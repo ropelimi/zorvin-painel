@@ -47,14 +47,18 @@ function horaDe(iso) {
 
 function Avatar({ nome, size = 40, foto }) {
   const inicial = (nome || "?").trim().charAt(0).toUpperCase();
-  // Se houver foto cadastrada, mostra a foto; senão, a inicial colorida.
-  if (foto) {
+  const [erroFoto, setErroFoto] = useState(false);
+  // Se a foto mudar, tenta de novo (limpa erro anterior).
+  useEffect(() => { setErroFoto(false); }, [foto]);
+  // Se houver foto cadastrada e ela carregar, mostra a foto;
+  // senão (sem foto ou falha ao carregar), a inicial colorida.
+  if (foto && !erroFoto) {
     return (
       <img
         src={foto}
         alt={nome || ""}
         style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", flexShrink: 0, background: corDe(nome) }}
-        onError={(e) => { e.currentTarget.style.display = "none"; }}
+        onError={() => setErroFoto(true)}
       />
     );
   }
