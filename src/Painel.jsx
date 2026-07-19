@@ -45,8 +45,19 @@ function horaDe(iso) {
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
 
-function Avatar({ nome, size = 40 }) {
+function Avatar({ nome, size = 40, foto }) {
   const inicial = (nome || "?").trim().charAt(0).toUpperCase();
+  // Se houver foto cadastrada, mostra a foto; senão, a inicial colorida.
+  if (foto) {
+    return (
+      <img
+        src={foto}
+        alt={nome || ""}
+        style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", flexShrink: 0, background: corDe(nome) }}
+        onError={(e) => { e.currentTarget.style.display = "none"; }}
+      />
+    );
+  }
   return (
     <div style={{ width: size, height: size, borderRadius: "50%", background: corDe(nome), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, fontSize: size * 0.42, flexShrink: 0 }}>
       {inicial}
@@ -89,7 +100,7 @@ export default function Painel({ sessao }) {
 
   // ---- Carrega os advogados (uma vez) ----
   useEffect(() => {
-    supabase.from("advogados").select("id, nome, numero").eq("ativo", true).order("nome")
+    supabase.from("advogados").select("id, nome, numero, foto_url").eq("ativo", true).order("nome")
       .then(({ data }) => {
         setAdvogados(data || []);
         if (data && data.length) setAdvogadoId(data[0].id);
@@ -101,7 +112,7 @@ export default function Painel({ sessao }) {
     if (!advId) return;
     const { data } = await supabase
       .from("conversas")
-      .select("id, ultima_mensagem, ultima_atividade, nao_lidas, contato:contato_id (nome, numero)")
+      .select("id, ultima_mensagem, ultima_atividade, nao_lidas, contato:contato_id (nome, numero, foto_url)")
       .eq("advogado_id", advId)
       .order("ultima_atividade", { ascending: false });
     setConversas(data || []);
@@ -185,7 +196,7 @@ export default function Painel({ sessao }) {
         <div style={{ background: C.headerBar, padding: "10px 16px", position: "relative" }}>
           <div style={{ fontSize: 12, color: C.textSecondary, marginBottom: 6, fontWeight: 600, letterSpacing: 0.3 }}>ATENDENDO COMO</div>
           <button onClick={() => setSeletorAberto((v) => !v)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 8, padding: "8px 12px", cursor: "pointer", color: C.textPrimary }}>
-            {advogado ? <Avatar nome={advogado.nome} size={34} /> : <div style={{ width: 34 }} />}
+            {advogado ? <Avatar nome={advogado.nome} foto={advogado.foto_url} size={34} /> : <div style={{ width: 34 }} />}
             <div style={{ flex: 1, textAlign: "left" }}>
               <div style={{ fontSize: 14, fontWeight: 600 }}>{advogado ? advogado.nome : "—"}</div>
               <div style={{ fontSize: 12, color: C.textSecondary }}>{advogado ? "+" + advogado.numero : "Nenhum advogado"}</div>
@@ -196,7 +207,7 @@ export default function Painel({ sessao }) {
             <div style={{ position: "absolute", top: "100%", left: 16, right: 16, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 8, boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 20, overflow: "hidden", maxHeight: 320, overflowY: "auto" }}>
               {advogados.map((a) => (
                 <button key={a.id} onClick={() => trocarAdvogado(a.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: a.id === advogadoId ? C.listActive : C.panel, border: "none", cursor: "pointer", textAlign: "left", color: C.textPrimary }}>
-                  <Avatar nome={a.nome} size={30} />
+                  <Avatar nome={a.nome} foto={a.foto_url} size={30} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{a.nome}</div>
                     <div style={{ fontSize: 11, color: C.textSecondary }}>+{a.numero}</div>
@@ -222,7 +233,7 @@ export default function Painel({ sessao }) {
             const nome = c.contato?.nome || ("+" + (c.contato?.numero || ""));
             return (
               <button key={c.id} onClick={() => setConversaId(c.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: c.id === conversaId ? C.listActive : C.panel, border: "none", borderBottom: `1px solid ${C.divider}`, cursor: "pointer", textAlign: "left", color: C.textPrimary }}>
-                <Avatar nome={nome} size={48} />
+                <Avatar nome={nome} foto={c.contato?.foto_url} size={48} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nome}</span>
@@ -257,7 +268,7 @@ export default function Painel({ sessao }) {
               <button onClick={() => setConversaId(null)} style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
                 <ArrowLeft size={20} color={C.textSecondary} />
               </button>
-              <Avatar nome={conversa.contato?.nome || conversa.contato?.numero} size={40} />
+              <Avatar nome={conversa.contato?.nome || conversa.contato?.numero} foto={conversa.contato?.foto_url} size={40} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{conversa.contato?.nome || ("+" + conversa.contato?.numero)}</div>
                 <div style={{ fontSize: 12, color: C.textSecondary }}>via {advogado?.nome}</div>
