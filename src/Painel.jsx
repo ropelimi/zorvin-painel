@@ -65,6 +65,79 @@ function marcaLida(status) {
   return status === "lida" || status === "read" || status === "lido";
 }
 
+// Emojis mais usados no atendimento (picker do ícone de carinha).
+const EMOJIS = [
+  "😀","😁","😂","🤣","😊","😍","😘","😅","😉","🙂",
+  "🙏","👍","👎","👏","🙌","🤝","💪","🔥","✅","❌",
+  "⚠️","📌","📎","📄","📅","⏰","💰","⚖️","📞","✉️",
+  "❤️","🎉","👋","🤔","😐","😢","😡","🥳","💯","👌",
+];
+
+// Converte o texto da mensagem em elementos: aplica *negrito*, _itálico_,
+// ~tachado~, `mono` e transforma links em algo clicável (estilo WhatsApp).
+const RE_URL = /(https?:\/\/[^\s]+)/g;
+function aplicarEnfase(txt, base) {
+  const re = /([*_~`])([^*_~`\n]+)\1/;
+  const out = [];
+  let resto = txt, k = 0, m;
+  while ((m = re.exec(resto))) {
+    if (m.index > 0) out.push(resto.slice(0, m.index));
+    const key = base + "e" + k++;
+    const [full, marca, conteudo] = m;
+    if (marca === "*") out.push(<strong key={key}>{conteudo}</strong>);
+    else if (marca === "_") out.push(<em key={key}>{conteudo}</em>);
+    else if (marca === "~") out.push(<s key={key}>{conteudo}</s>);
+    else out.push(<code key={key} style={{ fontFamily: "monospace", fontSize: "0.92em" }}>{conteudo}</code>);
+    resto = resto.slice(m.index + full.length);
+  }
+  if (resto) out.push(resto);
+  return out;
+}
+function formatarTexto(texto) {
+  if (!texto) return null;
+  const partes = [];
+  let last = 0, i = 0, m;
+  RE_URL.lastIndex = 0;
+  while ((m = RE_URL.exec(texto))) {
+    if (m.index > last) partes.push(...aplicarEnfase(texto.slice(last, m.index), "t" + i++));
+    const url = m[0];
+    partes.push(
+      <a key={"u" + i++} href={url} target="_blank" rel="noopener noreferrer" style={{ color: "#53bdeb", textDecoration: "underline" }}>{url}</a>
+    );
+    last = m.index + url.length;
+  }
+  if (last < texto.length) partes.push(...aplicarEnfase(texto.slice(last), "t" + i++));
+  return partes;
+}
+
+// Som curto ao chegar mensagem nova (sem precisar de arquivo de áudio).
+function tocarBeep() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const ctx = new AC();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type = "sine"; o.frequency.value = 880;
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
+    o.start();
+    o.stop(ctx.currentTime + 0.26);
+    o.onended = () => ctx.close();
+  } catch (_) { /* silêncio se o navegador bloquear */ }
+}
+
+// Notificação na área de trabalho (se o atendente autorizou).
+function notificarDesktop(titulo, corpo) {
+  try {
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification(titulo, { body: corpo, tag: "zorvin" });
+    }
+  } catch (_) { /* ignora */ }
+}
+
 function Avatar({ nome, size = 40, foto }) {
   const inicial = (nome || "?").trim().charAt(0).toUpperCase();
   const [erroFoto, setErroFoto] = useState(false);
@@ -121,6 +194,11 @@ export default function Painel({ sessao }) {
   const inputRef = useRef(null);
   const conversaIdRef = useRef(null);
   useEffect(() => { conversaIdRef.current = conversaId; }, [conversaId]);
+  const listaRef = useRef(null);
+  const [pertoDoFim, setPertoDoFim] = useState(true);
+  const [emojiAberto, setEmojiAberto] = useState(false);
+  const [buscaConversa, setBuscaConversa] = useState("");
+  const [buscaAberta, setBuscaAberta] = useState(false);
 
   const C = TEMAS[modo];
   const advogado = advogados.find((a) => a.id === advogadoId) || null;
@@ -253,6 +331,12 @@ export default function Painel({ sessao }) {
             supabase.from("conversas").update({ nao_lidas: 0 }).eq("id", conversaId).then(() => {});
           }
         }
+        // Aviso de nova mensagem (som + notificação) quando não estou olhando
+        // exatamente para ela (aba escondida ou outra conversa aberta).
+        if (nova.origem === "contato" && (document.hidden || nova.conversa_id !== conversaId)) {
+          tocarBeep();
+          notificarDesktop("Nova mensagem", nova.texto || "Mídia recebida");
+        }
         // Atualiza a lista de conversas (prévia / ordem / não lidas).
         carregarConversas(advogadoId);
       })
@@ -279,7 +363,42 @@ export default function Painel({ sessao }) {
     return () => { supabase.removeChannel(canal); };
   }, [conversaId, advogadoId, carregarConversas]);
 
-  useEffect(() => { fimRef.current?.scrollIntoView({ behavior: "smooth" }); }, [mensagens.length, conversaId]);
+  // Ao abrir uma conversa, começa no fim (mensagens mais recentes).
+  useEffect(() => { setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); requestAnimationFrame(() => fimRef.current?.scrollIntoView()); }, [conversaId]);
+
+  // Mensagem nova: só rola até o fim se o atendente já estava no fim
+  // (não "puxa" a tela quem está lendo mensagens antigas).
+  useEffect(() => { if (pertoDoFim) fimRef.current?.scrollIntoView({ behavior: "smooth" }); }, [mensagens.length]);
+
+  // Mostra o total de não lidas no título da aba: "(3) Zorvin".
+  useEffect(() => {
+    const total = conversas.reduce((s, c) => s + (c.nao_lidas || 0), 0);
+    document.title = total > 0 ? `(${total}) Zorvin` : "Zorvin";
+  }, [conversas]);
+
+  // Pede permissão para notificar na área de trabalho (uma vez).
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
+
+  function aoRolar() {
+    const el = listaRef.current;
+    if (!el) return;
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setPertoDoFim(dist < 120);
+  }
+
+  function irParaOFim() {
+    setPertoDoFim(true);
+    fimRef.current?.scrollIntoView({ behavior: "smooth" });
+  }
+
+  function inserirEmoji(e) {
+    setRascunho((r) => r + e);
+    inputRef.current?.focus();
+  }
 
   function trocarAdvogado(id) { setAdvogadoId(id); setConversaId(null); setSeletorAberto(false); setBusca(""); }
 
@@ -287,6 +406,8 @@ export default function Painel({ sessao }) {
     const t = rascunho.trim();
     if (!t || !conversaId) return;
     setRascunho("");
+    setEmojiAberto(false);
+    setPertoDoFim(true); // ao enviar, sempre volto para o fim da conversa
     // Mostra a mensagem NA HORA (provisória, com relóginho), como o WhatsApp Web.
     const tempId = "temp-" + Date.now() + "-" + Math.round(Math.random() * 1e6);
     const provisoria = {
@@ -402,7 +523,7 @@ export default function Painel({ sessao }) {
       </div>
 
       {/* Conversa */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", background: C.chatBg }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", background: C.chatBg, position: "relative" }}>
         {!conversa ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: C.textSecondary, gap: 16 }}>
             <div style={{ width: 90, height: 90, borderRadius: "50%", background: C.placeholderCircle, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -430,15 +551,28 @@ export default function Painel({ sessao }) {
                   <div style={{ fontSize: 12, color: C.textSecondary }}>via {advogado?.nome}</div>
                 )}
               </div>
+              <button onClick={() => setBuscaAberta((v) => !v)} title="Buscar na conversa" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
+                <Search size={19} color={buscaAberta ? C.green : C.textSecondary} />
+              </button>
               <MoreVertical size={20} color={C.textSecondary} />
             </div>
+            {buscaAberta && (
+              <div style={{ background: C.headerBar, padding: "0 16px 10px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.searchBg, borderRadius: 8, padding: "6px 12px" }}>
+                  <Search size={16} color={C.textSecondary} />
+                  <input autoFocus value={buscaConversa} onChange={(e) => setBuscaConversa(e.target.value)} placeholder="Buscar nesta conversa" style={{ border: "none", outline: "none", background: "transparent", fontSize: 14, flex: 1, color: C.textPrimary }} />
+                </div>
+              </div>
+            )}
 
-            <div style={{ flex: 1, overflowY: "auto", padding: "20px 8%", display: "flex", flexDirection: "column", gap: 6 }}>
+            <div ref={listaRef} onScroll={aoRolar} style={{ flex: 1, overflowY: "auto", padding: "20px 8%", display: "flex", flexDirection: "column", gap: 6 }}>
               {mensagens.map((m, i) => {
                 const saida = m.origem === "advogado";
                 const anterior = mensagens[i - 1];
                 const novoDia =
                   !anterior || new Date(anterior.criado_em).toDateString() !== new Date(m.criado_em).toDateString();
+                const q = buscaAberta ? buscaConversa.trim().toLowerCase() : "";
+                const casa = q && (m.texto || "").toLowerCase().includes(q);
                 return (
                   <React.Fragment key={m.id}>
                     {novoDia && (
@@ -447,12 +581,12 @@ export default function Painel({ sessao }) {
                       </div>
                     )}
                     <div style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start" }}>
-                      <div style={{ maxWidth: "65%", background: saida ? C.bubbleOut : C.bubbleIn, color: C.textPrimary, borderRadius: 8, padding: m.tipo === "imagem" ? 4 : "6px 9px 8px", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)" }}>
+                      <div style={{ maxWidth: "65%", background: saida ? C.bubbleOut : C.bubbleIn, color: C.textPrimary, borderRadius: 8, padding: m.tipo === "imagem" ? 4 : "6px 9px 8px", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
                         {m.tipo === "imagem" && m.midia_url && (
                           <img src={m.midia_url} alt="imagem" style={{ maxWidth: 240, borderRadius: 6, display: "block" }} />
                         )}
                         {m.tipo === "audio" && <BolhaAudio C={C} saida={saida} url={m.midia_url} />}
-                        {m.texto && <div style={{ fontSize: 14.2, lineHeight: 1.35, paddingRight: 42, marginTop: m.tipo !== "texto" ? 4 : 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{m.texto}</div>}
+                        {m.texto && <div style={{ fontSize: 14.2, lineHeight: 1.35, paddingRight: 42, marginTop: m.tipo !== "texto" ? 4 : 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{formatarTexto(m.texto)}</div>}
                         <div style={{ fontSize: 11, color: m._status === "erro" ? "#e53935" : C.textSecondary, textAlign: "right", marginTop: 2, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 3 }}>
                           {horaDe(m.criado_em)}
                           {saida && (
@@ -476,8 +610,23 @@ export default function Painel({ sessao }) {
               <div ref={fimRef} />
             </div>
 
-            <div style={{ background: C.headerBar, padding: "10px 16px", display: "flex", alignItems: "flex-end", gap: 10 }}>
-              <Smile size={24} color={C.textSecondary} style={{ marginBottom: 8 }} />
+            {!pertoDoFim && (
+              <button onClick={irParaOFim} title="Ir para o fim" style={{ position: "absolute", right: 24, bottom: 84, width: 42, height: 42, borderRadius: "50%", background: C.panel, border: `1px solid ${C.divider}`, boxShadow: "0 2px 6px rgba(0,0,0,.25)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.textSecondary, zIndex: 5 }}>
+                <ChevronDown size={22} />
+              </button>
+            )}
+
+            <div style={{ background: C.headerBar, padding: "10px 16px", display: "flex", alignItems: "flex-end", gap: 10, position: "relative" }}>
+              {emojiAberto && (
+                <div style={{ position: "absolute", bottom: 60, left: 12, width: 300, maxHeight: 220, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", padding: 8, display: "flex", flexWrap: "wrap", gap: 4, zIndex: 30 }}>
+                  {EMOJIS.map((e) => (
+                    <button key={e} onClick={() => inserirEmoji(e)} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 22, lineHeight: 1, padding: 4, borderRadius: 6 }}>{e}</button>
+                  ))}
+                </div>
+              )}
+              <button onClick={() => setEmojiAberto((v) => !v)} title="Emojis" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", marginBottom: 8, padding: 0 }}>
+                <Smile size={24} color={emojiAberto ? C.green : C.textSecondary} />
+              </button>
               <Paperclip size={22} color={C.textSecondary} style={{ marginBottom: 9 }} />
               <textarea
                 ref={inputRef}
