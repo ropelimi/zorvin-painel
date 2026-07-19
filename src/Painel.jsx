@@ -65,6 +65,13 @@ function marcaLida(status) {
   return status === "lida" || status === "read" || status === "lido";
 }
 
+// Formata segundos como m:ss (ex.: 75 -> "1:15").
+function formatarDuracao(seg) {
+  const m = Math.floor(seg / 60);
+  const s = seg % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 // Emojis mais usados no atendimento (picker do ícone de carinha).
 const EMOJIS = [
   "😀","😁","😂","🤣","😊","😍","😘","😅","😉","🙂",
@@ -208,9 +215,11 @@ export default function Painel({ sessao }) {
   const [buscaAberta, setBuscaAberta] = useState(false);
   const [respondendo, setRespondendo] = useState(null); // { id_uazapi, previa, autor }
   const [gravando, setGravando] = useState(false);
+  const [tempoGravacao, setTempoGravacao] = useState(0); // segundos gravados
   const [imagemAberta, setImagemAberta] = useState(null); // URL da imagem em tela cheia
   const gravadorRef = useRef(null);
   const chunksRef = useRef([]);
+  const timerRef = useRef(null);
 
   const C = TEMAS[modo];
   const advogado = advogados.find((a) => a.id === advogadoId) || null;
@@ -516,7 +525,7 @@ export default function Painel({ sessao }) {
       const nome = (file.name || "arquivo").replace(/[^\w.\-]+/g, "_");
       const caminho = `${conversaId}/${Date.now()}-${nome}`;
       const { error: upErr } = await supabase.storage.from("anexos").upload(caminho, file, { contentType: file.type });
-      if (upErr) throw upErr;
+      if (upErr) throw new Error("Falha ao subir o arquivo (Storage): " + (upErr.message || upErr));
       const { data: pub } = supabase.storage.from("anexos").getPublicUrl(caminho);
       const url = pub?.publicUrl;
       if (!url) throw new Error("sem URL pública do arquivo");
@@ -527,9 +536,31 @@ export default function Painel({ sessao }) {
         conversa_id: conversaId, texto: null, tipo,
         midia_url: url, midia_mime: file.type, midia_nome: nome,
       });
-      if (filaErr) throw filaErr;
+      if (filaErr) throw new Error("Falha ao colocar na fila (banco): " + (filaErr.message || filaErr));
     } catch (err) {
       setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _status: "erro" } : m)));
+      alert("Não consegui enviar o anexo.\n\n" + (err?.message || err));
+    }
+  }
+
+  // Baixa uma imagem de verdade (não só abre em nova aba). Como a imagem fica
+  // em outro domínio (Storage), o atributo download é ignorado; então buscamos
+  // o arquivo e forçamos o download por um link temporário.
+  async function baixarImagem(url) {
+    try {
+      const resp = await fetch(url);
+      const blob = await resp.blob();
+      const objUrl = URL.createObjectURL(blob);
+      const ext = (blob.type.split("/")[1] || "jpg").split(";")[0];
+      const a = document.createElement("a");
+      a.href = objUrl;
+      a.download = `imagem-${Date.now()}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(objUrl), 2000);
+    } catch (_) {
+      window.open(url, "_blank"); // se não der, abre em nova aba
     }
   }
 
@@ -554,6 +585,7 @@ export default function Painel({ sessao }) {
       gravador.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunksRef.current.push(e.data); };
       gravador.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
+        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
         setGravando(false);
         const tipoBlob = gravador.mimeType || "audio/ogg";
         const blob = new Blob(chunksRef.current, { type: tipoBlob });
@@ -567,6 +599,8 @@ export default function Painel({ sessao }) {
       gravadorRef.current = gravador;
       gravador.start();
       setGravando(true);
+      setTempoGravacao(0);
+      timerRef.current = setInterval(() => setTempoGravacao((t) => t + 1), 1000);
     } catch (_) {
       alert("Não consegui acessar o microfone. Verifique a permissão do navegador.");
       setGravando(false);
@@ -574,6 +608,7 @@ export default function Painel({ sessao }) {
   }
 
   function cancelarGravacao() {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (gravadorRef.current) {
       gravadorRef.current._cancelado = true;
       try { gravadorRef.current.stop(); } catch (_) { /* ignora */ }
@@ -807,7 +842,8 @@ export default function Painel({ sessao }) {
                     <X size={22} color={C.textSecondary} />
                   </button>
                   <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#e53935", display: "inline-block", flexShrink: 0 }} />
-                  <span style={{ flex: 1, color: C.textSecondary, fontSize: 14 }}>Gravando áudio… toque no verde para enviar</span>
+                  <span style={{ fontSize: 15, fontWeight: 600, color: C.textPrimary, minWidth: 44 }}>{formatarDuracao(tempoGravacao)}</span>
+                  <span style={{ flex: 1, color: C.textSecondary, fontSize: 14 }}>Gravando… toque no verde para enviar</span>
                   <button onClick={alternarGravacao} title="Enviar áudio" style={{ border: "none", background: C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0 }}>
                     <Send size={20} color="#fff" />
                   </button>
@@ -858,9 +894,9 @@ export default function Painel({ sessao }) {
       {imagemAberta && (
         <div onClick={() => setImagemAberta(null)} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,.9)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ position: "absolute", top: 16, right: 20, display: "flex", gap: 18 }}>
-            <a href={imagemAberta} download target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} title="Baixar imagem" style={{ color: "#fff", display: "flex" }}>
+            <button onClick={(e) => { e.stopPropagation(); baixarImagem(imagemAberta); }} title="Baixar imagem" style={{ background: "transparent", border: "none", cursor: "pointer", color: "#fff", display: "flex" }}>
               <Download size={26} />
-            </a>
+            </button>
             <button onClick={() => setImagemAberta(null)} title="Fechar" style={{ background: "transparent", border: "none", cursor: "pointer", color: "#fff", display: "flex" }}>
               <X size={28} />
             </button>
