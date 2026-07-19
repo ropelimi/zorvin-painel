@@ -484,14 +484,28 @@ export default function Painel({ sessao }) {
     }
   }
 
-  // Reenvia uma mensagem que falhou (recoloca na fila, mantendo a citação).
+  // Reenvia uma mensagem que falhou (recoloca na fila, mantendo a citação/anexo).
   async function reenviar(msg) {
     setMensagens((prev) => prev.map((m) => (m.id === msg.id ? { ...m, _status: "enviando" } : m)));
-    const payload = { conversa_id: msg.conversa_id, texto: msg.texto };
-    if (msg._responderId) {
-      payload.responder_id_uazapi = msg._responderId;
-      payload.resposta_previa = msg.resposta_previa;
-      payload.resposta_autor = msg.resposta_autor;
+    let payload;
+    if (msg.tipo && msg.tipo !== "texto") {
+      // Anexo: reaproveita o arquivo que já foi para o Storage.
+      const url = msg._midiaUrlFinal || msg.midia_url;
+      if (!url) {
+        setMensagens((prev) => prev.map((m) => (m.id === msg.id ? { ...m, _status: "erro" } : m)));
+        return;
+      }
+      payload = {
+        conversa_id: msg.conversa_id, texto: "", tipo: msg.tipo,
+        midia_url: url, midia_mime: msg.midia_mime || null, midia_nome: msg.midia_nome || null,
+      };
+    } else {
+      payload = { conversa_id: msg.conversa_id, texto: msg.texto || "" };
+      if (msg._responderId) {
+        payload.responder_id_uazapi = msg._responderId;
+        payload.resposta_previa = msg.resposta_previa;
+        payload.resposta_autor = msg.resposta_autor;
+      }
     }
     const { error } = await supabase.from("fila_envio").insert(payload);
     if (error) {
@@ -533,7 +547,7 @@ export default function Painel({ sessao }) {
       // com a versão real que a ponte vai gravar (evita duplicar).
       setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _midiaUrlFinal: url } : m)));
       const { error: filaErr } = await supabase.from("fila_envio").insert({
-        conversa_id: conversaId, texto: null, tipo,
+        conversa_id: conversaId, texto: "", tipo,
         midia_url: url, midia_mime: file.type, midia_nome: nome,
       });
       if (filaErr) throw new Error("Falha ao colocar na fila (banco): " + (filaErr.message || filaErr));
