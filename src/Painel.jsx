@@ -46,6 +46,25 @@ function horaDe(iso) {
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
 
+// Rótulo de dia para o separador de datas (HOJE / ONTEM / dd/mm/aaaa).
+function rotuloData(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const hoje = new Date();
+  const ontem = new Date();
+  ontem.setDate(hoje.getDate() - 1);
+  const mesmoDia = (a, b) =>
+    a.getDate() === b.getDate() && a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
+  if (mesmoDia(d, hoje)) return "HOJE";
+  if (mesmoDia(d, ontem)) return "ONTEM";
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+// Marca de status (tiquinhos) de uma mensagem que EU enviei, estilo WhatsApp.
+function marcaLida(status) {
+  return status === "lida" || status === "read" || status === "lido";
+}
+
 function Avatar({ nome, size = 40, foto }) {
   const inicial = (nome || "?").trim().charAt(0).toUpperCase();
   const [erroFoto, setErroFoto] = useState(false);
@@ -100,6 +119,8 @@ export default function Painel({ sessao }) {
   const [atendimentos, setAtendimentos] = useState({}); // { conversaId: { por, em } }
   const fimRef = useRef(null);
   const inputRef = useRef(null);
+  const conversaIdRef = useRef(null);
+  useEffect(() => { conversaIdRef.current = conversaId; }, [conversaId]);
 
   const C = TEMAS[modo];
   const advogado = advogados.find((a) => a.id === advogadoId) || null;
@@ -155,7 +176,12 @@ export default function Painel({ sessao }) {
       .select("id, ultima_mensagem, ultima_atividade, nao_lidas, contato:contato_id (nome, numero, foto_url)")
       .eq("advogado_id", advId)
       .order("ultima_atividade", { ascending: false });
-    setConversas(data || []);
+    // A conversa que está aberta agora não deve mostrar contador de não lidas
+    // (estou lendo em tempo real), igual ao WhatsApp Web.
+    const lista = (data || []).map((c) =>
+      c.id === conversaIdRef.current ? { ...c, nao_lidas: 0 } : c
+    );
+    setConversas(lista);
     carregarAtendimentos(advId);
   }, [carregarAtendimentos]);
 
@@ -166,7 +192,7 @@ export default function Painel({ sessao }) {
     if (!convId) { setMensagens([]); return; }
     const { data } = await supabase
       .from("mensagens")
-      .select("id, origem, tipo, texto, midia_url, criado_em")
+      .select("id, origem, tipo, texto, midia_url, criado_em, status")
       .eq("conversa_id", convId)
       .order("criado_em", { ascending: true });
     setMensagens(data || []);
@@ -221,9 +247,20 @@ export default function Painel({ sessao }) {
             }
             return [...base, nova];
           });
+          // Cheguei uma mensagem do contato e a conversa está aberta: já conta
+          // como lida (zera o contador no banco), igual ao WhatsApp Web.
+          if (nova.origem === "contato") {
+            supabase.from("conversas").update({ nao_lidas: 0 }).eq("id", conversaId).then(() => {});
+          }
         }
         // Atualiza a lista de conversas (prévia / ordem / não lidas).
         carregarConversas(advogadoId);
+      })
+      // Status de uma mensagem mudou (ex.: foi lida) — atualiza o "tiquinho".
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "mensagens" }, (payload) => {
+        const atual = payload.new;
+        if (atual.conversa_id !== conversaId) return;
+        setMensagens((prev) => prev.map((m) => (m.id === atual.id ? { ...m, status: atual.status } : m)));
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversas" }, () => {
         carregarConversas(advogadoId);
@@ -397,32 +434,43 @@ export default function Painel({ sessao }) {
             </div>
 
             <div style={{ flex: 1, overflowY: "auto", padding: "20px 8%", display: "flex", flexDirection: "column", gap: 6 }}>
-              {mensagens.map((m) => {
+              {mensagens.map((m, i) => {
                 const saida = m.origem === "advogado";
+                const anterior = mensagens[i - 1];
+                const novoDia =
+                  !anterior || new Date(anterior.criado_em).toDateString() !== new Date(m.criado_em).toDateString();
                 return (
-                  <div key={m.id} style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start" }}>
-                    <div style={{ maxWidth: "65%", background: saida ? C.bubbleOut : C.bubbleIn, color: C.textPrimary, borderRadius: 8, padding: m.tipo === "imagem" ? 4 : "6px 9px 8px", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)" }}>
-                      {m.tipo === "imagem" && m.midia_url && (
-                        <img src={m.midia_url} alt="imagem" style={{ maxWidth: 240, borderRadius: 6, display: "block" }} />
-                      )}
-                      {m.tipo === "audio" && <BolhaAudio C={C} saida={saida} url={m.midia_url} />}
-                      {m.texto && <div style={{ fontSize: 14.2, lineHeight: 1.35, paddingRight: 42, marginTop: m.tipo !== "texto" ? 4 : 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{m.texto}</div>}
-                      <div style={{ fontSize: 11, color: m._status === "erro" ? "#e53935" : C.textSecondary, textAlign: "right", marginTop: 2, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 3 }}>
-                        {horaDe(m.criado_em)}
-                        {saida && (
-                          m._status === "enviando" ? (
-                            <Clock size={13} color={C.textSecondary} />
-                          ) : m._status === "erro" ? (
-                            <span onClick={() => reenviar(m)} title="Toque para reenviar" style={{ color: "#e53935", cursor: "pointer", display: "flex", alignItems: "center", gap: 3, fontWeight: 600 }}>
-                              <AlertCircle size={13} /> não enviado · reenviar
-                            </span>
-                          ) : (
-                            <CheckCheck size={15} color="#53bdeb" />
-                          )
+                  <React.Fragment key={m.id}>
+                    {novoDia && (
+                      <div style={{ alignSelf: "center", background: C.bubbleIn, color: C.textSecondary, fontSize: 12, fontWeight: 500, padding: "5px 12px", borderRadius: 8, boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", margin: "10px 0 6px" }}>
+                        {rotuloData(m.criado_em)}
+                      </div>
+                    )}
+                    <div style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start" }}>
+                      <div style={{ maxWidth: "65%", background: saida ? C.bubbleOut : C.bubbleIn, color: C.textPrimary, borderRadius: 8, padding: m.tipo === "imagem" ? 4 : "6px 9px 8px", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)" }}>
+                        {m.tipo === "imagem" && m.midia_url && (
+                          <img src={m.midia_url} alt="imagem" style={{ maxWidth: 240, borderRadius: 6, display: "block" }} />
                         )}
+                        {m.tipo === "audio" && <BolhaAudio C={C} saida={saida} url={m.midia_url} />}
+                        {m.texto && <div style={{ fontSize: 14.2, lineHeight: 1.35, paddingRight: 42, marginTop: m.tipo !== "texto" ? 4 : 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{m.texto}</div>}
+                        <div style={{ fontSize: 11, color: m._status === "erro" ? "#e53935" : C.textSecondary, textAlign: "right", marginTop: 2, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 3 }}>
+                          {horaDe(m.criado_em)}
+                          {saida && (
+                            m._status === "enviando" ? (
+                              <Clock size={13} color={C.textSecondary} />
+                            ) : m._status === "erro" ? (
+                              <span onClick={() => reenviar(m)} title="Toque para reenviar" style={{ color: "#e53935", cursor: "pointer", display: "flex", alignItems: "center", gap: 3, fontWeight: 600 }}>
+                                <AlertCircle size={13} /> não enviado · reenviar
+                              </span>
+                            ) : (
+                              // Cinza = enviada; azul = lida (igual ao WhatsApp).
+                              <CheckCheck size={15} color={marcaLida(m.status) ? "#53bdeb" : "#8696a0"} />
+                            )
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  </React.Fragment>
                 );
               })}
               <div ref={fimRef} />
