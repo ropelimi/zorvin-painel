@@ -180,7 +180,13 @@ function BolhaAudio({ C, saida, url }) {
 }
 
 export default function Painel({ sessao }) {
-  const [modo, setModo] = useState("claro");
+  // Tema começa pelo que foi salvo da última vez (claro/escuro).
+  const [modo, setModo] = useState(() => {
+    try { return localStorage.getItem("zorvin_modo") || "claro"; } catch (_) { return "claro"; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("zorvin_modo", modo); } catch (_) { /* ignora */ }
+  }, [modo]);
   const [advogados, setAdvogados] = useState([]);
   const [advogadoId, setAdvogadoId] = useState(null);
   const [conversas, setConversas] = useState([]);
@@ -201,6 +207,9 @@ export default function Painel({ sessao }) {
   const [buscaConversa, setBuscaConversa] = useState("");
   const [buscaAberta, setBuscaAberta] = useState(false);
   const [respondendo, setRespondendo] = useState(null); // { id_uazapi, previa, autor }
+  const [gravando, setGravando] = useState(false);
+  const gravadorRef = useRef(null);
+  const chunksRef = useRef([]);
 
   const C = TEMAS[modo];
   const advogado = advogados.find((a) => a.id === advogadoId) || null;
@@ -227,9 +236,21 @@ export default function Painel({ sessao }) {
     supabase.from("advogados").select("id, nome, numero, foto_url").eq("ativo", true).order("nome")
       .then(({ data }) => {
         setAdvogados(data || []);
-        if (data && data.length) setAdvogadoId(data[0].id);
+        if (data && data.length) {
+          // Mantém o advogado que estava selecionado antes de atualizar a página.
+          let salvo = null;
+          try { salvo = localStorage.getItem("zorvin_advogado"); } catch (_) { /* ignora */ }
+          const existe = salvo && data.some((a) => a.id === salvo);
+          setAdvogadoId(existe ? salvo : data[0].id);
+        }
       });
   }, []);
+
+  // Salva o advogado selecionado para reabrir nele após atualizar a página.
+  useEffect(() => {
+    if (!advogadoId) return;
+    try { localStorage.setItem("zorvin_advogado", advogadoId); } catch (_) { /* ignora */ }
+  }, [advogadoId]);
 
   // ---- Carrega "quem está atendendo" cada conversa (recurso opcional) ----
   // Consulta separada e protegida: se as colunas atendendo_por/atendendo_em
@@ -483,31 +504,80 @@ export default function Painel({ sessao }) {
     const ehAudio = file.type.startsWith("audio/");
     const tipo = ehImagem ? "imagem" : ehVideo ? "video" : ehAudio ? "audio" : "documento";
     const tempId = "temp-" + Date.now() + "-" + Math.round(Math.random() * 1e6);
-    const previa = ehImagem ? URL.createObjectURL(file) : null;
-    // Mostra o anexo na hora (provisório, com relóginho).
+    // Prévia local (o remetente vê o anexo na hora, sem depender do Storage).
+    const previa = tipo === "documento" ? null : URL.createObjectURL(file);
     setMensagens((prev) => [...prev, {
       id: tempId, conversa_id: conversaId, origem: "advogado", tipo,
       texto: null, midia_url: previa, midia_mime: file.type, midia_nome: file.name,
       criado_em: new Date().toISOString(), _status: "enviando",
     }]);
     try {
-      const nome = file.name.replace(/[^\w.\-]+/g, "_");
+      const nome = (file.name || "arquivo").replace(/[^\w.\-]+/g, "_");
       const caminho = `${conversaId}/${Date.now()}-${nome}`;
       const { error: upErr } = await supabase.storage.from("anexos").upload(caminho, file, { contentType: file.type });
       if (upErr) throw upErr;
       const { data: pub } = supabase.storage.from("anexos").getPublicUrl(caminho);
       const url = pub?.publicUrl;
       if (!url) throw new Error("sem URL pública do arquivo");
-      // guarda a URL final (para casar com a versão real que a ponte gravar)
-      setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, midia_url: url, _midiaUrlFinal: url } : m)));
+      // Mantém a prévia local na tela; guarda a URL do Storage só para casar
+      // com a versão real que a ponte vai gravar (evita duplicar).
+      setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _midiaUrlFinal: url } : m)));
       const { error: filaErr } = await supabase.from("fila_envio").insert({
         conversa_id: conversaId, texto: null, tipo,
-        midia_url: url, midia_mime: file.type, midia_nome: file.name,
+        midia_url: url, midia_mime: file.type, midia_nome: nome,
       });
       if (filaErr) throw filaErr;
     } catch (err) {
       setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _status: "erro" } : m)));
     }
+  }
+
+  // ---- Gravação de áudio pelo microfone (mensagem de voz) ----
+  async function alternarGravacao() {
+    // Se já está gravando, para e envia.
+    if (gravando) {
+      try { gravadorRef.current && gravadorRef.current.stop(); } catch (_) { /* ignora */ }
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert("Este navegador não permite gravar áudio.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")
+        ? "audio/ogg;codecs=opus"
+        : (MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "");
+      const gravador = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      chunksRef.current = [];
+      gravador.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunksRef.current.push(e.data); };
+      gravador.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setGravando(false);
+        const tipoBlob = gravador.mimeType || "audio/ogg";
+        const blob = new Blob(chunksRef.current, { type: tipoBlob });
+        if (!gravadorRef.current?._cancelado && blob.size > 0) {
+          const ext = tipoBlob.includes("webm") ? "webm" : "ogg";
+          const arquivo = new File([blob], `audio-${Date.now()}.${ext}`, { type: tipoBlob });
+          enviarArquivo(arquivo);
+        }
+        gravadorRef.current = null;
+      };
+      gravadorRef.current = gravador;
+      gravador.start();
+      setGravando(true);
+    } catch (_) {
+      alert("Não consegui acessar o microfone. Verifique a permissão do navegador.");
+      setGravando(false);
+    }
+  }
+
+  function cancelarGravacao() {
+    if (gravadorRef.current) {
+      gravadorRef.current._cancelado = true;
+      try { gravadorRef.current.stop(); } catch (_) { /* ignora */ }
+    }
+    setGravando(false);
   }
 
   async function sair() { await supabase.auth.signOut(); }
@@ -730,36 +800,53 @@ export default function Painel({ sessao }) {
             )}
 
             <div style={{ background: C.headerBar, padding: "10px 16px", display: "flex", alignItems: "flex-end", gap: 10, position: "relative" }}>
-              {emojiAberto && (
-                <div style={{ position: "absolute", bottom: 60, left: 12, width: 300, maxHeight: 220, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", padding: 8, display: "flex", flexWrap: "wrap", gap: 4, zIndex: 30 }}>
-                  {EMOJIS.map((e) => (
-                    <button key={e} onClick={() => inserirEmoji(e)} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 22, lineHeight: 1, padding: 4, borderRadius: 6 }}>{e}</button>
-                  ))}
+              {gravando ? (
+                <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 12, padding: "6px 2px" }}>
+                  <button onClick={cancelarGravacao} title="Cancelar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
+                    <X size={22} color={C.textSecondary} />
+                  </button>
+                  <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#e53935", display: "inline-block", flexShrink: 0 }} />
+                  <span style={{ flex: 1, color: C.textSecondary, fontSize: 14 }}>Gravando áudio… toque no verde para enviar</span>
+                  <button onClick={alternarGravacao} title="Enviar áudio" style={{ border: "none", background: C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0 }}>
+                    <Send size={20} color="#fff" />
+                  </button>
                 </div>
-              )}
-              <button onClick={() => setEmojiAberto((v) => !v)} title="Emojis" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", marginBottom: 8, padding: 0 }}>
-                <Smile size={24} color={emojiAberto ? C.green : C.textSecondary} />
-              </button>
-              <button onClick={() => fileRef.current?.click()} title="Anexar arquivo" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", marginBottom: 9, padding: 0 }}>
-                <Paperclip size={22} color={C.textSecondary} />
-              </button>
-              <input ref={fileRef} type="file" onChange={aoEscolherArquivo} style={{ display: "none" }} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" />
-              <textarea
-                ref={inputRef}
-                value={rascunho}
-                onChange={(e) => setRascunho(e.target.value)}
-                onKeyDown={(e) => {
-                  // Enter envia; Shift+Enter pula linha (como no WhatsApp Web).
-                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); }
-                }}
-                rows={1}
-                placeholder="Digite uma mensagem"
-                style={{ flex: 1, border: "none", outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "10px 14px", fontSize: 14.5, resize: "none", lineHeight: 1.35, maxHeight: 120, overflowY: "auto", fontFamily: "inherit" }}
-              />
-              {rascunho.trim() ? (
-                <button onClick={enviar} style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}><Send size={24} color={C.green} /></button>
               ) : (
-                <Mic size={24} color={C.textSecondary} />
+                <>
+                  {emojiAberto && (
+                    <div style={{ position: "absolute", bottom: 60, left: 12, width: 300, maxHeight: 220, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", padding: 8, display: "flex", flexWrap: "wrap", gap: 4, zIndex: 30 }}>
+                      {EMOJIS.map((e) => (
+                        <button key={e} onClick={() => inserirEmoji(e)} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 22, lineHeight: 1, padding: 4, borderRadius: 6 }}>{e}</button>
+                      ))}
+                    </div>
+                  )}
+                  <button onClick={() => setEmojiAberto((v) => !v)} title="Emojis" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", marginBottom: 8, padding: 0 }}>
+                    <Smile size={24} color={emojiAberto ? C.green : C.textSecondary} />
+                  </button>
+                  <button onClick={() => fileRef.current?.click()} title="Anexar arquivo" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", marginBottom: 9, padding: 0 }}>
+                    <Paperclip size={22} color={C.textSecondary} />
+                  </button>
+                  <input ref={fileRef} type="file" onChange={aoEscolherArquivo} style={{ display: "none" }} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" />
+                  <textarea
+                    ref={inputRef}
+                    value={rascunho}
+                    onChange={(e) => setRascunho(e.target.value)}
+                    onKeyDown={(e) => {
+                      // Enter envia; Shift+Enter pula linha (como no WhatsApp Web).
+                      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); }
+                    }}
+                    rows={1}
+                    placeholder="Digite uma mensagem"
+                    style={{ flex: 1, border: "none", outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "10px 14px", fontSize: 14.5, resize: "none", lineHeight: 1.35, maxHeight: 120, overflowY: "auto", fontFamily: "inherit" }}
+                  />
+                  {rascunho.trim() ? (
+                    <button onClick={enviar} style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}><Send size={24} color={C.green} /></button>
+                  ) : (
+                    <button onClick={alternarGravacao} title="Gravar áudio" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", padding: 0 }}>
+                      <Mic size={24} color={C.textSecondary} />
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </>
