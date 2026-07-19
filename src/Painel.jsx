@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { supabase } from "./supabase.js";
 import {
   Search, Send, Paperclip, Smile, MoreVertical, ChevronDown,
-  MessageSquare, Mic, Play, CheckCheck, Settings, LogOut, Phone, ArrowLeft, Sun, Moon
+  MessageSquare, Mic, Play, CheckCheck, Settings, LogOut, Phone, ArrowLeft, Sun, Moon,
+  Clock, AlertCircle
 } from "lucide-react";
 
 // ============================================================
@@ -47,14 +48,18 @@ function horaDe(iso) {
 
 function Avatar({ nome, size = 40, foto }) {
   const inicial = (nome || "?").trim().charAt(0).toUpperCase();
-  // Se houver foto cadastrada, mostra a foto; senão, a inicial colorida.
-  if (foto) {
+  const [erroFoto, setErroFoto] = useState(false);
+  // Se a foto mudar, tenta de novo (limpa erro anterior).
+  useEffect(() => { setErroFoto(false); }, [foto]);
+  // Se houver foto cadastrada e ela carregar, mostra a foto;
+  // senão (sem foto ou falha ao carregar), a inicial colorida.
+  if (foto && !erroFoto) {
     return (
       <img
         src={foto}
         alt={nome || ""}
         style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", flexShrink: 0, background: corDe(nome) }}
-        onError={(e) => { e.currentTarget.style.display = "none"; }}
+        onError={() => setErroFoto(true)}
       />
     );
   }
@@ -92,11 +97,29 @@ export default function Painel({ sessao }) {
   const [seletorAberto, setSeletorAberto] = useState(false);
   const [busca, setBusca] = useState("");
   const [rascunho, setRascunho] = useState("");
+  const [atendimentos, setAtendimentos] = useState({}); // { conversaId: { por, em } }
   const fimRef = useRef(null);
+  const inputRef = useRef(null);
 
   const C = TEMAS[modo];
   const advogado = advogados.find((a) => a.id === advogadoId) || null;
   const conversa = conversas.find((c) => c.id === conversaId) || null;
+  // Nome que aparece para os outros atendentes quando eu abro uma conversa.
+  const meuNome =
+    sessao?.user?.user_metadata?.nome ||
+    sessao?.user?.user_metadata?.name ||
+    sessao?.user?.user_metadata?.full_name ||
+    (sessao?.user?.email || "").split("@")[0] ||
+    "atendente";
+
+  // Quem (além de mim) está atendendo uma conversa agora. Considera "ativo"
+  // apenas nos últimos 3 minutos, para não travar conversa que alguém abriu e saiu.
+  function atendidoPorOutro(convId) {
+    const a = atendimentos[convId];
+    if (!a || !a.por || a.por === meuNome) return null;
+    if (a.em && Date.now() - new Date(a.em).getTime() > 3 * 60 * 1000) return null;
+    return a.por;
+  }
 
   // ---- Carrega os advogados (uma vez) ----
   useEffect(() => {
@@ -105,6 +128,23 @@ export default function Painel({ sessao }) {
         setAdvogados(data || []);
         if (data && data.length) setAdvogadoId(data[0].id);
       });
+  }, []);
+
+  // ---- Carrega "quem está atendendo" cada conversa (recurso opcional) ----
+  // Consulta separada e protegida: se as colunas atendendo_por/atendendo_em
+  // ainda não existirem no banco, ignora sem erro e o painel segue normal.
+  const carregarAtendimentos = useCallback(async (advId) => {
+    if (!advId) return;
+    const { data, error } = await supabase
+      .from("conversas")
+      .select("id, atendendo_por, atendendo_em")
+      .eq("advogado_id", advId);
+    if (error) return; // coluna ainda não criada: recurso fica dormente
+    const mapa = {};
+    (data || []).forEach((r) => {
+      if (r.atendendo_por) mapa[r.id] = { por: r.atendendo_por, em: r.atendendo_em };
+    });
+    setAtendimentos(mapa);
   }, []);
 
   // ---- Carrega as conversas do advogado selecionado ----
@@ -116,7 +156,8 @@ export default function Painel({ sessao }) {
       .eq("advogado_id", advId)
       .order("ultima_atividade", { ascending: false });
     setConversas(data || []);
-  }, []);
+    carregarAtendimentos(advId);
+  }, [carregarAtendimentos]);
 
   useEffect(() => { carregarConversas(advogadoId); }, [advogadoId, carregarConversas]);
 
@@ -131,9 +172,35 @@ export default function Painel({ sessao }) {
     setMensagens(data || []);
     // Zera o contador de não lidas desta conversa.
     await supabase.from("conversas").update({ nao_lidas: 0 }).eq("id", convId);
-  }, []);
+    // Marca que EU estou atendendo (para os outros verem). Se a coluna ainda
+    // não existir no banco, o erro é ignorado de propósito (recurso dormente).
+    supabase.from("conversas")
+      .update({ atendendo_por: meuNome, atendendo_em: new Date().toISOString() })
+      .eq("id", convId)
+      .then(() => {});
+  }, [meuNome]);
 
   useEffect(() => { carregarMensagens(conversaId); }, [conversaId, carregarMensagens]);
+
+  // ---- Mantém vivo o "estou atendendo" enquanto a conversa fica aberta ----
+  useEffect(() => {
+    if (!conversaId) return;
+    const id = setInterval(() => {
+      supabase.from("conversas")
+        .update({ atendendo_em: new Date().toISOString() })
+        .eq("id", conversaId)
+        .then(() => {});
+    }, 60000);
+    return () => clearInterval(id);
+  }, [conversaId]);
+
+  // ---- Ajusta a altura da caixa de texto conforme escreve (várias linhas) ----
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 120) + "px";
+  }, [rascunho]);
 
   // ---- Realtime: novas mensagens e conversas atualizadas ----
   useEffect(() => {
@@ -142,13 +209,34 @@ export default function Painel({ sessao }) {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "mensagens" }, (payload) => {
         const nova = payload.new;
         if (nova.conversa_id === conversaId) {
-          setMensagens((prev) => (prev.some((m) => m.id === nova.id) ? prev : [...prev, nova]));
+          setMensagens((prev) => {
+            if (prev.some((m) => m.id === nova.id)) return prev;
+            // Se esta é a versão "real" de uma mensagem que enviei (e mostrei
+            // na hora, provisória), removo a provisória para não duplicar.
+            let base = prev;
+            if (nova.origem === "advogado") {
+              base = prev.filter(
+                (m) => !(String(m.id).startsWith("temp-") && m.texto === nova.texto)
+              );
+            }
+            return [...base, nova];
+          });
         }
         // Atualiza a lista de conversas (prévia / ordem / não lidas).
         carregarConversas(advogadoId);
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversas" }, () => {
         carregarConversas(advogadoId);
+      })
+      // Se a ponte não conseguir enviar, a fila vira "erro" — aviso na tela.
+      .on("postgres_changes", { event: "*", schema: "public", table: "fila_envio" }, (payload) => {
+        const row = payload.new;
+        if (!row || row.conversa_id !== conversaId || row.status !== "erro") return;
+        setMensagens((prev) => prev.map((m) =>
+          String(m.id).startsWith("temp-") && m.texto === row.texto && m._status === "enviando"
+            ? { ...m, _status: "erro" }
+            : m
+        ));
       })
       .subscribe();
     return () => { supabase.removeChannel(canal); };
@@ -162,8 +250,28 @@ export default function Painel({ sessao }) {
     const t = rascunho.trim();
     if (!t || !conversaId) return;
     setRascunho("");
+    // Mostra a mensagem NA HORA (provisória, com relóginho), como o WhatsApp Web.
+    const tempId = "temp-" + Date.now() + "-" + Math.round(Math.random() * 1e6);
+    const provisoria = {
+      id: tempId, conversa_id: conversaId, origem: "advogado",
+      tipo: "texto", texto: t, criado_em: new Date().toISOString(), _status: "enviando",
+    };
+    setMensagens((prev) => [...prev, provisoria]);
     // Coloca na fila de envio; a ponte processa e manda pela Uazapi.
-    await supabase.from("fila_envio").insert({ conversa_id: conversaId, texto: t });
+    const { error } = await supabase.from("fila_envio").insert({ conversa_id: conversaId, texto: t });
+    if (error) {
+      // Nem entrou na fila: marca como erro para o atendente reenviar.
+      setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _status: "erro" } : m)));
+    }
+  }
+
+  // Reenvia uma mensagem que falhou (recoloca na fila).
+  async function reenviar(msg) {
+    setMensagens((prev) => prev.map((m) => (m.id === msg.id ? { ...m, _status: "enviando" } : m)));
+    const { error } = await supabase.from("fila_envio").insert({ conversa_id: msg.conversa_id, texto: msg.texto });
+    if (error) {
+      setMensagens((prev) => prev.map((m) => (m.id === msg.id ? { ...m, _status: "erro" } : m)));
+    }
   }
 
   async function sair() { await supabase.auth.signOut(); }
@@ -243,6 +351,12 @@ export default function Painel({ sessao }) {
                     <span style={{ fontSize: 13, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 250 }}>{c.ultima_mensagem || ""}</span>
                     {c.nao_lidas > 0 && <span style={{ background: C.unread, color: "#fff", borderRadius: 12, fontSize: 11, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>{c.nao_lidas}</span>}
                   </div>
+                  {atendidoPorOutro(c.id) && (
+                    <div style={{ fontSize: 11, color: "#e0a400", marginTop: 3, display: "flex", alignItems: "center", gap: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#e0a400", display: "inline-block", flexShrink: 0 }} />
+                      {atendidoPorOutro(c.id)} está atendendo
+                    </div>
+                  )}
                 </div>
               </button>
             );
@@ -271,7 +385,13 @@ export default function Painel({ sessao }) {
               <Avatar nome={conversa.contato?.nome || conversa.contato?.numero} foto={conversa.contato?.foto_url} size={40} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{conversa.contato?.nome || ("+" + conversa.contato?.numero)}</div>
-                <div style={{ fontSize: 12, color: C.textSecondary }}>via {advogado?.nome}</div>
+                {atendidoPorOutro(conversa.id) ? (
+                  <div style={{ fontSize: 12, color: "#d98a00", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                    <AlertCircle size={13} /> {atendidoPorOutro(conversa.id)} também está nesta conversa
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12, color: C.textSecondary }}>via {advogado?.nome}</div>
+                )}
               </div>
               <MoreVertical size={20} color={C.textSecondary} />
             </div>
@@ -286,9 +406,20 @@ export default function Painel({ sessao }) {
                         <img src={m.midia_url} alt="imagem" style={{ maxWidth: 240, borderRadius: 6, display: "block" }} />
                       )}
                       {m.tipo === "audio" && <BolhaAudio C={C} saida={saida} url={m.midia_url} />}
-                      {m.texto && <div style={{ fontSize: 14.2, lineHeight: 1.35, paddingRight: 42, marginTop: m.tipo !== "texto" ? 4 : 0 }}>{m.texto}</div>}
-                      <div style={{ fontSize: 11, color: C.textSecondary, textAlign: "right", marginTop: 2, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 3 }}>
-                        {horaDe(m.criado_em)}{saida && <CheckCheck size={15} color="#53bdeb" />}
+                      {m.texto && <div style={{ fontSize: 14.2, lineHeight: 1.35, paddingRight: 42, marginTop: m.tipo !== "texto" ? 4 : 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{m.texto}</div>}
+                      <div style={{ fontSize: 11, color: m._status === "erro" ? "#e53935" : C.textSecondary, textAlign: "right", marginTop: 2, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 3 }}>
+                        {horaDe(m.criado_em)}
+                        {saida && (
+                          m._status === "enviando" ? (
+                            <Clock size={13} color={C.textSecondary} />
+                          ) : m._status === "erro" ? (
+                            <span onClick={() => reenviar(m)} title="Toque para reenviar" style={{ color: "#e53935", cursor: "pointer", display: "flex", alignItems: "center", gap: 3, fontWeight: 600 }}>
+                              <AlertCircle size={13} /> não enviado · reenviar
+                            </span>
+                          ) : (
+                            <CheckCheck size={15} color="#53bdeb" />
+                          )
+                        )}
                       </div>
                     </div>
                   </div>
@@ -297,10 +428,21 @@ export default function Painel({ sessao }) {
               <div ref={fimRef} />
             </div>
 
-            <div style={{ background: C.headerBar, padding: "10px 16px", display: "flex", alignItems: "center", gap: 10 }}>
-              <Smile size={24} color={C.textSecondary} />
-              <Paperclip size={22} color={C.textSecondary} />
-              <input value={rascunho} onChange={(e) => setRascunho(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") enviar(); }} placeholder="Digite uma mensagem" style={{ flex: 1, border: "none", outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "10px 14px", fontSize: 14.5 }} />
+            <div style={{ background: C.headerBar, padding: "10px 16px", display: "flex", alignItems: "flex-end", gap: 10 }}>
+              <Smile size={24} color={C.textSecondary} style={{ marginBottom: 8 }} />
+              <Paperclip size={22} color={C.textSecondary} style={{ marginBottom: 9 }} />
+              <textarea
+                ref={inputRef}
+                value={rascunho}
+                onChange={(e) => setRascunho(e.target.value)}
+                onKeyDown={(e) => {
+                  // Enter envia; Shift+Enter pula linha (como no WhatsApp Web).
+                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); }
+                }}
+                rows={1}
+                placeholder="Digite uma mensagem"
+                style={{ flex: 1, border: "none", outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "10px 14px", fontSize: 14.5, resize: "none", lineHeight: 1.35, maxHeight: 120, overflowY: "auto", fontFamily: "inherit" }}
+              />
               {rascunho.trim() ? (
                 <button onClick={enviar} style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}><Send size={24} color={C.green} /></button>
               ) : (
