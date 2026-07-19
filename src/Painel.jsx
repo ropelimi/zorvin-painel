@@ -72,6 +72,15 @@ function formatarDuracao(seg) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+// Rótulo da prévia de mídia na lista de conversas (estilo WhatsApp).
+function rotuloMidia(tipo) {
+  if (tipo === "imagem") return "📷 Foto";
+  if (tipo === "audio") return "🎤 Mensagem de voz";
+  if (tipo === "video") return "🎬 Vídeo";
+  if (tipo === "documento") return "📄 Documento";
+  return "";
+}
+
 // Emojis mais usados no atendimento (picker do ícone de carinha).
 const EMOJIS = [
   "😀","😁","😂","🤣","😊","😍","😘","😅","😉","🙂",
@@ -203,6 +212,7 @@ export default function Painel({ sessao }) {
   const [busca, setBusca] = useState("");
   const [rascunho, setRascunho] = useState("");
   const [atendimentos, setAtendimentos] = useState({}); // { conversaId: { por, em } }
+  const [ultimasMidias, setUltimasMidias] = useState({}); // { conversaId: tipo } da última mensagem, se mídia
   const fimRef = useRef(null);
   const inputRef = useRef(null);
   const conversaIdRef = useRef(null);
@@ -279,6 +289,27 @@ export default function Painel({ sessao }) {
     setAtendimentos(mapa);
   }, []);
 
+  // ---- Descobre o TIPO da última mensagem de cada conversa (para a prévia) ----
+  // Assim a lista mostra "📷 Foto", "🎤 Mensagem de voz" etc. em vez de "[anexo]".
+  const carregarUltimasMidias = useCallback(async (advId) => {
+    if (!advId) return;
+    try {
+      const { data, error } = await supabase
+        .from("conversas")
+        .select("id, mensagens(tipo, criado_em)")
+        .eq("advogado_id", advId)
+        .order("criado_em", { referencedTable: "mensagens", ascending: false })
+        .limit(1, { referencedTable: "mensagens" });
+      if (error) return;
+      const mapa = {};
+      (data || []).forEach((c) => {
+        const ult = c.mensagens && c.mensagens[0];
+        if (ult && ult.tipo && ult.tipo !== "texto") mapa[c.id] = ult.tipo;
+      });
+      setUltimasMidias(mapa);
+    } catch (_) { /* ignora: mantém a prévia padrão */ }
+  }, []);
+
   // ---- Carrega as conversas do advogado selecionado ----
   const carregarConversas = useCallback(async (advId) => {
     if (!advId) return;
@@ -294,7 +325,8 @@ export default function Painel({ sessao }) {
     );
     setConversas(lista);
     carregarAtendimentos(advId);
-  }, [carregarAtendimentos]);
+    carregarUltimasMidias(advId);
+  }, [carregarAtendimentos, carregarUltimasMidias]);
 
   useEffect(() => { carregarConversas(advogadoId); }, [advogadoId, carregarConversas]);
 
@@ -695,6 +727,11 @@ export default function Painel({ sessao }) {
           )}
           {conversasFiltradas.map((c) => {
             const nome = c.contato?.nome || ("+" + (c.contato?.numero || ""));
+            // Prévia: se a última mensagem é mídia (e sem legenda), mostra
+            // "📷 Foto", "🎤 Mensagem de voz" etc. em vez de "[anexo]".
+            const midiaTipo = ultimasMidias[c.id];
+            const bruto = c.ultima_mensagem || "";
+            const previa = midiaTipo && (bruto === "[anexo]" || bruto === "") ? rotuloMidia(midiaTipo) : bruto;
             return (
               <button key={c.id} onClick={() => setConversaId(c.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: c.id === conversaId ? C.listActive : C.panel, border: "none", borderBottom: `1px solid ${C.divider}`, cursor: "pointer", textAlign: "left", color: C.textPrimary }}>
                 <Avatar nome={nome} foto={c.contato?.foto_url} size={48} />
@@ -704,7 +741,7 @@ export default function Painel({ sessao }) {
                     <span style={{ fontSize: 11, color: c.nao_lidas ? C.green : C.textSecondary }}>{horaDe(c.ultima_atividade)}</span>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 2 }}>
-                    <span style={{ fontSize: 13, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 250 }}>{c.ultima_mensagem || ""}</span>
+                    <span style={{ fontSize: 13, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 250 }}>{previa}</span>
                     {c.nao_lidas > 0 && <span style={{ background: C.unread, color: "#fff", borderRadius: 12, fontSize: 11, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>{c.nao_lidas}</span>}
                   </div>
                   {atendidoPorOutro(c.id) && (
