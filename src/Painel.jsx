@@ -46,6 +46,12 @@ function horaDe(iso) {
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
 
+// Sempre HH:MM (usada no carimbo das bolhas; a data fica no separador).
+function horaCurta(iso) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+
 // Rótulo de dia para o separador de datas (HOJE / ONTEM / dd/mm/aaaa).
 function rotuloData(iso) {
   if (!iso) return "";
@@ -213,6 +219,8 @@ export default function Painel({ sessao }) {
   const [rascunho, setRascunho] = useState("");
   const [atendimentos, setAtendimentos] = useState({}); // { conversaId: { por, em } }
   const [ultimasMidias, setUltimasMidias] = useState({}); // { conversaId: tipo } da última mensagem, se mídia
+  const [digitandos, setDigitandos] = useState({}); // { conversaId: digitando_ate (ISO) }
+  const [tique, setTique] = useState(0); // força re-render p/ esconder "digitando…" ao expirar
   const fimRef = useRef(null);
   const inputRef = useRef(null);
   const conversaIdRef = useRef(null);
@@ -230,6 +238,8 @@ export default function Painel({ sessao }) {
   const gravadorRef = useRef(null);
   const chunksRef = useRef([]);
   const timerRef = useRef(null);
+  const emojiRef = useRef(null);
+  const seletorRef = useRef(null);
 
   const C = TEMAS[modo];
   const advogado = advogados.find((a) => a.id === advogadoId) || null;
@@ -241,6 +251,13 @@ export default function Painel({ sessao }) {
     sessao?.user?.user_metadata?.full_name ||
     (sessao?.user?.email || "").split("@")[0] ||
     "atendente";
+
+  // O contato está digitando nesta conversa agora? (janela curta que expira).
+  function digitandoAtivo(convId) {
+    void tique; // re-avalia a cada "tique"
+    const ate = digitandos[convId];
+    return !!ate && new Date(ate).getTime() > Date.now();
+  }
 
   // Quem (além de mim) está atendendo uma conversa agora. Considera "ativo"
   // apenas nos últimos 3 minutos, para não travar conversa que alguém abriu e saiu.
@@ -289,6 +306,19 @@ export default function Painel({ sessao }) {
     setAtendimentos(mapa);
   }, []);
 
+  // ---- Carrega "quem está digitando" (recurso opcional, protegido) ----
+  const carregarDigitando = useCallback(async (advId) => {
+    if (!advId) return;
+    const { data, error } = await supabase
+      .from("conversas")
+      .select("id, digitando_ate")
+      .eq("advogado_id", advId);
+    if (error) return; // coluna ainda não criada: recurso fica dormente
+    const mapa = {};
+    (data || []).forEach((r) => { if (r.digitando_ate) mapa[r.id] = r.digitando_ate; });
+    setDigitandos(mapa);
+  }, []);
+
   // ---- Descobre o TIPO da última mensagem de cada conversa (para a prévia) ----
   // Assim a lista mostra "📷 Foto", "🎤 Mensagem de voz" etc. em vez de "[anexo]".
   const carregarUltimasMidias = useCallback(async (advId) => {
@@ -326,7 +356,8 @@ export default function Painel({ sessao }) {
     setConversas(lista);
     carregarAtendimentos(advId);
     carregarUltimasMidias(advId);
-  }, [carregarAtendimentos, carregarUltimasMidias]);
+    carregarDigitando(advId);
+  }, [carregarAtendimentos, carregarUltimasMidias, carregarDigitando]);
 
   useEffect(() => { carregarConversas(advogadoId); }, [advogadoId, carregarConversas]);
 
@@ -381,13 +412,22 @@ export default function Painel({ sessao }) {
           setMensagens((prev) => {
             if (prev.some((m) => m.id === nova.id)) return prev;
             // Se esta é a versão "real" de uma mensagem que enviei (e mostrei
-            // na hora, provisória), removo a provisória para não duplicar.
+            // na hora, provisória), removo APENAS a provisória correspondente
+            // (a primeira ainda "enviando"), para não duplicar nem apagar uma
+            // que falhou (com o mesmo texto) ou outra idêntica.
             let base = prev;
             if (nova.origem === "advogado") {
-              base = prev.filter(
-                (m) => !(String(m.id).startsWith("temp-") &&
-                  (m.texto === nova.texto || (nova.midia_url && m._midiaUrlFinal === nova.midia_url)))
-              );
+              let removido = false;
+              base = prev.filter((m) => {
+                if (!removido && String(m.id).startsWith("temp-") && m._status === "enviando" &&
+                    ((nova.texto && m.texto === nova.texto) || (nova.midia_url && m._midiaUrlFinal === nova.midia_url))) {
+                  removido = true;
+                  // Libera a prévia local (blob) para não vazar memória.
+                  if (m.midia_url && String(m.midia_url).startsWith("blob:")) URL.revokeObjectURL(m.midia_url);
+                  return false;
+                }
+                return true;
+              });
             }
             return [...base, nova];
           });
@@ -420,7 +460,8 @@ export default function Painel({ sessao }) {
         const row = payload.new;
         if (!row || row.conversa_id !== conversaId || row.status !== "erro") return;
         setMensagens((prev) => prev.map((m) =>
-          String(m.id).startsWith("temp-") && m.texto === row.texto && m._status === "enviando"
+          String(m.id).startsWith("temp-") && m._status === "enviando" &&
+          ((row.texto && m.texto === row.texto) || (row.midia_url && m._midiaUrlFinal === row.midia_url))
             ? { ...m, _status: "erro" }
             : m
         ));
@@ -448,6 +489,45 @@ export default function Painel({ sessao }) {
       Notification.requestPermission().catch(() => {});
     }
   }, []);
+
+  // "Tique" a cada 2s: reavalia o "digitando…" para ele sumir ao expirar.
+  useEffect(() => {
+    const id = setInterval(() => setTique((t) => t + 1), 2000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Ao desmontar (logout/fechar), para uma gravação em curso e o cronômetro,
+  // para não deixar o microfone ligado nem timers rodando.
+  useEffect(() => () => {
+    try {
+      if (gravadorRef.current) { gravadorRef.current._cancelado = true; gravadorRef.current.stop(); }
+    } catch (_) { /* ignora */ }
+    if (timerRef.current) clearInterval(timerRef.current);
+  }, []);
+
+  // Tecla Esc fecha o que estiver aberto (imagem, emoji, seletor, busca, citação).
+  useEffect(() => {
+    function aoTeclar(e) {
+      if (e.key !== "Escape") return;
+      if (imagemAberta) setImagemAberta(null);
+      else if (emojiAberto) setEmojiAberto(false);
+      else if (seletorAberto) setSeletorAberto(false);
+      else if (buscaAberta) { setBuscaAberta(false); setBuscaConversa(""); }
+      else if (respondendo) setRespondendo(null);
+    }
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  }, [imagemAberta, emojiAberto, seletorAberto, buscaAberta, respondendo]);
+
+  // Clicar fora fecha o seletor de emoji e o seletor de advogado.
+  useEffect(() => {
+    function aoClicar(e) {
+      if (emojiAberto && emojiRef.current && !emojiRef.current.contains(e.target)) setEmojiAberto(false);
+      if (seletorAberto && seletorRef.current && !seletorRef.current.contains(e.target)) setSeletorAberto(false);
+    }
+    document.addEventListener("mousedown", aoClicar);
+    return () => document.removeEventListener("mousedown", aoClicar);
+  }, [emojiAberto, seletorAberto]);
 
   function aoRolar() {
     const el = listaRef.current;
@@ -689,7 +769,7 @@ export default function Painel({ sessao }) {
 
       {/* Lista de conversas */}
       <div style={{ width: 380, borderRight: `1px solid ${C.divider}`, display: "flex", flexDirection: "column", background: C.panel }}>
-        <div style={{ background: C.headerBar, padding: "10px 16px", position: "relative" }}>
+        <div ref={seletorRef} style={{ background: C.headerBar, padding: "10px 16px", position: "relative" }}>
           <div style={{ fontSize: 12, color: C.textSecondary, marginBottom: 6, fontWeight: 600, letterSpacing: 0.3 }}>ATENDENDO COMO</div>
           <button onClick={() => setSeletorAberto((v) => !v)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 8, padding: "8px 12px", cursor: "pointer", color: C.textPrimary }}>
             {advogado ? <Avatar nome={advogado.nome} foto={advogado.foto_url} size={34} /> : <div style={{ width: 34 }} />}
@@ -741,7 +821,11 @@ export default function Painel({ sessao }) {
                     <span style={{ fontSize: 11, color: c.nao_lidas ? C.green : C.textSecondary }}>{horaDe(c.ultima_atividade)}</span>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 2 }}>
-                    <span style={{ fontSize: 13, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 250 }}>{previa}</span>
+                    {digitandoAtivo(c.id) ? (
+                      <span style={{ fontSize: 13, color: C.green, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 250 }}>digitando…</span>
+                    ) : (
+                      <span style={{ fontSize: 13, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 250 }}>{previa}</span>
+                    )}
                     {c.nao_lidas > 0 && <span style={{ background: C.unread, color: "#fff", borderRadius: 12, fontSize: 11, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>{c.nao_lidas}</span>}
                   </div>
                   {atendidoPorOutro(c.id) && (
@@ -778,7 +862,9 @@ export default function Painel({ sessao }) {
               <Avatar nome={conversa.contato?.nome || conversa.contato?.numero} foto={conversa.contato?.foto_url} size={40} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{conversa.contato?.nome || ("+" + conversa.contato?.numero)}</div>
-                {atendidoPorOutro(conversa.id) ? (
+                {digitandoAtivo(conversa.id) ? (
+                  <div style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>digitando…</div>
+                ) : atendidoPorOutro(conversa.id) ? (
                   <div style={{ fontSize: 12, color: "#d98a00", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
                     <AlertCircle size={13} /> {atendidoPorOutro(conversa.id)} também está nesta conversa
                   </div>
@@ -829,7 +915,7 @@ export default function Painel({ sessao }) {
                           </div>
                         )}
                         {m.tipo === "imagem" && m.midia_url && (
-                          <img src={m.midia_url} alt="imagem" onClick={() => setImagemAberta(m.midia_url)} style={{ maxWidth: 240, borderRadius: 6, display: "block", cursor: "pointer" }} />
+                          <img src={m.midia_url} alt="imagem" onClick={() => setImagemAberta(m.midia_url)} onLoad={() => { if (pertoDoFim) fimRef.current?.scrollIntoView(); }} style={{ maxWidth: 240, borderRadius: 6, display: "block", cursor: "pointer" }} />
                         )}
                         {m.tipo === "audio" && <BolhaAudio C={C} saida={saida} url={m.midia_url} />}
                         {m.tipo === "video" && m.midia_url && (
@@ -844,7 +930,7 @@ export default function Painel({ sessao }) {
                         )}
                         {m.texto && <div style={{ fontSize: 14.2, lineHeight: 1.35, paddingRight: 42, marginTop: m.tipo !== "texto" ? 4 : 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{formatarTexto(m.texto)}</div>}
                         <div style={{ fontSize: 11, color: m._status === "erro" ? "#e53935" : C.textSecondary, textAlign: "right", marginTop: 2, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 3 }}>
-                          {horaDe(m.criado_em)}
+                          {horaCurta(m.criado_em)}
                           {saida && (
                             m._status === "enviando" ? (
                               <Clock size={13} color={C.textSecondary} />
@@ -901,16 +987,18 @@ export default function Painel({ sessao }) {
                 </div>
               ) : (
                 <>
-                  {emojiAberto && (
-                    <div style={{ position: "absolute", bottom: 60, left: 12, width: 300, maxHeight: 220, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", padding: 8, display: "flex", flexWrap: "wrap", gap: 4, zIndex: 30 }}>
-                      {EMOJIS.map((e) => (
-                        <button key={e} onClick={() => inserirEmoji(e)} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 22, lineHeight: 1, padding: 4, borderRadius: 6 }}>{e}</button>
-                      ))}
-                    </div>
-                  )}
-                  <button onClick={() => setEmojiAberto((v) => !v)} title="Emojis" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", marginBottom: 8, padding: 0 }}>
-                    <Smile size={24} color={emojiAberto ? C.green : C.textSecondary} />
-                  </button>
+                  <span ref={emojiRef} style={{ display: "flex", marginBottom: 8 }}>
+                    {emojiAberto && (
+                      <div style={{ position: "absolute", bottom: 60, left: 12, width: 300, maxHeight: 220, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", padding: 8, display: "flex", flexWrap: "wrap", gap: 4, zIndex: 30 }}>
+                        {EMOJIS.map((e) => (
+                          <button key={e} onClick={() => inserirEmoji(e)} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 22, lineHeight: 1, padding: 4, borderRadius: 6 }}>{e}</button>
+                        ))}
+                      </div>
+                    )}
+                    <button onClick={() => setEmojiAberto((v) => !v)} title="Emojis" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", padding: 0 }}>
+                      <Smile size={24} color={emojiAberto ? C.green : C.textSecondary} />
+                    </button>
+                  </span>
                   <button onClick={() => fileRef.current?.click()} title="Anexar arquivo" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", marginBottom: 9, padding: 0 }}>
                     <Paperclip size={22} color={C.textSecondary} />
                   </button>
