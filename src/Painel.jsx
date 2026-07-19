@@ -208,6 +208,7 @@ export default function Painel({ sessao }) {
   const [buscaAberta, setBuscaAberta] = useState(false);
   const [respondendo, setRespondendo] = useState(null); // { id_uazapi, previa, autor }
   const [gravando, setGravando] = useState(false);
+  const [imagemAberta, setImagemAberta] = useState(null); // URL da imagem em tela cheia
   const gravadorRef = useRef(null);
   const chunksRef = useRef([]);
 
@@ -742,7 +743,7 @@ export default function Painel({ sessao }) {
                           </div>
                         )}
                         {m.tipo === "imagem" && m.midia_url && (
-                          <img src={m.midia_url} alt="imagem" style={{ maxWidth: 240, borderRadius: 6, display: "block" }} />
+                          <img src={m.midia_url} alt="imagem" onClick={() => setImagemAberta(m.midia_url)} style={{ maxWidth: 240, borderRadius: 6, display: "block", cursor: "pointer" }} />
                         )}
                         {m.tipo === "audio" && <BolhaAudio C={C} saida={saida} url={m.midia_url} />}
                         {m.tipo === "video" && m.midia_url && (
@@ -852,6 +853,21 @@ export default function Painel({ sessao }) {
           </>
         )}
       </div>
+
+      {/* Imagem em tela cheia (abrir/baixar, estilo WhatsApp) */}
+      {imagemAberta && (
+        <div onClick={() => setImagemAberta(null)} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,.9)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ position: "absolute", top: 16, right: 20, display: "flex", gap: 18 }}>
+            <a href={imagemAberta} download target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} title="Baixar imagem" style={{ color: "#fff", display: "flex" }}>
+              <Download size={26} />
+            </a>
+            <button onClick={() => setImagemAberta(null)} title="Fechar" style={{ background: "transparent", border: "none", cursor: "pointer", color: "#fff", display: "flex" }}>
+              <X size={28} />
+            </button>
+          </div>
+          <img src={imagemAberta} alt="imagem" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "92%", maxHeight: "92%", borderRadius: 8, objectFit: "contain" }} />
+        </div>
+      )}
     </div>
   );
 }
