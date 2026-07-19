@@ -3,7 +3,7 @@ import { supabase } from "./supabase.js";
 import {
   Search, Send, Paperclip, Smile, MoreVertical, ChevronDown,
   MessageSquare, Mic, Play, CheckCheck, Settings, LogOut, Phone, ArrowLeft, Sun, Moon,
-  Clock, AlertCircle, Reply, X, FileText, Download
+  Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp
 } from "lucide-react";
 
 // ============================================================
@@ -201,6 +201,10 @@ function BolhaAudio({ C, saida, url }) {
   );
 }
 
+// Padrão sutil de "papel de parede" do chat (pontinhos discretos), como o WhatsApp.
+const PADRAO_CHAT_CLARO = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56'%3E%3Cg fill='%23000000' fill-opacity='0.022'%3E%3Ccircle cx='8' cy='8' r='2.5'/%3E%3Ccircle cx='36' cy='22' r='2.5'/%3E%3Ccircle cx='18' cy='44' r='2.5'/%3E%3Ccircle cx='48' cy='50' r='2.5'/%3E%3C/g%3E%3C/svg%3E\")";
+const PADRAO_CHAT_ESCURO = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56'%3E%3Cg fill='%23ffffff' fill-opacity='0.025'%3E%3Ccircle cx='8' cy='8' r='2.5'/%3E%3Ccircle cx='36' cy='22' r='2.5'/%3E%3Ccircle cx='18' cy='44' r='2.5'/%3E%3Ccircle cx='48' cy='50' r='2.5'/%3E%3C/g%3E%3C/svg%3E\")";
+
 export default function Painel({ sessao }) {
   // Tema começa pelo que foi salvo da última vez (claro/escuro).
   const [modo, setModo] = useState(() => {
@@ -235,13 +239,24 @@ export default function Painel({ sessao }) {
   const [gravando, setGravando] = useState(false);
   const [tempoGravacao, setTempoGravacao] = useState(0); // segundos gravados
   const [imagemAberta, setImagemAberta] = useState(null); // URL da imagem em tela cheia
+  const [aviso, setAviso] = useState(null); // toast discreto (texto)
+  const [anexoPendente, setAnexoPendente] = useState(null); // { file, url, tipo } aguardando legenda
+  const [legendaAnexo, setLegendaAnexo] = useState("");
+  const [buscaIdx, setBuscaIdx] = useState(0); // ocorrência atual na busca da conversa
+  const [idDivisorNaoLidas, setIdDivisorNaoLidas] = useState(null); // id da 1ª msg não lida ao abrir
+  const [msgHover, setMsgHover] = useState(null); // id da bolha sob o mouse (mostra "responder")
+  const [convHover, setConvHover] = useState(null); // id da conversa sob o mouse (realce)
+  const [largura, setLargura] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1200));
   const gravadorRef = useRef(null);
   const chunksRef = useRef([]);
+  const naoLidasRef = useRef(0);
+  const avisoTimerRef = useRef(null);
   const timerRef = useRef(null);
   const emojiRef = useRef(null);
   const seletorRef = useRef(null);
 
   const C = TEMAS[modo];
+  const estreito = largura < 768; // layout de celular: mostra lista OU conversa
   const advogado = advogados.find((a) => a.id === advogadoId) || null;
   const conversa = conversas.find((c) => c.id === conversaId) || null;
   // Nome que aparece para os outros atendentes quando eu abro uma conversa.
@@ -370,6 +385,15 @@ export default function Painel({ sessao }) {
       .eq("conversa_id", convId)
       .order("criado_em", { ascending: true });
     setMensagens(data || []);
+    // Divisor "mensagens não lidas": marca a 1ª mensagem não lida ao abrir.
+    const n = naoLidasRef.current || 0;
+    if (n > 0 && data && data.length >= n) {
+      const alvo = data[data.length - n];
+      setIdDivisorNaoLidas(alvo ? alvo.id : null);
+    } else {
+      setIdDivisorNaoLidas(null);
+    }
+    naoLidasRef.current = 0; // usa só na abertura
     // Zera o contador de não lidas desta conversa.
     await supabase.from("conversas").update({ nao_lidas: 0 }).eq("id", convId);
     // Marca que EU estou atendendo (para os outros verem). Se a coluna ainda
@@ -496,6 +520,20 @@ export default function Painel({ sessao }) {
     return () => clearInterval(id);
   }, []);
 
+  // Acompanha a largura da janela (para o layout de celular).
+  useEffect(() => {
+    function aoRedimensionar() { setLargura(window.innerWidth); }
+    window.addEventListener("resize", aoRedimensionar);
+    return () => window.removeEventListener("resize", aoRedimensionar);
+  }, []);
+
+  // Toast discreto (some sozinho em 4s).
+  function mostrarAviso(msg) {
+    setAviso(msg);
+    if (avisoTimerRef.current) clearTimeout(avisoTimerRef.current);
+    avisoTimerRef.current = setTimeout(() => setAviso(null), 4000);
+  }
+
   // Ao desmontar (logout/fechar), para uma gravação em curso e o cronômetro,
   // para não deixar o microfone ligado nem timers rodando.
   useEffect(() => () => {
@@ -528,6 +566,20 @@ export default function Painel({ sessao }) {
     document.addEventListener("mousedown", aoClicar);
     return () => document.removeEventListener("mousedown", aoClicar);
   }, [emojiAberto, seletorAberto]);
+
+  // Ao digitar na busca da conversa, vai para a ocorrência mais recente.
+  useEffect(() => {
+    const q = buscaConversa.trim().toLowerCase();
+    if (!buscaAberta || !q) return;
+    const ids = mensagens.filter((m) => (m.texto || "").toLowerCase().includes(q)).map((m) => m.id);
+    if (!ids.length) return;
+    const idx = ids.length - 1;
+    setBuscaIdx(idx);
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-msg-id="${ids[idx]}"]`);
+      if (el) el.scrollIntoView({ block: "center" });
+    });
+  }, [buscaConversa, buscaAberta]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function aoRolar() {
     const el = listaRef.current;
@@ -625,14 +677,34 @@ export default function Painel({ sessao }) {
     }
   }
 
-  // Anexos: abre o seletor de arquivo e envia via Storage + fila_envio.
+  // Anexos: ao escolher o arquivo, abre a PRÉVIA para digitar uma legenda
+  // antes de enviar (como no WhatsApp Web).
   function aoEscolherArquivo(e) {
     const file = e.target.files && e.target.files[0];
     e.target.value = ""; // permite escolher o mesmo arquivo de novo depois
-    if (file) enviarArquivo(file);
+    if (!file) return;
+    const t = file.type || "";
+    const tipo = t.startsWith("image/") ? "imagem" : t.startsWith("video/") ? "video" : t.startsWith("audio/") ? "audio" : "documento";
+    const url = tipo === "documento" ? null : URL.createObjectURL(file);
+    setLegendaAnexo("");
+    setAnexoPendente({ file, url, tipo, nome: file.name });
   }
 
-  async function enviarArquivo(file) {
+  function fecharAnexoPendente() {
+    if (anexoPendente?.url && String(anexoPendente.url).startsWith("blob:")) URL.revokeObjectURL(anexoPendente.url);
+    setAnexoPendente(null);
+    setLegendaAnexo("");
+  }
+
+  function confirmarEnviarAnexo() {
+    if (!anexoPendente) return;
+    const { file } = anexoPendente;
+    const legenda = legendaAnexo.trim();
+    fecharAnexoPendente();
+    enviarArquivo(file, legenda);
+  }
+
+  async function enviarArquivo(file, legenda = "") {
     if (!conversaId || !file) return;
     setPertoDoFim(true);
     const ehImagem = file.type.startsWith("image/");
@@ -644,7 +716,7 @@ export default function Painel({ sessao }) {
     const previa = tipo === "documento" ? null : URL.createObjectURL(file);
     setMensagens((prev) => [...prev, {
       id: tempId, conversa_id: conversaId, origem: "advogado", tipo,
-      texto: null, midia_url: previa, midia_mime: file.type, midia_nome: file.name,
+      texto: legenda || null, midia_url: previa, midia_mime: file.type, midia_nome: file.name,
       criado_em: new Date().toISOString(), _status: "enviando",
     }]);
     try {
@@ -659,13 +731,13 @@ export default function Painel({ sessao }) {
       // com a versão real que a ponte vai gravar (evita duplicar).
       setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _midiaUrlFinal: url } : m)));
       const { error: filaErr } = await supabase.from("fila_envio").insert({
-        conversa_id: conversaId, texto: "", tipo,
+        conversa_id: conversaId, texto: legenda || "", tipo,
         midia_url: url, midia_mime: file.type, midia_nome: nome,
       });
       if (filaErr) throw new Error("Falha ao colocar na fila (banco): " + (filaErr.message || filaErr));
     } catch (err) {
       setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _status: "erro" } : m)));
-      alert("Não consegui enviar o anexo.\n\n" + (err?.message || err));
+      mostrarAviso("Não consegui enviar o anexo. " + (err?.message || err));
     }
   }
 
@@ -742,11 +814,25 @@ export default function Painel({ sessao }) {
     setGravando(false);
   }
 
-  async function sair() { await supabase.auth.signOut(); }
+  async function sair() {
+    if (!window.confirm("Deseja sair do Zorvin?")) return;
+    await supabase.auth.signOut();
+  }
 
   const conversasFiltradas = conversas.filter((c) =>
     (c.contato?.nome || c.contato?.numero || "").toLowerCase().includes(busca.toLowerCase())
   );
+
+  // Ocorrências da busca dentro da conversa aberta (ids das mensagens que casam).
+  const matchesBusca = (buscaAberta && buscaConversa.trim())
+    ? mensagens.filter((m) => (m.texto || "").toLowerCase().includes(buscaConversa.trim().toLowerCase())).map((m) => m.id)
+    : [];
+  function rolarParaMatch(idx) {
+    const id = matchesBusca[idx];
+    if (!id) return;
+    const el = typeof document !== "undefined" && document.querySelector(`[data-msg-id="${id}"]`);
+    if (el) el.scrollIntoView({ block: "center" });
+  }
 
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: "'Segoe UI', Helvetica, Arial, sans-serif", background: C.headerBar, color: C.textPrimary }}>
@@ -768,7 +854,7 @@ export default function Painel({ sessao }) {
       </div>
 
       {/* Lista de conversas */}
-      <div style={{ width: 380, borderRight: `1px solid ${C.divider}`, display: "flex", flexDirection: "column", background: C.panel }}>
+      <div style={{ width: estreito ? "auto" : 380, flex: estreito ? 1 : "none", borderRight: `1px solid ${C.divider}`, display: (estreito && conversaId) ? "none" : "flex", flexDirection: "column", background: C.panel }}>
         <div ref={seletorRef} style={{ background: C.headerBar, padding: "10px 16px", position: "relative" }}>
           <div style={{ fontSize: 12, color: C.textSecondary, marginBottom: 6, fontWeight: 600, letterSpacing: 0.3 }}>ATENDENDO COMO</div>
           <button onClick={() => setSeletorAberto((v) => !v)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 8, padding: "8px 12px", cursor: "pointer", color: C.textPrimary }}>
@@ -813,7 +899,7 @@ export default function Painel({ sessao }) {
             const bruto = c.ultima_mensagem || "";
             const previa = midiaTipo && (bruto === "[anexo]" || bruto === "") ? rotuloMidia(midiaTipo) : bruto;
             return (
-              <button key={c.id} onClick={() => setConversaId(c.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: c.id === conversaId ? C.listActive : C.panel, border: "none", borderBottom: `1px solid ${C.divider}`, cursor: "pointer", textAlign: "left", color: C.textPrimary }}>
+              <button key={c.id} onClick={() => { naoLidasRef.current = c.nao_lidas || 0; setConversaId(c.id); }} onMouseEnter={() => setConvHover(c.id)} onMouseLeave={() => setConvHover((h) => (h === c.id ? null : h))} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: c.id === conversaId ? C.listActive : (convHover === c.id ? C.divider : C.panel), border: "none", borderBottom: `1px solid ${C.divider}`, cursor: "pointer", textAlign: "left", color: C.textPrimary }}>
                 <Avatar nome={nome} foto={c.contato?.foto_url} size={48} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -842,7 +928,7 @@ export default function Painel({ sessao }) {
       </div>
 
       {/* Conversa */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", background: C.chatBg, position: "relative" }}>
+      <div style={{ flex: 1, display: (estreito && !conversaId) ? "none" : "flex", flexDirection: "column", background: C.chatBg, backgroundImage: modo === "escuro" ? PADRAO_CHAT_ESCURO : PADRAO_CHAT_CLARO, position: "relative" }}>
         {!conversa ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: C.textSecondary, gap: 16 }}>
             <div style={{ width: 90, height: 90, borderRadius: "50%", background: C.placeholderCircle, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -882,6 +968,19 @@ export default function Painel({ sessao }) {
                 <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.searchBg, borderRadius: 8, padding: "6px 12px" }}>
                   <Search size={16} color={C.textSecondary} />
                   <input autoFocus value={buscaConversa} onChange={(e) => setBuscaConversa(e.target.value)} placeholder="Buscar nesta conversa" style={{ border: "none", outline: "none", background: "transparent", fontSize: 14, flex: 1, color: C.textPrimary }} />
+                  {buscaConversa.trim() && (
+                    <>
+                      <span style={{ fontSize: 12, color: C.textSecondary, minWidth: 46, textAlign: "right" }}>
+                        {matchesBusca.length ? `${buscaIdx + 1} de ${matchesBusca.length}` : "0"}
+                      </span>
+                      <button title="Anterior" disabled={!matchesBusca.length} onClick={() => { const i = Math.max(0, buscaIdx - 1); setBuscaIdx(i); rolarParaMatch(i); }} style={{ border: "none", background: "transparent", cursor: matchesBusca.length ? "pointer" : "default", display: "flex", padding: 0 }}>
+                        <ChevronUp size={18} color={C.textSecondary} />
+                      </button>
+                      <button title="Próxima" disabled={!matchesBusca.length} onClick={() => { const i = Math.min(matchesBusca.length - 1, buscaIdx + 1); setBuscaIdx(i); rolarParaMatch(i); }} style={{ border: "none", background: "transparent", cursor: matchesBusca.length ? "pointer" : "default", display: "flex", padding: 0 }}>
+                        <ChevronDown size={18} color={C.textSecondary} />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -892,6 +991,7 @@ export default function Painel({ sessao }) {
                 const anterior = mensagens[i - 1];
                 const novoDia =
                   !anterior || new Date(anterior.criado_em).toDateString() !== new Date(m.criado_em).toDateString();
+                const mesmoRemetente = anterior && !novoDia && anterior.origem === m.origem;
                 const q = buscaAberta ? buscaConversa.trim().toLowerCase() : "";
                 const casa = q && (m.texto || "").toLowerCase().includes(q);
                 return (
@@ -901,10 +1001,15 @@ export default function Painel({ sessao }) {
                         {rotuloData(m.criado_em)}
                       </div>
                     )}
-                    <div style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start" }}>
+                    {idDivisorNaoLidas === m.id && (
+                      <div style={{ alignSelf: "center", background: C.bubbleIn, color: C.green, fontSize: 12, fontWeight: 600, padding: "4px 14px", borderRadius: 8, boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", margin: "8px 0" }}>
+                        MENSAGENS NÃO LIDAS
+                      </div>
+                    )}
+                    <div data-msg-id={m.id} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start", marginTop: mesmoRemetente ? -4 : 0 }}>
                       <div style={{ position: "relative", maxWidth: "65%", background: saida ? C.bubbleOut : C.bubbleIn, color: C.textPrimary, borderRadius: 8, padding: m.tipo === "imagem" ? 4 : "6px 9px 8px", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
                         {m.id_uazapi && (
-                          <button onClick={() => iniciarResposta(m)} title="Responder" style={{ position: "absolute", top: 3, right: 3, border: "none", background: "transparent", cursor: "pointer", opacity: 0.45, display: "flex", padding: 0 }}>
+                          <button onClick={() => iniciarResposta(m)} title="Responder" style={{ position: "absolute", top: 3, right: 3, border: "none", background: "transparent", cursor: "pointer", opacity: msgHover === m.id ? 0.8 : 0, transition: "opacity .12s", display: "flex", padding: 0 }}>
                             <Reply size={14} color={C.textSecondary} />
                           </button>
                         )}
@@ -1041,6 +1146,38 @@ export default function Painel({ sessao }) {
             </button>
           </div>
           <img src={imagemAberta} alt="imagem" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "92%", maxHeight: "92%", borderRadius: 8, objectFit: "contain" }} />
+        </div>
+      )}
+
+      {/* Prévia do anexo com legenda antes de enviar (estilo WhatsApp) */}
+      {anexoPendente && (
+        <div onClick={fecharAnexoPendente} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,.85)", zIndex: 100, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: 20 }}>
+          <button onClick={(e) => { e.stopPropagation(); fecharAnexoPendente(); }} title="Cancelar" style={{ position: "absolute", top: 16, right: 20, background: "transparent", border: "none", cursor: "pointer", color: "#fff", display: "flex" }}>
+            <X size={28} />
+          </button>
+          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480, width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+            {anexoPendente.tipo === "imagem" && <img src={anexoPendente.url} alt="prévia" style={{ maxWidth: "100%", maxHeight: "60vh", borderRadius: 8, objectFit: "contain" }} />}
+            {anexoPendente.tipo === "video" && <video src={anexoPendente.url} controls style={{ maxWidth: "100%", maxHeight: "60vh", borderRadius: 8 }} />}
+            {anexoPendente.tipo === "audio" && <audio src={anexoPendente.url} controls style={{ width: "100%" }} />}
+            {anexoPendente.tipo === "documento" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#fff", background: "rgba(255,255,255,.1)", borderRadius: 8, padding: "16px 20px" }}>
+                <FileText size={32} /> <span style={{ fontSize: 15 }}>{anexoPendente.nome}</span>
+              </div>
+            )}
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 10, width: "100%", background: C.headerBar, borderRadius: 10, padding: "8px 12px" }}>
+              <input autoFocus value={legendaAnexo} onChange={(e) => setLegendaAnexo(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") confirmarEnviarAnexo(); }} placeholder="Adicione uma legenda…" style={{ flex: 1, border: "none", outline: "none", background: "transparent", color: C.textPrimary, fontSize: 14.5, padding: "8px 4px" }} />
+              <button onClick={confirmarEnviarAnexo} title="Enviar" style={{ border: "none", background: C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 44, height: 44, borderRadius: "50%", flexShrink: 0 }}>
+                <Send size={20} color="#fff" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast discreto (avisos não bloqueantes) */}
+      {aviso && (
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "#333", color: "#fff", padding: "10px 18px", borderRadius: 8, fontSize: 14, boxShadow: "0 4px 12px rgba(0,0,0,.3)", zIndex: 120, maxWidth: "90%", textAlign: "center" }}>
+          {aviso}
         </div>
       )}
     </div>
