@@ -3,7 +3,7 @@ import { supabase } from "./supabase.js";
 import {
   Search, Send, Paperclip, Smile, MoreVertical, ChevronDown,
   MessageSquare, Mic, Play, CheckCheck, Settings, LogOut, Phone, ArrowLeft, Sun, Moon,
-  Clock, AlertCircle
+  Clock, AlertCircle, Reply, X
 } from "lucide-react";
 
 // ============================================================
@@ -199,6 +199,7 @@ export default function Painel({ sessao }) {
   const [emojiAberto, setEmojiAberto] = useState(false);
   const [buscaConversa, setBuscaConversa] = useState("");
   const [buscaAberta, setBuscaAberta] = useState(false);
+  const [respondendo, setRespondendo] = useState(null); // { id_uazapi, previa, autor }
 
   const C = TEMAS[modo];
   const advogado = advogados.find((a) => a.id === advogadoId) || null;
@@ -270,7 +271,7 @@ export default function Painel({ sessao }) {
     if (!convId) { setMensagens([]); return; }
     const { data } = await supabase
       .from("mensagens")
-      .select("id, origem, tipo, texto, midia_url, criado_em, status")
+      .select("*")
       .eq("conversa_id", convId)
       .order("criado_em", { ascending: true });
     setMensagens(data || []);
@@ -364,7 +365,7 @@ export default function Painel({ sessao }) {
   }, [conversaId, advogadoId, carregarConversas]);
 
   // Ao abrir uma conversa, começa no fim (mensagens mais recentes).
-  useEffect(() => { setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); requestAnimationFrame(() => fimRef.current?.scrollIntoView()); }, [conversaId]);
+  useEffect(() => { setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); setRespondendo(null); requestAnimationFrame(() => fimRef.current?.scrollIntoView()); }, [conversaId]);
 
   // Mensagem nova: só rola até o fim se o atendente já estava no fim
   // (não "puxa" a tela quem está lendo mensagens antigas).
@@ -400,6 +401,23 @@ export default function Painel({ sessao }) {
     inputRef.current?.focus();
   }
 
+  // Texto curto que representa uma mensagem quando ela é citada.
+  function previaDe(m) {
+    if (m.tipo === "imagem") return "📷 Imagem";
+    if (m.tipo === "audio") return "🎤 Áudio";
+    if (m.tipo === "video") return "🎬 Vídeo";
+    if (m.tipo === "documento") return "📄 Documento";
+    return (m.texto || "").slice(0, 120);
+  }
+
+  // Começa a responder (citar) uma mensagem. Só dá para citar mensagens já
+  // confirmadas (que têm id_uazapi) — não as que ainda estão sendo enviadas.
+  function iniciarResposta(m) {
+    if (!m.id_uazapi) return;
+    setRespondendo({ id_uazapi: m.id_uazapi, previa: previaDe(m), autor: m.origem });
+    inputRef.current?.focus();
+  }
+
   function trocarAdvogado(id) { setAdvogadoId(id); setConversaId(null); setSeletorAberto(false); setBusca(""); }
 
   async function enviar() {
@@ -408,25 +426,41 @@ export default function Painel({ sessao }) {
     setRascunho("");
     setEmojiAberto(false);
     setPertoDoFim(true); // ao enviar, sempre volto para o fim da conversa
+    const alvo = respondendo; // mensagem que estou citando (se houver)
+    setRespondendo(null);
     // Mostra a mensagem NA HORA (provisória, com relóginho), como o WhatsApp Web.
     const tempId = "temp-" + Date.now() + "-" + Math.round(Math.random() * 1e6);
     const provisoria = {
       id: tempId, conversa_id: conversaId, origem: "advogado",
       tipo: "texto", texto: t, criado_em: new Date().toISOString(), _status: "enviando",
+      resposta_previa: alvo?.previa || null, resposta_autor: alvo?.autor || null,
+      _responderId: alvo?.id_uazapi || null,
     };
     setMensagens((prev) => [...prev, provisoria]);
     // Coloca na fila de envio; a ponte processa e manda pela Uazapi.
-    const { error } = await supabase.from("fila_envio").insert({ conversa_id: conversaId, texto: t });
+    const payload = { conversa_id: conversaId, texto: t };
+    if (alvo) {
+      payload.responder_id_uazapi = alvo.id_uazapi;
+      payload.resposta_previa = alvo.previa;
+      payload.resposta_autor = alvo.autor;
+    }
+    const { error } = await supabase.from("fila_envio").insert(payload);
     if (error) {
       // Nem entrou na fila: marca como erro para o atendente reenviar.
       setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _status: "erro" } : m)));
     }
   }
 
-  // Reenvia uma mensagem que falhou (recoloca na fila).
+  // Reenvia uma mensagem que falhou (recoloca na fila, mantendo a citação).
   async function reenviar(msg) {
     setMensagens((prev) => prev.map((m) => (m.id === msg.id ? { ...m, _status: "enviando" } : m)));
-    const { error } = await supabase.from("fila_envio").insert({ conversa_id: msg.conversa_id, texto: msg.texto });
+    const payload = { conversa_id: msg.conversa_id, texto: msg.texto };
+    if (msg._responderId) {
+      payload.responder_id_uazapi = msg._responderId;
+      payload.resposta_previa = msg.resposta_previa;
+      payload.resposta_autor = msg.resposta_autor;
+    }
+    const { error } = await supabase.from("fila_envio").insert(payload);
     if (error) {
       setMensagens((prev) => prev.map((m) => (m.id === msg.id ? { ...m, _status: "erro" } : m)));
     }
@@ -581,7 +615,18 @@ export default function Painel({ sessao }) {
                       </div>
                     )}
                     <div style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start" }}>
-                      <div style={{ maxWidth: "65%", background: saida ? C.bubbleOut : C.bubbleIn, color: C.textPrimary, borderRadius: 8, padding: m.tipo === "imagem" ? 4 : "6px 9px 8px", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
+                      <div style={{ position: "relative", maxWidth: "65%", background: saida ? C.bubbleOut : C.bubbleIn, color: C.textPrimary, borderRadius: 8, padding: m.tipo === "imagem" ? 4 : "6px 9px 8px", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
+                        {m.id_uazapi && (
+                          <button onClick={() => iniciarResposta(m)} title="Responder" style={{ position: "absolute", top: 3, right: 3, border: "none", background: "transparent", cursor: "pointer", opacity: 0.45, display: "flex", padding: 0 }}>
+                            <Reply size={14} color={C.textSecondary} />
+                          </button>
+                        )}
+                        {m.resposta_previa && (
+                          <div style={{ borderLeft: `3px solid ${C.green}`, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 4, padding: "3px 8px", marginBottom: 4 }}>
+                            <div style={{ color: C.green, fontWeight: 600, fontSize: 12 }}>{m.resposta_autor === "advogado" ? "Você" : (conversa.contato?.nome || "Contato")}</div>
+                            <div style={{ color: C.textSecondary, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 260 }}>{m.resposta_previa}</div>
+                          </div>
+                        )}
                         {m.tipo === "imagem" && m.midia_url && (
                           <img src={m.midia_url} alt="imagem" style={{ maxWidth: 240, borderRadius: 6, display: "block" }} />
                         )}
@@ -614,6 +659,20 @@ export default function Painel({ sessao }) {
               <button onClick={irParaOFim} title="Ir para o fim" style={{ position: "absolute", right: 24, bottom: 84, width: 42, height: 42, borderRadius: "50%", background: C.panel, border: `1px solid ${C.divider}`, boxShadow: "0 2px 6px rgba(0,0,0,.25)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.textSecondary, zIndex: 5 }}>
                 <ChevronDown size={22} />
               </button>
+            )}
+
+            {respondendo && (
+              <div style={{ background: C.headerBar, padding: "8px 16px 0" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.searchBg, borderLeft: `4px solid ${C.green}`, borderRadius: 6, padding: "6px 10px" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: C.green, fontWeight: 600, fontSize: 12 }}>Respondendo {respondendo.autor === "advogado" ? "você mesmo" : (conversa.contato?.nome || "o contato")}</div>
+                    <div style={{ color: C.textSecondary, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{respondendo.previa}</div>
+                  </div>
+                  <button onClick={() => setRespondendo(null)} title="Cancelar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
+                    <X size={18} color={C.textSecondary} />
+                  </button>
+                </div>
+              </div>
             )}
 
             <div style={{ background: C.headerBar, padding: "10px 16px", display: "flex", alignItems: "flex-end", gap: 10, position: "relative" }}>
