@@ -3,7 +3,7 @@ import { supabase } from "./supabase.js";
 import {
   Search, Send, Paperclip, Smile, MoreVertical, ChevronDown,
   MessageSquare, Mic, Play, CheckCheck, Settings, LogOut, Phone, ArrowLeft, Sun, Moon,
-  Clock, AlertCircle, Reply, X
+  Clock, AlertCircle, Reply, X, FileText, Download
 } from "lucide-react";
 
 // ============================================================
@@ -195,6 +195,7 @@ export default function Painel({ sessao }) {
   const conversaIdRef = useRef(null);
   useEffect(() => { conversaIdRef.current = conversaId; }, [conversaId]);
   const listaRef = useRef(null);
+  const fileRef = useRef(null);
   const [pertoDoFim, setPertoDoFim] = useState(true);
   const [emojiAberto, setEmojiAberto] = useState(false);
   const [buscaConversa, setBuscaConversa] = useState("");
@@ -321,7 +322,8 @@ export default function Painel({ sessao }) {
             let base = prev;
             if (nova.origem === "advogado") {
               base = prev.filter(
-                (m) => !(String(m.id).startsWith("temp-") && m.texto === nova.texto)
+                (m) => !(String(m.id).startsWith("temp-") &&
+                  (m.texto === nova.texto || (nova.midia_url && m._midiaUrlFinal === nova.midia_url)))
               );
             }
             return [...base, nova];
@@ -463,6 +465,48 @@ export default function Painel({ sessao }) {
     const { error } = await supabase.from("fila_envio").insert(payload);
     if (error) {
       setMensagens((prev) => prev.map((m) => (m.id === msg.id ? { ...m, _status: "erro" } : m)));
+    }
+  }
+
+  // Anexos: abre o seletor de arquivo e envia via Storage + fila_envio.
+  function aoEscolherArquivo(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = ""; // permite escolher o mesmo arquivo de novo depois
+    if (file) enviarArquivo(file);
+  }
+
+  async function enviarArquivo(file) {
+    if (!conversaId || !file) return;
+    setPertoDoFim(true);
+    const ehImagem = file.type.startsWith("image/");
+    const ehVideo = file.type.startsWith("video/");
+    const ehAudio = file.type.startsWith("audio/");
+    const tipo = ehImagem ? "imagem" : ehVideo ? "video" : ehAudio ? "audio" : "documento";
+    const tempId = "temp-" + Date.now() + "-" + Math.round(Math.random() * 1e6);
+    const previa = ehImagem ? URL.createObjectURL(file) : null;
+    // Mostra o anexo na hora (provisório, com relóginho).
+    setMensagens((prev) => [...prev, {
+      id: tempId, conversa_id: conversaId, origem: "advogado", tipo,
+      texto: null, midia_url: previa, midia_mime: file.type, midia_nome: file.name,
+      criado_em: new Date().toISOString(), _status: "enviando",
+    }]);
+    try {
+      const nome = file.name.replace(/[^\w.\-]+/g, "_");
+      const caminho = `${conversaId}/${Date.now()}-${nome}`;
+      const { error: upErr } = await supabase.storage.from("anexos").upload(caminho, file, { contentType: file.type });
+      if (upErr) throw upErr;
+      const { data: pub } = supabase.storage.from("anexos").getPublicUrl(caminho);
+      const url = pub?.publicUrl;
+      if (!url) throw new Error("sem URL pública do arquivo");
+      // guarda a URL final (para casar com a versão real que a ponte gravar)
+      setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, midia_url: url, _midiaUrlFinal: url } : m)));
+      const { error: filaErr } = await supabase.from("fila_envio").insert({
+        conversa_id: conversaId, texto: null, tipo,
+        midia_url: url, midia_mime: file.type, midia_nome: file.name,
+      });
+      if (filaErr) throw filaErr;
+    } catch (err) {
+      setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _status: "erro" } : m)));
     }
   }
 
@@ -631,6 +675,16 @@ export default function Painel({ sessao }) {
                           <img src={m.midia_url} alt="imagem" style={{ maxWidth: 240, borderRadius: 6, display: "block" }} />
                         )}
                         {m.tipo === "audio" && <BolhaAudio C={C} saida={saida} url={m.midia_url} />}
+                        {m.tipo === "video" && m.midia_url && (
+                          <video controls src={m.midia_url} style={{ maxWidth: 260, borderRadius: 6, display: "block" }} />
+                        )}
+                        {m.tipo === "documento" && (
+                          <a href={m.midia_url || undefined} target="_blank" rel="noopener noreferrer" download style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none", color: C.textPrimary, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 6, padding: "8px 10px", minWidth: 180 }}>
+                            <FileText size={22} color={C.textSecondary} />
+                            <span style={{ flex: 1, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>{m.midia_nome || "Documento"}</span>
+                            <Download size={16} color={C.textSecondary} />
+                          </a>
+                        )}
                         {m.texto && <div style={{ fontSize: 14.2, lineHeight: 1.35, paddingRight: 42, marginTop: m.tipo !== "texto" ? 4 : 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{formatarTexto(m.texto)}</div>}
                         <div style={{ fontSize: 11, color: m._status === "erro" ? "#e53935" : C.textSecondary, textAlign: "right", marginTop: 2, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 3 }}>
                           {horaDe(m.criado_em)}
@@ -686,7 +740,10 @@ export default function Painel({ sessao }) {
               <button onClick={() => setEmojiAberto((v) => !v)} title="Emojis" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", marginBottom: 8, padding: 0 }}>
                 <Smile size={24} color={emojiAberto ? C.green : C.textSecondary} />
               </button>
-              <Paperclip size={22} color={C.textSecondary} style={{ marginBottom: 9 }} />
+              <button onClick={() => fileRef.current?.click()} title="Anexar arquivo" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", marginBottom: 9, padding: 0 }}>
+                <Paperclip size={22} color={C.textSecondary} />
+              </button>
+              <input ref={fileRef} type="file" onChange={aoEscolherArquivo} style={{ display: "none" }} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" />
               <textarea
                 ref={inputRef}
                 value={rascunho}
