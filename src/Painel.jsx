@@ -220,7 +220,6 @@ export default function Painel({ sessao }) {
   const [mensagens, setMensagens] = useState([]);
   const [seletorAberto, setSeletorAberto] = useState(false);
   const [busca, setBusca] = useState("");
-  const [buscaAdvogado, setBuscaAdvogado] = useState(""); // filtro do seletor de advogado
   const [rascunho, setRascunho] = useState("");
   const [atendimentos, setAtendimentos] = useState({}); // { conversaId: { por, em } }
   const [ultimasMidias, setUltimasMidias] = useState({}); // { conversaId: tipo } da última mensagem, se mídia
@@ -619,7 +618,7 @@ export default function Painel({ sessao }) {
     inputRef.current?.focus();
   }
 
-  function trocarAdvogado(id) { setAdvogadoId(id); setConversaId(null); setSeletorAberto(false); setBusca(""); setBuscaAdvogado(""); }
+  function trocarAdvogado(id) { setAdvogadoId(id); setConversaId(null); setSeletorAberto(false); setBusca(""); }
 
   async function enviar() {
     const t = rascunho.trim();
@@ -827,10 +826,6 @@ export default function Painel({ sessao }) {
     (c.contato?.nome || c.contato?.numero || "").toLowerCase().includes(busca.toLowerCase())
   );
 
-  const advogadosFiltrados = advogados.filter((a) =>
-    (a.nome || "").toLowerCase().includes(buscaAdvogado.trim().toLowerCase())
-  );
-
   // Ocorrências da busca dentro da conversa aberta (ids das mensagens que casam).
   const matchesBusca = (buscaAberta && buscaConversa.trim())
     ? mensagens.filter((m) => (m.texto || "").toLowerCase().includes(buscaConversa.trim().toLowerCase())).map((m) => m.id)
@@ -865,7 +860,7 @@ export default function Painel({ sessao }) {
       <div style={{ width: estreito ? "auto" : 380, flex: estreito ? 1 : "none", borderRight: `1px solid ${C.divider}`, display: (estreito && conversaId) ? "none" : "flex", flexDirection: "column", background: C.panel }}>
         <div ref={seletorRef} style={{ background: C.headerBar, padding: "10px 16px", position: "relative" }}>
           <div style={{ fontSize: 12, color: C.textSecondary, marginBottom: 6, fontWeight: 600, letterSpacing: 0.3 }}>ATENDENDO COMO</div>
-          <button onClick={() => { setBuscaAdvogado(""); setSeletorAberto((v) => !v); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 8, padding: "8px 12px", cursor: "pointer", color: C.textPrimary }}>
+          <button onClick={() => setSeletorAberto((v) => !v)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 8, padding: "8px 12px", cursor: "pointer", color: C.textPrimary }}>
             {advogado ? <Avatar nome={advogado.nome} foto={advogado.foto_url} size={34} /> : <div style={{ width: 34 }} />}
             <div style={{ flex: 1, textAlign: "left" }}>
               <div style={{ fontSize: 14, fontWeight: 600 }}>{advogado ? advogado.nome : "—"}</div>
@@ -875,25 +870,15 @@ export default function Painel({ sessao }) {
           </button>
           {seletorAberto && (
             <div style={{ position: "absolute", top: "100%", left: 16, right: 16, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 8, boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 20, overflow: "hidden" }}>
-              {/* Busca — útil quando houver muitos advogados */}
-              <div style={{ padding: 8, borderBottom: `1px solid ${C.divider}` }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.searchBg, borderRadius: 8, padding: "6px 10px" }}>
-                  <Search size={15} color={C.textSecondary} />
-                  <input autoFocus value={buscaAdvogado} onChange={(e) => setBuscaAdvogado(e.target.value)} placeholder="Buscar advogado" style={{ border: "none", outline: "none", background: "transparent", fontSize: 13, flex: 1, color: C.textPrimary }} />
-                </div>
-              </div>
-              {/* Grade de fotos — sem precisar rolar longas listas */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, padding: 8, maxHeight: 320, overflowY: "auto" }}>
-                {advogadosFiltrados.map((a) => (
-                  <button key={a.id} onClick={() => trocarAdvogado(a.id)} title={a.nome} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "12px 6px", borderRadius: 10, background: a.id === advogadoId ? C.listActive : C.panel, border: a.id === advogadoId ? `2px solid ${C.green}` : `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary }}>
-                    <Avatar nome={a.nome} foto={a.foto_url} size={52} />
-                    <div style={{ fontSize: 12, fontWeight: 600, textAlign: "center", lineHeight: 1.2, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{a.nome}</div>
-                  </button>
-                ))}
-                {advogadosFiltrados.length === 0 && (
-                  <div style={{ gridColumn: "1 / -1", textAlign: "center", color: C.textSecondary, fontSize: 13, padding: 16 }}>Nenhum advogado encontrado.</div>
-                )}
-              </div>
+              {advogados.map((a) => (
+                <button key={a.id} onClick={() => trocarAdvogado(a.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: a.id === advogadoId ? C.listActive : C.panel, border: "none", cursor: "pointer", textAlign: "left", color: C.textPrimary }}>
+                  <Avatar nome={a.nome} foto={a.foto_url} size={30} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{a.nome}</div>
+                    <div style={{ fontSize: 11, color: C.textSecondary }}>+{a.numero}</div>
+                  </div>
+                </button>
+              ))}
             </div>
           )}
         </div>
