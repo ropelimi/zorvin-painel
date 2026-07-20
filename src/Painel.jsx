@@ -4,7 +4,7 @@ import {
   Search, Send, Paperclip, Smile, ChevronDown,
   MessageSquare, Mic, CheckCheck, LogOut, ArrowLeft, Sun, Moon,
   Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp,
-  StickyNote, Plus, Trash2, Settings, Camera, Pencil
+  StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check
 } from "lucide-react";
 
 // ============================================================
@@ -29,6 +29,9 @@ const TEMAS = {
     placeholderCircle: "#202c33", link: "#53bdeb",
   },
 };
+
+// Cores disponíveis ao criar uma tag (o usuário escolhe uma).
+const CORES_TAG = ["#ef5350", "#ec407a", "#ab47bc", "#7e57c2", "#5c6bc0", "#42a5f5", "#26a69a", "#66bb6a", "#d4a017", "#ff7043", "#8d6e63", "#78909c"];
 
 // Cor de avatar estável a partir do texto (mesmo nome = mesma cor).
 const CORES = ["#0288d1", "#f57c00", "#7cb342", "#8e24aa", "#5e35b1", "#00acc1", "#d81b60", "#6a5acd", "#00897b", "#c2185b"];
@@ -262,6 +265,11 @@ export default function Painel({ sessao }) {
   const [abaConfig, setAbaConfig] = useState("perfil"); // perfil | aparencia | rapidas
   const [cfgNome, setCfgNome] = useState(""); // rascunho do nome no perfil
   const [rapidaForm, setRapidaForm] = useState(null); // { id?, titulo, texto } sendo criada/editada
+  const [tags, setTags] = useState([]); // definições das tags (id, nome, cor)
+  const [tagsPorConversa, setTagsPorConversa] = useState({}); // { conversaId: [tagId,...] }
+  const [filtroTag, setFiltroTag] = useState(null); // filtrar a lista por uma tag (id) ou null
+  const [tagForm, setTagForm] = useState(null); // { id?, nome, cor } sendo criada/editada
+  const [tagMenuAberto, setTagMenuAberto] = useState(false); // menu de aplicar tags na conversa aberta
   const [largura, setLargura] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1200));
   const gravadorRef = useRef(null);
   const chunksRef = useRef([]);
@@ -271,6 +279,7 @@ export default function Painel({ sessao }) {
   const emojiRef = useRef(null);
   const seletorRef = useRef(null);
   const fotoPerfilRef = useRef(null); // input de arquivo para a foto do perfil
+  const tagMenuRef = useRef(null); // menu de aplicar tags (fecha ao clicar fora)
 
   const C = TEMAS[modo];
   const estreito = largura < 768; // layout de celular: mostra lista OU conversa
@@ -424,6 +433,65 @@ export default function Painel({ sessao }) {
 
   useEffect(() => { carregarRapidas(); }, [carregarRapidas]);
 
+  // ---- Tags (etiquetas coloridas das conversas, compartilhadas) ----
+  const carregarTags = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from("tags").select("*").order("nome", { ascending: true });
+      if (!error) setTags(data || []);
+    } catch (_) { /* tabela ainda não criada */ }
+  }, []);
+
+  const carregarTagsConversas = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from("conversa_tags").select("conversa_id, tag_id");
+      if (error) return;
+      const mapa = {};
+      (data || []).forEach((r) => { (mapa[r.conversa_id] = mapa[r.conversa_id] || []).push(r.tag_id); });
+      setTagsPorConversa(mapa);
+    } catch (_) { /* tabela ainda não criada */ }
+  }, []);
+
+  useEffect(() => { carregarTags(); carregarTagsConversas(); }, [carregarTags, carregarTagsConversas]);
+
+  async function salvarTagForm() {
+    const nome = (tagForm?.nome || "").trim();
+    const cor = tagForm?.cor || CORES_TAG[0];
+    if (!nome) { mostrarAviso("Digite o nome da tag."); return; }
+    let error;
+    if (tagForm.id) {
+      ({ error } = await supabase.from("tags").update({ nome, cor }).eq("id", tagForm.id));
+    } else {
+      ({ error } = await supabase.from("tags").insert({ nome, cor }));
+    }
+    if (error) { mostrarAviso("Não consegui salvar. Verifique se a tabela 'tags' foi criada."); return; }
+    setTagForm(null); carregarTags(); mostrarAviso("Tag salva!");
+  }
+
+  async function apagarTag(id) {
+    if (!window.confirm("Apagar esta tag? Ela sai de todas as conversas.")) return;
+    const { error } = await supabase.from("tags").delete().eq("id", id);
+    if (error) { mostrarAviso("Não consegui apagar a tag."); return; }
+    carregarTags(); carregarTagsConversas();
+  }
+
+  // Marca/desmarca uma tag na conversa aberta (otimista + banco).
+  async function alternarTagConversa(tagId) {
+    if (!conversaId) return;
+    const atuais = tagsPorConversa[conversaId] || [];
+    const tem = atuais.includes(tagId);
+    setTagsPorConversa((prev) => {
+      const lista = new Set(prev[conversaId] || []);
+      if (tem) lista.delete(tagId); else lista.add(tagId);
+      return { ...prev, [conversaId]: [...lista] };
+    });
+    if (tem) {
+      await supabase.from("conversa_tags").delete().eq("conversa_id", conversaId).eq("tag_id", tagId);
+    } else {
+      const { error } = await supabase.from("conversa_tags").insert({ conversa_id: conversaId, tag_id: tagId });
+      if (error) { mostrarAviso("Não consegui aplicar a tag."); carregarTagsConversas(); }
+    }
+  }
+
   // Cria (sem id) ou atualiza (com id) uma mensagem rápida, pela tela de Configurações.
   async function salvarRapidaForm() {
     const titulo = (rapidaForm?.titulo || "").trim();
@@ -490,6 +558,7 @@ export default function Painel({ sessao }) {
     setCfgNome(meuNome);
     setAbaConfig("perfil");
     setRapidaForm(null);
+    setTagForm(null);
     setConfigAberta(true);
   }
 
@@ -644,12 +713,15 @@ export default function Painel({ sessao }) {
           return [...semTemp, item].sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em));
         });
       })
+      // Tags criadas/editadas/removidas e tags aplicadas às conversas.
+      .on("postgres_changes", { event: "*", schema: "public", table: "tags" }, () => { carregarTags(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversa_tags" }, () => { carregarTagsConversas(); })
       .subscribe();
     return () => { supabase.removeChannel(canal); };
-  }, [conversaId, advogadoId, carregarConversas, carregarNaoLidasPorAdv]);
+  }, [conversaId, advogadoId, carregarConversas, carregarNaoLidasPorAdv, carregarTags, carregarTagsConversas]);
 
   // Ao abrir uma conversa, começa no fim (mensagens mais recentes).
-  useEffect(() => { setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); setRespondendo(null); setInfoAberta(false); requestAnimationFrame(() => { fimRef.current?.scrollIntoView(); if (conversaId && !estreito) inputRef.current?.focus(); }); }, [conversaId]);
+  useEffect(() => { setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); setRespondendo(null); setInfoAberta(false); setTagMenuAberto(false); requestAnimationFrame(() => { fimRef.current?.scrollIntoView(); if (conversaId && !estreito) inputRef.current?.focus(); }); }, [conversaId]);
 
   // Mensagem nova: só rola até o fim se o atendente já estava no fim
   // (não "puxa" a tela quem está lendo mensagens antigas).
@@ -710,8 +782,9 @@ export default function Painel({ sessao }) {
       if (e.key !== "Escape") return;
       if (imagemAberta) setImagemAberta(null);
       else if (anexoPendente) fecharAnexoPendente();
-      else if (configAberta && !rapidaForm) setConfigAberta(false);
+      else if (tagForm) setTagForm(null);
       else if (rapidaForm) setRapidaForm(null);
+      else if (configAberta) setConfigAberta(false);
       else if (emojiAberto) setEmojiAberto(false);
       else if (seletorAberto) setSeletorAberto(false);
       else if (infoAberta) setInfoAberta(false);
@@ -720,17 +793,18 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [imagemAberta, anexoPendente, configAberta, rapidaForm, emojiAberto, seletorAberto, infoAberta, buscaAberta, respondendo]);
+  }, [imagemAberta, anexoPendente, configAberta, rapidaForm, tagForm, emojiAberto, seletorAberto, infoAberta, buscaAberta, respondendo]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
     function aoClicar(e) {
       if (emojiAberto && emojiRef.current && !emojiRef.current.contains(e.target)) setEmojiAberto(false);
       if (seletorAberto && seletorRef.current && !seletorRef.current.contains(e.target)) setSeletorAberto(false);
+      if (tagMenuAberto && tagMenuRef.current && !tagMenuRef.current.contains(e.target)) setTagMenuAberto(false);
     }
     document.addEventListener("mousedown", aoClicar);
     return () => document.removeEventListener("mousedown", aoClicar);
-  }, [emojiAberto, seletorAberto]);
+  }, [emojiAberto, seletorAberto, tagMenuAberto]);
 
   // Fecha o menuzinho da conversa (marcar não lida) ao clicar em qualquer lugar.
   useEffect(() => {
@@ -1054,8 +1128,15 @@ export default function Painel({ sessao }) {
     await supabase.auth.signOut();
   }
 
+  // Tags (objetos) de uma conversa, na ordem em que foram definidas.
+  function tagsDaConversa(convId) {
+    const ids = tagsPorConversa[convId] || [];
+    return tags.filter((t) => ids.includes(t.id));
+  }
+
   const conversasFiltradas = conversas.filter((c) =>
-    (c.contato?.nome || c.contato?.numero || "").toLowerCase().includes(busca.toLowerCase())
+    (c.contato?.nome || c.contato?.numero || "").toLowerCase().includes(busca.toLowerCase()) &&
+    (!filtroTag || (tagsPorConversa[c.id] || []).includes(filtroTag))
   );
 
   // Não lidas de cada advogado, para o selo na barra lateral.
@@ -1163,6 +1244,19 @@ export default function Painel({ sessao }) {
           </div>
         </div>
 
+        {/* Filtro por tag: chips coloridos. Clique numa tag para filtrar. */}
+        {tags.length > 0 && (
+          <div className="sem-scrollbar" style={{ display: "flex", gap: 6, overflowX: "auto", padding: "0 12px 8px", background: C.panel }}>
+            <button onClick={() => setFiltroTag(null)} style={{ flexShrink: 0, border: `1px solid ${filtroTag === null ? C.green : C.divider}`, background: filtroTag === null ? C.green : "transparent", color: filtroTag === null ? "#fff" : C.textSecondary, borderRadius: 20, padding: "3px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>Todas</button>
+            {tags.map((t) => (
+              <button key={t.id} onClick={() => setFiltroTag(filtroTag === t.id ? null : t.id)} style={{ flexShrink: 0, border: `1px solid ${t.cor}`, background: filtroTag === t.id ? t.cor : "transparent", color: filtroTag === t.id ? "#fff" : C.textPrimary, borderRadius: 20, padding: "3px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: t.cor, display: filtroTag === t.id ? "none" : "inline-block" }} />
+                {t.nome}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div style={{ flex: 1, overflowY: "auto" }}>
           {conversasFiltradas.length === 0 && (
             <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>Nenhuma conversa ainda.</div>
@@ -1194,6 +1288,13 @@ export default function Painel({ sessao }) {
                     <div style={{ fontSize: 11, color: "#e0a400", marginTop: 3, display: "flex", alignItems: "center", gap: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#e0a400", display: "inline-block", flexShrink: 0 }} />
                       {atendidoPorOutro(c.id)} está atendendo
+                    </div>
+                  )}
+                  {tagsDaConversa(c.id).length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+                      {tagsDaConversa(c.id).map((t) => (
+                        <span key={t.id} style={{ fontSize: 10.5, fontWeight: 600, color: "#fff", background: t.cor, borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap" }}>{t.nome}</span>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -1245,6 +1346,13 @@ export default function Painel({ sessao }) {
                 ) : (
                   <div style={{ fontSize: 12, color: C.textSecondary }}>via {advogado?.nome}</div>
                 )}
+                {tagsDaConversa(conversa.id).length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+                    {tagsDaConversa(conversa.id).map((t) => (
+                      <span key={t.id} style={{ fontSize: 10.5, fontWeight: 600, color: "#fff", background: t.cor, borderRadius: 4, padding: "1px 6px" }}>{t.nome}</span>
+                    ))}
+                  </div>
+                )}
               </div>
               </div>
               {/* Avatares dos atendentes que já interagiram com este contato */}
@@ -1260,6 +1368,31 @@ export default function Painel({ sessao }) {
                   )}
                 </div>
               )}
+              {/* Etiquetar a conversa: abre um menu para marcar/desmarcar tags */}
+              <span ref={tagMenuRef} style={{ position: "relative", display: "flex" }}>
+                <button aria-label="Etiquetas" onClick={() => setTagMenuAberto((v) => !v)} title="Etiquetas (tags)" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
+                  <Tag size={19} color={tagMenuAberto || (tagsPorConversa[conversa.id] || []).length ? C.green : C.textSecondary} />
+                </button>
+                {tagMenuAberto && (
+                  <div style={{ position: "absolute", top: 30, right: 0, width: 240, maxHeight: 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 46 }}>
+                    <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.divider}`, fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3, position: "sticky", top: 0, background: C.panel }}>MARCAR TAGS</div>
+                    {tags.length === 0 && (
+                      <div style={{ padding: 14, fontSize: 13, color: C.textSecondary, textAlign: "center" }}>Nenhuma tag ainda. Crie em Configurações → Tags.</div>
+                    )}
+                    {tags.map((t) => {
+                      const marcada = (tagsPorConversa[conversa.id] || []).includes(t.id);
+                      return (
+                        <button key={t.id} onClick={() => alternarTagConversa(t.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, textAlign: "left" }}>
+                          <span style={{ width: 12, height: 12, borderRadius: 3, background: t.cor, flexShrink: 0 }} />
+                          <span style={{ flex: 1, fontSize: 13.5 }}>{t.nome}</span>
+                          {marcada && <Check size={16} color={C.green} />}
+                        </button>
+                      );
+                    })}
+                    <button onClick={() => { setTagMenuAberto(false); setAbaConfig("tags"); setTagForm(null); setConfigAberta(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 6, padding: "10px 12px", border: "none", borderTop: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.green, fontSize: 13, fontWeight: 600 }}><Plus size={15} /> Gerenciar tags</button>
+                  </div>
+                )}
+              </span>
               <button aria-label="Buscar na conversa" onClick={() => setBuscaAberta((v) => !v)} title="Buscar na conversa" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
                 <Search size={19} color={buscaAberta ? C.green : C.textSecondary} />
               </button>
@@ -1529,13 +1662,13 @@ export default function Painel({ sessao }) {
 
       {/* CONFIGURAÇÕES — perfil, aparência, sair e mensagens rápidas */}
       {configAberta && (
-        <div onClick={() => { if (!rapidaForm) setConfigAberta(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: estreito ? 0 : 24 }}>
+        <div onClick={() => { if (!rapidaForm && !tagForm) setConfigAberta(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: estreito ? 0 : 24 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 900, height: estreito ? "100%" : "86vh", background: C.panel, borderRadius: estreito ? 0 : 12, overflow: "hidden", display: "flex", flexDirection: estreito ? "column" : "row", boxShadow: "0 10px 40px rgba(0,0,0,.4)" }}>
             {/* Menu à esquerda */}
             <div style={{ width: estreito ? "100%" : 210, background: C.headerBar, borderRight: estreito ? "none" : `1px solid ${C.divider}`, borderBottom: estreito ? `1px solid ${C.divider}` : "none", display: "flex", flexDirection: estreito ? "row" : "column", padding: estreito ? 8 : 14, gap: 4, overflowX: estreito ? "auto" : "visible" }}>
               <div style={{ fontSize: 16, fontWeight: 700, padding: "6px 10px 14px", color: C.textPrimary, display: estreito ? "none" : "block" }}>Configurações</div>
-              {[["perfil", "Perfil"], ["aparencia", "Aparência"], ["rapidas", "Mensagens rápidas"]].map(([k, label]) => (
-                <button key={k} onClick={() => { setAbaConfig(k); setRapidaForm(null); }} style={{ textAlign: "left", border: "none", background: abaConfig === k ? C.listActive : "transparent", color: C.textPrimary, borderRadius: 8, padding: "10px 12px", fontSize: 14, fontWeight: abaConfig === k ? 600 : 500, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{label}</button>
+              {[["perfil", "Perfil"], ["aparencia", "Aparência"], ["rapidas", "Mensagens rápidas"], ["tags", "Tags"]].map(([k, label]) => (
+                <button key={k} onClick={() => { setAbaConfig(k); setRapidaForm(null); setTagForm(null); }} style={{ textAlign: "left", border: "none", background: abaConfig === k ? C.listActive : "transparent", color: C.textPrimary, borderRadius: 8, padding: "10px 12px", fontSize: 14, fontWeight: abaConfig === k ? 600 : 500, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{label}</button>
               ))}
               <div style={{ flex: 1 }} />
               <button onClick={sair} style={{ display: estreito ? "none" : "flex", alignItems: "center", gap: 8, border: "none", background: "transparent", color: "#e5573f", borderRadius: 8, padding: "10px 12px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}><LogOut size={17} /> Sair</button>
@@ -1630,6 +1763,60 @@ export default function Painel({ sessao }) {
                     </div>
                   )}
 
+                </div>
+              )}
+
+              {abaConfig === "tags" && (
+                <div style={{ maxWidth: 560 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
+                    <div>
+                      <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Tags</div>
+                      <div style={{ fontSize: 13, color: C.textSecondary }}>Etiquetas coloridas para organizar e filtrar as conversas.</div>
+                    </div>
+                    {!tagForm && (
+                      <button onClick={() => setTagForm({ nome: "", cor: CORES_TAG[0] })} style={{ display: "flex", alignItems: "center", gap: 6, border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}><Plus size={16} /> Nova</button>
+                    )}
+                  </div>
+
+                  {tagForm ? (
+                    <div style={{ border: `1px solid ${C.divider}`, borderRadius: 10, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>{tagForm.id ? "Editar tag" : "Nova tag"}</div>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary }}>NOME</label>
+                        <input value={tagForm.nome} onChange={(e) => setTagForm((f) => ({ ...f, nome: e.target.value }))} placeholder="Ex.: Documentação pendente" style={{ width: "100%", boxSizing: "border-box", marginTop: 5, border: `1px solid ${C.divider}`, outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "9px 12px", fontSize: 14 }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary }}>COR</label>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                          {CORES_TAG.map((cor) => (
+                            <button key={cor} onClick={() => setTagForm((f) => ({ ...f, cor }))} title={cor} style={{ width: 28, height: 28, borderRadius: "50%", background: cor, border: tagForm.cor === cor ? `3px solid ${C.textPrimary}` : "2px solid transparent", cursor: "pointer" }} />
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: 12, color: C.textSecondary }}>Prévia: </span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "#fff", background: tagForm.cor, borderRadius: 4, padding: "2px 8px" }}>{tagForm.nome || "Nome da tag"}</span>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                        <button onClick={() => setTagForm(null)} style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary, borderRadius: 8, padding: "9px 16px", fontSize: 14, cursor: "pointer" }}>Cancelar</button>
+                        <button onClick={salvarTagForm} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Salvar</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ border: `1px solid ${C.divider}`, borderRadius: 10, overflow: "hidden" }}>
+                      {tags.length === 0 && (
+                        <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>Nenhuma tag ainda. Toque em <b>Nova</b> para criar a primeira.</div>
+                      )}
+                      {tags.map((t) => (
+                        <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: `1px solid ${C.divider}` }}>
+                          <span style={{ width: 14, height: 14, borderRadius: 4, background: t.cor, flexShrink: 0 }} />
+                          <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.nome}</span>
+                          <button onClick={() => setTagForm({ id: t.id, nome: t.nome, cor: t.cor })} title="Editar" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex", flexShrink: 0 }}><Pencil size={16} /></button>
+                          <button onClick={() => apagarTag(t.id)} title="Apagar" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#e5573f", display: "flex", flexShrink: 0 }}><Trash2 size={16} /></button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
