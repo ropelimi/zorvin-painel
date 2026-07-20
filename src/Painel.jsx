@@ -4,7 +4,7 @@ import {
   Search, Send, Paperclip, Smile, ChevronDown,
   MessageSquare, Mic, CheckCheck, LogOut, ArrowLeft, Sun, Moon,
   Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp,
-  Zap, StickyNote, Plus, Trash2
+  StickyNote, Plus, Trash2, Settings, Camera, Pencil
 } from "lucide-react";
 
 // ============================================================
@@ -257,10 +257,11 @@ export default function Painel({ sessao }) {
   const [menuConversa, setMenuConversa] = useState(null); // id da conversa com o menuzinho aberto
   const [modoNota, setModoNota] = useState(false); // caixa de texto no modo "nota interna"
   const [rapidas, setRapidas] = useState([]); // mensagens rápidas (respostas prontas) da equipe
-  const [rapidasAberto, setRapidasAberto] = useState(false); // painel de mensagens rápidas aberto
-  const [gerenciarRapidas, setGerenciarRapidas] = useState(false); // mostrando o formulário de nova rápida
-  const [novaRapidaTitulo, setNovaRapidaTitulo] = useState("");
-  const [novaRapidaTexto, setNovaRapidaTexto] = useState("");
+  const [slashIdx, setSlashIdx] = useState(0); // item destacado no menu do "/"
+  const [configAberta, setConfigAberta] = useState(false); // tela de Configurações aberta
+  const [abaConfig, setAbaConfig] = useState("perfil"); // perfil | aparencia | rapidas
+  const [cfgNome, setCfgNome] = useState(""); // rascunho do nome no perfil
+  const [rapidaForm, setRapidaForm] = useState(null); // { id?, titulo, texto } sendo criada/editada
   const [largura, setLargura] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1200));
   const gravadorRef = useRef(null);
   const chunksRef = useRef([]);
@@ -269,19 +270,20 @@ export default function Painel({ sessao }) {
   const timerRef = useRef(null);
   const emojiRef = useRef(null);
   const seletorRef = useRef(null);
-  const rapidasRef = useRef(null);
+  const fotoPerfilRef = useRef(null); // input de arquivo para a foto do perfil
 
   const C = TEMAS[modo];
   const estreito = largura < 768; // layout de celular: mostra lista OU conversa
   const advogado = advogados.find((a) => a.id === advogadoId) || null;
   const conversa = conversas.find((c) => c.id === conversaId) || null;
-  // Nome que aparece para os outros atendentes quando eu abro uma conversa.
+  // Nome e foto do atendente logado (guardados no perfil do Supabase Auth).
   const meuNome =
     sessao?.user?.user_metadata?.nome ||
     sessao?.user?.user_metadata?.name ||
     sessao?.user?.user_metadata?.full_name ||
     (sessao?.user?.email || "").split("@")[0] ||
     "atendente";
+  const minhaFoto = sessao?.user?.user_metadata?.foto_url || null;
 
   // O contato está digitando nesta conversa agora? (janela curta que expira).
   function digitandoAtivo(convId) {
@@ -422,29 +424,73 @@ export default function Painel({ sessao }) {
 
   useEffect(() => { carregarRapidas(); }, [carregarRapidas]);
 
-  async function salvarRapida() {
-    const titulo = novaRapidaTitulo.trim();
-    const texto = novaRapidaTexto.trim();
+  // Cria (sem id) ou atualiza (com id) uma mensagem rápida, pela tela de Configurações.
+  async function salvarRapidaForm() {
+    const titulo = (rapidaForm?.titulo || "").trim();
+    const texto = (rapidaForm?.texto || "").trim();
     if (!titulo || !texto) { mostrarAviso("Preencha o atalho e o texto."); return; }
-    const { error } = await supabase.from("mensagens_rapidas").insert({ titulo, texto });
+    let error;
+    if (rapidaForm.id) {
+      ({ error } = await supabase.from("mensagens_rapidas").update({ titulo, texto }).eq("id", rapidaForm.id));
+    } else {
+      ({ error } = await supabase.from("mensagens_rapidas").insert({ titulo, texto }));
+    }
     if (error) { mostrarAviso("Não consegui salvar. Verifique se a tabela 'mensagens_rapidas' foi criada."); return; }
-    setNovaRapidaTitulo(""); setNovaRapidaTexto(""); setGerenciarRapidas(false);
+    setRapidaForm(null);
     mostrarAviso("Mensagem rápida salva!");
     carregarRapidas();
   }
 
   async function apagarRapida(id) {
+    if (!window.confirm("Apagar esta mensagem rápida?")) return;
     const { error } = await supabase.from("mensagens_rapidas").delete().eq("id", id);
     if (error) { mostrarAviso("Não consegui apagar."); return; }
     carregarRapidas();
   }
 
-  // Usa uma mensagem rápida: joga o texto na caixa (dá para editar antes de enviar).
-  function usarRapida(r) {
-    setRapidasAberto(false);
-    setModoNota(false);
-    setRascunho((atual) => (atual ? atual + " " : "") + r.texto);
+  // Escolhe uma rápida pelo menu do "/": substitui o texto digitado pela mensagem.
+  function escolherSlash(r) {
+    if (!r) return;
+    setRascunho(r.texto);
+    setSlashIdx(0);
     inputRef.current?.focus();
+  }
+
+  // ---- Perfil do atendente (nome e foto ficam no Supabase Auth) ----
+  async function salvarNomePerfil() {
+    const nome = cfgNome.trim();
+    if (!nome) { mostrarAviso("Digite seu nome."); return; }
+    const meta = sessao?.user?.user_metadata || {};
+    const { error } = await supabase.auth.updateUser({ data: { ...meta, nome } });
+    if (error) { mostrarAviso("Não consegui salvar o nome."); return; }
+    mostrarAviso("Nome atualizado!");
+  }
+
+  async function trocarFotoPerfil(file) {
+    if (!file) return;
+    try {
+      const ext = ((file.name || "").split(".").pop() || "jpg").toLowerCase();
+      const caminho = `perfil/${sessao.user.id}-${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("anexos").upload(caminho, file, { contentType: file.type, upsert: true });
+      if (upErr) throw upErr;
+      const { data: pub } = supabase.storage.from("anexos").getPublicUrl(caminho);
+      const url = pub?.publicUrl;
+      if (!url) throw new Error("sem URL");
+      const meta = sessao?.user?.user_metadata || {};
+      const { error } = await supabase.auth.updateUser({ data: { ...meta, foto_url: url } });
+      if (error) throw error;
+      mostrarAviso("Foto atualizada!");
+    } catch (_) {
+      mostrarAviso("Não consegui atualizar a foto.");
+    }
+  }
+
+  // Abre a tela de Configurações já com o nome atual no campo.
+  function abrirConfig() {
+    setCfgNome(meuNome);
+    setAbaConfig("perfil");
+    setRapidaForm(null);
+    setConfigAberta(true);
   }
 
   // ---- Carrega as mensagens da conversa aberta ----
@@ -664,8 +710,9 @@ export default function Painel({ sessao }) {
       if (e.key !== "Escape") return;
       if (imagemAberta) setImagemAberta(null);
       else if (anexoPendente) fecharAnexoPendente();
+      else if (configAberta && !rapidaForm) setConfigAberta(false);
+      else if (rapidaForm) setRapidaForm(null);
       else if (emojiAberto) setEmojiAberto(false);
-      else if (rapidasAberto) setRapidasAberto(false);
       else if (seletorAberto) setSeletorAberto(false);
       else if (infoAberta) setInfoAberta(false);
       else if (buscaAberta) { setBuscaAberta(false); setBuscaConversa(""); }
@@ -673,18 +720,17 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [imagemAberta, anexoPendente, emojiAberto, rapidasAberto, seletorAberto, infoAberta, buscaAberta, respondendo]);
+  }, [imagemAberta, anexoPendente, configAberta, rapidaForm, emojiAberto, seletorAberto, infoAberta, buscaAberta, respondendo]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
     function aoClicar(e) {
       if (emojiAberto && emojiRef.current && !emojiRef.current.contains(e.target)) setEmojiAberto(false);
       if (seletorAberto && seletorRef.current && !seletorRef.current.contains(e.target)) setSeletorAberto(false);
-      if (rapidasAberto && rapidasRef.current && !rapidasRef.current.contains(e.target)) setRapidasAberto(false);
     }
     document.addEventListener("mousedown", aoClicar);
     return () => document.removeEventListener("mousedown", aoClicar);
-  }, [emojiAberto, seletorAberto, rapidasAberto]);
+  }, [emojiAberto, seletorAberto]);
 
   // Fecha o menuzinho da conversa (marcar não lida) ao clicar em qualquer lugar.
   useEffect(() => {
@@ -1015,6 +1061,14 @@ export default function Painel({ sessao }) {
     return id === advogadoId ? naoLidasAtual : (naoLidasPorAdv[id] || 0);
   }
 
+  // Menu de mensagens rápidas: aparece ao digitar "/" no começo da mensagem.
+  // O texto após a "/" filtra a lista (por atalho ou conteúdo).
+  const slashQuery = (!modoNota && rascunho.startsWith("/")) ? rascunho.slice(1).toLowerCase() : null;
+  const slashLista = slashQuery !== null
+    ? rapidas.filter((r) => (`${r.titulo} ${r.texto}`).toLowerCase().includes(slashQuery))
+    : [];
+  const slashAberto = slashQuery !== null && slashLista.length > 0;
+
   // Ocorrências da busca dentro da conversa aberta (ids das mensagens que casam).
   const matchesBusca = (buscaAberta && buscaConversa.trim())
     ? mensagens.filter((m) => (m.texto || "").toLowerCase().includes(buscaConversa.trim().toLowerCase())).map((m) => m.id)
@@ -1063,17 +1117,10 @@ export default function Painel({ sessao }) {
             );
           })}
         </div>
-        {/* Quem está logado (atendente). Passa o mouse para ver nome e e-mail. */}
-        <div title={`Você está logado como ${meuNome}${sessao?.user?.email ? ` (${sessao.user.email})` : ""}`} style={{ display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 4 }}>
-          <Avatar nome={meuNome} size={32} />
-        </div>
-        <div style={{ width: 26, height: 1, background: "rgba(255,255,255,.12)", margin: "6px 0" }} />
-        <div onClick={() => setModo((m) => (m === "claro" ? "escuro" : "claro"))} title={modo === "claro" ? "Modo escuro" : "Modo claro"}
-          style={{ width: 40, height: 40, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "#aebac1", cursor: "pointer" }}>
-          {modo === "claro" ? <Moon size={20} /> : <Sun size={20} />}
-        </div>
-        <div onClick={sair} title="Sair" style={{ width: 40, height: 40, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "#aebac1", cursor: "pointer" }}>
-          <LogOut size={20} />
+        {/* Um único ícone de Configurações: perfil, aparência, sair e mensagens
+            rápidas ficam todos lá dentro. */}
+        <div onClick={abrirConfig} title="Configurações" style={{ width: 40, height: 40, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: configAberta ? "#fff" : "#aebac1", background: configAberta ? "rgba(255,255,255,.12)" : "transparent", cursor: "pointer" }}>
+          <Settings size={22} />
         </div>
         <div style={{ height: 16 }} />
       </div>
@@ -1377,39 +1424,18 @@ export default function Painel({ sessao }) {
                       <Smile size={24} color={emojiAberto ? C.green : C.textSecondary} />
                     </button>
                   </span>
-                  {/* Mensagens rápidas (respostas prontas da equipe) */}
-                  <span ref={rapidasRef} style={{ display: "flex", marginBottom: 8 }}>
-                    {rapidasAberto && (
-                      <div style={{ position: "absolute", bottom: 60, left: 12, width: 330, maxHeight: 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 30 }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderBottom: `1px solid ${C.divider}`, position: "sticky", top: 0, background: C.panel }}>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: C.textPrimary }}>Mensagens rápidas</span>
-                          <button onClick={() => setGerenciarRapidas((v) => !v)} title="Criar nova" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", color: C.green }}><Plus size={18} /></button>
-                        </div>
-                        {gerenciarRapidas && (
-                          <div style={{ padding: 10, borderBottom: `1px solid ${C.divider}`, display: "flex", flexDirection: "column", gap: 6 }}>
-                            <input value={novaRapidaTitulo} onChange={(e) => setNovaRapidaTitulo(e.target.value)} placeholder="Atalho (ex.: Saudação)" style={{ border: `1px solid ${C.divider}`, outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 6, padding: "7px 10px", fontSize: 13 }} />
-                            <textarea value={novaRapidaTexto} onChange={(e) => setNovaRapidaTexto(e.target.value)} placeholder="Texto que será inserido na mensagem" rows={3} style={{ border: `1px solid ${C.divider}`, outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 6, padding: "7px 10px", fontSize: 13, resize: "none", fontFamily: "inherit" }} />
-                            <button onClick={salvarRapida} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 6, padding: "8px 10px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Salvar</button>
-                          </div>
-                        )}
-                        {rapidas.length === 0 && !gerenciarRapidas && (
-                          <div style={{ padding: 16, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>Nenhuma resposta pronta ainda. Toque no + para criar a primeira.</div>
-                        )}
-                        {rapidas.map((r) => (
-                          <div key={r.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 12px", borderBottom: `1px solid ${C.divider}` }}>
-                            <button onClick={() => usarRapida(r)} style={{ flex: 1, minWidth: 0, textAlign: "left", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, padding: 0 }}>
-                              <div style={{ fontSize: 13, fontWeight: 600 }}>{r.titulo}</div>
-                              <div style={{ fontSize: 12, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.texto}</div>
-                            </button>
-                            <button onClick={() => apagarRapida(r.id)} title="Apagar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", color: C.textSecondary, marginTop: 2, flexShrink: 0 }}><Trash2 size={15} /></button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <button onClick={() => { setRapidasAberto((v) => !v); setEmojiAberto(false); }} title="Mensagens rápidas" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", padding: 0 }}>
-                      <Zap size={22} color={rapidasAberto ? C.green : C.textSecondary} />
-                    </button>
-                  </span>
+                  {/* Menu de mensagens rápidas — abre ao digitar "/" na caixa */}
+                  {slashAberto && (
+                    <div style={{ position: "absolute", bottom: 60, left: 12, right: 12, maxWidth: 420, maxHeight: 260, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 30 }}>
+                      <div style={{ padding: "8px 12px", borderBottom: `1px solid ${C.divider}`, fontSize: 11.5, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3, position: "sticky", top: 0, background: C.panel }}>MENSAGENS RÁPIDAS · use ↑ ↓ e Enter</div>
+                      {slashLista.map((r, idx) => (
+                        <button key={r.id} onMouseEnter={() => setSlashIdx(idx)} onClick={() => escolherSlash(r)} style={{ width: "100%", textAlign: "left", display: "block", border: "none", background: idx === Math.min(slashIdx, slashLista.length - 1) ? C.listActive : "transparent", cursor: "pointer", color: C.textPrimary, padding: "8px 12px", borderBottom: `1px solid ${C.divider}` }}>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>{r.titulo}</div>
+                          <div style={{ fontSize: 12, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.texto}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {/* Alternar para NOTA INTERNA (comentário que não vai ao WhatsApp) */}
                   <button onClick={() => setModoNota((v) => !v)} title={modoNota ? "Voltar para mensagem normal" : "Escrever nota interna (só a equipe vê)"} style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", marginBottom: 9, padding: 0 }}>
                     <StickyNote size={22} color={modoNota ? "#d4a017" : C.textSecondary} />
@@ -1421,8 +1447,15 @@ export default function Painel({ sessao }) {
                   <textarea
                     ref={inputRef}
                     value={rascunho}
-                    onChange={(e) => setRascunho(e.target.value)}
+                    onChange={(e) => { setRascunho(e.target.value); setSlashIdx(0); }}
                     onKeyDown={(e) => {
+                      // Menu do "/": navega com as setas e escolhe com Enter.
+                      if (slashAberto) {
+                        if (e.key === "ArrowDown") { e.preventDefault(); setSlashIdx((i) => Math.min(slashLista.length - 1, i + 1)); return; }
+                        if (e.key === "ArrowUp") { e.preventDefault(); setSlashIdx((i) => Math.max(0, i - 1)); return; }
+                        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); escolherSlash(slashLista[Math.min(slashIdx, slashLista.length - 1)]); return; }
+                        if (e.key === "Escape") { e.preventDefault(); setRascunho(""); return; }
+                      }
                       // Enter envia; Shift+Enter pula linha (como no WhatsApp Web).
                       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); }
                     }}
@@ -1443,6 +1476,120 @@ export default function Painel({ sessao }) {
           </>
         )}
       </div>
+
+      {/* CONFIGURAÇÕES — perfil, aparência, sair e mensagens rápidas */}
+      {configAberta && (
+        <div onClick={() => { if (!rapidaForm) setConfigAberta(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: estreito ? 0 : 24 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 900, height: estreito ? "100%" : "86vh", background: C.panel, borderRadius: estreito ? 0 : 12, overflow: "hidden", display: "flex", flexDirection: estreito ? "column" : "row", boxShadow: "0 10px 40px rgba(0,0,0,.4)" }}>
+            {/* Menu à esquerda */}
+            <div style={{ width: estreito ? "100%" : 210, background: C.headerBar, borderRight: estreito ? "none" : `1px solid ${C.divider}`, borderBottom: estreito ? `1px solid ${C.divider}` : "none", display: "flex", flexDirection: estreito ? "row" : "column", padding: estreito ? 8 : 14, gap: 4, overflowX: estreito ? "auto" : "visible" }}>
+              <div style={{ fontSize: 16, fontWeight: 700, padding: "6px 10px 14px", color: C.textPrimary, display: estreito ? "none" : "block" }}>Configurações</div>
+              {[["perfil", "Perfil"], ["aparencia", "Aparência"], ["rapidas", "Mensagens rápidas"]].map(([k, label]) => (
+                <button key={k} onClick={() => { setAbaConfig(k); setRapidaForm(null); }} style={{ textAlign: "left", border: "none", background: abaConfig === k ? C.listActive : "transparent", color: C.textPrimary, borderRadius: 8, padding: "10px 12px", fontSize: 14, fontWeight: abaConfig === k ? 600 : 500, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{label}</button>
+              ))}
+              <div style={{ flex: 1 }} />
+              <button onClick={sair} style={{ display: estreito ? "none" : "flex", alignItems: "center", gap: 8, border: "none", background: "transparent", color: "#e5573f", borderRadius: 8, padding: "10px 12px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}><LogOut size={17} /> Sair</button>
+            </div>
+            {/* Conteúdo à direita */}
+            <div style={{ flex: 1, overflowY: "auto", padding: estreito ? "20px 16px" : 28, position: "relative" }}>
+              <button onClick={() => setConfigAberta(false)} title="Fechar" style={{ position: "absolute", top: 14, right: 14, border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex" }}><X size={24} /></button>
+
+              {abaConfig === "perfil" && (
+                <div style={{ maxWidth: 420 }}>
+                  <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Meu perfil</div>
+                  <div style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20 }}>Como você aparece para o resto da equipe.</div>
+                  <div style={{ display: "flex", justifyContent: "center", marginBottom: 22 }}>
+                    <div style={{ position: "relative", width: 96, height: 96 }}>
+                      <Avatar nome={meuNome} foto={minhaFoto} size={96} />
+                      <button onClick={() => fotoPerfilRef.current?.click()} title="Trocar foto" style={{ position: "absolute", right: -2, bottom: -2, width: 32, height: 32, borderRadius: "50%", background: C.green, border: `2px solid ${C.panel}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Camera size={16} color="#fff" />
+                      </button>
+                      <input ref={fotoPerfilRef} type="file" accept="image/*" onChange={(e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (f) trocarFotoPerfil(f); }} style={{ display: "none" }} />
+                    </div>
+                  </div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, letterSpacing: 0.3 }}>NOME</label>
+                  <input value={cfgNome} onChange={(e) => setCfgNome(e.target.value)} placeholder="Seu nome" style={{ width: "100%", boxSizing: "border-box", marginTop: 6, marginBottom: 16, border: `1px solid ${C.divider}`, outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "10px 12px", fontSize: 14.5 }} />
+                  <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, letterSpacing: 0.3 }}>E-MAIL (não editável)</label>
+                  <div style={{ marginTop: 6, marginBottom: 20, padding: "10px 12px", background: C.searchBg, borderRadius: 8, fontSize: 14, color: C.textSecondary }}>{sessao?.user?.email || "—"}</div>
+                  <button onClick={salvarNomePerfil} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "10px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Salvar alterações</button>
+                </div>
+              )}
+
+              {abaConfig === "aparencia" && (
+                <div style={{ maxWidth: 440 }}>
+                  <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Aparência</div>
+                  <div style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20 }}>Escolha entre o tema claro e o escuro.</div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: C.searchBg, borderRadius: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      {modo === "claro" ? <Sun size={20} color={C.textSecondary} /> : <Moon size={20} color={C.textSecondary} />}
+                      <div>
+                        <div style={{ fontSize: 14.5, fontWeight: 600 }}>Modo escuro</div>
+                        <div style={{ fontSize: 12.5, color: C.textSecondary }}>{modo === "escuro" ? "Ativado" : "Desativado"}</div>
+                      </div>
+                    </div>
+                    <button onClick={() => setModo(modo === "claro" ? "escuro" : "claro")} title="Alternar tema" style={{ width: 48, height: 27, borderRadius: 14, border: "none", cursor: "pointer", background: modo === "escuro" ? C.green : "#c9ced3", position: "relative", transition: "background .15s", flexShrink: 0 }}>
+                      <span style={{ position: "absolute", top: 3, left: modo === "escuro" ? 24 : 3, width: 21, height: 21, borderRadius: "50%", background: "#fff", transition: "left .15s", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {abaConfig === "rapidas" && (
+                <div style={{ maxWidth: 560 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
+                    <div>
+                      <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Mensagens rápidas</div>
+                      <div style={{ fontSize: 13, color: C.textSecondary }}>Respostas prontas da equipe. Na conversa, digite <b>/</b> para usar.</div>
+                    </div>
+                    {!rapidaForm && (
+                      <button onClick={() => setRapidaForm({ titulo: "", texto: "" })} style={{ display: "flex", alignItems: "center", gap: 6, border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}><Plus size={16} /> Nova</button>
+                    )}
+                  </div>
+
+                  {rapidaForm ? (
+                    <div style={{ border: `1px solid ${C.divider}`, borderRadius: 10, padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>{rapidaForm.id ? "Editar mensagem" : "Nova mensagem"}</div>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary }}>ATALHO / TÍTULO</label>
+                        <input value={rapidaForm.titulo} onChange={(e) => setRapidaForm((f) => ({ ...f, titulo: e.target.value }))} placeholder="Ex.: Saudação" style={{ width: "100%", boxSizing: "border-box", marginTop: 5, border: `1px solid ${C.divider}`, outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "9px 12px", fontSize: 14 }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary }}>TEXTO DA MENSAGEM</label>
+                        <textarea value={rapidaForm.texto} onChange={(e) => setRapidaForm((f) => ({ ...f, texto: e.target.value }))} rows={5} placeholder="Escreva a resposta pronta…" style={{ width: "100%", boxSizing: "border-box", marginTop: 5, border: `1px solid ${C.divider}`, outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "9px 12px", fontSize: 14, resize: "vertical", fontFamily: "inherit", lineHeight: 1.4 }} />
+                      </div>
+                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                        <button onClick={() => setRapidaForm(null)} style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary, borderRadius: 8, padding: "9px 16px", fontSize: 14, cursor: "pointer" }}>Cancelar</button>
+                        <button onClick={salvarRapidaForm} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Salvar</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ border: `1px solid ${C.divider}`, borderRadius: 10, overflow: "hidden" }}>
+                      {rapidas.length === 0 && (
+                        <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>Nenhuma mensagem rápida ainda. Toque em <b>Nova</b> para criar a primeira.</div>
+                      )}
+                      {rapidas.map((r) => (
+                        <div key={r.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px", borderBottom: `1px solid ${C.divider}` }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 14, fontWeight: 600 }}>{r.titulo}</div>
+                            <div style={{ fontSize: 13, color: C.textSecondary, marginTop: 2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{r.texto}</div>
+                          </div>
+                          <button onClick={() => setRapidaForm({ id: r.id, titulo: r.titulo, texto: r.texto })} title="Editar" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex", flexShrink: 0 }}><Pencil size={16} /></button>
+                          <button onClick={() => apagarRapida(r.id)} title="Apagar" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#e5573f", display: "flex", flexShrink: 0 }}><Trash2 size={16} /></button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                </div>
+              )}
+
+              {estreito && (
+                <button onClick={sair} style={{ marginTop: 28, display: "flex", alignItems: "center", gap: 8, border: "none", background: "transparent", color: "#e5573f", padding: "8px 0", fontSize: 14, fontWeight: 600, cursor: "pointer" }}><LogOut size={17} /> Sair</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Imagem em tela cheia (abrir/baixar, estilo WhatsApp) */}
       {imagemAberta && (
