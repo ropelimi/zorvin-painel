@@ -775,9 +775,10 @@ export default function Painel({ sessao }) {
   // banco (SQL não rodou), tenta de novo sem ela — o envio nunca trava por isso.
   async function inserirNaFila(payload) {
     let { error } = await supabase.from("fila_envio").insert(payload);
-    if (error && payload.enviado_por !== undefined && /enviado_por/i.test(error.message || "")) {
+    if (error && /enviado_por/i.test(error.message || "")) {
       const semAutor = { ...payload };
       delete semAutor.enviado_por;
+      delete semAutor.enviado_por_foto;
       ({ error } = await supabase.from("fila_envio").insert(semAutor));
     }
     return { error };
@@ -825,14 +826,14 @@ export default function Painel({ sessao }) {
     // Mostra a mensagem NA HORA (provisória, com relóginho), como o WhatsApp Web.
     const tempId = "temp-" + Date.now() + "-" + Math.round(Math.random() * 1e6);
     const provisoria = {
-      id: tempId, conversa_id: conversaId, origem: "advogado", enviado_por: meuNome,
+      id: tempId, conversa_id: conversaId, origem: "advogado", enviado_por: meuNome, enviado_por_foto: minhaFoto,
       tipo: "texto", texto: t, criado_em: new Date().toISOString(), _status: "enviando",
       resposta_previa: alvo?.previa || null, resposta_autor: alvo?.autor || null,
       _responderId: alvo?.id_uazapi || null,
     };
     setMensagens((prev) => [...prev, provisoria]);
     // Coloca na fila de envio; a ponte processa e manda pela Uazapi.
-    const payload = { conversa_id: conversaId, texto: t, enviado_por: meuNome };
+    const payload = { conversa_id: conversaId, texto: t, enviado_por: meuNome, enviado_por_foto: minhaFoto };
     if (alvo) {
       payload.responder_id_uazapi = alvo.id_uazapi;
       payload.resposta_previa = alvo.previa;
@@ -857,10 +858,14 @@ export default function Painel({ sessao }) {
     const tempId = "nota-temp-" + Date.now();
     const provisoria = {
       id: tempId, conversa_id: conversaId, origem: "nota",
-      texto: t, autor: meuNome, criado_em: new Date().toISOString(), _status: "enviando",
+      texto: t, autor: meuNome, autor_foto: minhaFoto, criado_em: new Date().toISOString(), _status: "enviando",
     };
     setMensagens((prev) => [...prev, provisoria].sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em)));
-    const { error } = await supabase.from("notas").insert({ conversa_id: conversaId, texto: t, autor: meuNome });
+    let { error } = await supabase.from("notas").insert({ conversa_id: conversaId, texto: t, autor: meuNome, autor_foto: minhaFoto });
+    if (error && /autor_foto/i.test(error.message || "")) {
+      // Coluna de foto ainda não existe: salva a nota sem ela.
+      ({ error } = await supabase.from("notas").insert({ conversa_id: conversaId, texto: t, autor: meuNome }));
+    }
     if (error) {
       setMensagens((prev) => prev.filter((m) => m.id !== tempId));
       mostrarAviso("Não consegui salvar a nota. Verifique se a tabela 'notas' foi criada.");
@@ -889,10 +894,10 @@ export default function Painel({ sessao }) {
       payload = {
         conversa_id: msg.conversa_id, texto: msg.texto || "", tipo: msg.tipo,
         midia_url: url, midia_mime: msg.midia_mime || null, midia_nome: msg.midia_nome || null,
-        enviado_por: msg.enviado_por || meuNome,
+        enviado_por: msg.enviado_por || meuNome, enviado_por_foto: msg.enviado_por_foto || minhaFoto,
       };
     } else {
-      payload = { conversa_id: msg.conversa_id, texto: msg.texto || "", enviado_por: msg.enviado_por || meuNome };
+      payload = { conversa_id: msg.conversa_id, texto: msg.texto || "", enviado_por: msg.enviado_por || meuNome, enviado_por_foto: msg.enviado_por_foto || minhaFoto };
       if (msg._responderId) {
         payload.responder_id_uazapi = msg._responderId;
         payload.resposta_previa = msg.resposta_previa;
@@ -943,7 +948,7 @@ export default function Painel({ sessao }) {
     // Prévia local (o remetente vê o anexo na hora, sem depender do Storage).
     const previa = tipo === "documento" ? null : URL.createObjectURL(file);
     setMensagens((prev) => [...prev, {
-      id: tempId, conversa_id: convId, origem: "advogado", tipo, enviado_por: meuNome,
+      id: tempId, conversa_id: convId, origem: "advogado", tipo, enviado_por: meuNome, enviado_por_foto: minhaFoto,
       texto: legenda || null, midia_url: previa, midia_mime: file.type, midia_nome: file.name,
       criado_em: new Date().toISOString(), _status: "enviando",
       _file: file, _legenda: legenda, // guardados para poder reenviar se falhar
@@ -961,7 +966,7 @@ export default function Painel({ sessao }) {
       setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _midiaUrlFinal: url } : m)));
       const { error: filaErr } = await inserirNaFila({
         conversa_id: convId, texto: legenda || "", tipo,
-        midia_url: url, midia_mime: file.type, midia_nome: nome, enviado_por: meuNome,
+        midia_url: url, midia_mime: file.type, midia_nome: nome, enviado_por: meuNome, enviado_por_foto: minhaFoto,
       });
       if (filaErr) throw new Error("Falha ao colocar na fila (banco): " + (filaErr.message || filaErr));
     } catch (err) {
@@ -1060,6 +1065,19 @@ export default function Painel({ sessao }) {
   function naoLidasDoAdvogado(id) {
     return id === advogadoId ? naoLidasAtual : (naoLidasPorAdv[id] || 0);
   }
+
+  // Atendentes que já interagiram nesta conversa (para o grupinho de avatares
+  // no topo). Junta quem enviou mensagens e quem escreveu notas.
+  const atendentesInteragiram = (() => {
+    const mapa = new Map();
+    for (const m of mensagens) {
+      let nome = null, foto = null;
+      if (m.origem === "advogado" && m.enviado_por) { nome = m.enviado_por; foto = m.enviado_por_foto || null; }
+      else if (m.origem === "nota" && m.autor) { nome = m.autor; foto = m.autor_foto || null; }
+      if (nome && !mapa.has(nome)) mapa.set(nome, { nome, foto });
+    }
+    return [...mapa.values()];
+  })();
 
   // Menu de mensagens rápidas: aparece ao digitar "/" no começo da mensagem.
   // O texto após a "/" filtra a lista (por atalho ou conteúdo).
@@ -1229,6 +1247,19 @@ export default function Painel({ sessao }) {
                 )}
               </div>
               </div>
+              {/* Avatares dos atendentes que já interagiram com este contato */}
+              {atendentesInteragiram.length > 0 && (
+                <div title={`Já atenderam este contato: ${atendentesInteragiram.map((a) => a.nome).join(", ")}`} style={{ display: "flex", alignItems: "center", marginRight: 2 }}>
+                  {atendentesInteragiram.slice(0, 4).map((a, idx) => (
+                    <div key={a.nome} style={{ marginLeft: idx === 0 ? 0 : -8, borderRadius: "50%", border: `2px solid ${C.headerBar}`, display: "flex" }}>
+                      <Avatar nome={a.nome} foto={a.foto} size={26} />
+                    </div>
+                  ))}
+                  {atendentesInteragiram.length > 4 && (
+                    <div style={{ marginLeft: -8, width: 26, height: 26, borderRadius: "50%", background: C.divider, color: C.textSecondary, fontSize: 10.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${C.headerBar}` }}>+{atendentesInteragiram.length - 4}</div>
+                  )}
+                </div>
+              )}
               <button aria-label="Buscar na conversa" onClick={() => setBuscaAberta((v) => !v)} title="Buscar na conversa" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
                 <Search size={19} color={buscaAberta ? C.green : C.textSecondary} />
               </button>
@@ -1291,6 +1322,12 @@ export default function Painel({ sessao }) {
                 // sequência ou quando muda de atendente — como o nome nos grupos.
                 const mostrarAutor = saida && m.enviado_por &&
                   (!mesmoRemetente || (anterior && anterior.enviado_por !== m.enviado_por));
+                // Última mensagem de uma sequência do mesmo remetente: recebe o
+                // avatarzinho à direita (como o WhatsApp mostra a foto do grupo).
+                const proxima = mensagens[i + 1];
+                const ultimaDoGrupo = !proxima || proxima.origem !== m.origem ||
+                  proxima.enviado_por !== m.enviado_por ||
+                  new Date(proxima.criado_em).toDateString() !== new Date(m.criado_em).toDateString();
                 return (
                   <React.Fragment key={m.id}>
                     {novoDia && (
@@ -1304,17 +1341,27 @@ export default function Painel({ sessao }) {
                       </div>
                     )}
                     {m.origem === "nota" ? (
-                      // NOTA INTERNA — comentário da equipe, estilo bilhete amarelo.
-                      // Não é enviada ao WhatsApp; só a equipe vê.
-                      <div data-msg-id={m.id} style={{ alignSelf: "center", maxWidth: "80%", background: modo === "escuro" ? "#3a3320" : "#fff8d6", border: `1px solid ${modo === "escuro" ? "#5a5030" : "#f0e2a0"}`, color: C.textPrimary, borderRadius: 8, padding: "7px 12px", margin: "4px 0", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", opacity: m._status === "enviando" ? 0.7 : 1 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700, color: modo === "escuro" ? "#e8cf72" : "#a6852a", marginBottom: 2 }}>
-                          <StickyNote size={13} /> NOTA INTERNA · {m.autor || "equipe"}
+                      // NOTA INTERNA — comentário da equipe (não vai ao WhatsApp).
+                      // Alinhada à direita, com cabeçalho (autor • hora) + avatar,
+                      // bolha laranja e rodapé "Mensagem interna".
+                      <div data-msg-id={m.id} style={{ display: "flex", justifyContent: "flex-end", alignItems: "flex-end", gap: 6, marginTop: 4 }}>
+                        <div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", alignItems: "flex-end", opacity: m._status === "enviando" ? 0.7 : 1 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2, marginRight: 2 }}>
+                            <span style={{ fontSize: 12.5, fontWeight: 700, color: corDe(m.autor) }}>{m.autor || "equipe"}</span>
+                            <span style={{ fontSize: 11, color: C.textSecondary }}>• {horaCurta(m.criado_em)}</span>
+                          </div>
+                          <div style={{ background: "#d98a2b", color: "#fff", borderRadius: 8, padding: "7px 11px 6px", boxShadow: "0 1px 0.5px rgba(0,0,0,.2)", minWidth: 120 }}>
+                            <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 1 }}>{m.autor || "equipe"}:</div>
+                            <div style={{ fontSize: 14, lineHeight: 1.35, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{formatarTexto(m.texto, "#fff3d6")}</div>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, fontSize: 10.5, color: "rgba(255,255,255,.85)", marginTop: 3 }}>
+                              <StickyNote size={11} /> Mensagem interna{m._status === "enviando" ? " · salvando…" : ""}
+                            </div>
+                          </div>
                         </div>
-                        <div style={{ fontSize: 14, lineHeight: 1.35, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{formatarTexto(m.texto, C.link)}</div>
-                        <div style={{ fontSize: 10.5, color: C.textSecondary, textAlign: "right", marginTop: 2 }}>{horaCurta(m.criado_em)}{m._status === "enviando" ? " · salvando…" : ""}</div>
+                        <div style={{ width: 28, flexShrink: 0 }}><Avatar nome={m.autor || "equipe"} foto={m.autor_foto} size={28} /></div>
                       </div>
                     ) : (
-                    <div data-msg-id={m.id} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start", marginTop: mesmoRemetente ? -4 : 0 }}>
+                    <div data-msg-id={m.id} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6, marginTop: mesmoRemetente ? -4 : 0 }}>
                       <div style={{ position: "relative", maxWidth: "65%", background: saida ? C.bubbleOut : C.bubbleIn, color: C.textPrimary, borderRadius: 8, padding: m.tipo === "imagem" ? 4 : "6px 9px 8px", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
                         {mostrarAutor && (
                           <div style={{ fontSize: 12, fontWeight: 700, color: corDe(m.enviado_por), marginBottom: 1 }}>{m.enviado_por}</div>
@@ -1369,6 +1416,9 @@ export default function Painel({ sessao }) {
                           )}
                         </div>
                       </div>
+                      {saida && (
+                        <div style={{ width: 28, flexShrink: 0 }}>{ultimaDoGrupo ? <Avatar nome={m.enviado_por || meuNome} foto={m.enviado_por_foto} size={28} /> : null}</div>
+                      )}
                     </div>
                     )}
                   </React.Fragment>
