@@ -227,6 +227,7 @@ export default function Painel({ sessao }) {
   const [atendimentos, setAtendimentos] = useState({}); // { conversaId: { por, em } }
   const [ultimasMidias, setUltimasMidias] = useState({}); // { conversaId: tipo } da última mensagem, se mídia
   const [digitandos, setDigitandos] = useState({}); // { conversaId: digitando_ate (ISO) }
+  const [naoLidasPorAdv, setNaoLidasPorAdv] = useState({}); // { advogadoId: total de não lidas }
   const [tique, setTique] = useState(0); // força re-render p/ esconder "digitando…" ao expirar
   const fimRef = useRef(null);
   const inputRef = useRef(null);
@@ -383,6 +384,23 @@ export default function Painel({ sessao }) {
 
   useEffect(() => { carregarConversas(advogadoId); }, [advogadoId, carregarConversas]);
 
+  // ---- Total de não lidas de CADA advogado (para o selo na barra lateral) ----
+  // Busca todas as conversas com não lidas e soma por advogado.
+  const carregarNaoLidasPorAdv = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("conversas")
+      .select("advogado_id, nao_lidas")
+      .gt("nao_lidas", 0);
+    if (error) return;
+    const mapa = {};
+    (data || []).forEach((r) => {
+      mapa[r.advogado_id] = (mapa[r.advogado_id] || 0) + (r.nao_lidas || 0);
+    });
+    setNaoLidasPorAdv(mapa);
+  }, []);
+
+  useEffect(() => { carregarNaoLidasPorAdv(); }, [carregarNaoLidasPorAdv]);
+
   // ---- Carrega as mensagens da conversa aberta ----
   const carregarMensagens = useCallback(async (convId) => {
     if (!convId) { setMensagens([]); return; }
@@ -484,6 +502,7 @@ export default function Painel({ sessao }) {
         }
         // Atualiza a lista de conversas (prévia / ordem / não lidas).
         carregarConversas(advogadoId);
+        carregarNaoLidasPorAdv();
       })
       // Status de uma mensagem mudou (ex.: foi lida) — atualiza o "tiquinho".
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "mensagens" }, (payload) => {
@@ -493,6 +512,7 @@ export default function Painel({ sessao }) {
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversas" }, () => {
         carregarConversas(advogadoId);
+        carregarNaoLidasPorAdv();
       })
       // Se a ponte não conseguir enviar, a fila vira "erro" — aviso na tela.
       .on("postgres_changes", { event: "*", schema: "public", table: "fila_envio" }, (payload) => {
@@ -507,7 +527,7 @@ export default function Painel({ sessao }) {
       })
       .subscribe();
     return () => { supabase.removeChannel(canal); };
-  }, [conversaId, advogadoId, carregarConversas]);
+  }, [conversaId, advogadoId, carregarConversas, carregarNaoLidasPorAdv]);
 
   // Ao abrir uma conversa, começa no fim (mensagens mais recentes).
   useEffect(() => { setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); setRespondendo(null); setInfoAberta(false); requestAnimationFrame(() => { fimRef.current?.scrollIntoView(); if (conversaId && !estreito) inputRef.current?.focus(); }); }, [conversaId]);
@@ -876,6 +896,14 @@ export default function Painel({ sessao }) {
     (c.contato?.nome || c.contato?.numero || "").toLowerCase().includes(busca.toLowerCase())
   );
 
+  // Não lidas de cada advogado, para o selo na barra lateral.
+  // Para o advogado atual usamos a lista já carregada (que zera a conversa
+  // aberta em tempo real); para os demais, o total consultado do banco.
+  const naoLidasAtual = conversas.reduce((s, c) => s + (c.nao_lidas || 0), 0);
+  function naoLidasDoAdvogado(id) {
+    return id === advogadoId ? naoLidasAtual : (naoLidasPorAdv[id] || 0);
+  }
+
   // Ocorrências da busca dentro da conversa aberta (ids das mensagens que casam).
   const matchesBusca = (buscaAberta && buscaConversa.trim())
     ? mensagens.filter((m) => (m.texto || "").toLowerCase().includes(buscaConversa.trim().toLowerCase())).map((m) => m.id)
@@ -894,36 +922,36 @@ export default function Painel({ sessao }) {
       <style>{`
         *:focus { outline: none; }
         *:focus-visible { outline: 2px solid ${C.green}; outline-offset: 2px; border-radius: 4px; }
+        .sem-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+        .sem-scrollbar::-webkit-scrollbar { display: none; }
       `}</style>
       {/* Barra lateral */}
       <div style={{ width: 60, background: C.rail, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 16, gap: 8 }}>
         <div style={{ width: 34, height: 34, borderRadius: 8, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "#fff", marginBottom: 12 }}>Z</div>
 
-        {/* Troca de advogado (ATENDENDO COMO) — na barra lateral */}
-        <div ref={seletorRef} style={{ position: "relative", marginBottom: 6 }}>
-          <button onClick={() => setSeletorAberto((v) => !v)} title={advogado ? `Atendendo como ${advogado.nome} — clique para trocar` : "Escolher advogado"} style={{ border: "none", background: "transparent", cursor: "pointer", padding: 0, display: "flex", borderRadius: "50%", boxShadow: seletorAberto ? `0 0 0 2px ${C.green}` : "none" }}>
-            {advogado ? <Avatar nome={advogado.nome} foto={advogado.foto_url} size={42} /> : <div style={{ width: 42, height: 42, borderRadius: "50%", background: "#3a4a54" }} />}
-          </button>
-          {seletorAberto && (
-            <div style={{ position: "absolute", left: 54, top: 0, width: 280, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 8, boxShadow: "0 6px 24px rgba(0,0,0,.4)", zIndex: 60, overflow: "hidden", maxHeight: "80vh", overflowY: "auto" }}>
-              <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.divider}`, fontSize: 12, color: C.textSecondary, fontWeight: 600, letterSpacing: 0.3, position: "sticky", top: 0, background: C.panel }}>ATENDENDO COMO</div>
-              {advogados.map((a) => (
-                <button key={a.id} onClick={() => trocarAdvogado(a.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: a.id === advogadoId ? C.listActive : C.panel, border: "none", cursor: "pointer", textAlign: "left", color: C.textPrimary }}>
-                  <Avatar nome={a.nome} foto={a.foto_url} size={30} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{a.nome}</div>
-                    <div style={{ fontSize: 11, color: C.textSecondary }}>+{a.numero}</div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
+        {/* Advogados: um avatar por advogado. O atual fica destacado (anel
+            verde); quem tem mensagens não lidas ganha um selo vermelho. */}
+        <div className="sem-scrollbar" style={{ flex: 1, width: "100%", overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, paddingBottom: 8 }}>
+          {advogados.map((a) => {
+            const n = naoLidasDoAdvogado(a.id);
+            const atual = a.id === advogadoId;
+            return (
+              <button
+                key={a.id}
+                onClick={() => trocarAdvogado(a.id)}
+                title={`${a.nome}${n > 0 ? ` — ${n} não lida${n > 1 ? "s" : ""}` : ""}`}
+                style={{ position: "relative", border: "none", background: "transparent", cursor: "pointer", padding: 0, display: "flex", borderRadius: "50%", flexShrink: 0, boxShadow: atual ? `0 0 0 2px ${C.green}` : "none", opacity: atual ? 1 : 0.7, transition: "opacity .12s" }}
+              >
+                <Avatar nome={a.nome} foto={a.foto_url} size={42} />
+                {n > 0 && (
+                  <span style={{ position: "absolute", top: -4, right: -4, minWidth: 19, height: 19, padding: "0 5px", borderRadius: 10, background: "#ff3b30", color: "#fff", fontSize: 11, fontWeight: 700, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${C.rail}`, boxSizing: "border-box" }}>
+                    {n > 99 ? "99+" : n}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
-
-        <div title="Conversas" style={{ width: 40, height: 40, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", background: "rgba(255,255,255,.12)" }}>
-          <MessageSquare size={20} />
-        </div>
-        <div style={{ flex: 1 }} />
         <div onClick={() => setModo((m) => (m === "claro" ? "escuro" : "claro"))} title={modo === "claro" ? "Modo escuro" : "Modo claro"}
           style={{ width: 40, height: 40, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "#aebac1", cursor: "pointer" }}>
           {modo === "claro" ? <Moon size={20} /> : <Sun size={20} />}
