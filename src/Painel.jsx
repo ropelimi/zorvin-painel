@@ -244,6 +244,7 @@ export default function Painel({ sessao }) {
   const [legendaAnexo, setLegendaAnexo] = useState("");
   const [buscaIdx, setBuscaIdx] = useState(0); // ocorrência atual na busca da conversa
   const [idDivisorNaoLidas, setIdDivisorNaoLidas] = useState(null); // id da 1ª msg não lida ao abrir
+  const [infoAberta, setInfoAberta] = useState(false); // painel de dados do contato
   const [msgHover, setMsgHover] = useState(null); // id da bolha sob o mouse (mostra "responder")
   const [convHover, setConvHover] = useState(null); // id da conversa sob o mouse (realce)
   const [largura, setLargura] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1200));
@@ -495,7 +496,7 @@ export default function Painel({ sessao }) {
   }, [conversaId, advogadoId, carregarConversas]);
 
   // Ao abrir uma conversa, começa no fim (mensagens mais recentes).
-  useEffect(() => { setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); setRespondendo(null); requestAnimationFrame(() => fimRef.current?.scrollIntoView()); }, [conversaId]);
+  useEffect(() => { setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); setRespondendo(null); setInfoAberta(false); requestAnimationFrame(() => fimRef.current?.scrollIntoView()); }, [conversaId]);
 
   // Mensagem nova: só rola até o fim se o atendente já estava no fim
   // (não "puxa" a tela quem está lendo mensagens antigas).
@@ -548,14 +549,16 @@ export default function Painel({ sessao }) {
     function aoTeclar(e) {
       if (e.key !== "Escape") return;
       if (imagemAberta) setImagemAberta(null);
+      else if (anexoPendente) fecharAnexoPendente();
       else if (emojiAberto) setEmojiAberto(false);
       else if (seletorAberto) setSeletorAberto(false);
+      else if (infoAberta) setInfoAberta(false);
       else if (buscaAberta) { setBuscaAberta(false); setBuscaConversa(""); }
       else if (respondendo) setRespondendo(null);
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [imagemAberta, emojiAberto, seletorAberto, buscaAberta, respondendo]);
+  }, [imagemAberta, anexoPendente, emojiAberto, seletorAberto, infoAberta, buscaAberta, respondendo]);
 
   // Clicar fora fecha o seletor de emoji e o seletor de advogado.
   useEffect(() => {
@@ -945,8 +948,9 @@ export default function Painel({ sessao }) {
               <button onClick={() => setConversaId(null)} style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
                 <ArrowLeft size={20} color={C.textSecondary} />
               </button>
+              <div onClick={() => setInfoAberta(true)} title="Ver dados do contato" style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, cursor: "pointer", minWidth: 0 }}>
               <Avatar nome={conversa.contato?.nome || conversa.contato?.numero} foto={conversa.contato?.foto_url} size={40} />
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{conversa.contato?.nome || ("+" + conversa.contato?.numero)}</div>
                 {digitandoAtivo(conversa.id) ? (
                   <div style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>digitando…</div>
@@ -958,11 +962,35 @@ export default function Painel({ sessao }) {
                   <div style={{ fontSize: 12, color: C.textSecondary }}>via {advogado?.nome}</div>
                 )}
               </div>
+              </div>
               <button onClick={() => setBuscaAberta((v) => !v)} title="Buscar na conversa" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
                 <Search size={19} color={buscaAberta ? C.green : C.textSecondary} />
               </button>
               <MoreVertical size={20} color={C.textSecondary} />
             </div>
+
+            {infoAberta && (
+              <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: estreito ? "100%" : 360, background: C.panel, borderLeft: `1px solid ${C.divider}`, zIndex: 45, display: "flex", flexDirection: "column", boxShadow: "-2px 0 12px rgba(0,0,0,.15)" }}>
+                <div style={{ background: C.headerBar, padding: "14px 16px", display: "flex", alignItems: "center", gap: 16, borderBottom: `1px solid ${C.divider}` }}>
+                  <button onClick={() => setInfoAberta(false)} title="Fechar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
+                    <X size={22} color={C.textSecondary} />
+                  </button>
+                  <span style={{ fontSize: 16, fontWeight: 600 }}>Dados do contato</span>
+                </div>
+                <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", padding: "28px 20px", gap: 10 }}>
+                  <div onClick={() => { if (conversa.contato?.foto_url) setImagemAberta(conversa.contato.foto_url); }} style={{ cursor: conversa.contato?.foto_url ? "pointer" : "default" }}>
+                    <Avatar nome={conversa.contato?.nome || conversa.contato?.numero} foto={conversa.contato?.foto_url} size={150} />
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 600, textAlign: "center", marginTop: 6 }}>{conversa.contato?.nome || ("+" + conversa.contato?.numero)}</div>
+                  <div style={{ fontSize: 15, color: C.textSecondary }}>+{conversa.contato?.numero}</div>
+                  <div style={{ width: "100%", borderTop: `1px solid ${C.divider}`, marginTop: 14, paddingTop: 16 }}>
+                    <div style={{ fontSize: 12, color: C.textSecondary, fontWeight: 600, letterSpacing: 0.3 }}>ATENDIDO POR</div>
+                    <div style={{ fontSize: 15, marginTop: 4 }}>{advogado?.nome || "—"}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {buscaAberta && (
               <div style={{ background: C.headerBar, padding: "0 16px 10px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.searchBg, borderRadius: 8, padding: "6px 12px" }}>
