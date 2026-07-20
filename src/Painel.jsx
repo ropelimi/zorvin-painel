@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { supabase } from "./supabase.js";
 import {
-  Search, Send, Paperclip, Smile, MoreVertical, ChevronDown,
-  MessageSquare, Mic, Play, CheckCheck, LogOut, ArrowLeft, Sun, Moon,
+  Search, Send, Paperclip, Smile, ChevronDown,
+  MessageSquare, Mic, CheckCheck, LogOut, ArrowLeft, Sun, Moon,
   Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp
 } from "lucide-react";
 
@@ -18,14 +18,14 @@ const TEMAS = {
     chatBg: "#efeae2", bubbleIn: "#ffffff", bubbleOut: "#d9fdd3", green: "#00a884",
     greenDark: "#008069", textPrimary: "#111b21", textSecondary: "#667781",
     divider: "#e9edef", unread: "#25d366", inputBg: "#ffffff", searchBg: "#f0f2f5",
-    placeholderCircle: "#dfe5e7",
+    placeholderCircle: "#dfe5e7", link: "#027eb5",
   },
   escuro: {
     rail: "#161717", headerBar: "#202c33", panel: "#111b21", listActive: "#2a3942",
     chatBg: "#0b141a", bubbleIn: "#202c33", bubbleOut: "#005c4b", green: "#00a884",
     greenDark: "#025144", textPrimary: "#e9edef", textSecondary: "#8696a0",
     divider: "#222d34", unread: "#00a884", inputBg: "#2a3942", searchBg: "#202c33",
-    placeholderCircle: "#202c33",
+    placeholderCircle: "#202c33", link: "#53bdeb",
   },
 };
 
@@ -115,7 +115,7 @@ function aplicarEnfase(txt, base) {
   if (resto) out.push(resto);
   return out;
 }
-function formatarTexto(texto) {
+function formatarTexto(texto, corLink = "#53bdeb") {
   if (!texto) return null;
   const partes = [];
   let last = 0, i = 0, m;
@@ -124,7 +124,7 @@ function formatarTexto(texto) {
     if (m.index > last) partes.push(...aplicarEnfase(texto.slice(last, m.index), "t" + i++));
     const url = m[0];
     partes.push(
-      <a key={"u" + i++} href={url} target="_blank" rel="noopener noreferrer" style={{ color: "#53bdeb", textDecoration: "underline" }}>{url}</a>
+      <a key={"u" + i++} href={url} target="_blank" rel="noopener noreferrer" style={{ color: corLink, textDecoration: "underline" }}>{url}</a>
     );
     last = m.index + url.length;
   }
@@ -133,11 +133,15 @@ function formatarTexto(texto) {
 }
 
 // Som curto ao chegar mensagem nova (sem precisar de arquivo de áudio).
+// Reusa um único AudioContext (não cria um novo a cada beep).
+let _audioCtx = null;
 function tocarBeep() {
   try {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
-    const ctx = new AC();
+    if (!_audioCtx) _audioCtx = new AC();
+    const ctx = _audioCtx;
+    if (ctx.state === "suspended") ctx.resume();
     const o = ctx.createOscillator();
     const g = ctx.createGain();
     o.connect(g); g.connect(ctx.destination);
@@ -147,7 +151,6 @@ function tocarBeep() {
     g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
     o.start();
     o.stop(ctx.currentTime + 0.26);
-    o.onended = () => ctx.close();
   } catch (_) { /* silêncio se o navegador bloquear */ }
 }
 
@@ -191,10 +194,10 @@ function BolhaAudio({ C, saida, url }) {
         <audio controls src={url} style={{ height: 32, maxWidth: 220 }} />
       ) : (
         <>
-          <div style={{ width: 34, height: 34, borderRadius: "50%", background: saida ? C.greenDark : C.green, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <Play size={16} color="#fff" fill="#fff" />
+          <div style={{ width: 34, height: 34, borderRadius: "50%", background: C.searchBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Mic size={16} color={C.textSecondary} />
           </div>
-          <span style={{ fontSize: 12, color: C.textSecondary }}>Áudio</span>
+          <span style={{ fontSize: 12, color: C.textSecondary, fontStyle: "italic" }}>Áudio indisponível</span>
         </>
       )}
     </div>
@@ -229,6 +232,8 @@ export default function Painel({ sessao }) {
   const inputRef = useRef(null);
   const conversaIdRef = useRef(null);
   useEffect(() => { conversaIdRef.current = conversaId; }, [conversaId]);
+  const conversasRef = useRef([]);
+  useEffect(() => { conversasRef.current = conversas; }, [conversas]);
   const listaRef = useRef(null);
   const fileRef = useRef(null);
   const [pertoDoFim, setPertoDoFim] = useState(true);
@@ -387,14 +392,20 @@ export default function Painel({ sessao }) {
       .eq("conversa_id", convId)
       .order("criado_em", { ascending: true });
     setMensagens(data || []);
-    // Divisor "mensagens não lidas": marca a 1ª mensagem não lida ao abrir.
+    // Divisor "mensagens não lidas": marca a 1ª não lida, contando de trás para
+    // frente APENAS as mensagens do contato (ignora respostas do advogado).
     const n = naoLidasRef.current || 0;
-    if (n > 0 && data && data.length >= n) {
-      const alvo = data[data.length - n];
-      setIdDivisorNaoLidas(alvo ? alvo.id : null);
-    } else {
-      setIdDivisorNaoLidas(null);
+    let alvoId = null;
+    if (n > 0 && data && data.length) {
+      let count = 0;
+      for (let i = data.length - 1; i >= 0; i--) {
+        if (data[i].origem === "contato") {
+          count++;
+          if (count === n) { alvoId = data[i].id; break; }
+        }
+      }
     }
+    setIdDivisorNaoLidas(alvoId);
     naoLidasRef.current = 0; // usa só na abertura
     // Zera o contador de não lidas desta conversa.
     await supabase.from("conversas").update({ nao_lidas: 0 }).eq("id", convId);
@@ -464,8 +475,10 @@ export default function Painel({ sessao }) {
           }
         }
         // Aviso de nova mensagem (som + notificação) quando não estou olhando
-        // exatamente para ela (aba escondida ou outra conversa aberta).
-        if (nova.origem === "contato" && (document.hidden || nova.conversa_id !== conversaId)) {
+        // exatamente para ela — mas SÓ se a conversa for do advogado atual
+        // (evita beeps de outros advogados que nem estão na tela).
+        const doAdvogadoAtual = conversasRef.current.some((c) => c.id === nova.conversa_id);
+        if (nova.origem === "contato" && doAdvogadoAtual && (document.hidden || nova.conversa_id !== conversaId)) {
           tocarBeep();
           notificarDesktop("Nova mensagem", nova.texto || "Mídia recebida");
         }
@@ -497,7 +510,7 @@ export default function Painel({ sessao }) {
   }, [conversaId, advogadoId, carregarConversas]);
 
   // Ao abrir uma conversa, começa no fim (mensagens mais recentes).
-  useEffect(() => { setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); setRespondendo(null); setInfoAberta(false); requestAnimationFrame(() => fimRef.current?.scrollIntoView()); }, [conversaId]);
+  useEffect(() => { setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); setRespondendo(null); setInfoAberta(false); requestAnimationFrame(() => { fimRef.current?.scrollIntoView(); if (conversaId && !estreito) inputRef.current?.focus(); }); }, [conversaId]);
 
   // Mensagem nova: só rola até o fim se o atendente já estava no fim
   // (não "puxa" a tela quem está lendo mensagens antigas).
@@ -509,18 +522,25 @@ export default function Painel({ sessao }) {
     document.title = total > 0 ? `(${total}) Zorvin` : "Zorvin";
   }, [conversas]);
 
-  // Pede permissão para notificar na área de trabalho (uma vez).
+  // Pede permissão para notificar na área de trabalho (uma vez), quando o
+  // atendente abre a primeira conversa — é um gesto do usuário, então o
+  // navegador aceita melhor do que pedir logo ao carregar a página.
+  const jaPediuNotif = useRef(false);
   useEffect(() => {
+    if (!conversaId || jaPediuNotif.current) return;
+    jaPediuNotif.current = true;
     if ("Notification" in window && Notification.permission === "default") {
       Notification.requestPermission().catch(() => {});
     }
-  }, []);
+  }, [conversaId]);
 
-  // "Tique" a cada 2s: reavalia o "digitando…" para ele sumir ao expirar.
+  // "Tique" a cada 2s só quando há alguém "digitando…", para expirar o aviso
+  // (não fica re-renderizando a lista à toa quando ninguém está digitando).
   useEffect(() => {
+    if (Object.keys(digitandos).length === 0) return;
     const id = setInterval(() => setTique((t) => t + 1), 2000);
     return () => clearInterval(id);
-  }, []);
+  }, [digitandos]);
 
   // Acompanha a largura da janela (para o layout de celular).
   useEffect(() => {
@@ -636,6 +656,7 @@ export default function Painel({ sessao }) {
     setConversas((prev) => prev.map((x) => (x.id === conv.id ? { ...x, nao_lidas: novo } : x)));
     // Para o "não lida" valer visualmente, sai da conversa se ela estiver aberta.
     if (naoLida && conv.id === conversaId) setConversaId(null);
+    mostrarAviso(naoLida ? "Marcada como não lida" : "Marcada como lida");
     await supabase.from("conversas").update({ nao_lidas: novo }).eq("id", conv.id);
   }
 
@@ -667,6 +688,7 @@ export default function Painel({ sessao }) {
     if (error) {
       // Nem entrou na fila: marca como erro para o atendente reenviar.
       setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _status: "erro" } : m)));
+      mostrarAviso("Não consegui enviar a mensagem. Toque em 'reenviar'.");
     }
   }
 
@@ -675,14 +697,21 @@ export default function Painel({ sessao }) {
     setMensagens((prev) => prev.map((m) => (m.id === msg.id ? { ...m, _status: "enviando" } : m)));
     let payload;
     if (msg.tipo && msg.tipo !== "texto") {
-      // Anexo: reaproveita o arquivo que já foi para o Storage.
-      const url = msg._midiaUrlFinal || msg.midia_url;
+      // Anexo: reaproveita a URL do Storage (não o blob local, que a ponte não baixa).
+      const url = msg._midiaUrlFinal || (msg.midia_url && !String(msg.midia_url).startsWith("blob:") ? msg.midia_url : null);
       if (!url) {
+        // O upload nunca completou. Se ainda temos o arquivo, refaz do zero.
+        if (msg._file) {
+          setMensagens((prev) => prev.filter((m) => m.id !== msg.id));
+          enviarArquivo(msg._file, msg._legenda || msg.texto || "", msg.conversa_id);
+          return;
+        }
         setMensagens((prev) => prev.map((m) => (m.id === msg.id ? { ...m, _status: "erro" } : m)));
+        mostrarAviso("Não consegui reenviar o anexo. Anexe o arquivo novamente.");
         return;
       }
       payload = {
-        conversa_id: msg.conversa_id, texto: "", tipo: msg.tipo,
+        conversa_id: msg.conversa_id, texto: msg.texto || "", tipo: msg.tipo,
         midia_url: url, midia_mime: msg.midia_mime || null, midia_nome: msg.midia_nome || null,
       };
     } else {
@@ -726,8 +755,8 @@ export default function Painel({ sessao }) {
     enviarArquivo(file, legenda);
   }
 
-  async function enviarArquivo(file, legenda = "") {
-    if (!conversaId || !file) return;
+  async function enviarArquivo(file, legenda = "", convId = conversaId) {
+    if (!convId || !file) return;
     setPertoDoFim(true);
     const ehImagem = file.type.startsWith("image/");
     const ehVideo = file.type.startsWith("video/");
@@ -737,13 +766,14 @@ export default function Painel({ sessao }) {
     // Prévia local (o remetente vê o anexo na hora, sem depender do Storage).
     const previa = tipo === "documento" ? null : URL.createObjectURL(file);
     setMensagens((prev) => [...prev, {
-      id: tempId, conversa_id: conversaId, origem: "advogado", tipo,
+      id: tempId, conversa_id: convId, origem: "advogado", tipo,
       texto: legenda || null, midia_url: previa, midia_mime: file.type, midia_nome: file.name,
       criado_em: new Date().toISOString(), _status: "enviando",
+      _file: file, _legenda: legenda, // guardados para poder reenviar se falhar
     }]);
     try {
       const nome = (file.name || "arquivo").replace(/[^\w.\-]+/g, "_");
-      const caminho = `${conversaId}/${Date.now()}-${nome}`;
+      const caminho = `${convId}/${Date.now()}-${nome}`;
       const { error: upErr } = await supabase.storage.from("anexos").upload(caminho, file, { contentType: file.type });
       if (upErr) throw new Error("Falha ao subir o arquivo (Storage): " + (upErr.message || upErr));
       const { data: pub } = supabase.storage.from("anexos").getPublicUrl(caminho);
@@ -753,7 +783,7 @@ export default function Painel({ sessao }) {
       // com a versão real que a ponte vai gravar (evita duplicar).
       setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _midiaUrlFinal: url } : m)));
       const { error: filaErr } = await supabase.from("fila_envio").insert({
-        conversa_id: conversaId, texto: legenda || "", tipo,
+        conversa_id: convId, texto: legenda || "", tipo,
         midia_url: url, midia_mime: file.type, midia_nome: nome,
       });
       if (filaErr) throw new Error("Falha ao colocar na fila (banco): " + (filaErr.message || filaErr));
@@ -795,6 +825,7 @@ export default function Painel({ sessao }) {
       alert("Este navegador não permite gravar áudio.");
       return;
     }
+    const convId = conversaId; // conversa onde a gravação começou (não muda se trocar)
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mime = MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")
@@ -812,7 +843,7 @@ export default function Painel({ sessao }) {
         if (!gravadorRef.current?._cancelado && blob.size > 0) {
           const ext = tipoBlob.includes("webm") ? "webm" : "ogg";
           const arquivo = new File([blob], `audio-${Date.now()}.${ext}`, { type: tipoBlob });
-          enviarArquivo(arquivo);
+          enviarArquivo(arquivo, "", convId);
         }
         gravadorRef.current = null;
       };
@@ -858,6 +889,12 @@ export default function Painel({ sessao }) {
 
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: "'Segoe UI', Helvetica, Arial, sans-serif", background: C.headerBar, color: C.textPrimary }}>
+      {/* Contorno de foco só para quem navega por teclado (acessibilidade),
+          sem "caixa azul" para quem usa o mouse. */}
+      <style>{`
+        *:focus { outline: none; }
+        *:focus-visible { outline: 2px solid ${C.green}; outline-offset: 2px; border-radius: 4px; }
+      `}</style>
       {/* Barra lateral */}
       <div style={{ width: 60, background: C.rail, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 16, gap: 8 }}>
         <div style={{ width: 34, height: 34, borderRadius: 8, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "#fff", marginBottom: 12 }}>Z</div>
@@ -945,12 +982,10 @@ export default function Painel({ sessao }) {
                     </div>
                   )}
                 </div>
-                {/* Botão do menuzinho (aparece no hover ou quando o menu está aberto) */}
-                {(convHover === c.id || menuConversa === c.id) && (
-                  <button onClick={(e) => { e.stopPropagation(); setMenuConversa(menuConversa === c.id ? null : c.id); }} title="Opções" style={{ position: "absolute", top: 8, right: 8, border: "none", background: c.id === conversaId ? C.listActive : C.headerBar, borderRadius: 6, cursor: "pointer", display: "flex", padding: 2 }}>
-                    <ChevronDown size={18} color={C.textSecondary} />
-                  </button>
-                )}
+                {/* Botão do menuzinho (sempre visível, realça no hover — funciona no toque) */}
+                <button aria-label="Opções da conversa" onClick={(e) => { e.stopPropagation(); setMenuConversa(menuConversa === c.id ? null : c.id); }} title="Opções" style={{ position: "absolute", top: 8, right: 8, border: "none", background: c.id === conversaId ? C.listActive : C.headerBar, borderRadius: 6, cursor: "pointer", display: "flex", padding: 2, opacity: (convHover === c.id || menuConversa === c.id) ? 1 : 0.4, transition: "opacity .12s" }}>
+                  <ChevronDown size={18} color={C.textSecondary} />
+                </button>
                 {menuConversa === c.id && (
                   <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: 32, right: 8, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 8, boxShadow: "0 6px 20px rgba(0,0,0,.3)", zIndex: 30, overflow: "hidden", minWidth: 190 }}>
                     <button onClick={(e) => { e.stopPropagation(); marcarNaoLida(c, !(c.nao_lidas > 0)); }} style={{ width: "100%", textAlign: "left", padding: "10px 14px", border: "none", background: C.panel, cursor: "pointer", color: C.textPrimary, fontSize: 14 }}>
@@ -997,10 +1032,9 @@ export default function Painel({ sessao }) {
                 )}
               </div>
               </div>
-              <button onClick={() => setBuscaAberta((v) => !v)} title="Buscar na conversa" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
+              <button aria-label="Buscar na conversa" onClick={() => setBuscaAberta((v) => !v)} title="Buscar na conversa" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
                 <Search size={19} color={buscaAberta ? C.green : C.textSecondary} />
               </button>
-              <MoreVertical size={20} color={C.textSecondary} />
             </div>
 
             {infoAberta && (
@@ -1033,7 +1067,7 @@ export default function Painel({ sessao }) {
                   {buscaConversa.trim() && (
                     <>
                       <span style={{ fontSize: 12, color: C.textSecondary, minWidth: 46, textAlign: "right" }}>
-                        {matchesBusca.length ? `${buscaIdx + 1} de ${matchesBusca.length}` : "0"}
+                        {matchesBusca.length ? `${Math.min(buscaIdx, matchesBusca.length - 1) + 1} de ${matchesBusca.length}` : "0"}
                       </span>
                       <button title="Anterior" disabled={!matchesBusca.length} onClick={() => { const i = Math.max(0, buscaIdx - 1); setBuscaIdx(i); rolarParaMatch(i); }} style={{ border: "none", background: "transparent", cursor: matchesBusca.length ? "pointer" : "default", display: "flex", padding: 0 }}>
                         <ChevronUp size={18} color={C.textSecondary} />
@@ -1089,13 +1123,21 @@ export default function Painel({ sessao }) {
                           <video controls src={m.midia_url} style={{ maxWidth: 260, borderRadius: 6, display: "block" }} />
                         )}
                         {m.tipo === "documento" && (
-                          <a href={m.midia_url || undefined} target="_blank" rel="noopener noreferrer" download style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none", color: C.textPrimary, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 6, padding: "8px 10px", minWidth: 180 }}>
-                            <FileText size={22} color={C.textSecondary} />
-                            <span style={{ flex: 1, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>{m.midia_nome || "Documento"}</span>
-                            <Download size={16} color={C.textSecondary} />
-                          </a>
+                          m.midia_url ? (
+                            <a href={m.midia_url} target="_blank" rel="noopener noreferrer" download style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none", color: C.textPrimary, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 6, padding: "8px 10px", minWidth: 180 }}>
+                              <FileText size={22} color={C.textSecondary} />
+                              <span style={{ flex: 1, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>{m.midia_nome || "Documento"}</span>
+                              <Download size={16} color={C.textSecondary} />
+                            </a>
+                          ) : (
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, color: C.textPrimary, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 6, padding: "8px 10px", minWidth: 180 }}>
+                              <FileText size={22} color={C.textSecondary} />
+                              <span style={{ flex: 1, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>{m.midia_nome || "Documento"}</span>
+                              <span style={{ fontSize: 11, color: C.textSecondary, fontStyle: "italic", flexShrink: 0 }}>indisponível</span>
+                            </div>
+                          )
                         )}
-                        {m.texto && <div style={{ fontSize: 14.2, lineHeight: 1.35, paddingRight: 42, marginTop: m.tipo !== "texto" ? 4 : 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{formatarTexto(m.texto)}</div>}
+                        {m.texto && <div style={{ fontSize: 14.2, lineHeight: 1.35, paddingRight: 42, marginTop: m.tipo !== "texto" ? 4 : 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{formatarTexto(m.texto, C.link)}</div>}
                         <div style={{ fontSize: 11, color: m._status === "erro" ? "#e53935" : C.textSecondary, textAlign: "right", marginTop: 2, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 3 }}>
                           {horaCurta(m.criado_em)}
                           {saida && (
@@ -1183,7 +1225,7 @@ export default function Painel({ sessao }) {
                     style={{ flex: 1, border: "none", outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "10px 14px", fontSize: 14.5, resize: "none", lineHeight: 1.35, maxHeight: 120, overflowY: "auto", fontFamily: "inherit" }}
                   />
                   {rascunho.trim() ? (
-                    <button onClick={enviar} style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}><Send size={24} color={C.green} /></button>
+                    <button onClick={enviar} title="Enviar" style={{ border: "none", background: C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, marginBottom: 1 }}><Send size={20} color="#fff" /></button>
                   ) : (
                     <button onClick={alternarGravacao} title="Gravar áudio" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", padding: 0 }}>
                       <Mic size={24} color={C.textSecondary} />
