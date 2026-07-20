@@ -3,7 +3,8 @@ import { supabase } from "./supabase.js";
 import {
   Search, Send, Paperclip, Smile, ChevronDown,
   MessageSquare, Mic, CheckCheck, LogOut, ArrowLeft, Sun, Moon,
-  Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp
+  Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp,
+  Zap, StickyNote, Plus, Trash2
 } from "lucide-react";
 
 // ============================================================
@@ -254,6 +255,12 @@ export default function Painel({ sessao }) {
   const [msgHover, setMsgHover] = useState(null); // id da bolha sob o mouse (mostra "responder")
   const [convHover, setConvHover] = useState(null); // id da conversa sob o mouse (realce)
   const [menuConversa, setMenuConversa] = useState(null); // id da conversa com o menuzinho aberto
+  const [modoNota, setModoNota] = useState(false); // caixa de texto no modo "nota interna"
+  const [rapidas, setRapidas] = useState([]); // mensagens rápidas (respostas prontas) da equipe
+  const [rapidasAberto, setRapidasAberto] = useState(false); // painel de mensagens rápidas aberto
+  const [gerenciarRapidas, setGerenciarRapidas] = useState(false); // mostrando o formulário de nova rápida
+  const [novaRapidaTitulo, setNovaRapidaTitulo] = useState("");
+  const [novaRapidaTexto, setNovaRapidaTexto] = useState("");
   const [largura, setLargura] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1200));
   const gravadorRef = useRef(null);
   const chunksRef = useRef([]);
@@ -262,6 +269,7 @@ export default function Painel({ sessao }) {
   const timerRef = useRef(null);
   const emojiRef = useRef(null);
   const seletorRef = useRef(null);
+  const rapidasRef = useRef(null);
 
   const C = TEMAS[modo];
   const estreito = largura < 768; // layout de celular: mostra lista OU conversa
@@ -401,6 +409,44 @@ export default function Painel({ sessao }) {
 
   useEffect(() => { carregarNaoLidasPorAdv(); }, [carregarNaoLidasPorAdv]);
 
+  // ---- Mensagens rápidas (respostas prontas, compartilhadas pela equipe) ----
+  const carregarRapidas = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from("mensagens_rapidas")
+        .select("*")
+        .order("titulo", { ascending: true });
+      if (!error) setRapidas(data || []);
+    } catch (_) { /* tabela ainda não criada: fica sem rápidas */ }
+  }, []);
+
+  useEffect(() => { carregarRapidas(); }, [carregarRapidas]);
+
+  async function salvarRapida() {
+    const titulo = novaRapidaTitulo.trim();
+    const texto = novaRapidaTexto.trim();
+    if (!titulo || !texto) { mostrarAviso("Preencha o atalho e o texto."); return; }
+    const { error } = await supabase.from("mensagens_rapidas").insert({ titulo, texto });
+    if (error) { mostrarAviso("Não consegui salvar. Verifique se a tabela 'mensagens_rapidas' foi criada."); return; }
+    setNovaRapidaTitulo(""); setNovaRapidaTexto(""); setGerenciarRapidas(false);
+    mostrarAviso("Mensagem rápida salva!");
+    carregarRapidas();
+  }
+
+  async function apagarRapida(id) {
+    const { error } = await supabase.from("mensagens_rapidas").delete().eq("id", id);
+    if (error) { mostrarAviso("Não consegui apagar."); return; }
+    carregarRapidas();
+  }
+
+  // Usa uma mensagem rápida: joga o texto na caixa (dá para editar antes de enviar).
+  function usarRapida(r) {
+    setRapidasAberto(false);
+    setModoNota(false);
+    setRascunho((atual) => (atual ? atual + " " : "") + r.texto);
+    inputRef.current?.focus();
+  }
+
   // ---- Carrega as mensagens da conversa aberta ----
   const carregarMensagens = useCallback(async (convId) => {
     if (!convId) { setMensagens([]); return; }
@@ -409,7 +455,22 @@ export default function Painel({ sessao }) {
       .select("*")
       .eq("conversa_id", convId)
       .order("criado_em", { ascending: true });
-    setMensagens(data || []);
+    // Também carrega as NOTAS internas (comentários da equipe) e mistura na
+    // linha do tempo, em ordem de horário. Notas ficam numa tabela separada
+    // e nunca são enviadas para o WhatsApp.
+    let notas = [];
+    try {
+      const { data: ns, error: nErr } = await supabase
+        .from("notas")
+        .select("*")
+        .eq("conversa_id", convId)
+        .order("criado_em", { ascending: true });
+      if (!nErr) notas = (ns || []).map((n) => ({ ...n, id: "nota-" + n.id, origem: "nota" }));
+    } catch (_) { /* tabela ainda não criada: segue sem notas */ }
+    const juntas = [...(data || []), ...notas].sort(
+      (a, b) => new Date(a.criado_em) - new Date(b.criado_em)
+    );
+    setMensagens(juntas);
     // Divisor "mensagens não lidas": marca a 1ª não lida, contando de trás para
     // frente APENAS as mensagens do contato (ignora respostas do advogado).
     const n = naoLidasRef.current || 0;
@@ -525,6 +586,18 @@ export default function Painel({ sessao }) {
             : m
         ));
       })
+      // Nota interna nova (de outro atendente): aparece na conversa aberta.
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notas" }, (payload) => {
+        const n = payload.new;
+        if (!n || n.conversa_id !== conversaId) return;
+        const item = { ...n, id: "nota-" + n.id, origem: "nota" };
+        setMensagens((prev) => {
+          if (prev.some((m) => m.id === item.id)) return prev;
+          // Substitui a versão provisória (que eu mesmo acabei de escrever), se houver.
+          const semTemp = prev.filter((m) => !(String(m.id).startsWith("nota-temp-") && m.texto === n.texto));
+          return [...semTemp, item].sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em));
+        });
+      })
       .subscribe();
     return () => { supabase.removeChannel(canal); };
   }, [conversaId, advogadoId, carregarConversas, carregarNaoLidasPorAdv]);
@@ -592,6 +665,7 @@ export default function Painel({ sessao }) {
       if (imagemAberta) setImagemAberta(null);
       else if (anexoPendente) fecharAnexoPendente();
       else if (emojiAberto) setEmojiAberto(false);
+      else if (rapidasAberto) setRapidasAberto(false);
       else if (seletorAberto) setSeletorAberto(false);
       else if (infoAberta) setInfoAberta(false);
       else if (buscaAberta) { setBuscaAberta(false); setBuscaConversa(""); }
@@ -599,17 +673,18 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [imagemAberta, anexoPendente, emojiAberto, seletorAberto, infoAberta, buscaAberta, respondendo]);
+  }, [imagemAberta, anexoPendente, emojiAberto, rapidasAberto, seletorAberto, infoAberta, buscaAberta, respondendo]);
 
-  // Clicar fora fecha o seletor de emoji e o seletor de advogado.
+  // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
     function aoClicar(e) {
       if (emojiAberto && emojiRef.current && !emojiRef.current.contains(e.target)) setEmojiAberto(false);
       if (seletorAberto && seletorRef.current && !seletorRef.current.contains(e.target)) setSeletorAberto(false);
+      if (rapidasAberto && rapidasRef.current && !rapidasRef.current.contains(e.target)) setRapidasAberto(false);
     }
     document.addEventListener("mousedown", aoClicar);
     return () => document.removeEventListener("mousedown", aoClicar);
-  }, [emojiAberto, seletorAberto]);
+  }, [emojiAberto, seletorAberto, rapidasAberto]);
 
   // Fecha o menuzinho da conversa (marcar não lida) ao clicar em qualquer lugar.
   useEffect(() => {
@@ -650,6 +725,18 @@ export default function Painel({ sessao }) {
     inputRef.current?.focus();
   }
 
+  // Insere na fila de envio. Se a coluna "enviado_por" ainda não existir no
+  // banco (SQL não rodou), tenta de novo sem ela — o envio nunca trava por isso.
+  async function inserirNaFila(payload) {
+    let { error } = await supabase.from("fila_envio").insert(payload);
+    if (error && payload.enviado_por !== undefined && /enviado_por/i.test(error.message || "")) {
+      const semAutor = { ...payload };
+      delete semAutor.enviado_por;
+      ({ error } = await supabase.from("fila_envio").insert(semAutor));
+    }
+    return { error };
+  }
+
   // Texto curto que representa uma mensagem quando ela é citada.
   function previaDe(m) {
     if (m.tipo === "imagem") return "📷 Imagem";
@@ -681,6 +768,7 @@ export default function Painel({ sessao }) {
   }
 
   async function enviar() {
+    if (modoNota) { enviarNota(); return; }
     const t = rascunho.trim();
     if (!t || !conversaId) return;
     setRascunho("");
@@ -691,25 +779,47 @@ export default function Painel({ sessao }) {
     // Mostra a mensagem NA HORA (provisória, com relóginho), como o WhatsApp Web.
     const tempId = "temp-" + Date.now() + "-" + Math.round(Math.random() * 1e6);
     const provisoria = {
-      id: tempId, conversa_id: conversaId, origem: "advogado",
+      id: tempId, conversa_id: conversaId, origem: "advogado", enviado_por: meuNome,
       tipo: "texto", texto: t, criado_em: new Date().toISOString(), _status: "enviando",
       resposta_previa: alvo?.previa || null, resposta_autor: alvo?.autor || null,
       _responderId: alvo?.id_uazapi || null,
     };
     setMensagens((prev) => [...prev, provisoria]);
     // Coloca na fila de envio; a ponte processa e manda pela Uazapi.
-    const payload = { conversa_id: conversaId, texto: t };
+    const payload = { conversa_id: conversaId, texto: t, enviado_por: meuNome };
     if (alvo) {
       payload.responder_id_uazapi = alvo.id_uazapi;
       payload.resposta_previa = alvo.previa;
       payload.resposta_autor = alvo.autor;
     }
-    const { error } = await supabase.from("fila_envio").insert(payload);
+    const { error } = await inserirNaFila(payload);
     if (error) {
       // Nem entrou na fila: marca como erro para o atendente reenviar.
       setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _status: "erro" } : m)));
       mostrarAviso("Não consegui enviar a mensagem. Toque em 'reenviar'.");
     }
+  }
+
+  // Salva uma NOTA INTERNA (comentário da equipe). Não vai para o WhatsApp:
+  // grava direto na tabela "notas", que só o painel enxerga.
+  async function enviarNota() {
+    const t = rascunho.trim();
+    if (!t || !conversaId) return;
+    setRascunho("");
+    setEmojiAberto(false);
+    setPertoDoFim(true);
+    const tempId = "nota-temp-" + Date.now();
+    const provisoria = {
+      id: tempId, conversa_id: conversaId, origem: "nota",
+      texto: t, autor: meuNome, criado_em: new Date().toISOString(), _status: "enviando",
+    };
+    setMensagens((prev) => [...prev, provisoria].sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em)));
+    const { error } = await supabase.from("notas").insert({ conversa_id: conversaId, texto: t, autor: meuNome });
+    if (error) {
+      setMensagens((prev) => prev.filter((m) => m.id !== tempId));
+      mostrarAviso("Não consegui salvar a nota. Verifique se a tabela 'notas' foi criada.");
+    }
+    // Se deu certo, o Realtime traz a versão definitiva e remove a provisória.
   }
 
   // Reenvia uma mensagem que falhou (recoloca na fila, mantendo a citação/anexo).
@@ -733,16 +843,17 @@ export default function Painel({ sessao }) {
       payload = {
         conversa_id: msg.conversa_id, texto: msg.texto || "", tipo: msg.tipo,
         midia_url: url, midia_mime: msg.midia_mime || null, midia_nome: msg.midia_nome || null,
+        enviado_por: msg.enviado_por || meuNome,
       };
     } else {
-      payload = { conversa_id: msg.conversa_id, texto: msg.texto || "" };
+      payload = { conversa_id: msg.conversa_id, texto: msg.texto || "", enviado_por: msg.enviado_por || meuNome };
       if (msg._responderId) {
         payload.responder_id_uazapi = msg._responderId;
         payload.resposta_previa = msg.resposta_previa;
         payload.resposta_autor = msg.resposta_autor;
       }
     }
-    const { error } = await supabase.from("fila_envio").insert(payload);
+    const { error } = await inserirNaFila(payload);
     if (error) {
       setMensagens((prev) => prev.map((m) => (m.id === msg.id ? { ...m, _status: "erro" } : m)));
     }
@@ -786,7 +897,7 @@ export default function Painel({ sessao }) {
     // Prévia local (o remetente vê o anexo na hora, sem depender do Storage).
     const previa = tipo === "documento" ? null : URL.createObjectURL(file);
     setMensagens((prev) => [...prev, {
-      id: tempId, conversa_id: convId, origem: "advogado", tipo,
+      id: tempId, conversa_id: convId, origem: "advogado", tipo, enviado_por: meuNome,
       texto: legenda || null, midia_url: previa, midia_mime: file.type, midia_nome: file.name,
       criado_em: new Date().toISOString(), _status: "enviando",
       _file: file, _legenda: legenda, // guardados para poder reenviar se falhar
@@ -802,9 +913,9 @@ export default function Painel({ sessao }) {
       // Mantém a prévia local na tela; guarda a URL do Storage só para casar
       // com a versão real que a ponte vai gravar (evita duplicar).
       setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _midiaUrlFinal: url } : m)));
-      const { error: filaErr } = await supabase.from("fila_envio").insert({
+      const { error: filaErr } = await inserirNaFila({
         conversa_id: convId, texto: legenda || "", tipo,
-        midia_url: url, midia_mime: file.type, midia_nome: nome,
+        midia_url: url, midia_mime: file.type, midia_nome: nome, enviado_por: meuNome,
       });
       if (filaErr) throw new Error("Falha ao colocar na fila (banco): " + (filaErr.message || filaErr));
     } catch (err) {
@@ -952,6 +1063,11 @@ export default function Painel({ sessao }) {
             );
           })}
         </div>
+        {/* Quem está logado (atendente). Passa o mouse para ver nome e e-mail. */}
+        <div title={`Você está logado como ${meuNome}${sessao?.user?.email ? ` (${sessao.user.email})` : ""}`} style={{ display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 4 }}>
+          <Avatar nome={meuNome} size={32} />
+        </div>
+        <div style={{ width: 26, height: 1, background: "rgba(255,255,255,.12)", margin: "6px 0" }} />
         <div onClick={() => setModo((m) => (m === "claro" ? "escuro" : "claro"))} title={modo === "claro" ? "Modo escuro" : "Modo claro"}
           style={{ width: 40, height: 40, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "#aebac1", cursor: "pointer" }}>
           {modo === "claro" ? <Moon size={20} /> : <Sun size={20} />}
@@ -964,7 +1080,13 @@ export default function Painel({ sessao }) {
 
       {/* Lista de conversas */}
       <div style={{ width: estreito ? "auto" : 380, flex: estreito ? 1 : "none", borderRight: `1px solid ${C.divider}`, display: (estreito && conversaId) ? "none" : "flex", flexDirection: "column", background: C.panel }}>
-        <div style={{ background: C.headerBar, padding: "12px 16px", borderBottom: `1px solid ${C.divider}` }}>
+        <div style={{ background: C.headerBar, padding: "10px 16px 12px", borderBottom: `1px solid ${C.divider}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 8, paddingBottom: 8, borderBottom: `1px solid ${C.divider}` }}>
+            <Avatar nome={meuNome} size={22} />
+            <div style={{ fontSize: 12.5, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              Você: <span style={{ color: C.textPrimary, fontWeight: 600 }}>{meuNome}</span>
+            </div>
+          </div>
           <div style={{ fontSize: 11, color: C.textSecondary, fontWeight: 600, letterSpacing: 0.3 }}>ATENDENDO COMO</div>
           <div style={{ fontSize: 15, fontWeight: 600, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{advogado ? advogado.nome : "—"}</div>
         </div>
@@ -1118,6 +1240,10 @@ export default function Painel({ sessao }) {
                 const mesmoRemetente = anterior && !novoDia && anterior.origem === m.origem;
                 const q = buscaAberta ? buscaConversa.trim().toLowerCase() : "";
                 const casa = q && (m.texto || "").toLowerCase().includes(q);
+                // Mostra quem (qual atendente) enviou, na 1ª mensagem de cada
+                // sequência ou quando muda de atendente — como o nome nos grupos.
+                const mostrarAutor = saida && m.enviado_por &&
+                  (!mesmoRemetente || (anterior && anterior.enviado_por !== m.enviado_por));
                 return (
                   <React.Fragment key={m.id}>
                     {novoDia && (
@@ -1130,8 +1256,22 @@ export default function Painel({ sessao }) {
                         MENSAGENS NÃO LIDAS
                       </div>
                     )}
+                    {m.origem === "nota" ? (
+                      // NOTA INTERNA — comentário da equipe, estilo bilhete amarelo.
+                      // Não é enviada ao WhatsApp; só a equipe vê.
+                      <div data-msg-id={m.id} style={{ alignSelf: "center", maxWidth: "80%", background: modo === "escuro" ? "#3a3320" : "#fff8d6", border: `1px solid ${modo === "escuro" ? "#5a5030" : "#f0e2a0"}`, color: C.textPrimary, borderRadius: 8, padding: "7px 12px", margin: "4px 0", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", opacity: m._status === "enviando" ? 0.7 : 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700, color: modo === "escuro" ? "#e8cf72" : "#a6852a", marginBottom: 2 }}>
+                          <StickyNote size={13} /> NOTA INTERNA · {m.autor || "equipe"}
+                        </div>
+                        <div style={{ fontSize: 14, lineHeight: 1.35, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{formatarTexto(m.texto, C.link)}</div>
+                        <div style={{ fontSize: 10.5, color: C.textSecondary, textAlign: "right", marginTop: 2 }}>{horaCurta(m.criado_em)}{m._status === "enviando" ? " · salvando…" : ""}</div>
+                      </div>
+                    ) : (
                     <div data-msg-id={m.id} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start", marginTop: mesmoRemetente ? -4 : 0 }}>
                       <div style={{ position: "relative", maxWidth: "65%", background: saida ? C.bubbleOut : C.bubbleIn, color: C.textPrimary, borderRadius: 8, padding: m.tipo === "imagem" ? 4 : "6px 9px 8px", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
+                        {mostrarAutor && (
+                          <div style={{ fontSize: 12, fontWeight: 700, color: corDe(m.enviado_por), marginBottom: 1 }}>{m.enviado_por}</div>
+                        )}
                         {m.id_uazapi && (
                           <button onClick={() => iniciarResposta(m)} title="Responder" style={{ position: "absolute", top: 3, right: 3, border: "none", background: "transparent", cursor: "pointer", opacity: msgHover === m.id ? 0.8 : 0, transition: "opacity .12s", display: "flex", padding: 0 }}>
                             <Reply size={14} color={C.textSecondary} />
@@ -1183,6 +1323,7 @@ export default function Painel({ sessao }) {
                         </div>
                       </div>
                     </div>
+                    )}
                   </React.Fragment>
                 );
               })}
@@ -1236,6 +1377,43 @@ export default function Painel({ sessao }) {
                       <Smile size={24} color={emojiAberto ? C.green : C.textSecondary} />
                     </button>
                   </span>
+                  {/* Mensagens rápidas (respostas prontas da equipe) */}
+                  <span ref={rapidasRef} style={{ display: "flex", marginBottom: 8 }}>
+                    {rapidasAberto && (
+                      <div style={{ position: "absolute", bottom: 60, left: 12, width: 330, maxHeight: 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 30 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderBottom: `1px solid ${C.divider}`, position: "sticky", top: 0, background: C.panel }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: C.textPrimary }}>Mensagens rápidas</span>
+                          <button onClick={() => setGerenciarRapidas((v) => !v)} title="Criar nova" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", color: C.green }}><Plus size={18} /></button>
+                        </div>
+                        {gerenciarRapidas && (
+                          <div style={{ padding: 10, borderBottom: `1px solid ${C.divider}`, display: "flex", flexDirection: "column", gap: 6 }}>
+                            <input value={novaRapidaTitulo} onChange={(e) => setNovaRapidaTitulo(e.target.value)} placeholder="Atalho (ex.: Saudação)" style={{ border: `1px solid ${C.divider}`, outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 6, padding: "7px 10px", fontSize: 13 }} />
+                            <textarea value={novaRapidaTexto} onChange={(e) => setNovaRapidaTexto(e.target.value)} placeholder="Texto que será inserido na mensagem" rows={3} style={{ border: `1px solid ${C.divider}`, outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 6, padding: "7px 10px", fontSize: 13, resize: "none", fontFamily: "inherit" }} />
+                            <button onClick={salvarRapida} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 6, padding: "8px 10px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Salvar</button>
+                          </div>
+                        )}
+                        {rapidas.length === 0 && !gerenciarRapidas && (
+                          <div style={{ padding: 16, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>Nenhuma resposta pronta ainda. Toque no + para criar a primeira.</div>
+                        )}
+                        {rapidas.map((r) => (
+                          <div key={r.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 12px", borderBottom: `1px solid ${C.divider}` }}>
+                            <button onClick={() => usarRapida(r)} style={{ flex: 1, minWidth: 0, textAlign: "left", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, padding: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600 }}>{r.titulo}</div>
+                              <div style={{ fontSize: 12, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.texto}</div>
+                            </button>
+                            <button onClick={() => apagarRapida(r.id)} title="Apagar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", color: C.textSecondary, marginTop: 2, flexShrink: 0 }}><Trash2 size={15} /></button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <button onClick={() => { setRapidasAberto((v) => !v); setEmojiAberto(false); }} title="Mensagens rápidas" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", padding: 0 }}>
+                      <Zap size={22} color={rapidasAberto ? C.green : C.textSecondary} />
+                    </button>
+                  </span>
+                  {/* Alternar para NOTA INTERNA (comentário que não vai ao WhatsApp) */}
+                  <button onClick={() => setModoNota((v) => !v)} title={modoNota ? "Voltar para mensagem normal" : "Escrever nota interna (só a equipe vê)"} style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", marginBottom: 9, padding: 0 }}>
+                    <StickyNote size={22} color={modoNota ? "#d4a017" : C.textSecondary} />
+                  </button>
                   <button onClick={() => fileRef.current?.click()} title="Anexar arquivo" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", marginBottom: 9, padding: 0 }}>
                     <Paperclip size={22} color={C.textSecondary} />
                   </button>
@@ -1249,11 +1427,11 @@ export default function Painel({ sessao }) {
                       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); }
                     }}
                     rows={1}
-                    placeholder="Digite uma mensagem"
-                    style={{ flex: 1, border: "none", outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "10px 14px", fontSize: 14.5, resize: "none", lineHeight: 1.35, maxHeight: 120, overflowY: "auto", fontFamily: "inherit" }}
+                    placeholder={modoNota ? "Escreva uma nota interna (só a equipe vê)" : "Digite uma mensagem"}
+                    style={{ flex: 1, border: modoNota ? "1px solid #e6cf6a" : "none", outline: "none", background: modoNota ? (modo === "escuro" ? "#3a3320" : "#fff8d6") : C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "10px 14px", fontSize: 14.5, resize: "none", lineHeight: 1.35, maxHeight: 120, overflowY: "auto", fontFamily: "inherit" }}
                   />
-                  {rascunho.trim() ? (
-                    <button onClick={enviar} title="Enviar" style={{ border: "none", background: C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, marginBottom: 1 }}><Send size={20} color="#fff" /></button>
+                  {(rascunho.trim() || modoNota) ? (
+                    <button onClick={enviar} title={modoNota ? "Salvar nota" : "Enviar"} style={{ border: "none", background: modoNota ? "#d4a017" : C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, marginBottom: 1 }}>{modoNota ? <StickyNote size={19} color="#fff" /> : <Send size={20} color="#fff" />}</button>
                   ) : (
                     <button onClick={alternarGravacao} title="Gravar áudio" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", padding: 0 }}>
                       <Mic size={24} color={C.textSecondary} />
