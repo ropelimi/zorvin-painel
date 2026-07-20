@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { supabase } from "./supabase.js";
 import {
   Search, Send, Paperclip, Smile, MoreVertical, ChevronDown,
-  MessageSquare, Mic, Play, CheckCheck, Settings, LogOut, Phone, ArrowLeft, Sun, Moon,
+  MessageSquare, Mic, Play, CheckCheck, LogOut, ArrowLeft, Sun, Moon,
   Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp
 } from "lucide-react";
 
@@ -883,14 +883,14 @@ export default function Painel({ sessao }) {
           )}
         </div>
 
-        <RailIcon ativo><MessageSquare size={20} /></RailIcon>
-        <RailIcon><Phone size={20} /></RailIcon>
+        <div title="Conversas" style={{ width: 40, height: 40, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", background: "rgba(255,255,255,.12)" }}>
+          <MessageSquare size={20} />
+        </div>
         <div style={{ flex: 1 }} />
-        <div onClick={() => setModo((m) => (m === "claro" ? "escuro" : "claro"))} title="Alternar tema"
+        <div onClick={() => setModo((m) => (m === "claro" ? "escuro" : "claro"))} title={modo === "claro" ? "Modo escuro" : "Modo claro"}
           style={{ width: 40, height: 40, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "#aebac1", cursor: "pointer" }}>
           {modo === "claro" ? <Moon size={20} /> : <Sun size={20} />}
         </div>
-        <RailIcon><Settings size={20} /></RailIcon>
         <div onClick={sair} title="Sair" style={{ width: 40, height: 40, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "#aebac1", cursor: "pointer" }}>
           <LogOut size={20} />
         </div>
