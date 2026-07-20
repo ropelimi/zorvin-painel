@@ -247,6 +247,7 @@ export default function Painel({ sessao }) {
   const [infoAberta, setInfoAberta] = useState(false); // painel de dados do contato
   const [msgHover, setMsgHover] = useState(null); // id da bolha sob o mouse (mostra "responder")
   const [convHover, setConvHover] = useState(null); // id da conversa sob o mouse (realce)
+  const [menuConversa, setMenuConversa] = useState(null); // id da conversa com o menuzinho aberto
   const [largura, setLargura] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1200));
   const gravadorRef = useRef(null);
   const chunksRef = useRef([]);
@@ -570,6 +571,14 @@ export default function Painel({ sessao }) {
     return () => document.removeEventListener("mousedown", aoClicar);
   }, [emojiAberto, seletorAberto]);
 
+  // Fecha o menuzinho da conversa (marcar não lida) ao clicar em qualquer lugar.
+  useEffect(() => {
+    if (!menuConversa) return;
+    function fecha() { setMenuConversa(null); }
+    document.addEventListener("click", fecha);
+    return () => document.removeEventListener("click", fecha);
+  }, [menuConversa]);
+
   // Ao digitar na busca da conversa, vai para a ocorrência mais recente.
   useEffect(() => {
     const q = buscaConversa.trim().toLowerCase();
@@ -619,6 +628,16 @@ export default function Painel({ sessao }) {
   }
 
   function trocarAdvogado(id) { setAdvogadoId(id); setConversaId(null); setSeletorAberto(false); setBusca(""); }
+
+  // Marca a conversa como não lida (mostra o selo verde) ou como lida.
+  async function marcarNaoLida(conv, naoLida) {
+    setMenuConversa(null);
+    const novo = naoLida ? (conv.nao_lidas > 0 ? conv.nao_lidas : 1) : 0;
+    setConversas((prev) => prev.map((x) => (x.id === conv.id ? { ...x, nao_lidas: novo } : x)));
+    // Para o "não lida" valer visualmente, sai da conversa se ela estiver aberta.
+    if (naoLida && conv.id === conversaId) setConversaId(null);
+    await supabase.from("conversas").update({ nao_lidas: novo }).eq("id", conv.id);
+  }
 
   async function enviar() {
     const t = rascunho.trim();
@@ -842,6 +861,28 @@ export default function Painel({ sessao }) {
       {/* Barra lateral */}
       <div style={{ width: 60, background: C.rail, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 16, gap: 8 }}>
         <div style={{ width: 34, height: 34, borderRadius: 8, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "#fff", marginBottom: 12 }}>Z</div>
+
+        {/* Troca de advogado (ATENDENDO COMO) — na barra lateral */}
+        <div ref={seletorRef} style={{ position: "relative", marginBottom: 6 }}>
+          <button onClick={() => setSeletorAberto((v) => !v)} title={advogado ? `Atendendo como ${advogado.nome} — clique para trocar` : "Escolher advogado"} style={{ border: "none", background: "transparent", cursor: "pointer", padding: 0, display: "flex", borderRadius: "50%", boxShadow: seletorAberto ? `0 0 0 2px ${C.green}` : "none" }}>
+            {advogado ? <Avatar nome={advogado.nome} foto={advogado.foto_url} size={42} /> : <div style={{ width: 42, height: 42, borderRadius: "50%", background: "#3a4a54" }} />}
+          </button>
+          {seletorAberto && (
+            <div style={{ position: "absolute", left: 54, top: 0, width: 280, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 8, boxShadow: "0 6px 24px rgba(0,0,0,.4)", zIndex: 60, overflow: "hidden", maxHeight: "80vh", overflowY: "auto" }}>
+              <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.divider}`, fontSize: 12, color: C.textSecondary, fontWeight: 600, letterSpacing: 0.3, position: "sticky", top: 0, background: C.panel }}>ATENDENDO COMO</div>
+              {advogados.map((a) => (
+                <button key={a.id} onClick={() => trocarAdvogado(a.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: a.id === advogadoId ? C.listActive : C.panel, border: "none", cursor: "pointer", textAlign: "left", color: C.textPrimary }}>
+                  <Avatar nome={a.nome} foto={a.foto_url} size={30} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{a.nome}</div>
+                    <div style={{ fontSize: 11, color: C.textSecondary }}>+{a.numero}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <RailIcon ativo><MessageSquare size={20} /></RailIcon>
         <RailIcon><Phone size={20} /></RailIcon>
         <div style={{ flex: 1 }} />
@@ -858,29 +899,9 @@ export default function Painel({ sessao }) {
 
       {/* Lista de conversas */}
       <div style={{ width: estreito ? "auto" : 380, flex: estreito ? 1 : "none", borderRight: `1px solid ${C.divider}`, display: (estreito && conversaId) ? "none" : "flex", flexDirection: "column", background: C.panel }}>
-        <div ref={seletorRef} style={{ background: C.headerBar, padding: "10px 16px", position: "relative" }}>
-          <div style={{ fontSize: 12, color: C.textSecondary, marginBottom: 6, fontWeight: 600, letterSpacing: 0.3 }}>ATENDENDO COMO</div>
-          <button onClick={() => setSeletorAberto((v) => !v)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 8, padding: "8px 12px", cursor: "pointer", color: C.textPrimary }}>
-            {advogado ? <Avatar nome={advogado.nome} foto={advogado.foto_url} size={34} /> : <div style={{ width: 34 }} />}
-            <div style={{ flex: 1, textAlign: "left" }}>
-              <div style={{ fontSize: 14, fontWeight: 600 }}>{advogado ? advogado.nome : "—"}</div>
-              <div style={{ fontSize: 12, color: C.textSecondary }}>{advogado ? "+" + advogado.numero : "Nenhum advogado"}</div>
-            </div>
-            <ChevronDown size={18} color={C.textSecondary} style={{ transform: seletorAberto ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
-          </button>
-          {seletorAberto && (
-            <div style={{ position: "absolute", top: "100%", left: 16, right: 16, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 8, boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 20, overflow: "hidden" }}>
-              {advogados.map((a) => (
-                <button key={a.id} onClick={() => trocarAdvogado(a.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: a.id === advogadoId ? C.listActive : C.panel, border: "none", cursor: "pointer", textAlign: "left", color: C.textPrimary }}>
-                  <Avatar nome={a.nome} foto={a.foto_url} size={30} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{a.nome}</div>
-                    <div style={{ fontSize: 11, color: C.textSecondary }}>+{a.numero}</div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
+        <div style={{ background: C.headerBar, padding: "12px 16px", borderBottom: `1px solid ${C.divider}` }}>
+          <div style={{ fontSize: 11, color: C.textSecondary, fontWeight: 600, letterSpacing: 0.3 }}>ATENDENDO COMO</div>
+          <div style={{ fontSize: 15, fontWeight: 600, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{advogado ? advogado.nome : "—"}</div>
         </div>
 
         <div style={{ padding: "8px 12px", background: C.panel }}>
@@ -902,7 +923,7 @@ export default function Painel({ sessao }) {
             const bruto = c.ultima_mensagem || "";
             const previa = midiaTipo && (bruto === "[anexo]" || bruto === "") ? rotuloMidia(midiaTipo) : bruto;
             return (
-              <button key={c.id} onClick={() => { naoLidasRef.current = c.nao_lidas || 0; setConversaId(c.id); }} onMouseEnter={() => setConvHover(c.id)} onMouseLeave={() => setConvHover((h) => (h === c.id ? null : h))} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: c.id === conversaId ? C.listActive : (convHover === c.id ? C.divider : C.panel), border: "none", borderBottom: `1px solid ${C.divider}`, cursor: "pointer", textAlign: "left", color: C.textPrimary }}>
+              <div key={c.id} role="button" onClick={() => { naoLidasRef.current = c.nao_lidas || 0; setConversaId(c.id); }} onMouseEnter={() => setConvHover(c.id)} onMouseLeave={() => setConvHover((h) => (h === c.id ? null : h))} style={{ position: "relative", width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: c.id === conversaId ? C.listActive : (convHover === c.id ? C.divider : C.panel), borderBottom: `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary }}>
                 <Avatar nome={nome} foto={c.contato?.foto_url} size={48} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -924,7 +945,20 @@ export default function Painel({ sessao }) {
                     </div>
                   )}
                 </div>
-              </button>
+                {/* Botão do menuzinho (aparece no hover ou quando o menu está aberto) */}
+                {(convHover === c.id || menuConversa === c.id) && (
+                  <button onClick={(e) => { e.stopPropagation(); setMenuConversa(menuConversa === c.id ? null : c.id); }} title="Opções" style={{ position: "absolute", top: 8, right: 8, border: "none", background: c.id === conversaId ? C.listActive : C.headerBar, borderRadius: 6, cursor: "pointer", display: "flex", padding: 2 }}>
+                    <ChevronDown size={18} color={C.textSecondary} />
+                  </button>
+                )}
+                {menuConversa === c.id && (
+                  <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: 32, right: 8, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 8, boxShadow: "0 6px 20px rgba(0,0,0,.3)", zIndex: 30, overflow: "hidden", minWidth: 190 }}>
+                    <button onClick={(e) => { e.stopPropagation(); marcarNaoLida(c, !(c.nao_lidas > 0)); }} style={{ width: "100%", textAlign: "left", padding: "10px 14px", border: "none", background: C.panel, cursor: "pointer", color: C.textPrimary, fontSize: 14 }}>
+                      {c.nao_lidas > 0 ? "Marcar como lida" : "Marcar como não lida"}
+                    </button>
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
