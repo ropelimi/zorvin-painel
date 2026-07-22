@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { supabase } from "./supabase.js";
 import {
-  Search, Send, Paperclip, Smile, ChevronDown,
+  Search, Send, Paperclip, Smile, ChevronDown, MoreVertical,
   MessageSquare, Mic, CheckCheck, LogOut, ArrowLeft, Sun, Moon,
   Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp,
-  StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check
+  StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star
 } from "lucide-react";
 
 // ============================================================
@@ -267,9 +267,10 @@ export default function Painel({ sessao }) {
   const [rapidaForm, setRapidaForm] = useState(null); // { id?, titulo, texto } sendo criada/editada
   const [tags, setTags] = useState([]); // definições das tags (id, nome, cor)
   const [tagsPorConversa, setTagsPorConversa] = useState({}); // { conversaId: [tagId,...] }
-  const [filtroTag, setFiltroTag] = useState(null); // filtrar a lista por uma tag (id) ou null
+  const [filtro, setFiltro] = useState("tudo"); // aba/filtro da lista: 'tudo' | 'naolidas' | 'favoritas' | 'tag:<id>'
   const [tagForm, setTagForm] = useState(null); // { id?, nome, cor } sendo criada/editada
   const [tagMenuAberto, setTagMenuAberto] = useState(false); // menu de aplicar tags na conversa aberta
+  const [menuTopoAberto, setMenuTopoAberto] = useState(false); // menu ⋮ do topo da lista
   const [largura, setLargura] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1200));
   const gravadorRef = useRef(null);
   const chunksRef = useRef([]);
@@ -280,6 +281,7 @@ export default function Painel({ sessao }) {
   const seletorRef = useRef(null);
   const fotoPerfilRef = useRef(null); // input de arquivo para a foto do perfil
   const tagMenuRef = useRef(null); // menu de aplicar tags (fecha ao clicar fora)
+  const menuTopoRef = useRef(null); // menu ⋮ do topo (fecha ao clicar fora)
 
   const C = TEMAS[modo];
   const estreito = largura < 768; // layout de celular: mostra lista OU conversa
@@ -387,7 +389,7 @@ export default function Painel({ sessao }) {
     if (!advId) return;
     const { data } = await supabase
       .from("conversas")
-      .select("id, ultima_mensagem, ultima_atividade, nao_lidas, contato:contato_id (nome, numero, foto_url)")
+      .select("*, contato:contato_id (nome, numero, foto_url)")
       .eq("advogado_id", advId)
       .order("ultima_atividade", { ascending: false });
     // A conversa que está aberta agora não deve mostrar contador de não lidas
@@ -801,10 +803,11 @@ export default function Painel({ sessao }) {
       if (emojiAberto && emojiRef.current && !emojiRef.current.contains(e.target)) setEmojiAberto(false);
       if (seletorAberto && seletorRef.current && !seletorRef.current.contains(e.target)) setSeletorAberto(false);
       if (tagMenuAberto && tagMenuRef.current && !tagMenuRef.current.contains(e.target)) setTagMenuAberto(false);
+      if (menuTopoAberto && menuTopoRef.current && !menuTopoRef.current.contains(e.target)) setMenuTopoAberto(false);
     }
     document.addEventListener("mousedown", aoClicar);
     return () => document.removeEventListener("mousedown", aoClicar);
-  }, [emojiAberto, seletorAberto, tagMenuAberto]);
+  }, [emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto]);
 
   // Fecha o menuzinho da conversa (marcar não lida) ao clicar em qualquer lugar.
   useEffect(() => {
@@ -886,6 +889,27 @@ export default function Painel({ sessao }) {
     if (naoLida && conv.id === conversaId) setConversaId(null);
     mostrarAviso(naoLida ? "Marcada como não lida" : "Marcada como lida");
     await supabase.from("conversas").update({ nao_lidas: novo }).eq("id", conv.id);
+  }
+
+  // Favoritar / desfavoritar uma conversa (aba "Favoritas").
+  async function alternarFavorita(conv) {
+    setMenuConversa(null);
+    const novo = !conv.favorita;
+    setConversas((prev) => prev.map((x) => (x.id === conv.id ? { ...x, favorita: novo } : x)));
+    mostrarAviso(novo ? "Adicionada aos favoritos" : "Removida dos favoritos");
+    const { error } = await supabase.from("conversas").update({ favorita: novo }).eq("id", conv.id);
+    if (error) { mostrarAviso("Não consegui favoritar. Rode o SQL da coluna 'favorita'."); carregarConversas(advogadoId); }
+  }
+
+  // Menu ⋮ do topo: marca TODAS as conversas do advogado como lidas.
+  async function marcarTodasLidas() {
+    setMenuTopoAberto(false);
+    const ids = conversas.filter((c) => (c.nao_lidas || 0) > 0).map((c) => c.id);
+    if (!ids.length) { mostrarAviso("Nenhuma conversa não lida."); return; }
+    setConversas((prev) => prev.map((c) => ({ ...c, nao_lidas: 0 })));
+    await supabase.from("conversas").update({ nao_lidas: 0 }).in("id", ids);
+    carregarNaoLidasPorAdv();
+    mostrarAviso("Todas marcadas como lidas");
   }
 
   async function enviar() {
@@ -1134,9 +1158,20 @@ export default function Painel({ sessao }) {
     return tags.filter((t) => ids.includes(t.id));
   }
 
+  // Quantas conversas não lidas há (para o número na aba "Não lidas").
+  const totalNaoLidasLista = conversas.filter((c) => (c.nao_lidas || 0) > 0).length;
+
+  // Aplica a aba/filtro selecionado a uma conversa.
+  function passaNoFiltro(c) {
+    if (filtro === "naolidas") return (c.nao_lidas || 0) > 0;
+    if (filtro === "favoritas") return !!c.favorita;
+    if (filtro.startsWith("tag:")) return (tagsPorConversa[c.id] || []).includes(filtro.slice(4));
+    return true; // 'tudo'
+  }
+
   const conversasFiltradas = conversas.filter((c) =>
     (c.contato?.nome || c.contato?.numero || "").toLowerCase().includes(busca.toLowerCase()) &&
-    (!filtroTag || (tagsPorConversa[c.id] || []).includes(filtroTag))
+    passaNoFiltro(c)
   );
 
   // Não lidas de cada advogado, para o selo na barra lateral.
@@ -1229,9 +1264,23 @@ export default function Painel({ sessao }) {
         <div style={{ background: C.headerBar, padding: "10px 16px 12px", borderBottom: `1px solid ${C.divider}` }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 8, paddingBottom: 8, borderBottom: `1px solid ${C.divider}` }}>
             <Avatar nome={meuNome} size={22} />
-            <div style={{ fontSize: 12.5, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               Você: <span style={{ color: C.textPrimary, fontWeight: 600 }}>{meuNome}</span>
             </div>
+            {/* Menu ⋮ do topo, estilo WhatsApp Web */}
+            <span ref={menuTopoRef} style={{ position: "relative", display: "flex" }}>
+              <button onClick={() => setMenuTopoAberto((v) => !v)} aria-label="Menu" title="Menu" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", color: C.textSecondary, padding: 0 }}>
+                <MoreVertical size={20} />
+              </button>
+              {menuTopoAberto && (
+                <div style={{ position: "absolute", top: 26, right: 0, width: 230, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.28)", zIndex: 50, overflow: "hidden" }}>
+                  <button onClick={marcarTodasLidas} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><CheckCheck size={17} color={C.textSecondary} /> Marcar todas como lidas</button>
+                  <button onClick={() => { setMenuTopoAberto(false); abrirConfig(); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><Settings size={17} color={C.textSecondary} /> Configurações</button>
+                  <div style={{ height: 1, background: C.divider }} />
+                  <button onClick={() => { setMenuTopoAberto(false); sair(); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: "#e5573f", fontSize: 14, fontWeight: 600, textAlign: "left" }}><LogOut size={17} /> Desconectar</button>
+                </div>
+              )}
+            </span>
           </div>
           <div style={{ fontSize: 11, color: C.textSecondary, fontWeight: 600, letterSpacing: 0.3 }}>ATENDENDO COMO</div>
           <div style={{ fontSize: 15, fontWeight: 600, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{advogado ? advogado.nome : "—"}</div>
@@ -1244,18 +1293,25 @@ export default function Painel({ sessao }) {
           </div>
         </div>
 
-        {/* Filtro por tag: chips coloridos. Clique numa tag para filtrar. */}
-        {tags.length > 0 && (
-          <div className="sem-scrollbar" style={{ display: "flex", gap: 6, overflowX: "auto", padding: "0 12px 8px", background: C.panel }}>
-            <button onClick={() => setFiltroTag(null)} style={{ flexShrink: 0, border: `1px solid ${filtroTag === null ? C.green : C.divider}`, background: filtroTag === null ? C.green : "transparent", color: filtroTag === null ? "#fff" : C.textSecondary, borderRadius: 20, padding: "3px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>Todas</button>
-            {tags.map((t) => (
-              <button key={t.id} onClick={() => setFiltroTag(filtroTag === t.id ? null : t.id)} style={{ flexShrink: 0, border: `1px solid ${t.cor}`, background: filtroTag === t.id ? t.cor : "transparent", color: filtroTag === t.id ? "#fff" : C.textPrimary, borderRadius: 20, padding: "3px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: t.cor, display: filtroTag === t.id ? "none" : "inline-block" }} />
+        {/* Abas de filtro estilo WhatsApp Web: Tudo, Não lidas, Favoritas + tags */}
+        <div className="sem-scrollbar" style={{ display: "flex", gap: 6, overflowX: "auto", padding: "0 12px 8px", background: C.panel }}>
+          {[["tudo", "Tudo", null], ["naolidas", `Não lidas${totalNaoLidasLista ? " " + totalNaoLidasLista : ""}`, null], ["favoritas", "Favoritas", null]].map(([k, label]) => {
+            const ativo = filtro === k;
+            return (
+              <button key={k} onClick={() => setFiltro(k)} style={{ flexShrink: 0, border: `1px solid ${ativo ? C.green : C.divider}`, background: ativo ? C.green : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 20, padding: "3px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
+            );
+          })}
+          {tags.map((t) => {
+            const ativo = filtro === "tag:" + t.id;
+            return (
+              <button key={t.id} onClick={() => setFiltro(ativo ? "tudo" : "tag:" + t.id)} style={{ flexShrink: 0, border: `1px solid ${t.cor}`, background: ativo ? t.cor : "transparent", color: ativo ? "#fff" : C.textPrimary, borderRadius: 20, padding: "3px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: t.cor, display: ativo ? "none" : "inline-block" }} />
                 {t.nome}
               </button>
-            ))}
-          </div>
-        )}
+            );
+          })}
+          <button onClick={() => { setAbaConfig("tags"); setTagForm({ nome: "", cor: CORES_TAG[0] }); setConfigAberta(true); }} title="Nova tag" style={{ flexShrink: 0, width: 28, height: 26, borderRadius: 20, border: `1px solid ${C.divider}`, background: "transparent", color: C.textSecondary, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Plus size={15} /></button>
+        </div>
 
         <div style={{ flex: 1, overflowY: "auto" }}>
           {conversasFiltradas.length === 0 && (
@@ -1272,9 +1328,12 @@ export default function Painel({ sessao }) {
               <div key={c.id} role="button" onClick={() => { naoLidasRef.current = c.nao_lidas || 0; setConversaId(c.id); }} onMouseEnter={() => setConvHover(c.id)} onMouseLeave={() => setConvHover((h) => (h === c.id ? null : h))} style={{ position: "relative", width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: c.id === conversaId ? C.listActive : (convHover === c.id ? C.divider : C.panel), borderBottom: `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary }}>
                 <Avatar nome={nome} foto={c.contato?.foto_url} size={48} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nome}</span>
-                    <span style={{ fontSize: 11, color: c.nao_lidas ? C.green : C.textSecondary }}>{horaDe(c.ultima_atividade)}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                      {c.favorita && <Star size={13} color="#f5c518" fill="#f5c518" style={{ flexShrink: 0 }} />}
+                      <span style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nome}</span>
+                    </span>
+                    <span style={{ fontSize: 11, color: c.nao_lidas ? C.green : C.textSecondary, flexShrink: 0 }}>{horaDe(c.ultima_atividade)}</span>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 2 }}>
                     {digitandoAtivo(c.id) ? (
@@ -1306,6 +1365,9 @@ export default function Painel({ sessao }) {
                   <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: 32, right: 8, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 8, boxShadow: "0 6px 20px rgba(0,0,0,.3)", zIndex: 30, overflow: "hidden", minWidth: 190 }}>
                     <button onClick={(e) => { e.stopPropagation(); marcarNaoLida(c, !(c.nao_lidas > 0)); }} style={{ width: "100%", textAlign: "left", padding: "10px 14px", border: "none", background: C.panel, cursor: "pointer", color: C.textPrimary, fontSize: 14 }}>
                       {c.nao_lidas > 0 ? "Marcar como lida" : "Marcar como não lida"}
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); alternarFavorita(c); }} style={{ width: "100%", textAlign: "left", padding: "10px 14px", border: "none", background: C.panel, cursor: "pointer", color: C.textPrimary, fontSize: 14 }}>
+                      {c.favorita ? "Remover dos favoritos" : "Adicionar aos favoritos"}
                     </button>
                   </div>
                 )}
