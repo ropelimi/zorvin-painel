@@ -13,6 +13,17 @@ import {
 //  em tempo real (Realtime); envia gravando na fila_envio.
 // ============================================================
 
+// URL da ponte (bridge). Ao enviar, o painel dá um "toque" nela para
+// ACORDAR a ponte na hora (o Render free hiberna) e despachar a fila —
+// senão a mensagem fica "carregando" até chegar algo de fora.
+const BRIDGE_URL = (import.meta.env.VITE_BRIDGE_URL || "").replace(/\/$/, "");
+function acordarPonte() {
+  if (!BRIDGE_URL) return;
+  // "no-cors": só precisamos que o pedido CHEGUE na ponte (acorda + despacha);
+  // não lemos a resposta. Falha de rede é ignorada de propósito.
+  try { fetch(BRIDGE_URL + "/", { mode: "no-cors", cache: "no-store" }).catch(() => {}); } catch (_) { /* ignora */ }
+}
+
 const TEMAS = {
   claro: {
     rail: "#202c33", headerBar: "#f0f2f5", panel: "#ffffff", listActive: "#f0f2f5",
@@ -858,6 +869,8 @@ export default function Painel({ sessao }) {
       delete semAutor.enviado_por_foto;
       ({ error } = await supabase.from("fila_envio").insert(semAutor));
     }
+    // Entrou na fila: cutuca a ponte para ela acordar e enviar já.
+    if (!error) acordarPonte();
     return { error };
   }
 
