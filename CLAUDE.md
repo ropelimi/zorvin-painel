@@ -81,3 +81,12 @@ RLS está **ligado** com políticas para o papel `authenticated`. Se uma consult
 - Visual o mais parecido possível com o **WhatsApp Web** (cores, bolhas, layout) — a equipe já conhece.
 - Modo claro e escuro, alternável.
 - Textos da interface em português.
+
+## Fluxo de trabalho — PRs (REGRA IMPORTANTE do Rodrigo)
+
+- **Cada entrega/pedido deve ir numa PR NOVA.** Nunca reutilizar nem estender uma PR já mesclada.
+- O Rodrigo faz o merge e, na rodada seguinte, quer **sempre uma PR nova** (não empilhar em cima da anterior).
+- Fluxo por rodada: recomeçar a branch a partir da `main` mais recente
+  (`git fetch origin main && git checkout -B <branch> origin/main`), aplicar a mudança,
+  commit, push e **abrir uma PR nova**.
+- Passo a passo (SQL, merge, etc.) vai **no chat**, não na descrição da PR — o Rodrigo não lê a descrição para instruções de setup.
