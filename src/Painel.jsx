@@ -4,7 +4,8 @@ import {
   Search, Send, Paperclip, Smile, ChevronDown, MoreVertical,
   MessageSquare, Mic, CheckCheck, LogOut, ArrowLeft, Sun, Moon,
   Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp,
-  StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star
+  StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star,
+  Archive, UserPlus, MessageSquarePlus
 } from "lucide-react";
 
 // ============================================================
@@ -291,6 +292,10 @@ export default function Painel({ sessao }) {
   const [conversaId, setConversaId] = useState(null);
   const [mensagens, setMensagens] = useState([]);
   const [seletorAberto, setSeletorAberto] = useState(false);
+  const [verArquivadas, setVerArquivadas] = useState(false); // exibindo a lista de arquivadas
+  const [contatosLista, setContatosLista] = useState([]); // todos os contatos (agenda)
+  const [buscaContato, setBuscaContato] = useState(""); // busca na agenda de contatos
+  const [contatoForm, setContatoForm] = useState(null); // { nome, numero } ao criar um contato
   const [busca, setBusca] = useState("");
   const [rascunho, setRascunho] = useState("");
   const [atendimentos, setAtendimentos] = useState({}); // { conversaId: { por, em } }
@@ -632,7 +637,43 @@ export default function Painel({ sessao }) {
     setAbaConfig("perfil");
     setRapidaForm(null);
     setTagForm(null);
+    setContatoForm(null);
     setConfigAberta(true);
+  }
+
+  // ---- Agenda de contatos (ver todos / criar novo) ----
+  const carregarContatos = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from("contatos").select("id, nome, numero, foto_url").order("nome", { ascending: true });
+      if (!error) setContatosLista(data || []);
+    } catch (_) { /* ignora */ }
+  }, []);
+
+  useEffect(() => { carregarContatos(); }, [carregarContatos]);
+
+  async function salvarContato() {
+    const nome = (contatoForm?.nome || "").trim();
+    const numero = (contatoForm?.numero || "").replace(/\D/g, "");
+    if (!nome) { mostrarAviso("Digite o nome do contato."); return; }
+    if (numero.length < 8) { mostrarAviso("Digite um número válido (com DDD)."); return; }
+    const { error } = await supabase.from("contatos").upsert({ numero, nome }, { onConflict: "numero" });
+    if (error) { mostrarAviso("Não consegui salvar. Verifique as permissões (RLS) da tabela 'contatos'."); return; }
+    setContatoForm(null);
+    mostrarAviso("Contato salvo!");
+    carregarContatos();
+  }
+
+  // Abre (ou cria) a conversa do advogado atual com este contato.
+  async function abrirConversaContato(cont) {
+    if (!advogadoId) { mostrarAviso("Escolha um advogado na barra lateral primeiro."); return; }
+    const { data: conv, error } = await supabase.from("conversas")
+      .upsert({ advogado_id: advogadoId, contato_id: cont.id }, { onConflict: "advogado_id,contato_id" })
+      .select("id").single();
+    if (error || !conv) { mostrarAviso("Não consegui abrir a conversa."); return; }
+    setConfigAberta(false);
+    setVerArquivadas(false);
+    await carregarConversas(advogadoId);
+    setConversaId(conv.id);
   }
 
   // ---- Importar histórico do WhatsApp em LOTE (vários .txt exportados) ----
@@ -972,6 +1013,7 @@ export default function Painel({ sessao }) {
       else if (anexoPendente) fecharAnexoPendente();
       else if (tagForm) setTagForm(null);
       else if (rapidaForm) setRapidaForm(null);
+      else if (contatoForm) setContatoForm(null);
       else if (configAberta) setConfigAberta(false);
       else if (emojiAberto) setEmojiAberto(false);
       else if (seletorAberto) setSeletorAberto(false);
@@ -981,7 +1023,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [imagemAberta, anexoPendente, configAberta, rapidaForm, tagForm, emojiAberto, seletorAberto, infoAberta, buscaAberta, respondendo]);
+  }, [imagemAberta, anexoPendente, configAberta, rapidaForm, tagForm, contatoForm, emojiAberto, seletorAberto, infoAberta, buscaAberta, respondendo]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -1066,7 +1108,7 @@ export default function Painel({ sessao }) {
     inputRef.current?.focus();
   }
 
-  function trocarAdvogado(id) { setAdvogadoId(id); setConversaId(null); setSeletorAberto(false); setBusca(""); }
+  function trocarAdvogado(id) { setAdvogadoId(id); setConversaId(null); setSeletorAberto(false); setBusca(""); setVerArquivadas(false); }
 
   // Marca a conversa como não lida (mostra o selo verde) ou como lida.
   async function marcarNaoLida(conv, naoLida) {
@@ -1087,6 +1129,16 @@ export default function Painel({ sessao }) {
     mostrarAviso(novo ? "Adicionada aos favoritos" : "Removida dos favoritos");
     const { error } = await supabase.from("conversas").update({ favorita: novo }).eq("id", conv.id);
     if (error) { mostrarAviso("Não consegui favoritar. Rode o SQL da coluna 'favorita'."); carregarConversas(advogadoId); }
+  }
+
+  // Arquivar / desarquivar uma conversa (some da lista, vai para "Arquivadas").
+  async function alternarArquivada(conv, arquivar) {
+    setMenuConversa(null);
+    setConversas((prev) => prev.map((x) => (x.id === conv.id ? { ...x, arquivada: arquivar } : x)));
+    if (arquivar && conv.id === conversaId) setConversaId(null);
+    mostrarAviso(arquivar ? "Conversa arquivada" : "Conversa desarquivada");
+    const { error } = await supabase.from("conversas").update({ arquivada: arquivar }).eq("id", conv.id);
+    if (error) { mostrarAviso("Não consegui arquivar. Rode o SQL da coluna 'arquivada'."); carregarConversas(advogadoId); }
   }
 
   // Menu ⋮ do topo: marca TODAS as conversas do advogado como lidas.
@@ -1346,8 +1398,11 @@ export default function Painel({ sessao }) {
     return tags.filter((t) => ids.includes(t.id));
   }
 
-  // Quantas conversas não lidas há (para o número na aba "Não lidas").
-  const totalNaoLidasLista = conversas.filter((c) => (c.nao_lidas || 0) > 0).length;
+  // Quantas conversas não lidas há (para o número na aba "Não lidas"). Só conta
+  // as que estão à vista (não arquivadas).
+  const totalNaoLidasLista = conversas.filter((c) => !c.arquivada && (c.nao_lidas || 0) > 0).length;
+  // Quantas estão arquivadas (para o contador da linha "Arquivadas").
+  const totalArquivadas = conversas.filter((c) => c.arquivada).length;
 
   // Aplica a aba/filtro selecionado a uma conversa.
   function passaNoFiltro(c) {
@@ -1358,6 +1413,7 @@ export default function Painel({ sessao }) {
   }
 
   const conversasFiltradas = conversas.filter((c) =>
+    (!!c.arquivada === verArquivadas) && // arquivadas só aparecem na visão de arquivadas
     (c.contato?.nome || c.contato?.numero || "").toLowerCase().includes(busca.toLowerCase()) &&
     passaNoFiltro(c)
   );
@@ -1502,8 +1558,23 @@ export default function Painel({ sessao }) {
         </div>
 
         <div style={{ flex: 1, overflowY: "auto" }}>
+          {/* Cabeçalho da visão "Arquivadas" (botão de voltar) */}
+          {verArquivadas && (
+            <div onClick={() => setVerArquivadas(false)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: `1px solid ${C.divider}`, cursor: "pointer", background: C.headerBar }}>
+              <ArrowLeft size={18} color={C.textSecondary} />
+              <span style={{ fontSize: 15, fontWeight: 600 }}>Arquivadas</span>
+            </div>
+          )}
+          {/* Atalho para as arquivadas (estilo WhatsApp Web), no topo da lista */}
+          {!verArquivadas && totalArquivadas > 0 && !busca && (
+            <div onClick={() => setVerArquivadas(true)} role="button" style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 16px", borderBottom: `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary }}>
+              <Archive size={20} color={C.green} />
+              <span style={{ flex: 1, fontSize: 14.5, fontWeight: 600 }}>Arquivadas</span>
+              <span style={{ fontSize: 12, color: C.textSecondary, fontWeight: 600 }}>{totalArquivadas}</span>
+            </div>
+          )}
           {conversasFiltradas.length === 0 && (
-            <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>Nenhuma conversa ainda.</div>
+            <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>{verArquivadas ? "Nenhuma conversa arquivada." : "Nenhuma conversa ainda."}</div>
           )}
           {conversasFiltradas.map((c) => {
             const nome = c.contato?.nome || ("+" + (c.contato?.numero || ""));
@@ -1556,6 +1627,9 @@ export default function Painel({ sessao }) {
                     </button>
                     <button onClick={(e) => { e.stopPropagation(); alternarFavorita(c); }} style={{ width: "100%", textAlign: "left", padding: "10px 14px", border: "none", background: C.panel, cursor: "pointer", color: C.textPrimary, fontSize: 14 }}>
                       {c.favorita ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); alternarArquivada(c, !c.arquivada); }} style={{ width: "100%", textAlign: "left", padding: "10px 14px", border: "none", borderTop: `1px solid ${C.divider}`, background: C.panel, cursor: "pointer", color: C.textPrimary, fontSize: 14 }}>
+                      {c.arquivada ? "Desarquivar" : "Arquivar"}
                     </button>
                   </div>
                 )}
@@ -1912,13 +1986,13 @@ export default function Painel({ sessao }) {
 
       {/* CONFIGURAÇÕES — perfil, aparência, sair e mensagens rápidas */}
       {configAberta && (
-        <div onClick={() => { if (!rapidaForm && !tagForm) setConfigAberta(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: estreito ? 0 : 24 }}>
+        <div onClick={() => { if (!rapidaForm && !tagForm && !contatoForm) setConfigAberta(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: estreito ? 0 : 24 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 900, height: estreito ? "100%" : "86vh", background: C.panel, borderRadius: estreito ? 0 : 12, overflow: "hidden", display: "flex", flexDirection: estreito ? "column" : "row", boxShadow: "0 10px 40px rgba(0,0,0,.4)" }}>
             {/* Menu à esquerda */}
             <div style={{ width: estreito ? "100%" : 210, background: C.headerBar, borderRight: estreito ? "none" : `1px solid ${C.divider}`, borderBottom: estreito ? `1px solid ${C.divider}` : "none", display: "flex", flexDirection: estreito ? "row" : "column", padding: estreito ? 8 : 14, gap: 4, overflowX: estreito ? "auto" : "visible" }}>
               <div style={{ fontSize: 16, fontWeight: 700, padding: "6px 10px 14px", color: C.textPrimary, display: estreito ? "none" : "block" }}>Configurações</div>
-              {[["perfil", "Perfil"], ["aparencia", "Aparência"], ["rapidas", "Mensagens rápidas"], ["tags", "Tags"], ["importar", "Importar histórico"]].map(([k, label]) => (
-                <button key={k} onClick={() => { setAbaConfig(k); setRapidaForm(null); setTagForm(null); }} style={{ textAlign: "left", border: "none", background: abaConfig === k ? C.listActive : "transparent", color: C.textPrimary, borderRadius: 8, padding: "10px 12px", fontSize: 14, fontWeight: abaConfig === k ? 600 : 500, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{label}</button>
+              {[["perfil", "Perfil"], ["aparencia", "Aparência"], ["contatos", "Contatos"], ["rapidas", "Mensagens rápidas"], ["tags", "Tags"], ["importar", "Importar histórico"]].map(([k, label]) => (
+                <button key={k} onClick={() => { setAbaConfig(k); setRapidaForm(null); setTagForm(null); setContatoForm(null); }} style={{ textAlign: "left", border: "none", background: abaConfig === k ? C.listActive : "transparent", color: C.textPrimary, borderRadius: 8, padding: "10px 12px", fontSize: 14, fontWeight: abaConfig === k ? 600 : 500, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{label}</button>
               ))}
               <div style={{ flex: 1 }} />
               <button onClick={sair} style={{ display: estreito ? "none" : "flex", alignItems: "center", gap: 8, border: "none", background: "transparent", color: "#e5573f", borderRadius: 8, padding: "10px 12px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}><LogOut size={17} /> Sair</button>
@@ -2066,6 +2140,65 @@ export default function Painel({ sessao }) {
                         </div>
                       ))}
                     </div>
+                  )}
+                </div>
+              )}
+
+              {abaConfig === "contatos" && (
+                <div style={{ maxWidth: 620 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
+                    <div>
+                      <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Contatos</div>
+                      <div style={{ fontSize: 13, color: C.textSecondary }}>Todos os contatos salvos. Crie novos e abra a conversa com o advogado atual.</div>
+                    </div>
+                    {!contatoForm && (
+                      <button onClick={() => setContatoForm({ nome: "", numero: "" })} style={{ display: "flex", alignItems: "center", gap: 6, border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}><UserPlus size={16} /> Novo</button>
+                    )}
+                  </div>
+
+                  {contatoForm ? (
+                    <div style={{ border: `1px solid ${C.divider}`, borderRadius: 10, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>Novo contato</div>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary }}>NOME</label>
+                        <input value={contatoForm.nome} onChange={(e) => setContatoForm((f) => ({ ...f, nome: e.target.value }))} placeholder="Ex.: João Silva" style={{ width: "100%", boxSizing: "border-box", marginTop: 5, border: `1px solid ${C.divider}`, outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "9px 12px", fontSize: 14 }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary }}>NÚMERO (com DDD, ex.: 5511999999999)</label>
+                        <input value={contatoForm.numero} onChange={(e) => setContatoForm((f) => ({ ...f, numero: e.target.value }))} placeholder="5511999999999" style={{ width: "100%", boxSizing: "border-box", marginTop: 5, border: `1px solid ${C.divider}`, outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "9px 12px", fontSize: 14 }} />
+                      </div>
+                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                        <button onClick={() => setContatoForm(null)} style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary, borderRadius: 8, padding: "9px 16px", fontSize: 14, cursor: "pointer" }}>Cancelar</button>
+                        <button onClick={salvarContato} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Salvar</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.searchBg, borderRadius: 8, padding: "6px 12px", marginBottom: 12 }}>
+                        <Search size={16} color={C.textSecondary} />
+                        <input value={buscaContato} onChange={(e) => setBuscaContato(e.target.value)} placeholder="Buscar contato" style={{ border: "none", outline: "none", background: "transparent", fontSize: 14, flex: 1, color: C.textPrimary }} />
+                      </div>
+                      <div style={{ border: `1px solid ${C.divider}`, borderRadius: 10, overflow: "hidden", maxHeight: "52vh", overflowY: "auto" }}>
+                        {(() => {
+                          const q = buscaContato.trim().toLowerCase();
+                          const lista = contatosLista.filter((c) => (c.nome || "").toLowerCase().includes(q) || (c.numero || "").includes(q));
+                          if (!lista.length) return <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>{contatosLista.length ? "Nenhum contato encontrado." : "Nenhum contato ainda. Toque em Novo para criar."}</div>;
+                          return lista.map((c) => (
+                            <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderBottom: `1px solid ${C.divider}` }}>
+                              <Avatar nome={c.nome || c.numero} foto={c.foto_url} size={40} />
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.nome || ("+" + c.numero)}</div>
+                                <div style={{ fontSize: 12.5, color: C.textSecondary }}>+{c.numero}</div>
+                              </div>
+                              <button onClick={() => abrirConversaContato(c)} title="Abrir conversa" style={{ display: "flex", alignItems: "center", gap: 6, border: `1px solid ${C.green}`, background: "transparent", color: C.green, borderRadius: 8, padding: "7px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}><MessageSquarePlus size={15} /> Conversar</button>
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: C.textSecondary, marginTop: 10, lineHeight: 1.4 }}>
+                        "Conversar" abre (ou cria) a conversa com o advogado que está selecionado na barra lateral ({advogado?.nome || "—"}).
+                      </div>
+                    </>
                   )}
                 </div>
               )}
