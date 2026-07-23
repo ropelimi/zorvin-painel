@@ -311,9 +311,9 @@ function Avatar({ nome, size = 40, foto }) {
 
 function BolhaAudio({ C, saida, url }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 200 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
       {url ? (
-        <audio controls src={url} style={{ height: 32, maxWidth: 220 }} />
+        <audio controls src={url} style={{ height: 32, maxWidth: "min(220px, 100%)", minWidth: 0 }} />
       ) : (
         <>
           <div style={{ width: 34, height: 34, borderRadius: "50%", background: C.searchBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -959,6 +959,9 @@ export default function Painel({ sessao }) {
     const juntas = [...(data || []), ...notas].sort(
       (a, b) => new Date(a.criado_em) - new Date(b.criado_em)
     );
+    // Se troquei de conversa enquanto esta busca estava em andamento, descarta o
+    // resultado — senão as mensagens da conversa antiga sobrescreveriam a atual.
+    if (conversaIdRef.current !== convId) return;
     // Antes de trocar a lista, libera prévias locais (blob:) da lista anterior
     // que não foram revogadas (ex.: troquei de conversa antes do eco chegar),
     // para não vazar memória.
@@ -1040,7 +1043,9 @@ export default function Painel({ sessao }) {
                 return true;
               });
             }
-            return [...base, nova];
+            // Reordena por horário: uma mensagem "real" pode ter data anterior
+            // à provisória (ou vir de backfill) e não pode cair no fim da lista.
+            return [...base, nova].sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em));
           });
           // Cheguei uma mensagem do contato e a conversa está aberta: já conta
           // como lida (zera o contador no banco), igual ao WhatsApp Web.
@@ -1126,8 +1131,14 @@ export default function Painel({ sessao }) {
         const item = { ...n, id: "nota-" + n.id, origem: "nota" };
         setMensagens((prev) => {
           if (prev.some((m) => m.id === item.id)) return prev;
-          // Substitui a versão provisória (que eu mesmo acabei de escrever), se houver.
-          const semTemp = prev.filter((m) => !(String(m.id).startsWith("nota-temp-") && m.texto === n.texto));
+          // Substitui APENAS a primeira versão provisória correspondente (que eu
+          // mesmo acabei de escrever) — se eu mandar duas notas iguais em
+          // sequência, não pode remover as duas de uma vez.
+          let removido = false;
+          const semTemp = prev.filter((m) => {
+            if (!removido && String(m.id).startsWith("nota-temp-") && m.texto === n.texto) { removido = true; return false; }
+            return true;
+          });
           return [...semTemp, item].sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em));
         });
       })
@@ -1139,7 +1150,7 @@ export default function Painel({ sessao }) {
   }, [conversaId, advogadoId, carregarConversas, carregarNaoLidasPorAdv, carregarTags, carregarTagsConversas]);
 
   // Ao abrir uma conversa, começa no fim (mensagens mais recentes).
-  useEffect(() => { setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); setRespondendo(null); setInfoAberta(false); setTagMenuAberto(false); requestAnimationFrame(() => { fimRef.current?.scrollIntoView(); if (conversaId && !estreito) inputRef.current?.focus(); }); }, [conversaId]);
+  useEffect(() => { setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); setRespondendo(null); setInfoAberta(false); setTagMenuAberto(false); setModoNota(false); requestAnimationFrame(() => { fimRef.current?.scrollIntoView(); if (conversaId && !estreito) inputRef.current?.focus(); }); }, [conversaId]);
 
   // Mensagem nova: só rola até o fim se o atendente já estava no fim
   // (não "puxa" a tela quem está lendo mensagens antigas).
@@ -1193,7 +1204,13 @@ export default function Painel({ sessao }) {
     } catch (_) { /* ignora */ }
     if (timerRef.current) clearInterval(timerRef.current);
     if (avisoTimerRef.current) clearTimeout(avisoTimerRef.current);
+    document.title = "Zorvin"; // não deixa o contador de não lidas grudado na aba após sair
   }, []);
+
+  // Libera as prévias locais (blob:) do áudio gravado e do anexo pendente quando
+  // elas mudam ou ao sair, para não vazar memória.
+  useEffect(() => () => { if (audioPronto && String(audioPronto.url).startsWith("blob:")) URL.revokeObjectURL(audioPronto.url); }, [audioPronto]);
+  useEffect(() => () => { if (anexoPendente && String(anexoPendente.url).startsWith("blob:")) URL.revokeObjectURL(anexoPendente.url); }, [anexoPendente]);
 
   // Tecla Esc fecha o que estiver aberto (imagem, emoji, seletor, busca, citação).
   useEffect(() => {
@@ -1945,9 +1962,11 @@ export default function Painel({ sessao }) {
         ) : (
           <>
             <div style={{ background: C.headerBar, padding: "10px 16px", display: "flex", alignItems: "center", gap: 12, borderBottom: `1px solid ${C.divider}` }}>
-              <button onClick={() => setConversaId(null)} style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
-                <ArrowLeft size={20} color={C.textSecondary} />
-              </button>
+              {estreito && (
+                <button onClick={() => setConversaId(null)} title="Voltar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
+                  <ArrowLeft size={20} color={C.textSecondary} />
+                </button>
+              )}
               <div onClick={() => setInfoAberta(true)} title="Ver dados do contato" style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, cursor: "pointer", minWidth: 0 }}>
               <Avatar nome={conversa.contato?.nome || conversa.contato?.numero} foto={conversa.contato?.foto_url} size={40} />
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -2114,7 +2133,7 @@ export default function Painel({ sessao }) {
                           <div style={{ fontSize: 12, fontWeight: 700, color: corDe(m.enviado_por), marginBottom: 1 }}>{m.enviado_por}</div>
                         )}
                         {m.id_uazapi && (
-                          <button onClick={() => iniciarResposta(m)} title="Responder" style={{ position: "absolute", top: 3, right: 3, border: "none", background: "transparent", cursor: "pointer", opacity: msgHover === m.id ? 0.8 : 0, transition: "opacity .12s", display: "flex", padding: 0 }}>
+                          <button onClick={() => iniciarResposta(m)} title="Responder" style={{ position: "absolute", top: 3, right: 3, border: "none", background: "transparent", cursor: "pointer", opacity: (estreito || msgHover === m.id) ? 0.75 : 0, transition: "opacity .12s", display: "flex", padding: 0 }}>
                             <Reply size={14} color={C.textSecondary} />
                           </button>
                         )}
@@ -2125,11 +2144,11 @@ export default function Painel({ sessao }) {
                           </div>
                         )}
                         {m.tipo === "imagem" && m.midia_url && (
-                          <img src={m.midia_url} alt="imagem" onClick={() => setImagemAberta(m.midia_url)} onLoad={() => { if (pertoDoFim) fimRef.current?.scrollIntoView(); }} style={{ maxWidth: 240, borderRadius: 6, display: "block", cursor: "pointer" }} />
+                          <img src={m.midia_url} alt="imagem" onClick={() => setImagemAberta(m.midia_url)} onLoad={() => { if (pertoDoFim) fimRef.current?.scrollIntoView(); }} style={{ maxWidth: "min(240px, 100%)", borderRadius: 6, display: "block", cursor: "pointer" }} />
                         )}
                         {m.tipo === "audio" && <BolhaAudio C={C} saida={saida} url={m.midia_url} />}
                         {m.tipo === "video" && m.midia_url && (
-                          <video controls src={m.midia_url} style={{ maxWidth: 260, borderRadius: 6, display: "block" }} />
+                          <video controls src={m.midia_url} style={{ maxWidth: "min(260px, 100%)", borderRadius: 6, display: "block" }} />
                         )}
                         {m.tipo === "documento" && (
                           m.midia_url ? (
@@ -2566,7 +2585,7 @@ export default function Painel({ sessao }) {
                               <div style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nomeContatoDoItem(it)}</div>
                               <div style={{ fontSize: 12, color: C.textSecondary }}>{it.msgs.length} mensagens</div>
                             </div>
-                            <input value={it.numero} onChange={(e) => { const v = e.target.value; setImpArquivos((prev) => prev.map((x, i) => i === idx ? { ...x, numero: v } : x)); }} placeholder="Número (ex.: 5511999999999)" style={{ width: 190, boxSizing: "border-box", border: `1px solid ${numeroDeTexto(it.numero) ? C.divider : "#e5573f"}`, background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "8px 10px", fontSize: 13 }} />
+                            <input value={it.numero} onChange={(e) => { const v = e.target.value; setImpArquivos((prev) => prev.map((x, i) => i === idx ? { ...x, numero: v } : x)); }} placeholder="Número (ex.: 5511999999999)" style={{ width: "min(190px, 44%)", flexShrink: 0, boxSizing: "border-box", border: `1px solid ${numeroDeTexto(it.numero) ? C.divider : "#e5573f"}`, background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "8px 10px", fontSize: 13 }} />
                             <button onClick={() => setImpArquivos((prev) => prev.filter((_, i) => i !== idx))} title="Remover" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex", flexShrink: 0 }}><X size={17} /></button>
                           </div>
                         ))}
