@@ -844,7 +844,13 @@ export default function Painel({ sessao }) {
     const juntas = [...(data || []), ...notas].sort(
       (a, b) => new Date(a.criado_em) - new Date(b.criado_em)
     );
-    setMensagens(juntas);
+    // Antes de trocar a lista, libera prévias locais (blob:) da lista anterior
+    // que não foram revogadas (ex.: troquei de conversa antes do eco chegar),
+    // para não vazar memória.
+    setMensagens((prev) => {
+      prev.forEach((m) => { if (m.midia_url && String(m.midia_url).startsWith("blob:")) URL.revokeObjectURL(m.midia_url); });
+      return juntas;
+    });
     // Divisor "mensagens não lidas": marca a 1ª não lida, contando de trás para
     // frente APENAS as mensagens do contato (ignora respostas do advogado).
     const n = naoLidasRef.current || 0;
@@ -896,7 +902,7 @@ export default function Painel({ sessao }) {
   useEffect(() => {
     const canal = supabase
       .channel("zorvin-realtime")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "mensagens" }, (payload) => {
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "mensagens" }, async (payload) => {
         const nova = payload.new;
         if (nova.conversa_id === conversaId) {
           setMensagens((prev) => {
@@ -927,17 +933,24 @@ export default function Painel({ sessao }) {
             supabase.from("conversas").update({ nao_lidas: 0 }).eq("id", conversaId).then(() => {});
           }
         }
-        // Aviso de nova mensagem (som + notificação) quando não estou olhando
-        // exatamente para ela — mas SÓ se a conversa for do advogado atual
-        // (evita beeps de outros advogados que nem estão na tela).
-        const doAdvogadoAtual = conversasRef.current.some((c) => c.id === nova.conversa_id);
+        // Esta mensagem é do advogado atualmente aberto? Se a conversa já está
+        // na lista, sim. Se não está (pode ser uma conversa NOVA — lead novo),
+        // confirmamos com uma consulta rápida do advogado_id.
+        let doAdvogadoAtual = conversasRef.current.some((c) => c.id === nova.conversa_id);
+        if (!doAdvogadoAtual && nova.origem === "contato" && advogadoId) {
+          const { data } = await supabase.from("conversas").select("advogado_id").eq("id", nova.conversa_id).maybeSingle();
+          doAdvogadoAtual = !!data && data.advogado_id === advogadoId;
+        }
+        // Aviso de nova mensagem (som + notificação) — inclusive para conversa
+        // nova — quando não estou olhando exatamente para ela.
         if (nova.origem === "contato" && doAdvogadoAtual && (document.hidden || nova.conversa_id !== conversaId)) {
           tocarBeep();
           notificarDesktop("Nova mensagem", nova.texto || "Mídia recebida");
         }
-        // Atualiza a lista de conversas (prévia / ordem / não lidas).
-        carregarConversas(advogadoId);
-        carregarNaoLidasPorAdv();
+        // Recarrega a lista só quando é do advogado atual (evita reconsultar a
+        // lista inteira a cada mensagem de todo o escritório).
+        if (doAdvogadoAtual) carregarConversas(advogadoId);
+        carregarNaoLidasPorAdv(); // selos do rail de todos os advogados
       })
       // Status de uma mensagem mudou (ex.: foi lida) — atualiza o "tiquinho".
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "mensagens" }, (payload) => {
@@ -1033,6 +1046,7 @@ export default function Painel({ sessao }) {
       if (gravadorRef.current) { gravadorRef.current._cancelado = true; gravadorRef.current.stop(); }
     } catch (_) { /* ignora */ }
     if (timerRef.current) clearInterval(timerRef.current);
+    if (avisoTimerRef.current) clearTimeout(avisoTimerRef.current);
   }, []);
 
   // Tecla Esc fecha o que estiver aberto (imagem, emoji, seletor, busca, citação).
@@ -1041,11 +1055,15 @@ export default function Painel({ sessao }) {
       if (e.key !== "Escape") return;
       if (imagemAberta) setImagemAberta(null);
       else if (anexoPendente) fecharAnexoPendente();
+      else if (gravando) cancelarGravacao();
       else if (tagForm) setTagForm(null);
       else if (rapidaForm) setRapidaForm(null);
       else if (contatoForm) setContatoForm(null);
       else if (configAberta) setConfigAberta(false);
       else if (novaConversaAberta) setNovaConversaAberta(false);
+      else if (menuConversa) setMenuConversa(null);
+      else if (menuTopoAberto) setMenuTopoAberto(false);
+      else if (tagMenuAberto) setTagMenuAberto(false);
       else if (emojiAberto) setEmojiAberto(false);
       else if (seletorAberto) setSeletorAberto(false);
       else if (infoAberta) setInfoAberta(false);
@@ -1054,7 +1072,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [imagemAberta, anexoPendente, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, emojiAberto, seletorAberto, infoAberta, buscaAberta, respondendo]);
+  }, [imagemAberta, anexoPendente, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, menuConversa, menuTopoAberto, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, buscaAberta, respondendo]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -1500,7 +1518,7 @@ export default function Painel({ sessao }) {
         .sem-scrollbar::-webkit-scrollbar { display: none; }
       `}</style>
       {/* Barra lateral */}
-      <div style={{ width: 60, background: C.rail, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 16, gap: 8 }}>
+      <div style={{ width: 60, background: C.rail, display: (estreito && conversaId) ? "none" : "flex", flexDirection: "column", alignItems: "center", paddingTop: 16, gap: 8 }}>
         <div style={{ width: 34, height: 34, borderRadius: 8, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "#fff", marginBottom: 12 }}>Z</div>
 
         {/* Advogados: um avatar por advogado. O atual fica destacado (anel
@@ -1681,7 +1699,7 @@ export default function Painel({ sessao }) {
             const bruto = c.ultima_mensagem || "";
             const previa = midiaTipo && (bruto === "[anexo]" || bruto === "") ? rotuloMidia(midiaTipo) : bruto;
             return (
-              <div key={c.id} role="button" onClick={() => { naoLidasRef.current = c.nao_lidas || 0; setConversaId(c.id); }} onMouseEnter={() => setConvHover(c.id)} onMouseLeave={() => setConvHover((h) => (h === c.id ? null : h))} style={{ position: "relative", width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: c.id === conversaId ? C.listActive : (convHover === c.id ? C.divider : C.panel), borderBottom: `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary }}>
+              <div key={c.id} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); naoLidasRef.current = c.nao_lidas || 0; setConversaId(c.id); } }} onClick={() => { naoLidasRef.current = c.nao_lidas || 0; setConversaId(c.id); }} onMouseEnter={() => setConvHover(c.id)} onMouseLeave={() => setConvHover((h) => (h === c.id ? null : h))} style={{ position: "relative", width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: c.id === conversaId ? C.listActive : (convHover === c.id ? C.divider : C.panel), borderBottom: `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary }}>
                 <Avatar nome={nome} foto={c.contato?.foto_url} size={48} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
@@ -1700,8 +1718,8 @@ export default function Painel({ sessao }) {
                     {c.nao_lidas > 0 && <span style={{ background: C.unread, color: "#fff", borderRadius: 12, fontSize: 11, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>{c.nao_lidas}</span>}
                   </div>
                   {atendidoPorOutro(c.id) && (
-                    <div style={{ fontSize: 11, color: "#e0a400", marginTop: 3, display: "flex", alignItems: "center", gap: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#e0a400", display: "inline-block", flexShrink: 0 }} />
+                    <div style={{ fontSize: 11, color: modo === "escuro" ? "#e0a400" : "#9a6a00", marginTop: 3, display: "flex", alignItems: "center", gap: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: modo === "escuro" ? "#e0a400" : "#9a6a00", display: "inline-block", flexShrink: 0 }} />
                       {atendidoPorOutro(c.id)} está atendendo
                     </div>
                   )}
@@ -1761,7 +1779,7 @@ export default function Painel({ sessao }) {
                 {digitandoAtivo(conversa.id) ? (
                   <div style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>digitando…</div>
                 ) : atendidoPorOutro(conversa.id) ? (
-                  <div style={{ fontSize: 12, color: "#d98a00", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                  <div style={{ fontSize: 12, color: modo === "escuro" ? "#e0a400" : "#8a6d00", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
                     <AlertCircle size={13} /> {atendidoPorOutro(conversa.id)} também está nesta conversa
                   </div>
                 ) : (
@@ -2018,7 +2036,7 @@ export default function Painel({ sessao }) {
                 <>
                   <span ref={emojiRef} style={{ display: "flex", marginBottom: 8 }}>
                     {emojiAberto && (
-                      <div style={{ position: "absolute", bottom: 60, left: 12, width: 300, maxHeight: 220, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", padding: 8, display: "flex", flexWrap: "wrap", gap: 4, zIndex: 30 }}>
+                      <div style={{ position: "absolute", bottom: 60, left: 12, width: "min(300px, calc(100vw - 24px))", maxHeight: 220, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", padding: 8, display: "flex", flexWrap: "wrap", gap: 4, zIndex: 30 }}>
                         {EMOJIS.map((e) => (
                           <button key={e} onClick={() => inserirEmoji(e)} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 22, lineHeight: 1, padding: 4, borderRadius: 6 }}>{e}</button>
                         ))}
@@ -2083,7 +2101,7 @@ export default function Painel({ sessao }) {
 
       {/* CONFIGURAÇÕES — perfil, aparência, sair e mensagens rápidas */}
       {configAberta && (
-        <div onClick={() => { if (!rapidaForm && !tagForm && !contatoForm) setConfigAberta(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: estreito ? 0 : 24 }}>
+        <div onClick={() => { if (!rapidaForm && !tagForm && !contatoForm && !importando && !(abaConfig === "importar" && impArquivos.length)) setConfigAberta(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: estreito ? 0 : 24 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 900, height: estreito ? "100%" : "86vh", background: C.panel, borderRadius: estreito ? 0 : 12, overflow: "hidden", display: "flex", flexDirection: estreito ? "column" : "row", boxShadow: "0 10px 40px rgba(0,0,0,.4)" }}>
             {/* Menu à esquerda */}
             <div style={{ width: estreito ? "100%" : 210, background: C.headerBar, borderRight: estreito ? "none" : `1px solid ${C.divider}`, borderBottom: estreito ? `1px solid ${C.divider}` : "none", display: "flex", flexDirection: estreito ? "row" : "column", padding: estreito ? 8 : 14, gap: 4, overflowX: estreito ? "auto" : "visible" }}>
@@ -2409,7 +2427,7 @@ export default function Painel({ sessao }) {
               </div>
             )}
             <div style={{ display: "flex", alignItems: "flex-end", gap: 10, width: "100%", background: C.headerBar, borderRadius: 10, padding: "8px 12px" }}>
-              <input autoFocus value={legendaAnexo} onChange={(e) => setLegendaAnexo(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") confirmarEnviarAnexo(); }} placeholder="Adicione uma legenda…" style={{ flex: 1, border: "none", outline: "none", background: "transparent", color: C.textPrimary, fontSize: 14.5, padding: "8px 4px" }} />
+              <input autoFocus value={legendaAnexo} onChange={(e) => setLegendaAnexo(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); confirmarEnviarAnexo(); } }} placeholder="Adicione uma legenda…" style={{ flex: 1, border: "none", outline: "none", background: "transparent", color: C.textPrimary, fontSize: 14.5, padding: "8px 4px" }} />
               <button onClick={confirmarEnviarAnexo} title="Enviar" style={{ border: "none", background: C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 44, height: 44, borderRadius: "50%", flexShrink: 0 }}>
                 <Send size={20} color="#fff" />
               </button>
@@ -2428,10 +2446,3 @@ export default function Painel({ sessao }) {
   );
 }
 
-function RailIcon({ children, ativo }) {
-  return (
-    <div style={{ width: 40, height: 40, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: ativo ? "#fff" : "#aebac1", background: ativo ? "rgba(255,255,255,.12)" : "transparent", cursor: "pointer" }}>
-      {children}
-    </div>
-  );
-}
