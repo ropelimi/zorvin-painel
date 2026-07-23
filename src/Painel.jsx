@@ -5,7 +5,7 @@ import {
   MessageSquare, Mic, CheckCheck, LogOut, ArrowLeft, Sun, Moon,
   Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp,
   StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star,
-  Archive, UserPlus, MessageSquarePlus, SquarePen
+  Archive, UserPlus, MessageSquarePlus, SquarePen, Pause
 } from "lucide-react";
 
 // ============================================================
@@ -318,6 +318,8 @@ export default function Painel({ sessao }) {
   const [buscaAberta, setBuscaAberta] = useState(false);
   const [respondendo, setRespondendo] = useState(null); // { id_uazapi, previa, autor }
   const [gravando, setGravando] = useState(false);
+  const [gravacaoPausada, setGravacaoPausada] = useState(false); // gravação em pausa
+  const [audioPronto, setAudioPronto] = useState(null); // { file, url, convId } aguardando prévia/envio
   const [tempoGravacao, setTempoGravacao] = useState(0); // segundos gravados
   const [imagemAberta, setImagemAberta] = useState(null); // URL da imagem em tela cheia
   const [aviso, setAviso] = useState(null); // toast discreto (texto)
@@ -1055,6 +1057,7 @@ export default function Painel({ sessao }) {
       if (e.key !== "Escape") return;
       if (imagemAberta) setImagemAberta(null);
       else if (anexoPendente) fecharAnexoPendente();
+      else if (audioPronto) descartarAudioPronto();
       else if (gravando) cancelarGravacao();
       else if (tagForm) setTagForm(null);
       else if (rapidaForm) setRapidaForm(null);
@@ -1072,7 +1075,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [imagemAberta, anexoPendente, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, menuConversa, menuTopoAberto, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, buscaAberta, respondendo]);
+  }, [imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, menuConversa, menuTopoAberto, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, buscaAberta, respondendo]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -1384,12 +1387,7 @@ export default function Painel({ sessao }) {
   }
 
   // ---- Gravação de áudio pelo microfone (mensagem de voz) ----
-  async function alternarGravacao() {
-    // Se já está gravando, para e envia.
-    if (gravando) {
-      try { gravadorRef.current && gravadorRef.current.stop(); } catch (_) { /* ignora */ }
-      return;
-    }
+  async function iniciarGravacao() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       alert("Este navegador não permite gravar áudio.");
       return;
@@ -1407,24 +1405,49 @@ export default function Painel({ sessao }) {
         stream.getTracks().forEach((t) => t.stop());
         if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
         setGravando(false);
+        setGravacaoPausada(false);
         const tipoBlob = gravador.mimeType || "audio/ogg";
         const blob = new Blob(chunksRef.current, { type: tipoBlob });
         if (!gravadorRef.current?._cancelado && blob.size > 0) {
           const ext = tipoBlob.includes("webm") ? "webm" : "ogg";
           const arquivo = new File([blob], `audio-${Date.now()}.${ext}`, { type: tipoBlob });
-          enviarArquivo(arquivo, "", convId);
+          // Não envia direto: mostra a PRÉVIA para ouvir antes de enviar.
+          setAudioPronto({ file: arquivo, url: URL.createObjectURL(blob), convId });
         }
         gravadorRef.current = null;
       };
       gravadorRef.current = gravador;
       gravador.start();
       setGravando(true);
+      setGravacaoPausada(false);
       setTempoGravacao(0);
       timerRef.current = setInterval(() => setTempoGravacao((t) => t + 1), 1000);
     } catch (_) {
       alert("Não consegui acessar o microfone. Verifique a permissão do navegador.");
       setGravando(false);
     }
+  }
+
+  // Pausa / retoma a gravação (o cronômetro pausa junto).
+  function pausarRetomarGravacao() {
+    const g = gravadorRef.current;
+    if (!g) return;
+    try {
+      if (g.state === "recording") {
+        g.pause();
+        setGravacaoPausada(true);
+        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+      } else if (g.state === "paused") {
+        g.resume();
+        setGravacaoPausada(false);
+        timerRef.current = setInterval(() => setTempoGravacao((t) => t + 1), 1000);
+      }
+    } catch (_) { /* ignora */ }
+  }
+
+  // Finaliza a gravação → o onstop monta a prévia (ainda não envia).
+  function finalizarGravacao() {
+    try { gravadorRef.current && gravadorRef.current.stop(); } catch (_) { /* ignora */ }
   }
 
   function cancelarGravacao() {
@@ -1434,6 +1457,21 @@ export default function Painel({ sessao }) {
       try { gravadorRef.current.stop(); } catch (_) { /* ignora */ }
     }
     setGravando(false);
+    setGravacaoPausada(false);
+  }
+
+  // Prévia pronta: envia o áudio gravado.
+  function enviarAudioPronto() {
+    if (!audioPronto) return;
+    enviarArquivo(audioPronto.file, "", audioPronto.convId);
+    try { URL.revokeObjectURL(audioPronto.url); } catch (_) { /* ignora */ }
+    setAudioPronto(null);
+  }
+
+  // Prévia pronta: descarta o áudio gravado.
+  function descartarAudioPronto() {
+    if (audioPronto) { try { URL.revokeObjectURL(audioPronto.url); } catch (_) { /* ignora */ } }
+    setAudioPronto(null);
   }
 
   async function sair() {
@@ -1890,10 +1928,9 @@ export default function Painel({ sessao }) {
                 const mesmoRemetente = anterior && !novoDia && anterior.origem === m.origem;
                 const q = buscaAberta ? buscaConversa.trim().toLowerCase() : "";
                 const casa = q && (m.texto || "").toLowerCase().includes(q);
-                // Mostra quem (qual atendente) enviou, na 1ª mensagem de cada
-                // sequência ou quando muda de atendente — como o nome nos grupos.
-                const mostrarAutor = saida && m.enviado_por &&
-                  (!mesmoRemetente || (anterior && anterior.enviado_por !== m.enviado_por));
+                // Mostra quem (qual atendente) enviou em TODAS as mensagens
+                // enviadas — a equipe sempre sabe quem respondeu.
+                const mostrarAutor = saida && !!m.enviado_por;
                 // Última mensagem de uma sequência do mesmo remetente: recebe o
                 // avatarzinho à direita (como o WhatsApp mostra a foto do grupo).
                 const proxima = mensagens[i + 1];
@@ -1930,7 +1967,7 @@ export default function Painel({ sessao }) {
                             </div>
                           </div>
                         </div>
-                        <div style={{ width: 28, flexShrink: 0 }}><Avatar nome={m.autor || "equipe"} foto={m.autor_foto} size={28} /></div>
+                        <div style={{ width: 28, flexShrink: 0 }}><Avatar nome={m.autor || "equipe"} foto={m.autor_foto || (m.autor === meuNome ? minhaFoto : null)} size={28} /></div>
                       </div>
                     ) : (
                     <div data-msg-id={m.id} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6, marginTop: mesmoRemetente ? -4 : 0 }}>
@@ -1989,7 +2026,7 @@ export default function Painel({ sessao }) {
                         </div>
                       </div>
                       {saida && (
-                        <div style={{ width: 28, flexShrink: 0 }}>{ultimaDoGrupo ? <Avatar nome={m.enviado_por || meuNome} foto={m.enviado_por_foto} size={28} /> : null}</div>
+                        <div style={{ width: 28, flexShrink: 0 }}>{ultimaDoGrupo ? <Avatar nome={m.enviado_por || meuNome} foto={m.enviado_por_foto || (m.enviado_por === meuNome ? minhaFoto : null)} size={28} /> : null}</div>
                       )}
                     </div>
                     )}
@@ -2020,16 +2057,30 @@ export default function Painel({ sessao }) {
             )}
 
             <div style={{ background: C.headerBar, padding: "10px 16px", display: "flex", alignItems: "flex-end", gap: 10, position: "relative" }}>
-              {gravando ? (
-                <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 12, padding: "6px 2px" }}>
-                  <button onClick={cancelarGravacao} title="Cancelar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
-                    <X size={22} color={C.textSecondary} />
+              {audioPronto ? (
+                // Prévia do áudio gravado: ouça antes de enviar.
+                <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, padding: "6px 2px" }}>
+                  <button onClick={descartarAudioPronto} title="Descartar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
+                    <Trash2 size={20} color="#e53935" />
                   </button>
-                  <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#e53935", display: "inline-block", flexShrink: 0 }} />
-                  <span style={{ fontSize: 15, fontWeight: 600, color: C.textPrimary, minWidth: 44 }}>{formatarDuracao(tempoGravacao)}</span>
-                  <span style={{ flex: 1, color: C.textSecondary, fontSize: 14 }}>Gravando… toque no verde para enviar</span>
-                  <button onClick={alternarGravacao} title="Enviar áudio" style={{ border: "none", background: C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0 }}>
+                  <audio controls src={audioPronto.url} style={{ flex: 1, height: 36, maxWidth: "100%" }} />
+                  <button onClick={enviarAudioPronto} title="Enviar áudio" style={{ border: "none", background: C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0 }}>
                     <Send size={20} color="#fff" />
+                  </button>
+                </div>
+              ) : gravando ? (
+                <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, padding: "6px 2px" }}>
+                  <button onClick={cancelarGravacao} title="Cancelar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
+                    <Trash2 size={20} color="#e53935" />
+                  </button>
+                  <span style={{ width: 10, height: 10, borderRadius: "50%", background: gravacaoPausada ? C.textSecondary : "#e53935", display: "inline-block", flexShrink: 0 }} />
+                  <span style={{ fontSize: 15, fontWeight: 600, color: C.textPrimary, minWidth: 44 }}>{formatarDuracao(tempoGravacao)}</span>
+                  <span style={{ flex: 1, color: C.textSecondary, fontSize: 14 }}>{gravacaoPausada ? "Pausado" : "Gravando…"}</span>
+                  <button onClick={pausarRetomarGravacao} title={gravacaoPausada ? "Retomar" : "Pausar"} style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", padding: 0 }}>
+                    {gravacaoPausada ? <Mic size={24} color={C.green} /> : <Pause size={24} color={C.textSecondary} />}
+                  </button>
+                  <button onClick={finalizarGravacao} title="Concluir gravação" style={{ border: "none", background: C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0 }}>
+                    <Check size={22} color="#fff" />
                   </button>
                 </div>
               ) : (
@@ -2088,7 +2139,7 @@ export default function Painel({ sessao }) {
                   {(rascunho.trim() || modoNota) ? (
                     <button onClick={enviar} title={modoNota ? "Salvar nota" : "Enviar"} style={{ border: "none", background: modoNota ? "#d4a017" : C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, marginBottom: 1 }}>{modoNota ? <StickyNote size={19} color="#fff" /> : <Send size={20} color="#fff" />}</button>
                   ) : (
-                    <button onClick={alternarGravacao} title="Gravar áudio" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", padding: 0 }}>
+                    <button onClick={iniciarGravacao} title="Gravar áudio" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", padding: 0 }}>
                       <Mic size={24} color={C.textSecondary} />
                     </button>
                   )}
