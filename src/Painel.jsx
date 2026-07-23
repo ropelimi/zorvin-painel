@@ -111,6 +111,58 @@ function hashCurto(s) {
   return (h >>> 0).toString(36);
 }
 
+// Lê um .zip exportado do WhatsApp direto no navegador (sem biblioteca
+// externa: usa o DecompressionStream nativo). Devolve os arquivos .txt de
+// dentro como { nome, texto }. Assim o Rodrigo sobe o .zip sem precisar
+// extrair antes.
+async function lerTxtsDoZip(file) {
+  if (typeof DecompressionStream === "undefined") {
+    throw new Error("navegador sem suporte a zip");
+  }
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const dv = new DataView(buf.buffer);
+  // Acha o "End of Central Directory" (assinatura 0x06054b50), varrendo do fim.
+  let eocd = -1;
+  const minimo = Math.max(0, buf.length - 22 - 65536);
+  for (let i = buf.length - 22; i >= minimo; i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error("zip inválido");
+  const total = dv.getUint16(eocd + 10, true);
+  let off = dv.getUint32(eocd + 16, true); // início do diretório central
+  const dec = new TextDecoder("utf-8");
+  const saida = [];
+  for (let n = 0; n < total && off + 46 <= buf.length; n++) {
+    if (dv.getUint32(off, true) !== 0x02014b50) break; // assinatura do diretório
+    const metodo = dv.getUint16(off + 10, true);
+    const compSize = dv.getUint32(off + 20, true);
+    const nomeLen = dv.getUint16(off + 28, true);
+    const extraLen = dv.getUint16(off + 30, true);
+    const comLen = dv.getUint16(off + 32, true);
+    const localOff = dv.getUint32(off + 42, true);
+    const nome = dec.decode(buf.subarray(off + 46, off + 46 + nomeLen));
+    off += 46 + nomeLen + extraLen + comLen;
+    if (!/\.txt$/i.test(nome)) continue; // só interessa o texto da conversa
+    if (dv.getUint32(localOff, true) !== 0x04034b50) continue; // cabeçalho local
+    const lNomeLen = dv.getUint16(localOff + 26, true);
+    const lExtraLen = dv.getUint16(localOff + 28, true);
+    const dataIni = localOff + 30 + lNomeLen + lExtraLen;
+    const comp = buf.subarray(dataIni, dataIni + compSize);
+    let bytes;
+    if (metodo === 0) {
+      bytes = comp; // guardado sem compressão
+    } else if (metodo === 8) {
+      const ds = new DecompressionStream("deflate-raw");
+      const stream = new Blob([comp]).stream().pipeThrough(ds);
+      bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+    } else {
+      continue; // método de compressão não suportado
+    }
+    saida.push({ nome: nome.split("/").pop(), texto: dec.decode(bytes) });
+  }
+  return saida;
+}
+
 // Troca os "marcadores de mídia" da exportação do WhatsApp por um rótulo
 // legível (a exportação em .txt normalmente NÃO inclui o arquivo).
 function rotularMidiaExport(texto) {
@@ -713,8 +765,9 @@ export default function Painel({ sessao }) {
     return d.length >= 8 && d.length <= 15 ? d : "";
   }
   // Tenta adivinhar o nome do contato pelo nome do arquivo exportado.
+  // Vale tanto para .txt quanto para o .zip ("Conversa do WhatsApp com X.zip").
   function contatoDoArquivo(nomeArquivo) {
-    const m = /com\s+(.+?)\.txt$/i.exec(nomeArquivo || "");
+    const m = /com\s+(.+?)\.(txt|zip)$/i.exec(nomeArquivo || "");
     return m ? m[1].trim() : "";
   }
   // Nome do advogado (você) como aparece nos .txt: é o autor que aparece em
@@ -735,26 +788,55 @@ export default function Painel({ sessao }) {
     return "";
   }
 
-  function aoEscolherTxts(e) {
+  // Lê o texto de um arquivo .txt como string (promessa).
+  function lerTextoArquivo(f) {
+    return new Promise((resolve) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result || ""));
+      r.onerror = () => resolve("");
+      r.readAsText(f, "utf-8");
+    });
+  }
+
+  async function aoEscolherTxts(e) {
     const files = Array.from(e.target.files || []);
     e.target.value = "";
     if (!files.length) return;
-    Promise.all(files.map((f) => new Promise((resolve) => {
-      const r = new FileReader();
-      r.onload = () => {
-        const msgs = parseWhatsAppTxt(String(r.result || ""));
-        const autores = [...new Set(msgs.map((m) => m.autor))];
-        const nomeContato = contatoDoArquivo(f.name);
-        resolve({ nome: f.name, msgs, autores, numero: numeroDeTexto(f.name) || numeroDeTexto(nomeContato), nomeContato });
-      };
-      r.readAsText(f, "utf-8");
-    }))).then((itens) => {
-      const validos = itens.filter((it) => it.msgs.length);
-      if (!validos.length) { mostrarAviso("Nenhum arquivo tinha mensagens de conversa do WhatsApp."); return; }
-      const juntos = [...impArquivos, ...validos];
-      setImpArquivos(juntos);
-      setImpMeuNome((atual) => atual || detectarMeuNome(juntos));
+    let houveErroZip = false;
+    // Cada arquivo vira uma lista de { conteudo, nomeBase }. O .zip pode conter
+    // um ou mais .txt; usamos o NOME DO ZIP para achar o contato/número, porque
+    // dentro do zip o arquivo costuma se chamar só "_chat.txt".
+    const listas = await Promise.all(files.map(async (f) => {
+      const ehZip = /\.zip$/i.test(f.name) || f.type === "application/zip" || f.type === "application/x-zip-compressed";
+      if (ehZip) {
+        try {
+          const txts = await lerTxtsDoZip(f);
+          if (!txts.length) { houveErroZip = true; return []; }
+          return txts.map((t) => ({ conteudo: t.texto, nomeBase: f.name }));
+        } catch (_err) {
+          houveErroZip = true;
+          return [];
+        }
+      }
+      return [{ conteudo: await lerTextoArquivo(f), nomeBase: f.name }];
+    }));
+    const itens = listas.flat().map(({ conteudo, nomeBase }) => {
+      const msgs = parseWhatsAppTxt(conteudo);
+      const autores = [...new Set(msgs.map((m) => m.autor))];
+      const nomeContato = contatoDoArquivo(nomeBase);
+      return { nome: nomeBase, msgs, autores, numero: numeroDeTexto(nomeBase) || numeroDeTexto(nomeContato), nomeContato };
     });
+    const validos = itens.filter((it) => it.msgs.length);
+    if (!validos.length) {
+      mostrarAviso(houveErroZip
+        ? "Não consegui abrir o .zip. Extraia e suba o arquivo .txt de dentro dele."
+        : "Nenhum arquivo tinha mensagens de conversa do WhatsApp.");
+      return;
+    }
+    if (houveErroZip) mostrarAviso("Um ou mais .zip não puderam ser abertos e foram ignorados.");
+    const juntos = [...impArquivos, ...validos];
+    setImpArquivos(juntos);
+    setImpMeuNome((atual) => atual || detectarMeuNome(juntos));
   }
 
   // Nome do contato de um arquivo = o autor que NÃO é você.
@@ -2404,10 +2486,10 @@ export default function Painel({ sessao }) {
                 <div style={{ maxWidth: 620 }}>
                   <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Importar histórico</div>
                   <div style={{ fontSize: 13, color: C.textSecondary, marginBottom: 18, lineHeight: 1.5 }}>
-                    Traga conversas antigas do WhatsApp para o Zorvin. No celular do advogado: abra a conversa → <b>⋮ → Mais → Exportar conversa → Sem mídia</b>, e suba os arquivos <b>.txt</b> aqui (pode subir vários de uma vez). As conversas que ainda não existem são <b>criadas</b>.
+                    Traga conversas antigas do WhatsApp para o Zorvin. No celular do advogado: abra a conversa → <b>⋮ → Mais → Exportar conversa → Sem mídia</b>, e suba aqui o arquivo <b>.zip</b> (ou o <b>.txt</b>) que o WhatsApp gera — não precisa extrair. Pode subir vários de uma vez. As conversas que ainda não existem são <b>criadas</b>.
                   </div>
 
-                  <input ref={txtRef} type="file" accept=".txt,text/plain" multiple onChange={aoEscolherTxts} style={{ display: "none" }} />
+                  <input ref={txtRef} type="file" accept=".txt,.zip,text/plain,application/zip,application/x-zip-compressed" multiple onChange={aoEscolherTxts} style={{ display: "none" }} />
 
                   <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary }}>ADVOGADO (dono destas conversas)</label>
                   <select value={impAdvId} onChange={(e) => setImpAdvId(e.target.value)} style={{ width: "100%", boxSizing: "border-box", marginTop: 6, marginBottom: 16, border: `1px solid ${C.divider}`, background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "10px 12px", fontSize: 14 }}>
@@ -2416,7 +2498,7 @@ export default function Painel({ sessao }) {
                   </select>
 
                   <button onClick={() => txtRef.current?.click()} style={{ display: "flex", alignItems: "center", gap: 8, border: `1px solid ${C.green}`, background: "transparent", color: C.green, borderRadius: 8, padding: "10px 14px", fontSize: 14, fontWeight: 600, cursor: "pointer", marginBottom: 16 }}>
-                    <Paperclip size={17} /> Escolher arquivos .txt
+                    <Paperclip size={17} /> Escolher arquivos (.zip ou .txt)
                   </button>
 
                   {impArquivos.length > 0 && (
