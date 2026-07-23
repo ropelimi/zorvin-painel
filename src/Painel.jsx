@@ -696,11 +696,13 @@ export default function Painel({ sessao }) {
       comum = comum === null ? set : new Set([...comum].filter((x) => set.has(x)));
     }
     const inter = comum ? [...comum] : [];
-    if (inter.length === 1) return inter[0];
+    if (inter.length === 1) return inter[0]; // aparece em TODOS os arquivos = você (certeza)
+    // Senão, tenta bater com o nome cadastrado do advogado.
     const adv = advogados.find((a) => a.id === impAdvId);
     const alvo = (adv?.nome || "").toLowerCase();
     for (const it of itens) { const h = it.autores.find((a) => a.toLowerCase() === alvo); if (h) return h; }
-    return inter[0] || (itens[0]?.autores?.[0]) || "";
+    // Não arrisca chutar (chutar o 1º autor invertia os papéis): o usuário escolhe.
+    return "";
   }
 
   function aoEscolherTxts(e) {
@@ -2225,9 +2227,14 @@ export default function Painel({ sessao }) {
                   {impArquivos.length > 0 && (
                     <>
                       <div style={{ marginBottom: 14 }}>
-                        <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary }}>SEU NOME NO WHATSAPP (o advogado)</label>
-                        <input value={impMeuNome} onChange={(e) => setImpMeuNome(e.target.value)} placeholder="Como você aparece nas conversas" style={{ width: "100%", boxSizing: "border-box", marginTop: 6, border: `1px solid ${C.divider}`, background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "9px 12px", fontSize: 14 }} />
-                        <div style={{ fontSize: 11.5, color: C.textSecondary, marginTop: 5 }}>Essas mensagens entram como <b>enviadas</b>; as dos outros nomes, como <b>recebidas</b>.</div>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary }}>QUAL NOME É VOCÊ (o advogado) NAS CONVERSAS?</label>
+                        <select value={impMeuNome} onChange={(e) => setImpMeuNome(e.target.value)} style={{ width: "100%", boxSizing: "border-box", marginTop: 6, border: `1px solid ${impMeuNome ? C.divider : "#e5573f"}`, background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "10px 12px", fontSize: 14 }}>
+                          <option value="">Escolha o seu nome…</option>
+                          {[...new Set(impArquivos.flatMap((it) => it.autores))].map((a) => <option key={a} value={a}>{a}</option>)}
+                        </select>
+                        <div style={{ fontSize: 11.5, color: C.textSecondary, marginTop: 5, lineHeight: 1.4 }}>
+                          As mensagens desse nome entram como <b>enviadas (você)</b>; as dos outros, como <b>recebidas (contato)</b>. <b style={{ color: impMeuNome ? C.textSecondary : "#e5573f" }}>Confira bem para não inverter os papéis.</b>
+                        </div>
                       </div>
 
                       <div style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, marginBottom: 8 }}>CONVERSAS ({impArquivos.length}) — preencha o número dos marcados em vermelho</div>
@@ -2246,14 +2253,16 @@ export default function Painel({ sessao }) {
 
                       {(() => {
                         const faltam = impArquivos.filter((it) => !numeroDeTexto(it.numero)).length;
+                        const bloqueado = importando || faltam > 0 || !impMeuNome;
                         return (
                           <>
                             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                              <button onClick={importarLote} disabled={importando || faltam > 0} title={faltam > 0 ? "Preencha os números que faltam" : ""} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "11px 22px", fontSize: 14.5, fontWeight: 600, cursor: (importando || faltam > 0) ? "default" : "pointer", opacity: (importando || faltam > 0) ? 0.55 : 1 }}>
+                              <button onClick={importarLote} disabled={bloqueado} title={!impMeuNome ? "Escolha qual nome é você" : (faltam > 0 ? "Preencha os números que faltam" : "")} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "11px 22px", fontSize: 14.5, fontWeight: 600, cursor: bloqueado ? "default" : "pointer", opacity: bloqueado ? 0.55 : 1 }}>
                                 {importando ? (impProgresso || "Importando…") : "Importar tudo"}
                               </button>
                               {!importando && <button onClick={() => { setImpArquivos([]); setImpMeuNome(""); }} style={{ border: "none", background: "transparent", color: C.textSecondary, fontSize: 13.5, cursor: "pointer" }}>Limpar</button>}
-                              {faltam > 0 && <span style={{ fontSize: 12.5, color: "#e5573f", fontWeight: 600 }}>Faltam {faltam} número(s)</span>}
+                              {!impMeuNome && <span style={{ fontSize: 12.5, color: "#e5573f", fontWeight: 600 }}>Escolha o seu nome</span>}
+                              {impMeuNome && faltam > 0 && <span style={{ fontSize: 12.5, color: "#e5573f", fontWeight: 600 }}>Faltam {faltam} número(s)</span>}
                             </div>
                             <div style={{ fontSize: 11.5, color: C.textSecondary, marginTop: 12, lineHeight: 1.4 }}>
                               O número é <b>obrigatório</b> — é ele que evita conversa duplicada no futuro (quando o contato mandar mensagem nova). Contatos que <b>não estavam salvos</b> já vêm com o número preenchido; os <b>salvos</b> você precisa preencher. Pode reimportar sem duplicar.
