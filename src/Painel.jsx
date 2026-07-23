@@ -102,6 +102,60 @@ function rotuloMidia(tipo) {
   return "";
 }
 
+// Hash curto e estável de um texto (para gerar um id único e repetível na
+// importação de .txt — assim reimportar o mesmo arquivo não duplica).
+function hashCurto(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
+// Troca os "marcadores de mídia" da exportação do WhatsApp por um rótulo
+// legível (a exportação em .txt normalmente NÃO inclui o arquivo).
+function rotularMidiaExport(texto) {
+  const s = (texto || "").toLowerCase();
+  if (/imagem ocultada|image omitted|\.jpg|\.jpeg|\.png|\.webp/.test(s)) return "📷 Foto (mídia não incluída na exportação)";
+  if (/áudio ocultado|audio ocultado|audio omitted|\.opus|ptt-/.test(s)) return "🎤 Áudio (mídia não incluída na exportação)";
+  if (/vídeo ocultado|video ocultado|video omitted|\.mp4/.test(s)) return "🎬 Vídeo (mídia não incluída na exportação)";
+  if (/documento ocultado|document omitted|\.pdf|\.docx?|\.xlsx?/.test(s)) return "📄 Documento (mídia não incluído na exportação)";
+  if (/figurinha|sticker omitted/.test(s)) return "🩹 Figurinha (não incluída na exportação)";
+  if (/gif omitido|gif omitted/.test(s)) return "🎞️ GIF (não incluído na exportação)";
+  if (/mídia oculta|media omitted|arquivo anexado|file attached/.test(s)) return "📎 Mídia (não incluída na exportação)";
+  return null;
+}
+
+// Lê o texto de uma conversa exportada do WhatsApp (.txt) e devolve as
+// mensagens { data, autor, texto }. Suporta os formatos Android e iPhone,
+// datas pt-BR, mensagens de várias linhas e marcadores de mídia.
+function parseWhatsAppTxt(conteudo) {
+  const linhas = conteudo.split(/\r?\n/);
+  // Android: 12/03/2024 14:05 - Nome: msg   |   iPhone: [12/03/2024, 14:05:07] Nome: msg
+  const reAndroid = /^‎?\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4}),?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([APap]\.?[Mm]\.?)?\s*-\s*(.*)$/;
+  const reIOS = /^‎?\s*\[(\d{1,2})\/(\d{1,2})\/(\d{2,4}),?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([APap]\.?[Mm]\.?)?\]\s*(.*)$/;
+  const out = [];
+  let atual = null;
+  const fechar = () => { if (atual) { out.push(atual); atual = null; } };
+  for (const linha of linhas) {
+    const m = reAndroid.exec(linha) || reIOS.exec(linha);
+    if (m) {
+      fechar();
+      const dd = +m[1], MM = +m[2]; let ano = +m[3];
+      if (ano < 100) ano += 2000;
+      let hora = +m[4]; const min = +m[5], seg = +(m[6] || 0);
+      if (m[7]) { const pm = /p/i.test(m[7]); if (pm && hora < 12) hora += 12; if (!pm && hora === 12) hora = 0; }
+      const data = new Date(ano, MM - 1, dd, hora, min, seg);
+      const resto = m[8] || "";
+      const idx = resto.indexOf(": ");
+      if (idx === -1) { atual = null; continue; } // linha de sistema (ex.: aviso de criptografia)
+      atual = { data, autor: resto.slice(0, idx).trim(), texto: resto.slice(idx + 2) };
+    } else if (atual) {
+      atual.texto += "\n" + linha; // continuação de mensagem de várias linhas
+    }
+  }
+  fechar();
+  return out.filter((m) => !isNaN(m.data.getTime()));
+}
+
 // Emojis mais usados no atendimento (picker do ícone de carinha).
 const EMOJIS = [
   "😀","😁","😂","🤣","😊","😍","😘","😅","😉","🙂",
@@ -266,6 +320,10 @@ export default function Painel({ sessao }) {
   const [buscaIdx, setBuscaIdx] = useState(0); // ocorrência atual na busca da conversa
   const [idDivisorNaoLidas, setIdDivisorNaoLidas] = useState(null); // id da 1ª msg não lida ao abrir
   const [infoAberta, setInfoAberta] = useState(false); // painel de dados do contato
+  const [importAberto, setImportAberto] = useState(false); // modal de importar histórico (.txt)
+  const [importInfo, setImportInfo] = useState(null); // { msgs, autores, de, ate } do arquivo lido
+  const [importAutorNos, setImportAutorNos] = useState(""); // qual nome do arquivo é "nós" (advogado)
+  const [importando, setImportando] = useState(false); // gravando no banco
   const [msgHover, setMsgHover] = useState(null); // id da bolha sob o mouse (mostra "responder")
   const [convHover, setConvHover] = useState(null); // id da conversa sob o mouse (realce)
   const [menuConversa, setMenuConversa] = useState(null); // id da conversa com o menuzinho aberto
@@ -292,6 +350,7 @@ export default function Painel({ sessao }) {
   const seletorRef = useRef(null);
   const fotoPerfilRef = useRef(null); // input de arquivo para a foto do perfil
   const tagMenuRef = useRef(null); // menu de aplicar tags (fecha ao clicar fora)
+  const txtRef = useRef(null); // input de arquivo .txt (importar histórico)
   const menuTopoRef = useRef(null); // menu ⋮ do topo (fecha ao clicar fora)
 
   const C = TEMAS[modo];
@@ -573,6 +632,90 @@ export default function Painel({ sessao }) {
     setRapidaForm(null);
     setTagForm(null);
     setConfigAberta(true);
+  }
+
+  // ---- Importar histórico do WhatsApp (arquivo .txt exportado) ----
+  function abrirImportador() {
+    setImportInfo(null);
+    setImportAutorNos("");
+    setImportAberto(true);
+    setInfoAberta(false);
+  }
+
+  function aoEscolherTxt(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    const leitor = new FileReader();
+    leitor.onload = () => {
+      try {
+        const msgs = parseWhatsAppTxt(String(leitor.result || ""));
+        if (!msgs.length) { mostrarAviso("Não encontrei mensagens nesse arquivo. É a exportação .txt do WhatsApp?"); return; }
+        const autores = [...new Set(msgs.map((m) => m.autor))];
+        // Palpite de quem somos "nós": o nome que bate com o advogado, senão o
+        // que NÃO é o nome do contato, senão o primeiro.
+        const nomeContato = (conversa?.contato?.nome || "").toLowerCase();
+        const palpite =
+          autores.find((a) => a.toLowerCase() === (advogado?.nome || "").toLowerCase()) ||
+          autores.find((a) => a.toLowerCase() !== nomeContato) ||
+          autores[0];
+        setImportInfo({
+          msgs, autores,
+          de: msgs[0].data, ate: msgs[msgs.length - 1].data,
+        });
+        setImportAutorNos(palpite || "");
+      } catch (_) {
+        mostrarAviso("Não consegui ler o arquivo.");
+      }
+    };
+    leitor.readAsText(file, "utf-8");
+  }
+
+  async function confirmarImportacao() {
+    if (!importInfo || !conversaId || importando) return;
+    setImportando(true);
+    try {
+      const linhas = importInfo.msgs.map((m) => {
+        const origem = m.autor === importAutorNos ? "advogado" : "contato";
+        const rotulo = rotularMidiaExport(m.texto);
+        const texto = rotulo || m.texto;
+        const iso = m.data.toISOString();
+        return {
+          conversa_id: conversaId,
+          origem,
+          tipo: "texto",
+          texto,
+          id_uazapi: "txt-" + hashCurto(conversaId + "|" + iso + "|" + origem + "|" + (texto || "").slice(0, 80)),
+          status: origem === "advogado" ? "enviada" : "recebida",
+          criado_em: iso,
+          enviado_por: origem === "advogado" ? importAutorNos : null,
+        };
+      });
+      // Grava em lotes, ignorando o que já existe (dedup pelo id_uazapi).
+      let gravadas = 0;
+      for (let i = 0; i < linhas.length; i += 400) {
+        const lote = linhas.slice(i, i + 400);
+        const { error } = await supabase.from("mensagens").upsert(lote, { onConflict: "id_uazapi", ignoreDuplicates: true });
+        if (error) throw error;
+        gravadas += lote.length;
+      }
+      // Acerta a conversa: ordena pela mensagem mais recente e zera não lidas.
+      const ultima = importInfo.msgs[importInfo.msgs.length - 1];
+      await supabase.from("conversas").update({
+        ultima_mensagem: (rotularMidiaExport(ultima.texto) || ultima.texto || "").slice(0, 200),
+        ultima_atividade: ultima.data.toISOString(),
+        nao_lidas: 0,
+      }).eq("id", conversaId);
+      setImportAberto(false);
+      setImportInfo(null);
+      mostrarAviso(`Histórico importado: ${gravadas} mensagens.`);
+      carregarMensagens(conversaId);
+      carregarConversas(advogadoId);
+    } catch (err) {
+      mostrarAviso("Não consegui importar. " + (err?.message || err));
+    } finally {
+      setImportando(false);
+    }
   }
 
   // ---- Carrega as mensagens da conversa aberta ----
@@ -1491,6 +1634,14 @@ export default function Painel({ sessao }) {
                     <div style={{ fontSize: 12, color: C.textSecondary, fontWeight: 600, letterSpacing: 0.3 }}>ATENDIDO POR</div>
                     <div style={{ fontSize: 15, marginTop: 4 }}>{advogado?.nome || "—"}</div>
                   </div>
+                  <div style={{ width: "100%", borderTop: `1px solid ${C.divider}`, marginTop: 16, paddingTop: 16 }}>
+                    <button onClick={abrirImportador} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, border: `1px solid ${C.green}`, background: "transparent", color: C.green, borderRadius: 8, padding: "10px 12px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                      <Download size={17} /> Importar histórico (.txt)
+                    </button>
+                    <div style={{ fontSize: 11.5, color: C.textSecondary, marginTop: 8, lineHeight: 1.4, textAlign: "center" }}>
+                      No WhatsApp do advogado: abra a conversa → ⋮ → Mais → Exportar conversa (Sem mídia) e suba o arquivo aqui.
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -1897,6 +2048,58 @@ export default function Painel({ sessao }) {
 
               {estreito && (
                 <button onClick={sair} style={{ marginTop: 28, display: "flex", alignItems: "center", gap: 8, border: "none", background: "transparent", color: "#e5573f", padding: "8px 0", fontSize: 14, fontWeight: 600, cursor: "pointer" }}><LogOut size={17} /> Sair</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Importar histórico do WhatsApp (.txt exportado) */}
+      {importAberto && (
+        <div onClick={() => { if (!importando) setImportAberto(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 460, background: C.panel, borderRadius: 12, boxShadow: "0 10px 40px rgba(0,0,0,.4)", overflow: "hidden" }}>
+            <div style={{ background: C.headerBar, padding: "14px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${C.divider}` }}>
+              <span style={{ fontSize: 16, fontWeight: 700 }}>Importar histórico</span>
+              <button onClick={() => { if (!importando) setImportAberto(false); }} title="Fechar" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex" }}><X size={22} /></button>
+            </div>
+            <div style={{ padding: 18 }}>
+              <input ref={txtRef} type="file" accept=".txt,text/plain" onChange={aoEscolherTxt} style={{ display: "none" }} />
+              {!importInfo ? (
+                <>
+                  <div style={{ fontSize: 13.5, color: C.textSecondary, lineHeight: 1.5, marginBottom: 16 }}>
+                    Suba o arquivo <b>.txt</b> que você exportou da conversa no WhatsApp
+                    (⋮ → Mais → <b>Exportar conversa</b> → <b>Sem mídia</b>). As mensagens
+                    entram na conversa de <b>{conversa?.contato?.nome || ("+" + conversa?.contato?.numero)}</b>.
+                  </div>
+                  <button onClick={() => txtRef.current?.click()} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "12px", fontSize: 14.5, fontWeight: 600, cursor: "pointer" }}>
+                    <Paperclip size={18} /> Escolher arquivo .txt
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div style={{ background: C.searchBg, borderRadius: 8, padding: "10px 12px", fontSize: 13.5, marginBottom: 16 }}>
+                    <div><b>{importInfo.msgs.length}</b> mensagens encontradas</div>
+                    <div style={{ color: C.textSecondary, marginTop: 2 }}>de {rotuloData(importInfo.de.toISOString())} até {rotuloData(importInfo.ate.toISOString())}</div>
+                  </div>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 8 }}>Qual nome é você / o advogado (mensagens enviadas)?</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
+                    {importInfo.autores.map((a) => (
+                      <button key={a} onClick={() => setImportAutorNos(a)} style={{ display: "flex", alignItems: "center", gap: 10, border: `1px solid ${importAutorNos === a ? C.green : C.divider}`, background: importAutorNos === a ? (modo === "escuro" ? "#0b3b30" : "#e7f7ef") : "transparent", color: C.textPrimary, borderRadius: 8, padding: "10px 12px", fontSize: 14, cursor: "pointer", textAlign: "left" }}>
+                        <span style={{ width: 16, height: 16, borderRadius: "50%", border: `2px solid ${importAutorNos === a ? C.green : C.textSecondary}`, background: importAutorNos === a ? C.green : "transparent", flexShrink: 0 }} />
+                        {a}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 12, color: C.textSecondary, marginBottom: 16, lineHeight: 1.4 }}>
+                    Os demais nomes entram como mensagens recebidas do contato. Pode rodar de novo sem duplicar.
+                  </div>
+                  <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                    <button onClick={() => setImportInfo(null)} disabled={importando} style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary, borderRadius: 8, padding: "10px 16px", fontSize: 14, cursor: "pointer" }}>Trocar arquivo</button>
+                    <button onClick={confirmarImportacao} disabled={importando || !importAutorNos} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 600, cursor: importando ? "default" : "pointer", opacity: importando || !importAutorNos ? 0.7 : 1 }}>
+                      {importando ? "Importando…" : "Importar"}
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           </div>
