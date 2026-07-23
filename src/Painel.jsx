@@ -765,6 +765,16 @@ export default function Painel({ sessao }) {
     const d = (str || "").replace(/\D/g, "");
     return d.length >= 8 && d.length <= 15 ? d : "";
   }
+  // Diz se um texto é, na verdade, só um telefone (ex.: "+55 14 2106-0802").
+  // No WhatsApp, contatos NÃO salvos aparecem no arquivo exportado com o número
+  // formatado no lugar do nome — não queremos salvar isso como nome do contato.
+  function pareceTelefone(str) {
+    const s = (str || "").trim();
+    if (!s) return false;
+    if (/[a-zA-ZÀ-ÿ]/.test(s)) return false; // tem letra = é nome de verdade
+    const d = s.replace(/\D/g, "");
+    return d.length >= 8 && d.length <= 15;
+  }
   // Tenta adivinhar o nome do contato pelo nome do arquivo exportado.
   // Vale tanto para .txt quanto para o .zip ("Conversa do WhatsApp com X.zip").
   function contatoDoArquivo(nomeArquivo) {
@@ -876,10 +886,16 @@ export default function Painel({ sessao }) {
       for (let k = 0; k < prontos.length; k++) {
         const it = prontos[k];
         setImpProgresso(`Importando ${k + 1} de ${prontos.length}…`);
-        const nomeC = nomeContatoDoItem(it);
+        const nomeBruto = nomeContatoDoItem(it);
+        // Se o "nome" é só um telefone (contato não salvo na agenda do WhatsApp),
+        // NÃO gravamos como nome — deixamos em branco para o painel mostrar o
+        // número limpo e padronizado, igual às demais conversas.
+        const nomeC = pareceTelefone(nomeBruto) ? null : nomeBruto;
         const numero = numeroDeTexto(it.numero); // garantido preenchido (validado acima)
+        const registroContato = { numero };
+        if (nomeC) registroContato.nome = nomeC; // sem nome: não sobrescreve o que já existir
         const { data: cont, error: e1 } = await supabase.from("contatos")
-          .upsert({ numero, nome: nomeC }, { onConflict: "numero" }).select("id").single();
+          .upsert(registroContato, { onConflict: "numero" }).select("id").single();
         if (e1) throw e1;
         const { data: conv, error: e2 } = await supabase.from("conversas")
           .upsert({ advogado_id: impAdvId, contato_id: cont.id }, { onConflict: "advogado_id,contato_id" }).select("id").single();
