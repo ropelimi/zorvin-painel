@@ -5,7 +5,7 @@ import {
   MessageSquare, Mic, CheckCheck, LogOut, ArrowLeft, Sun, Moon,
   Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp,
   StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star,
-  Archive, UserPlus, MessageSquarePlus
+  Archive, UserPlus, MessageSquarePlus, SquarePen
 } from "lucide-react";
 
 // ============================================================
@@ -296,6 +296,7 @@ export default function Painel({ sessao }) {
   const [contatosLista, setContatosLista] = useState([]); // todos os contatos (agenda)
   const [buscaContato, setBuscaContato] = useState(""); // busca na agenda de contatos
   const [contatoForm, setContatoForm] = useState(null); // { nome, numero } ao criar um contato
+  const [novaConversaAberta, setNovaConversaAberta] = useState(false); // tela "Nova conversa" (⊞)
   const [busca, setBusca] = useState("");
   const [rascunho, setRascunho] = useState("");
   const [atendimentos, setAtendimentos] = useState({}); // { conversaId: { por, em } }
@@ -671,9 +672,36 @@ export default function Painel({ sessao }) {
       .select("id").single();
     if (error || !conv) { mostrarAviso("Não consegui abrir a conversa."); return; }
     setConfigAberta(false);
+    setNovaConversaAberta(false);
+    setContatoForm(null);
+    setBuscaContato("");
     setVerArquivadas(false);
     await carregarConversas(advogadoId);
     setConversaId(conv.id);
+  }
+
+  // "Novo contato" dentro da Nova conversa: cria e já abre a conversa.
+  async function criarContatoEConversar() {
+    const nome = (contatoForm?.nome || "").trim();
+    const numero = (contatoForm?.numero || "").replace(/\D/g, "");
+    if (!nome) { mostrarAviso("Digite o nome do contato."); return; }
+    if (numero.length < 8) { mostrarAviso("Digite um número válido (com DDD)."); return; }
+    const { data: cont, error } = await supabase.from("contatos")
+      .upsert({ numero, nome }, { onConflict: "numero" }).select("id").single();
+    if (error || !cont) { mostrarAviso("Não consegui salvar o contato."); return; }
+    carregarContatos();
+    await abrirConversaContato(cont);
+  }
+
+  // Conversar direto com um número digitado (sem cadastrar nome).
+  async function conversarComNumero(numeroBruto) {
+    const numero = (numeroBruto || "").replace(/\D/g, "");
+    if (numero.length < 8) { mostrarAviso("Digite um número válido (com DDD)."); return; }
+    const { data: cont, error } = await supabase.from("contatos")
+      .upsert({ numero }, { onConflict: "numero" }).select("id").single();
+    if (error || !cont) { mostrarAviso("Não consegui iniciar a conversa."); return; }
+    carregarContatos();
+    await abrirConversaContato(cont);
   }
 
   // ---- Importar histórico do WhatsApp em LOTE (vários .txt exportados) ----
@@ -1017,6 +1045,7 @@ export default function Painel({ sessao }) {
       else if (rapidaForm) setRapidaForm(null);
       else if (contatoForm) setContatoForm(null);
       else if (configAberta) setConfigAberta(false);
+      else if (novaConversaAberta) setNovaConversaAberta(false);
       else if (emojiAberto) setEmojiAberto(false);
       else if (seletorAberto) setSeletorAberto(false);
       else if (infoAberta) setInfoAberta(false);
@@ -1025,7 +1054,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [imagemAberta, anexoPendente, configAberta, rapidaForm, tagForm, contatoForm, emojiAberto, seletorAberto, infoAberta, buscaAberta, respondendo]);
+  }, [imagemAberta, anexoPendente, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, emojiAberto, seletorAberto, infoAberta, buscaAberta, respondendo]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -1506,13 +1535,79 @@ export default function Painel({ sessao }) {
       </div>
 
       {/* Lista de conversas */}
-      <div style={{ width: estreito ? "auto" : 380, flex: estreito ? 1 : "none", borderRight: `1px solid ${C.divider}`, display: (estreito && conversaId) ? "none" : "flex", flexDirection: "column", background: C.panel }}>
+      <div style={{ position: "relative", width: estreito ? "auto" : 380, flex: estreito ? 1 : "none", borderRight: `1px solid ${C.divider}`, display: (estreito && conversaId) ? "none" : "flex", flexDirection: "column", background: C.panel }}>
+        {/* NOVA CONVERSA (⊞) — estilo WhatsApp Web: busca, novo contato e agenda */}
+        {novaConversaAberta && (
+          <div style={{ position: "absolute", inset: 0, zIndex: 40, background: C.panel, display: "flex", flexDirection: "column" }}>
+            <div style={{ background: C.headerBar, padding: "16px 16px", display: "flex", alignItems: "center", gap: 18, borderBottom: `1px solid ${C.divider}` }}>
+              <button onClick={() => { setNovaConversaAberta(false); setContatoForm(null); setBuscaContato(""); }} title="Voltar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}><ArrowLeft size={20} color={C.textSecondary} /></button>
+              <span style={{ fontSize: 16, fontWeight: 600 }}>Nova conversa</span>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto" }}>
+              {contatoForm ? (
+                <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700 }}>Novo contato</div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary }}>NOME</label>
+                    <input autoFocus value={contatoForm.nome} onChange={(e) => setContatoForm((f) => ({ ...f, nome: e.target.value }))} placeholder="Ex.: João Silva" style={{ width: "100%", boxSizing: "border-box", marginTop: 5, border: `1px solid ${C.divider}`, outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "9px 12px", fontSize: 14 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary }}>NÚMERO (com DDD, ex.: 5511999999999)</label>
+                    <input value={contatoForm.numero} onChange={(e) => setContatoForm((f) => ({ ...f, numero: e.target.value }))} placeholder="5511999999999" style={{ width: "100%", boxSizing: "border-box", marginTop: 5, border: `1px solid ${C.divider}`, outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "9px 12px", fontSize: 14 }} />
+                  </div>
+                  <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                    <button onClick={() => setContatoForm(null)} style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary, borderRadius: 8, padding: "9px 16px", fontSize: 14, cursor: "pointer" }}>Cancelar</button>
+                    <button onClick={criarContatoEConversar} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Salvar e conversar</button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div style={{ padding: "8px 12px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.searchBg, borderRadius: 8, padding: "6px 12px" }}>
+                      <Search size={16} color={C.textSecondary} />
+                      <input autoFocus value={buscaContato} onChange={(e) => setBuscaContato(e.target.value)} placeholder="Pesquisar nome ou número" style={{ border: "none", outline: "none", background: "transparent", fontSize: 14, flex: 1, color: C.textPrimary }} />
+                    </div>
+                  </div>
+                  <button onClick={() => setContatoForm({ nome: "", numero: numeroDeTexto(buscaContato) })} style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "12px 16px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary }}>
+                    <span style={{ width: 40, height: 40, borderRadius: "50%", background: C.green, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><UserPlus size={20} color="#fff" /></span>
+                    <span style={{ fontSize: 15, fontWeight: 500 }}>Novo contato</span>
+                  </button>
+                  {numeroDeTexto(buscaContato) && !contatosLista.some((c) => (c.numero || "").includes(numeroDeTexto(buscaContato))) && (
+                    <button onClick={() => conversarComNumero(buscaContato)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "12px 16px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary }}>
+                      <span style={{ width: 40, height: 40, borderRadius: "50%", background: C.green, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageSquarePlus size={20} color="#fff" /></span>
+                      <span style={{ fontSize: 15, fontWeight: 500 }}>Conversar com +{numeroDeTexto(buscaContato)}</span>
+                    </button>
+                  )}
+                  <div style={{ padding: "10px 16px 4px", fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3 }}>CONTATOS</div>
+                  {(() => {
+                    const q = buscaContato.trim().toLowerCase();
+                    const lista = contatosLista.filter((c) => (c.nome || "").toLowerCase().includes(q) || (c.numero || "").includes(q.replace(/\D/g, "")));
+                    if (!lista.length) return <div style={{ padding: 20, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>{contatosLista.length ? "Nenhum contato encontrado." : "Nenhum contato salvo ainda."}</div>;
+                    return lista.map((c) => (
+                      <div key={c.id} role="button" onClick={() => abrirConversaContato(c)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", cursor: "pointer", color: C.textPrimary }} onMouseEnter={(e) => { e.currentTarget.style.background = C.divider; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
+                        <Avatar nome={c.nome || c.numero} foto={c.foto_url} size={44} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.nome || ("+" + c.numero)}</div>
+                          <div style={{ fontSize: 12.5, color: C.textSecondary }}>+{c.numero}</div>
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </>
+              )}
+            </div>
+          </div>
+        )}
         <div style={{ background: C.headerBar, padding: "10px 16px 12px", borderBottom: `1px solid ${C.divider}` }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 8, paddingBottom: 8, borderBottom: `1px solid ${C.divider}` }}>
             <Avatar nome={meuNome} size={22} />
             <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               Você: <span style={{ color: C.textPrimary, fontWeight: 600 }}>{meuNome}</span>
             </div>
+            {/* Nova conversa (⊞), estilo WhatsApp Web */}
+            <button onClick={() => { setBuscaContato(""); setContatoForm(null); setNovaConversaAberta(true); carregarContatos(); }} aria-label="Nova conversa" title="Nova conversa" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", color: C.textSecondary, padding: 0, marginRight: 4 }}>
+              <SquarePen size={19} />
+            </button>
             {/* Menu ⋮ do topo, estilo WhatsApp Web */}
             <span ref={menuTopoRef} style={{ position: "relative", display: "flex" }}>
               <button onClick={() => setMenuTopoAberto((v) => !v)} aria-label="Menu" title="Menu" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", color: C.textSecondary, padding: 0 }}>
