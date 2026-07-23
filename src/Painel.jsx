@@ -938,7 +938,8 @@ export default function Painel({ sessao }) {
         // Esta mensagem é do advogado atualmente aberto? Se a conversa já está
         // na lista, sim. Se não está (pode ser uma conversa NOVA — lead novo),
         // confirmamos com uma consulta rápida do advogado_id.
-        let doAdvogadoAtual = conversasRef.current.some((c) => c.id === nova.conversa_id);
+        const jaNaLista = conversasRef.current.some((c) => c.id === nova.conversa_id);
+        let doAdvogadoAtual = jaNaLista;
         if (!doAdvogadoAtual && nova.origem === "contato" && advogadoId) {
           const { data } = await supabase.from("conversas").select("advogado_id").eq("id", nova.conversa_id).maybeSingle();
           doAdvogadoAtual = !!data && data.advogado_id === advogadoId;
@@ -949,9 +950,11 @@ export default function Painel({ sessao }) {
           tocarBeep();
           notificarDesktop("Nova mensagem", nova.texto || "Mídia recebida");
         }
-        // Recarrega a lista só quando é do advogado atual (evita reconsultar a
-        // lista inteira a cada mensagem de todo o escritório).
-        if (doAdvogadoAtual) carregarConversas(advogadoId);
+        // Só re-busca a lista inteira quando é uma conversa NOVA (que ainda não
+        // está na lista). Conversas que já estão na lista são atualizadas no
+        // lugar pelo handler de UPDATE de conversas — sem re-buscar tudo, que
+        // era o que fazia a tela "recarregar sozinha".
+        if (doAdvogadoAtual && !jaNaLista) carregarConversas(advogadoId);
         carregarNaoLidasPorAdv(); // selos do rail de todos os advogados
       })
       // Status de uma mensagem mudou (ex.: foi lida) — atualiza o "tiquinho".
@@ -960,8 +963,36 @@ export default function Painel({ sessao }) {
         if (atual.conversa_id !== conversaId) return;
         setMensagens((prev) => prev.map((m) => (m.id === atual.id ? { ...m, status: atual.status } : m)));
       })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversas" }, () => {
-        carregarConversas(advogadoId);
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversas" }, (payload) => {
+        const cv = payload.new;
+        if (!cv) return;
+        // Atualiza "digitando…" e "quem está atendendo" localmente (leve).
+        setDigitandos((prev) => {
+          const novo = { ...prev };
+          if (cv.digitando_ate) novo[cv.id] = cv.digitando_ate; else delete novo[cv.id];
+          return novo;
+        });
+        setAtendimentos((prev) => {
+          const novo = { ...prev };
+          if (cv.atendendo_por) novo[cv.id] = { por: cv.atendendo_por, em: cv.atendendo_em }; else delete novo[cv.id];
+          return novo;
+        });
+        // Aplica os campos alterados NA PRÓPRIA lista, sem re-buscar tudo (era o
+        // que fazia a tela "recarregar sozinha" a cada evento). Só mexe se a
+        // conversa já está na lista do advogado atual; conversa nova entra pelo
+        // handler de INSERT de mensagens.
+        setConversas((prev) => {
+          if (!prev.some((c) => c.id === cv.id)) return prev;
+          const patched = prev.map((c) => c.id === cv.id ? {
+            ...c,
+            ultima_mensagem: cv.ultima_mensagem,
+            ultima_atividade: cv.ultima_atividade,
+            nao_lidas: cv.id === conversaIdRef.current ? 0 : cv.nao_lidas,
+            favorita: cv.favorita,
+            arquivada: cv.arquivada,
+          } : c);
+          return patched.sort((a, b) => new Date(b.ultima_atividade) - new Date(a.ultima_atividade));
+        });
         carregarNaoLidasPorAdv();
       })
       // Se a ponte não conseguir enviar, a fila vira "erro" — aviso na tela.
