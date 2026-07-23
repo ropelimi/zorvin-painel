@@ -1899,12 +1899,6 @@ export default function Painel({ sessao }) {
                     )}
                     {c.nao_lidas > 0 && <span style={{ background: C.unread, color: "#fff", borderRadius: 12, fontSize: 11, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>{c.nao_lidas}</span>}
                   </div>
-                  {atendidoPorOutro(c.id) && (
-                    <div style={{ fontSize: 11, color: modo === "escuro" ? "#e0a400" : "#9a6a00", marginTop: 3, display: "flex", alignItems: "center", gap: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: modo === "escuro" ? "#e0a400" : "#9a6a00", display: "inline-block", flexShrink: 0 }} />
-                      {atendidoPorOutro(c.id)} está atendendo
-                    </div>
-                  )}
                   {tagsDaConversa(c.id).length > 0 && (
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
                       {tagsDaConversa(c.id).map((t) => (
