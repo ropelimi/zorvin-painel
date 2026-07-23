@@ -385,6 +385,7 @@ export default function Painel({ sessao }) {
   const [impMeuNome, setImpMeuNome] = useState(""); // nome do advogado como aparece nos .txt
   const [impArquivos, setImpArquivos] = useState([]); // [{ nome, msgs, autores, numero }]
   const [impProgresso, setImpProgresso] = useState(""); // texto de progresso da importação
+  const [impArrastando, setImpArrastando] = useState(false); // arquivo sendo arrastado sobre a área
   const [msgHover, setMsgHover] = useState(null); // id da bolha sob o mouse (mostra "responder")
   const [convHover, setConvHover] = useState(null); // id da conversa sob o mouse (realce)
   const [menuConversa, setMenuConversa] = useState(null); // id da conversa com o menuzinho aberto
@@ -798,9 +799,13 @@ export default function Painel({ sessao }) {
     });
   }
 
-  async function aoEscolherTxts(e) {
+  function aoEscolherTxts(e) {
     const files = Array.from(e.target.files || []);
     e.target.value = "";
+    processarArquivosImport(files);
+  }
+
+  async function processarArquivosImport(files) {
     if (!files.length) return;
     let houveErroZip = false;
     // Cada arquivo vira uma lista de { conteudo, nomeBase }. O .zip pode conter
@@ -837,6 +842,16 @@ export default function Painel({ sessao }) {
     const juntos = [...impArquivos, ...validos];
     setImpArquivos(juntos);
     setImpMeuNome((atual) => atual || detectarMeuNome(juntos));
+  }
+
+  // Arrastar e soltar arquivos na área de importação.
+  function aoSoltarImport(e) {
+    e.preventDefault();
+    setImpArrastando(false);
+    const files = Array.from(e.dataTransfer?.files || [])
+      .filter((f) => /\.(txt|zip)$/i.test(f.name));
+    if (!files.length) { mostrarAviso("Solte apenas arquivos .zip ou .txt exportados do WhatsApp."); return; }
+    processarArquivosImport(files);
   }
 
   // Nome do contato de um arquivo = o autor que NÃO é você.
@@ -2497,9 +2512,28 @@ export default function Painel({ sessao }) {
                     {advogados.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}
                   </select>
 
-                  <button onClick={() => txtRef.current?.click()} style={{ display: "flex", alignItems: "center", gap: 8, border: `1px solid ${C.green}`, background: "transparent", color: C.green, borderRadius: 8, padding: "10px 14px", fontSize: 14, fontWeight: 600, cursor: "pointer", marginBottom: 16 }}>
-                    <Paperclip size={17} /> Escolher arquivos (.zip ou .txt)
-                  </button>
+                  <div
+                    onClick={() => txtRef.current?.click()}
+                    onDragOver={(e) => { e.preventDefault(); if (!impArrastando) setImpArrastando(true); }}
+                    onDragLeave={(e) => { e.preventDefault(); setImpArrastando(false); }}
+                    onDrop={aoSoltarImport}
+                    style={{
+                      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8,
+                      border: `2px dashed ${impArrastando ? C.green : C.divider}`,
+                      background: impArrastando ? (modo === "escuro" ? "rgba(37,211,102,.10)" : "rgba(37,211,102,.07)") : "transparent",
+                      color: impArrastando ? C.green : C.textSecondary,
+                      borderRadius: 12, padding: "26px 16px", marginBottom: 16, cursor: "pointer", textAlign: "center",
+                      transition: "border-color .15s, background .15s",
+                    }}
+                  >
+                    <Paperclip size={22} color={impArrastando ? C.green : C.textSecondary} />
+                    <div style={{ fontSize: 14.5, fontWeight: 600, color: impArrastando ? C.green : C.textPrimary }}>
+                      {impArrastando ? "Solte os arquivos aqui" : "Arraste os arquivos aqui"}
+                    </div>
+                    <div style={{ fontSize: 12.5 }}>
+                      ou <span style={{ color: C.green, fontWeight: 600 }}>clique para escolher</span> — .zip ou .txt
+                    </div>
+                  </div>
 
                   {impArquivos.length > 0 && (
                     <>
