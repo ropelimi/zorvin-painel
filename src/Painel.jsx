@@ -694,6 +694,10 @@ export default function Painel({ sessao }) {
     if (!impAdvId) { mostrarAviso("Escolha o advogado dono dessas conversas."); return; }
     const meu = (impMeuNome || "").trim();
     if (!meu) { mostrarAviso("Confirme qual nome é o seu (o advogado) nos arquivos."); return; }
+    // O número é OBRIGATÓRIO para todos (evita conversa duplicada no futuro,
+    // quando o mesmo contato mandar mensagem pela ponte).
+    const faltando = impArquivos.filter((it) => !numeroDeTexto(it.numero)).length;
+    if (faltando > 0) { mostrarAviso(`Preencha o número dos ${faltando} contato(s) em vermelho antes de importar.`); return; }
     const prontos = impArquivos;
     if (!prontos.length) { mostrarAviso("Suba pelo menos um arquivo .txt."); return; }
     setImportando(true);
@@ -703,9 +707,7 @@ export default function Painel({ sessao }) {
         const it = prontos[k];
         setImpProgresso(`Importando ${k + 1} de ${prontos.length}…`);
         const nomeC = nomeContatoDoItem(it);
-        // Número informado; se não tiver, cria uma "chave" estável pelo nome
-        // (a conversa aparece mesmo assim, só não se liga a mensagens futuras).
-        const numero = numeroDeTexto(it.numero) || ("imp-" + hashCurto(impAdvId + "|" + nomeC.toLowerCase()));
+        const numero = numeroDeTexto(it.numero); // garantido preenchido (validado acima)
         const { data: cont, error: e1 } = await supabase.from("contatos")
           .upsert({ numero, nome: nomeC }, { onConflict: "numero" }).select("id").single();
         if (e1) throw e1;
@@ -2095,7 +2097,7 @@ export default function Painel({ sessao }) {
                         <div style={{ fontSize: 11.5, color: C.textSecondary, marginTop: 5 }}>Essas mensagens entram como <b>enviadas</b>; as dos outros nomes, como <b>recebidas</b>.</div>
                       </div>
 
-                      <div style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, marginBottom: 8 }}>CONVERSAS ({impArquivos.length}) — o número é opcional</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, marginBottom: 8 }}>CONVERSAS ({impArquivos.length}) — preencha o número dos marcados em vermelho</div>
                       <div style={{ border: `1px solid ${C.divider}`, borderRadius: 10, overflow: "hidden", marginBottom: 16 }}>
                         {impArquivos.map((it, idx) => (
                           <div key={idx} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderBottom: idx < impArquivos.length - 1 ? `1px solid ${C.divider}` : "none" }}>
@@ -2103,21 +2105,29 @@ export default function Painel({ sessao }) {
                               <div style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nomeContatoDoItem(it)}</div>
                               <div style={{ fontSize: 12, color: C.textSecondary }}>{it.msgs.length} mensagens</div>
                             </div>
-                            <input value={it.numero} onChange={(e) => { const v = e.target.value; setImpArquivos((prev) => prev.map((x, i) => i === idx ? { ...x, numero: v } : x)); }} placeholder="Número (opcional)" style={{ width: 190, boxSizing: "border-box", border: `1px solid ${C.divider}`, background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "8px 10px", fontSize: 13 }} />
+                            <input value={it.numero} onChange={(e) => { const v = e.target.value; setImpArquivos((prev) => prev.map((x, i) => i === idx ? { ...x, numero: v } : x)); }} placeholder="Número (ex.: 5511999999999)" style={{ width: 190, boxSizing: "border-box", border: `1px solid ${numeroDeTexto(it.numero) ? C.divider : "#e5573f"}`, background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "8px 10px", fontSize: 13 }} />
                             <button onClick={() => setImpArquivos((prev) => prev.filter((_, i) => i !== idx))} title="Remover" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex", flexShrink: 0 }}><X size={17} /></button>
                           </div>
                         ))}
                       </div>
 
-                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <button onClick={importarLote} disabled={importando} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "11px 22px", fontSize: 14.5, fontWeight: 600, cursor: importando ? "default" : "pointer", opacity: importando ? 0.7 : 1 }}>
-                          {importando ? (impProgresso || "Importando…") : "Importar tudo"}
-                        </button>
-                        {!importando && <button onClick={() => { setImpArquivos([]); setImpMeuNome(""); }} style={{ border: "none", background: "transparent", color: C.textSecondary, fontSize: 13.5, cursor: "pointer" }}>Limpar</button>}
-                      </div>
-                      <div style={{ fontSize: 11.5, color: C.textSecondary, marginTop: 12, lineHeight: 1.4 }}>
-                        O número é <b>opcional</b>. Com ele, a conversa importada se junta às mensagens novas desse contato. Sem ele, a conversa aparece do mesmo jeito (só não se liga automaticamente ao futuro). Pode reimportar sem duplicar.
-                      </div>
+                      {(() => {
+                        const faltam = impArquivos.filter((it) => !numeroDeTexto(it.numero)).length;
+                        return (
+                          <>
+                            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                              <button onClick={importarLote} disabled={importando || faltam > 0} title={faltam > 0 ? "Preencha os números que faltam" : ""} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "11px 22px", fontSize: 14.5, fontWeight: 600, cursor: (importando || faltam > 0) ? "default" : "pointer", opacity: (importando || faltam > 0) ? 0.55 : 1 }}>
+                                {importando ? (impProgresso || "Importando…") : "Importar tudo"}
+                              </button>
+                              {!importando && <button onClick={() => { setImpArquivos([]); setImpMeuNome(""); }} style={{ border: "none", background: "transparent", color: C.textSecondary, fontSize: 13.5, cursor: "pointer" }}>Limpar</button>}
+                              {faltam > 0 && <span style={{ fontSize: 12.5, color: "#e5573f", fontWeight: 600 }}>Faltam {faltam} número(s)</span>}
+                            </div>
+                            <div style={{ fontSize: 11.5, color: C.textSecondary, marginTop: 12, lineHeight: 1.4 }}>
+                              O número é <b>obrigatório</b> — é ele que evita conversa duplicada no futuro (quando o contato mandar mensagem nova). Contatos que <b>não estavam salvos</b> já vêm com o número preenchido; os <b>salvos</b> você precisa preencher. Pode reimportar sem duplicar.
+                            </div>
+                          </>
+                        );
+                      })()}
                     </>
                   )}
                 </div>
