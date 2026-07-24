@@ -1798,7 +1798,11 @@ export default function Painel({ sessao }) {
                   <div style={{ padding: "10px 16px 4px", fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3 }}>CONTATOS</div>
                   {(() => {
                     const q = buscaContato.trim().toLowerCase();
-                    const lista = contatosLista.filter((c) => (c.nome || "").toLowerCase().includes(q) || (c.numero || "").includes(q.replace(/\D/g, "")));
+                    const qDig = q.replace(/\D/g, ""); // só os dígitos (para busca por número)
+                    // Busca por nome OU por número. O número só entra no filtro se
+                    // a pessoa digitou algum dígito — senão "inclui vazio" daria
+                    // verdadeiro para todos e a busca por nome nunca filtrava.
+                    const lista = contatosLista.filter((c) => (c.nome || "").toLowerCase().includes(q) || (qDig && (c.numero || "").includes(qDig)));
                     if (!lista.length) return <div style={{ padding: 20, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>{contatosLista.length ? "Nenhum contato encontrado." : "Nenhum contato salvo ainda."}</div>;
                     return lista.map((c) => (
                       <div key={c.id} role="button" onClick={() => abrirConversaContato(c)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", cursor: "pointer", color: C.textPrimary }} onMouseEnter={(e) => { e.currentTarget.style.background = C.divider; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
