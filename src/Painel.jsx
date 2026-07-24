@@ -2144,7 +2144,7 @@ export default function Painel({ sessao }) {
                           </div>
                         )}
                         {m.tipo === "imagem" && m.midia_url && (
-                          <img src={m.midia_url} alt="imagem" onClick={() => setImagemAberta(m.midia_url)} onLoad={() => { if (pertoDoFim) fimRef.current?.scrollIntoView(); }} style={{ maxWidth: "min(240px, 100%)", borderRadius: 6, display: "block", cursor: "pointer" }} />
+                          <img src={m.midia_url} alt="imagem" onClick={() => setImagemAberta(m.midia_url)} onLoad={() => { if (pertoDoFim) fimRef.current?.scrollIntoView(); }} style={{ maxWidth: "min(260px, 100%)", maxHeight: 320, width: "auto", height: "auto", objectFit: "contain", borderRadius: 6, display: "block", cursor: "pointer" }} />
                         )}
                         {m.tipo === "audio" && <BolhaAudio C={C} saida={saida} url={m.midia_url} />}
                         {m.tipo === "video" && m.midia_url && (
