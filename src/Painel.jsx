@@ -53,6 +53,18 @@ function corDe(txt) {
   return CORES[h];
 }
 
+// Cor do NOME de quem enviou, exibido em cima de fundos coloridos (bolha verde
+// enviada, bolha de nota). Precisa de bom contraste em cada tema: tons claros
+// no modo escuro, tons escuros no modo claro. Estável por nome.
+const CORES_NOME_ESCURO = ["#8fd0ff", "#ffd08a", "#b6e88f", "#ffa8cf", "#cbb8ff", "#8ce6d6", "#ffb38a", "#a7d8ff", "#8ee0b0", "#ff9db0"];
+const CORES_NOME_CLARO = ["#0277bd", "#c25e00", "#4e7d1e", "#8e24aa", "#4527a0", "#00838f", "#ad1457", "#3949ab", "#00695c", "#b71c40"];
+function corNome(txt, modo) {
+  const arr = modo === "escuro" ? CORES_NOME_ESCURO : CORES_NOME_CLARO;
+  let h = 0;
+  for (let i = 0; i < (txt || "").length; i++) h = (h * 31 + txt.charCodeAt(i)) % arr.length;
+  return arr[h];
+}
+
 function horaDe(iso) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -2178,7 +2190,7 @@ export default function Painel({ sessao }) {
                       <div data-msg-id={m.id} style={{ display: "flex", justifyContent: "flex-end", alignItems: "flex-end", gap: 6, marginTop: 4 }}>
                         <div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", alignItems: "flex-end", opacity: m._status === "enviando" ? 0.7 : 1 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2, marginRight: 2 }}>
-                            <span style={{ fontSize: 12.5, fontWeight: 700, color: corDe(m.autor) }}>{m.autor || "equipe"}</span>
+                            <span style={{ fontSize: 12.5, fontWeight: 700, color: corNome(m.autor, modo) }}>{m.autor || "equipe"}</span>
                             <span style={{ fontSize: 11, color: C.textSecondary }}>• {horaCurta(m.criado_em)}</span>
                           </div>
                           <div style={{ background: "#d98a2b", color: "#fff", borderRadius: 8, padding: "7px 11px 6px", boxShadow: "0 1px 0.5px rgba(0,0,0,.2)", minWidth: 120 }}>
@@ -2195,7 +2207,7 @@ export default function Painel({ sessao }) {
                     <div data-msg-id={m.id} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6, marginTop: mesmoRemetente ? -4 : 0 }}>
                       <div style={{ position: "relative", maxWidth: "65%", background: saida ? C.bubbleOut : C.bubbleIn, color: C.textPrimary, borderRadius: 8, padding: m.tipo === "imagem" ? 4 : "6px 9px 8px", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
                         {mostrarAutor && (
-                          <div style={{ fontSize: 12, fontWeight: 700, color: corDe(m.enviado_por), marginBottom: 1 }}>{m.enviado_por}</div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: corNome(m.enviado_por, modo), marginBottom: 1 }}>{m.enviado_por}</div>
                         )}
                         {m.id_uazapi && (
                           <button onClick={() => iniciarResposta(m)} title="Responder" style={{ position: "absolute", top: 3, right: 3, border: "none", background: "transparent", cursor: "pointer", opacity: (estreito || msgHover === m.id) ? 0.75 : 0, transition: "opacity .12s", display: "flex", padding: 0 }}>
