@@ -866,6 +866,28 @@ export default function Painel({ sessao }) {
         : "Nenhum arquivo tinha mensagens de conversa do WhatsApp.");
       return;
     }
+    // Contatos SALVOS não têm o número no arquivo (o WhatsApp só mostra o nome).
+    // Mas se o escritório já conversou com essa pessoa pelo Zorvin, o número já
+    // está na agenda — então preenchemos automaticamente casando pelo nome.
+    const semNumero = validos.filter((it) => !it.numero);
+    if (semNumero.length) {
+      try {
+        const { data: agenda } = await supabase.from("contatos").select("nome, numero");
+        if (agenda && agenda.length) {
+          const norm = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
+          const mapa = new Map();
+          agenda.forEach((c) => { if (c.nome && c.numero) mapa.set(norm(c.nome), c.numero); });
+          validos.forEach((it) => {
+            if (it.numero) return;
+            const candidatos = [it.nomeContato, ...it.autores].filter(Boolean);
+            for (const nome of candidatos) {
+              const achou = mapa.get(norm(nome));
+              if (achou) { it.numero = numeroDeTexto(achou); break; }
+            }
+          });
+        }
+      } catch (_) { /* sem agenda acessível: segue e o usuário preenche à mão */ }
+    }
     if (houveErroZip) mostrarAviso("Um ou mais .zip não puderam ser abertos e foram ignorados.");
     const juntos = [...impArquivos, ...validos];
     setImpArquivos(juntos);
