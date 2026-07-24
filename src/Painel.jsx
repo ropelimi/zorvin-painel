@@ -850,7 +850,14 @@ export default function Painel({ sessao }) {
       const msgs = parseWhatsAppTxt(conteudo);
       const autores = [...new Set(msgs.map((m) => m.autor))];
       const nomeContato = contatoDoArquivo(nomeBase);
-      return { nome: nomeBase, msgs, autores, numero: numeroDeTexto(nomeBase) || numeroDeTexto(nomeContato), nomeContato };
+      // O telefone REAL de um contato não salvo aparece como AUTOR dentro da
+      // conversa (ex.: "+55 11 98984-8764"). O NOME DO ARQUIVO às vezes traz um
+      // identificador interno do WhatsApp (@lid) — um número longo que NÃO é o
+      // telefone. Por isso pegamos o número do autor (ou do nome do contato,
+      // quando ele próprio é um telefone), nunca dos dígitos crus do arquivo.
+      const autorTelefone = autores.find((a) => pareceTelefone(a)) || "";
+      const numero = numeroDeTexto(autorTelefone) || (pareceTelefone(nomeContato) ? numeroDeTexto(nomeContato) : "");
+      return { nome: nomeBase, msgs, autores, numero, nomeContato };
     });
     const validos = itens.filter((it) => it.msgs.length);
     if (!validos.length) {
