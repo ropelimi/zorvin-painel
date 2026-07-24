@@ -221,6 +221,13 @@ function parseWhatsAppTxt(conteudo) {
   return out.filter((m) => !isNaN(m.data.getTime()));
 }
 
+// Reconhece se um arquivo exportado é de um GRUPO, pelas "linhas de sistema"
+// que só aparecem em grupos (criar/renomear grupo, entrar/sair, adicionar).
+// (Contar autores não serve: um grupo pode ter só 2 pessoas ativas.)
+function pareceGrupo(conteudo) {
+  return /criou (este |o )?grupo|mudou o nome do grupo|saiu do grupo|entrou usando o link|convite do grupo|adicionou você|removeu você|created (this )?group|changed the subject|group's invite link|left the group|added you to the group|removed you/i.test(conteudo || "");
+}
+
 // Emojis mais usados no atendimento (picker do ícone de carinha).
 const EMOJIS = [
   "😀","😁","😂","🤣","😊","😍","😘","😅","😉","🙂",
@@ -724,7 +731,9 @@ export default function Painel({ sessao }) {
   const carregarContatos = useCallback(async () => {
     try {
       const { data, error } = await supabase.from("contatos").select("id, nome, numero, foto_url").order("nome", { ascending: true });
-      if (!error) setContatosLista(data || []);
+      // Grupos (numero "grupo:...") não entram na agenda de contatos — não são
+      // números para iniciar conversa; aparecem só na lista de conversas.
+      if (!error) setContatosLista((data || []).filter((c) => !String(c.numero || "").startsWith("grupo:")));
     } catch (_) { /* ignora */ }
   }, []);
 
@@ -869,7 +878,7 @@ export default function Painel({ sessao }) {
       // quando ele próprio é um telefone), nunca dos dígitos crus do arquivo.
       const autorTelefone = autores.find((a) => pareceTelefone(a)) || "";
       const numero = numeroDeTexto(autorTelefone) || (pareceTelefone(nomeContato) ? numeroDeTexto(nomeContato) : "");
-      return { nome: nomeBase, msgs, autores, numero, nomeContato };
+      return { nome: nomeBase, msgs, autores, numero, nomeContato, ehGrupo: pareceGrupo(conteudo) };
     });
     const validos = itens.filter((it) => it.msgs.length);
     if (!validos.length) {
@@ -881,7 +890,7 @@ export default function Painel({ sessao }) {
     // Contatos SALVOS não têm o número no arquivo (o WhatsApp só mostra o nome).
     // Mas se o escritório já conversou com essa pessoa pelo Zorvin, o número já
     // está na agenda — então preenchemos automaticamente casando pelo nome.
-    const semNumero = validos.filter((it) => !it.numero);
+    const semNumero = validos.filter((it) => !it.numero && !it.ehGrupo);
     if (semNumero.length) {
       try {
         const { data: agenda } = await supabase.from("contatos").select("nome, numero");
@@ -890,7 +899,7 @@ export default function Painel({ sessao }) {
           const mapa = new Map();
           agenda.forEach((c) => { if (c.nome && c.numero) mapa.set(norm(c.nome), c.numero); });
           validos.forEach((it) => {
-            if (it.numero) return;
+            if (it.numero || it.ehGrupo) return;
             const candidatos = [it.nomeContato, ...it.autores].filter(Boolean);
             for (const nome of candidatos) {
               const achou = mapa.get(norm(nome));
@@ -916,8 +925,10 @@ export default function Painel({ sessao }) {
     processarArquivosImport(files);
   }
 
-  // Nome do contato de um arquivo = o autor que NÃO é você.
+  // Nome mostrado de um arquivo. Grupo: o nome do grupo (do nome do arquivo).
+  // 1:1: o autor que NÃO é você.
   function nomeContatoDoItem(it) {
+    if (it.ehGrupo) return it.nomeContato || "Grupo";
     return it.nomeContato || it.autores.find((a) => a !== impMeuNome) || it.autores[0] || "Contato";
   }
 
@@ -926,9 +937,10 @@ export default function Painel({ sessao }) {
     if (!impAdvId) { mostrarAviso("Escolha o advogado dono dessas conversas."); return; }
     const meu = (impMeuNome || "").trim();
     if (!meu) { mostrarAviso("Confirme qual nome é o seu (o advogado) nos arquivos."); return; }
-    // O número é OBRIGATÓRIO para todos (evita conversa duplicada no futuro,
-    // quando o mesmo contato mandar mensagem pela ponte).
-    const faltando = impArquivos.filter((it) => !numeroDeTexto(it.numero)).length;
+    // O número é OBRIGATÓRIO para conversas 1:1 (evita conversa duplicada no
+    // futuro, quando o mesmo contato mandar mensagem pela ponte). Grupos não
+    // têm número — são identificados pelo nome do grupo.
+    const faltando = impArquivos.filter((it) => !it.ehGrupo && !numeroDeTexto(it.numero)).length;
     if (faltando > 0) { mostrarAviso(`Preencha o número dos ${faltando} contato(s) em vermelho antes de importar.`); return; }
     const prontos = impArquivos;
     if (!prontos.length) { mostrarAviso("Suba pelo menos um arquivo .txt."); return; }
@@ -939,13 +951,22 @@ export default function Painel({ sessao }) {
         const it = prontos[k];
         setImpProgresso(`Importando ${k + 1} de ${prontos.length}…`);
         const nomeBruto = nomeContatoDoItem(it);
-        // Se o "nome" é só um telefone (contato não salvo na agenda do WhatsApp),
-        // NÃO gravamos como nome — deixamos em branco para o painel mostrar o
-        // número limpo e padronizado, igual às demais conversas.
-        const nomeC = pareceTelefone(nomeBruto) ? null : nomeBruto;
-        const numero = numeroDeTexto(it.numero); // garantido preenchido (validado acima)
-        const registroContato = { numero };
-        if (nomeC) registroContato.nome = nomeC; // sem nome: não sobrescreve o que já existir
+        let registroContato;
+        if (it.ehGrupo) {
+          // GRUPO: não tem telefone. Cria um "contato" sintético que representa
+          // o grupo (chave estável por advogado + nome do grupo), marcado como
+          // grupo. Reimportar o mesmo grupo cai no mesmo registro (não duplica).
+          // A chave começa com "grupo:" — é assim que o painel reconhece um grupo
+          // (sem precisar de coluna nova no banco). Telefone real nunca é assim.
+          const chave = "grupo:" + hashCurto(impAdvId + "|" + (it.nomeContato || "grupo"));
+          registroContato = { numero: chave, nome: it.nomeContato || "Grupo" };
+        } else {
+          // 1:1. Se o "nome" é só um telefone (contato não salvo), NÃO gravamos
+          // como nome — deixamos em branco para o painel mostrar o número limpo.
+          const nomeC = pareceTelefone(nomeBruto) ? null : nomeBruto;
+          registroContato = { numero: numeroDeTexto(it.numero) };
+          if (nomeC) registroContato.nome = nomeC; // sem nome: não sobrescreve o que já existir
+        }
         const { data: cont, error: e1 } = await supabase.from("contatos")
           .upsert(registroContato, { onConflict: "numero" }).select("id").single();
         if (e1) throw e1;
@@ -958,10 +979,12 @@ export default function Painel({ sessao }) {
           const iso = m.data.toISOString();
           return {
             conversa_id: conv.id, origem, tipo: "texto", texto,
-            id_uazapi: "txt-" + hashCurto(conv.id + "|" + iso + "|" + origem + "|" + (texto || "").slice(0, 80)),
+            // No grupo, várias pessoas escrevem — o autor entra na chave para não
+            // colidir; e guardamos SEMPRE quem enviou (para mostrar na bolha).
+            id_uazapi: (it.ehGrupo ? "grp-" : "txt-") + hashCurto(conv.id + "|" + iso + "|" + (it.ehGrupo ? m.autor : origem) + "|" + (texto || "").slice(0, 80)),
             status: origem === "advogado" ? "enviada" : "recebida",
             criado_em: iso,
-            enviado_por: origem === "advogado" ? meu : null,
+            enviado_por: it.ehGrupo ? m.autor : (origem === "advogado" ? meu : null),
           };
         });
         for (let i = 0; i < linhas.length; i += 400) {
@@ -2122,7 +2145,7 @@ export default function Painel({ sessao }) {
                     <Avatar nome={conversa.contato?.nome || conversa.contato?.numero} foto={conversa.contato?.foto_url} size={150} />
                   </div>
                   <div style={{ fontSize: 20, fontWeight: 600, textAlign: "center", marginTop: 6 }}>{conversa.contato?.nome || ("+" + conversa.contato?.numero)}</div>
-                  <div style={{ fontSize: 15, color: C.textSecondary }}>+{conversa.contato?.numero}</div>
+                  <div style={{ fontSize: 15, color: C.textSecondary }}>{String(conversa.contato?.numero || "").startsWith("grupo:") ? "Grupo" : ("+" + conversa.contato?.numero)}</div>
                   <div style={{ width: "100%", borderTop: `1px solid ${C.divider}`, marginTop: 14, paddingTop: 16 }}>
                     <div style={{ fontSize: 12, color: C.textSecondary, fontWeight: 600, letterSpacing: 0.3 }}>ATENDIDO POR</div>
                     <div style={{ fontSize: 15, marginTop: 4 }}>{advogado?.nome || "—"}</div>
@@ -2162,9 +2185,11 @@ export default function Painel({ sessao }) {
                 const mesmoRemetente = anterior && !novoDia && anterior.origem === m.origem;
                 const q = buscaAberta ? buscaConversa.trim().toLowerCase() : "";
                 const casa = q && (m.texto || "").toLowerCase().includes(q);
-                // Mostra quem (qual atendente) enviou em TODAS as mensagens
-                // enviadas — a equipe sempre sabe quem respondeu.
-                const mostrarAutor = saida && !!m.enviado_por;
+                // Mostra o nome de quem enviou: sempre nas ENVIADAS (qual
+                // atendente respondeu) e também nas RECEBIDAS quando é um GRUPO
+                // (para saber qual participante escreveu, como no WhatsApp).
+                const ehGrupoConversa = String(conversa?.contato?.numero || "").startsWith("grupo:");
+                const mostrarAutor = (saida || ehGrupoConversa) && !!m.enviado_por;
                 // Última mensagem de uma sequência do mesmo remetente: recebe o
                 // avatarzinho à direita (como o WhatsApp mostra a foto do grupo).
                 const proxima = mensagens[i + 1];
@@ -2660,16 +2685,20 @@ export default function Painel({ sessao }) {
                           <div key={idx} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderBottom: idx < impArquivos.length - 1 ? `1px solid ${C.divider}` : "none" }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nomeContatoDoItem(it)}</div>
-                              <div style={{ fontSize: 12, color: C.textSecondary }}>{it.msgs.length} mensagens</div>
+                              <div style={{ fontSize: 12, color: C.textSecondary }}>{it.msgs.length} mensagens{it.ehGrupo ? " · grupo" : ""}</div>
                             </div>
-                            <input value={it.numero} onChange={(e) => { const v = e.target.value; setImpArquivos((prev) => prev.map((x, i) => i === idx ? { ...x, numero: v } : x)); }} placeholder="Número (ex.: 5511999999999)" style={{ width: "min(190px, 44%)", flexShrink: 0, boxSizing: "border-box", border: `1px solid ${numeroDeTexto(it.numero) ? C.divider : "#e5573f"}`, background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "8px 10px", fontSize: 13 }} />
+                            {/* Botão "Grupo": marca/desmarca (o painel detecta sozinho, mas você pode corrigir). Grupo não precisa de número. */}
+                            <button onClick={() => setImpArquivos((prev) => prev.map((x, i) => i === idx ? { ...x, ehGrupo: !x.ehGrupo } : x))} title="Marcar/desmarcar como grupo" style={{ flexShrink: 0, border: `1px solid ${it.ehGrupo ? C.green : C.divider}`, background: it.ehGrupo ? C.green : "transparent", color: it.ehGrupo ? "#fff" : C.textSecondary, borderRadius: 20, padding: "6px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>Grupo</button>
+                            {!it.ehGrupo && (
+                              <input value={it.numero} onChange={(e) => { const v = e.target.value; setImpArquivos((prev) => prev.map((x, i) => i === idx ? { ...x, numero: v } : x)); }} placeholder="Número (ex.: 5511999999999)" style={{ width: "min(170px, 40%)", flexShrink: 0, boxSizing: "border-box", border: `1px solid ${numeroDeTexto(it.numero) ? C.divider : "#e5573f"}`, background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "8px 10px", fontSize: 13 }} />
+                            )}
                             <button onClick={() => setImpArquivos((prev) => prev.filter((_, i) => i !== idx))} title="Remover" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex", flexShrink: 0 }}><X size={17} /></button>
                           </div>
                         ))}
                       </div>
 
                       {(() => {
-                        const faltam = impArquivos.filter((it) => !numeroDeTexto(it.numero)).length;
+                        const faltam = impArquivos.filter((it) => !it.ehGrupo && !numeroDeTexto(it.numero)).length;
                         const bloqueado = importando || faltam > 0 || !impMeuNome;
                         return (
                           <>
