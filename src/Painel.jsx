@@ -228,6 +228,26 @@ function pareceGrupo(conteudo) {
   return /criou (este |o )?grupo|mudou o nome do grupo|saiu do grupo|entrou usando o link|convite do grupo|adicionou você|removeu você|created (this )?group|changed the subject|group's invite link|left the group|added you to the group|removed you/i.test(conteudo || "");
 }
 
+// Descobre o NOME do grupo a partir do conteúdo do arquivo (quando o nome do
+// arquivo não traz). Usa a linha "mudou o nome do grupo … para «X»" (fica com o
+// último = nome atual) ou "criou o grupo «X»". Vale PT e EN.
+function nomeDoGrupo(conteudo) {
+  const linhas = (conteudo || "").split(/\r?\n/);
+  const limpar = (s) => (s || "").replace(/^[\s"'“”«»]+|[\s"'“”«»]+$/g, "").trim();
+  let nome = "";
+  for (const ln of linhas) {
+    const m = /mudou o nome do grupo .*?\bpara\b\s*(.+)$/i.exec(ln) ||
+              /changed the (?:subject|group name) to\s*(.+)$/i.exec(ln);
+    if (m) nome = limpar(m[1]); // fica com o ÚLTIMO (nome atual do grupo)
+  }
+  if (nome) return nome;
+  for (const ln of linhas) {
+    const m = /criou o grupo\s*(.+)$/i.exec(ln) || /created (?:the )?group\s*(.+)$/i.exec(ln);
+    if (m) { const c = limpar(m[1]); if (c) return c; }
+  }
+  return "";
+}
+
 // Emojis mais usados no atendimento (picker do ícone de carinha).
 const EMOJIS = [
   "😀","😁","😂","🤣","😊","😍","😘","😅","😉","🙂",
@@ -878,7 +898,11 @@ export default function Painel({ sessao }) {
       // quando ele próprio é um telefone), nunca dos dígitos crus do arquivo.
       const autorTelefone = autores.find((a) => pareceTelefone(a)) || "";
       const numero = numeroDeTexto(autorTelefone) || (pareceTelefone(nomeContato) ? numeroDeTexto(nomeContato) : "");
-      return { nome: nomeBase, msgs, autores, numero, nomeContato, ehGrupo: pareceGrupo(conteudo) };
+      const ehGrupo = pareceGrupo(conteudo);
+      // Nome do grupo: usa o do nome do arquivo; se faltar, pega de dentro do
+      // arquivo (linha de "mudou o nome do grupo…"/"criou o grupo…").
+      const nomeFinal = ehGrupo ? (nomeContato || nomeDoGrupo(conteudo)) : nomeContato;
+      return { nome: nomeBase, msgs, autores, numero, nomeContato: nomeFinal, ehGrupo };
     });
     const validos = itens.filter((it) => it.msgs.length);
     if (!validos.length) {
