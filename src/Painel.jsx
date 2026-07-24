@@ -339,6 +339,7 @@ export default function Painel({ sessao }) {
     try { localStorage.setItem("zorvin_modo", modo); } catch (_) { /* ignora */ }
   }, [modo]);
   const [advogados, setAdvogados] = useState([]);
+  const [setorAtivo, setSetorAtivo] = useState("acordos"); // "acordos" | "gestao" (só gestor troca)
   const [advogadoId, setAdvogadoId] = useState(null);
   const [conversas, setConversas] = useState([]);
   const [conversaId, setConversaId] = useState(null);
@@ -427,6 +428,13 @@ export default function Painel({ sessao }) {
     (sessao?.user?.email || "").split("@")[0] ||
     "atendente";
   const minhaFoto = sessao?.user?.user_metadata?.foto_url || null;
+  // Permissão de GESTÃO: definida no perfil do usuário no Supabase
+  // (user_metadata: { "gestor": true }). Só o gestor vê o setor "Gestão".
+  const g = sessao?.user?.user_metadata?.gestor;
+  const ehGestor = g === true || g === "true";
+  // Advogados que aparecem AGORA (do setor selecionado). Advogado sem setor
+  // definido conta como "acordos" (o padrão de antes).
+  const advogadosVisiveis = advogados.filter((a) => (a.setor || "acordos") === setorAtivo);
 
   // O contato está digitando nesta conversa agora? (janela curta que expira).
   function digitandoAtivo(convId) {
@@ -446,15 +454,18 @@ export default function Painel({ sessao }) {
 
   // ---- Carrega os advogados (uma vez) ----
   useEffect(() => {
-    supabase.from("advogados").select("id, nome, numero, foto_url").eq("ativo", true).order("nome")
+    supabase.from("advogados").select("id, nome, numero, foto_url, setor").eq("ativo", true).order("nome")
       .then(({ data }) => {
         setAdvogados(data || []);
         if (data && data.length) {
           // Mantém o advogado que estava selecionado antes de atualizar a página.
           let salvo = null;
           try { salvo = localStorage.getItem("zorvin_advogado"); } catch (_) { /* ignora */ }
-          const existe = salvo && data.some((a) => a.id === salvo);
-          setAdvogadoId(existe ? salvo : data[0].id);
+          const advSalvo = salvo && data.find((a) => a.id === salvo);
+          const escolhido = advSalvo || data[0];
+          // Abre no setor do advogado escolhido (ex.: se estava na Gestão, volta lá).
+          setSetorAtivo(escolhido.setor || "acordos");
+          setAdvogadoId(escolhido.id);
         }
       });
   }, []);
@@ -1322,6 +1333,15 @@ export default function Painel({ sessao }) {
   }
 
   function trocarAdvogado(id) { setAdvogadoId(id); setConversaId(null); setSeletorAberto(false); setBusca(""); setVerArquivadas(false); }
+  // Troca o SETOR (Central de Acordos ↔ Gestão) e vai para o 1º advogado dele.
+  function trocarSetor(s) {
+    if (s === setorAtivo) return;
+    setSetorAtivo(s);
+    setConversaId(null);
+    setBusca(""); setVerArquivadas(false); setFiltro("tudo");
+    const primeiro = advogados.find((a) => (a.setor || "acordos") === s);
+    setAdvogadoId(primeiro ? primeiro.id : null);
+  }
 
   // Marca a conversa como não lida (mostra o selo verde) ou como lida.
   async function marcarNaoLida(conv, naoLida) {
@@ -1723,7 +1743,7 @@ export default function Painel({ sessao }) {
         {/* Advogados: um avatar por advogado. O atual fica destacado (anel
             verde); quem tem mensagens não lidas ganha um selo vermelho. */}
         <div className="sem-scrollbar" style={{ flex: 1, width: "100%", overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, paddingBottom: 8 }}>
-          {advogados.map((a) => {
+          {advogadosVisiveis.map((a) => {
             const n = naoLidasDoAdvogado(a.id);
             const atual = a.id === advogadoId;
             return (
@@ -1844,6 +1864,18 @@ export default function Painel({ sessao }) {
               )}
             </span>
           </div>
+          {/* Seletor de SETOR — só o gestor vê. Divide "Central de Acordos" e
+              "Gestão" (números de outros setores, restritos à gestão). */}
+          {ehGestor && (
+            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+              {[["acordos", "Central de Acordos"], ["gestao", "Gestão"]].map(([k, label]) => {
+                const ativo = setorAtivo === k;
+                return (
+                  <button key={k} onClick={() => trocarSetor(k)} style={{ flex: 1, border: `1px solid ${ativo ? C.green : C.divider}`, background: ativo ? C.green : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 8, padding: "6px 8px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</button>
+                );
+              })}
+            </div>
+          )}
           <div style={{ fontSize: 11, color: C.textSecondary, fontWeight: 600, letterSpacing: 0.3 }}>ATENDENDO COMO</div>
           <div style={{ fontSize: 15, fontWeight: 600, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{advogado ? advogado.nome : "—"}</div>
         </div>
