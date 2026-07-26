@@ -5,8 +5,9 @@ import {
   MessageSquare, Mic, CheckCheck, LogOut, ArrowLeft, Sun, Moon,
   Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp,
   StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star,
-  Archive, UserPlus, MessageSquarePlus, SquarePen, Pause
+  Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList
 } from "lucide-react";
+import FichaVantoro from "./FichaVantoro";
 
 // ============================================================
 //  ZORVIN by Ropelimi — Painel real (conectado ao Supabase)
@@ -382,6 +383,8 @@ export default function Painel({ sessao }) {
   const [advogadoId, setAdvogadoId] = useState(null);
   const [conversas, setConversas] = useState([]);
   const [conversaId, setConversaId] = useState(null);
+  // Ficha do cliente no Vantoro (abre ao lado da conversa).
+  const [fichaAberta, setFichaAberta] = useState(false);
   const [mensagens, setMensagens] = useState([]);
   const [seletorAberto, setSeletorAberto] = useState(false);
   const [verArquivadas, setVerArquivadas] = useState(false); // exibindo a lista de arquivadas
@@ -1329,13 +1332,14 @@ export default function Painel({ sessao }) {
       else if (tagMenuAberto) setTagMenuAberto(false);
       else if (emojiAberto) setEmojiAberto(false);
       else if (seletorAberto) setSeletorAberto(false);
+      else if (fichaAberta) setFichaAberta(false);
       else if (infoAberta) setInfoAberta(false);
       else if (buscaAberta) { setBuscaAberta(false); setBuscaConversa(""); }
       else if (respondendo) setRespondendo(null);
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, menuConversa, menuTopoAberto, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, buscaAberta, respondendo]);
+  }, [imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, menuConversa, menuTopoAberto, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -2113,6 +2117,13 @@ export default function Painel({ sessao }) {
                 )}
               </div>
               </div>
+              {/* Ficha do cliente no Vantoro (cadastro, esteira, processos) */}
+              <button onClick={() => setFichaAberta((v) => !v)}
+                      title="Ficha do cliente no Vantoro"
+                      style={{ border: "none", background: fichaAberta ? C.listActive : "transparent",
+                               borderRadius: 8, padding: 7, cursor: "pointer", display: "flex" }}>
+                <ClipboardList size={19} color={fichaAberta ? C.green : C.textSecondary} />
+              </button>
               {/* Avatares dos atendentes que já interagiram com este contato */}
               {atendentesInteragiram.length > 0 && (
                 <div title={`Já atenderam este contato: ${atendentesInteragiram.map((a) => a.nome).join(", ")}`} style={{ display: "flex", alignItems: "center", marginRight: 2 }}>
@@ -2155,6 +2166,21 @@ export default function Painel({ sessao }) {
                 <Search size={19} color={buscaAberta ? C.green : C.textSecondary} />
               </button>
             </div>
+
+            {/* Ficha do cliente no Vantoro — mesmo padrão do painel de dados */}
+            {fichaAberta && (
+              <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, zIndex: 46,
+                            boxShadow: "-2px 0 12px rgba(0,0,0,.15)", display: "flex",
+                            width: estreito ? "100%" : "auto" }}>
+                <FichaVantoro
+                  numero={conversa.contato?.numero}
+                  nomeContato={conversa.contato?.nome}
+                  C={C}
+                  onFechar={() => setFichaAberta(false)}
+                  onAviso={mostrarAviso}
+                />
+              </div>
+            )}
 
             {infoAberta && (
               <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: estreito ? "100%" : 360, background: C.panel, borderLeft: `1px solid ${C.divider}`, zIndex: 45, display: "flex", flexDirection: "column", boxShadow: "-2px 0 12px rgba(0,0,0,.15)" }}>
