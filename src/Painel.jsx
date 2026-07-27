@@ -5,7 +5,7 @@ import {
   MessageSquare, Mic, CheckCheck, LogOut, ArrowLeft, Sun, Moon,
   Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp,
   StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star,
-  Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList
+  Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList, Info
 } from "lucide-react";
 import FichaVantoro from "./FichaVantoro";
 
@@ -2243,7 +2243,12 @@ export default function Painel({ sessao }) {
                   <ArrowLeft size={20} color={C.textSecondary} />
                 </button>
               )}
-              <div onClick={() => setInfoAberta(true)} title="Ver dados do contato" style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, cursor: "pointer", minWidth: 0 }}>
+              {/* Clicar no nome abre a FICHA DO CLIENTE, não os dados do
+                  contato. Quem clica ali quer saber de quem se trata — CPF,
+                  processos, pendências —, e não o telefone que já está na
+                  conversa. Os dados do contato continuam acessíveis pela
+                  etiqueta ao lado. */}
+              <div onClick={() => setFichaAberta(true)} title="Abrir a ficha do cliente" style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, cursor: "pointer", minWidth: 0 }}>
               <Avatar nome={conversa.contato?.nome || conversa.contato?.numero} foto={conversa.contato?.foto_url} size={40} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{conversa.contato?.nome || ("+" + conversa.contato?.numero)}</div>
@@ -2271,6 +2276,15 @@ export default function Painel({ sessao }) {
                       style={{ border: "none", background: fichaAberta ? C.listActive : "transparent",
                                borderRadius: 8, padding: 7, cursor: "pointer", display: "flex" }}>
                 <ClipboardList size={19} color={fichaAberta ? C.green : C.textSecondary} />
+              </button>
+              {/* Os dados do contato (telefone, foto, mídias) ganharam botão
+                  próprio: o clique no nome agora abre a ficha, e sem isto este
+                  painel ficaria sem porta de entrada. */}
+              <button onClick={() => setInfoAberta((v) => !v)}
+                      title="Dados do contato"
+                      style={{ border: "none", background: infoAberta ? C.listActive : "transparent",
+                               borderRadius: 8, padding: 7, cursor: "pointer", display: "flex" }}>
+                <Info size={19} color={infoAberta ? C.green : C.textSecondary} />
               </button>
               {/* Avatares dos atendentes que já interagiram com este contato */}
               {atendentesInteragiram.length > 0 && (
