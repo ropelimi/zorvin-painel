@@ -1252,7 +1252,9 @@ export default function Painel({ sessao }) {
   }, [conversaId, advogadoId, carregarConversas, carregarNaoLidasPorAdv, carregarTags, carregarTagsConversas]);
 
   // Ao abrir uma conversa, começa no fim (mensagens mais recentes).
-  useEffect(() => { setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); setRespondendo(null); setInfoAberta(false); setTagMenuAberto(false); setModoNota(false); requestAnimationFrame(() => { fimRef.current?.scrollIntoView(); if (conversaId && !estreito) inputRef.current?.focus(); }); }, [conversaId]);
+  // A ficha do cliente fecha junto: ela é o cadastro de QUEM está na conversa,
+  // e deixá-la aberta ao trocar de contato mostraria os dados da pessoa errada.
+  useEffect(() => { setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); setRespondendo(null); setInfoAberta(false); setFichaAberta(false); setTagMenuAberto(false); setModoNota(false); requestAnimationFrame(() => { fimRef.current?.scrollIntoView(); if (conversaId && !estreito) inputRef.current?.focus(); }); }, [conversaId]);
 
   // Mensagem nova: só rola até o fim se o atendente já estava no fim
   // (não "puxa" a tela quem está lendo mensagens antigas).
@@ -1864,7 +1866,10 @@ export default function Painel({ sessao }) {
       </div>
 
       {/* Lista de conversas */}
-      <div style={{ position: "relative", width: estreito ? "auto" : 380, flex: estreito ? 1 : "none", borderRight: `1px solid ${C.divider}`, display: (estreito && conversaId) ? "none" : "flex", flexDirection: "column", background: C.panel }}>
+      {/* Com a ficha aberta a lista sai de cena e devolve os 380px para a
+          conversa: o atendente está tratando de uma pessoa só, e as outras
+          conversas voltam assim que ele fecha a ficha. */}
+      <div style={{ position: "relative", width: estreito ? "auto" : 380, flex: estreito ? 1 : "none", borderRight: `1px solid ${C.divider}`, display: ((estreito && conversaId) || fichaAberta) ? "none" : "flex", flexDirection: "column", background: C.panel }}>
         {/* NOVA CONVERSA (⊞) — estilo WhatsApp Web: busca, novo contato e agenda */}
         {novaConversaAberta && (
           <div style={{ position: "absolute", inset: 0, zIndex: 40, background: C.panel, display: "flex", flexDirection: "column" }}>
@@ -2076,7 +2081,7 @@ export default function Painel({ sessao }) {
       </div>
 
       {/* Conversa */}
-      <div style={{ flex: 1, display: (estreito && !conversaId) ? "none" : "flex", flexDirection: "column", background: C.chatBg, backgroundImage: modo === "escuro" ? PADRAO_CHAT_ESCURO : PADRAO_CHAT_CLARO, position: "relative" }}>
+      <div style={{ flex: 1, display: ((estreito && !conversaId) || (estreito && fichaAberta)) ? "none" : "flex", flexDirection: "column", background: C.chatBg, backgroundImage: modo === "escuro" ? PADRAO_CHAT_ESCURO : PADRAO_CHAT_CLARO, position: "relative" }}>
         {!conversa ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: C.textSecondary, gap: 16 }}>
             <div style={{ width: 90, height: 90, borderRadius: "50%", background: C.placeholderCircle, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -2166,21 +2171,6 @@ export default function Painel({ sessao }) {
                 <Search size={19} color={buscaAberta ? C.green : C.textSecondary} />
               </button>
             </div>
-
-            {/* Ficha do cliente no Vantoro — mesmo padrão do painel de dados */}
-            {fichaAberta && (
-              <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, zIndex: 46,
-                            boxShadow: "-2px 0 12px rgba(0,0,0,.15)", display: "flex",
-                            width: estreito ? "100%" : "auto" }}>
-                <FichaVantoro
-                  numero={conversa.contato?.numero}
-                  nomeContato={conversa.contato?.nome}
-                  C={C}
-                  onFechar={() => setFichaAberta(false)}
-                  onAviso={mostrarAviso}
-                />
-              </div>
-            )}
 
             {infoAberta && (
               <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: estreito ? "100%" : 360, background: C.panel, borderLeft: `1px solid ${C.divider}`, zIndex: 45, display: "flex", flexDirection: "column", boxShadow: "-2px 0 12px rgba(0,0,0,.15)" }}>
@@ -2458,6 +2448,22 @@ export default function Painel({ sessao }) {
           </>
         )}
       </div>
+
+      {/* Ficha do cliente no Vantoro — coluna ao lado da conversa.
+          Fica aqui fora, irmã da conversa, e não dentro dela: assim a conversa
+          encolhe e cede o espaço em vez de ficar escondida atrás da ficha.
+          Quem sai de cena é a lista de conversas (ver a coluna lá em cima), que
+          não faz falta enquanto se atende uma pessoa só. */}
+      {fichaAberta && conversa && (
+        <FichaVantoro
+          numero={conversa.contato?.numero}
+          nomeContato={conversa.contato?.nome}
+          C={C}
+          estreito={estreito}
+          onFechar={() => setFichaAberta(false)}
+          onAviso={mostrarAviso}
+        />
+      )}
 
       {/* CONFIGURAÇÕES — perfil, aparência, sair e mensagens rápidas */}
       {configAberta && (

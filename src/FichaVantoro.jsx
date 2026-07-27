@@ -70,7 +70,7 @@ async function chamarPonte(caminho, opcoes = {}) {
   return corpo;
 }
 
-export default function FichaVantoro({ numero, nomeContato, C, onFechar, onAviso }) {
+export default function FichaVantoro({ numero, nomeContato, C, estreito, onFechar, onAviso }) {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [cliente, setCliente] = useState(null);
@@ -150,8 +150,11 @@ export default function FichaVantoro({ numero, nomeContato, C, onFechar, onAviso
   };
 
   return (
+    // Coluna de verdade, ao lado da conversa — não uma camada por cima dela.
+    // No celular não cabem as duas, então a ficha ocupa a tela inteira.
     <div style={{
-      width: 330, flex: "none", background: C.panel, borderLeft: `1px solid ${C.divider}`,
+      width: estreito ? "100%" : 330, flex: estreito ? 1 : "none",
+      background: C.panel, borderLeft: `1px solid ${C.divider}`,
       display: "flex", flexDirection: "column", height: "100%", overflow: "hidden",
     }}>
       <div style={{
