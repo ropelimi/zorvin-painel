@@ -5,9 +5,14 @@
 //  O caminho é: painel -> ponte (zorvin-bridge) -> Vantoro.
 //  A ponte é quem guarda o token do Vantoro; aqui mandamos apenas a
 //  sessão do Zorvin (o mesmo login que o atendente já fez).
+//
+//  Os campos ficam em seções que abrem e fecham. São muitos dados para uma
+//  coluna estreita: deixar tudo aberto vira uma rolagem sem fim, e no meio de
+//  um atendimento ninguém tem tempo de procurar. Só a primeira seção começa
+//  aberta — é a que responde "com quem estou falando".
 // ============================================================
 import { useEffect, useState } from "react";
-import { X, Save, UserPlus, RefreshCw, ExternalLink } from "lucide-react";
+import { X, Save, UserPlus, RefreshCw, ExternalLink, ChevronDown, ChevronRight } from "lucide-react";
 import { supabase } from "./supabase";
 
 const BRIDGE_URL = (import.meta.env.VITE_BRIDGE_URL || "").replace(/\/$/, "");
@@ -21,25 +26,71 @@ const FALTA_PONTE =
   "Render → zorvin-painel → Environment com o endereço do zorvin-bridge e " +
   "publique o painel de novo (o Vite grava esse valor durante o build).";
 
-// Campos que o atendente pode preencher direto daqui.
-// "minusculo" força letra minúscula enquanto se digita: e-mail não diferencia
-// maiúscula de minúscula, e guardar tudo igual evita cadastro duplicado e
-// busca que não acha. O Vantoro faz o mesmo do lado dele, por garantia.
-const CAMPOS = [
-  // CPF na frente: é por ele que o cadastro é procurado e conferido.
-  { chave: "cpf", rotulo: "CPF" },
-  { chave: "nome", rotulo: "Nome completo" },
-  { chave: "email", rotulo: "E-mail", minusculo: true },
-  { chave: "nascimento", rotulo: "Nascimento", dica: "DD/MM/AAAA", data: true },
-  { chave: "ocupacao", rotulo: "Profissão" },
-  { chave: "cidade", rotulo: "Cidade" },
-  { chave: "estado", rotulo: "UF" },
-  // Acessos do cliente. Ficam editáveis aqui porque quem descobre a senha é
-  // quem está na conversa — obrigar a abrir o Vantoro só para isso custava
-  // tempo e a senha acabava anotada em outro lugar.
-  { chave: "senha_serasa", rotulo: "Senha SERASA" },
-  { chave: "senha_gov", rotulo: "Senha GOV" },
+// Lista usada só enquanto o Vantoro não responder com a dele (por exemplo, se
+// o painel for publicado antes do Vantoro). A lista boa vem da API, para não
+// existirem duas que precisam ser mantidas iguais.
+const ESTADO_CIVIL_RESERVA = [
+  { valor: "SOLTEIRO", rotulo: "Solteiro(a)" },
+  { valor: "CASADO", rotulo: "Casado(a)" },
+  { valor: "DIVORCIADO", rotulo: "Divorciado(a)" },
+  { valor: "UNIAO_ESTAVEL", rotulo: "União estável" },
+  { valor: "VIUVO", rotulo: "Viúvo(a)" },
 ];
+
+// As seções da ficha, na ordem em que aparecem. "aberta" define quais já vêm
+// abertas; as outras o atendente abre quando precisar.
+//   minusculo → desce a letra enquanto digita (e-mail)
+//   data      → máscara DD/MM/AAAA
+//   cep       → máscara 00000-000 e busca o endereço sozinho
+//   opcoes    → vira lista de escolha em vez de texto livre
+const SECOES = [
+  {
+    id: "identificacao",
+    titulo: "Identificação",
+    aberta: true,
+    campos: [
+      { chave: "telefone2", rotulo: "Outro WhatsApp/telefone",
+        dica: "se o cliente trocou de número" },
+      { chave: "cpf", rotulo: "CPF" },
+      { chave: "nome", rotulo: "Nome completo" },
+      { chave: "email", rotulo: "E-mail", minusculo: true },
+      { chave: "nascimento", rotulo: "Nascimento", dica: "DD/MM/AAAA", data: true },
+      { chave: "estado_civil", rotulo: "Estado civil", opcoes: "estado_civil" },
+      { chave: "ocupacao", rotulo: "Profissão" },
+    ],
+  },
+  {
+    id: "endereco",
+    titulo: "Endereço",
+    campos: [
+      { chave: "cep", rotulo: "CEP", dica: "preenche o resto sozinho", cep: true },
+      { chave: "endereco", rotulo: "Rua e número" },
+      { chave: "bairro", rotulo: "Bairro" },
+      { chave: "cidade", rotulo: "Cidade" },
+      { chave: "estado", rotulo: "UF" },
+    ],
+  },
+  {
+    id: "acessos",
+    titulo: "Acessos",
+    campos: [
+      { chave: "senha_serasa", rotulo: "Senha SERASA" },
+      { chave: "senha_gov", rotulo: "Senha GOV" },
+    ],
+  },
+  {
+    id: "origem",
+    titulo: "Origem do lead",
+    campos: [
+      { chave: "origem", rotulo: "Origem" },
+      { chave: "utm_campaign", rotulo: "Campanha" },
+      { chave: "utm_medium", rotulo: "Conjunto de anúncios" },
+      { chave: "utm_content", rotulo: "Anúncio" },
+    ],
+  },
+];
+
+const TODOS_CAMPOS = SECOES.flatMap((s) => s.campos);
 
 // Vai colocando as barras enquanto se digita a data: 25121980 → 25/12/1980.
 // Assim o atendente digita só os números e não erra a ordem do dia e do mês.
@@ -48,6 +99,37 @@ function mascaraData(valor) {
   if (d.length <= 2) return d;
   if (d.length <= 4) return `${d.slice(0, 2)}/${d.slice(2)}`;
   return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
+}
+
+function mascaraCep(valor) {
+  const d = (valor || "").replace(/\D/g, "").slice(0, 8);
+  return d.length <= 5 ? d : `${d.slice(0, 5)}-${d.slice(5)}`;
+}
+
+// 5511997303331 → (11) 99730-3331. Só para leitura; o que vale é o número cru.
+function formatarTelefone(valor) {
+  let d = (valor || "").replace(/\D/g, "");
+  if (d.length > 11 && d.startsWith("55")) d = d.slice(2);
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return valor || "—";
+}
+
+// Busca o endereço pelo CEP. Serviço público e sem cadastro; se estiver fora do
+// ar, o atendente digita à mão e nada trava.
+async function buscarCep(cep) {
+  const d = (cep || "").replace(/\D/g, "");
+  if (d.length !== 8) return null;
+  const r = await fetch(`https://viacep.com.br/ws/${d}/json/`);
+  if (!r.ok) return null;
+  const j = await r.json();
+  if (j.erro) return null;
+  return {
+    endereco: j.logradouro || "",
+    bairro: j.bairro || "",
+    cidade: j.localidade || "",
+    estado: j.uf || "",
+  };
 }
 
 // Chama a ponte já com a sessão do Zorvin no cabeçalho.
@@ -76,6 +158,19 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   const [cliente, setCliente] = useState(null);
   const [edicao, setEdicao] = useState({});
   const [salvando, setSalvando] = useState(false);
+  const [buscandoCep, setBuscandoCep] = useState(false);
+  const [opcoes, setOpcoes] = useState({ estado_civil: ESTADO_CIVIL_RESERVA });
+  const [abertas, setAbertas] = useState(
+    () => new Set(SECOES.filter((s) => s.aberta).map((s) => s.id))
+  );
+
+  function alternar(id) {
+    setAbertas((atual) => {
+      const nova = new Set(atual);
+      if (nova.has(id)) nova.delete(id); else nova.add(id);
+      return nova;
+    });
+  }
 
   async function buscar() {
     setCarregando(true);
@@ -83,6 +178,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     try {
       const r = await chamarPonte(`/vantoro/cliente?telefone=${encodeURIComponent(numero || "")}`);
       const achado = (r.clientes && r.clientes[0]) || null;
+      if (r.opcoes?.estado_civil?.length) setOpcoes(r.opcoes);
       setCliente(achado);
       setEdicao(achado ? { ...achado } : {});
     } catch (e) {
@@ -120,7 +216,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     setSalvando(true);
     try {
       const mudou = {};
-      CAMPOS.forEach(({ chave }) => {
+      TODOS_CAMPOS.forEach(({ chave }) => {
         if ((edicao[chave] || "") !== (cliente[chave] || "")) mudou[chave] = edicao[chave] || "";
       });
       if (!Object.keys(mudou).length) { onAviso && onAviso("Nada foi alterado."); return; }
@@ -138,6 +234,24 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     }
   }
 
+  // CEP completo: puxa o endereço e preenche o resto. Falhou? Segue sem avisar
+  // com alarde — os campos continuam lá para digitar.
+  async function aoDigitarCep(valor) {
+    const mascarado = mascaraCep(valor);
+    setEdicao((e) => ({ ...e, cep: mascarado }));
+    if (mascarado.replace(/\D/g, "").length !== 8) return;
+    setBuscandoCep(true);
+    try {
+      const achado = await buscarCep(mascarado);
+      if (achado) setEdicao((e) => ({ ...e, ...achado }));
+      else onAviso && onAviso("CEP não encontrado. Preencha o endereço à mão.");
+    } catch {
+      onAviso && onAviso("Não consegui consultar o CEP agora. Preencha à mão.");
+    } finally {
+      setBuscandoCep(false);
+    }
+  }
+
   const rotulo = { fontSize: 11, color: C.textSecondary, marginBottom: 3, display: "block" };
   const campo = {
     width: "100%", boxSizing: "border-box", background: C.inputBg, color: C.textPrimary,
@@ -148,6 +262,42 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13.5,
     fontWeight: 600, cursor: "pointer", background: C.green, color: "#fff",
   };
+  const cabecalhoSecao = {
+    display: "flex", alignItems: "center", gap: 6, width: "100%", border: "none",
+    background: "transparent", color: C.textPrimary, cursor: "pointer",
+    padding: "9px 0", fontSize: 12.5, fontWeight: 600, textAlign: "left",
+  };
+
+  function desenharCampo(c) {
+    const lista = c.opcoes ? (opcoes[c.opcoes] || []) : null;
+    return (
+      <div key={c.chave} style={{ marginBottom: 10 }}>
+        <label style={rotulo}>{c.rotulo}{c.dica ? ` (${c.dica})` : ""}</label>
+        {lista ? (
+          <select style={campo} value={edicao[c.chave] || ""}
+                  onChange={(e) => setEdicao({ ...edicao, [c.chave]: e.target.value })}>
+            <option value="">—</option>
+            {lista.map((o) => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
+          </select>
+        ) : (
+          <input style={campo} value={edicao[c.chave] || ""}
+                 inputMode={(c.data || c.cep) ? "numeric" : undefined}
+                 placeholder={c.data ? "DD/MM/AAAA" : c.cep ? "00000-000" : undefined}
+                 onChange={(e) => {
+                   const v = e.target.value;
+                   if (c.cep) { aoDigitarCep(v); return; }
+                   setEdicao({
+                     ...edicao,
+                     [c.chave]: c.data ? mascaraData(v) : c.minusculo ? v.toLowerCase() : v,
+                   });
+                 }} />
+        )}
+        {c.cep && buscandoCep && (
+          <div style={{ fontSize: 11, color: C.textSecondary, marginTop: 3 }}>Buscando endereço…</div>
+        )}
+      </div>
+    );
+  }
 
   return (
     // Coluna de verdade, ao lado da conversa — não uma camada por cima dela.
@@ -241,22 +391,38 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
               </a>
             )}
 
-            {CAMPOS.map(({ chave, rotulo: r, dica, minusculo, data }) => (
-              <div key={chave} style={{ marginBottom: 10 }}>
-                <label style={rotulo}>{r}{dica ? ` (${dica})` : ""}</label>
-                <input style={campo} value={edicao[chave] || ""}
-                       inputMode={data ? "numeric" : undefined}
-                       placeholder={data ? "DD/MM/AAAA" : undefined}
-                       onChange={(e) => {
-                         let v = e.target.value;
-                         if (data) v = mascaraData(v);
-                         else if (minusculo) v = v.toLowerCase();
-                         setEdicao({ ...edicao, [chave]: v });
-                       }} />
+            {/* O número desta conversa, só para conferir. Não se edita aqui: é
+                por ele que a conversa acha o cadastro, e trocá-lo no meio do
+                atendimento desfaria esse vínculo. Se o cliente mudou de número,
+                anote no campo abaixo; a troca do principal é feita no Vantoro. */}
+            <div style={{ marginBottom: 10 }}>
+              <label style={rotulo}>WhatsApp desta conversa</label>
+              <div style={{ ...campo, background: C.headerBar, color: C.textSecondary }}>
+                {formatarTelefone(numero)}
               </div>
-            ))}
+            </div>
 
-            <button style={{ ...botao, width: "100%", marginTop: 4, opacity: salvando ? 0.6 : 1 }}
+            {SECOES.map((secao) => {
+              const aberta = abertas.has(secao.id);
+              // Quantos campos da seção já têm conteúdo — dá para saber o que
+              // falta preencher sem abrir uma por uma.
+              const preenchidos = secao.campos.filter((c) => (edicao[c.chave] || "").trim()).length;
+              return (
+                <div key={secao.id} style={{ borderTop: `1px solid ${C.divider}` }}>
+                  <button style={cabecalhoSecao} onClick={() => alternar(secao.id)}>
+                    {aberta ? <ChevronDown size={15} color={C.textSecondary} />
+                            : <ChevronRight size={15} color={C.textSecondary} />}
+                    <span style={{ flex: 1 }}>{secao.titulo}</span>
+                    <span style={{ fontSize: 11, color: C.textSecondary, fontWeight: 400 }}>
+                      {preenchidos}/{secao.campos.length}
+                    </span>
+                  </button>
+                  {aberta && <div style={{ paddingBottom: 6 }}>{secao.campos.map(desenharCampo)}</div>}
+                </div>
+              );
+            })}
+
+            <button style={{ ...botao, width: "100%", marginTop: 12, opacity: salvando ? 0.6 : 1 }}
                     onClick={salvar} disabled={salvando}>
               <Save size={15} /> {salvando ? "Salvando…" : "Salvar no Vantoro"}
             </button>
