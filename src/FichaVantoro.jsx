@@ -12,6 +12,15 @@ import { supabase } from "./supabase";
 
 const BRIDGE_URL = (import.meta.env.VITE_BRIDGE_URL || "").replace(/\/$/, "");
 
+// Aviso exibido quando o painel foi publicado sem saber o endereco da ponte.
+// Detalhe importante: o Vite grava as variaveis VITE_* dentro do arquivo final
+// no momento do build. Preencher a variavel na Render nao basta — precisa de um
+// deploy novo depois, senao o painel continua com o valor vazio de antes.
+const FALTA_PONTE =
+  "Falta a variável VITE_BRIDGE_URL no painel. Preencha em " +
+  "Render → zorvin-painel → Environment com o endereço do zorvin-bridge e " +
+  "publique o painel de novo (o Vite grava esse valor durante o build).";
+
 // Campos que o atendente pode preencher direto daqui.
 const CAMPOS = [
   { chave: "nome", rotulo: "Nome" },
@@ -25,7 +34,7 @@ const CAMPOS = [
 
 // Chama a ponte já com a sessão do Zorvin no cabeçalho.
 async function chamarPonte(caminho, opcoes = {}) {
-  if (!BRIDGE_URL) throw new Error("A ponte não está configurada (VITE_BRIDGE_URL).");
+  if (!BRIDGE_URL) throw new Error(FALTA_PONTE);
   const { data } = await supabase.auth.getSession();
   const jwt = data?.session?.access_token;
   if (!jwt) throw new Error("Sessão expirada. Entre de novo.");
@@ -146,9 +155,13 @@ export default function FichaVantoro({ numero, nomeContato, C, onFechar, onAviso
         {!carregando && erro && (
           <div style={{ color: "#e5695a", fontSize: 13, lineHeight: 1.5 }}>
             {erro}
-            <div style={{ color: C.textSecondary, marginTop: 8, fontSize: 12 }}>
-              Verifique se a ponte está configurada com VANTORO_API_URL e VANTORO_API_TOKEN.
-            </div>
+            {/* A dica só faz sentido quando o painel já sabe o endereço da
+                ponte; se nem isso ele tem, a mensagem acima já explica tudo. */}
+            {BRIDGE_URL && (
+              <div style={{ color: C.textSecondary, marginTop: 8, fontSize: 12 }}>
+                Verifique se a ponte está configurada com VANTORO_API_URL e VANTORO_API_TOKEN.
+              </div>
+            )}
           </div>
         )}
 
