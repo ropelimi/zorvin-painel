@@ -19,6 +19,20 @@ import FichaVantoro from "./FichaVantoro";
 // ACORDAR a ponte na hora (o Render free hiberna) e despachar a fila —
 // senão a mensagem fica "carregando" até chegar algo de fora.
 const BRIDGE_URL = (import.meta.env.VITE_BRIDGE_URL || "").replace(/\/$/, "");
+
+// As frentes de atendimento. O mesmo número de advogado atende acordo (com o
+// escritório do réu) e cliente (SAC, audiências): quem separa é quem está do
+// outro lado, e essa etiqueta vem do Vantoro pela ponte.
+// A cor não é enfeite — é o que deixa a equipe ver, de relance, que aquela
+// conversa não é da sua alçada.
+const FRENTES = [
+  { chave: "ACORDO", rotulo: "Acordos", cor: "#c98a2e" },
+  { chave: "CLIENTE", rotulo: "Clientes", cor: "#2e9e6b" },
+  { chave: "LEAD", rotulo: "Vendas", cor: "#3d7dd6" },
+  { chave: "INTERNO", rotulo: "Interno", cor: "#8a72c9" },
+  { chave: "DESCONHECIDA", rotulo: "Sem identificar", cor: "#7b8794" },
+];
+const FRENTE_POR_CHAVE = Object.fromEntries(FRENTES.map((f) => [f.chave, f]));
 function acordarPonte() {
   if (!BRIDGE_URL) return;
   // "no-cors": só precisamos que o pedido CHEGUE na ponte (acorda + despacha);
@@ -441,7 +455,7 @@ export default function Painel({ sessao }) {
   const [rapidaForm, setRapidaForm] = useState(null); // { id?, titulo, texto } sendo criada/editada
   const [tags, setTags] = useState([]); // definições das tags (id, nome, cor)
   const [tagsPorConversa, setTagsPorConversa] = useState({}); // { conversaId: [tagId,...] }
-  const [filtro, setFiltro] = useState("tudo"); // aba/filtro da lista: 'tudo' | 'naolidas' | 'favoritas' | 'tag:<id>'
+  const [filtro, setFiltro] = useState("tudo"); // aba/filtro da lista: 'tudo' | 'naolidas' | 'favoritas' | 'tag:<id>' | 'frente:<FRENTE>'
   const [tagForm, setTagForm] = useState(null); // { id?, nome, cor } sendo criada/editada
   const [tagMenuAberto, setTagMenuAberto] = useState(false); // menu de aplicar tags na conversa aberta
   const [menuTopoAberto, setMenuTopoAberto] = useState(false); // menu ⋮ do topo da lista
@@ -1771,8 +1785,21 @@ export default function Painel({ sessao }) {
     if (filtro === "naolidas") return (c.nao_lidas || 0) > 0;
     if (filtro === "favoritas") return !!c.favorita;
     if (filtro.startsWith("tag:")) return (tagsPorConversa[c.id] || []).includes(filtro.slice(4));
+    if (filtro.startsWith("frente:")) return c.frente === filtro.slice(7);
     return true; // 'tudo'
   }
+
+  // Quantas conversas há em cada frente, para o número na aba. Conta só o que
+  // está à vista, igual ao contador de não lidas.
+  const contagemPorFrente = {};
+  conversas.forEach((c) => {
+    if (!c.arquivada && c.frente) {
+      contagemPorFrente[c.frente] = (contagemPorFrente[c.frente] || 0) + 1;
+    }
+  });
+  // As abas de frente só aparecem depois que existe alguma conversa
+  // classificada. Antes disso seriam quatro botões que não filtram nada.
+  const temFrentes = Object.keys(contagemPorFrente).length > 0;
 
   const conversasFiltradas = conversas.filter((c) =>
     (!!c.arquivada === verArquivadas) && // arquivadas só aparecem na visão de arquivadas
@@ -1992,6 +2019,18 @@ export default function Painel({ sessao }) {
               <button key={k} onClick={() => setFiltro(k)} style={{ flexShrink: 0, border: `1px solid ${ativo ? C.green : C.divider}`, background: ativo ? C.green : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 20, padding: "3px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
             );
           })}
+          {/* Frentes: separam acordo, cliente, vendas e interno DENTRO do mesmo
+              número de advogado. Só aparecem quando há conversa classificada. */}
+          {temFrentes && FRENTES.filter((f) => contagemPorFrente[f.chave]).map((f) => {
+            const ativo = filtro === "frente:" + f.chave;
+            return (
+              <button key={f.chave} onClick={() => setFiltro(ativo ? "tudo" : "frente:" + f.chave)}
+                style={{ flexShrink: 0, border: `1px solid ${f.cor}`, background: ativo ? f.cor : "transparent", color: ativo ? "#fff" : C.textPrimary, borderRadius: 20, padding: "3px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: f.cor, display: ativo ? "none" : "inline-block" }} />
+                {f.rotulo} {contagemPorFrente[f.chave]}
+              </button>
+            );
+          })}
           {tags.map((t) => {
             const ativo = filtro === "tag:" + t.id;
             return (
@@ -2038,6 +2077,15 @@ export default function Painel({ sessao }) {
                     <span style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
                       {c.favorita && <Star size={13} color="#f5c518" fill="#f5c518" style={{ flexShrink: 0 }} />}
                       <span style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nome}</span>
+                      {/* De que frente é esta conversa. Fica junto do nome, e
+                          não no rodapé, porque é a primeira coisa que decide se
+                          aquela conversa é sua ou de outra equipe. */}
+                      {FRENTE_POR_CHAVE[c.frente] && (
+                        <span title={`Frente: ${FRENTE_POR_CHAVE[c.frente].rotulo}`}
+                          style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, color: "#fff", background: FRENTE_POR_CHAVE[c.frente].cor, borderRadius: 4, padding: "1px 5px", whiteSpace: "nowrap", letterSpacing: .2 }}>
+                          {FRENTE_POR_CHAVE[c.frente].rotulo}
+                        </span>
+                      )}
                     </span>
                     <span style={{ fontSize: 11, color: c.nao_lidas ? C.green : C.textSecondary, flexShrink: 0 }}>{horaDe(c.ultima_atividade)}</span>
                   </div>
