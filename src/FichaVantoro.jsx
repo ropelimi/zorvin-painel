@@ -22,15 +22,33 @@ const FALTA_PONTE =
   "publique o painel de novo (o Vite grava esse valor durante o build).";
 
 // Campos que o atendente pode preencher direto daqui.
+// "minusculo" força letra minúscula enquanto se digita: e-mail não diferencia
+// maiúscula de minúscula, e guardar tudo igual evita cadastro duplicado e
+// busca que não acha. O Vantoro faz o mesmo do lado dele, por garantia.
 const CAMPOS = [
-  { chave: "nome", rotulo: "Nome" },
+  // CPF na frente: é por ele que o cadastro é procurado e conferido.
   { chave: "cpf", rotulo: "CPF" },
-  { chave: "email", rotulo: "E-mail" },
-  { chave: "nascimento", rotulo: "Nascimento", dica: "AAAA-MM-DD" },
+  { chave: "nome", rotulo: "Nome completo" },
+  { chave: "email", rotulo: "E-mail", minusculo: true },
+  { chave: "nascimento", rotulo: "Nascimento", dica: "DD/MM/AAAA", data: true },
   { chave: "ocupacao", rotulo: "Profissão" },
   { chave: "cidade", rotulo: "Cidade" },
   { chave: "estado", rotulo: "UF" },
+  // Acessos do cliente. Ficam editáveis aqui porque quem descobre a senha é
+  // quem está na conversa — obrigar a abrir o Vantoro só para isso custava
+  // tempo e a senha acabava anotada em outro lugar.
+  { chave: "senha_serasa", rotulo: "Senha SERASA" },
+  { chave: "senha_gov", rotulo: "Senha GOV" },
 ];
+
+// Vai colocando as barras enquanto se digita a data: 25121980 → 25/12/1980.
+// Assim o atendente digita só os números e não erra a ordem do dia e do mês.
+function mascaraData(valor) {
+  const d = (valor || "").replace(/\D/g, "").slice(0, 8);
+  if (d.length <= 2) return d;
+  if (d.length <= 4) return `${d.slice(0, 2)}/${d.slice(2)}`;
+  return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
+}
 
 // Chama a ponte já com a sessão do Zorvin no cabeçalho.
 async function chamarPonte(caminho, opcoes = {}) {
@@ -207,11 +225,18 @@ export default function FichaVantoro({ numero, nomeContato, C, onFechar, onAviso
               </div>
             )}
 
-            {CAMPOS.map(({ chave, rotulo: r, dica }) => (
+            {CAMPOS.map(({ chave, rotulo: r, dica, minusculo, data }) => (
               <div key={chave} style={{ marginBottom: 10 }}>
                 <label style={rotulo}>{r}{dica ? ` (${dica})` : ""}</label>
                 <input style={campo} value={edicao[chave] || ""}
-                       onChange={(e) => setEdicao({ ...edicao, [chave]: e.target.value })} />
+                       inputMode={data ? "numeric" : undefined}
+                       placeholder={data ? "DD/MM/AAAA" : undefined}
+                       onChange={(e) => {
+                         let v = e.target.value;
+                         if (data) v = mascaraData(v);
+                         else if (minusculo) v = v.toLowerCase();
+                         setEdicao({ ...edicao, [chave]: v });
+                       }} />
               </div>
             ))}
 
@@ -219,14 +244,6 @@ export default function FichaVantoro({ numero, nomeContato, C, onFechar, onAviso
                     onClick={salvar} disabled={salvando}>
               <Save size={15} /> {salvando ? "Salvando…" : "Salvar no Vantoro"}
             </button>
-
-            {(cliente.senha_serasa || cliente.senha_gov) && (
-              <div style={{ marginTop: 16, fontSize: 12.5, color: C.textSecondary }}>
-                <div style={{ fontSize: 11, marginBottom: 4 }}>ACESSOS</div>
-                {cliente.senha_serasa && <div>SERASA: <b style={{ color: C.textPrimary }}>{cliente.senha_serasa}</b></div>}
-                {cliente.senha_gov && <div>GOV: <b style={{ color: C.textPrimary }}>{cliente.senha_gov}</b></div>}
-              </div>
-            )}
 
             {cliente.processos?.length > 0 && (
               <div style={{ marginTop: 16 }}>
