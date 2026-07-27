@@ -228,6 +228,19 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
               </div>
             )}
 
+            {/* Atalho para o cadastro inteiro. Fica no topo, junto com o que se
+                olha primeiro: aqui cabe só um resumo, e quem precisa do resto
+                (processos, documentos, histórico) não deveria ter de rolar a
+                ficha inteira para descobrir que existe um caminho. */}
+            {import.meta.env.VITE_VANTORO_WEB && (
+              <a href={`${import.meta.env.VITE_VANTORO_WEB}/cadastro/clientes/${cliente.id}/`}
+                 target="_blank" rel="noopener noreferrer"
+                 style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14,
+                          fontSize: 12.5, color: C.link, textDecoration: "none" }}>
+                <ExternalLink size={13} /> Abrir ficha completa no Vantoro
+              </a>
+            )}
+
             {CAMPOS.map(({ chave, rotulo: r, dica, minusculo, data }) => (
               <div key={chave} style={{ marginBottom: 10 }}>
                 <label style={rotulo}>{r}{dica ? ` (${dica})` : ""}</label>
@@ -267,15 +280,6 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
             <div style={{ marginTop: 16, fontSize: 12, color: C.textSecondary }}>
               {cliente.documentos} documento(s) no cadastro.
             </div>
-
-            {import.meta.env.VITE_VANTORO_WEB && (
-              <a href={`${import.meta.env.VITE_VANTORO_WEB}/cadastro/clientes/${cliente.id}/`}
-                 target="_blank" rel="noopener noreferrer"
-                 style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14,
-                          fontSize: 12.5, color: C.link, textDecoration: "none" }}>
-                <ExternalLink size={13} /> Abrir ficha completa no Vantoro
-              </a>
-            )}
           </div>
         )}
       </div>
