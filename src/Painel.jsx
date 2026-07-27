@@ -1801,9 +1801,93 @@ export default function Painel({ sessao }) {
   // classificada. Antes disso seriam quatro botões que não filtram nada.
   const temFrentes = Object.keys(contagemPorFrente).length > 0;
 
+  // ---- Busca ampla ------------------------------------------------------
+  // A busca da lista achava só pelo nome e pelo número do contato. Faltavam as
+  // duas formas que mais se usam no dia a dia: procurar pelo que foi DITO na
+  // conversa (como no WhatsApp) e procurar pelo CADASTRO — CPF ou número do
+  // processo, que é o que o atendente costuma ter em mãos.
+  const [achadosMsg, setAchadosMsg] = useState({});   // conversa_id → trecho
+  const [achadosCad, setAchadosCad] = useState({});   // conversa_id → motivo
+  const [buscando, setBuscando] = useState(false);
+
+  useEffect(() => {
+    const termo = busca.trim();
+    // Limpa ANTES de consultar, sempre. Sem isso, os achados da busca anterior
+    // sobrevivem até a nova responder — e por um instante a lista mostra
+    // conversas que não têm nada a ver com o que está escrito na caixa.
+    setAchadosMsg({});
+    setAchadosCad({});
+    if (termo.length < 3) { setBuscando(false); return; }
+
+    let cancelado = false;
+    setBuscando(true);
+    const tarefa = setTimeout(async () => {
+      const ids = conversas.map((c) => c.id);
+
+      // 1) Dentro das mensagens. Em lotes porque a lista de ids vai na URL —
+      //    com centenas de conversas de uma vez, a consulta seria recusada.
+      const porMsg = {};
+      try {
+        for (let i = 0; i < ids.length; i += 150) {
+          const { data } = await supabase.from("mensagens")
+            .select("conversa_id, texto")
+            .in("conversa_id", ids.slice(i, i + 150))
+            .ilike("texto", `%${termo}%`)
+            .order("criado_em", { ascending: false })
+            .limit(300);
+          (data || []).forEach((m) => {
+            if (!porMsg[m.conversa_id]) porMsg[m.conversa_id] = m.texto || "";
+          });
+        }
+      } catch (_e) { /* sem resultado por mensagem; a busca por nome segue */ }
+
+      // 2) No cadastro do Vantoro (nome, CPF, processo) → casa pelo telefone.
+      const porCad = {};
+      try {
+        if (BRIDGE_URL) {
+          const { data: sessao } = await supabase.auth.getSession();
+          const jwt = sessao?.session?.access_token;
+          if (jwt) {
+            const r = await fetch(`${BRIDGE_URL}/vantoro/buscar?q=${encodeURIComponent(termo)}`,
+              { headers: { Authorization: "Bearer " + jwt } });
+            const corpo = await r.json().catch(() => ({}));
+            (corpo.clientes || []).forEach((cl) => {
+              // Os últimos 8 dígitos são o miolo do número: não mudam com DDD,
+              // com o 9 extra nem com o código do país. É por eles que casamos.
+              [cl.telefone, cl.telefone2].forEach((tel) => {
+                const chave = String(tel || "").replace(/\D/g, "").slice(-8);
+                if (chave.length < 8) return;
+                conversas.forEach((c) => {
+                  if (String(c.contato?.numero || "").endsWith(chave)) {
+                    porCad[c.id] = cl.nome;
+                  }
+                });
+              });
+            });
+          }
+        }
+      } catch (_e) { /* Vantoro fora do ar não pode atrapalhar a busca local */ }
+
+      if (cancelado) return;
+      setAchadosMsg(porMsg);
+      setAchadosCad(porCad);
+      setBuscando(false);
+    }, 350);
+
+    return () => { cancelado = true; clearTimeout(tarefa); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busca, conversas.length, advogadoId]);
+
+  function casaNaBusca(c) {
+    const termo = busca.trim().toLowerCase();
+    if (!termo) return true;
+    const nome = (c.contato?.nome || c.contato?.numero || "").toLowerCase();
+    return nome.includes(termo) || !!achadosMsg[c.id] || !!achadosCad[c.id];
+  }
+
   const conversasFiltradas = conversas.filter((c) =>
     (!!c.arquivada === verArquivadas) && // arquivadas só aparecem na visão de arquivadas
-    (c.contato?.nome || c.contato?.numero || "").toLowerCase().includes(busca.toLowerCase()) &&
+    casaNaBusca(c) &&
     passaNoFiltro(c)
   );
 
@@ -2007,7 +2091,7 @@ export default function Painel({ sessao }) {
         <div style={{ padding: "8px 12px", background: C.panel }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.searchBg, borderRadius: 8, padding: "6px 12px" }}>
             <Search size={16} color={C.textSecondary} />
-            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar conversa" style={{ border: "none", outline: "none", background: "transparent", fontSize: 14, flex: 1, color: C.textPrimary }} />
+            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, mensagem, CPF ou processo" style={{ border: "none", outline: "none", background: "transparent", fontSize: 14, flex: 1, color: C.textPrimary }} />
           </div>
         </div>
 
@@ -2097,6 +2181,17 @@ export default function Painel({ sessao }) {
                     )}
                     {c.nao_lidas > 0 && <span style={{ background: C.unread, color: "#fff", borderRadius: 12, fontSize: 11, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>{c.nao_lidas}</span>}
                   </div>
+                  {/* Por que esta conversa apareceu na busca. Sem isso, um
+                      resultado que casou pelo texto de uma mensagem antiga
+                      parece ter vindo do nada. */}
+                  {busca.trim().length >= 3 && (achadosMsg[c.id] || achadosCad[c.id]) &&
+                   !(c.contato?.nome || c.contato?.numero || "").toLowerCase().includes(busca.trim().toLowerCase()) && (
+                    <div style={{ marginTop: 3, fontSize: 11.5, color: C.green, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 260 }}>
+                      {achadosMsg[c.id]
+                        ? '💬 ' + achadosMsg[c.id]
+                        : '🗂 ' + achadosCad[c.id]}
+                    </div>
+                  )}
                   {tagsDaConversa(c.id).length > 0 && (
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
                       {tagsDaConversa(c.id).map((t) => (
