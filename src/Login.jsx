@@ -2,10 +2,20 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "./supabase.js";
 import { MessageSquare, Mail, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
 
-// Tela de entrada do Zorvin. O atendente entra com e-mail e senha.
-// Os usuários são criados no painel do Supabase (Authentication → Users).
+// Tela de entrada do Zorvin. É o MESMO usuário e a MESMA senha do Vantoro.
+//
+// Antes, cada pessoa tinha uma conta criada à mão no Supabase, com senha
+// própria — duas listas de gente para manter iguais, e ninguém lembra das
+// duas. Agora quem confere a senha é o Vantoro: o painel manda usuário e senha
+// para a ponte, a ponte pergunta lá e devolve um bilhete de entrada de uso
+// único, que viramos numa sessão do Supabase aqui.
+//
+// A senha não fica guardada em lugar nenhum deste lado.
+//
 // Visual "premium": tema claro/escuro automático, responsivo (desktop e
 // celular) e estilos 100% inline (sem CSS externo), como o resto do app.
+const BRIDGE_URL = (import.meta.env.VITE_BRIDGE_URL || "").replace(/\/$/, "");
+
 export default function Login() {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
@@ -32,12 +42,38 @@ export default function Login() {
     if (entrando) return;
     setErro("");
     setEntrando(true);
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password: senha });
-    if (error) {
-      setErro("E-mail ou senha incorretos.");
+    try {
+      if (!BRIDGE_URL) throw new Error("O endereço da ponte não está configurado (VITE_BRIDGE_URL).");
+
+      const r = await fetch(`${BRIDGE_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ login: email.trim(), senha }),
+      });
+      const corpo = await r.json().catch(() => null);
+      if (!r.ok || !corpo || !corpo.ok) {
+        // A mensagem vem de lá quando existe: ela distingue "senha errada" de
+        // "o Vantoro está fora do ar", e essas duas mandam a pessoa fazer
+        // coisas diferentes.
+        setErro((corpo && corpo.erro) || "Não foi possível entrar agora.");
+        setEntrando(false);
+        return;
+      }
+
+      // O bilhete vira sessão. É de uso único: se esta troca falhar, é preciso
+      // pedir outro — por isso ela não é repetida em silêncio.
+      const { error } = await supabase.auth.verifyOtp({
+        token_hash: corpo.token_hash, type: "email",
+      });
+      if (error) {
+        setErro("Entrei no Vantoro mas não consegui abrir a sessão. Tente de novo.");
+        setEntrando(false);
+      }
+      // Se der certo, o App detecta a sessão e troca para o painel sozinho.
+    } catch (err) {
+      setErro((err && err.message) || "Não foi possível falar com o servidor.");
       setEntrando(false);
     }
-    // Se der certo, o App detecta a sessão e troca para o painel sozinho.
   }
 
   const campoWrap = (ativo) => ({
@@ -89,12 +125,15 @@ export default function Login() {
         </div>
 
         <form onSubmit={entrar} noValidate>
-          <label style={{ fontSize: 13, fontWeight: 600, color: C.textSecondary }}>E-mail</label>
+          {/* `type="text"` e não `email`: o login do Vantoro é "rodrigo.sousa",
+              sem arroba, e o navegador recusaria o formulário sozinho. Os dois
+              formatos entram — quem decorou o e-mail continua usando ele. */}
+          <label style={{ fontSize: 13, fontWeight: 600, color: C.textSecondary }}>Usuário do Vantoro</label>
           <div style={campoWrap(foco === "email")}>
             <Mail size={18} color={foco === "email" ? C.green : C.textSecondary} style={{ flexShrink: 0 }} />
             <input
-              className="zv-input" type="email" inputMode="email" autoComplete="username" autoCapitalize="none"
-              placeholder="voce@escritorio.com" value={email}
+              className="zv-input" type="text" autoComplete="username" autoCapitalize="none"
+              placeholder="seu.nome  ou  voce@escritorio.com" value={email}
               onChange={(e) => setEmail(e.target.value)} onFocus={() => setFoco("email")} onBlur={() => setFoco("")}
               required style={inputEstilo}
             />

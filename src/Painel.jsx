@@ -5,9 +5,10 @@ import {
   MessageSquare, Mic, CheckCheck, LogOut, ArrowLeft, Sun, Moon,
   Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp,
   StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star,
-  Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList
+  Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList, ShieldCheck
 } from "lucide-react";
 import FichaVantoro from "./FichaVantoro";
+import Departamentos from "./Departamentos";
 
 // ============================================================
 //  ZORVIN by Ropelimi — Painel real (conectado ao Supabase)
@@ -25,14 +26,8 @@ const BRIDGE_URL = (import.meta.env.VITE_BRIDGE_URL || "").replace(/\/$/, "");
 // outro lado, e essa etiqueta vem do Vantoro pela ponte.
 // A cor não é enfeite — é o que deixa a equipe ver, de relance, que aquela
 // conversa não é da sua alçada.
-const FRENTES = [
-  { chave: "ACORDO", rotulo: "Acordos", cor: "#c98a2e" },
-  { chave: "CLIENTE", rotulo: "Clientes", cor: "#2e9e6b" },
-  { chave: "LEAD", rotulo: "Vendas", cor: "#3d7dd6" },
-  { chave: "INTERNO", rotulo: "Interno", cor: "#8a72c9" },
-  { chave: "DESCONHECIDA", rotulo: "Sem identificar", cor: "#7b8794" },
-];
-const FRENTE_POR_CHAVE = Object.fromEntries(FRENTES.map((f) => [f.chave, f]));
+// (A lista fixa de frentes saiu daqui: departamentos e grupos agora vêm do
+//  banco, e o nome de cada grupo é editável na tela de Departamentos.)
 function acordarPonte() {
   if (!BRIDGE_URL) return;
   // "no-cors": só precisamos que o pedido CHEGUE na ponte (acorda + despacha);
@@ -393,7 +388,13 @@ export default function Painel({ sessao }) {
     try { localStorage.setItem("zorvin_modo", modo); } catch (_) { /* ignora */ }
   }, [modo]);
   const [advogados, setAdvogados] = useState([]);
-  const [setorAtivo, setSetorAtivo] = useState("acordos"); // "acordos" | "gestao" (só gestor troca)
+  // Departamentos e grupos saem do BANCO, não mais de uma lista escrita aqui.
+  // Era isso que impedia criar SAC, Vendas ou Interno sem mexer em código.
+  const [departamentos, setDepartamentos] = useState([]);
+  const [grupos, setGrupos] = useState([]);
+  const [departamentoId, setDepartamentoId] = useState(null);
+  const [souAdmin, setSouAdmin] = useState(false);
+  const [telaAdmin, setTelaAdmin] = useState(false);
   const [advogadoId, setAdvogadoId] = useState(null);
   const [conversas, setConversas] = useState([]);
   const [conversaId, setConversaId] = useState(null);
@@ -484,13 +485,18 @@ export default function Painel({ sessao }) {
     (sessao?.user?.email || "").split("@")[0] ||
     "atendente";
   const minhaFoto = sessao?.user?.user_metadata?.foto_url || null;
-  // Permissão de GESTÃO: definida no perfil do usuário no Supabase
-  // (user_metadata: { "gestor": true }). Só o gestor vê o setor "Gestão".
-  const g = sessao?.user?.user_metadata?.gestor;
-  const ehGestor = g === true || g === "true";
-  // Advogados que aparecem AGORA (do setor selecionado). Advogado sem setor
-  // definido conta como "acordos" (o padrão de antes).
-  const advogadosVisiveis = advogados.filter((a) => (a.setor || "acordos") === setorAtivo);
+  // Quem administra: sai da tabela `usuarios` (espelho do Vantoro), e não mais
+  // de um metadado escrito à mão no Supabase. Quem é superusuário no Vantoro
+  // administra aqui — uma lista de gente, não duas. Está em `souAdmin`.
+  // Telefones que aparecem AGORA (do departamento selecionado).
+  const advogadosVisiveis = advogados.filter((a) => a.departamento_id === departamentoId);
+  // Só entram os departamentos onde esta pessoa tem ALGUM telefone visível —
+  // e o que é visível já foi decidido pelo banco, não por esta tela. Mostrar
+  // um departamento que abre vazio é pior do que não mostrar.
+  const departamentosVisiveis = departamentos.filter(
+    (d) => advogados.some((a) => a.departamento_id === d.id));
+  // Os grupos deste departamento: são as abas de filtro da lista de conversas.
+  const gruposDoDepartamento = grupos.filter((g) => g.departamento_id === departamentoId);
 
   // O contato está digitando nesta conversa agora? (janela curta que expira).
   function digitandoAtivo(convId) {
@@ -508,23 +514,38 @@ export default function Painel({ sessao }) {
     return a.por;
   }
 
-  // ---- Carrega os advogados (uma vez) ----
+  // ---- Carrega telefones, departamentos e grupos (uma vez) ----
   useEffect(() => {
-    supabase.from("advogados").select("id, nome, numero, foto_url, setor").eq("ativo", true).order("nome")
-      .then(({ data }) => {
-        setAdvogados(data || []);
-        if (data && data.length) {
-          // Mantém o advogado que estava selecionado antes de atualizar a página.
-          let salvo = null;
-          try { salvo = localStorage.getItem("zorvin_advogado"); } catch (_) { /* ignora */ }
-          const advSalvo = salvo && data.find((a) => a.id === salvo);
-          const escolhido = advSalvo || data[0];
-          // Abre no setor do advogado escolhido (ex.: se estava na Gestão, volta lá).
-          setSetorAtivo(escolhido.setor || "acordos");
-          setAdvogadoId(escolhido.id);
-        }
-      });
-  }, []);
+    let vivo = true;
+    (async () => {
+      const [tel, dep, gru, eu] = await Promise.all([
+        supabase.from("advogados").select("id, nome, numero, foto_url, departamento_id")
+          .eq("ativo", true).order("nome"),
+        supabase.from("departamentos").select("id, nome, slug, cor, ordem")
+          .eq("ativo", true).order("ordem"),
+        supabase.from("grupos").select("id, departamento_id, nome, slug, cor, ordem, regra, frente")
+          .eq("ativo", true).order("ordem"),
+        supabase.from("usuarios").select("admin").eq("id", sessao?.user?.id || "").maybeSingle(),
+      ]);
+      if (!vivo) return;
+      setAdvogados(tel.data || []);
+      setDepartamentos(dep.data || []);
+      setGrupos(gru.data || []);
+      setSouAdmin(Boolean(eu.data && eu.data.admin));
+
+      const lista = tel.data || [];
+      if (lista.length) {
+        // Mantém o telefone que estava selecionado antes de atualizar a página.
+        let salvo = null;
+        try { salvo = localStorage.getItem("zorvin_advogado"); } catch (_) { /* ignora */ }
+        const advSalvo = salvo && lista.find((a) => a.id === salvo);
+        const escolhido = advSalvo || lista[0];
+        setDepartamentoId(escolhido.departamento_id || null);
+        setAdvogadoId(escolhido.id);
+      }
+    })();
+    return () => { vivo = false; };
+  }, [sessao?.user?.id]);
 
   // Salva o advogado selecionado para reabrir nele após atualizar a página.
   useEffect(() => {
@@ -1441,13 +1462,13 @@ export default function Painel({ sessao }) {
   }
 
   function trocarAdvogado(id) { setAdvogadoId(id); setConversaId(null); setSeletorAberto(false); setBusca(""); setVerArquivadas(false); }
-  // Troca o SETOR (Central de Acordos ↔ Gestão) e vai para o 1º advogado dele.
-  function trocarSetor(s) {
-    if (s === setorAtivo) return;
-    setSetorAtivo(s);
+  // Troca de DEPARTAMENTO e vai para o primeiro telefone dele.
+  function trocarDepartamento(id) {
+    if (id === departamentoId) return;
+    setDepartamentoId(id);
     setConversaId(null);
     setBusca(""); setVerArquivadas(false); setFiltro("tudo");
-    const primeiro = advogados.find((a) => (a.setor || "acordos") === s);
+    const primeiro = advogados.find((a) => a.departamento_id === id);
     setAdvogadoId(primeiro ? primeiro.id : null);
   }
 
@@ -1785,21 +1806,23 @@ export default function Painel({ sessao }) {
     if (filtro === "naolidas") return (c.nao_lidas || 0) > 0;
     if (filtro === "favoritas") return !!c.favorita;
     if (filtro.startsWith("tag:")) return (tagsPorConversa[c.id] || []).includes(filtro.slice(4));
-    if (filtro.startsWith("frente:")) return c.frente === filtro.slice(7);
+    if (filtro.startsWith("grupo:")) return String(c.grupo_id) === filtro.slice(6);
     return true; // 'tudo'
   }
 
-  // Quantas conversas há em cada frente, para o número na aba. Conta só o que
+  // Quantas conversas há em cada grupo, para o número na aba. Conta só o que
   // está à vista, igual ao contador de não lidas.
-  const contagemPorFrente = {};
+  const contagemPorGrupo = {};
   conversas.forEach((c) => {
-    if (!c.arquivada && c.frente) {
-      contagemPorFrente[c.frente] = (contagemPorFrente[c.frente] || 0) + 1;
+    if (!c.arquivada && c.grupo_id) {
+      contagemPorGrupo[c.grupo_id] = (contagemPorGrupo[c.grupo_id] || 0) + 1;
     }
   });
-  // As abas de frente só aparecem depois que existe alguma conversa
-  // classificada. Antes disso seriam quatro botões que não filtram nada.
-  const temFrentes = Object.keys(contagemPorFrente).length > 0;
+  // As abas só aparecem para grupos que TÊM conversa. Um departamento com
+  // quatro grupos e conversa em um só mostraria três botões que não filtram
+  // nada — e a pessoa clicaria neles para descobrir isso.
+  const gruposComConversa = gruposDoDepartamento.filter((g) => contagemPorGrupo[g.id]);
+  const grupoPorId = Object.fromEntries(grupos.map((g) => [g.id, g]));
 
   // ---- Busca ampla ------------------------------------------------------
   // A busca da lista achava só pelo nome e pelo número do contato. Faltavam as
@@ -2066,20 +2089,28 @@ export default function Painel({ sessao }) {
                 <div style={{ position: "absolute", top: 26, right: 0, width: 230, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.28)", zIndex: 50, overflow: "hidden" }}>
                   <button onClick={marcarTodasLidas} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><CheckCheck size={17} color={C.textSecondary} /> Marcar todas como lidas</button>
                   <button onClick={() => { setMenuTopoAberto(false); abrirConfig(); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><Settings size={17} color={C.textSecondary} /> Configurações</button>
+                  {/* Quem administra no Vantoro administra aqui. Esconder o botão
+                      é cortesia, não segurança: quem não é admin esbarra nas
+                      regras do banco de qualquer forma. */}
+                  {souAdmin && (
+                    <button onClick={() => { setMenuTopoAberto(false); setTelaAdmin(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><ShieldCheck size={17} color={C.textSecondary} /> Departamentos e acessos</button>
+                  )}
                   <div style={{ height: 1, background: C.divider }} />
                   <button onClick={() => { setMenuTopoAberto(false); sair(); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: "#e5573f", fontSize: 14, fontWeight: 600, textAlign: "left" }}><LogOut size={17} /> Desconectar</button>
                 </div>
               )}
             </span>
           </div>
-          {/* Seletor de SETOR — só o gestor vê. Divide "Central de Acordos" e
-              "Gestão" (números de outros setores, restritos à gestão). */}
-          {ehGestor && (
-            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-              {[["acordos", "Central de Acordos"], ["gestao", "Gestão"]].map(([k, label]) => {
-                const ativo = setorAtivo === k;
+          {/* Seletor de DEPARTAMENTO. Aparece quando a pessoa alcança mais de
+              um — com um só, o botão não teria para onde levar. Quem alcança o
+              quê é decidido pelo banco (as permissões), não por esta tela. */}
+          {departamentosVisiveis.length > 1 && (
+            <div className="sem-scrollbar" style={{ display: "flex", gap: 6, marginBottom: 10, overflowX: "auto" }}>
+              {departamentosVisiveis.map((d) => {
+                const ativo = departamentoId === d.id;
                 return (
-                  <button key={k} onClick={() => trocarSetor(k)} style={{ flex: 1, border: `1px solid ${ativo ? C.green : C.divider}`, background: ativo ? C.green : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 8, padding: "6px 8px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</button>
+                  <button key={d.id} onClick={() => trocarDepartamento(d.id)} title={d.nome}
+                    style={{ flex: "1 0 auto", border: `1px solid ${ativo ? (d.cor || C.green) : C.divider}`, background: ativo ? (d.cor || C.green) : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 8, padding: "6px 10px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{d.nome}</button>
                 );
               })}
             </div>
@@ -2103,15 +2134,17 @@ export default function Painel({ sessao }) {
               <button key={k} onClick={() => setFiltro(k)} style={{ flexShrink: 0, border: `1px solid ${ativo ? C.green : C.divider}`, background: ativo ? C.green : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 20, padding: "3px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
             );
           })}
-          {/* Frentes: separam acordo, cliente, vendas e interno DENTRO do mesmo
-              número de advogado. Só aparecem quando há conversa classificada. */}
-          {temFrentes && FRENTES.filter((f) => contagemPorFrente[f.chave]).map((f) => {
-            const ativo = filtro === "frente:" + f.chave;
+          {/* Grupos do departamento: separam os tipos de conversa DENTRO dos
+              mesmos telefones (ex.: Acordos e Audiências nos números dos
+              advogados). Vêm do banco — o nome de cada um é editável. */}
+          {gruposComConversa.map((g) => {
+            const ativo = filtro === "grupo:" + g.id;
+            const cor = g.cor || C.green;
             return (
-              <button key={f.chave} onClick={() => setFiltro(ativo ? "tudo" : "frente:" + f.chave)}
-                style={{ flexShrink: 0, border: `1px solid ${f.cor}`, background: ativo ? f.cor : "transparent", color: ativo ? "#fff" : C.textPrimary, borderRadius: 20, padding: "3px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: f.cor, display: ativo ? "none" : "inline-block" }} />
-                {f.rotulo} {contagemPorFrente[f.chave]}
+              <button key={g.id} onClick={() => setFiltro(ativo ? "tudo" : "grupo:" + g.id)}
+                style={{ flexShrink: 0, border: `1px solid ${cor}`, background: ativo ? cor : "transparent", color: ativo ? "#fff" : C.textPrimary, borderRadius: 20, padding: "3px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: cor, display: ativo ? "none" : "inline-block" }} />
+                {g.nome} {contagemPorGrupo[g.id]}
               </button>
             );
           })}
@@ -2164,10 +2197,10 @@ export default function Painel({ sessao }) {
                       {/* De que frente é esta conversa. Fica junto do nome, e
                           não no rodapé, porque é a primeira coisa que decide se
                           aquela conversa é sua ou de outra equipe. */}
-                      {FRENTE_POR_CHAVE[c.frente] && (
-                        <span title={`Frente: ${FRENTE_POR_CHAVE[c.frente].rotulo}`}
-                          style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, color: "#fff", background: FRENTE_POR_CHAVE[c.frente].cor, borderRadius: 4, padding: "1px 5px", whiteSpace: "nowrap", letterSpacing: .2 }}>
-                          {FRENTE_POR_CHAVE[c.frente].rotulo}
+                      {grupoPorId[c.grupo_id] && (
+                        <span title={`Grupo: ${grupoPorId[c.grupo_id].nome}`}
+                          style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, color: "#fff", background: grupoPorId[c.grupo_id].cor || C.green, borderRadius: 4, padding: "1px 5px", whiteSpace: "nowrap", letterSpacing: .2 }}>
+                          {grupoPorId[c.grupo_id].nome}
                         </span>
                       )}
                     </span>
@@ -2973,6 +3006,24 @@ export default function Painel({ sessao }) {
         <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "#333", color: "#fff", padding: "10px 18px", borderRadius: 8, fontSize: 14, boxShadow: "0 4px 12px rgba(0,0,0,.3)", zIndex: 120, maxWidth: "90%", textAlign: "center" }}>
           {aviso}
         </div>
+      )}
+
+      {/* Departamentos, grupos e permissões. Ao fechar, os cadastros são
+          relidos: renomear um grupo tem de aparecer nas abas na hora, senão
+          a pessoa acha que não salvou e faz de novo. */}
+      {telaAdmin && (
+        <Departamentos C={C} aoFechar={() => {
+          setTelaAdmin(false);
+          Promise.all([
+            supabase.from("departamentos").select("id, nome, slug, cor, ordem").eq("ativo", true).order("ordem"),
+            supabase.from("grupos").select("id, departamento_id, nome, slug, cor, ordem, regra, frente").eq("ativo", true).order("ordem"),
+            supabase.from("advogados").select("id, nome, numero, foto_url, departamento_id").eq("ativo", true).order("nome"),
+          ]).then(([d, g, t]) => {
+            setDepartamentos(d.data || []);
+            setGrupos(g.data || []);
+            setAdvogados(t.data || []);
+          });
+        }} />
       )}
     </div>
   );
