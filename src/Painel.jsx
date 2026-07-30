@@ -84,6 +84,33 @@ function horaDe(iso) {
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
 
+// O NÚMERO DE QUEM ESTÁ ATENDENDO, legível.
+//
+// O painel atende por VÁRIOS números, e o nome sozinho não diz qual. "Cadastro"
+// e "Comercial 1" são rótulos internos: quem precisa passar o número para um
+// cliente ("me chama no ...") ou conferir se está respondendo pela linha certa
+// não tem onde ler o número sem abrir o Supabase. Dois números do mesmo setor
+// deixam a dúvida permanente.
+//
+// Guarda no banco vem cru e com o país ("5511934042997"). Aqui sai como se lê em
+// voz alta. Número fora do formato brasileiro volta como veio: melhor mostrar o
+// que existe do que esconder o que não coube na máscara.
+function numeroBonito(bruto) {
+  const d = String(bruto || "").replace(/\D/g, "");
+  if (!d) return "";
+  const nac = d.length > 11 && d.startsWith("55") ? d.slice(2) : d;
+  if (nac.length === 11) return `(${nac.slice(0, 2)}) ${nac.slice(2, 7)}-${nac.slice(7)}`;
+  if (nac.length === 10) return `(${nac.slice(0, 2)}) ${nac.slice(2, 6)}-${nac.slice(6)}`;
+  return bruto;
+}
+
+// "Cadastro · (11) 93404-2997" — e só "Cadastro" quando não há número gravado.
+function comNumero(adv) {
+  if (!adv) return "";
+  const n = numeroBonito(adv.numero);
+  return n ? `${adv.nome} · ${n}` : adv.nome;
+}
+
 // Sempre HH:MM (usada no carimbo das bolhas; a data fica no separador).
 function horaCurta(iso) {
   if (!iso) return "";
@@ -2116,7 +2143,15 @@ export default function Painel({ sessao }) {
             </div>
           )}
           <div style={{ fontSize: 11, color: C.textSecondary, fontWeight: 600, letterSpacing: 0.3 }}>ATENDENDO COMO</div>
+          {/* Nome e número em linhas separadas: juntos, os dois se cortam no
+              meio numa barra de 260px, e o que sobra é meio número — pior do
+              que nenhum. O número é o dado que se copia, então fica inteiro. */}
           <div style={{ fontSize: 15, fontWeight: 600, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{advogado ? advogado.nome : "—"}</div>
+          {advogado && numeroBonito(advogado.numero) && (
+            <div style={{ fontSize: 12.5, color: C.textSecondary, marginTop: 1, fontVariantNumeric: "tabular-nums" }}>
+              {numeroBonito(advogado.numero)}
+            </div>
+          )}
         </div>
 
         <div style={{ padding: "8px 12px", background: C.panel }}>
@@ -2287,7 +2322,7 @@ export default function Painel({ sessao }) {
                     <AlertCircle size={13} /> {atendidoPorOutro(conversa.id)} também está nesta conversa
                   </div>
                 ) : (
-                  <div style={{ fontSize: 12, color: C.textSecondary }}>via {advogado?.nome}</div>
+                  <div style={{ fontSize: 12, color: C.textSecondary }}>via {comNumero(advogado)}</div>
                 )}
                 {tagsDaConversa(conversa.id).length > 0 && (
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
