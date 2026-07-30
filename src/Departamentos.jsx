@@ -1,36 +1,33 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "./supabase.js";
-import { X, Plus, Trash2, Check, Loader2, Building2, Layers, Phone, ShieldCheck } from "lucide-react";
+import { X, Plus, Trash2, Check, Loader2, Building2, Phone, ShieldCheck } from "lucide-react";
 
 // ============================================================
-//  DEPARTAMENTOS, GRUPOS E PERMISSÕES
+//  DEPARTAMENTOS, TELEFONES E PERMISSÕES
 //
-//  Três coisas nesta tela, nesta ordem, porque uma depende da outra:
+//  Duas coisas nesta tela, nesta ordem, porque uma depende da outra:
 //
 //    1. DEPARTAMENTO  — onde os telefones nossos ficam agrupados
 //                       (Advogados, SAC, Vendas, Interno…)
-//    2. GRUPO         — que TIPO de conversa é, dentro do departamento.
-//                       Existe porque o telefone sozinho não separa: nos
-//                       números dos advogados acontecem tanto os acordos
-//                       (conversa com o réu) quanto as audiências (conversa
-//                       com o cliente). Quem separa é quem está do outro
-//                       lado, e o Vantoro já sabe dizer isso.
-//    3. PERMISSÃO     — quem enxerga o quê. Vale por departamento, por grupo
-//                       ou por telefone; e as três podem se combinar.
+//    2. PERMISSÃO     — quem enxerga o quê. Vale por departamento ou por
+//                       telefone, e as duas se combinam.
+//
+//  O GRUPO SAIU. Ele era um terceiro degrau entre os dois, e existia para um
+//  problema só: nos números dos advogados aconteciam tanto os acordos (conversa
+//  com o réu) quanto as audiências (conversa com o cliente), e o telefone
+//  sozinho não separava. O aviso de audiência passou a sair de um telefone
+//  próprio — e aí o telefone voltou a responder a pergunta sozinho.
+//
+//  O que ficou do grupo foi o estorvo: uma etiqueta colorida em cada conversa,
+//  idêntica às tags que a equipe cria à mão, dizendo "Sem identificar" em quase
+//  toda linha da lista (é o balaio de quem ainda não tem ficha). Ninguém tinha
+//  criado nenhuma delas — nasciam de um gatilho no banco e de um INSERT da
+//  migração. Uma dimensão que não separa mais nada não é neutra: é mais uma
+//  caixa para marcar errado.
 //
 //  Quem manda de verdade é o banco (as regras de visibilidade). Esta tela é
 //  só o jeito de escrever nelas — se ela errasse, o banco continuaria negando.
 // ============================================================
-
-// As classificações que o Vantoro sabe fazer. O nome do grupo é livre; o que
-// se escolhe aqui é QUAL conversa ele recebe.
-const REGRAS = [
-  { valor: "ACORDO", rotulo: "Acordos — conversa com o réu ou o advogado dele" },
-  { valor: "CLIENTE", rotulo: "Clientes — conversa com quem é nosso cliente (audiências, SAC)" },
-  { valor: "LEAD", rotulo: "Vendas — quem chegou por anúncio e ainda não é cliente" },
-  { valor: "INTERNO", rotulo: "Interno — RH, cadastro, fornecedores" },
-  { valor: "DESCONHECIDA", rotulo: "Sem identificar — número que não está no cadastro" },
-];
 
 const CORES = ["#c98a2e", "#2e9e6b", "#3d7dd6", "#8a72c9", "#d2555f", "#2ea3a8", "#7b8794"];
 
@@ -45,7 +42,6 @@ export default function Departamentos({ C, aoFechar }) {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [departamentos, setDepartamentos] = useState([]);
-  const [grupos, setGrupos] = useState([]);
   const [telefones, setTelefones] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [permissoes, setPermissoes] = useState([]);
@@ -56,7 +52,6 @@ export default function Departamentos({ C, aoFechar }) {
     setErro("");
     const [d, g, t, u, p] = await Promise.all([
       supabase.from("departamentos").select("*").order("ordem"),
-      supabase.from("grupos").select("*").order("ordem"),
       supabase.from("advogados").select("id, nome, numero, departamento_id, ativo").order("nome"),
       supabase.from("usuarios").select("*").order("nome"),
       supabase.from("permissoes").select("*"),
@@ -69,7 +64,6 @@ export default function Departamentos({ C, aoFechar }) {
               "Se esta é a primeira vez, falta rodar o SQL de departamentos no Supabase.");
     }
     setDepartamentos(d.data || []);
-    setGrupos(g.data || []);
     setTelefones(t.data || []);
     setUsuarios(u.data || []);
     setPermissoes(p.data || []);
@@ -90,10 +84,7 @@ export default function Departamentos({ C, aoFechar }) {
 
   function traduzir(msg) {
     const m = String(msg || "");
-    if (m.includes("grupos_frente_unica")) return "Já existe um grupo com essa regra neste departamento.";
-    if (m.includes("grupos_padrao_unico")) return "Este departamento já tem um grupo para “o que sobrar”.";
     if (m.includes("departamentos_slug_key")) return "Já existe um departamento com esse nome.";
-    if (m.includes("grupos_departamento_id_slug_key")) return "Já existe um grupo com esse nome neste departamento.";
     if (m.toLowerCase().includes("row-level security") || m.toLowerCase().includes("policy")) {
       return "Só quem é administrador no Vantoro pode mexer aqui.";
     }
@@ -114,15 +105,6 @@ export default function Departamentos({ C, aoFechar }) {
     setNovoDep("");
   }
 
-  function criarGrupo(depId, nome, frente) {
-    if (!nome.trim() || !frente) return;
-    gravar("grupo", () => supabase.from("grupos").insert({
-      departamento_id: depId, nome: nome.trim(), slug: paraSlug(nome),
-      cor: CORES[grupos.length % CORES.length], regra: "frente", frente,
-      ordem: (grupos.filter((g) => g.departamento_id === depId).length + 1) * 10,
-    }));
-  }
-
   // ---------- permissões ----------
   const [pessoaId, setPessoaId] = useState(null);
   const pessoa = usuarios.find((u) => u.id === pessoaId) || null;
@@ -140,10 +122,6 @@ export default function Departamentos({ C, aoFechar }) {
   function descrever(p) {
     const partes = [];
     if (p.departamento_id) partes.push(nomeDep(p.departamento_id));
-    if (p.grupo_id) {
-      const g = grupos.find((x) => x.id === p.grupo_id);
-      partes.push(g ? `${nomeDep(g.departamento_id)} · ${g.nome}` : "grupo removido");
-    }
     if (p.telefone_id) {
       const t = telefones.find((x) => x.id === p.telefone_id);
       partes.push(t ? `telefone de ${t.nome}` : "telefone removido");
@@ -182,7 +160,7 @@ export default function Departamentos({ C, aoFechar }) {
         </div>
 
         <div style={{ display: "flex", gap: 8, padding: "12px 18px 0" }}>
-          <button style={cx.aba(aba === "estrutura")} onClick={() => setAba("estrutura")}>Departamentos e grupos</button>
+          <button style={cx.aba(aba === "estrutura")} onClick={() => setAba("estrutura")}>Departamentos e telefones</button>
           <button style={cx.aba(aba === "pessoas")} onClick={() => setAba("pessoas")}>Quem vê o quê</button>
         </div>
 
@@ -198,8 +176,8 @@ export default function Departamentos({ C, aoFechar }) {
                 <div style={cx.titulo}><Building2 size={16} /> Novo departamento</div>
                 <div style={cx.dica}>
                   Um departamento é um conjunto de telefones nossos — Advogados, SAC,
-                  Vendas, Interno. Ele já nasce com um grupo “Outras”, onde cai o que
-                  não se encaixar em nenhum outro.
+                  Vendas, Interno. Depois, traga para ele os telefones que atendem
+                  por ali.
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <input value={novoDep} onChange={(e) => setNovoDep(e.target.value)} placeholder="Nome do departamento"
@@ -210,13 +188,9 @@ export default function Departamentos({ C, aoFechar }) {
 
               {departamentos.map((d) => (
                 <Departamento key={d.id} d={d} cx={cx} C={C}
-                  grupos={grupos.filter((g) => g.departamento_id === d.id)}
                   telefones={telefones}
                   aoRenomear={(nome) => gravar("dep", () => supabase.from("departamentos").update({ nome }).eq("id", d.id))}
                   aoApagar={() => gravar("dep", () => supabase.from("departamentos").delete().eq("id", d.id))}
-                  aoCriarGrupo={(nome, frente) => criarGrupo(d.id, nome, frente)}
-                  aoRenomearGrupo={(id, nome) => gravar("grupo", () => supabase.from("grupos").update({ nome }).eq("id", id))}
-                  aoApagarGrupo={(id) => gravar("grupo", () => supabase.from("grupos").delete().eq("id", id))}
                   aoMoverTelefone={(telId) => gravar("tel", () => supabase.from("advogados").update({ departamento_id: d.id }).eq("id", telId))}
                 />
               ))}
@@ -263,7 +237,7 @@ export default function Departamentos({ C, aoFechar }) {
 
                   <div style={{ marginTop: 14 }}>
                     <div style={{ ...cx.titulo, fontSize: 13 }}><Plus size={14} /> Dar acesso a…</div>
-                    <NovoAcesso cx={cx} departamentos={departamentos} grupos={grupos}
+                    <NovoAcesso cx={cx} departamentos={departamentos}
                                 telefones={telefones} aoConceder={conceder} />
                   </div>
                 </div>
@@ -284,12 +258,9 @@ export default function Departamentos({ C, aoFechar }) {
   );
 }
 
-// ---------- um departamento, com seus grupos e telefones ----------
-function Departamento({ d, cx, C, grupos, telefones, aoRenomear, aoApagar, aoCriarGrupo,
-                        aoRenomearGrupo, aoApagarGrupo, aoMoverTelefone }) {
+// ---------- um departamento, com os telefones que atendem por ele ----------
+function Departamento({ d, cx, C, telefones, aoRenomear, aoApagar, aoMoverTelefone }) {
   const [nome, setNome] = useState(d.nome);
-  const [novoGrupo, setNovoGrupo] = useState("");
-  const [novaFrente, setNovaFrente] = useState("");
   const meus = telefones.filter((t) => t.departamento_id === d.id);
   const soltos = telefones.filter((t) => !t.departamento_id);
 
@@ -302,32 +273,9 @@ function Departamento({ d, cx, C, grupos, telefones, aoRenomear, aoApagar, aoCri
         <button style={{ ...cx.botaoFraco, color: "#c0392b" }}
                 onClick={() => {
                   if (meus.length) return alert("Mova os telefones para outro departamento antes de apagar este.");
-                  if (confirm(`Apagar o departamento “${d.nome}”? Os grupos dele também saem.`)) aoApagar();
+                  if (confirm(`Apagar o departamento “${d.nome}”?`)) aoApagar();
                 }}>
           <Trash2 size={13} /> Apagar
-        </button>
-      </div>
-
-      <div style={{ ...cx.titulo, fontSize: 13 }}><Layers size={14} /> Grupos</div>
-      <div style={cx.dica}>
-        O grupo separa os tipos de conversa dentro dos mesmos telefones. Quem decide
-        em qual grupo a conversa cai é <b>quem está do outro lado</b> — o Vantoro
-        reconhece pelo cadastro. O nome é seu: pode chamar de “Audiências” o grupo
-        que recebe as conversas com clientes.
-      </div>
-      {grupos.map((g) => (
-        <LinhaGrupo key={g.id} g={g} cx={cx} aoRenomear={aoRenomearGrupo} aoApagar={aoApagarGrupo} />
-      ))}
-      <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-        <input value={novoGrupo} onChange={(e) => setNovoGrupo(e.target.value)} placeholder="Nome do grupo (ex.: Audiências)"
-               style={{ ...cx.campo, flex: "1 1 180px" }} />
-        <select value={novaFrente} onChange={(e) => setNovaFrente(e.target.value)} style={{ ...cx.campo, flex: "2 1 260px" }}>
-          <option value="">Recebe as conversas de…</option>
-          {REGRAS.map((r) => <option key={r.valor} value={r.valor}>{r.rotulo}</option>)}
-        </select>
-        <button style={cx.botao} disabled={!novoGrupo.trim() || !novaFrente}
-                onClick={() => { aoCriarGrupo(novoGrupo, novaFrente); setNovoGrupo(""); setNovaFrente(""); }}>
-          <Plus size={14} /> Criar grupo
         </button>
       </div>
 
@@ -352,51 +300,19 @@ function Departamento({ d, cx, C, grupos, telefones, aoRenomear, aoApagar, aoCri
   );
 }
 
-function LinhaGrupo({ g, cx, aoRenomear, aoApagar }) {
-  const [nome, setNome] = useState(g.nome);
-  const regra = REGRAS.find((r) => r.valor === g.frente);
-  return (
-    <div style={cx.linha}>
-      <span style={{ width: 10, height: 10, borderRadius: "50%", background: g.cor, flexShrink: 0 }} />
-      <input value={nome} onChange={(e) => setNome(e.target.value)}
-             onBlur={() => nome.trim() && nome !== g.nome && aoRenomear(g.id, nome.trim())}
-             style={{ ...cx.campo, flex: "1 1 150px" }} />
-      <span style={{ flex: "2 1 220px", fontSize: 12.5, color: "#8696a0" }}>
-        {g.regra === "padrao" ? "o que não se encaixar em nenhum outro grupo" : (regra ? regra.rotulo : g.frente)}
-      </span>
-      {/* O balaio não pode ser apagado: sem ele, conversa que não casa com
-          nenhuma regra fica sem grupo — e some da tela de quem tem acesso por
-          grupo, sem avisar ninguém. */}
-      {g.regra !== "padrao" && (
-        <button style={{ ...cx.botaoFraco, color: "#c0392b" }}
-                onClick={() => confirm(`Apagar o grupo “${g.nome}”?`) && aoApagar(g.id)}>
-          <Trash2 size={13} />
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ---------- montar uma linha de permissão ----------
-function NovoAcesso({ cx, departamentos, grupos, telefones, aoConceder }) {
+function NovoAcesso({ cx, departamentos, telefones, aoConceder }) {
   const [dep, setDep] = useState("");
-  const [grupo, setGrupo] = useState("");
   const [tel, setTel] = useState("");
-  const gruposDoDep = grupos.filter((g) => !dep || String(g.departamento_id) === String(dep));
   const telsDoDep = telefones.filter((t) => !dep || String(t.departamento_id) === String(dep));
-  const nada = !dep && !grupo && !tel;
+  const nada = !dep && !tel;
 
   return (
     <div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <select value={dep} onChange={(e) => { setDep(e.target.value); setGrupo(""); setTel(""); }}
+        <select value={dep} onChange={(e) => { setDep(e.target.value); setTel(""); }}
                 style={{ ...cx.campo, flex: "1 1 170px" }}>
           <option value="">Departamento — todos</option>
           {departamentos.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}
-        </select>
-        <select value={grupo} onChange={(e) => setGrupo(e.target.value)} style={{ ...cx.campo, flex: "1 1 170px" }}>
-          <option value="">Grupo — todos</option>
-          {gruposDoDep.map((g) => <option key={g.id} value={g.id}>{g.nome}</option>)}
         </select>
         <select value={tel} onChange={(e) => setTel(e.target.value)} style={{ ...cx.campo, flex: "1 1 170px" }}>
           <option value="">Telefone — todos</option>
@@ -405,17 +321,16 @@ function NovoAcesso({ cx, departamentos, grupos, telefones, aoConceder }) {
       </div>
       <div style={{ fontSize: 12.5, color: "#8696a0", margin: "8px 0" }}>
         {nada
-          ? "Escolha ao menos um. Deixar os três em “todos” daria acesso a tudo sem dizer isso em lugar nenhum — por isso não é aceito."
-          : "Só entra o que bater em TUDO que você escolheu. Escolher o departamento e o grupo dá acesso àquele grupo daquele departamento, e a mais nada."}
+          ? "Escolha ao menos um. Deixar os dois em “todos” daria acesso a tudo sem dizer isso em lugar nenhum — por isso não é aceito."
+          : "Só entra o que bater em TUDO que você escolheu. Escolher o departamento e o telefone dá acesso àquele telefone, e a mais nada."}
       </div>
       <button style={{ ...cx.botao, opacity: nada ? 0.5 : 1 }} disabled={nada}
               onClick={() => {
                 aoConceder({
                   departamento_id: dep || null,
-                  grupo_id: grupo || null,
                   telefone_id: tel || null,
                 });
-                setDep(""); setGrupo(""); setTel("");
+                setDep(""); setTel("");
               }}>
         <Check size={15} /> Dar este acesso
       </button>

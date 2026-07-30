@@ -21,13 +21,18 @@ import Departamentos from "./Departamentos";
 // senão a mensagem fica "carregando" até chegar algo de fora.
 const BRIDGE_URL = (import.meta.env.VITE_BRIDGE_URL || "").replace(/\/$/, "");
 
-// As frentes de atendimento. O mesmo número de advogado atende acordo (com o
-// escritório do réu) e cliente (SAC, audiências): quem separa é quem está do
-// outro lado, e essa etiqueta vem do Vantoro pela ponte.
-// A cor não é enfeite — é o que deixa a equipe ver, de relance, que aquela
-// conversa não é da sua alçada.
-// (A lista fixa de frentes saiu daqui: departamentos e grupos agora vêm do
-//  banco, e o nome de cada grupo é editável na tela de Departamentos.)
+// ETIQUETA AUTOMÁTICA NA CONVERSA: NÃO EXISTE MAIS.
+//
+// O sistema carimbava cada conversa com o "grupo" dela — Acordos, Clientes,
+// Vendas, Interno e, para quem não estava no cadastro, "Sem identificar". Na
+// tela, isso ficava idêntico às tags que a equipe cria à mão, e a diferença
+// importa: uma foi escolhida por alguém, a outra o sistema inventou. "Sem
+// identificar" caía em quase toda conversa, porque é o balaio de quem ainda não
+// tem ficha — uma etiqueta que diz "não sei" em toda linha da lista.
+//
+// Saíram os selos, as abas de filtro por grupo e o que só existia para
+// desenhá-los. As tags de verdade — as que se criam na tela de tags — continuam
+// intactas, e agora são as únicas coisas coloridas na lista.
 function acordarPonte() {
   if (!BRIDGE_URL) return;
   // "no-cors": só precisamos que o pedido CHEGUE na ponte (acorda + despacha);
@@ -415,10 +420,9 @@ export default function Painel({ sessao }) {
     try { localStorage.setItem("zorvin_modo", modo); } catch (_) { /* ignora */ }
   }, [modo]);
   const [advogados, setAdvogados] = useState([]);
-  // Departamentos e grupos saem do BANCO, não mais de uma lista escrita aqui.
-  // Era isso que impedia criar SAC, Vendas ou Interno sem mexer em código.
+  // Os departamentos saem do BANCO, não de uma lista escrita aqui: é isso que
+  // permite criar um departamento novo sem mexer em código.
   const [departamentos, setDepartamentos] = useState([]);
-  const [grupos, setGrupos] = useState([]);
   const [departamentoId, setDepartamentoId] = useState(null);
   const [souAdmin, setSouAdmin] = useState(false);
   const [telaAdmin, setTelaAdmin] = useState(false);
@@ -522,8 +526,6 @@ export default function Painel({ sessao }) {
   // um departamento que abre vazio é pior do que não mostrar.
   const departamentosVisiveis = departamentos.filter(
     (d) => advogados.some((a) => a.departamento_id === d.id));
-  // Os grupos deste departamento: são as abas de filtro da lista de conversas.
-  const gruposDoDepartamento = grupos.filter((g) => g.departamento_id === departamentoId);
 
   // O contato está digitando nesta conversa agora? (janela curta que expira).
   function digitandoAtivo(convId) {
@@ -541,23 +543,20 @@ export default function Painel({ sessao }) {
     return a.por;
   }
 
-  // ---- Carrega telefones, departamentos e grupos (uma vez) ----
+  // ---- Carrega telefones e departamentos (uma vez) ----
   useEffect(() => {
     let vivo = true;
     (async () => {
-      const [tel, dep, gru, eu] = await Promise.all([
+      const [tel, dep, eu] = await Promise.all([
         supabase.from("advogados").select("id, nome, numero, foto_url, departamento_id")
           .eq("ativo", true).order("nome"),
         supabase.from("departamentos").select("id, nome, slug, cor, ordem")
-          .eq("ativo", true).order("ordem"),
-        supabase.from("grupos").select("id, departamento_id, nome, slug, cor, ordem, regra, frente")
           .eq("ativo", true).order("ordem"),
         supabase.from("usuarios").select("admin").eq("id", sessao?.user?.id || "").maybeSingle(),
       ]);
       if (!vivo) return;
       setAdvogados(tel.data || []);
       setDepartamentos(dep.data || []);
-      setGrupos(gru.data || []);
       setSouAdmin(Boolean(eu.data && eu.data.admin));
 
       const lista = tel.data || [];
@@ -1833,23 +1832,8 @@ export default function Painel({ sessao }) {
     if (filtro === "naolidas") return (c.nao_lidas || 0) > 0;
     if (filtro === "favoritas") return !!c.favorita;
     if (filtro.startsWith("tag:")) return (tagsPorConversa[c.id] || []).includes(filtro.slice(4));
-    if (filtro.startsWith("grupo:")) return String(c.grupo_id) === filtro.slice(6);
     return true; // 'tudo'
   }
-
-  // Quantas conversas há em cada grupo, para o número na aba. Conta só o que
-  // está à vista, igual ao contador de não lidas.
-  const contagemPorGrupo = {};
-  conversas.forEach((c) => {
-    if (!c.arquivada && c.grupo_id) {
-      contagemPorGrupo[c.grupo_id] = (contagemPorGrupo[c.grupo_id] || 0) + 1;
-    }
-  });
-  // As abas só aparecem para grupos que TÊM conversa. Um departamento com
-  // quatro grupos e conversa em um só mostraria três botões que não filtram
-  // nada — e a pessoa clicaria neles para descobrir isso.
-  const gruposComConversa = gruposDoDepartamento.filter((g) => contagemPorGrupo[g.id]);
-  const grupoPorId = Object.fromEntries(grupos.map((g) => [g.id, g]));
 
   // ---- Busca ampla ------------------------------------------------------
   // A busca da lista achava só pelo nome e pelo número do contato. Faltavam as
@@ -2143,15 +2127,20 @@ export default function Painel({ sessao }) {
             </div>
           )}
           <div style={{ fontSize: 11, color: C.textSecondary, fontWeight: 600, letterSpacing: 0.3 }}>ATENDENDO COMO</div>
-          {/* Nome e número em linhas separadas: juntos, os dois se cortam no
-              meio numa barra de 260px, e o que sobra é meio número — pior do
-              que nenhum. O número é o dado que se copia, então fica inteiro. */}
-          <div style={{ fontSize: 15, fontWeight: 600, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{advogado ? advogado.nome : "—"}</div>
-          {advogado && numeroBonito(advogado.numero) && (
-            <div style={{ fontSize: 12.5, color: C.textSecondary, marginTop: 1, fontVariantNumeric: "tabular-nums" }}>
-              {numeroBonito(advogado.numero)}
-            </div>
-          )}
+          {/* Nome e número na MESMA linha. Quem encolhe é o nome (`minWidth: 0`
+              com reticências); o número fica inteiro (`flexShrink: 0`) porque é
+              o dado que se copia — meio número não serve para nada, e um nome
+              cortado ainda se reconhece. */}
+          <div style={{ display: "flex", alignItems: "baseline", gap: 7, marginTop: 2 }}>
+            <span style={{ fontSize: 15, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+              {advogado ? advogado.nome : "—"}
+            </span>
+            {advogado && numeroBonito(advogado.numero) && (
+              <span style={{ fontSize: 12.5, color: C.textSecondary, whiteSpace: "nowrap", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+                {numeroBonito(advogado.numero)}
+              </span>
+            )}
+          </div>
         </div>
 
         <div style={{ padding: "8px 12px", background: C.panel }}>
@@ -2167,20 +2156,6 @@ export default function Painel({ sessao }) {
             const ativo = filtro === k;
             return (
               <button key={k} onClick={() => setFiltro(k)} style={{ flexShrink: 0, border: `1px solid ${ativo ? C.green : C.divider}`, background: ativo ? C.green : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 20, padding: "3px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
-            );
-          })}
-          {/* Grupos do departamento: separam os tipos de conversa DENTRO dos
-              mesmos telefones (ex.: Acordos e Audiências nos números dos
-              advogados). Vêm do banco — o nome de cada um é editável. */}
-          {gruposComConversa.map((g) => {
-            const ativo = filtro === "grupo:" + g.id;
-            const cor = g.cor || C.green;
-            return (
-              <button key={g.id} onClick={() => setFiltro(ativo ? "tudo" : "grupo:" + g.id)}
-                style={{ flexShrink: 0, border: `1px solid ${cor}`, background: ativo ? cor : "transparent", color: ativo ? "#fff" : C.textPrimary, borderRadius: 20, padding: "3px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: cor, display: ativo ? "none" : "inline-block" }} />
-                {g.nome} {contagemPorGrupo[g.id]}
-              </button>
             );
           })}
           {tags.map((t) => {
@@ -2229,15 +2204,6 @@ export default function Painel({ sessao }) {
                     <span style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
                       {c.favorita && <Star size={13} color="#f5c518" fill="#f5c518" style={{ flexShrink: 0 }} />}
                       <span style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nome}</span>
-                      {/* De que frente é esta conversa. Fica junto do nome, e
-                          não no rodapé, porque é a primeira coisa que decide se
-                          aquela conversa é sua ou de outra equipe. */}
-                      {grupoPorId[c.grupo_id] && (
-                        <span title={`Grupo: ${grupoPorId[c.grupo_id].nome}`}
-                          style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, color: "#fff", background: grupoPorId[c.grupo_id].cor || C.green, borderRadius: 4, padding: "1px 5px", whiteSpace: "nowrap", letterSpacing: .2 }}>
-                          {grupoPorId[c.grupo_id].nome}
-                        </span>
-                      )}
                     </span>
                     <span style={{ fontSize: 11, color: c.nao_lidas ? C.green : C.textSecondary, flexShrink: 0 }}>{horaDe(c.ultima_atividade)}</span>
                   </div>
@@ -3043,19 +3009,17 @@ export default function Painel({ sessao }) {
         </div>
       )}
 
-      {/* Departamentos, grupos e permissões. Ao fechar, os cadastros são
-          relidos: renomear um grupo tem de aparecer nas abas na hora, senão
-          a pessoa acha que não salvou e faz de novo. */}
+      {/* Departamentos, telefones e permissões. Ao fechar, os cadastros são
+          relidos: renomear um departamento tem de aparecer na hora, senão a
+          pessoa acha que não salvou e faz de novo. */}
       {telaAdmin && (
         <Departamentos C={C} aoFechar={() => {
           setTelaAdmin(false);
           Promise.all([
             supabase.from("departamentos").select("id, nome, slug, cor, ordem").eq("ativo", true).order("ordem"),
-            supabase.from("grupos").select("id, departamento_id, nome, slug, cor, ordem, regra, frente").eq("ativo", true).order("ordem"),
             supabase.from("advogados").select("id, nome, numero, foto_url, departamento_id").eq("ativo", true).order("nome"),
-          ]).then(([d, g, t]) => {
+          ]).then(([d, t]) => {
             setDepartamentos(d.data || []);
-            setGrupos(g.data || []);
             setAdvogados(t.data || []);
           });
         }} />
