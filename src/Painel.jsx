@@ -33,6 +33,20 @@ const BRIDGE_URL = (import.meta.env.VITE_BRIDGE_URL || "").replace(/\/$/, "");
 // Saíram os selos, as abas de filtro por grupo e o que só existia para
 // desenhá-los. As tags de verdade — as que se criam na tela de tags — continuam
 // intactas, e agora são as únicas coisas coloridas na lista.
+// COMO UM CONTATO SE CHAMA NA TELA.
+//
+// Sem nome salvo, mostra-se o número — mas GRUPO não tem número: a chave dele é
+// o identificador do WhatsApp (`grupo:120363…`), e imprimir isso com um "+" na
+// frente dá "+grupo:120363021070929710", que não é nada. Antes deste conserto,
+// mensagem de grupo caía numa conversa cujo título era um pedaço desse
+// identificador ("+70929710") — sem nome, porque o nome do grupo era ignorado.
+function nomeDoContato(contato) {
+  if (!contato) return "";
+  if (contato.nome) return contato.nome;
+  const numero = String(contato.numero || "");
+  return numero.startsWith("grupo:") ? "Grupo" : "+" + numero;
+}
+
 function acordarPonte() {
   if (!BRIDGE_URL) return;
   // "no-cors": só precisamos que o pedido CHEGUE na ponte (acorda + despacha);
@@ -841,7 +855,14 @@ export default function Painel({ sessao }) {
     const { data: conv, error } = await supabase.from("conversas")
       .upsert({ advogado_id: advogadoId, contato_id: cont.id }, { onConflict: "advogado_id,contato_id" })
       .select("id").single();
-    if (error || !conv) { mostrarAviso("Não consegui abrir a conversa."); return; }
+    if (error || !conv) {
+      // A causa quase sempre é a mesma, e é uma só: falta a política de INSERÇÃO
+      // em `conversas` no Supabase (o banco recusa a linha nova em silêncio).
+      // Dizer isso poupa a hora de procura que este erro custou.
+      mostrarAviso("Não consegui abrir a conversa. Se isto acontece com TODO contato novo, "
+                 + "falta rodar o SQL 2026-07-abrir-conversa.sql no Supabase.");
+      return;
+    }
     setConfigAberta(false);
     setNovaConversaAberta(false);
     setContatoForm(null);
@@ -2070,7 +2091,7 @@ export default function Painel({ sessao }) {
                       <div key={c.id} role="button" onClick={() => abrirConversaContato(c)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", cursor: "pointer", color: C.textPrimary }} onMouseEnter={(e) => { e.currentTarget.style.background = C.divider; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
                         <Avatar nome={c.nome || c.numero} foto={c.foto_url} size={44} />
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.nome || ("+" + c.numero)}</div>
+                          <div style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nomeDoContato(c)}</div>
                           <div style={{ fontSize: 12.5, color: C.textSecondary }}>+{c.numero}</div>
                         </div>
                       </div>
@@ -2190,7 +2211,7 @@ export default function Painel({ sessao }) {
             <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>{verArquivadas ? "Nenhuma conversa arquivada." : "Nenhuma conversa ainda."}</div>
           )}
           {conversasFiltradas.map((c) => {
-            const nome = c.contato?.nome || ("+" + (c.contato?.numero || ""));
+            const nome = nomeDoContato(c.contato);
             // Prévia: se a última mensagem é mídia (e sem legenda), mostra
             // "📷 Foto", "🎤 Mensagem de voz" etc. em vez de "[anexo]".
             const midiaTipo = ultimasMidias[c.id];
@@ -2280,7 +2301,7 @@ export default function Painel({ sessao }) {
               <div onClick={() => setInfoAberta(true)} title="Ver dados do contato" style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, cursor: "pointer", minWidth: 0 }}>
               <Avatar nome={conversa.contato?.nome || conversa.contato?.numero} foto={conversa.contato?.foto_url} size={40} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 15, fontWeight: 600 }}>{conversa.contato?.nome || ("+" + conversa.contato?.numero)}</div>
+                <div style={{ fontSize: 15, fontWeight: 600 }}>{nomeDoContato(conversa.contato)}</div>
                 {digitandoAtivo(conversa.id) ? (
                   <div style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>digitando…</div>
                 ) : atendidoPorOutro(conversa.id) ? (
@@ -2361,7 +2382,7 @@ export default function Painel({ sessao }) {
                   <div onClick={() => { if (conversa.contato?.foto_url) setImagemAberta(conversa.contato.foto_url); }} style={{ cursor: conversa.contato?.foto_url ? "pointer" : "default" }}>
                     <Avatar nome={conversa.contato?.nome || conversa.contato?.numero} foto={conversa.contato?.foto_url} size={150} />
                   </div>
-                  <div style={{ fontSize: 20, fontWeight: 600, textAlign: "center", marginTop: 6 }}>{conversa.contato?.nome || ("+" + conversa.contato?.numero)}</div>
+                  <div style={{ fontSize: 20, fontWeight: 600, textAlign: "center", marginTop: 6 }}>{nomeDoContato(conversa.contato)}</div>
                   <div style={{ fontSize: 15, color: C.textSecondary }}>{String(conversa.contato?.numero || "").startsWith("grupo:") ? "Grupo" : ("+" + conversa.contato?.numero)}</div>
                   <div style={{ width: "100%", borderTop: `1px solid ${C.divider}`, marginTop: 14, paddingTop: 16 }}>
                     <div style={{ fontSize: 12, color: C.textSecondary, fontWeight: 600, letterSpacing: 0.3 }}>ATENDIDO POR</div>
@@ -2845,7 +2866,7 @@ export default function Painel({ sessao }) {
                             <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderBottom: `1px solid ${C.divider}` }}>
                               <Avatar nome={c.nome || c.numero} foto={c.foto_url} size={40} />
                               <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.nome || ("+" + c.numero)}</div>
+                                <div style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nomeDoContato(c)}</div>
                                 <div style={{ fontSize: 12.5, color: C.textSecondary }}>+{c.numero}</div>
                               </div>
                               <button onClick={() => abrirConversaContato(c)} title="Abrir conversa" style={{ display: "flex", alignItems: "center", gap: 6, border: `1px solid ${C.green}`, background: "transparent", color: C.green, borderRadius: 8, padding: "7px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}><MessageSquarePlus size={15} /> Conversar</button>
