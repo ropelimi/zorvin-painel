@@ -14,17 +14,9 @@
 import { useEffect, useState } from "react";
 import { X, Save, UserPlus, RefreshCw, ExternalLink, ChevronDown, ChevronRight } from "lucide-react";
 import { supabase } from "./supabase";
-
-const BRIDGE_URL = (import.meta.env.VITE_BRIDGE_URL || "").replace(/\/$/, "");
-
-// Aviso exibido quando o painel foi publicado sem saber o endereco da ponte.
-// Detalhe importante: o Vite grava as variaveis VITE_* dentro do arquivo final
-// no momento do build. Preencher a variavel na Render nao basta — precisa de um
-// deploy novo depois, senao o painel continua com o valor vazio de antes.
-const FALTA_PONTE =
-  "Falta a variável VITE_BRIDGE_URL no painel. Preencha em " +
-  "Render → zorvin-painel → Environment com o endereço do zorvin-bridge e " +
-  "publique o painel de novo (o Vite grava esse valor durante o build).";
+// A chamada à ponte mora em `ponte.js`: duas telas precisam dela (esta e a de
+// atendentes), e duas cópias divergiriam na primeira mudança.
+import { chamarPonte, BRIDGE_URL, FALTA_PONTE } from "./ponte.js";
 
 // Lista usada só enquanto o Vantoro não responder com a dele (por exemplo, se
 // o painel for publicado antes do Vantoro). A lista boa vem da API, para não
@@ -130,26 +122,6 @@ async function buscarCep(cep) {
     cidade: j.localidade || "",
     estado: j.uf || "",
   };
-}
-
-// Chama a ponte já com a sessão do Zorvin no cabeçalho.
-async function chamarPonte(caminho, opcoes = {}) {
-  if (!BRIDGE_URL) throw new Error(FALTA_PONTE);
-  const { data } = await supabase.auth.getSession();
-  const jwt = data?.session?.access_token;
-  if (!jwt) throw new Error("Sessão expirada. Entre de novo.");
-
-  const r = await fetch(BRIDGE_URL + caminho, {
-    ...opcoes,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: "Bearer " + jwt,
-      ...(opcoes.headers || {}),
-    },
-  });
-  const corpo = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(corpo.erro || "Não consegui falar com o Vantoro.");
-  return corpo;
 }
 
 export default function FichaVantoro({ numero, nomeContato, C, estreito, onFechar, onAviso }) {
