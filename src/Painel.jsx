@@ -2252,7 +2252,10 @@ export default function Painel({ sessao }) {
       `}</style>
       {/* Barra lateral */}
       <div style={{ width: 60, background: C.rail, display: (estreito && conversaId) ? "none" : "flex", flexDirection: "column", alignItems: "center", paddingTop: 16, gap: 8 }}>
-        <div style={{ width: 34, height: 34, borderRadius: 8, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "#fff", marginBottom: 12 }}>Z</div>
+        {/* Aqui havia um quadrado verde com a letra "Z". Saiu: era a terceira
+            vez que a tela dizia o nome do sistema (o "Zorvin" do cabeçalho e o
+            do fundo já dizem), e ocupava justo o alto da barra dos telefones,
+            onde o olho procura o primeiro atendente. */}
 
         {/* Advogados: um avatar por advogado. O atual fica destacado (anel
             verde); quem tem mensagens não lidas ganha um selo vermelho. */}
@@ -2284,15 +2287,21 @@ export default function Painel({ sessao }) {
              style={{ width: 40, height: 40, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: midiasAberta ? "#fff" : "#aebac1", background: midiasAberta ? "rgba(255,255,255,.12)" : "transparent", cursor: "pointer" }}>
           <Images size={22} />
         </div>
-        <div onClick={abrirConfig} title="Configurações" style={{ width: 40, height: 40, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: configAberta ? "#fff" : "#aebac1", background: configAberta ? "rgba(255,255,255,.12)" : "transparent", cursor: "pointer" }}>
-          <Settings size={22} />
-        </div>
+        {/* A engrenagem saiu daqui. Ela e a foto logo abaixo faziam a MESMA
+            coisa — abrir as Configurações — coladas uma na outra, e dois botões
+            idênticos lado a lado não dão duas opções: dão a dúvida de qual é
+            qual. Ficou a foto, que além de abrir também diz quem está entrado.
+            O destaque de "configurações abertas" passou para ela. */}
         {/* A FOTO DE QUEM ESTÁ LOGADO, no pé da barra. É onde ela fica em todo
             painel de atendimento, e é o que responde de relance a pergunta que
             aparece quando duas pessoas dividem a mesma máquina: "estou entrada
             como quem?". Clicar abre as configurações, que é onde se troca a
             foto e se sai. */}
-        <div onClick={abrirConfig} title={`Você: ${meuNome}`} style={{ cursor: "pointer", marginTop: 4, marginBottom: 14, borderRadius: "50%", display: "flex" }}>
+        <div onClick={abrirConfig} role="button" tabIndex={0}
+             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrirConfig(); } }}
+             title={`${meuNome} — configurações`}
+             style={{ cursor: "pointer", marginTop: 4, marginBottom: 14, borderRadius: "50%", display: "flex",
+                      boxShadow: configAberta ? `0 0 0 2px ${C.green}` : "none" }}>
           <Avatar nome={meuNome} foto={minhaFoto} size={36} />
         </div>
       </div>
@@ -2380,8 +2389,24 @@ export default function Painel({ sessao }) {
               "Você: Fulano" no topo era gastar a linha mais nobre da tela com o
               único dado que a pessoa nunca precisa consultar. */}
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 8, paddingBottom: 8, borderBottom: `1px solid ${C.divider}` }}>
-            <div style={{ flex: 1, minWidth: 0, fontSize: 19, fontWeight: 700, color: C.textPrimary, letterSpacing: .2 }}>
-              Zorvin
+            {/* A MARCA, no mesmo desenho do Vantoro: nome em serifada por cima,
+                "by Ropelimi" miúdo por baixo, com o Ropelimi em dourado. São
+                dois sistemas da mesma casa e é isso que a assinatura repetida
+                diz — quem passa de um para o outro não precisa reaprender onde
+                está.
+
+                A fonte é `ui-serif` e não a Fraunces do Vantoro: buscar uma
+                fonte na rede para escrever seis letras atrasaria a primeira
+                pintura da tela, e a serifada do sistema dá o mesmo ar. O dourado
+                muda com o tema porque o do Vantoro também muda: o escuro do
+                modo claro sumiria no fundo escuro. */}
+            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
+              <span style={{ fontFamily: 'ui-serif, Georgia, "Times New Roman", serif', fontSize: 19, fontWeight: 600, color: C.textPrimary, letterSpacing: ".005em" }}>
+                Zorvin
+              </span>
+              <span style={{ fontSize: 11, color: C.textSecondary, letterSpacing: ".02em" }}>
+                by <b style={{ color: modo === "escuro" ? "#d6a94e" : "#b6862c", fontWeight: 700 }}>Ropelimi</b>
+              </span>
             </div>
             {/* Nova conversa (⊞), estilo WhatsApp Web */}
             <button onClick={() => { setBuscaContato(""); setContatoForm(null); setNovaConversaAberta(true); carregarContatos(); }} aria-label="Nova conversa" title="Nova conversa" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", color: C.textSecondary, padding: 0, marginRight: 4 }}>
