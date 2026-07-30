@@ -48,6 +48,32 @@ function nomeDoContato(contato) {
   return numero.startsWith("grupo:") ? "Grupo" : "+" + numero;
 }
 
+// QUAIS TELEFONES ESTA PESSOA PODE USAR.
+//
+// O bug que isto conserta: quem tinha acesso só a "Acordos" via também as abas
+// de "Sucesso do Cliente" e podia atender por um telefone de lá.
+//
+// A causa não estava na permissão, e sim aqui: a tabela `advogados` é de leitura
+// LIVRE no banco (`using (true)`) — precisa ser, porque a tela mostra o nome do
+// telefone em vários lugares. O painel montava as abas de departamento a partir
+// dessa lista inteira, com um comentário afirmando que "o banco já filtrou". O
+// banco filtra as CONVERSAS (e essas nunca vazaram), não a lista de telefones.
+//
+// A regra abaixo é a mesma da função `pode_ver_conversa` do banco, escrita em
+// JavaScript: cada linha de permissão vale para um departamento, para um
+// telefone, ou para os dois juntos — e o vazio quer dizer "qualquer".
+//
+// Sem conseguir ler as permissões, a tela não oferece telefone NENHUM. É o
+// contrário do que se faz com dado comum: aqui, na dúvida, mostrar de menos é o
+// erro barato e mostrar de mais é o caro.
+function filtrarPermitidos(telefones, permissoes, ehAdmin, erro) {
+  if (ehAdmin) return telefones;
+  if (erro) return [];
+  return telefones.filter((a) => (permissoes || []).some(
+    (p) => (!p.departamento_id || p.departamento_id === a.departamento_id)
+        && (!p.telefone_id || p.telefone_id === a.id)));
+}
+
 function acordarPonte() {
   if (!BRIDGE_URL) return;
   // "no-cors": só precisamos que o pedido CHEGUE na ponte (acorda + despacha);
@@ -438,6 +464,9 @@ export default function Painel({ sessao }) {
   // Os departamentos saem do BANCO, não de uma lista escrita aqui: é isso que
   // permite criar um departamento novo sem mexer em código.
   const [departamentos, setDepartamentos] = useState([]);
+  // As permissões desta pessoa, para a tela oferecer só o que ela pode usar.
+  const [minhasPermissoes, setMinhasPermissoes] = useState([]);
+  const [erroPermissoes, setErroPermissoes] = useState("");
   const [departamentoId, setDepartamentoId] = useState(null);
   const [souAdmin, setSouAdmin] = useState(false);
   const [telaAdmin, setTelaAdmin] = useState(false);
@@ -538,12 +567,15 @@ export default function Painel({ sessao }) {
   // de um metadado escrito à mão no Supabase. Quem é superusuário no Vantoro
   // administra aqui — uma lista de gente, não duas. Está em `souAdmin`.
   // Telefones que aparecem AGORA (do departamento selecionado).
-  const advogadosVisiveis = advogados.filter((a) => a.departamento_id === departamentoId);
-  // Só entram os departamentos onde esta pessoa tem ALGUM telefone visível —
-  // e o que é visível já foi decidido pelo banco, não por esta tela. Mostrar
-  // um departamento que abre vazio é pior do que não mostrar.
+  // Os telefones que esta pessoa PODE usar — e é desta lista que sai tudo o que
+  // a tela oferece. Ver `filtrarPermitidos`.
+  const advogadosPermitidos = filtrarPermitidos(advogados, minhasPermissoes, souAdmin, erroPermissoes);
+  const advogadosVisiveis = advogadosPermitidos.filter((a) => a.departamento_id === departamentoId);
+  // Só entram os departamentos onde esta pessoa tem ALGUM telefone permitido.
+  // Mostrar um departamento que abre vazio é pior do que não mostrar — e, antes,
+  // era pior ainda: parecia acesso que ela não tinha.
   const departamentosVisiveis = departamentos.filter(
-    (d) => advogados.some((a) => a.departamento_id === d.id));
+    (d) => advogadosPermitidos.some((a) => a.departamento_id === d.id));
 
   // O contato está digitando nesta conversa agora? (janela curta que expira).
   function digitandoAtivo(convId) {
@@ -565,19 +597,27 @@ export default function Painel({ sessao }) {
   useEffect(() => {
     let vivo = true;
     (async () => {
-      const [tel, dep, eu] = await Promise.all([
+      const [tel, dep, eu, perm] = await Promise.all([
         supabase.from("advogados").select("id, nome, numero, foto_url, departamento_id")
           .eq("ativo", true).order("nome"),
         supabase.from("departamentos").select("id, nome, slug, cor, ordem")
           .eq("ativo", true).order("ordem"),
         supabase.from("usuarios").select("admin").eq("id", sessao?.user?.id || "").maybeSingle(),
+        // AS MINHAS permissões. O banco só deixa cada pessoa ler as próprias
+        // (`permissoes_leitura`), então isto não conta a ninguém o que os
+        // outros alcançam.
+        supabase.from("permissoes").select("departamento_id, telefone_id")
+          .eq("usuario_id", sessao?.user?.id || ""),
       ]);
       if (!vivo) return;
+      const ehAdmin = Boolean(eu.data && eu.data.admin);
       setAdvogados(tel.data || []);
       setDepartamentos(dep.data || []);
-      setSouAdmin(Boolean(eu.data && eu.data.admin));
+      setSouAdmin(ehAdmin);
+      setMinhasPermissoes(perm.data || []);
+      setErroPermissoes(perm.error ? perm.error.message : "");
 
-      const lista = tel.data || [];
+      const lista = filtrarPermitidos(tel.data || [], perm.data || [], ehAdmin, perm.error);
       if (lista.length) {
         // Mantém o telefone que estava selecionado antes de atualizar a página.
         let salvo = null;
