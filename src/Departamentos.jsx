@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "./supabase.js";
-import { X, Plus, Trash2, Check, Loader2, Building2, Phone, ShieldCheck } from "lucide-react";
+import { chamarPonte } from "./ponte.js";
+import { X, Plus, Trash2, Loader2, Building2, Phone, ShieldCheck } from "lucide-react";
 
 // ============================================================
 //  DEPARTAMENTOS, TELEFONES E PERMISSÕES
@@ -43,20 +44,16 @@ export default function Departamentos({ C, aoFechar }) {
   const [erro, setErro] = useState("");
   const [departamentos, setDepartamentos] = useState([]);
   const [telefones, setTelefones] = useState([]);
-  const [usuarios, setUsuarios] = useState([]);
-  const [permissoes, setPermissoes] = useState([]);
   const [aba, setAba] = useState("estrutura"); // 'estrutura' | 'pessoas'
   const [salvando, setSalvando] = useState("");
 
   const recarregar = useCallback(async () => {
     setErro("");
-    const [d, g, t, u, p] = await Promise.all([
+    const [d, t] = await Promise.all([
       supabase.from("departamentos").select("*").order("ordem"),
       supabase.from("advogados").select("id, nome, numero, departamento_id, ativo").order("nome"),
-      supabase.from("usuarios").select("*").order("nome"),
-      supabase.from("permissoes").select("*"),
     ]);
-    const falhou = [d, g, t, u, p].find((r) => r.error);
+    const falhou = [d, t].find((r) => r.error);
     if (falhou) {
       // A causa quase sempre é a mesma: o SQL de departamentos ainda não foi
       // rodado no Supabase. Dizer isso poupa uma hora de procura.
@@ -65,8 +62,6 @@ export default function Departamentos({ C, aoFechar }) {
     }
     setDepartamentos(d.data || []);
     setTelefones(t.data || []);
-    setUsuarios(u.data || []);
-    setPermissoes(p.data || []);
     setCarregando(false);
   }, []);
 
@@ -105,34 +100,6 @@ export default function Departamentos({ C, aoFechar }) {
     setNovoDep("");
   }
 
-  // ---------- permissões ----------
-  const [pessoaId, setPessoaId] = useState(null);
-  const pessoa = usuarios.find((u) => u.id === pessoaId) || null;
-  const minhas = permissoes.filter((p) => p.usuario_id === pessoaId);
-
-  function conceder(campos) {
-    gravar("perm", () => supabase.from("permissoes").insert({ usuario_id: pessoaId, ...campos }));
-  }
-  function revogar(id) {
-    gravar("perm", () => supabase.from("permissoes").delete().eq("id", id));
-  }
-
-  // Como uma linha de permissão se lê em português. Cada dimensão preenchida
-  // aperta mais o filtro; ler "Advogados · Audiências" é ler a regra inteira.
-  function descrever(p) {
-    const partes = [];
-    if (p.departamento_id) partes.push(nomeDep(p.departamento_id));
-    if (p.telefone_id) {
-      const t = telefones.find((x) => x.id === p.telefone_id);
-      partes.push(t ? `telefone de ${t.nome}` : "telefone removido");
-    }
-    return partes.join("  +  ");
-  }
-  function nomeDep(id) {
-    const d = departamentos.find((x) => x.id === id);
-    return d ? d.nome : "departamento removido";
-  }
-
   const cx = {
     fundo: { position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 },
     caixa: { background: C.panel, color: C.textPrimary, borderRadius: 16, width: "100%", maxWidth: 880, maxHeight: "92vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 24px 60px rgba(0,0,0,.35)" },
@@ -161,7 +128,7 @@ export default function Departamentos({ C, aoFechar }) {
 
         <div style={{ display: "flex", gap: 8, padding: "12px 18px 0" }}>
           <button style={cx.aba(aba === "estrutura")} onClick={() => setAba("estrutura")}>Departamentos e telefones</button>
-          <button style={cx.aba(aba === "pessoas")} onClick={() => setAba("pessoas")}>Quem vê o quê</button>
+          <button style={cx.aba(aba === "pessoas")} onClick={() => setAba("pessoas")}>Atendentes</button>
         </div>
 
         <div style={cx.corpo}>
@@ -198,59 +165,8 @@ export default function Departamentos({ C, aoFechar }) {
           )}
 
           {!carregando && aba === "pessoas" && (
-            <>
-              <div style={cx.secao}>
-                <div style={cx.titulo}><ShieldCheck size={16} /> Quem vê o quê</div>
-                <div style={cx.dica}>
-                  Escolha a pessoa e diga o que ela alcança. Os acessos <b>somam</b>:
-                  ela enxerga a união de tudo que estiver na lista dela. Sem nenhum
-                  item, ela entra e não vê conversa nenhuma. Quem é administrador no
-                  Vantoro vê tudo, sem precisar de linha aqui.
-                </div>
-                <select value={pessoaId || ""} onChange={(e) => setPessoaId(e.target.value || null)}
-                        style={{ ...cx.campo, width: "100%" }}>
-                  <option value="">Escolha a pessoa…</option>
-                  {usuarios.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.nome || u.login}{u.admin ? " — administrador (vê tudo)" : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {pessoa && !pessoa.admin && (
-                <div style={cx.secao}>
-                  <div style={cx.titulo}>Acessos de {pessoa.nome || pessoa.login}</div>
-                  {minhas.length === 0 && (
-                    <div style={{ ...cx.dica, marginBottom: 12 }}>
-                      Sem nenhum acesso. Hoje esta pessoa entra e não enxerga conversa alguma.
-                    </div>
-                  )}
-                  {minhas.map((p) => (
-                    <div key={p.id} style={cx.linha}>
-                      <span style={{ flex: 1, fontSize: 13.5 }}>{descrever(p)}</span>
-                      <button style={{ ...cx.botaoFraco, color: "#c0392b" }} onClick={() => revogar(p.id)}>
-                        <Trash2 size={13} /> Tirar
-                      </button>
-                    </div>
-                  ))}
-
-                  <div style={{ marginTop: 14 }}>
-                    <div style={{ ...cx.titulo, fontSize: 13 }}><Plus size={14} /> Dar acesso a…</div>
-                    <NovoAcesso cx={cx} departamentos={departamentos}
-                                telefones={telefones} aoConceder={conceder} />
-                  </div>
-                </div>
-              )}
-              {pessoa && pessoa.admin && (
-                <div style={cx.secao}>
-                  <div style={cx.dica}>
-                    <b>{pessoa.nome || pessoa.login}</b> é administrador no Vantoro e por isso
-                    enxerga tudo aqui. Para restringir, tire o superusuário dela no Vantoro.
-                  </div>
-                </div>
-              )}
-            </>
+            <Atendentes cx={cx} C={C} departamentos={departamentos} telefones={telefones}
+                        aoAvisar={setErro} />
           )}
         </div>
       </div>
@@ -300,40 +216,253 @@ function Departamento({ d, cx, C, telefones, aoRenomear, aoApagar, aoMoverTelefo
   );
 }
 
-function NovoAcesso({ cx, departamentos, telefones, aoConceder }) {
-  const [dep, setDep] = useState("");
-  const [tel, setTel] = useState("");
-  const telsDoDep = telefones.filter((t) => !dep || String(t.departamento_id) === String(dep));
-  const nada = !dep && !tel;
+
+// ============================================================
+//  ATENDENTES — quem enxerga o quê, sem sair do Zorvin
+//
+//  Antes, dar acesso a alguém significava abrir o admin do Django. Quem
+//  administra o escritório não faz isso, e o resultado era previsível: pedidos
+//  de acesso esperando dias por alguém com o Django aberto.
+//
+//  A PERMISSÃO CONTINUA MORANDO NO VANTORO — esta tela é outra porta para o
+//  mesmo dado, não um segundo lugar onde guardá-lo. Ela não escreve na tabela
+//  `permissoes` daqui: a Ponte reescreve essas linhas a partir do Vantoro a cada
+//  poucos minutos, e o que fosse salvo direto sumiria sozinho na rodada
+//  seguinte, sem nada dizendo por quê. A tela grava no Vantoro pela Ponte, e a
+//  Ponte aplica no banco na hora.
+//
+//  DOIS CORTES, e o fino ganha do grosso:
+//    - DEPARTAMENTOS: tudo o que entra por aqueles telefones.
+//    - CONEXÕES: com a chave ligada, ela vê SÓ os números marcados — inclusive
+//      número de departamento que ela não tem.
+// ============================================================
+function Chave({ ligada, aoTrocar, rotulo }) {
+  return (
+    <button type="button" role="switch" aria-checked={ligada} aria-label={rotulo}
+            onClick={aoTrocar}
+            style={{
+              width: 40, height: 22, borderRadius: 20, flexShrink: 0, cursor: "pointer",
+              border: "none", padding: 0, position: "relative",
+              background: ligada ? "#2e9e6b" : "#6b7280",
+              transition: "background .15s",
+            }}>
+      <span style={{
+        position: "absolute", top: 3, left: ligada ? 21 : 3, width: 16, height: 16,
+        borderRadius: "50%", background: "#fff", transition: "left .15s",
+      }} />
+    </button>
+  );
+}
+
+// Um cartão de conexão ou de departamento: nome em cima, detalhe embaixo, chave
+// à direita. O cartão inteiro é clicável — é o gesto que todo mundo tenta.
+function Cartao({ cx, C, titulo, detalhe, cor, ligada, aoTrocar, desligado }) {
+  return (
+    <div onClick={desligado ? undefined : aoTrocar}
+         style={{
+           display: "flex", alignItems: "center", gap: 10, padding: "9px 11px",
+           border: `1px solid ${ligada ? (cor || C.green) : C.divider}`,
+           borderRadius: 10, cursor: desligado ? "default" : "pointer",
+           opacity: desligado ? 0.45 : 1, minHeight: 46,
+         }}>
+      <span style={{ width: 8, height: 8, borderRadius: "50%", background: cor || C.green, flexShrink: 0 }} />
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: "block", fontSize: 13.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{titulo}</span>
+        {detalhe && <span style={{ display: "block", fontSize: 11.5, color: C.textSecondary }}>{detalhe}</span>}
+      </span>
+      <Chave ligada={ligada} aoTrocar={(e) => { e.stopPropagation(); if (!desligado) aoTrocar(); }} rotulo={titulo} />
+    </div>
+  );
+}
+
+function Atendentes({ cx, C, departamentos, telefones, aoAvisar }) {
+  const [gente, setGente] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [busca, setBusca] = useState("");
+  const [quem, setQuem] = useState(null);
+  const [salvando, setSalvando] = useState(false);
+
+  const carregar = useCallback(async () => {
+    setCarregando(true);
+    try {
+      const r = await chamarPonte("/permissoes/atendentes");
+      setGente(r.usuarios || []);
+    } catch (e) {
+      aoAvisar(e.message || "Não consegui ler os atendentes.");
+    }
+    setCarregando(false);
+  }, [aoAvisar]);
+  useEffect(() => { carregar(); }, [carregar]);
+
+  const pessoa = gente.find((u) => String(u.id) === String(quem)) || null;
+  const filtradas = gente.filter((u) => {
+    const t = busca.trim().toLowerCase();
+    if (!t) return true;
+    return `${u.nome || ""} ${u.login || ""} ${u.email || ""}`.toLowerCase().includes(t);
+  });
+
+  // Uma gravação por clique, mandando SÓ o que mudou. O estado local muda antes
+  // da resposta para a chave não "pular" — mas o que vale é o que o Vantoro
+  // devolve, e é ele que fica no fim.
+  async function mudar(campos) {
+    if (!pessoa) return;
+    setSalvando(true); aoAvisar("");
+    try {
+      const r = await chamarPonte("/permissoes/atendente", {
+        method: "POST",
+        body: JSON.stringify({ usuario: pessoa.login, ...campos }),
+      });
+      setGente((lista) => lista.map((u) => (String(u.id) === String(pessoa.id)
+        ? { ...u, ...r.usuario, ja_entrou: u.ja_entrou } : u)));
+      if (r.aplicada === false) {
+        aoAvisar("Salvo. A pessoa ainda não entrou no Zorvin, então a permissão passa a valer na primeira entrada dela.");
+      }
+    } catch (e) {
+      aoAvisar(e.message || "Não consegui salvar.");
+      carregar();   // devolve a tela ao que o servidor tem
+    }
+    setSalvando(false);
+  }
+
+  const meusDeps = pessoa ? (pessoa.zorvin || []) : [];
+  const meusFones = pessoa ? (pessoa.zorvin_telefones || []) : [];
+  const limitado = Boolean(pessoa && pessoa.zorvin_so_telefones);
+
+  // O número como o Vantoro guarda: só dígitos, sem o 55. É por esta chave que
+  // os dois lados se acham.
+  function chaveDoNumero(bruto) {
+    let d = String(bruto || "").replace(/\D/g, "");
+    if (d.length > 11 && d.startsWith("55")) d = d.slice(2);
+    return d.length > 11 ? d.slice(-11) : d;
+  }
+  const nomeDep = Object.fromEntries(departamentos.map((d) => [d.id, d.nome]));
+
+  function alternar(lista, valor) {
+    return lista.includes(valor) ? lista.filter((x) => x !== valor) : [...lista, valor];
+  }
 
   return (
-    <div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <select value={dep} onChange={(e) => { setDep(e.target.value); setTel(""); }}
-                style={{ ...cx.campo, flex: "1 1 170px" }}>
-          <option value="">Departamento — todos</option>
-          {departamentos.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}
-        </select>
-        <select value={tel} onChange={(e) => setTel(e.target.value)} style={{ ...cx.campo, flex: "1 1 170px" }}>
-          <option value="">Telefone — todos</option>
-          {telsDoDep.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}
-        </select>
+    <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
+      {/* ---- a lista de gente ---- */}
+      <div style={{ flex: "1 1 230px", minWidth: 210, maxWidth: 320 }}>
+        <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Pesquisar…"
+               style={{ ...cx.campo, width: "100%", marginBottom: 8 }} />
+        {carregando && <div style={cx.dica}>Carregando…</div>}
+        {!carregando && filtradas.length === 0 && <div style={cx.dica}>Ninguém com esse nome.</div>}
+        <div style={{ maxHeight: 420, overflowY: "auto" }}>
+          {filtradas.map((u) => {
+            const on = pessoa && String(pessoa.id) === String(u.id);
+            return (
+              <div key={u.id} onClick={() => setQuem(u.id)}
+                   style={{
+                     display: "flex", flexDirection: "column", gap: 1, padding: "9px 11px",
+                     borderRadius: 10, cursor: "pointer", minHeight: 46,
+                     background: on ? C.listActive : "transparent",
+                   }}>
+                <span style={{ fontSize: 13.5, fontWeight: 600 }}>
+                  {u.nome || u.login}
+                  {u.admin && <span style={{ fontSize: 11, color: C.textSecondary, fontWeight: 500 }}> · administrador</span>}
+                </span>
+                <span style={{ fontSize: 11.5, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {u.email || u.login}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </div>
-      <div style={{ fontSize: 12.5, color: "#8696a0", margin: "8px 0" }}>
-        {nada
-          ? "Escolha ao menos um. Deixar os dois em “todos” daria acesso a tudo sem dizer isso em lugar nenhum — por isso não é aceito."
-          : "Só entra o que bater em TUDO que você escolheu. Escolher o departamento e o telefone dá acesso àquele telefone, e a mais nada."}
+
+      {/* ---- o que a pessoa escolhida alcança ---- */}
+      <div style={{ flex: "2 1 340px", minWidth: 280 }}>
+        {!pessoa && <div style={cx.dica}>Escolha alguém na lista ao lado.</div>}
+
+        {pessoa && pessoa.admin && (
+          <div style={cx.secao}>
+            <div style={cx.titulo}>{pessoa.nome || pessoa.login}</div>
+            <div style={cx.dica}>
+              É <b>administradora</b>: enxerga todas as conversas, e nenhuma marcação aqui
+              mudaria isso. Para restringir, tire o superusuário dela no Vantoro.
+            </div>
+          </div>
+        )}
+
+        {pessoa && !pessoa.admin && (
+          <>
+            <div style={cx.secao}>
+              <div style={cx.titulo}>
+                {pessoa.nome || pessoa.login}
+                {salvando && <Loader2 size={14} className="zv-girando" color={C.textSecondary} />}
+              </div>
+              <div style={cx.dica}>
+                {pessoa.ja_entrou
+                  ? "As mudanças valem em segundos — a Ponte aplica na hora."
+                  : "Esta pessoa ainda não entrou no Zorvin. Pode marcar agora: a permissão passa a valer na primeira entrada dela."}
+              </div>
+            </div>
+
+            {/* CONEXÕES primeiro, como no painel que a equipe já conhece: é o
+                corte mais fino, e é ele que decide se os departamentos abaixo
+                valem alguma coisa. */}
+            <div style={cx.secao}>
+              <div style={cx.titulo}><Phone size={15} /> Conexões</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                <span style={{ flex: 1 }}>
+                  <span style={{ display: "block", fontSize: 13.5, fontWeight: 600 }}>Limitar a conexões específicas</span>
+                  <span style={{ display: "block", fontSize: 12, color: C.textSecondary }}>
+                    Ligado, ela vê só os números marcados — e mais nada, mesmo que tenha o departamento deles.
+                  </span>
+                </span>
+                <Chave ligada={limitado} rotulo="Limitar a conexões específicas"
+                       aoTrocar={() => mudar({ so_telefones: !limitado })} />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 8 }}>
+                {telefones.map((t) => {
+                  const chave = chaveDoNumero(t.numero);
+                  return (
+                    <Cartao key={t.id} cx={cx} C={C} cor="#3d7dd6"
+                            titulo={t.nome || t.numero}
+                            detalhe={nomeDep[t.departamento_id] || "sem departamento"}
+                            ligada={meusFones.includes(chave)}
+                            desligado={!limitado}
+                            aoTrocar={() => mudar({ telefones: alternar(meusFones, chave) })} />
+                  );
+                })}
+              </div>
+              {!limitado && (
+                <div style={{ ...cx.dica, marginTop: 8, marginBottom: 0 }}>
+                  Ligue a chave acima para escolher números. Desligada, ela vê todos os
+                  telefones dos departamentos marcados abaixo.
+                </div>
+              )}
+            </div>
+
+            <div style={cx.secao}>
+              <div style={cx.titulo}><Building2 size={15} /> Departamentos</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 8 }}>
+                {departamentos.map((d) => (
+                  <Cartao key={d.id} cx={cx} C={C} cor={d.cor}
+                          titulo={d.nome}
+                          detalhe={`${telefones.filter((t) => t.departamento_id === d.id).length} telefone(s)`}
+                          ligada={meusDeps.includes(d.slug)}
+                          desligado={limitado}
+                          aoTrocar={() => mudar({ departamentos: alternar(meusDeps, d.slug) })} />
+                ))}
+              </div>
+              {limitado && (
+                <div style={{ ...cx.dica, marginTop: 8, marginBottom: 0 }}>
+                  Enquanto a chave das conexões estiver ligada, o departamento não decide
+                  nada — quem manda é a lista de números.
+                </div>
+              )}
+              {!limitado && meusDeps.length === 0 && (
+                <div style={{ ...cx.dica, marginTop: 8, marginBottom: 0 }}>
+                  Sem nenhum departamento marcado, esta pessoa entra e não vê conversa alguma.
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
-      <button style={{ ...cx.botao, opacity: nada ? 0.5 : 1 }} disabled={nada}
-              onClick={() => {
-                aoConceder({
-                  departamento_id: dep || null,
-                  telefone_id: tel || null,
-                });
-                setDep(""); setTel("");
-              }}>
-        <Check size={15} /> Dar este acesso
-      </button>
     </div>
   );
 }
