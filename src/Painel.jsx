@@ -1442,7 +1442,18 @@ export default function Painel({ sessao }) {
   useEffect(() => () => { if (audioPronto && String(audioPronto.url).startsWith("blob:")) URL.revokeObjectURL(audioPronto.url); }, [audioPronto]);
   useEffect(() => () => { if (anexoPendente && String(anexoPendente.url).startsWith("blob:")) URL.revokeObjectURL(anexoPendente.url); }, [anexoPendente]);
 
-  // Tecla Esc fecha o que estiver aberto (imagem, emoji, seletor, busca, citação).
+  // Tecla Esc fecha o que estiver aberto (imagem, emoji, seletor, busca, citação)
+  // e, quando não há mais nada aberto, FECHA A CONVERSA — como no WhatsApp Web.
+  //
+  // A ordem é a coisa toda: a conversa é o ÚLTIMO degrau. Esc com o emoji aberto
+  // fecha o emoji; Esc com a citação pendente tira a citação; e só quando não
+  // sobrou nada por fechar é que ele sai da conversa. Fosse o primeiro degrau,
+  // abrir o seletor de emoji e desistir jogaria a pessoa para fora do
+  // atendimento.
+  //
+  // O texto que estiver escrito no campo NÃO se perde: o rascunho vive fora da
+  // conversa (é o mesmo comportamento de trocar de conversa hoje), então ele
+  // continua lá ao reabrir.
   useEffect(() => {
     function aoTeclar(e) {
       if (e.key !== "Escape") return;
@@ -1464,10 +1475,11 @@ export default function Painel({ sessao }) {
       else if (infoAberta) setInfoAberta(false);
       else if (buscaAberta) { setBuscaAberta(false); setBuscaConversa(""); }
       else if (respondendo) setRespondendo(null);
+      else if (conversaId) setConversaId(null);
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, menuConversa, menuTopoAberto, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo]);
+  }, [imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, menuConversa, menuTopoAberto, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo, conversaId]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
