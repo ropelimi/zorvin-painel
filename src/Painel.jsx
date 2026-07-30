@@ -8,6 +8,7 @@ import {
   Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList, ShieldCheck
 } from "lucide-react";
 import FichaVantoro from "./FichaVantoro";
+import { chamarPonte } from "./ponte.js";
 import Departamentos from "./Departamentos";
 
 // ============================================================
@@ -440,6 +441,9 @@ export default function Painel({ sessao }) {
   const [departamentoId, setDepartamentoId] = useState(null);
   const [souAdmin, setSouAdmin] = useState(false);
   const [telaAdmin, setTelaAdmin] = useState(false);
+  // A janela de juntar duas conversas (só admin). `de` é a que SOME; `para` é a
+  // que fica com tudo.
+  const [juntar, setJuntar] = useState(null);   // null | {de, para, indo}
   const [advogadoId, setAdvogadoId] = useState(null);
   const [conversas, setConversas] = useState([]);
   const [conversaId, setConversaId] = useState(null);
@@ -2127,6 +2131,13 @@ export default function Painel({ sessao }) {
                   {souAdmin && (
                     <button onClick={() => { setMenuTopoAberto(false); setTelaAdmin(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><ShieldCheck size={17} color={C.textSecondary} /> Departamentos e acessos</button>
                   )}
+                  {/* Duas conversas que são a MESMA coisa — o caso do grupo que
+                      nasceu partido. A junção automática só alcança o que ela
+                      reconhece e só roda quando chega mensagem nova; aqui quem
+                      OLHA a tela aponta as duas, e não há o que adivinhar. */}
+                  {souAdmin && (
+                    <button onClick={() => { setMenuTopoAberto(false); setJuntar({ de: "", para: "", indo: false }); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><MessageSquarePlus size={17} color={C.textSecondary} /> Juntar duas conversas</button>
+                  )}
                   <div style={{ height: 1, background: C.divider }} />
                   <button onClick={() => { setMenuTopoAberto(false); sair(); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: "#e5573f", fontSize: 14, fontWeight: 600, textAlign: "left" }}><LogOut size={17} /> Desconectar</button>
                 </div>
@@ -3033,6 +3044,60 @@ export default function Painel({ sessao }) {
       {/* Departamentos, telefones e permissões. Ao fechar, os cadastros são
           relidos: renomear um departamento tem de aparecer na hora, senão a
           pessoa acha que não salvou e faz de novo. */}
+      {/* JUNTAR DUAS CONVERSAS. A lista é a das conversas VISÍVEIS agora, e o
+          servidor recusa juntar conversas de telefones diferentes — misturar
+          dois números apagaria por onde a conversa aconteceu. */}
+      {juntar && (
+        <div onClick={() => setJuntar(null)}
+             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 210, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()}
+               style={{ background: C.panel, color: C.textPrimary, borderRadius: 14, width: "100%", maxWidth: 460, padding: 18, boxShadow: "0 24px 60px rgba(0,0,0,.35)" }}>
+            <div style={{ fontSize: 15.5, fontWeight: 700, marginBottom: 6 }}>Juntar duas conversas</div>
+            <div style={{ fontSize: 12.5, color: C.textSecondary, lineHeight: 1.5, marginBottom: 14 }}>
+              Para quando a MESMA conversa nasceu duas vezes — o caso do grupo que
+              apareceu com um número esquisito. As mensagens da primeira vão para a
+              segunda, e a primeira deixa de existir. Não dá para desfazer.
+            </div>
+            {[["de", "Esta conversa SOME…"], ["para", "…e as mensagens dela vão para"]].map(([campo, rotulo]) => (
+              <div key={campo} style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 11.5, color: C.textSecondary, fontWeight: 600, marginBottom: 4 }}>{rotulo}</div>
+                <select value={juntar[campo]} onChange={(e) => setJuntar((j) => ({ ...j, [campo]: e.target.value }))}
+                        style={{ width: "100%", border: `1px solid ${C.divider}`, background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "9px 10px", fontSize: 13.5 }}>
+                  <option value="">Escolha…</option>
+                  {conversasFiltradas.map((c) => (
+                    <option key={c.id} value={c.id}>{nomeDoContato(c.contato)}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
+              <button onClick={() => setJuntar(null)}
+                      style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textSecondary, borderRadius: 8, padding: "8px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>Cancelar</button>
+              <button disabled={!juntar.de || !juntar.para || juntar.de === juntar.para || juntar.indo}
+                      onClick={async () => {
+                        setJuntar((j) => ({ ...j, indo: true }));
+                        try {
+                          const r = await chamarPonte("/conversas/juntar", {
+                            method: "POST",
+                            body: JSON.stringify({ de: juntar.de, para: juntar.para }),
+                          });
+                          setJuntar(null);
+                          if (String(conversaId) === String(juntar.de)) setConversaId(juntar.para);
+                          mostrarAviso(`Pronto: ${r.movidas} mensagem(ns) juntada(s).`);
+                          carregarConversas(advogadoId);
+                        } catch (e) {
+                          setJuntar((j) => ({ ...j, indo: false }));
+                          mostrarAviso(e.message || "Não consegui juntar.");
+                        }
+                      }}
+                      style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "8px 16px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", opacity: (!juntar.de || !juntar.para || juntar.de === juntar.para || juntar.indo) ? 0.5 : 1 }}>
+                {juntar.indo ? "Juntando…" : "Juntar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {telaAdmin && (
         <Departamentos C={C} aoFechar={() => {
           setTelaAdmin(false);
