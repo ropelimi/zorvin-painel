@@ -6,7 +6,7 @@ import {
   Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp,
   StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star,
   Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList, ShieldCheck,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, Images, ExternalLink, Pin
 } from "lucide-react";
 import FichaVantoro from "./FichaVantoro";
 import { chamarPonte } from "./ponte.js";
@@ -42,11 +42,65 @@ const BRIDGE_URL = (import.meta.env.VITE_BRIDGE_URL || "").replace(/\/$/, "");
 // frente dá "+grupo:120363021070929710", que não é nada. Antes deste conserto,
 // mensagem de grupo caía numa conversa cujo título era um pedaço desse
 // identificador ("+70929710") — sem nome, porque o nome do grupo era ignorado.
+//
+// O CADASTRO MANDA. Quem já tem ficha no Vantoro aparece aqui com o nome da
+// ficha, não com o nome que veio do WhatsApp — porque esse é o que a própria
+// pessoa escreveu no aparelho dela ("Jô 💜", "Eu", o nome da loja) e não é o
+// nome com que o escritório trata o processo. Quem não tem ficha continua
+// aparecendo como o WhatsApp mandou.
 function nomeDoContato(contato) {
   if (!contato) return "";
+  if (contato.vantoro_nome) return contato.vantoro_nome;
   if (contato.nome) return contato.nome;
   const numero = String(contato.numero || "");
   return numero.startsWith("grupo:") ? "Grupo" : "+" + numero;
+}
+
+// AS COLUNAS DE CONTATO QUE A TELA PEDE AO BANCO.
+//
+// `vantoro_nome` só existe depois do SQL das frentes. Pedir coluna que não
+// existe não devolve nulo — derruba a consulta INTEIRA, e a lista de conversas
+// sumiria por causa de um extra. Então pedimos com ela e, no primeiro "não
+// existe", descemos para o conjunto de sempre e não perguntamos de novo nesta
+// sessão. É a mesma tolerância que a Ponte já tem do outro lado ao gravar.
+let TEM_NOME_DO_CADASTRO = true;
+const colunasDoContato = (base) =>
+  TEM_NOME_DO_CADASTRO ? base + ", vantoro_nome" : base;
+
+// RECURSOS QUE DEPENDEM DE COLUNA QUE PODE NÃO EXISTIR.
+//
+// O painel foi escrito para não quebrar quando um SQL não foi rodado: a
+// consulta falha, o erro é ignorado, e o recurso "fica dormente". O que faltava
+// é que IGNORAR não é PARAR DE PEDIR. O "estou atendendo" reescrevia
+// `atendendo_em` de 60 em 60 segundos, em cada aba aberta, numa coluna que
+// talvez não exista — e cada tentativa é uma linha de ERRO no log do Postgres.
+// Um dia de trabalho com duas abas abertas são alguns milhares de erros no
+// painel do Supabase, que é justamente onde um erro DE VERDADE precisaria
+// aparecer para ser visto.
+//
+// Agora cada recurso é perguntado UMA vez por sessão. Falhou, fica desligado
+// até a próxima abertura do painel — quando o SQL tiver sido rodado, um F5
+// basta para ele voltar.
+// Só desliga por FALTA DE COLUNA — que é permanente até alguém rodar o SQL.
+// Queda de rede e sessão expirada também devolvem erro, e essas passam sozinhas:
+// desligar o recurso por causa delas apagaria da tela, até o próximo F5, algo
+// que estava funcionando um segundo antes.
+//   42703 = coluna não existe   42P01 = tabela não existe
+//   PGRST204 = o PostgREST não achou a coluna no cache do esquema
+const SEM_ESSA_COLUNA = ["42703", "42P01", "PGRST204", "PGRST200"];
+function faltaColuna(erro) {
+  if (!erro) return false;
+  if (SEM_ESSA_COLUNA.includes(String(erro.code))) return true;
+  return /does not exist|could not find|schema cache/i.test(String(erro.message || ""));
+}
+
+const RECURSOS = { atendendo: true, digitando: true };
+function desligarRecurso(nome, erro) {
+  if (!RECURSOS[nome] || !faltaColuna(erro)) return;
+  RECURSOS[nome] = false;
+  console.info(`Zorvin: o recurso "${nome}" ficou desligado nesta sessão — `
+    + `${(erro && erro.message) || "o banco recusou a consulta"}. `
+    + "Rode o SQL correspondente no Supabase e recarregue a página.");
 }
 
 // QUAIS TELEFONES ESTA PESSOA PODE USAR.
@@ -639,15 +693,13 @@ export default function Painel({ sessao }) {
   }, [advogadoId]);
 
   // ---- Carrega "quem está atendendo" cada conversa (recurso opcional) ----
-  // Consulta separada e protegida: se as colunas atendendo_por/atendendo_em
-  // ainda não existirem no banco, ignora sem erro e o painel segue normal.
   const carregarAtendimentos = useCallback(async (advId) => {
-    if (!advId) return;
+    if (!advId || !RECURSOS.atendendo) return;
     const { data, error } = await supabase
       .from("conversas")
       .select("id, atendendo_por, atendendo_em")
       .eq("advogado_id", advId);
-    if (error) return; // coluna ainda não criada: recurso fica dormente
+    if (error) { desligarRecurso("atendendo", error); return; }
     const mapa = {};
     (data || []).forEach((r) => {
       if (r.atendendo_por) mapa[r.id] = { por: r.atendendo_por, em: r.atendendo_em };
@@ -657,12 +709,12 @@ export default function Painel({ sessao }) {
 
   // ---- Carrega "quem está digitando" (recurso opcional, protegido) ----
   const carregarDigitando = useCallback(async (advId) => {
-    if (!advId) return;
+    if (!advId || !RECURSOS.digitando) return;
     const { data, error } = await supabase
       .from("conversas")
       .select("id, digitando_ate")
       .eq("advogado_id", advId);
-    if (error) return; // coluna ainda não criada: recurso fica dormente
+    if (error) { desligarRecurso("digitando", error); return; }
     const mapa = {};
     (data || []).forEach((r) => { if (r.digitando_ate) mapa[r.id] = r.digitando_ate; });
     setDigitandos(mapa);
@@ -692,16 +744,31 @@ export default function Painel({ sessao }) {
   // ---- Carrega as conversas do advogado selecionado ----
   const carregarConversas = useCallback(async (advId) => {
     if (!advId) return;
-    const { data } = await supabase
+    const buscar = () => supabase
       .from("conversas")
-      .select("*, contato:contato_id (nome, numero, foto_url)")
+      .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
       .eq("advogado_id", advId)
       .order("ultima_atividade", { ascending: false });
+    let { data, error } = await buscar();
+    // Base sem o SQL das frentes: tira `vantoro_nome` do pedido e repete. Uma
+    // vez só — depois disso a coluna já não é pedida.
+    if (error && TEM_NOME_DO_CADASTRO && faltaColuna(error)) {
+      TEM_NOME_DO_CADASTRO = false;
+      ({ data, error } = await buscar());
+    }
+    // Queda de rede não pode esvaziar a lista: sem resposta, fica o que já
+    // estava na tela em vez de "Nenhuma conversa ainda".
+    if (error) return;
+    // As FIXADAS sobem, e entre elas continua valendo a ordem de sempre. A
+    // ordenação é feita aqui e não no banco porque a coluna pode ainda não
+    // existir: pedi-la no `order` faria a consulta inteira falhar, e a lista de
+    // conversas sumiria por causa de um recurso que nem foi instalado.
+    const porFixada = (a, b) => (b.fixada ? 1 : 0) - (a.fixada ? 1 : 0);
     // A conversa que está aberta agora não deve mostrar contador de não lidas
     // (estou lendo em tempo real), igual ao WhatsApp Web.
     const lista = (data || []).map((c) =>
       c.id === conversaIdRef.current ? { ...c, nao_lidas: 0 } : c
-    );
+    ).sort(porFixada);
     setConversas(lista);
     carregarAtendimentos(advId);
     carregarUltimasMidias(advId);
@@ -873,7 +940,14 @@ export default function Painel({ sessao }) {
   // ---- Agenda de contatos (ver todos / criar novo) ----
   const carregarContatos = useCallback(async () => {
     try {
-      const { data, error } = await supabase.from("contatos").select("id, nome, numero, foto_url").order("nome", { ascending: true });
+      const buscar = () => supabase.from("contatos")
+        .select(colunasDoContato("id, nome, numero, foto_url"))
+        .order("nome", { ascending: true });
+      let { data, error } = await buscar();
+      if (error && TEM_NOME_DO_CADASTRO) {
+        TEM_NOME_DO_CADASTRO = false;
+        ({ data, error } = await buscar());
+      }
       // Grupos (numero "grupo:...") não entram na agenda de contatos — não são
       // números para iniciar conversa; aparecem só na lista de conversas.
       if (!error) setContatosLista((data || []).filter((c) => !String(c.numero || "").startsWith("grupo:")));
@@ -1215,24 +1289,36 @@ export default function Painel({ sessao }) {
     naoLidasRef.current = 0; // usa só na abertura
     // Zera o contador de não lidas desta conversa.
     await supabase.from("conversas").update({ nao_lidas: 0 }).eq("id", convId);
-    // Marca que EU estou atendendo (para os outros verem). Se a coluna ainda
-    // não existir no banco, o erro é ignorado de propósito (recurso dormente).
-    supabase.from("conversas")
-      .update({ atendendo_por: meuNome, atendendo_em: new Date().toISOString() })
-      .eq("id", convId)
-      .then(() => {});
+    // Marca que EU estou atendendo (para os outros verem). Na primeira recusa
+    // do banco o recurso se desliga e nem esta gravação nem o pulso de 60s
+    // voltam a tentar — ver RECURSOS, no alto do arquivo.
+    if (RECURSOS.atendendo) {
+      supabase.from("conversas")
+        .update({ atendendo_por: meuNome, atendendo_em: new Date().toISOString() })
+        .eq("id", convId)
+        .then(({ error }) => { if (error) desligarRecurso("atendendo", error); });
+    }
   }, [meuNome]);
 
   useEffect(() => { carregarMensagens(conversaId); }, [conversaId, carregarMensagens]);
 
   // ---- Mantém vivo o "estou atendendo" enquanto a conversa fica aberta ----
+  // Este era o pior dos casos: um relógio que batia no banco a cada minuto,
+  // para sempre, mesmo quando a coluna não existia e a resposta era erro.
   useEffect(() => {
-    if (!conversaId) return;
+    if (!conversaId || !RECURSOS.atendendo) return;
     const id = setInterval(() => {
+      if (!RECURSOS.atendendo) { clearInterval(id); return; }
       supabase.from("conversas")
         .update({ atendendo_em: new Date().toISOString() })
         .eq("id", conversaId)
-        .then(() => {});
+        .then(({ error }) => {
+          if (!error) return;
+          desligarRecurso("atendendo", error);
+          // Só para o relógio se o recurso morreu de vez. Erro passageiro
+          // (rede) não desliga nada e o próximo minuto tenta de novo.
+          if (!RECURSOS.atendendo) clearInterval(id);
+        });
     }, 60000);
     return () => clearInterval(id);
   }, [conversaId]);
@@ -1337,8 +1423,15 @@ export default function Painel({ sessao }) {
             nao_lidas: cv.id === conversaIdRef.current ? 0 : cv.nao_lidas,
             favorita: cv.favorita,
             arquivada: cv.arquivada,
+            // Fixar vale para a equipe toda, então quem fixou de outra máquina
+            // tem de subir aqui também. O `??` é para a base que ainda não tem a
+            // coluna: ali `cv.fixada` vem indefinido e não pode apagar o que
+            // esta tela já sabe.
+            fixada: cv.fixada ?? c.fixada,
           } : c);
-          return patched.sort((a, b) => new Date(b.ultima_atividade) - new Date(a.ultima_atividade));
+          // Fixadas no alto; entre iguais, a mais recente primeiro.
+          return patched.sort((a, b) => (b.fixada ? 1 : 0) - (a.fixada ? 1 : 0)
+            || new Date(b.ultima_atividade) - new Date(a.ultima_atividade));
         });
         carregarNaoLidasPorAdv();
       })
@@ -1482,6 +1575,55 @@ export default function Painel({ sessao }) {
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
   });
+
+  // ---- MÍDIAS, DOCUMENTOS E LINKS DE TODAS AS CONVERSAS ----
+  //
+  // "Aquele comprovante que mandaram semana passada" é uma busca que existe
+  // todo dia e que a lista de conversas não responde: o arquivo está no meio de
+  // uma conversa que a pessoa nem lembra qual é. Aqui tudo o que passou pelos
+  // telefones dela aparece junto, do mais novo para o mais velho.
+  //
+  // Não há filtro de permissão escrito nesta consulta, e isso é de propósito: o
+  // banco só devolve mensagem de conversa que a pessoa pode ver (as políticas de
+  // `mensagens` e `conversas`). Escrever o filtro aqui também criaria uma
+  // segunda regra para manter igual à primeira.
+  const [midiasAberta, setMidiasAberta] = useState(false);
+  const [midiaAba, setMidiaAba] = useState("midias");   // 'midias' | 'documentos' | 'links'
+  const [acervo, setAcervo] = useState({ carregando: false, itens: [] });
+
+  const abrirMidias = useCallback(async () => {
+    setMidiasAberta(true);
+    setAcervo((a) => ({ ...a, carregando: true }));
+    const { data, error } = await supabase
+      .from("mensagens")
+      .select("id, conversa_id, tipo, texto, midia_url, midia_mime, criado_em")
+      // Teto de 500: é acervo para OLHAR, não para auditar. Sem teto, um ano de
+      // conversa desenharia milhares de miniaturas de uma vez e a tela travaria
+      // justamente em quem mais usa.
+      .order("criado_em", { ascending: false })
+      .limit(500);
+    if (error) { setAcervo({ carregando: false, itens: [] }); mostrarAviso("Não consegui abrir as mídias."); return; }
+    setAcervo({ carregando: false, itens: data || [] });
+  }, []);
+
+  // De qual conversa é cada item, para a etiqueta embaixo da miniatura. Só o que
+  // está carregado — o acervo pode alcançar conversa de outro telefone, e ali a
+  // etiqueta fica em branco em vez de mentir um nome.
+  const nomePorConversa = Object.fromEntries(
+    conversas.map((c) => [c.id, nomeDoContato(c.contato)]));
+
+  // Um link é uma URL dentro do texto. Regex simples de propósito: o que se quer
+  // é reencontrar o endereço que alguém mandou, não validar URL.
+  const RE_LINK = /https?:\/\/[^\s<>"']+/gi;
+  const acervoFiltrado = (() => {
+    const itens = acervo.itens || [];
+    if (midiaAba === "midias") return itens.filter((m) => (m.tipo === "imagem" || m.tipo === "video") && m.midia_url);
+    if (midiaAba === "documentos") return itens.filter((m) => m.tipo === "documento" && m.midia_url);
+    return itens.flatMap((m) => {
+      const achados = String(m.texto || "").match(RE_LINK) || [];
+      return achados.map((url, i) => ({ ...m, _link: url, id: m.id + "-" + i }));
+    });
+  })();
 
   // Tecla Esc fecha o que estiver aberto (imagem, emoji, seletor, busca, citação)
   // e, quando não há mais nada aberto, FECHA A CONVERSA — como no WhatsApp Web.
@@ -1635,6 +1777,21 @@ export default function Painel({ sessao }) {
     mostrarAviso(novo ? "Adicionada aos favoritos" : "Removida dos favoritos");
     const { error } = await supabase.from("conversas").update({ favorita: novo }).eq("id", conv.id);
     if (error) { mostrarAviso("Não consegui favoritar. Rode o SQL da coluna 'favorita'."); carregarConversas(advogadoId); }
+  }
+
+  // FIXAR uma conversa no alto da lista.
+  //
+  // Diferente de favoritar: favorito é uma ABA, uma gaveta que se abre quando se
+  // quer; fixar é uma conversa que fica à vista todo dia, acima das outras,
+  // mesmo quando não é a mais recente. Quem atende uma negociação em curso não
+  // quer procurá-la de novo a cada mensagem nova que chega de outra pessoa.
+  async function alternarFixada(conv) {
+    setMenuConversa(null);
+    const novo = !conv.fixada;
+    setConversas((prev) => prev.map((x) => (x.id === conv.id ? { ...x, fixada: novo } : x)));
+    mostrarAviso(novo ? "Conversa fixada no topo" : "Conversa desafixada");
+    const { error } = await supabase.from("conversas").update({ fixada: novo }).eq("id", conv.id);
+    if (error) { mostrarAviso("Não consegui fixar. Rode o 2026-07-colunas-que-faltavam.sql no Supabase."); carregarConversas(advogadoId); }
   }
 
   // Arquivar / desarquivar uma conversa (some da lista, vai para "Arquivadas").
@@ -2122,17 +2279,35 @@ export default function Painel({ sessao }) {
         </div>
         {/* Um único ícone de Configurações: perfil, aparência, sair e mensagens
             rápidas ficam todos lá dentro. */}
+        {/* MÍDIAS de todas as conversas — o mesmo lugar do WhatsApp Web. */}
+        <div onClick={() => abrirMidias()} title="Mídias, documentos e links"
+             style={{ width: 40, height: 40, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: midiasAberta ? "#fff" : "#aebac1", background: midiasAberta ? "rgba(255,255,255,.12)" : "transparent", cursor: "pointer" }}>
+          <Images size={22} />
+        </div>
         <div onClick={abrirConfig} title="Configurações" style={{ width: 40, height: 40, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: configAberta ? "#fff" : "#aebac1", background: configAberta ? "rgba(255,255,255,.12)" : "transparent", cursor: "pointer" }}>
           <Settings size={22} />
         </div>
-        <div style={{ height: 16 }} />
+        {/* A FOTO DE QUEM ESTÁ LOGADO, no pé da barra. É onde ela fica em todo
+            painel de atendimento, e é o que responde de relance a pergunta que
+            aparece quando duas pessoas dividem a mesma máquina: "estou entrada
+            como quem?". Clicar abre as configurações, que é onde se troca a
+            foto e se sai. */}
+        <div onClick={abrirConfig} title={`Você: ${meuNome}`} style={{ cursor: "pointer", marginTop: 4, marginBottom: 14, borderRadius: "50%", display: "flex" }}>
+          <Avatar nome={meuNome} foto={minhaFoto} size={36} />
+        </div>
       </div>
 
       {/* Lista de conversas */}
       {/* Com a ficha aberta a lista sai de cena e devolve os 380px para a
           conversa: o atendente está tratando de uma pessoa só, e as outras
           conversas voltam assim que ele fecha a ficha. */}
-      <div style={{ position: "relative", width: estreito ? "auto" : 380, flex: estreito ? 1 : "none", borderRight: `1px solid ${C.divider}`, display: ((estreito && conversaId) || fichaAberta) ? "none" : "flex", flexDirection: "column", background: C.panel }}>
+      {/* `minWidth: 0` NÃO é enfeite. Item de flex nasce com `min-width: auto`,
+          que é "nunca menor que o meu conteúdo" — e no celular isso deixava
+          esta coluna com 392px numa tela de 390: a página inteira ganhava
+          rolagem lateral e a lista aparecia cortada, sem a hora nem o contador
+          de não lidas. Com o zero, ela encolhe para o que sobra (330px) e quem
+          rola é só a fita de filtros, que já foi feita para isso. */}
+      <div style={{ position: "relative", width: estreito ? "auto" : 380, flex: estreito ? 1 : "none", minWidth: 0, borderRight: `1px solid ${C.divider}`, display: ((estreito && conversaId) || fichaAberta) ? "none" : "flex", flexDirection: "column", background: C.panel }}>
         {/* NOVA CONVERSA (⊞) — estilo WhatsApp Web: busca, novo contato e agenda */}
         {novaConversaAberta && (
           <div style={{ position: "absolute", inset: 0, zIndex: 40, background: C.panel, display: "flex", flexDirection: "column" }}>
@@ -2200,10 +2375,13 @@ export default function Painel({ sessao }) {
           </div>
         )}
         <div style={{ background: C.headerBar, padding: "10px 16px 12px", borderBottom: `1px solid ${C.divider}` }}>
+          {/* O NOME DO SISTEMA, e não o de quem está logado. Quem está logado
+              já se vê no rodapé da barra da esquerda, e ali com a foto — dizer
+              "Você: Fulano" no topo era gastar a linha mais nobre da tela com o
+              único dado que a pessoa nunca precisa consultar. */}
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 8, paddingBottom: 8, borderBottom: `1px solid ${C.divider}` }}>
-            <Avatar nome={meuNome} size={22} />
-            <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              Você: <span style={{ color: C.textPrimary, fontWeight: 600 }}>{meuNome}</span>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 19, fontWeight: 700, color: C.textPrimary, letterSpacing: .2 }}>
+              Zorvin
             </div>
             {/* Nova conversa (⊞), estilo WhatsApp Web */}
             <button onClick={() => { setBuscaContato(""); setContatoForm(null); setNovaConversaAberta(true); carregarContatos(); }} aria-label="Nova conversa" title="Nova conversa" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", color: C.textSecondary, padding: 0, marginRight: 4 }}>
@@ -2338,7 +2516,13 @@ export default function Painel({ sessao }) {
                     ) : (
                       <span style={{ fontSize: 13, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 250 }}>{previa}</span>
                     )}
-                    {c.nao_lidas > 0 && <span style={{ background: C.unread, color: "#fff", borderRadius: 12, fontSize: 11, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>{c.nao_lidas}</span>}
+                    {/* O alfinete precisa aparecer: sem ele a conversa fixada
+                        fica no alto da lista sem nenhuma explicação visível, e
+                        a lista passa a parecer simplesmente fora de ordem. */}
+                    <span style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                      {c.fixada && <Pin size={13} color={C.textSecondary} fill={C.textSecondary} style={{ transform: "rotate(45deg)" }} />}
+                      {c.nao_lidas > 0 && <span style={{ background: C.unread, color: "#fff", borderRadius: 12, fontSize: 11, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>{c.nao_lidas}</span>}
+                    </span>
                   </div>
                   {/* Por que esta conversa apareceu na busca. Sem isso, um
                       resultado que casou pelo texto de uma mensagem antiga
@@ -2368,6 +2552,9 @@ export default function Painel({ sessao }) {
                     <button onClick={(e) => { e.stopPropagation(); marcarNaoLida(c, !(c.nao_lidas > 0)); }} style={{ width: "100%", textAlign: "left", padding: "10px 14px", border: "none", background: C.panel, cursor: "pointer", color: C.textPrimary, fontSize: 14 }}>
                       {c.nao_lidas > 0 ? "Marcar como lida" : "Marcar como não lida"}
                     </button>
+                    <button onClick={(e) => { e.stopPropagation(); alternarFixada(c); }} style={{ width: "100%", textAlign: "left", padding: "10px 14px", border: "none", background: C.panel, cursor: "pointer", color: C.textPrimary, fontSize: 14 }}>
+                      {c.fixada ? "Desafixar" : "Fixar no topo"}
+                    </button>
                     <button onClick={(e) => { e.stopPropagation(); alternarFavorita(c); }} style={{ width: "100%", textAlign: "left", padding: "10px 14px", border: "none", background: C.panel, cursor: "pointer", color: C.textPrimary, fontSize: 14 }}>
                       {c.favorita ? "Remover dos favoritos" : "Adicionar aos favoritos"}
                     </button>
@@ -2383,7 +2570,10 @@ export default function Painel({ sessao }) {
       </div>
 
       {/* Conversa */}
-      <div style={{ flex: 1, display: ((estreito && !conversaId) || (estreito && fichaAberta)) ? "none" : "flex", flexDirection: "column", background: C.chatBg, backgroundImage: modo === "escuro" ? PADRAO_CHAT_ESCURO : PADRAO_CHAT_CLARO, position: "relative" }}>
+      {/* Mesmo motivo da coluna da lista: sem `minWidth: 0` a conversa aberta
+          no celular fica mais larga que a tela por causa de uma mensagem
+          comprida. */}
+      <div style={{ flex: 1, minWidth: 0, display: ((estreito && !conversaId) || (estreito && fichaAberta)) ? "none" : "flex", flexDirection: "column", background: C.chatBg, backgroundImage: modo === "escuro" ? PADRAO_CHAT_ESCURO : PADRAO_CHAT_CLARO, position: "relative" }}>
         {!conversa ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: C.textSecondary, gap: 16 }}>
             <div style={{ width: 90, height: 90, borderRadius: "50%", background: C.placeholderCircle, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -3229,6 +3419,88 @@ export default function Painel({ sessao }) {
                       style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "8px 16px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", opacity: (!juntar.de || !juntar.para || juntar.de === juntar.para || juntar.indo) ? 0.5 : 1 }}>
                 {juntar.indo ? "Juntando…" : "Juntar"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MÍDIAS, DOCUMENTOS E LINKS — de todas as conversas que a pessoa alcança. */}
+      {midiasAberta && (
+        <div onClick={() => setMidiasAberta(false)}
+             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 190, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()}
+               style={{ background: C.panel, color: C.textPrimary, borderRadius: 14, width: "100%", maxWidth: 940, height: "min(86vh, 760px)", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 24px 60px rgba(0,0,0,.4)" }}>
+            {/* No celular os três nomes das abas mais o título mais o X não cabem
+                em 390px, e o que sobrava para fora era justamente o X de fechar.
+                Aqui o título perde o subtítulo, a fita de abas encolhe e rola, e
+                o X fica fixo — nunca sai da tela. */}
+            <div style={{ display: "flex", alignItems: "center", gap: estreito ? 8 : 14, padding: estreito ? "12px 12px" : "14px 18px", borderBottom: `1px solid ${C.divider}` }}>
+              <div style={{ flex: "0 1 auto", minWidth: 0 }}>
+                <div style={{ fontSize: 15.5, fontWeight: 700 }}>Mídia</div>
+                {!estreito && <div style={{ fontSize: 12, color: C.textSecondary }}>de todas as conversas</div>}
+              </div>
+              <div className="sem-scrollbar" style={{ flex: 1, minWidth: 0, display: "flex", gap: 4, justifyContent: estreito ? "flex-end" : "center", overflowX: "auto" }}>
+                {[["midias", "Mídias"], ["documentos", "Documentos"], ["links", "Links"]].map(([k, r]) => (
+                  <button key={k} onClick={() => setMidiaAba(k)}
+                          style={{ flexShrink: 0, border: "none", background: "transparent", cursor: "pointer", padding: estreito ? "8px 8px" : "8px 14px", fontSize: 14, fontWeight: 600, color: midiaAba === k ? C.textPrimary : C.textSecondary, borderBottom: `2px solid ${midiaAba === k ? C.green : "transparent"}` }}>{r}</button>
+                ))}
+              </div>
+              <button onClick={() => setMidiasAberta(false)} aria-label="Fechar"
+                      style={{ flexShrink: 0, border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex" }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
+              {acervo.carregando && <div style={{ color: C.textSecondary, fontSize: 14 }}>Carregando…</div>}
+              {!acervo.carregando && acervoFiltrado.length === 0 && (
+                <div style={{ color: C.textSecondary, fontSize: 14 }}>
+                  {midiaAba === "midias" ? "Nenhuma foto ou vídeo ainda."
+                    : midiaAba === "documentos" ? "Nenhum documento ainda."
+                    : "Nenhum link enviado ainda."}
+                </div>
+              )}
+
+              {/* MÍDIAS em grade, com o nome da conversa por cima — é por ele que
+                  se reconhece de quem veio aquela foto sem abrir. */}
+              {!acervo.carregando && midiaAba === "midias" && (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8 }}>
+                  {acervoFiltrado.map((m) => (
+                    <button key={m.id}
+                            onClick={() => { if (m.tipo === "imagem") { setMidiasAberta(false); setImagemAberta(m.midia_url); } else { window.open(m.midia_url, "_blank", "noopener"); } }}
+                            title={nomePorConversa[m.conversa_id] || ""}
+                            style={{ position: "relative", border: "none", padding: 0, aspectRatio: "1 / 1", borderRadius: 8, overflow: "hidden", cursor: "pointer", background: C.inputBg }}>
+                      {m.tipo === "imagem"
+                        ? <img src={m.midia_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        : <span style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: C.textSecondary, fontSize: 13 }}>vídeo</span>}
+                      <span style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "14px 8px 6px", fontSize: 11.5, color: "#fff", textAlign: "left", background: "linear-gradient(transparent, rgba(0,0,0,.75))", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {nomePorConversa[m.conversa_id] || ""}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* DOCUMENTOS e LINKS em lista: aqui o que identifica é o TEXTO, e
+                  texto em grade de quadradinhos não se lê. */}
+              {!acervo.carregando && midiaAba !== "midias" && (
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  {acervoFiltrado.map((m) => (
+                    <a key={m.id} href={midiaAba === "links" ? m._link : m.midia_url} target="_blank" rel="noopener noreferrer"
+                       style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 8px", borderBottom: `1px solid ${C.divider}`, color: C.textPrimary, textDecoration: "none" }}>
+                      {midiaAba === "links" ? <ExternalLink size={17} color={C.textSecondary} /> : <FileText size={17} color={C.textSecondary} />}
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: "block", fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {midiaAba === "links" ? m._link : (m.texto || "Documento")}
+                        </span>
+                        <span style={{ display: "block", fontSize: 11.5, color: C.textSecondary }}>
+                          {(nomePorConversa[m.conversa_id] || "")}{nomePorConversa[m.conversa_id] ? " · " : ""}{rotuloData(m.criado_em)}
+                        </span>
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
