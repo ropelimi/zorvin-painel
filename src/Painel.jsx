@@ -5,7 +5,8 @@ import {
   MessageSquare, Mic, CheckCheck, LogOut, ArrowLeft, Sun, Moon,
   Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp,
   StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star,
-  Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList, ShieldCheck
+  Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList, ShieldCheck,
+  ChevronLeft, ChevronRight
 } from "lucide-react";
 import FichaVantoro from "./FichaVantoro";
 import { chamarPonte } from "./ponte.js";
@@ -1441,6 +1442,46 @@ export default function Painel({ sessao }) {
   // elas mudam ou ao sair, para não vazar memória.
   useEffect(() => () => { if (audioPronto && String(audioPronto.url).startsWith("blob:")) URL.revokeObjectURL(audioPronto.url); }, [audioPronto]);
   useEffect(() => () => { if (anexoPendente && String(anexoPendente.url).startsWith("blob:")) URL.revokeObjectURL(anexoPendente.url); }, [anexoPendente]);
+
+  // ---- A GALERIA DA CONVERSA ----
+  //
+  // Ampliar uma imagem mostrava aquela imagem e mais nada. Quem procura "a foto
+  // do documento que ela mandou" tinha de fechar, rolar a conversa, achar a
+  // próxima, ampliar de novo — e numa conversa de duzentas mensagens isso é a
+  // diferença entre achar e desistir.
+  //
+  // A lista é a das imagens DESTA conversa, na ordem em que chegaram. Sai das
+  // mensagens que já estão na tela: não há consulta nova, e a fita de baixo
+  // acompanha sozinha quando chega imagem nova.
+  const imagensDaConversa = mensagens
+    .filter((m) => m.tipo === "imagem" && m.midia_url)
+    .map((m) => m.midia_url);
+  // Onde a imagem aberta está na lista. -1 quer dizer "não é da conversa" — é o
+  // caso da FOTO DE PERFIL, que se amplia pelo cabeçalho. Ali não há próxima nem
+  // anterior, e mostrar setas seria prometer uma navegação que não existe.
+  const posNaGaleria = imagemAberta ? imagensDaConversa.indexOf(imagemAberta) : -1;
+  const temGaleria = posNaGaleria >= 0 && imagensDaConversa.length > 1;
+
+  function andarNaGaleria(passo) {
+    if (posNaGaleria < 0) return;
+    // Sem dar a volta: na última, "próxima" não faz nada. Voltar ao começo sem
+    // aviso faz a pessoa rever as mesmas imagens achando que ainda há mais.
+    const destino = posNaGaleria + passo;
+    if (destino < 0 || destino >= imagensDaConversa.length) return;
+    setImagemAberta(imagensDaConversa[destino]);
+  }
+
+  // Setas do teclado andam na galeria — é o gesto de quem está comparando duas
+  // imagens e não quer tirar a mão do teclado.
+  useEffect(() => {
+    if (!temGaleria) return;
+    function aoTeclar(e) {
+      if (e.key === "ArrowLeft") { e.preventDefault(); andarNaGaleria(-1); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); andarNaGaleria(1); }
+    }
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  });
 
   // Tecla Esc fecha o que estiver aberto (imagem, emoji, seletor, busca, citação)
   // e, quando não há mais nada aberto, FECHA A CONVERSA — como no WhatsApp Web.
@@ -3046,10 +3087,18 @@ export default function Painel({ sessao }) {
         </div>
       )}
 
-      {/* Imagem em tela cheia (abrir/baixar, estilo WhatsApp) */}
+      {/* Imagem em tela cheia, com a GALERIA da conversa (estilo WhatsApp Web).
+          A fita de baixo e as setas só aparecem quando a imagem faz parte da
+          conversa e há mais de uma — na foto de perfil, ampliada pelo cabeçalho,
+          não há próxima nem anterior. */}
       {imagemAberta && (
-        <div onClick={() => setImagemAberta(null)} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,.9)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ position: "absolute", top: 16, right: 20, display: "flex", gap: 18 }}>
+        <div onClick={() => setImagemAberta(null)} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,.9)", zIndex: 100, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ position: "absolute", top: 16, right: 20, display: "flex", gap: 18, alignItems: "center" }}>
+            {temGaleria && (
+              <span style={{ color: "rgba(255,255,255,.75)", fontSize: 13, fontVariantNumeric: "tabular-nums" }}>
+                {posNaGaleria + 1} de {imagensDaConversa.length}
+              </span>
+            )}
             <button onClick={(e) => { e.stopPropagation(); baixarImagem(imagemAberta); }} title="Baixar imagem" style={{ background: "transparent", border: "none", cursor: "pointer", color: "#fff", display: "flex" }}>
               <Download size={26} />
             </button>
@@ -3057,7 +3106,42 @@ export default function Painel({ sessao }) {
               <X size={28} />
             </button>
           </div>
-          <img src={imagemAberta} alt="imagem" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "92%", maxHeight: "92%", borderRadius: 8, objectFit: "contain" }} />
+
+          {/* As setas ficam nas BORDAS da tela, e não coladas na imagem: a
+              imagem muda de tamanho a cada foto, e um botão que dança de lugar
+              obriga a mirar de novo a cada clique. Some quando não há para onde
+              ir — seta apagada que não faz nada é pior do que seta nenhuma. */}
+          {temGaleria && posNaGaleria > 0 && (
+            <button onClick={(e) => { e.stopPropagation(); andarNaGaleria(-1); }} title="Anterior (←)" aria-label="Imagem anterior"
+                    style={{ position: "absolute", left: 18, top: "50%", transform: "translateY(-50%)", width: 42, height: 42, borderRadius: "50%", border: "none", background: "rgba(255,255,255,.14)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <ChevronLeft size={26} />
+            </button>
+          )}
+          {temGaleria && posNaGaleria < imagensDaConversa.length - 1 && (
+            <button onClick={(e) => { e.stopPropagation(); andarNaGaleria(1); }} title="Próxima (→)" aria-label="Próxima imagem"
+                    style={{ position: "absolute", right: 18, top: "50%", transform: "translateY(-50%)", width: 42, height: 42, borderRadius: "50%", border: "none", background: "rgba(255,255,255,.14)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <ChevronRight size={26} />
+            </button>
+          )}
+
+          <img src={imagemAberta} alt="imagem" onClick={(e) => e.stopPropagation()}
+               style={{ maxWidth: "88%", maxHeight: temGaleria ? "76%" : "92%", borderRadius: 8, objectFit: "contain" }} />
+
+          {/* A FITA. Rola sozinha até a imagem aberta, senão numa conversa com
+              trinta fotos a marcada fica fora da vista e a fita parece travada. */}
+          {temGaleria && (
+            <div className="sem-scrollbar" onClick={(e) => e.stopPropagation()}
+                 style={{ position: "absolute", bottom: 16, left: 0, right: 0, display: "flex", gap: 8, justifyContent: "safe center", overflowX: "auto", padding: "0 18px" }}>
+              {imagensDaConversa.map((url, i) => (
+                <button key={url + i} onClick={() => setImagemAberta(url)}
+                        ref={i === posNaGaleria ? (el) => el && el.scrollIntoView({ block: "nearest", inline: "center" }) : undefined}
+                        title={`Imagem ${i + 1}`}
+                        style={{ flex: "none", width: 62, height: 62, padding: 0, borderRadius: 6, cursor: "pointer", overflow: "hidden", background: "rgba(255,255,255,.08)", border: i === posNaGaleria ? "2px solid #25d366" : "2px solid transparent", opacity: i === posNaGaleria ? 1 : 0.6 }}>
+                  <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
