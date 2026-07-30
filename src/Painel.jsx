@@ -2251,7 +2251,7 @@ export default function Painel({ sessao }) {
         .sem-scrollbar::-webkit-scrollbar { display: none; }
       `}</style>
       {/* Barra lateral */}
-      <div style={{ width: 60, background: C.rail, display: (estreito && conversaId) ? "none" : "flex", flexDirection: "column", alignItems: "center", paddingTop: 16, gap: 8 }}>
+      <div style={{ width: 60, background: C.rail, display: (estreito && conversaId) ? "none" : "flex", flexDirection: "column", alignItems: "center", paddingTop: 8, gap: 8 }}>
         {/* Aqui havia um quadrado verde com a letra "Z". Saiu: era a terceira
             vez que a tela dizia o nome do sistema (o "Zorvin" do cabeçalho e o
             do fundo já dizem), e ocupava justo o alto da barra dos telefones,
@@ -2259,7 +2259,15 @@ export default function Painel({ sessao }) {
 
         {/* Advogados: um avatar por advogado. O atual fica destacado (anel
             verde); quem tem mensagens não lidas ganha um selo vermelho. */}
-        <div className="sem-scrollbar" style={{ flex: 1, width: "100%", overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, paddingBottom: 8 }}>
+        {/* O `paddingTop` PRECISA estar aqui dentro, e não na barra.
+            Esta caixa rola, e o que rola apara tudo o que passa da borda: o selo
+            vermelho fica em `top: -4` (mais 2px de contorno) e o anel verde do
+            telefone escolhido vai 2px além do avatar. Com o respiro na barra, do
+            lado de fora, a borda de corte caía exatamente no topo do primeiro
+            avatar — e o primeiro de cada departamento aparecia lascado.
+            8px cobrem os 6 do selo e os 2 do anel; a barra cedeu os mesmos 8,
+            então o espaçamento visto continua igual ao de antes. */}
+        <div className="sem-scrollbar" style={{ flex: 1, width: "100%", overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, paddingTop: 8, paddingBottom: 8 }}>
           {advogadosVisiveis.map((a) => {
             const n = naoLidasDoAdvogado(a.id);
             const atual = a.id === advogadoId;
