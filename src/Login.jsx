@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "./supabase.js";
 import { MessageSquare, Mail, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
+import Marca from "./Marca";
 
 // Tela de entrada do Zorvin. É o MESMO usuário e a MESMA senha do Vantoro.
 //
@@ -120,8 +121,12 @@ export default function Login() {
           }}>
             <MessageSquare size={30} color="#fff" strokeWidth={2.2} />
           </div>
-          <div style={{ fontSize: 26, fontWeight: 800, color: C.textPrimary, letterSpacing: 0.2 }}>Zorvin</div>
-          <div style={{ fontSize: 13.5, color: C.textSecondary, marginTop: 3 }}>Central de atendimento · Ropelimi</div>
+          {/* A mesma marca do topo da lista de conversas — ver `Marca.jsx`. O
+              "· Ropelimi" saiu da linha de baixo porque agora o nome da casa
+              está na de cima, e em corpo maior: dizê-lo duas vezes na mesma
+              caixa era repetição, não reforço. */}
+          <Marca tamanho={26} cor={C.textPrimary} corFraca={C.textSecondary} />
+          <div style={{ fontSize: 13.5, color: C.textSecondary, marginTop: 3 }}>Central de atendimento</div>
         </div>
 
         <form onSubmit={entrar} noValidate>
@@ -176,7 +181,10 @@ export default function Login() {
         </form>
 
         <div style={{ textAlign: "center", fontSize: 12, color: C.textSecondary, marginTop: 22, lineHeight: 1.5 }}>
-          Acordos e Execução · Ropelimi<br />
+          {/* Sem o "· Ropelimi" do fim: com a marca nova, o nome da casa já está
+              no alto do cartão e em corpo grande. Repetir aqui, miúdo, só fazia
+              a mesma palavra aparecer duas vezes na mesma caixa. */}
+          Acordos e Execução<br />
           Problemas para entrar? Fale com o administrador.
         </div>
       </div>
