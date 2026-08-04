@@ -11,6 +11,7 @@ import {
 import FichaVantoro from "./FichaVantoro";
 import { chamarPonte } from "./ponte.js";
 import Departamentos from "./Departamentos";
+import Marca from "./Marca";
 
 // ============================================================
 //  ZORVIN by Ropelimi — Painel real (conectado ao Supabase)
@@ -2397,24 +2398,15 @@ export default function Painel({ sessao }) {
               "Você: Fulano" no topo era gastar a linha mais nobre da tela com o
               único dado que a pessoa nunca precisa consultar. */}
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 8, paddingBottom: 8, borderBottom: `1px solid ${C.divider}` }}>
-            {/* A MARCA, no mesmo desenho do Vantoro: nome em serifada por cima,
-                "by Ropelimi" miúdo por baixo, com o Ropelimi em dourado. São
-                dois sistemas da mesma casa e é isso que a assinatura repetida
-                diz — quem passa de um para o outro não precisa reaprender onde
-                está.
+            {/* A MARCA — o desenho mora em `Marca.jsx`, porque ela também
+                aparece na tela de entrada e no fundo sem conversa, e três
+                cópias soltas foi como o topo acabou em serifada enquanto a
+                entrada estava em sem serifa.
 
-                A fonte é `ui-serif` e não a Fraunces do Vantoro: buscar uma
-                fonte na rede para escrever seis letras atrasaria a primeira
-                pintura da tela, e a serifada do sistema dá o mesmo ar. O dourado
-                muda com o tema porque o do Vantoro também muda: o escuro do
-                modo claro sumiria no fundo escuro. */}
-            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
-              <span style={{ fontFamily: 'ui-serif, Georgia, "Times New Roman", serif', fontSize: 19, fontWeight: 600, color: C.textPrimary, letterSpacing: ".005em" }}>
-                Zorvin
-              </span>
-              <span style={{ fontSize: 11, color: C.textSecondary, letterSpacing: ".02em" }}>
-                by <b style={{ color: modo === "escuro" ? "#d6a94e" : "#b6862c", fontWeight: 700 }}>Ropelimi</b>
-              </span>
+                Agora cabe numa linha só: a linha que sobrou desceu para a
+                lista de conversas, que é o que a pessoa veio ver. */}
+            <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", overflow: "hidden" }}>
+              <Marca tamanho={19} cor={C.textPrimary} corFraca={C.textSecondary} />
             </div>
             {/* Nova conversa (⊞), estilo WhatsApp Web */}
             <button onClick={() => { setBuscaContato(""); setContatoForm(null); setNovaConversaAberta(true); carregarContatos(); }} aria-label="Nova conversa" title="Nova conversa" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", color: C.textSecondary, padding: 0, marginRight: 4 }}>
@@ -2612,7 +2604,7 @@ export default function Painel({ sessao }) {
             <div style={{ width: 90, height: 90, borderRadius: "50%", background: C.placeholderCircle, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <MessageSquare size={44} color={C.textSecondary} />
             </div>
-            <div style={{ fontSize: 22, color: C.textPrimary, fontWeight: 300 }}>Zorvin</div>
+            <Marca tamanho={22} cor={C.textPrimary} corFraca={C.textSecondary} />
             <div style={{ fontSize: 14, maxWidth: 380, textAlign: "center", lineHeight: 1.5 }}>
               Selecione uma conversa à esquerda para começar a atender{advogado ? <> as conversas de <b>{advogado.nome}</b></> : ""}.
             </div>
