@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" aria-label="Zorvin">
+  <defs><linearGradient id="zorvin-balao" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#00a884"/><stop offset="1" stop-color="#008069"/>
+  </linearGradient></defs>
+  <!-- Balão de conversa: o Zorvin é atendimento, e o rabinho é o que diz isso
+       sem escrever. Ele fica GORDO de propósito — a 16px um rabinho fino some
+       e o selo volta a ser um quadrado qualquer. -->
+  <path fill="url(#zorvin-balao)" d="M12 4h40a8 8 0 0 1 8 8v30a8 8 0 0 1-8 8H30L14 61l3-11h-5a8 8 0 0 1-8-8V12a8 8 0 0 1 8-8z"/>
+  <path fill="#ffffff" fill-rule="evenodd"
+        d="M17 14h30l-3.4 8.8L28.4 37H45l-3.2 8.6H12l3.4-8.8L30.6 22.6H14z"/>
+</svg>
