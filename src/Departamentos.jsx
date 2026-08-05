@@ -177,6 +177,11 @@ export default function Departamentos({ C, aoFechar }) {
 // ---------- um departamento, com os telefones que atendem por ele ----------
 function Departamento({ d, cx, C, telefones, aoRenomear, aoApagar, aoMoverTelefone }) {
   const [nome, setNome] = useState(d.nome);
+  // Volta ao que o BANCO tem quando a lista é recarregada. Sem isto, uma
+  // renomeação recusada (nome repetido, permissão) deixava o campo mostrando o
+  // nome novo para sempre: a tela dizia uma coisa e o banco tinha outra, e a
+  // pessoa só descobria no dia seguinte, ao abrir de novo.
+  useEffect(() => { setNome(d.nome); }, [d.nome]);
   const meus = telefones.filter((t) => t.departamento_id === d.id);
   const soltos = telefones.filter((t) => !t.departamento_id);
 
