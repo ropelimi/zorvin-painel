@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "./supabase.js";
-import { MessageSquare, Mail, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
 import Marca from "./Marca";
 
 // Tela de entrada do Zorvin. É o MESMO usuário e a MESMA senha do Vantoro.
@@ -115,12 +115,19 @@ export default function Login() {
       }}>
         {/* Cabeçalho / marca */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 26 }}>
-          <div style={{
-            width: 62, height: 62, borderRadius: 18, display: "flex", alignItems: "center", justifyContent: "center",
-            background: `linear-gradient(135deg, ${C.green}, ${C.greenDark})`, boxShadow: `0 10px 24px ${C.greenGlow}`, marginBottom: 14,
-          }}>
-            <MessageSquare size={30} color="#fff" strokeWidth={2.2} />
-          </div>
+          {/* O MESMO desenho do ícone da aba, e não um parecido: o arquivo é
+              literalmente o mesmo (`public/zorvin.svg`), então a marca da
+              entrada e a da aba não têm como divergir no dia em que uma das
+              duas for mexida.
+
+              O quadrado verde que ficava aqui atrás saiu junto. O balão já traz
+              o próprio campo verde — mantido o quadrado, ficavam dois crachás
+              um dentro do outro e o balão encolhia para caber no de fora. A
+              sombra passou para a forma: o `drop-shadow` acompanha o contorno
+              do balão, inclusive o rabinho. */}
+          <img src="/zorvin.svg" alt="" width={74} height={74}
+               style={{ display: "block", marginBottom: 14,
+                        filter: `drop-shadow(0 10px 22px ${C.greenGlow})` }} />
           {/* A mesma marca do topo da lista de conversas — ver `Marca.jsx`. O
               "· Ropelimi" saiu da linha de baixo porque agora o nome da casa
               está na de cima, e em corpo maior: dizê-lo duas vezes na mesma
@@ -132,13 +139,19 @@ export default function Login() {
         <form onSubmit={entrar} noValidate>
           {/* `type="text"` e não `email`: o login do Vantoro é "rodrigo.sousa",
               sem arroba, e o navegador recusaria o formulário sozinho. Os dois
-              formatos entram — quem decorou o e-mail continua usando ele. */}
+              formatos entram — quem decorou o e-mail continua usando ele.
+
+              O exemplo dentro do campo dizia "seu.nome ou voce@escritorio.com",
+              e quem lia aquilo tinha de adivinhar QUAL das duas coisas era a
+              sua. A resposta é sempre a mesma e agora está escrita: é o mesmo
+              usuário do Vantoro, o que a pessoa digita todo dia no outro
+              sistema. Não há o que decorar nem inventar. */}
           <label style={{ fontSize: 13, fontWeight: 600, color: C.textSecondary }}>Usuário do Vantoro</label>
           <div style={campoWrap(foco === "email")}>
             <Mail size={18} color={foco === "email" ? C.green : C.textSecondary} style={{ flexShrink: 0 }} />
             <input
               className="zv-input" type="text" autoComplete="username" autoCapitalize="none"
-              placeholder="seu.nome  ou  voce@escritorio.com" value={email}
+              placeholder="Digite o mesmo usuário do Vantoro" value={email}
               onChange={(e) => setEmail(e.target.value)} onFocus={() => setFoco("email")} onBlur={() => setFoco("")}
               required style={inputEstilo}
             />
@@ -181,10 +194,10 @@ export default function Login() {
         </form>
 
         <div style={{ textAlign: "center", fontSize: 12, color: C.textSecondary, marginTop: 22, lineHeight: 1.5 }}>
-          {/* Sem o "· Ropelimi" do fim: com a marca nova, o nome da casa já está
-              no alto do cartão e em corpo grande. Repetir aqui, miúdo, só fazia
-              a mesma palavra aparecer duas vezes na mesma caixa. */}
-          Acordos e Execução<br />
+          {/* Só a linha que serve para alguma coisa. "Acordos e Execução" era
+              o nome do setor: quem chega nesta tela já sabe de que setor é, e
+              a linha só empurrava para baixo a única frase que responde a uma
+              pergunta de verdade — para quem chamar quando a senha não entra. */}
           Problemas para entrar? Fale com o administrador.
         </div>
       </div>
