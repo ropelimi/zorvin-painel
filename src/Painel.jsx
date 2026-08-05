@@ -137,28 +137,81 @@ function acordarPonte() {
   try { fetch(BRIDGE_URL + "/", { mode: "no-cors", cache: "no-store" }).catch(() => {}); } catch (_) { /* ignora */ }
 }
 
+// `green` é a cor de PREENCHIMENTO (botão, aba escolhida, anel do avatar) e o
+// verde do WhatsApp continua sendo ele. `verdeTexto` é outra coisa: o mesmo
+// verde escrito em letra miúda — "digitando…", a hora de quem tem não lidas.
+// Ali o #00a884 dava 3,0:1 no tema claro e 3,9:1 sobre a conversa selecionada
+// no escuro; letra de 11px nesse contraste é o tipo de coisa que só quem tem
+// vinte anos e um monitor bom consegue ler. `horaNaoLida` existe separado
+// porque ela aparece sobre DOIS fundos (a linha comum e a selecionada).
 const TEMAS = {
   claro: {
     rail: "#202c33", headerBar: "#f0f2f5", panel: "#ffffff", listActive: "#f0f2f5",
     chatBg: "#efeae2", bubbleIn: "#ffffff", bubbleOut: "#d9fdd3", green: "#00a884",
     greenDark: "#008069", textPrimary: "#111b21", textSecondary: "#667781",
-    divider: "#e9edef", unread: "#25d366", inputBg: "#ffffff", searchBg: "#f0f2f5",
+    divider: "#e9edef", unread: "#008069", inputBg: "#ffffff", searchBg: "#f0f2f5",
     placeholderCircle: "#dfe5e7", link: "#027eb5",
+    verdeTexto: "#017561", horaNaoLida: "#017561",
   },
   escuro: {
     rail: "#161717", headerBar: "#202c33", panel: "#111b21", listActive: "#2a3942",
     chatBg: "#0b141a", bubbleIn: "#202c33", bubbleOut: "#005c4b", green: "#00a884",
     greenDark: "#025144", textPrimary: "#e9edef", textSecondary: "#8696a0",
-    divider: "#222d34", unread: "#00a884", inputBg: "#2a3942", searchBg: "#202c33",
+    divider: "#222d34", unread: "#008069", inputBg: "#2a3942", searchBg: "#202c33",
     placeholderCircle: "#202c33", link: "#53bdeb",
+    verdeTexto: "#1fbf9c", horaNaoLida: "#1fbf9c",
   },
 };
 
+// O BOTÃO QUE É SÓ UM ÍCONE.
+//
+// O alvo do toque tem de ser maior que o desenho. Aqui os ícones têm de 19 a
+// 24px e o botão não tinha respiro nenhum: o alvo era o próprio desenho —
+// metade do que se recomenda para dedo (44px), e menos ainda para quem tem a
+// mão trêmula. No computador o mouse acerta; no celular a pessoa erra, abre a
+// conversa que estava por baixo, ou não acontece nada e ela toca de novo.
+//
+// 10px de respiro em volta de um ícone de 20 dão 40px de alvo sem mudar nada
+// do que se vê: o desenho continua do mesmo tamanho, no mesmo lugar.
+const BOTAO_ICONE = {
+  border: "none", background: "transparent", cursor: "pointer",
+  display: "flex", alignItems: "center", justifyContent: "center",
+  padding: 10, borderRadius: 8, flexShrink: 0,
+};
+
 // Cores disponíveis ao criar uma tag (o usuário escolhe uma).
-const CORES_TAG = ["#ef5350", "#ec407a", "#ab47bc", "#7e57c2", "#5c6bc0", "#42a5f5", "#26a69a", "#66bb6a", "#d4a017", "#ff7043", "#8d6e63", "#78909c"];
+// Escuras o bastante para o texto BRANCO por cima ser legível: o verde-claro e
+// o azul-claro de antes davam 2,4:1 e 2,6:1 numa etiqueta de 10,5px.
+const CORES_TAG = ["#d32f2f", "#c2185b", "#8e24aa", "#5e35b1", "#3949ab", "#1976d2", "#00796b", "#2e7d32", "#8f6800", "#cc3f12", "#6d4c41", "#546e7a"];
+
+// PRETO OU BRANCO POR CIMA DESTA COR?
+//
+// As etiquetas já criadas guardam a cor no banco, e várias são claras — o
+// "Acordo fechado" verde-claro dava 2,4:1 com letra branca, ilegível. Trocar a
+// paleta só conserta as etiquetas NOVAS; escolher a letra pela cor conserta
+// também as que a equipe já criou, sem mexer no banco.
+//
+// Não há corte mágico de luminância: a conta certa é medir o contraste das
+// DUAS opções e ficar com a maior. Um azul médio como o #42a5f5 engana — pela
+// aparência pede letra branca, mas dá 2,6:1 com branco e 7,9:1 com preto.
+function corDoTextoSobre(fundo) {
+  const s = String(fundo || "").replace("#", "");
+  if (s.length !== 6) return "#fff";
+  const canal = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  const l = 0.2126 * canal(parseInt(s.slice(0, 2), 16))
+          + 0.7152 * canal(parseInt(s.slice(2, 4), 16))
+          + 0.0722 * canal(parseInt(s.slice(4, 6), 16));
+  const comBranco = 1.05 / (l + 0.05);
+  const comPreto = (l + 0.05) / 0.05;
+  return comPreto > comBranco ? "#101c14" : "#fff";
+}
 
 // Cor de avatar estável a partir do texto (mesmo nome = mesma cor).
-const CORES = ["#0288d1", "#f57c00", "#7cb342", "#8e24aa", "#5e35b1", "#00acc1", "#d81b60", "#6a5acd", "#00897b", "#c2185b"];
+// As dez cores dos círculos de avatar. Todas escuras o bastante para a letra
+// BRANCA por cima passar de 4,5:1 — o laranja e o verde-limão de antes davam
+// 2,7:1 e 2,5:1, e a inicial sumia no círculo justamente nas telas de fora,
+// onde o brilho do sol já come metade do contraste.
+const CORES = ["#027abc", "#b55c00", "#577d2e", "#8e24aa", "#5e35b1", "#007f8f", "#d81b60", "#6a5acd", "#008476", "#c2185b"];
 function corDe(txt) {
   let h = 0;
   for (let i = 0; i < (txt || "").length; i++) h = (h * 31 + txt.charCodeAt(i)) % CORES.length;
@@ -168,8 +221,12 @@ function corDe(txt) {
 // Cor do NOME de quem enviou, exibido em cima de fundos coloridos (bolha verde
 // enviada, bolha de nota). Precisa de bom contraste em cada tema: tons claros
 // no modo escuro, tons escuros no modo claro. Estável por nome.
-const CORES_NOME_ESCURO = ["#8fd0ff", "#ffd08a", "#b6e88f", "#ffa8cf", "#cbb8ff", "#8ce6d6", "#ffb38a", "#a7d8ff", "#8ee0b0", "#ff9db0"];
-const CORES_NOME_CLARO = ["#0277bd", "#c25e00", "#4e7d1e", "#8e24aa", "#4527a0", "#00838f", "#ad1457", "#3949ab", "#00695c", "#b71c40"];
+// Ajustadas para 4,6:1 sobre o balão de saída de cada tema (#005c4b no escuro,
+// #d9fdd3 no claro) — três do escuro e quatro do claro ficavam entre 3,9 e 4,5,
+// que é o suficiente para a pessoa ver que tem um nome ali e não conseguir ler
+// qual é. O matiz é o mesmo; só a claridade mudou.
+const CORES_NOME_ESCURO = ["#8fd0ff", "#ffd08a", "#b6e88f", "#ffb0d4", "#d1c1ff", "#8ce6d6", "#ffb892", "#a7d8ff", "#8ee0b0", "#ffb6c4"];
+const CORES_NOME_CLARO = ["#0272b5", "#ab5300", "#4c7a1d", "#8e24aa", "#4527a0", "#007984", "#ad1457", "#3949ab", "#00695c", "#b71c40"];
 function corNome(txt, modo) {
   const arr = modo === "escuro" ? CORES_NOME_ESCURO : CORES_NOME_CLARO;
   let h = 0;
@@ -463,8 +520,29 @@ function notificarDesktop(titulo, corpo) {
   } catch (_) { /* ignora */ }
 }
 
+// AS INICIAIS DO CÍRCULO.
+//
+// Era `nome.charAt(0)` — e num escritório de advocacia isso significava uma
+// barra lateral inteira de círculos com a letra "D", porque todo advogado é
+// "Dr." ou "Dra.". Aquela barra existe justamente para distinguir um telefone
+// do outro, e estava dizendo a mesma coisa em todos eles.
+//
+// Duas letras, pulando o tratamento e as partículas: "Dra. Beatriz Aguiar"
+// vira BA e "Antônio Ribeiro dos Santos Filho" vira AR. Quem não tem nome
+// (só o número) continua com o primeiro caractere, que é o que existe.
+const TRATAMENTOS = /^(dr|dra|sr|sra|srta|prof|profa|exmo|exma|adv)\.?$/i;
+const PARTICULAS = /^(de|da|do|das|dos|e|di|del|van|von|la|le)$/i;
+function iniciaisDe(nome) {
+  const cru = String(nome || "").trim();
+  if (!cru) return "?";
+  const palavras = cru.split(/\s+/).filter((p) => /\p{L}/u.test(p) && !TRATAMENTOS.test(p));
+  const nucleo = palavras.filter((p) => !PARTICULAS.test(p));
+  if (!nucleo.length) return cru.charAt(0).toUpperCase();
+  return (nucleo[0].charAt(0) + (nucleo[1] ? nucleo[1].charAt(0) : "")).toUpperCase();
+}
+
 function Avatar({ nome, size = 40, foto }) {
-  const inicial = (nome || "?").trim().charAt(0).toUpperCase();
+  const inicial = iniciaisDe(nome);
   const [erroFoto, setErroFoto] = useState(false);
   // Se a foto mudar, tenta de novo (limpa erro anterior).
   useEffect(() => { setErroFoto(false); }, [foto]);
@@ -481,7 +559,7 @@ function Avatar({ nome, size = 40, foto }) {
     );
   }
   return (
-    <div style={{ width: size, height: size, borderRadius: "50%", background: corDe(nome), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, fontSize: size * 0.42, flexShrink: 0 }}>
+    <div style={{ width: size, height: size, borderRadius: "50%", background: corDe(nome), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, fontSize: size * (inicial.length > 1 ? 0.36 : 0.42), letterSpacing: inicial.length > 1 ? "-.02em" : 0, flexShrink: 0 }}>
       {inicial}
     </div>
   );
@@ -552,8 +630,19 @@ export default function Painel({ sessao }) {
   const inputRef = useRef(null);
   const conversaIdRef = useRef(null);
   useEffect(() => { conversaIdRef.current = conversaId; }, [conversaId]);
+  // Mesmo papel do `conversaIdRef`, para o telefone: quem responde atrasado
+  // confere aqui se ainda é o telefone aberto antes de mexer na tela.
+  const advogadoIdRef = useRef(null);
+  useEffect(() => { advogadoIdRef.current = advogadoId; }, [advogadoId]);
   const conversasRef = useRef([]);
   useEffect(() => { conversasRef.current = conversas; }, [conversas]);
+  // O que está escrito na caixa AGORA, para o efeito de troca de conversa
+  // conseguir guardar antes de trocar.
+  const rascunhoRef = useRef("");
+  const modoNotaRef = useRef(false);
+  // O que ficou escrito em cada conversa: { [conversaId]: { texto, nota } }.
+  const rascunhosRef = useRef({});
+  const conversaAnteriorRef = useRef(null);
   const listaRef = useRef(null);
   const fileRef = useRef(null);
   const [pertoDoFim, setPertoDoFim] = useState(true);
@@ -571,6 +660,8 @@ export default function Painel({ sessao }) {
   const [legendaAnexo, setLegendaAnexo] = useState("");
   const [buscaIdx, setBuscaIdx] = useState(0); // ocorrência atual na busca da conversa
   const [idDivisorNaoLidas, setIdDivisorNaoLidas] = useState(null); // id da 1ª msg não lida ao abrir
+  const [temMaisAntigas, setTemMaisAntigas] = useState(false); // há histórico acima do que está na tela
+  const [buscandoAntigas, setBuscandoAntigas] = useState(false);
   const [infoAberta, setInfoAberta] = useState(false); // painel de dados do contato
   const [importando, setImportando] = useState(false); // gravando no banco
   const [impAdvId, setImpAdvId] = useState(""); // advogado dono das conversas importadas
@@ -717,7 +808,14 @@ export default function Painel({ sessao }) {
       .eq("advogado_id", advId);
     if (error) { desligarRecurso("digitando", error); return; }
     const mapa = {};
-    (data || []).forEach((r) => { if (r.digitando_ate) mapa[r.id] = r.digitando_ate; });
+    // Só o que ainda VALE. Guardando o vencido, o mapa nunca esvaziava e o
+    // relógio de 2 segundos passava a re-renderizar o painel inteiro para
+    // sempre — a cada 2s, o dia todo, por causa de um "digitando…" que já
+    // tinha expirado horas antes.
+    const agora = Date.now();
+    (data || []).forEach((r) => {
+      if (r.digitando_ate && new Date(r.digitando_ate).getTime() > agora) mapa[r.id] = r.digitando_ate;
+    });
     setDigitandos(mapa);
   }, []);
 
@@ -760,6 +858,11 @@ export default function Painel({ sessao }) {
     // Queda de rede não pode esvaziar a lista: sem resposta, fica o que já
     // estava na tela em vez de "Nenhuma conversa ainda".
     if (error) return;
+    // Troquei de telefone enquanto esta resposta vinha? Ela é de outro telefone
+    // agora: descarta. Sem isto, clicar rápido em dois telefones deixava a
+    // lista do PRIMEIRO na tela do segundo (a resposta lenta chega por último
+    // e sobrescreve), e o atendente atendia a conversa errada.
+    if (advogadoIdRef.current !== advId) return;
     // As FIXADAS sobem, e entre elas continua valendo a ordem de sempre. A
     // ordenação é feita aqui e não no banco porque a coluna pode ainda não
     // existir: pedi-la no `order` faria a consulta inteira falhar, e a lista de
@@ -945,7 +1048,11 @@ export default function Painel({ sessao }) {
         .select(colunasDoContato("id, nome, numero, foto_url"))
         .order("nome", { ascending: true });
       let { data, error } = await buscar();
-      if (error && TEM_NOME_DO_CADASTRO) {
+      // `faltaColuna` junto: sem ele, uma queda de rede era lida como "a coluna
+      // não existe" e o nome do cadastro do Vantoro ficava desligado pelo resto
+      // da sessão, para todas as telas — por causa de um 4G que oscilou.
+      // É a mesma guarda que `carregarConversas` já usava.
+      if (error && TEM_NOME_DO_CADASTRO && faltaColuna(error)) {
         TEM_NOME_DO_CADASTRO = false;
         ({ data, error } = await buscar());
       }
@@ -1139,9 +1246,16 @@ export default function Painel({ sessao }) {
       } catch (_) { /* sem agenda acessível: segue e o usuário preenche à mão */ }
     }
     if (houveErroZip) mostrarAviso("Um ou mais .zip não puderam ser abertos e foram ignorados.");
-    const juntos = [...impArquivos, ...validos];
-    setImpArquivos(juntos);
-    setImpMeuNome((atual) => atual || detectarMeuNome(juntos));
+    // A forma funcional. Esta função é assíncrona (lê e descompacta os
+    // arquivos), então quando ela chega aqui o `impArquivos` que ela enxerga é
+    // o de quando ela COMEÇOU. Soltando um segundo lote antes do primeiro
+    // terminar, o segundo apagava o primeiro — e a tela dizia que só os
+    // últimos arquivos tinham sido escolhidos.
+    setImpArquivos((prev) => {
+      const juntos = [...prev, ...validos];
+      setImpMeuNome((atual) => atual || detectarMeuNome(juntos));
+      return juntos;
+    });
   }
 
   // Arrastar e soltar arquivos na área de importação.
@@ -1240,14 +1354,41 @@ export default function Painel({ sessao }) {
     }
   }
 
+  // Quantas mensagens a conversa traz de uma vez.
+  //
+  // Antes não havia teto NENHUM, e a ordem era CRESCENTE — a combinação errada.
+  // Numa conversa de três anos isso dava um de dois desastres: ou o PostgREST
+  // aplicava o teto dele (mil linhas, no Supabase hospedado) e o painel abria
+  // mostrando as mensagens MAIS ANTIGAS, sem a que o cliente acabou de mandar;
+  // ou não havia teto e o navegador montava vinte mil bolhas de uma vez, com
+  // todas as fotos, e a aba travava.
+  //
+  // Agora vêm as ÚLTIMAS, que é o que se quer ao abrir uma conversa, e o resto
+  // sobe sob demanda — o mesmo que o WhatsApp Web faz.
+  const TETO_MENSAGENS = 120;
+
   // ---- Carrega as mensagens da conversa aberta ----
   const carregarMensagens = useCallback(async (convId) => {
-    if (!convId) { setMensagens([]); return; }
-    const { data } = await supabase
+    if (!convId) { setMensagens([]); setTemMaisAntigas(false); return; }
+    const { data, error } = await supabase
       .from("mensagens")
       .select("*")
       .eq("conversa_id", convId)
-      .order("criado_em", { ascending: true });
+      .order("criado_em", { ascending: false })
+      .limit(TETO_MENSAGENS);
+    // ERRO NÃO É LISTA VAZIA. Sem esta guarda, uma oscilação de 4G ao tocar na
+    // conversa abria uma tela EM BRANCO — e, dez linhas abaixo, zerava o
+    // contador de não lidas no banco. As cinco mensagens do cliente sumiam da
+    // lista e do título da aba, e ninguém mais sabia que existiam. O
+    // zeramento é o "eu li": ele só pode acontecer depois de uma leitura que
+    // deu certo.
+    if (error) {
+      mostrarAviso("Não consegui carregar as mensagens. Toque na conversa de novo.");
+      return;
+    }
+    // Vieram de trás para a frente (para pegar as últimas); a tela quer na
+    // ordem do tempo.
+    const recentes = (data || []).slice().reverse();
     // Também carrega as NOTAS internas (comentários da equipe) e mistura na
     // linha do tempo, em ordem de horário. Notas ficam numa tabela separada
     // e nunca são enviadas para o WhatsApp.
@@ -1260,7 +1401,7 @@ export default function Painel({ sessao }) {
         .order("criado_em", { ascending: true });
       if (!nErr) notas = (ns || []).map((n) => ({ ...n, id: "nota-" + n.id, origem: "nota" }));
     } catch (_) { /* tabela ainda não criada: segue sem notas */ }
-    const juntas = [...(data || []), ...notas].sort(
+    const juntas = [...recentes, ...notas].sort(
       (a, b) => new Date(a.criado_em) - new Date(b.criado_em)
     );
     // Se troquei de conversa enquanto esta busca estava em andamento, descarta o
@@ -1277,16 +1418,18 @@ export default function Painel({ sessao }) {
     // frente APENAS as mensagens do contato (ignora respostas do advogado).
     const n = naoLidasRef.current || 0;
     let alvoId = null;
-    if (n > 0 && data && data.length) {
+    if (n > 0 && recentes.length) {
       let count = 0;
-      for (let i = data.length - 1; i >= 0; i--) {
-        if (data[i].origem === "contato") {
+      for (let i = recentes.length - 1; i >= 0; i--) {
+        if (recentes[i].origem === "contato") {
           count++;
-          if (count === n) { alvoId = data[i].id; break; }
+          if (count === n) { alvoId = recentes[i].id; break; }
         }
       }
     }
     setIdDivisorNaoLidas(alvoId);
+    // Veio o lote cheio? Então provavelmente há mais para trás.
+    setTemMaisAntigas((data || []).length >= TETO_MENSAGENS);
     naoLidasRef.current = 0; // usa só na abertura
     // Zera o contador de não lidas desta conversa.
     await supabase.from("conversas").update({ nao_lidas: 0 }).eq("id", convId);
@@ -1302,6 +1445,36 @@ export default function Painel({ sessao }) {
   }, [meuNome]);
 
   useEffect(() => { carregarMensagens(conversaId); }, [conversaId, carregarMensagens]);
+
+  // SOBE MAIS UM LOTE de histórico, a partir da mensagem mais antiga que já
+  // está na tela. É o "carregar anteriores" do WhatsApp Web — e é ele que
+  // permite que a abertura da conversa traga só as últimas, que é o barato.
+  async function carregarAntigas() {
+    if (buscandoAntigas || !conversaId) return;
+    const maisAntiga = mensagens.find((m) => m.origem !== "nota");
+    if (!maisAntiga) return;
+    setBuscandoAntigas(true);
+    const convId = conversaId;
+    const { data, error } = await supabase
+      .from("mensagens")
+      .select("*")
+      .eq("conversa_id", convId)
+      .lt("criado_em", maisAntiga.criado_em)
+      .order("criado_em", { ascending: false })
+      .limit(TETO_MENSAGENS);
+    setBuscandoAntigas(false);
+    if (error) { mostrarAviso("Não consegui trazer as mensagens anteriores."); return; }
+    // Troquei de conversa enquanto isto vinha: joga fora, senão o histórico de
+    // uma pessoa aparece na conversa de outra.
+    if (conversaIdRef.current !== convId) return;
+    const lote = (data || []).slice().reverse();
+    setTemMaisAntigas(lote.length >= TETO_MENSAGENS);
+    if (!lote.length) return;
+    setMensagens((prev) => {
+      const jaTem = new Set(prev.map((m) => m.id));
+      return [...lote.filter((m) => !jaTem.has(m.id)), ...prev];
+    });
+  }
 
   // ---- Mantém vivo o "estou atendendo" enquanto a conversa fica aberta ----
   // Este era o pior dos casos: um relógio que batia no banco a cada minuto,
@@ -1333,12 +1506,22 @@ export default function Painel({ sessao }) {
   }, [rascunho]);
 
   // ---- Realtime: novas mensagens e conversas atualizadas ----
+  //
+  // O CANAL É ASSINADO UMA VEZ SÓ, e tudo o que muda é lido por referência.
+  //
+  // Antes as dependências incluíam `conversaId` e `advogadoId`: cada conversa
+  // que o atendente abria derrubava o canal e assinava outro. Entre o
+  // `removeChannel` e o `subscribe` novo há um vão de rede — e o que o
+  // Postgres publica nesse vão não é entregue a ninguém, nem depois. Numa
+  // manhã de trinta conversas abertas eram trinta janelas de silêncio, e a
+  // mensagem que caísse numa delas simplesmente não aparecia até alguém
+  // recarregar a página.
   useEffect(() => {
     const canal = supabase
       .channel("zorvin-realtime")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "mensagens" }, async (payload) => {
         const nova = payload.new;
-        if (nova.conversa_id === conversaId) {
+        if (nova.conversa_id === conversaIdRef.current) {
           setMensagens((prev) => {
             if (prev.some((m) => m.id === nova.id)) return prev;
             // Se esta é a versão "real" de uma mensagem que enviei (e mostrei
@@ -1366,7 +1549,7 @@ export default function Painel({ sessao }) {
           // Cheguei uma mensagem do contato e a conversa está aberta: já conta
           // como lida (zera o contador no banco), igual ao WhatsApp Web.
           if (nova.origem === "contato") {
-            supabase.from("conversas").update({ nao_lidas: 0 }).eq("id", conversaId).then(() => {});
+            supabase.from("conversas").update({ nao_lidas: 0 }).eq("id", conversaIdRef.current).then(() => {});
           }
         }
         // Esta mensagem é do advogado atualmente aberto? Se a conversa já está
@@ -1374,13 +1557,13 @@ export default function Painel({ sessao }) {
         // confirmamos com uma consulta rápida do advogado_id.
         const jaNaLista = conversasRef.current.some((c) => c.id === nova.conversa_id);
         let doAdvogadoAtual = jaNaLista;
-        if (!doAdvogadoAtual && nova.origem === "contato" && advogadoId) {
+        if (!doAdvogadoAtual && nova.origem === "contato" && advogadoIdRef.current) {
           const { data } = await supabase.from("conversas").select("advogado_id").eq("id", nova.conversa_id).maybeSingle();
-          doAdvogadoAtual = !!data && data.advogado_id === advogadoId;
+          doAdvogadoAtual = !!data && data.advogado_id === advogadoIdRef.current;
         }
         // Aviso de nova mensagem (som + notificação) — inclusive para conversa
         // nova — quando não estou olhando exatamente para ela.
-        if (nova.origem === "contato" && doAdvogadoAtual && (document.hidden || nova.conversa_id !== conversaId)) {
+        if (nova.origem === "contato" && doAdvogadoAtual && (document.hidden || nova.conversa_id !== conversaIdRef.current)) {
           tocarBeep();
           notificarDesktop("Nova mensagem", nova.texto || "Mídia recebida");
         }
@@ -1388,13 +1571,13 @@ export default function Painel({ sessao }) {
         // está na lista). Conversas que já estão na lista são atualizadas no
         // lugar pelo handler de UPDATE de conversas — sem re-buscar tudo, que
         // era o que fazia a tela "recarregar sozinha".
-        if (doAdvogadoAtual && !jaNaLista) carregarConversas(advogadoId);
+        if (doAdvogadoAtual && !jaNaLista) carregarConversas(advogadoIdRef.current);
         carregarNaoLidasPorAdv(); // selos do rail de todos os advogados
       })
       // Status de uma mensagem mudou (ex.: foi lida) — atualiza o "tiquinho".
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "mensagens" }, (payload) => {
         const atual = payload.new;
-        if (atual.conversa_id !== conversaId) return;
+        if (atual.conversa_id !== conversaIdRef.current) return;
         setMensagens((prev) => prev.map((m) => (m.id === atual.id ? { ...m, status: atual.status } : m)));
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversas" }, (payload) => {
@@ -1403,7 +1586,8 @@ export default function Painel({ sessao }) {
         // Atualiza "digitando…" e "quem está atendendo" localmente (leve).
         setDigitandos((prev) => {
           const novo = { ...prev };
-          if (cv.digitando_ate) novo[cv.id] = cv.digitando_ate; else delete novo[cv.id];
+          if (cv.digitando_ate && new Date(cv.digitando_ate).getTime() > Date.now()) novo[cv.id] = cv.digitando_ate;
+          else delete novo[cv.id];
           return novo;
         });
         setAtendimentos((prev) => {
@@ -1439,18 +1623,27 @@ export default function Painel({ sessao }) {
       // Se a ponte não conseguir enviar, a fila vira "erro" — aviso na tela.
       .on("postgres_changes", { event: "*", schema: "public", table: "fila_envio" }, (payload) => {
         const row = payload.new;
-        if (!row || row.conversa_id !== conversaId || row.status !== "erro") return;
-        setMensagens((prev) => prev.map((m) =>
-          String(m.id).startsWith("temp-") && m._status === "enviando" &&
-          ((row.texto && m.texto === row.texto) || (row.midia_url && m._midiaUrlFinal === row.midia_url))
-            ? { ...m, _status: "erro" }
-            : m
-        ));
+        if (!row || row.conversa_id !== conversaIdRef.current || row.status !== "erro") return;
+        // Marca APENAS a primeira provisória que casa — a mesma trava dos
+        // outros dois handlers. Sem ela, mandar "ok" duas vezes e a ponte
+        // falhar uma pintava as DUAS de vermelho; reenviando as duas, o
+        // cliente recebia "ok" duplicado.
+        setMensagens((prev) => {
+          let marcado = false;
+          return prev.map((m) => {
+            if (marcado) return m;
+            const casa = String(m.id).startsWith("temp-") && m._status === "enviando" &&
+              ((row.texto && m.texto === row.texto) || (row.midia_url && m._midiaUrlFinal === row.midia_url));
+            if (!casa) return m;
+            marcado = true;
+            return { ...m, _status: "erro" };
+          });
+        });
       })
       // Nota interna nova (de outro atendente): aparece na conversa aberta.
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notas" }, (payload) => {
         const n = payload.new;
-        if (!n || n.conversa_id !== conversaId) return;
+        if (!n || n.conversa_id !== conversaIdRef.current) return;
         const item = { ...n, id: "nota-" + n.id, origem: "nota" };
         setMensagens((prev) => {
           if (prev.some((m) => m.id === item.id)) return prev;
@@ -1470,12 +1663,40 @@ export default function Painel({ sessao }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "conversa_tags" }, () => { carregarTagsConversas(); })
       .subscribe();
     return () => { supabase.removeChannel(canal); };
-  }, [conversaId, advogadoId, carregarConversas, carregarNaoLidasPorAdv, carregarTags, carregarTagsConversas]);
+  }, [carregarConversas, carregarNaoLidasPorAdv, carregarTags, carregarTagsConversas]);
 
   // Ao abrir uma conversa, começa no fim (mensagens mais recentes).
   // A ficha do cliente fecha junto: ela é o cadastro de QUEM está na conversa,
   // e deixá-la aberta ao trocar de contato mostraria os dados da pessoa errada.
-  useEffect(() => { setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); setRespondendo(null); setInfoAberta(false); setFichaAberta(false); setTagMenuAberto(false); setModoNota(false); requestAnimationFrame(() => { fimRef.current?.scrollIntoView(); if (conversaId && !estreito) inputRef.current?.focus(); }); }, [conversaId]);
+  // O RASCUNHO PASSOU A SER DE CADA CONVERSA.
+  //
+  // Antes ele era um só, compartilhado, e a troca de conversa desligava o modo
+  // "nota interna" SEM apagar o texto. O resultado era o pior erro que este
+  // painel podia cometer: a pessoa começava a escrever uma nota interna sobre
+  // um cliente ("cliente mente sobre a data, conferir antes de responder"),
+  // era chamada para outra conversa, e ali a mesma frase estava na caixa —
+  // agora em modo mensagem normal. Um Enter e a nota ia parar no WhatsApp do
+  // outro cliente.
+  //
+  // Guardando por conversa, o texto volta para onde foi escrito, junto com o
+  // modo em que foi escrito. Ninguém perde o que digitou e nada atravessa de
+  // uma conversa para a outra.
+  useEffect(() => { rascunhoRef.current = rascunho; }, [rascunho]);
+  useEffect(() => { modoNotaRef.current = modoNota; }, [modoNota]);
+  useEffect(() => {
+    const antes = conversaAnteriorRef.current;
+    if (antes && antes !== conversaId) {
+      const texto = rascunhoRef.current;
+      if (texto.trim()) rascunhosRef.current[antes] = { texto, nota: modoNotaRef.current };
+      else delete rascunhosRef.current[antes];
+    }
+    conversaAnteriorRef.current = conversaId;
+    const guardado = conversaId ? rascunhosRef.current[conversaId] : null;
+    setRascunho(guardado ? guardado.texto : "");
+    setModoNota(guardado ? !!guardado.nota : false);
+    setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); setRespondendo(null); setInfoAberta(false); setFichaAberta(false); setTagMenuAberto(false);
+    requestAnimationFrame(() => { fimRef.current?.scrollIntoView(); if (conversaId && !estreito) inputRef.current?.focus(); });
+  }, [conversaId]);
 
   // Mensagem nova: só rola até o fim se o atendente já estava no fim
   // (não "puxa" a tela quem está lendo mensagens antigas).
@@ -1483,7 +1704,10 @@ export default function Painel({ sessao }) {
 
   // Mostra o total de não lidas no título da aba: "(3) Zorvin".
   useEffect(() => {
-    const total = conversas.reduce((s, c) => s + (c.nao_lidas || 0), 0);
+    // ARQUIVADA não conta. Uma conversa arquivada com não lidas deixava o
+    // título da aba em "(2) Zorvin" e o selo vermelho no telefone para sempre:
+    // o número existia e não havia nada na lista para clicar e zerar.
+    const total = conversas.reduce((s, c) => s + (c.arquivada ? 0 : (c.nao_lidas || 0)), 0);
     document.title = total > 0 ? `(${total}) Zorvin` : "Zorvin";
   }, [conversas]);
 
@@ -1502,14 +1726,24 @@ export default function Painel({ sessao }) {
   // "Tique" a cada 2s só quando há alguém "digitando…", para expirar o aviso
   // (não fica re-renderizando a lista à toa quando ninguém está digitando).
   useEffect(() => {
-    if (Object.keys(digitandos).length === 0) return;
+    // "Há alguém digitando" é ter algum prazo AINDA no futuro. Contar as
+    // chaves do mapa não servia: uma entrada vencida conta igual a uma viva.
+    const vivo = Object.values(digitandos).some((a) => new Date(a).getTime() > Date.now());
+    if (!vivo) return;
     const id = setInterval(() => setTique((t) => t + 1), 2000);
     return () => clearInterval(id);
-  }, [digitandos]);
+  }, [digitandos, tique]);
 
   // Acompanha a largura da janela (para o layout de celular).
   useEffect(() => {
-    function aoRedimensionar() { setLargura(window.innerWidth); }
+    // Guarda o BOOLEANO, não o número. Com a largura exata, arrastar a janela
+    // gerava dezenas de re-renders do painel inteiro por segundo; com o
+    // booleano, o React descarta o setState enquanto o valor não muda, e o
+    // custo cai a zero fora do ponto de virada dos 768px.
+    function aoRedimensionar() {
+      const w = window.innerWidth;
+      setLargura((antes) => ((antes < 768) === (w < 768) ? antes : w));
+    }
     window.addEventListener("resize", aoRedimensionar);
     return () => window.removeEventListener("resize", aoRedimensionar);
   }, []);
@@ -1575,7 +1809,11 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  });
+    // Sem lista de dependências, este efeito trocava o ouvinte do teclado a
+    // CADA render do painel — e o painel re-renderiza a cada mensagem que
+    // chega, a cada tecla digitada e a cada tique do relógio. A lista abaixo
+    // cobre tudo o que a função lê: a posição e o tamanho da galeria.
+  }, [temGaleria, posNaGaleria, imagensDaConversa.length]);
 
   // ---- MÍDIAS, DOCUMENTOS E LINKS DE TODAS AS CONVERSAS ----
   //
@@ -1648,6 +1886,13 @@ export default function Painel({ sessao }) {
       else if (tagForm) setTagForm(null);
       else if (rapidaForm) setRapidaForm(null);
       else if (contatoForm) setContatoForm(null);
+      // As três telas que cobrem tudo. Faltavam aqui, e como o Esc é uma
+      // escada, faltar não era "o Esc não faz nada": ele descia até o último
+      // degrau e FECHAVA A CONVERSA lá atrás, por baixo do que estava aberto.
+      // A pessoa fechava as Mídias e a conversa tinha sumido.
+      else if (juntar) setJuntar(null);
+      else if (midiasAberta) setMidiasAberta(false);
+      else if (telaAdmin) setTelaAdmin(false);
       else if (configAberta) setConfigAberta(false);
       else if (novaConversaAberta) setNovaConversaAberta(false);
       else if (menuConversa) setMenuConversa(null);
@@ -1663,7 +1908,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, menuConversa, menuTopoAberto, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo, conversaId]);
+  }, [imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo, conversaId]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -1748,14 +1993,22 @@ export default function Painel({ sessao }) {
     inputRef.current?.focus();
   }
 
-  function trocarAdvogado(id) { setAdvogadoId(id); setConversaId(null); setSeletorAberto(false); setBusca(""); setVerArquivadas(false); }
+  // `setFiltro("tudo")` junto: com um filtro de tag ativo, trocar de telefone
+  // abria a lista escrita "Nenhuma conversa ainda" — e não era verdade, era o
+  // filtro de outro telefone ainda ligado.
+  function trocarAdvogado(id) { setAdvogadoId(id); setConversaId(null); setSeletorAberto(false); setBusca(""); setVerArquivadas(false); setFiltro("tudo"); }
   // Troca de DEPARTAMENTO e vai para o primeiro telefone dele.
   function trocarDepartamento(id) {
     if (id === departamentoId) return;
     setDepartamentoId(id);
     setConversaId(null);
     setBusca(""); setVerArquivadas(false); setFiltro("tudo");
-    const primeiro = advogados.find((a) => a.departamento_id === id);
+    // A lista PERMITIDA, não a lista crua. `advogados` vem do banco sem filtro
+    // (é leitura livre, ver `filtrarPermitidos`): usá-la aqui jogava a pessoa
+    // num telefone que ela não pode abrir, e a lista de conversas aparecia
+    // vazia sem dizer por quê.
+    const primeiro = advogadosVisiveis.find((a) => a.departamento_id === id)
+                  || advogadosVisiveis[0] || null;
     setAdvogadoId(primeiro ? primeiro.id : null);
   }
 
@@ -1767,7 +2020,11 @@ export default function Painel({ sessao }) {
     // Para o "não lida" valer visualmente, sai da conversa se ela estiver aberta.
     if (naoLida && conv.id === conversaId) setConversaId(null);
     mostrarAviso(naoLida ? "Marcada como não lida" : "Marcada como lida");
-    await supabase.from("conversas").update({ nao_lidas: novo }).eq("id", conv.id);
+    const { error } = await supabase.from("conversas").update({ nao_lidas: novo }).eq("id", conv.id);
+    // Sem conferir, a tela dizia "Marcada como lida" e o banco continuava com o
+    // contador antigo — na próxima recarga o selo voltava, e a pessoa jurava
+    // ter marcado.
+    if (error) { mostrarAviso("Não consegui marcar. Tente de novo."); carregarConversas(advogadoId); }
   }
 
   // Favoritar / desfavoritar uma conversa (aba "Favoritas").
@@ -1811,8 +2068,15 @@ export default function Painel({ sessao }) {
     const ids = conversas.filter((c) => (c.nao_lidas || 0) > 0).map((c) => c.id);
     if (!ids.length) { mostrarAviso("Nenhuma conversa não lida."); return; }
     setConversas((prev) => prev.map((c) => ({ ...c, nao_lidas: 0 })));
-    await supabase.from("conversas").update({ nao_lidas: 0 }).in("id", ids);
+    // Em lotes: a lista de ids vai na URL, e com centenas de conversas a
+    // consulta inteira seria recusada — o mesmo cuidado que a busca já tem.
+    let erro = null;
+    for (let i = 0; i < ids.length && !erro; i += 100) {
+      const { error } = await supabase.from("conversas").update({ nao_lidas: 0 }).in("id", ids.slice(i, i + 100));
+      erro = error;
+    }
     carregarNaoLidasPorAdv();
+    if (erro) { mostrarAviso("Não consegui marcar todas. Tente de novo."); carregarConversas(advogadoId); return; }
     mostrarAviso("Todas marcadas como lidas");
   }
 
@@ -1870,7 +2134,11 @@ export default function Painel({ sessao }) {
     }
     if (error) {
       setMensagens((prev) => prev.filter((m) => m.id !== tempId));
-      mostrarAviso("Não consegui salvar a nota. Verifique se a tabela 'notas' foi criada.");
+      // Devolve o texto à caixa: a nota some da conversa, e sem isto o que a
+      // pessoa escreveu some junto — sem cópia, sem rascunho, sem nada.
+      setRascunho((r) => (r ? r : t));
+      setModoNota(true);
+      mostrarAviso("Não consegui salvar a nota. O texto voltou para a caixa.");
     }
     // Se deu certo, o Realtime traz a versão definitiva e remove a provisória.
   }
@@ -2204,7 +2472,7 @@ export default function Painel({ sessao }) {
   // Não lidas de cada advogado, para o selo na barra lateral.
   // Para o advogado atual usamos a lista já carregada (que zera a conversa
   // aberta em tempo real); para os demais, o total consultado do banco.
-  const naoLidasAtual = conversas.reduce((s, c) => s + (c.nao_lidas || 0), 0);
+  const naoLidasAtual = conversas.reduce((s, c) => s + (c.arquivada ? 0 : (c.nao_lidas || 0)), 0);
   function naoLidasDoAdvogado(id) {
     return id === advogadoId ? naoLidasAtual : (naoLidasPorAdv[id] || 0);
   }
@@ -2241,8 +2509,14 @@ export default function Painel({ sessao }) {
     if (el) el.scrollIntoView({ block: "center" });
   }
 
+  // `100dvh` e não `100vh`. No Safari do iPhone o `vh` é a altura da tela COM a
+  // barra do navegador recolhida — uma altura que, na prática, quase nunca é a
+  // que se tem. Resultado: os últimos ~90px do painel ficavam embaixo da barra
+  // de endereço, e o que mora ali é exatamente a caixa de digitar mensagem. O
+  // `dvh` acompanha a barra abrindo e fechando; o `100vh` fica de reserva para
+  // navegador que ainda não conheça `dvh`.
   return (
-    <div style={{ display: "flex", height: "100vh", fontFamily: "'Segoe UI', Helvetica, Arial, sans-serif", background: C.headerBar, color: C.textPrimary }}>
+    <div style={{ display: "flex", height: "100vh", maxHeight: "100dvh", fontFamily: "'Segoe UI', Helvetica, Arial, sans-serif", background: C.headerBar, color: C.textPrimary }}>
       {/* Contorno de foco só para quem navega por teclado (acessibilidade),
           sem "caixa azul" para quem usa o mouse. */}
       <style>{`
@@ -2250,6 +2524,35 @@ export default function Painel({ sessao }) {
         *:focus-visible { outline: 2px solid ${C.green}; outline-offset: 2px; border-radius: 4px; }
         .sem-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
         .sem-scrollbar::-webkit-scrollbar { display: none; }
+
+        /* FITA QUE ROLA DE LADO — departamentos, filtros, abas das
+           configurações. A barra de rolagem está escondida (é feia numa fita
+           de 26px de altura), e sem ela a fita simplesmente CORTAVA o último
+           item no meio da palavra: "Acordo fechad|". Quem olha não conclui
+           "tem mais coisa para o lado", conclui que a tela está quebrada.
+
+           A sombrinha nas pontas é o truque clássico de duas camadas: as
+           "tampas" rolam junto com o conteúdo (background-attachment: local) e
+           as sombras ficam paradas (scroll). Encostado na ponta, a tampa cobre
+           a sombra e não se vê nada; assim que sobra conteúdo para aquele
+           lado, a tampa sai de cima e a sombra aparece. Puro CSS: não custa
+           medição nenhuma, nem re-render, e acerta sozinho quando a lista de
+           tags muda de tamanho. */
+        .fita { overflow-x: auto; }
+        /* A BORDA que esmaece. É o último filho da fita e fica GRUDADO na
+           direita (position: sticky) — não some com a rolagem e, por ser o
+           último irmão, é desenhado POR CIMA das pílulas. Foi por isso que a
+           primeira tentativa (uma sombra no fundo da fita) não resolveu: o fundo fica
+           atrás do conteúdo, e o conteúdo aqui são pílulas opacas.
+
+           A margem negativa devolve exatamente a largura que ele ocupa, então
+           ele não empurra nada: só pinta por cima. E quando não há o que rolar,
+           o que ele esmaece é o próprio fundo — ou seja, não se vê nada. */
+        .fita-borda {
+          position: sticky; right: 0; flex: 0 0 32px; width: 32px;
+          margin-left: -32px; align-self: stretch; pointer-events: none;
+          background: linear-gradient(to right, transparent, var(--fita-fundo));
+        }
       `}</style>
       {/* Barra lateral */}
       <div style={{ width: 60, background: C.rail, display: (estreito && conversaId) ? "none" : "flex", flexDirection: "column", alignItems: "center", paddingTop: 8, gap: 8 }}>
@@ -2281,7 +2584,7 @@ export default function Painel({ sessao }) {
               >
                 <Avatar nome={a.nome} foto={a.foto_url} size={42} />
                 {n > 0 && (
-                  <span style={{ position: "absolute", top: -4, right: -4, minWidth: 19, height: 19, padding: "0 5px", borderRadius: 10, background: "#ff3b30", color: "#fff", fontSize: 11, fontWeight: 700, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${C.rail}`, boxSizing: "border-box" }}>
+                  <span style={{ position: "absolute", top: -4, right: -4, minWidth: 19, height: 19, padding: "0 5px", borderRadius: 10, background: "#d92b20", color: "#fff", fontSize: 11, fontWeight: 700, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${C.rail}`, boxSizing: "border-box" }}>
                     {n > 99 ? "99+" : n}
                   </span>
                 )}
@@ -2330,7 +2633,7 @@ export default function Painel({ sessao }) {
         {novaConversaAberta && (
           <div style={{ position: "absolute", inset: 0, zIndex: 40, background: C.panel, display: "flex", flexDirection: "column" }}>
             <div style={{ background: C.headerBar, padding: "16px 16px", display: "flex", alignItems: "center", gap: 18, borderBottom: `1px solid ${C.divider}` }}>
-              <button onClick={() => { setNovaConversaAberta(false); setContatoForm(null); setBuscaContato(""); }} title="Voltar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}><ArrowLeft size={20} color={C.textSecondary} /></button>
+              <button onClick={() => { setNovaConversaAberta(false); setContatoForm(null); setBuscaContato(""); }} title="Voltar" style={BOTAO_ICONE}><ArrowLeft size={20} color={C.textSecondary} /></button>
               <span style={{ fontSize: 16, fontWeight: 600 }}>Nova conversa</span>
             </div>
             <div style={{ flex: 1, overflowY: "auto" }}>
@@ -2409,12 +2712,12 @@ export default function Painel({ sessao }) {
               <Marca tamanho={19} cor={C.textPrimary} corFraca={C.textSecondary} />
             </div>
             {/* Nova conversa (⊞), estilo WhatsApp Web */}
-            <button onClick={() => { setBuscaContato(""); setContatoForm(null); setNovaConversaAberta(true); carregarContatos(); }} aria-label="Nova conversa" title="Nova conversa" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", color: C.textSecondary, padding: 0, marginRight: 4 }}>
+            <button onClick={() => { setBuscaContato(""); setContatoForm(null); setNovaConversaAberta(true); carregarContatos(); }} aria-label="Nova conversa" title="Nova conversa" style={{ ...BOTAO_ICONE, color: C.textSecondary }}>
               <SquarePen size={19} />
             </button>
             {/* Menu ⋮ do topo, estilo WhatsApp Web */}
             <span ref={menuTopoRef} style={{ position: "relative", display: "flex" }}>
-              <button onClick={() => setMenuTopoAberto((v) => !v)} aria-label="Menu" title="Menu" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", color: C.textSecondary, padding: 0 }}>
+              <button onClick={() => setMenuTopoAberto((v) => !v)} aria-label="Menu" title="Menu" style={{ ...BOTAO_ICONE, color: C.textSecondary }}>
                 <MoreVertical size={20} />
               </button>
               {menuTopoAberto && (
@@ -2444,14 +2747,15 @@ export default function Painel({ sessao }) {
               um — com um só, o botão não teria para onde levar. Quem alcança o
               quê é decidido pelo banco (as permissões), não por esta tela. */}
           {departamentosVisiveis.length > 1 && (
-            <div className="sem-scrollbar" style={{ display: "flex", gap: 6, marginBottom: 10, overflowX: "auto" }}>
+            <div className="sem-scrollbar fita" style={{ display: "flex", gap: 6, marginBottom: 10, "--fita-fundo": C.headerBar }}>
               {departamentosVisiveis.map((d) => {
                 const ativo = departamentoId === d.id;
                 return (
                   <button key={d.id} onClick={() => trocarDepartamento(d.id)} title={d.nome}
-                    style={{ flex: "1 0 auto", border: `1px solid ${ativo ? (d.cor || C.green) : C.divider}`, background: ativo ? (d.cor || C.green) : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 8, padding: "6px 10px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{d.nome}</button>
+                    style={{ flex: "1 0 auto", minHeight: 34, border: `1px solid ${ativo ? (d.cor || C.greenDark) : C.divider}`, background: ativo ? (d.cor || C.greenDark) : "transparent", color: ativo ? corDoTextoSobre(d.cor || C.greenDark) : C.textSecondary, borderRadius: 8, padding: "7px 10px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{d.nome}</button>
                 );
               })}
+              <span aria-hidden className="fita-borda" />
             </div>
           )}
           <div style={{ fontSize: 11, color: C.textSecondary, fontWeight: 600, letterSpacing: 0.3 }}>ATENDENDO COMO</div>
@@ -2479,23 +2783,24 @@ export default function Painel({ sessao }) {
         </div>
 
         {/* Abas de filtro estilo WhatsApp Web: Tudo, Não lidas, Favoritas + tags */}
-        <div className="sem-scrollbar" style={{ display: "flex", gap: 6, overflowX: "auto", padding: "0 12px 8px", background: C.panel }}>
+        <div className="sem-scrollbar fita" style={{ display: "flex", gap: 6, padding: "0 12px 8px", "--fita-fundo": C.panel }}>
           {[["tudo", "Tudo", null], ["naolidas", `Não lidas${totalNaoLidasLista ? " " + totalNaoLidasLista : ""}`, null], ["favoritas", "Favoritas", null]].map(([k, label]) => {
             const ativo = filtro === k;
             return (
-              <button key={k} onClick={() => setFiltro(k)} style={{ flexShrink: 0, border: `1px solid ${ativo ? C.green : C.divider}`, background: ativo ? C.green : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 20, padding: "3px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
+              <button key={k} onClick={() => setFiltro(k)} style={{ flexShrink: 0, minHeight: 32, border: `1px solid ${ativo ? C.greenDark : C.divider}`, background: ativo ? C.greenDark : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 20, padding: "5px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
             );
           })}
           {tags.map((t) => {
             const ativo = filtro === "tag:" + t.id;
             return (
-              <button key={t.id} onClick={() => setFiltro(ativo ? "tudo" : "tag:" + t.id)} style={{ flexShrink: 0, border: `1px solid ${t.cor}`, background: ativo ? t.cor : "transparent", color: ativo ? "#fff" : C.textPrimary, borderRadius: 20, padding: "3px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
+              <button key={t.id} onClick={() => setFiltro(ativo ? "tudo" : "tag:" + t.id)} style={{ flexShrink: 0, minHeight: 32, border: `1px solid ${t.cor}`, background: ativo ? t.cor : "transparent", color: ativo ? corDoTextoSobre(t.cor) : C.textPrimary, borderRadius: 20, padding: "5px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: t.cor, display: ativo ? "none" : "inline-block" }} />
                 {t.nome}
               </button>
             );
           })}
-          <button onClick={() => { setAbaConfig("tags"); setTagForm({ nome: "", cor: CORES_TAG[0] }); setConfigAberta(true); }} title="Nova tag" style={{ flexShrink: 0, width: 28, height: 26, borderRadius: 20, border: `1px solid ${C.divider}`, background: "transparent", color: C.textSecondary, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Plus size={15} /></button>
+          <button onClick={() => { setAbaConfig("tags"); setTagForm({ nome: "", cor: CORES_TAG[0] }); setConfigAberta(true); }} title="Nova tag" style={{ flexShrink: 0, width: 34, height: 32, borderRadius: 20, border: `1px solid ${C.divider}`, background: "transparent", color: C.textSecondary, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Plus size={15} /></button>
+          <span aria-hidden className="fita-borda" />
         </div>
 
         <div style={{ flex: 1, overflowY: "auto" }}>
@@ -2528,16 +2833,16 @@ export default function Painel({ sessao }) {
               <div key={c.id} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); naoLidasRef.current = c.nao_lidas || 0; setConversaId(c.id); } }} onClick={() => { naoLidasRef.current = c.nao_lidas || 0; setConversaId(c.id); }} onMouseEnter={() => setConvHover(c.id)} onMouseLeave={() => setConvHover((h) => (h === c.id ? null : h))} style={{ position: "relative", width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: c.id === conversaId ? C.listActive : (convHover === c.id ? C.divider : C.panel), borderBottom: `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary }}>
                 <Avatar nome={nome} foto={c.contato?.foto_url} size={48} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
                     <span style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
                       {c.favorita && <Star size={13} color="#f5c518" fill="#f5c518" style={{ flexShrink: 0 }} />}
                       <span style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nome}</span>
                     </span>
-                    <span style={{ fontSize: 11, color: c.nao_lidas ? C.green : C.textSecondary, flexShrink: 0 }}>{horaDe(c.ultima_atividade)}</span>
+                    <span style={{ fontSize: 11, color: c.nao_lidas ? C.horaNaoLida : C.textSecondary, flexShrink: 0 }}>{horaDe(c.ultima_atividade)}</span>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 2 }}>
                     {digitandoAtivo(c.id) ? (
-                      <span style={{ fontSize: 13, color: C.green, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 250 }}>digitando…</span>
+                      <span style={{ fontSize: 13, color: C.verdeTexto, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 250 }}>digitando…</span>
                     ) : (
                       <span style={{ fontSize: 13, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 250 }}>{previa}</span>
                     )}
@@ -2554,7 +2859,7 @@ export default function Painel({ sessao }) {
                       parece ter vindo do nada. */}
                   {busca.trim().length >= 3 && (achadosMsg[c.id] || achadosCad[c.id]) &&
                    !(c.contato?.nome || c.contato?.numero || "").toLowerCase().includes(busca.trim().toLowerCase()) && (
-                    <div style={{ marginTop: 3, fontSize: 11.5, color: C.green, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 260 }}>
+                    <div style={{ marginTop: 3, fontSize: 11.5, color: C.verdeTexto, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 260 }}>
                       {achadosMsg[c.id]
                         ? '💬 ' + achadosMsg[c.id]
                         : '🗂 ' + achadosCad[c.id]}
@@ -2563,13 +2868,19 @@ export default function Painel({ sessao }) {
                   {tagsDaConversa(c.id).length > 0 && (
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
                       {tagsDaConversa(c.id).map((t) => (
-                        <span key={t.id} style={{ fontSize: 10.5, fontWeight: 600, color: "#fff", background: t.cor, borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap" }}>{t.nome}</span>
+                        <span key={t.id} style={{ fontSize: 10.5, fontWeight: 600, color: corDoTextoSobre(t.cor), background: t.cor, borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap" }}>{t.nome}</span>
                       ))}
                     </div>
                   )}
                 </div>
                 {/* Botão do menuzinho (sempre visível, realça no hover — funciona no toque) */}
-                <button aria-label="Opções da conversa" onClick={(e) => { e.stopPropagation(); setMenuConversa(menuConversa === c.id ? null : c.id); }} title="Opções" style={{ position: "absolute", top: 8, right: 8, border: "none", background: c.id === conversaId ? C.listActive : C.headerBar, borderRadius: 6, cursor: "pointer", display: "flex", padding: 2, opacity: (convHover === c.id || menuConversa === c.id) ? 1 : 0.4, transition: "opacity .12s" }}>
+                {/* O "⌄" das opções da conversa. Era desenhado POR CIMA da linha
+                    (position:absolute, canto superior direito) e caía em cima da
+                    hora — 16px de sobreposição em toda conversa da lista, nos
+                    dois temas, com o horário riscado por um chevron meio
+                    transparente. Aqui ele é um irmão do bloco de texto: ocupa a
+                    sua faixa e não tem como cobrir nada. */}
+                <button aria-label="Opções da conversa" onClick={(e) => { e.stopPropagation(); setMenuConversa(menuConversa === c.id ? null : c.id); }} title="Opções" style={{ alignSelf: "center", flexShrink: 0, border: "none", background: "transparent", borderRadius: 8, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 6, marginRight: -6, color: C.textSecondary, opacity: (convHover === c.id || menuConversa === c.id) ? 1 : 0.6, transition: "opacity .12s" }}>
                   <ChevronDown size={18} color={C.textSecondary} />
                 </button>
                 {menuConversa === c.id && (
@@ -2613,27 +2924,33 @@ export default function Painel({ sessao }) {
           <>
             <div style={{ background: C.headerBar, padding: "10px 16px", display: "flex", alignItems: "center", gap: 12, borderBottom: `1px solid ${C.divider}` }}>
               {estreito && (
-                <button onClick={() => setConversaId(null)} title="Voltar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
+                <button onClick={() => setConversaId(null)} title="Voltar" style={BOTAO_ICONE}>
                   <ArrowLeft size={20} color={C.textSecondary} />
                 </button>
               )}
               <div onClick={() => setInfoAberta(true)} title="Ver dados do contato" style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, cursor: "pointer", minWidth: 0 }}>
               <Avatar nome={conversa.contato?.nome || conversa.contato?.numero} foto={conversa.contato?.foto_url} size={40} />
+              {/* TUDO AQUI DENTRO CABE EM UMA LINHA CADA.
+                  Sem as reticências, "Maria Aparecida da Silva Nascimento"
+                  quebrava em QUATRO linhas no celular, as tags quebravam em
+                  mais duas, e o cabeçalho passava de 290px — um terço da tela
+                  gasto para dizer com quem se está falando, empurrando a
+                  conversa para fora. */}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 15, fontWeight: 600 }}>{nomeDoContato(conversa.contato)}</div>
+                <div style={{ fontSize: 15, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nomeDoContato(conversa.contato)}</div>
                 {digitandoAtivo(conversa.id) ? (
-                  <div style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>digitando…</div>
+                  <div style={{ fontSize: 12, color: C.verdeTexto, fontWeight: 600 }}>digitando…</div>
                 ) : atendidoPorOutro(conversa.id) ? (
-                  <div style={{ fontSize: 12, color: modo === "escuro" ? "#e0a400" : "#8a6d00", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-                    <AlertCircle size={13} /> {atendidoPorOutro(conversa.id)} também está nesta conversa
+                  <div style={{ fontSize: 12, color: modo === "escuro" ? "#e0a400" : "#8a6d00", fontWeight: 600, display: "flex", alignItems: "center", gap: 4, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                    <AlertCircle size={13} style={{ flexShrink: 0 }} /> {atendidoPorOutro(conversa.id)} também está nesta conversa
                   </div>
                 ) : (
-                  <div style={{ fontSize: 12, color: C.textSecondary }}>via {comNumero(advogado)}</div>
+                  <div style={{ fontSize: 12, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>via {comNumero(advogado)}</div>
                 )}
-                {tagsDaConversa(conversa.id).length > 0 && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+                {!estreito && tagsDaConversa(conversa.id).length > 0 && (
+                  <div style={{ display: "flex", gap: 4, marginTop: 4, overflow: "hidden" }}>
                     {tagsDaConversa(conversa.id).map((t) => (
-                      <span key={t.id} style={{ fontSize: 10.5, fontWeight: 600, color: "#fff", background: t.cor, borderRadius: 4, padding: "1px 6px" }}>{t.nome}</span>
+                      <span key={t.id} style={{ fontSize: 10.5, fontWeight: 600, color: corDoTextoSobre(t.cor), background: t.cor, borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: t.nome.length > 12 ? 1 : 0 }}>{t.nome}</span>
                     ))}
                   </div>
                 )}
@@ -2642,12 +2959,11 @@ export default function Painel({ sessao }) {
               {/* Ficha do cliente no Vantoro (cadastro, esteira, processos) */}
               <button onClick={() => setFichaAberta((v) => !v)}
                       title="Ficha do cliente no Vantoro"
-                      style={{ border: "none", background: fichaAberta ? C.listActive : "transparent",
-                               borderRadius: 8, padding: 7, cursor: "pointer", display: "flex" }}>
+                      style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10, background: fichaAberta ? C.listActive : "transparent" }}>
                 <ClipboardList size={19} color={fichaAberta ? C.green : C.textSecondary} />
               </button>
               {/* Avatares dos atendentes que já interagiram com este contato */}
-              {atendentesInteragiram.length > 0 && (
+              {!estreito && atendentesInteragiram.length > 0 && (
                 <div title={`Já atenderam este contato: ${atendentesInteragiram.map((a) => a.nome).join(", ")}`} style={{ display: "flex", alignItems: "center", marginRight: 2 }}>
                   {atendentesInteragiram.slice(0, 4).map((a, idx) => (
                     <div key={a.nome} style={{ marginLeft: idx === 0 ? 0 : -8, borderRadius: "50%", border: `2px solid ${C.headerBar}`, display: "flex" }}>
@@ -2661,7 +2977,7 @@ export default function Painel({ sessao }) {
               )}
               {/* Etiquetar a conversa: abre um menu para marcar/desmarcar tags */}
               <span ref={tagMenuRef} style={{ position: "relative", display: "flex" }}>
-                <button aria-label="Etiquetas" onClick={() => setTagMenuAberto((v) => !v)} title="Etiquetas (tags)" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
+                <button aria-label="Etiquetas" onClick={() => setTagMenuAberto((v) => !v)} title="Etiquetas (tags)" style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10 }}>
                   <Tag size={19} color={tagMenuAberto || (tagsPorConversa[conversa.id] || []).length ? C.green : C.textSecondary} />
                 </button>
                 {tagMenuAberto && (
@@ -2680,11 +2996,11 @@ export default function Painel({ sessao }) {
                         </button>
                       );
                     })}
-                    <button onClick={() => { setTagMenuAberto(false); setAbaConfig("tags"); setTagForm(null); setConfigAberta(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 6, padding: "10px 12px", border: "none", borderTop: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.green, fontSize: 13, fontWeight: 600 }}><Plus size={15} /> Gerenciar tags</button>
+                    <button onClick={() => { setTagMenuAberto(false); setAbaConfig("tags"); setTagForm(null); setConfigAberta(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 6, padding: "10px 12px", border: "none", borderTop: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.verdeTexto, fontSize: 13, fontWeight: 600 }}><Plus size={15} /> Gerenciar tags</button>
                   </div>
                 )}
               </span>
-              <button aria-label="Buscar na conversa" onClick={() => setBuscaAberta((v) => !v)} title="Buscar na conversa" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
+              <button aria-label="Buscar na conversa" onClick={() => setBuscaAberta((v) => !v)} title="Buscar na conversa" style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10 }}>
                 <Search size={19} color={buscaAberta ? C.green : C.textSecondary} />
               </button>
             </div>
@@ -2692,7 +3008,7 @@ export default function Painel({ sessao }) {
             {infoAberta && (
               <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: estreito ? "100%" : 360, background: C.panel, borderLeft: `1px solid ${C.divider}`, zIndex: 45, display: "flex", flexDirection: "column", boxShadow: "-2px 0 12px rgba(0,0,0,.15)" }}>
                 <div style={{ background: C.headerBar, padding: "14px 16px", display: "flex", alignItems: "center", gap: 16, borderBottom: `1px solid ${C.divider}` }}>
-                  <button onClick={() => setInfoAberta(false)} title="Fechar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
+                  <button onClick={() => setInfoAberta(false)} title="Fechar" style={BOTAO_ICONE}>
                     <X size={22} color={C.textSecondary} />
                   </button>
                   <span style={{ fontSize: 16, fontWeight: 600 }}>Dados do contato</span>
@@ -2733,7 +3049,18 @@ export default function Painel({ sessao }) {
               </div>
             )}
 
-            <div ref={listaRef} onScroll={aoRolar} style={{ flex: 1, overflowY: "auto", padding: "20px 8%", display: "flex", flexDirection: "column", gap: 6 }}>
+            <div ref={listaRef} onScroll={aoRolar} style={{ flex: 1, overflowY: "auto", padding: estreito ? "16px 10px" : "20px 8%", display: "flex", flexDirection: "column", gap: 6 }}>
+              {/* O degrau para subir no histórico. A conversa abre com as
+                  últimas mensagens; o resto vem daqui, um lote por vez. Um
+                  botão e não rolagem automática: rolar para cima é também o
+                  gesto de quem só quer reler o que acabou de acontecer, e
+                  carregar sozinho puxaria a tela debaixo do dedo dessa pessoa. */}
+              {temMaisAntigas && (
+                <button onClick={carregarAntigas} disabled={buscandoAntigas}
+                        style={{ alignSelf: "center", marginBottom: 6, border: `1px solid ${C.divider}`, background: C.panel, color: C.textSecondary, borderRadius: 20, padding: "7px 16px", fontSize: 12.5, fontWeight: 600, cursor: buscandoAntigas ? "default" : "pointer" }}>
+                  {buscandoAntigas ? "Buscando…" : "↑ Carregar mensagens anteriores"}
+                </button>
+              )}
               {mensagens.map((m, i) => {
                 const saida = m.origem === "advogado";
                 const anterior = mensagens[i - 1];
@@ -2761,7 +3088,7 @@ export default function Painel({ sessao }) {
                       </div>
                     )}
                     {idDivisorNaoLidas === m.id && (
-                      <div style={{ alignSelf: "center", background: C.bubbleIn, color: C.green, fontSize: 12, fontWeight: 600, padding: "4px 14px", borderRadius: 8, boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", margin: "8px 0" }}>
+                      <div style={{ alignSelf: "center", background: C.bubbleIn, color: C.verdeTexto, fontSize: 12, fontWeight: 600, padding: "4px 14px", borderRadius: 8, boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", margin: "8px 0" }}>
                         MENSAGENS NÃO LIDAS
                       </div>
                     )}
@@ -2770,12 +3097,12 @@ export default function Painel({ sessao }) {
                       // Alinhada à direita, com cabeçalho (autor • hora) + avatar,
                       // bolha laranja e rodapé "Mensagem interna".
                       <div data-msg-id={m.id} style={{ display: "flex", justifyContent: "flex-end", alignItems: "flex-end", gap: 6, marginTop: 4 }}>
-                        <div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", alignItems: "flex-end", opacity: m._status === "enviando" ? 0.7 : 1 }}>
+                        <div style={{ maxWidth: estreito ? "88%" : "70%", display: "flex", flexDirection: "column", alignItems: "flex-end", opacity: m._status === "enviando" ? 0.7 : 1 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2, marginRight: 2 }}>
                             <span style={{ fontSize: 12.5, fontWeight: 700, color: corNome(m.autor, modo) }}>{m.autor || "equipe"}</span>
                             <span style={{ fontSize: 11, color: C.textSecondary }}>• {horaCurta(m.criado_em)}</span>
                           </div>
-                          <div style={{ background: "#d98a2b", color: "#fff", borderRadius: 8, padding: "7px 11px 6px", boxShadow: "0 1px 0.5px rgba(0,0,0,.2)", minWidth: 120 }}>
+                          <div style={{ background: "#a35e0c", color: "#fff", borderRadius: 8, padding: "7px 11px 6px", boxShadow: "0 1px 0.5px rgba(0,0,0,.2)", minWidth: 120 }}>
                             <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 1 }}>{m.autor || "equipe"}:</div>
                             <div style={{ fontSize: 14, lineHeight: 1.35, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{formatarTexto(m.texto, "#fff3d6")}</div>
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, fontSize: 10.5, color: "rgba(255,255,255,.85)", marginTop: 3 }}>
@@ -2787,7 +3114,7 @@ export default function Painel({ sessao }) {
                       </div>
                     ) : (
                     <div data-msg-id={m.id} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6, marginTop: mesmoRemetente ? -4 : 0 }}>
-                      <div style={{ position: "relative", maxWidth: "65%", background: saida ? C.bubbleOut : C.bubbleIn, color: C.textPrimary, borderRadius: 8, padding: m.tipo === "imagem" ? 4 : "6px 9px 8px", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
+                      <div style={{ position: "relative", maxWidth: estreito ? "84%" : "65%", background: saida ? C.bubbleOut : C.bubbleIn, color: C.textPrimary, borderRadius: 8, padding: m.tipo === "imagem" ? 4 : "6px 9px 8px", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
                         {mostrarAutor && (
                           <div style={{ fontSize: 12, fontWeight: 700, color: corNome(m.enviado_por, modo), marginBottom: 1 }}>{m.enviado_por}</div>
                         )}
@@ -2798,16 +3125,23 @@ export default function Painel({ sessao }) {
                         )}
                         {m.resposta_previa && (
                           <div style={{ borderLeft: `3px solid ${C.green}`, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 4, padding: "3px 8px", marginBottom: 4 }}>
-                            <div style={{ color: C.green, fontWeight: 600, fontSize: 12 }}>{m.resposta_autor === "advogado" ? "Você" : (conversa.contato?.nome || "Contato")}</div>
+                            <div style={{ color: C.verdeTexto, fontWeight: 600, fontSize: 12 }}>{m.resposta_autor === "advogado" ? "Você" : (conversa.contato?.nome || "Contato")}</div>
                             <div style={{ color: C.textSecondary, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 260 }}>{m.resposta_previa}</div>
                           </div>
                         )}
                         {m.tipo === "imagem" && m.midia_url && (
-                          <img src={m.midia_url} alt="imagem" onClick={() => setImagemAberta(m.midia_url)} onLoad={() => { if (pertoDoFim) fimRef.current?.scrollIntoView(); }} style={{ maxWidth: "min(260px, 62vw)", maxHeight: 320, width: "auto", height: "auto", borderRadius: 6, display: "block", cursor: "pointer" }} />
+                          // Um `button` de verdade em volta da imagem. Como
+                          // `<img onClick>` solto, ela abria no clique e não
+                          // abria de jeito nenhum pelo teclado — e o leitor de
+                          // tela anunciava "imagem", não "abrir imagem".
+                          <button onClick={() => setImagemAberta(m.midia_url)} aria-label="Abrir a imagem em tela cheia"
+                                  style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", display: "block", borderRadius: 6 }}>
+                            <img src={m.midia_url} alt="Imagem recebida na conversa" loading="lazy" decoding="async" onLoad={() => { if (pertoDoFim) fimRef.current?.scrollIntoView(); }} style={{ maxWidth: "min(260px, 62vw)", maxHeight: 320, width: "auto", height: "auto", borderRadius: 6, display: "block" }} />
+                          </button>
                         )}
                         {m.tipo === "audio" && <BolhaAudio C={C} saida={saida} url={m.midia_url} />}
                         {m.tipo === "video" && m.midia_url && (
-                          <video controls src={m.midia_url} style={{ maxWidth: "min(260px, 62vw)", borderRadius: 6, display: "block" }} />
+                          <video controls preload="none" src={m.midia_url} style={{ maxWidth: "min(260px, 62vw)", borderRadius: 6, display: "block" }} />
                         )}
                         {m.tipo === "documento" && (
                           m.midia_url ? (
@@ -2862,7 +3196,7 @@ export default function Painel({ sessao }) {
               <div style={{ background: C.headerBar, padding: "8px 16px 0" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.searchBg, borderLeft: `4px solid ${C.green}`, borderRadius: 6, padding: "6px 10px" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ color: C.green, fontWeight: 600, fontSize: 12 }}>Respondendo {respondendo.autor === "advogado" ? "você mesmo" : (conversa.contato?.nome || "o contato")}</div>
+                    <div style={{ color: C.verdeTexto, fontWeight: 600, fontSize: 12 }}>Respondendo {respondendo.autor === "advogado" ? "você mesmo" : (conversa.contato?.nome || "o contato")}</div>
                     <div style={{ color: C.textSecondary, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{respondendo.previa}</div>
                   </div>
                   <button onClick={() => setRespondendo(null)} title="Cancelar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
@@ -2872,7 +3206,13 @@ export default function Painel({ sessao }) {
               </div>
             )}
 
-            <div style={{ background: C.headerBar, padding: "10px 16px", display: "flex", alignItems: "flex-end", gap: 10, position: "relative" }}>
+            {/* No celular a barra tem CINCO controles disputando 390px: emoji, nota,
+                anexo, a caixa de texto e o microfone. Com o respiro de 10px em
+                cada botão e 10 de vão entre eles, sobravam ~140px para escrever
+                — o "Digite uma mensagem" nem cabia numa linha. Aqui o respiro
+                cai para 7 (o alvo continua com 36-38px, contra os 22 de antes)
+                e o vão para 2. */}
+            <div style={{ background: C.headerBar, padding: estreito ? "8px 8px" : "10px 16px", display: "flex", alignItems: "flex-end", gap: estreito ? 2 : 10, position: "relative" }}>
               {audioPronto ? (
                 // Prévia do áudio gravado: ouça antes de enviar.
                 <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, padding: "6px 2px" }}>
@@ -2909,7 +3249,7 @@ export default function Painel({ sessao }) {
                         ))}
                       </div>
                     )}
-                    <button onClick={() => setEmojiAberto((v) => !v)} title="Emojis" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", padding: 0 }}>
+                    <button onClick={() => setEmojiAberto((v) => !v)} title="Emojis" style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10 }}>
                       <Smile size={24} color={emojiAberto ? C.green : C.textSecondary} />
                     </button>
                   </span>
@@ -2926,10 +3266,10 @@ export default function Painel({ sessao }) {
                     </div>
                   )}
                   {/* Alternar para NOTA INTERNA (comentário que não vai ao WhatsApp) */}
-                  <button onClick={() => setModoNota((v) => !v)} title={modoNota ? "Voltar para mensagem normal" : "Escrever nota interna (só a equipe vê)"} style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", marginBottom: 9, padding: 0 }}>
+                  <button onClick={() => setModoNota((v) => !v)} title={modoNota ? "Voltar para mensagem normal" : "Escrever nota interna (só a equipe vê)"} style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10, marginBottom: 1 }}>
                     <StickyNote size={22} color={modoNota ? "#d4a017" : C.textSecondary} />
                   </button>
-                  <button onClick={() => fileRef.current?.click()} title="Anexar arquivo" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", marginBottom: 9, padding: 0 }}>
+                  <button onClick={() => fileRef.current?.click()} title="Anexar arquivo" style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10, marginBottom: 1 }}>
                     <Paperclip size={22} color={C.textSecondary} />
                   </button>
                   <input ref={fileRef} type="file" onChange={aoEscolherArquivo} style={{ display: "none" }} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" />
@@ -2950,12 +3290,12 @@ export default function Painel({ sessao }) {
                     }}
                     rows={1}
                     placeholder={modoNota ? "Escreva uma nota interna (só a equipe vê)" : "Digite uma mensagem"}
-                    style={{ flex: 1, border: modoNota ? "1px solid #e6cf6a" : "none", outline: "none", background: modoNota ? (modo === "escuro" ? "#3a3320" : "#fff8d6") : C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "10px 14px", fontSize: 14.5, resize: "none", lineHeight: 1.35, maxHeight: 120, overflowY: "auto", fontFamily: "inherit" }}
+                    style={{ flex: 1, minWidth: 0, border: modoNota ? "1px solid #e6cf6a" : "none", outline: "none", background: modoNota ? (modo === "escuro" ? "#3a3320" : "#fff8d6") : C.inputBg, color: C.textPrimary, borderRadius: 8, padding: estreito ? "9px 11px" : "10px 14px", fontSize: 14.5, resize: "none", lineHeight: 1.35, maxHeight: 120, overflowY: "auto", fontFamily: "inherit" }}
                   />
                   {(rascunho.trim() || modoNota) ? (
                     <button onClick={enviar} title={modoNota ? "Salvar nota" : "Enviar"} style={{ border: "none", background: modoNota ? "#d4a017" : C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, marginBottom: 1 }}>{modoNota ? <StickyNote size={19} color="#fff" /> : <Send size={20} color="#fff" />}</button>
                   ) : (
-                    <button onClick={iniciarGravacao} title="Gravar áudio" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", padding: 0 }}>
+                    <button onClick={iniciarGravacao} title="Gravar áudio" style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10 }}>
                       <Mic size={24} color={C.textSecondary} />
                     </button>
                   )}
@@ -2987,17 +3327,19 @@ export default function Painel({ sessao }) {
         <div onClick={() => { if (!rapidaForm && !tagForm && !contatoForm && !importando && !(abaConfig === "importar" && impArquivos.length)) setConfigAberta(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: estreito ? 0 : 24 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 900, height: estreito ? "100%" : "86vh", background: C.panel, borderRadius: estreito ? 0 : 12, overflow: "hidden", display: "flex", flexDirection: estreito ? "column" : "row", boxShadow: "0 10px 40px rgba(0,0,0,.4)" }}>
             {/* Menu à esquerda */}
-            <div style={{ width: estreito ? "100%" : 210, background: C.headerBar, borderRight: estreito ? "none" : `1px solid ${C.divider}`, borderBottom: estreito ? `1px solid ${C.divider}` : "none", display: "flex", flexDirection: estreito ? "row" : "column", padding: estreito ? 8 : 14, gap: 4, overflowX: estreito ? "auto" : "visible" }}>
+            <div style={{ width: estreito ? "100%" : 210, background: C.headerBar, borderRight: estreito ? "none" : `1px solid ${C.divider}`, borderBottom: estreito ? `1px solid ${C.divider}` : "none", display: "flex", flexDirection: estreito ? "row" : "column", padding: estreito ? 8 : 14, gap: 4, overflowX: estreito ? "auto" : "visible", "--fita-fundo": C.headerBar }}
+                 className={estreito ? "sem-scrollbar fita" : undefined}>
               <div style={{ fontSize: 16, fontWeight: 700, padding: "6px 10px 14px", color: C.textPrimary, display: estreito ? "none" : "block" }}>Configurações</div>
               {[["perfil", "Perfil"], ["aparencia", "Aparência"], ["contatos", "Contatos"], ["rapidas", "Mensagens rápidas"], ["tags", "Tags"], ["importar", "Importar histórico"]].map(([k, label]) => (
                 <button key={k} onClick={() => { setAbaConfig(k); setRapidaForm(null); setTagForm(null); setContatoForm(null); }} style={{ textAlign: "left", border: "none", background: abaConfig === k ? C.listActive : "transparent", color: C.textPrimary, borderRadius: 8, padding: "10px 12px", fontSize: 14, fontWeight: abaConfig === k ? 600 : 500, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{label}</button>
               ))}
+              {estreito && <span aria-hidden className="fita-borda" />}
               <div style={{ flex: 1 }} />
               <button onClick={sair} style={{ display: estreito ? "none" : "flex", alignItems: "center", gap: 8, border: "none", background: "transparent", color: "#e5573f", borderRadius: 8, padding: "10px 12px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}><LogOut size={17} /> Sair</button>
             </div>
             {/* Conteúdo à direita */}
             <div style={{ flex: 1, overflowY: "auto", padding: estreito ? "20px 16px" : 28, position: "relative" }}>
-              <button onClick={() => setConfigAberta(false)} title="Fechar" style={{ position: "absolute", top: 14, right: 14, border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex" }}><X size={24} /></button>
+              <button onClick={() => setConfigAberta(false)} title="Fechar" style={{ ...BOTAO_ICONE, position: "absolute", top: 8, right: 8, color: C.textSecondary }}><X size={24} /></button>
 
               {abaConfig === "perfil" && (
                 <div style={{ maxWidth: 420 }}>
@@ -3188,7 +3530,7 @@ export default function Painel({ sessao }) {
                                 <div style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nomeDoContato(c)}</div>
                                 <div style={{ fontSize: 12.5, color: C.textSecondary }}>+{c.numero}</div>
                               </div>
-                              <button onClick={() => abrirConversaContato(c)} title="Abrir conversa" style={{ display: "flex", alignItems: "center", gap: 6, border: `1px solid ${C.green}`, background: "transparent", color: C.green, borderRadius: 8, padding: "7px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}><MessageSquarePlus size={15} /> Conversar</button>
+                              <button onClick={() => abrirConversaContato(c)} title="Abrir conversa" style={{ display: "flex", alignItems: "center", gap: 6, border: `1px solid ${C.green}`, background: "transparent", color: C.verdeTexto, borderRadius: 8, padding: "7px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}><MessageSquarePlus size={15} /> Conversar</button>
                             </div>
                           ));
                         })()}
@@ -3235,7 +3577,7 @@ export default function Painel({ sessao }) {
                       {impArrastando ? "Solte os arquivos aqui" : "Arraste os arquivos aqui"}
                     </div>
                     <div style={{ fontSize: 12.5 }}>
-                      ou <span style={{ color: C.green, fontWeight: 600 }}>clique para escolher</span> — .zip ou .txt
+                      ou <span style={{ color: C.verdeTexto, fontWeight: 600 }}>clique para escolher</span> — .zip ou .txt
                     </div>
                   </div>
 
@@ -3317,7 +3659,7 @@ export default function Painel({ sessao }) {
             <button onClick={(e) => { e.stopPropagation(); baixarImagem(imagemAberta); }} title="Baixar imagem" style={{ background: "transparent", border: "none", cursor: "pointer", color: "#fff", display: "flex" }}>
               <Download size={26} />
             </button>
-            <button onClick={() => setImagemAberta(null)} title="Fechar" style={{ background: "transparent", border: "none", cursor: "pointer", color: "#fff", display: "flex" }}>
+            <button onClick={() => setImagemAberta(null)} title="Fechar" style={{ ...BOTAO_ICONE, color: "#fff" }}>
               <X size={28} />
             </button>
           </div>
@@ -3352,7 +3694,7 @@ export default function Painel({ sessao }) {
                         ref={i === posNaGaleria ? (el) => el && el.scrollIntoView({ block: "nearest", inline: "center" }) : undefined}
                         title={`Imagem ${i + 1}`}
                         style={{ flex: "none", width: 62, height: 62, padding: 0, borderRadius: 6, cursor: "pointer", overflow: "hidden", background: "rgba(255,255,255,.08)", border: i === posNaGaleria ? "2px solid #25d366" : "2px solid transparent", opacity: i === posNaGaleria ? 1 : 0.6 }}>
-                  <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                  <img src={url} alt="" loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                 </button>
               ))}
             </div>
@@ -3452,9 +3794,9 @@ export default function Painel({ sessao }) {
       {/* MÍDIAS, DOCUMENTOS E LINKS — de todas as conversas que a pessoa alcança. */}
       {midiasAberta && (
         <div onClick={() => setMidiasAberta(false)}
-             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 190, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 190, display: "flex", alignItems: "center", justifyContent: "center", padding: estreito ? 0 : 16 }}>
           <div onClick={(e) => e.stopPropagation()}
-               style={{ background: C.panel, color: C.textPrimary, borderRadius: 14, width: "100%", maxWidth: 940, height: "min(86vh, 760px)", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 24px 60px rgba(0,0,0,.4)" }}>
+               style={{ background: C.panel, color: C.textPrimary, borderRadius: estreito ? 0 : 14, width: "100%", maxWidth: 940, height: estreito ? "100dvh" : "min(86vh, 760px)", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 24px 60px rgba(0,0,0,.4)" }}>
             {/* No celular os três nomes das abas mais o título mais o X não cabem
                 em 390px, e o que sobrava para fora era justamente o X de fechar.
                 Aqui o título perde o subtítulo, a fita de abas encolhe e rola, e
@@ -3464,14 +3806,15 @@ export default function Painel({ sessao }) {
                 <div style={{ fontSize: 15.5, fontWeight: 700 }}>Mídia</div>
                 {!estreito && <div style={{ fontSize: 12, color: C.textSecondary }}>de todas as conversas</div>}
               </div>
-              <div className="sem-scrollbar" style={{ flex: 1, minWidth: 0, display: "flex", gap: 4, justifyContent: estreito ? "flex-end" : "center", overflowX: "auto" }}>
+              <div className="sem-scrollbar fita" style={{ flex: 1, minWidth: 0, display: "flex", gap: 4, justifyContent: estreito ? "flex-end" : "center", "--fita-fundo": C.panel }}>
                 {[["midias", "Mídias"], ["documentos", "Documentos"], ["links", "Links"]].map(([k, r]) => (
                   <button key={k} onClick={() => setMidiaAba(k)}
                           style={{ flexShrink: 0, border: "none", background: "transparent", cursor: "pointer", padding: estreito ? "8px 8px" : "8px 14px", fontSize: 14, fontWeight: 600, color: midiaAba === k ? C.textPrimary : C.textSecondary, borderBottom: `2px solid ${midiaAba === k ? C.green : "transparent"}` }}>{r}</button>
                 ))}
+                <span aria-hidden className="fita-borda" />
               </div>
-              <button onClick={() => setMidiasAberta(false)} aria-label="Fechar"
-                      style={{ flexShrink: 0, border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex" }}>
+              <button onClick={() => setMidiasAberta(false)} aria-label="Fechar" title="Fechar"
+                      style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10, color: C.textSecondary }}>
                 <X size={20} />
               </button>
             </div>
@@ -3496,7 +3839,7 @@ export default function Painel({ sessao }) {
                             title={nomePorConversa[m.conversa_id] || ""}
                             style={{ position: "relative", border: "none", padding: 0, aspectRatio: "1 / 1", borderRadius: 8, overflow: "hidden", cursor: "pointer", background: C.inputBg }}>
                       {m.tipo === "imagem"
-                        ? <img src={m.midia_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        ? <img src={m.midia_url} alt="" loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                         : <span style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: C.textSecondary, fontSize: 13 }}>vídeo</span>}
                       <span style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "14px 8px 6px", fontSize: 11.5, color: "#fff", textAlign: "left", background: "linear-gradient(transparent, rgba(0,0,0,.75))", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {nomePorConversa[m.conversa_id] || ""}

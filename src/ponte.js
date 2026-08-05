@@ -27,14 +27,33 @@ export async function chamarPonte(caminho, opcoes = {}) {
   const jwt = data?.session?.access_token;
   if (!jwt) throw new Error("Sessão expirada. Entre de novo.");
 
-  const r = await fetch(BRIDGE_URL + caminho, {
-    ...opcoes,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: "Bearer " + jwt,
-      ...(opcoes.headers || {}),
-    },
-  });
+  // TEMPO LIMITE. A ponte roda no plano free da Render e hiberna: a primeira
+  // chamada depois de um tempo parado pode demorar quase um minuto para
+  // acordar o servidor — e, se ela nunca responder, o `fetch` fica pendurado
+  // para sempre. A ficha do cliente ficava em "Consultando…" sem fim, sem erro
+  // e sem botão de desistir, e o atendente não tinha como saber se era lento
+  // ou se tinha travado.
+  const relogio = new AbortController();
+  const estourou = setTimeout(() => relogio.abort(), 30000);
+  let r;
+  try {
+    r = await fetch(BRIDGE_URL + caminho, {
+      ...opcoes,
+      signal: relogio.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + jwt,
+        ...(opcoes.headers || {}),
+      },
+    });
+  } catch (err) {
+    if (err && err.name === "AbortError") {
+      throw new Error("O Vantoro demorou demais para responder. Tente de novo em alguns segundos.");
+    }
+    throw new Error("Não consegui falar com o Vantoro. Verifique a conexão.");
+  } finally {
+    clearTimeout(estourou);
+  }
   const corpo = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(corpo.erro || "Não consegui falar com o Vantoro.");
   return corpo;
