@@ -156,8 +156,12 @@ const TEMAS = {
   escuro: {
     rail: "#161717", headerBar: "#202c33", panel: "#111b21", listActive: "#2a3942",
     chatBg: "#0b141a", bubbleIn: "#202c33", bubbleOut: "#005c4b", green: "#00a884",
-    greenDark: "#025144", textPrimary: "#e9edef", textSecondary: "#8696a0",
+    greenDark: "#025144", textPrimary: "#e9edef", textSecondary: "#9aa8b1",
     divider: "#222d34", unread: "#008069", inputBg: "#2a3942", searchBg: "#202c33",
+    // Um tom acima do #8696a0 de antes: aquele dava 5,7:1 na linha comum, mas
+    // só 3,9:1 na conversa SELECIONADA, que tem o fundo mais claro — e a
+    // prévia da conversa aberta é justamente a que mais se lê agora que ela
+    // continua na lista com o selo de não lida.
     placeholderCircle: "#202c33", link: "#53bdeb",
     verdeTexto: "#1fbf9c", horaNaoLida: "#1fbf9c",
   },
@@ -685,6 +689,7 @@ export default function Painel({ sessao }) {
   const [tagForm, setTagForm] = useState(null); // { id?, nome, cor } sendo criada/editada
   const [tagMenuAberto, setTagMenuAberto] = useState(false); // menu de aplicar tags na conversa aberta
   const [menuTopoAberto, setMenuTopoAberto] = useState(false); // menu ⋮ do topo da lista
+  const [menuEtiquetas, setMenuEtiquetas] = useState(false); // lista de etiquetas para filtrar
   const [largura, setLargura] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1200));
   const gravadorRef = useRef(null);
   const chunksRef = useRef([]);
@@ -696,7 +701,8 @@ export default function Painel({ sessao }) {
   const fotoPerfilRef = useRef(null); // input de arquivo para a foto do perfil
   const tagMenuRef = useRef(null); // menu de aplicar tags (fecha ao clicar fora)
   const txtRef = useRef(null); // input de arquivo .txt (importar histórico)
-  const menuTopoRef = useRef(null); // menu ⋮ do topo (fecha ao clicar fora)
+  const menuTopoRef = useRef(null);
+  const etiquetasRef = useRef(null); // menu ⋮ do topo (fecha ao clicar fora)
 
   const C = TEMAS[modo];
   const estreito = largura < 768; // layout de celular: mostra lista OU conversa
@@ -868,11 +874,8 @@ export default function Painel({ sessao }) {
     // existir: pedi-la no `order` faria a consulta inteira falhar, e a lista de
     // conversas sumiria por causa de um recurso que nem foi instalado.
     const porFixada = (a, b) => (b.fixada ? 1 : 0) - (a.fixada ? 1 : 0);
-    // A conversa que está aberta agora não deve mostrar contador de não lidas
-    // (estou lendo em tempo real), igual ao WhatsApp Web.
-    const lista = (data || []).map((c) =>
-      c.id === conversaIdRef.current ? { ...c, nao_lidas: 0 } : c
-    ).sort(porFixada);
+    // A conversa aberta mantém o contador dela: abrir não é responder.
+    const lista = (data || []).slice().sort(porFixada);
     setConversas(lista);
     carregarAtendimentos(advId);
     carregarUltimasMidias(advId);
@@ -1431,8 +1434,17 @@ export default function Painel({ sessao }) {
     // Veio o lote cheio? Então provavelmente há mais para trás.
     setTemMaisAntigas((data || []).length >= TETO_MENSAGENS);
     naoLidasRef.current = 0; // usa só na abertura
-    // Zera o contador de não lidas desta conversa.
-    await supabase.from("conversas").update({ nao_lidas: 0 }).eq("id", convId);
+    // AQUI ZERAVA O CONTADOR. Não zera mais.
+    //
+    // Abrir a conversa era o suficiente para ela sumir da lista de não lidas —
+    // e abrir não é atender. Quem passa o olho para saber do que se trata, ou
+    // clica sem querer, apagava o único sinal de que aquele cliente estava
+    // esperando resposta. Com a equipe dividindo os mesmos telefones, o sinal
+    // apagado por um some para todos.
+    //
+    // Agora a conversa só vira "lida" quando alguém RESPONDE o contato (ver
+    // `marcarLida`, chamada em `enviar` e em `enviarArquivo`) ou quando alguém
+    // diz explicitamente que já tratou, no botão do cabeçalho.
     // Marca que EU estou atendendo (para os outros verem). Na primeira recusa
     // do banco o recurso se desliga e nem esta gravação nem o pulso de 60s
     // voltam a tentar — ver RECURSOS, no alto do arquivo.
@@ -1546,11 +1558,10 @@ export default function Painel({ sessao }) {
             // à provisória (ou vir de backfill) e não pode cair no fim da lista.
             return [...base, nova].sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em));
           });
-          // Cheguei uma mensagem do contato e a conversa está aberta: já conta
-          // como lida (zera o contador no banco), igual ao WhatsApp Web.
-          if (nova.origem === "contato") {
-            supabase.from("conversas").update({ nao_lidas: 0 }).eq("id", conversaIdRef.current).then(() => {});
-          }
+          // Mensagem nova do contato com a conversa aberta TAMBÉM conta como
+          // não lida. Estar com a tela aberta não é ter respondido — e é
+          // justamente com a conversa aberta que chega a mensagem que a pessoa
+          // ainda vai ler e responder depois.
         }
         // Esta mensagem é do advogado atualmente aberto? Se a conversa já está
         // na lista, sim. Se não está (pode ser uma conversa NOVA — lead novo),
@@ -1605,7 +1616,7 @@ export default function Painel({ sessao }) {
             ...c,
             ultima_mensagem: cv.ultima_mensagem,
             ultima_atividade: cv.ultima_atividade,
-            nao_lidas: cv.id === conversaIdRef.current ? 0 : cv.nao_lidas,
+            nao_lidas: cv.nao_lidas,
             favorita: cv.favorita,
             arquivada: cv.arquivada,
             // Fixar vale para a equipe toda, então quem fixou de outra máquina
@@ -1897,6 +1908,7 @@ export default function Painel({ sessao }) {
       else if (novaConversaAberta) setNovaConversaAberta(false);
       else if (menuConversa) setMenuConversa(null);
       else if (menuTopoAberto) setMenuTopoAberto(false);
+      else if (menuEtiquetas) setMenuEtiquetas(false);
       else if (tagMenuAberto) setTagMenuAberto(false);
       else if (emojiAberto) setEmojiAberto(false);
       else if (seletorAberto) setSeletorAberto(false);
@@ -1908,11 +1920,12 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo, conversaId]);
+  }, [imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo, conversaId]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
     function aoClicar(e) {
+      if (menuEtiquetas && etiquetasRef.current && !etiquetasRef.current.contains(e.target)) setMenuEtiquetas(false);
       if (emojiAberto && emojiRef.current && !emojiRef.current.contains(e.target)) setEmojiAberto(false);
       if (seletorAberto && seletorRef.current && !seletorRef.current.contains(e.target)) setSeletorAberto(false);
       if (tagMenuAberto && tagMenuRef.current && !tagMenuRef.current.contains(e.target)) setTagMenuAberto(false);
@@ -1920,7 +1933,7 @@ export default function Painel({ sessao }) {
     }
     document.addEventListener("mousedown", aoClicar);
     return () => document.removeEventListener("mousedown", aoClicar);
-  }, [emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto]);
+  }, [emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas]);
 
   // Fecha o menuzinho da conversa (marcar não lida) ao clicar em qualquer lugar.
   useEffect(() => {
@@ -2080,6 +2093,22 @@ export default function Painel({ sessao }) {
     mostrarAviso("Todas marcadas como lidas");
   }
 
+  // Marca a conversa como lida. É o gesto de "já tratei disto".
+  //
+  // Acontece em dois momentos, e só nesses dois: quando alguém RESPONDE o
+  // contato (mensagem ou anexo) e quando alguém aperta o botão no cabeçalho.
+  // NOTA INTERNA NÃO CONTA: ela é recado entre a equipe, o contato não recebe
+  // nada, e o cliente continua esperando exatamente como estava.
+  const marcarLida = useCallback(async (convId) => {
+    if (!convId) return;
+    setConversas((prev) => prev.map((c) => (c.id === convId ? { ...c, nao_lidas: 0 } : c)));
+    const { error } = await supabase.from("conversas").update({ nao_lidas: 0 }).eq("id", convId);
+    // Não deu para gravar: devolve o que o banco tem, senão a tela diz "lida"
+    // e o resto da equipe continua vendo o selo.
+    if (error) { mostrarAviso("Não consegui marcar como lida."); carregarConversas(advogadoIdRef.current); }
+    else carregarNaoLidasPorAdv();
+  }, [carregarConversas, carregarNaoLidasPorAdv]);
+
   async function enviar() {
     if (modoNota) { enviarNota(); return; }
     const t = rascunho.trim();
@@ -2110,7 +2139,10 @@ export default function Painel({ sessao }) {
       // Nem entrou na fila: marca como erro para o atendente reenviar.
       setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _status: "erro" } : m)));
       mostrarAviso("Não consegui enviar a mensagem. Toque em 'reenviar'.");
+      return;
     }
+    // Respondi o contato: a conversa deixa de estar pendente.
+    marcarLida(conversaId);
   }
 
   // Salva uma NOTA INTERNA (comentário da equipe). Não vai para o WhatsApp:
@@ -2239,6 +2271,8 @@ export default function Painel({ sessao }) {
         midia_url: url, midia_mime: file.type, midia_nome: nome, enviado_por: meuNome, enviado_por_foto: minhaFoto,
       });
       if (filaErr) throw new Error("Falha ao colocar na fila (banco): " + (filaErr.message || filaErr));
+      // Anexo também é resposta ao contato: a conversa deixa de estar pendente.
+      marcarLida(convId);
     } catch (err) {
       setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _status: "erro" } : m)));
       mostrarAviso("Não consegui enviar o anexo. " + (err?.message || err));
@@ -2370,6 +2404,13 @@ export default function Painel({ sessao }) {
   const totalNaoLidasLista = conversas.filter((c) => !c.arquivada && (c.nao_lidas || 0) > 0).length;
   // Quantas estão arquivadas (para o contador da linha "Arquivadas").
   const totalArquivadas = conversas.filter((c) => c.arquivada).length;
+
+  // A etiqueta escolhida no filtro, quando há uma. É ela que dá cor e nome à
+  // pílula de etiquetas — sem isso, com o filtro ligado a lista fica curta e
+  // nada na tela diz por quê.
+  const tagFiltrada = filtro.startsWith("tag:")
+    ? tags.find((t) => t.id === filtro.slice(4)) || null
+    : null;
 
   // Aplica a aba/filtro selecionado a uma conversa.
   function passaNoFiltro(c) {
@@ -2752,7 +2793,18 @@ export default function Painel({ sessao }) {
                 const ativo = departamentoId === d.id;
                 return (
                   <button key={d.id} onClick={() => trocarDepartamento(d.id)} title={d.nome}
-                    style={{ flex: "1 0 auto", minHeight: 34, border: `1px solid ${ativo ? (d.cor || C.greenDark) : C.divider}`, background: ativo ? (d.cor || C.greenDark) : "transparent", color: ativo ? corDoTextoSobre(d.cor || C.greenDark) : C.textSecondary, borderRadius: 8, padding: "7px 10px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{d.nome}</button>
+                    /* O departamento escolhido é SEMPRE o mesmo verde, e não a
+                       cor cadastrada dele. A cor mudando a cada troca fazia o
+                       topo da tela mudar de cor sem que nada de importante
+                       tivesse mudado — e verde, azul e dourado no mesmo lugar
+                       não significam nada: quem escolhe é a pessoa, não o
+                       sistema avisando de algo. A cor de cada departamento
+                       continua no banco e continua servindo onde ela de fato
+                       identifica um: no pontinho ao lado do nome. */
+                    style={{ flex: "1 0 auto", minHeight: 34, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, border: `1px solid ${ativo ? C.greenDark : C.divider}`, background: ativo ? C.greenDark : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 8, padding: "7px 10px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+                    {d.cor && !ativo && <span style={{ width: 7, height: 7, borderRadius: "50%", background: d.cor, flexShrink: 0 }} />}
+                    {d.nome}
+                  </button>
                 );
               })}
               <span aria-hidden className="fita-borda" />
@@ -2782,25 +2834,65 @@ export default function Painel({ sessao }) {
           </div>
         </div>
 
-        {/* Abas de filtro estilo WhatsApp Web: Tudo, Não lidas, Favoritas + tags */}
-        <div className="sem-scrollbar fita" style={{ display: "flex", gap: 6, padding: "0 12px 8px", "--fita-fundo": C.panel }}>
-          {[["tudo", "Tudo", null], ["naolidas", `Não lidas${totalNaoLidasLista ? " " + totalNaoLidasLista : ""}`, null], ["favoritas", "Favoritas", null]].map(([k, label]) => {
+        {/* AS ABAS DE FILTRO.
+            As etiquetas saíram da fita e viraram um menu. A fita rolava de
+            lado e cortava a última pílula NO MEIO — e uma cápsula de contorno
+            colorido fatiada não se lê como "tem mais para o lado", se lê como
+            tela quebrada. Esmaecer a borda não resolveu: o traço colorido
+            atravessa o esmaecido e termina em seco.
+
+            Com três pílulas fixas mais uma de etiquetas, a linha CABE, e o que
+            não couber quebra para baixo (`wrap`) em vez de ser cortado. E o
+            menu resolve um problema que a fita tinha de nascença: etiqueta que
+            ficava depois da dobra era invisível — para filtrar por ela, a
+            pessoa precisava adivinhar que dava para arrastar. */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "0 12px 8px", background: C.panel }}>
+          {[["tudo", "Tudo"], ["naolidas", `Não lidas${totalNaoLidasLista ? " " + totalNaoLidasLista : ""}`], ["favoritas", "Favoritas"]].map(([k, label]) => {
             const ativo = filtro === k;
             return (
               <button key={k} onClick={() => setFiltro(k)} style={{ flexShrink: 0, minHeight: 32, border: `1px solid ${ativo ? C.greenDark : C.divider}`, background: ativo ? C.greenDark : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 20, padding: "5px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
             );
           })}
-          {tags.map((t) => {
-            const ativo = filtro === "tag:" + t.id;
-            return (
-              <button key={t.id} onClick={() => setFiltro(ativo ? "tudo" : "tag:" + t.id)} style={{ flexShrink: 0, minHeight: 32, border: `1px solid ${t.cor}`, background: ativo ? t.cor : "transparent", color: ativo ? corDoTextoSobre(t.cor) : C.textPrimary, borderRadius: 20, padding: "5px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: t.cor, display: ativo ? "none" : "inline-block" }} />
-                {t.nome}
-              </button>
-            );
-          })}
-          <button onClick={() => { setAbaConfig("tags"); setTagForm({ nome: "", cor: CORES_TAG[0] }); setConfigAberta(true); }} title="Nova tag" style={{ flexShrink: 0, width: 34, height: 32, borderRadius: 20, border: `1px solid ${C.divider}`, background: "transparent", color: C.textSecondary, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Plus size={15} /></button>
-          <span aria-hidden className="fita-borda" />
+          {/* A pílula das etiquetas. Quando há uma escolhida, ela mostra a cor e
+              o nome da etiqueta — é o que responde "por que a lista está
+              curta?" sem precisar abrir nada. */}
+          <span ref={etiquetasRef} style={{ position: "relative", display: "flex", minWidth: 0 }}>
+            <button onClick={() => setMenuEtiquetas((v) => !v)}
+                    title={tagFiltrada ? `Filtrando por "${tagFiltrada.nome}"` : "Filtrar por etiqueta"}
+                    style={{ flexShrink: 1, minWidth: 0, maxWidth: 190, minHeight: 32, border: `1px solid ${tagFiltrada ? tagFiltrada.cor : C.divider}`, background: tagFiltrada ? tagFiltrada.cor : "transparent", color: tagFiltrada ? corDoTextoSobre(tagFiltrada.cor) : C.textSecondary, borderRadius: 20, padding: "5px 11px 5px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {tagFiltrada ? tagFiltrada.nome : "Etiquetas"}
+              </span>
+              <ChevronDown size={14} style={{ flexShrink: 0, opacity: .8 }} />
+            </button>
+            {menuEtiquetas && (
+              <div style={{ position: "absolute", top: 38, left: 0, zIndex: 40, width: 250, maxHeight: 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
+                <button onClick={() => { setFiltro("tudo"); setMenuEtiquetas(false); }}
+                        style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", border: "none", borderBottom: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
+                  Todas as conversas
+                  {!tagFiltrada && <Check size={16} color={C.green} style={{ marginLeft: "auto" }} />}
+                </button>
+                {tags.length === 0 && (
+                  <div style={{ padding: 14, fontSize: 13, color: C.textSecondary, textAlign: "center" }}>Nenhuma etiqueta ainda.</div>
+                )}
+                {tags.map((t) => {
+                  const escolhida = filtro === "tag:" + t.id;
+                  return (
+                    <button key={t.id} onClick={() => { setFiltro(escolhida ? "tudo" : "tag:" + t.id); setMenuEtiquetas(false); }}
+                            style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
+                      <span style={{ width: 11, height: 11, borderRadius: 3, background: t.cor, flexShrink: 0 }} />
+                      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.nome}</span>
+                      {escolhida && <Check size={16} color={C.green} style={{ flexShrink: 0 }} />}
+                    </button>
+                  );
+                })}
+                <button onClick={() => { setMenuEtiquetas(false); setAbaConfig("tags"); setTagForm(null); setConfigAberta(true); }}
+                        style={{ width: "100%", display: "flex", alignItems: "center", gap: 6, padding: "10px 12px", border: "none", borderTop: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.verdeTexto, fontSize: 13, fontWeight: 600 }}>
+                  <Plus size={15} /> Gerenciar etiquetas
+                </button>
+              </div>
+            )}
+          </span>
         </div>
 
         <div style={{ flex: 1, overflowY: "auto" }}>
@@ -2956,6 +3048,25 @@ export default function Painel({ sessao }) {
                 )}
               </div>
               </div>
+              {/* MARCAR COMO LIDA — só aparece quando há o que marcar.
+                  Responder o contato já marca sozinho; este botão é para o
+                  outro caso, o de "olhei, não precisa de resposta, resolvido".
+                  Sem ele, uma conversa que não pede resposta ficaria com o selo
+                  vermelho para sempre.
+                  No computador vem com a palavra escrita: um tique sozinho não
+                  diz o que faz, e este botão apaga um aviso que a equipe
+                  inteira está vendo. No celular fica só o tique, por espaço,
+                  mas com o mesmo `title`. */}
+              {(conversa.nao_lidas || 0) > 0 && (
+                <button onClick={() => marcarLida(conversa.id)}
+                        title="Marcar esta conversa como lida"
+                        style={{ ...BOTAO_ICONE, padding: estreito ? 7 : "7px 11px", gap: 6,
+                                 background: C.searchBg, color: C.verdeTexto,
+                                 fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>
+                  <CheckCheck size={17} />
+                  {!estreito && "Marcar como lida"}
+                </button>
+              )}
               {/* Ficha do cliente no Vantoro (cadastro, esteira, processos) */}
               <button onClick={() => setFichaAberta((v) => !v)}
                       title="Ficha do cliente no Vantoro"
