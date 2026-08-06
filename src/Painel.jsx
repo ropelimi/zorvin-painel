@@ -1087,13 +1087,52 @@ export default function Painel({ sessao }) {
     return d;
   }
 
+  // A CHAVE PARA COMPARAR DOIS TELEFONES ESCRITOS DE JEITOS DIFERENTES.
+  //
+  // O mesmo telefone aparece de quatro formas no dia a dia, e as quatro
+  // precisam se reconhecer:
+  //
+  //     5511999999999      como o WhatsApp manda
+  //     11999999999        como a pessoa digita
+  //     (11) 999999999     copiado de um e-mail
+  //     (11) 99999-9999    copiado do cadastro
+  //
+  // A chave joga fora a pontuação e o código do país, sobrando "11999999999"
+  // nos quatro casos. É o que permite ACHAR na busca e, ao cadastrar, perceber
+  // que aquele contato já existe em vez de criar um segundo.
+  //
+  // O 55 só sai quando o que sobra tem cara de telefone brasileiro (10 ou 11
+  // dígitos). Assim um número de fora, que por acaso comece com 55, continua
+  // inteiro.
+  function chaveDoNumero(bruto) {
+    const d = String(bruto || "").replace(/\D/g, "");
+    if (d.startsWith("55") && (d.length === 12 || d.length === 13)) return d.slice(2);
+    return d;
+  }
+
+  // Procura no banco um contato que JÁ seja este telefone, escrito de qualquer
+  // das formas. Sem isto, cadastrar de novo alguém que já estava lá com o
+  // número curto criaria um segundo contato — e, na primeira resposta, uma
+  // segunda conversa.
+  async function contatoExistente(bruto) {
+    const chave = chaveDoNumero(bruto);
+    if (chave.length < 8) return null;
+    const { data } = await supabase.from("contatos")
+      .select("id, nome, numero").in("numero", [chave, "55" + chave]);
+    return (data && data[0]) || null;
+  }
+
   async function salvarContato() {
     const nome = (contatoForm?.nome || "").trim();
     const numero = numeroCanonico(contatoForm?.numero);
     if (!nome) { mostrarAviso("Digite o nome do contato."); return; }
     if (numero.length < 8) { mostrarAviso("Digite um número válido (com DDD)."); return; }
-    const { error } = await supabase.from("contatos").upsert({ numero, nome }, { onConflict: "numero" });
+    const jaExiste = await contatoExistente(numero);
+    const { error } = jaExiste
+      ? await supabase.from("contatos").update({ nome }).eq("id", jaExiste.id)
+      : await supabase.from("contatos").upsert({ numero, nome }, { onConflict: "numero" });
     if (error) { mostrarAviso("Não consegui salvar. Verifique as permissões (RLS) da tabela 'contatos'."); return; }
+    if (jaExiste) { mostrarAviso(`Este número já estava salvo; atualizei o nome.`); }
     setContatoForm(null);
     mostrarAviso("Contato salvo!");
     carregarContatos();
@@ -1128,8 +1167,10 @@ export default function Painel({ sessao }) {
     const numero = numeroCanonico(contatoForm?.numero);
     if (!nome) { mostrarAviso("Digite o nome do contato."); return; }
     if (numero.length < 8) { mostrarAviso("Digite um número válido (com DDD)."); return; }
-    const { data: cont, error } = await supabase.from("contatos")
-      .upsert({ numero, nome }, { onConflict: "numero" }).select("id").single();
+    const jaExiste = await contatoExistente(numero);
+    const { data: cont, error } = jaExiste
+      ? await supabase.from("contatos").update({ nome }).eq("id", jaExiste.id).select("id").single()
+      : await supabase.from("contatos").upsert({ numero, nome }, { onConflict: "numero" }).select("id").single();
     if (error || !cont) { mostrarAviso("Não consegui salvar o contato."); return; }
     carregarContatos();
     await abrirConversaContato(cont);
@@ -1139,8 +1180,10 @@ export default function Painel({ sessao }) {
   async function conversarComNumero(numeroBruto) {
     const numero = numeroCanonico(numeroBruto);
     if (numero.length < 8) { mostrarAviso("Digite um número válido (com DDD)."); return; }
-    const { data: cont, error } = await supabase.from("contatos")
-      .upsert({ numero }, { onConflict: "numero" }).select("id").single();
+    const jaExiste = await contatoExistente(numero);
+    const { data: cont, error } = jaExiste
+      ? { data: jaExiste, error: null }
+      : await supabase.from("contatos").upsert({ numero }, { onConflict: "numero" }).select("id").single();
     if (error || !cont) { mostrarAviso("Não consegui iniciar a conversa."); return; }
     carregarContatos();
     await abrirConversaContato(cont);
@@ -2521,7 +2564,16 @@ export default function Painel({ sessao }) {
     const termo = busca.trim().toLowerCase();
     if (!termo) return true;
     const nome = (c.contato?.nome || c.contato?.numero || "").toLowerCase();
-    return nome.includes(termo) || !!achadosMsg[c.id] || !!achadosCad[c.id];
+    if (nome.includes(termo)) return true;
+    // Por NÚMERO, comparando as chaves: assim "(11) 99999-9999" acha um
+    // contato salvo como "5511999999999". Antes a busca era texto contra
+    // texto, e a pontuação bastava para não achar nada.
+    const chaveTermo = chaveDoNumero(termo);
+    if (chaveTermo.length >= 4) {
+      const chaveContato = chaveDoNumero(c.contato?.numero);
+      if (chaveContato && chaveContato.includes(chaveTermo)) return true;
+    }
+    return !!achadosMsg[c.id] || !!achadosCad[c.id];
   }
 
   const conversasFiltradas = conversas.filter((c) =>
@@ -2739,7 +2791,9 @@ export default function Painel({ sessao }) {
                     // Busca por nome OU por número. O número só entra no filtro se
                     // a pessoa digitou algum dígito — senão "inclui vazio" daria
                     // verdadeiro para todos e a busca por nome nunca filtrava.
-                    const lista = contatosLista.filter((c) => (c.nome || "").toLowerCase().includes(q) || (qDig && (c.numero || "").includes(qDig)));
+                    const chaveQ = chaveDoNumero(qDig);
+                    const lista = contatosLista.filter((c) => (c.nome || "").toLowerCase().includes(q)
+                      || (chaveQ.length >= 4 && chaveDoNumero(c.numero).includes(chaveQ)));
                     if (!lista.length) return <div style={{ padding: 20, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>{contatosLista.length ? "Nenhum contato encontrado." : "Nenhum contato salvo ainda."}</div>;
                     return lista.map((c) => (
                       <div key={c.id} role="button" onClick={() => abrirConversaContato(c)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", cursor: "pointer", color: C.textPrimary }} onMouseEnter={(e) => { e.currentTarget.style.background = C.divider; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
@@ -3652,7 +3706,9 @@ export default function Painel({ sessao }) {
                       <div style={{ border: `1px solid ${C.divider}`, borderRadius: 10, overflow: "hidden", maxHeight: "52vh", overflowY: "auto" }}>
                         {(() => {
                           const q = buscaContato.trim().toLowerCase();
-                          const lista = contatosLista.filter((c) => (c.nome || "").toLowerCase().includes(q) || (c.numero || "").includes(q));
+                          const chaveQ = chaveDoNumero(q);
+                          const lista = contatosLista.filter((c) => (c.nome || "").toLowerCase().includes(q)
+                            || (chaveQ.length >= 4 && chaveDoNumero(c.numero).includes(chaveQ)));
                           if (!lista.length) return <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>{contatosLista.length ? "Nenhum contato encontrado." : "Nenhum contato ainda. Toque em Novo para criar."}</div>;
                           return lista.map((c) => (
                             <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderBottom: `1px solid ${C.divider}` }}>
