@@ -1067,9 +1067,29 @@ export default function Painel({ sessao }) {
 
   useEffect(() => { carregarContatos(); }, [carregarContatos]);
 
+  // O NÚMERO COMO O WHATSAPP O ESCREVE — sempre com o código do país.
+  //
+  // Era este o defeito que duplicava conversa. Quem cadastrava um contato aqui
+  // digitava "(11) 95670-6171" e o painel gravava "11956706171", sem o 55.
+  // Nós mandávamos a primeira mensagem e ela ia normalmente. Mas, quando a
+  // pessoa respondia, o WhatsApp devolvia o MESMO telefone escrito do jeito
+  // dele — "5511956706171" — e a ponte, não achando ninguém com esse texto,
+  // criava um segundo contato e uma segunda conversa. A resposta aparecia numa
+  // conversa nova, ao lado da que nós tínhamos começado.
+  //
+  // O 55 entra só quando o número tem cara de brasileiro (10 ou 11 dígitos: o
+  // DDD mais o telefone). Número que já vem com código de país, ou estrangeiro,
+  // passa intacto — o WhatsApp do escritório fala com o mundo todo, e prefixar
+  // 55 num número de Portugal criaria justamente o problema que se quer evitar.
+  function numeroCanonico(bruto) {
+    const d = String(bruto || "").replace(/\D/g, "");
+    if (d.length === 10 || d.length === 11) return "55" + d;
+    return d;
+  }
+
   async function salvarContato() {
     const nome = (contatoForm?.nome || "").trim();
-    const numero = (contatoForm?.numero || "").replace(/\D/g, "");
+    const numero = numeroCanonico(contatoForm?.numero);
     if (!nome) { mostrarAviso("Digite o nome do contato."); return; }
     if (numero.length < 8) { mostrarAviso("Digite um número válido (com DDD)."); return; }
     const { error } = await supabase.from("contatos").upsert({ numero, nome }, { onConflict: "numero" });
@@ -1105,7 +1125,7 @@ export default function Painel({ sessao }) {
   // "Novo contato" dentro da Nova conversa: cria e já abre a conversa.
   async function criarContatoEConversar() {
     const nome = (contatoForm?.nome || "").trim();
-    const numero = (contatoForm?.numero || "").replace(/\D/g, "");
+    const numero = numeroCanonico(contatoForm?.numero);
     if (!nome) { mostrarAviso("Digite o nome do contato."); return; }
     if (numero.length < 8) { mostrarAviso("Digite um número válido (com DDD)."); return; }
     const { data: cont, error } = await supabase.from("contatos")
@@ -1117,7 +1137,7 @@ export default function Painel({ sessao }) {
 
   // Conversar direto com um número digitado (sem cadastrar nome).
   async function conversarComNumero(numeroBruto) {
-    const numero = (numeroBruto || "").replace(/\D/g, "");
+    const numero = numeroCanonico(numeroBruto);
     if (numero.length < 8) { mostrarAviso("Digite um número válido (com DDD)."); return; }
     const { data: cont, error } = await supabase.from("contatos")
       .upsert({ numero }, { onConflict: "numero" }).select("id").single();
@@ -1310,7 +1330,7 @@ export default function Painel({ sessao }) {
           // 1:1. Se o "nome" é só um telefone (contato não salvo), NÃO gravamos
           // como nome — deixamos em branco para o painel mostrar o número limpo.
           const nomeC = pareceTelefone(nomeBruto) ? null : nomeBruto;
-          registroContato = { numero: numeroDeTexto(it.numero) };
+          registroContato = { numero: numeroCanonico(numeroDeTexto(it.numero)) };
           if (nomeC) registroContato.nome = nomeC; // sem nome: não sobrescreve o que já existir
         }
         const { data: cont, error: e1 } = await supabase.from("contatos")
