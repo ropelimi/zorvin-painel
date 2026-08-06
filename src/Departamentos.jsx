@@ -46,13 +46,27 @@ export default function Departamentos({ C, aoFechar }) {
   const [telefones, setTelefones] = useState([]);
   const [aba, setAba] = useState("estrutura"); // 'estrutura' | 'pessoas'
   const [salvando, setSalvando] = useState("");
+  // O que o BANCO acha: `null` = não deu para perguntar (base antiga, sem a
+  // função), `true`/`false` = a resposta dele.
+  const [adminNoBanco, setAdminNoBanco] = useState(null);
+  // Sobe a cada releitura. Serve para os campos de texto voltarem ao que o
+  // banco tem — inclusive quando o banco NÃO mudou, que é justamente o caso
+  // em que o campo estava mentindo.
+  const [releituras, setReleituras] = useState(0);
 
   const recarregar = useCallback(async () => {
     setErro("");
-    const [d, t] = await Promise.all([
+    // Pergunta ao BANCO se ele reconhece esta conta como administradora, com a
+    // mesma função que as políticas usam para decidir. É a única resposta que
+    // vale: o painel abre esta tela olhando só `usuarios.admin`, e o banco exige
+    // `admin E ativo` — dá para ver a tela e mesmo assim não conseguir salvar
+    // nada, que era exatamente o que acontecia sem nenhum aviso.
+    const [d, t, adm] = await Promise.all([
       supabase.from("departamentos").select("*").order("ordem"),
       supabase.from("advogados").select("id, nome, numero, departamento_id, ativo").order("nome"),
+      supabase.rpc("zorvin_admin"),
     ]);
+    setAdminNoBanco(adm.error ? null : !!adm.data);
     const falhou = [d, t].find((r) => r.error);
     if (falhou) {
       // A causa quase sempre é a mesma: o SQL de departamentos ainda não foi
@@ -62,6 +76,7 @@ export default function Departamentos({ C, aoFechar }) {
     }
     setDepartamentos(d.data || []);
     setTelefones(t.data || []);
+    setReleituras((n) => n + 1);
     setCarregando(false);
   }, []);
 
@@ -69,13 +84,42 @@ export default function Departamentos({ C, aoFechar }) {
 
   // Toda gravação passa por aqui: mostra que está salvando, recarrega no fim e
   // transforma erro do banco em mensagem na tela — nunca numa tela em branco.
+  //
+  // A ARMADILHA QUE FAZIA ESTA TELA "NÃO FUNCIONAR":
+  //
+  // Quando a RLS do Postgres barra um UPDATE ou um DELETE, ela NÃO devolve
+  // erro. Ela simplesmente não encontra a linha: `error` vem nulo e zero linhas
+  // são alteradas. Aqui isso passava por sucesso — a tela recarregava, o valor
+  // voltava ao que era, e não havia nada escrito em lugar nenhum. Renomear um
+  // departamento parecia não fazer efeito, e a pessoa tentava de novo.
+  //
+  // (Com INSERT é diferente: ali a RLS levanta erro de verdade. Foi por isso
+  // que "Criar departamento" avisava e o resto ficava mudo.)
+  //
+  // O `.select("id")` no fim de cada gravação é o que revela isso: ele faz o
+  // banco devolver as linhas que realmente mudaram. Nenhuma linha de volta =
+  // não salvou, e agora a tela diz.
   async function gravar(rotulo, fn) {
     setSalvando(rotulo); setErro("");
-    const { error } = await fn();
-    if (error) setErro(traduzir(error.message));
+    const { data, error } = await fn();
+    // O `recarregar()` VEM ANTES de escrever a mensagem, e essa ordem é o
+    // conserto principal desta tela.
+    //
+    // Ele começa com `setErro("")` — precisa, para não deixar erro velho na
+    // tela. Só que aqui ele rodava DEPOIS, e apagava a mensagem que a linha
+    // acima tinha acabado de escrever. Resultado: mesmo quando o banco recusava
+    // com um erro claro, a tela ficava muda. Era isso que fazia esta tela
+    // "não funcionar sem dizer nada".
     await recarregar();
+    if (error) setErro(traduzir(error.message));
+    else if (Array.isArray(data) && data.length === 0) setErro(SEM_PERMISSAO);
     setSalvando("");
   }
+
+  const SEM_PERMISSAO =
+    "Não salvou: o banco de dados não deixou. Isso acontece quando a sua conta " +
+    "não está marcada como administradora no Zorvin — só ela pode mexer em " +
+    "departamentos, telefones e acessos.";
 
   function traduzir(msg) {
     const m = String(msg || "");
@@ -135,6 +179,18 @@ export default function Departamentos({ C, aoFechar }) {
           {erro && (
             <div style={{ background: "#fdecea", border: "1px solid #f5c2c0", color: "#a32b2b", borderRadius: 10, padding: "10px 13px", fontSize: 13, marginBottom: 14 }}>{erro}</div>
           )}
+          {/* O aviso vem ANTES de a pessoa tentar. Descobrir que não tinha
+              permissão só depois de renomear três departamentos e ver os três
+              voltarem ao nome antigo é o pior jeito de descobrir. */}
+          {adminNoBanco === false && (
+            <div style={{ background: "#fff6e0", border: "1px solid #e6cf6a", color: "#6b4e00", borderRadius: 10, padding: "10px 13px", fontSize: 13, marginBottom: 14, lineHeight: 1.5 }}>
+              <b>Você consegue ver esta tela, mas não consegue salvar nada nela.</b><br />
+              O banco de dados não reconhece a sua conta como administradora do
+              Zorvin. Quem administra o Zorvin precisa liberar a sua conta —
+              é uma marcação na tabela <code>usuarios</code> do Supabase
+              (<code>admin</code> e <code>ativo</code>, as duas ligadas).
+            </div>
+          )}
           {carregando && <div style={{ color: C.textSecondary, fontSize: 14 }}>Carregando…</div>}
 
           {!carregando && aba === "estrutura" && (
@@ -155,10 +211,10 @@ export default function Departamentos({ C, aoFechar }) {
 
               {departamentos.map((d) => (
                 <Departamento key={d.id} d={d} cx={cx} C={C}
-                  telefones={telefones}
-                  aoRenomear={(nome) => gravar("dep", () => supabase.from("departamentos").update({ nome }).eq("id", d.id))}
-                  aoApagar={() => gravar("dep", () => supabase.from("departamentos").delete().eq("id", d.id))}
-                  aoMoverTelefone={(telId) => gravar("tel", () => supabase.from("advogados").update({ departamento_id: d.id }).eq("id", telId))}
+                  telefones={telefones} releituras={releituras}
+                  aoRenomear={(nome) => gravar("dep", () => supabase.from("departamentos").update({ nome }).eq("id", d.id).select("id"))}
+                  aoApagar={() => gravar("dep", () => supabase.from("departamentos").delete().eq("id", d.id).select("id"))}
+                  aoMoverTelefone={(telId) => gravar("tel", () => supabase.from("advogados").update({ departamento_id: d.id }).eq("id", telId).select("id"))}
                 />
               ))}
             </>
@@ -175,21 +231,35 @@ export default function Departamentos({ C, aoFechar }) {
 }
 
 // ---------- um departamento, com os telefones que atendem por ele ----------
-function Departamento({ d, cx, C, telefones, aoRenomear, aoApagar, aoMoverTelefone }) {
+function Departamento({ d, cx, C, telefones, releituras, aoRenomear, aoApagar, aoMoverTelefone }) {
   const [nome, setNome] = useState(d.nome);
-  // Volta ao que o BANCO tem quando a lista é recarregada. Sem isto, uma
-  // renomeação recusada (nome repetido, permissão) deixava o campo mostrando o
-  // nome novo para sempre: a tela dizia uma coisa e o banco tinha outra, e a
-  // pessoa só descobria no dia seguinte, ao abrir de novo.
-  useEffect(() => { setNome(d.nome); }, [d.nome]);
+  // Volta ao que o BANCO tem A CADA RELEITURA — e não só quando o nome muda.
+  //
+  // Depender de `d.nome` não bastava justamente no caso que importa: se a
+  // gravação foi recusada, o nome no banco continua o mesmo, o efeito não roda,
+  // e o campo fica exibindo o nome novo como se tivesse sido salvo. A tela
+  // dizia uma coisa e o banco tinha outra.
+  useEffect(() => { setNome(d.nome); }, [d.nome, releituras]);
   const meus = telefones.filter((t) => t.departamento_id === d.id);
   const soltos = telefones.filter((t) => !t.departamento_id);
 
   return (
     <div style={{ ...cx.secao, borderLeft: `4px solid ${d.cor || C.green}` }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+        {/* ENTER TAMBÉM SALVA.
+            Só o `onBlur` salvava, e quem digita um nome novo aperta Enter — é o
+            gesto. Não acontecia nada: nem salvava, nem avisava. A pessoa
+            concluía que a tela estava quebrada e, se saísse dali sem clicar em
+            outro lugar, o nome novo ia embora junto.
+            O `blur()` no Enter reaproveita o mesmo caminho de sempre, em vez de
+            criar um segundo jeito de gravar que pode divergir do primeiro. */}
         <input value={nome} onChange={(e) => setNome(e.target.value)}
                onBlur={() => nome.trim() && nome !== d.nome && aoRenomear(nome.trim())}
+               onKeyDown={(e) => {
+                 if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); }
+                 if (e.key === "Escape") { e.preventDefault(); setNome(d.nome); }
+               }}
+               aria-label={`Nome do departamento ${d.nome}`}
                style={{ ...cx.campo, flex: 1, fontWeight: 700 }} />
         <button style={{ ...cx.botaoFraco, color: "#c0392b" }}
                 onClick={() => {
