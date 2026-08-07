@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { supabase } from "./supabase.js";
 import {
   Search, Send, Paperclip, Smile, ChevronDown, MoreVertical,
@@ -628,6 +628,50 @@ function MetaBolha({ C, m, saida, flutuante, aoReenviar }) {
   );
 }
 
+// EMPURRA DE VOLTA PARA DENTRO qualquer coisa que abra ao lado de uma bolha.
+//
+// A fileira de emojis e o menu nascem grudados na mensagem, e a mensagem pode
+// estar em qualquer lugar da conversa. Numa bolha curta encostada na margem, a
+// fileira nasce metade para fora e o primeiro emoji aparece cortado — foi
+// exatamente o que aconteceu com o 👍.
+//
+// Mede depois de desenhar e desloca só o que faltou. `useLayoutEffect` e não
+// `useEffect` porque isso tem de acontecer ANTES de a tela pintar: com o
+// segundo, a fileira apareceria cortada por um quadro e depois pularia para o
+// lugar, o que é pior do que ficar cortada.
+//
+// O limite é a caixa que rola, não a janela: quem corta o emoji é a borda da
+// conversa, e o resto da tela (a lista de conversas, a barra lateral) não está
+// disponível para ele.
+function usarDentroDaTela(aberto, tudo) {
+  const alvo = useRef(null);
+  const [desloca, setDesloca] = useState(0);
+  useLayoutEffect(() => {
+    if (!aberto) { setDesloca(0); return; }
+    const el = alvo.current;
+    if (!el) return;
+    let pai = el.parentElement, caixa = null;
+    while (pai) {
+      const o = window.getComputedStyle(pai);
+      if (/(auto|scroll|hidden)/.test(o.overflowY) || /(auto|scroll|hidden)/.test(o.overflowX)) { caixa = pai; break; }
+      pai = pai.parentElement;
+    }
+    const lim = caixa ? caixa.getBoundingClientRect()
+                      : { left: 0, right: window.innerWidth };
+    // Mede o retângulo sem o deslocamento anterior, senão cada abertura
+    // empurraria a partir da posição já corrigida e a fileira andaria sozinha.
+    const r = el.getBoundingClientRect();
+    const esq = r.left - desloca, dir = r.right - desloca;
+    const FOLGA = 10;
+    let d = 0;
+    if (esq < lim.left + FOLGA) d = (lim.left + FOLGA) - esq;
+    else if (dir > lim.right - FOLGA) d = (lim.right - FOLGA) - dir;
+    setDesloca(d);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aberto, tudo]);
+  return [alvo, desloca];
+}
+
 // O ROSTO DE REAGIR, ao lado da bolha.
 //
 // Faz o que a seta também faz, e existe assim mesmo: reagir é a ação mais
@@ -638,7 +682,15 @@ function MetaBolha({ C, m, saida, flutuante, aoReenviar }) {
 // Fica FORA da bolha, do lado de dentro da conversa: à esquerda de quem envia,
 // à direita de quem recebe.
 function RostoReagir({ C, saida, visivel, aberto, aoAbrir, aoReagir, aoVerTudo, tudo }) {
-  const ancora = saida ? { left: 0 } : { right: 0 };
+  // ABRE PARA O LADO EM QUE HÁ ESPAÇO, e era o contrário.
+  //
+  // O rosto de uma mensagem RECEBIDA fica à direita da bolha, e a fileira saía
+  // dali para a esquerda — por cima da mensagem e para fora da margem. O espaço
+  // livre está do outro lado: a bolha recebida encosta na esquerda, e a metade
+  // direita da conversa está vazia. Nas mensagens que nós enviamos vale o
+  // inverso.
+  const ancora = saida ? { right: 0 } : { left: 0 };
+  const [alvo, desloca] = usarDentroDaTela(aberto, tudo);
   return (
     <div data-menu-msg style={{ position: "relative", width: 26, flexShrink: 0, marginBottom: 2 }}>
       <button onClick={aoAbrir} title="Reagir" aria-label="Reagir"
@@ -648,7 +700,8 @@ function RostoReagir({ C, saida, visivel, aberto, aoAbrir, aoReagir, aoVerTudo, 
         <Smile size={19} color={C.textSecondary} />
       </button>
       {aberto && (
-        <div style={{ position: "absolute", bottom: 32, ...ancora, zIndex: 20 }}>
+        <div ref={alvo} style={{ position: "absolute", bottom: 32, ...ancora, zIndex: 20,
+                                 transform: desloca ? `translateX(${desloca}px)` : "none" }}>
           {tudo ? (
             <PainelEmoji C={C} aoEscolher={aoReagir} largura={312} altura={232} />
           ) : (
@@ -697,13 +750,15 @@ function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoRespond
   // dedo de quem acabou de clicar.
   const ancora = { ...(saida ? { right: 0 } : { left: 0 }),
                    ...(paraCima ? { bottom: 22 } : { top: 22 }) };
+  const [alvo, desloca] = usarDentroDaTela(true, tudo);
   const ITEM = {
     width: "100%", display: "flex", alignItems: "center", gap: 12,
     padding: "9px 14px", border: "none", background: "transparent",
     cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left",
   };
   return (
-    <div data-menu-msg style={{ position: "absolute", ...ancora, zIndex: 20,
+    <div data-menu-msg ref={alvo} style={{ position: "absolute", ...ancora, zIndex: 20,
+                  transform: desloca ? `translateX(${desloca}px)` : "none",
                   display: "flex", flexDirection: paraCima ? "column-reverse" : "column",
                   alignItems: saida ? "flex-end" : "flex-start", gap: 6 }}>
       {tudo ? (
