@@ -1741,12 +1741,23 @@ export default function Painel({ sessao }) {
   }, [conversaId]);
 
   // ---- Ajusta a altura da caixa de texto conforme escreve (várias linhas) ----
+  //
+  // `scrollHeight` JÁ INCLUI o respiro de cima e de baixo. Numa caixa
+  // content-box (o padrão), devolver esse número para `height` soma o respiro
+  // outra vez: uma linha de 20px virava 60 em vez de 40, e a barra inteira
+  // desalinhava assim que alguém digitava a primeira letra — ou ao trocar de
+  // conversa, quando o rascunho é restaurado e este efeito roda de novo.
+  //
+  // A caixa agora é border-box (ver o estilo dela), então altura é altura. O
+  // `height: auto` antes da medida continua necessário: sem ele, a caixa nunca
+  // encolheria ao apagar texto, porque `scrollHeight` jamais fica menor que a
+  // altura já fixada.
   useEffect(() => {
     const el = inputRef.current;
     if (!el) return;
     el.style.height = "auto";
     el.style.height = Math.min(el.scrollHeight, 120) + "px";
-  }, [rascunho]);
+  }, [rascunho, conversaId]);
 
   // ---- Realtime: novas mensagens e conversas atualizadas ----
   //
@@ -3840,10 +3851,10 @@ export default function Painel({ sessao }) {
                     }}
                     rows={1}
                     placeholder={modoNota ? "Escreva uma nota interna (só a equipe vê)" : "Digite uma mensagem"}
-                    style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", color: C.textPrimary, padding: "10px 6px", fontSize: 14.5, resize: "none", lineHeight: "20px", maxHeight: 120, overflowY: "auto", fontFamily: "inherit", alignSelf: "center" }}
+                    style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", color: C.textPrimary, boxSizing: "border-box", padding: "10px 6px", fontSize: 14.5, resize: "none", lineHeight: "20px", maxHeight: 120, overflowY: "auto", fontFamily: "inherit", alignSelf: "flex-end" }}
                   />
                   {(rascunho.trim() || modoNota) ? (
-                    <button onClick={enviar} title={modoNota ? "Salvar nota" : "Enviar"} style={{ border: "none", background: modoNota ? "#d4a017" : C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 36, height: 36, borderRadius: "50%", flexShrink: 0, alignSelf: "flex-end", marginBottom: 2 }}>{modoNota ? <StickyNote size={19} color="#fff" /> : <Send size={20} color="#fff" />}</button>
+                    <button onClick={enviar} title={modoNota ? "Salvar nota" : "Enviar"} style={{ border: "none", background: modoNota ? "#d4a017" : C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, alignSelf: "flex-end" }}>{modoNota ? <StickyNote size={19} color="#fff" /> : <Send size={20} color="#fff" />}</button>
                   ) : (
                     <button onClick={iniciarGravacao} title="Gravar áudio" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
                       <Mic size={24} color={C.textSecondary} />
