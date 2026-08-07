@@ -623,6 +623,13 @@ export default function Painel({ sessao }) {
   const [buscaContato, setBuscaContato] = useState(""); // busca na agenda de contatos
   const [contatoForm, setContatoForm] = useState(null); // { nome, numero } ao criar um contato
   const [novaConversaAberta, setNovaConversaAberta] = useState(false); // tela "Nova conversa" (⊞)
+  // Clientes do VANTORO que casam com o que está sendo digitado na Nova
+  // conversa. Ficam separados de `contatosLista` de propósito: um é a agenda do
+  // Zorvin (gente com quem já se falou), o outro é o cadastro do escritório
+  // (gente que talvez nunca tenha recebido mensagem).
+  const [vantoroAchados, setVantoroAchados] = useState([]);
+  const [vantoroBuscando, setVantoroBuscando] = useState(false);
+  const [vantoroErro, setVantoroErro] = useState("");
   const [busca, setBusca] = useState("");
   const [rascunho, setRascunho] = useState("");
   const [atendimentos, setAtendimentos] = useState({}); // { conversaId: { por, em } }
@@ -1120,6 +1127,91 @@ export default function Painel({ sessao }) {
     const { data } = await supabase.from("contatos")
       .select("id, nome, numero").in("numero", [chave, "55" + chave]);
     return (data && data[0]) || null;
+  }
+
+  // ---- O CADASTRO DO VANTORO DENTRO DA "NOVA CONVERSA" ----
+  //
+  // Para mandar a primeira mensagem a um cliente, alguém tinha de digitar nome
+  // e telefone à mão no Zorvin — dados que já estavam no Vantoro, a duas telas
+  // dali. Isso custava tempo e, pior, criava divergência: o nome era digitado
+  // de um jeito, o número às vezes sem DDD, e o cadastro do escritório e a
+  // agenda do atendimento passavam a discordar sobre quem era a mesma pessoa.
+  //
+  // A busca é a mesma rota que a lupa da lista de conversas já usava, e o token
+  // do Vantoro continua onde sempre esteve: no servidor. O navegador manda a
+  // sessão do Zorvin para a ponte, e é a ponte que fala com o Vantoro.
+  //
+  // O atraso de 350ms existe porque isto dispara a cada tecla. Sem ele, digitar
+  // "Maria" faria cinco consultas ao Vantoro para mostrar o resultado de uma.
+  useEffect(() => {
+    if (!novaConversaAberta) { setVantoroAchados([]); setVantoroErro(""); return undefined; }
+    const termo = buscaContato.trim();
+    setVantoroErro("");
+    if (termo.length < 3) { setVantoroAchados([]); setVantoroBuscando(false); return undefined; }
+    let cancelado = false;
+    setVantoroBuscando(true);
+    const tarefa = setTimeout(async () => {
+      try {
+        const r = await chamarPonte(`/vantoro/buscar?q=${encodeURIComponent(termo)}`);
+        if (!cancelado) setVantoroAchados(r.clientes || []);
+      } catch (e) {
+        // O Vantoro fora do ar não pode derrubar a tela: a agenda do Zorvin
+        // continua funcionando, e o aviso fica restrito à seção dele.
+        if (!cancelado) { setVantoroAchados([]); setVantoroErro((e && e.message) || "Não consegui consultar o Vantoro."); }
+      } finally {
+        if (!cancelado) setVantoroBuscando(false);
+      }
+    }, 350);
+    return () => { cancelado = true; clearTimeout(tarefa); };
+  }, [buscaContato, novaConversaAberta]);
+
+  // Vira UMA LINHA POR TELEFONE, não por cliente: quem tem dois números
+  // cadastrados aparece duas vezes, porque a escolha de para qual dos dois
+  // mandar a mensagem é de quem está atendendo, não nossa.
+  //
+  // Some quem já está na agenda do Zorvin — essa pessoa já aparece logo acima,
+  // em CONTATOS, e listar de novo faria parecer que são duas pessoas.
+  function linhasDoVantoro() {
+    const jaNaAgenda = new Set(contatosLista.map((c) => chaveDoNumero(c.numero)));
+    const vistos = new Set();
+    const linhas = [];
+    (vantoroAchados || []).forEach((cli) => {
+      [cli.telefone, cli.telefone2].forEach((tel, posicao) => {
+        const chave = chaveDoNumero(tel);
+        if (chave.length < 10) return;             // sem DDD não dá para chamar
+        if (jaNaAgenda.has(chave) || vistos.has(chave)) return;
+        vistos.add(chave);
+        linhas.push({ chave, clienteId: cli.id, nome: cli.nome,
+                      numero: numeroCanonico(tel), segundo: posicao === 1 });
+      });
+    });
+    return linhas;
+  }
+
+  // Abre a conversa com um cliente que veio do Vantoro.
+  //
+  // Ele vira contato do Zorvin na hora — não há como conversar sem contato,
+  // porque a conversa pertence a um. A diferença para "Novo contato" é que
+  // ninguém digita nada: nome, número e o vínculo com a ficha do Vantoro vêm
+  // prontos, e era esse trabalho manual que se queria evitar.
+  async function conversarComClienteVantoro(linha) {
+    const jaExiste = await contatoExistente(linha.numero);
+    const gravar = (campos) => (jaExiste
+      ? supabase.from("contatos").update(campos).eq("id", jaExiste.id).select("id").single()
+      : supabase.from("contatos").upsert({ numero: linha.numero, ...campos }, { onConflict: "numero" })
+          .select("id").single());
+
+    let { data: cont, error } = await gravar({
+      nome: linha.nome, vantoro_cliente_id: linha.clienteId, vantoro_nome: linha.nome,
+    });
+    // Instalação sem as colunas de vínculo com o Vantoro: perder o vínculo é
+    // aceitável, não conseguir abrir a conversa não é.
+    if (error && /vantoro_/i.test(error.message || "")) {
+      ({ data: cont, error } = await gravar({ nome: linha.nome }));
+    }
+    if (error || !cont) { mostrarAviso("Não consegui criar o contato a partir do Vantoro."); return; }
+    carregarContatos();
+    await abrirConversaContato(cont);
   }
 
   async function salvarContato() {
@@ -2784,7 +2876,6 @@ export default function Painel({ sessao }) {
                       <span style={{ fontSize: 15, fontWeight: 500 }}>Conversar com +{numeroDeTexto(buscaContato)}</span>
                     </button>
                   )}
-                  <div style={{ padding: "10px 16px 4px", fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3 }}>CONTATOS</div>
                   {(() => {
                     const q = buscaContato.trim().toLowerCase();
                     const qDig = q.replace(/\D/g, ""); // só os dígitos (para busca por número)
@@ -2794,16 +2885,46 @@ export default function Painel({ sessao }) {
                     const chaveQ = chaveDoNumero(qDig);
                     const lista = contatosLista.filter((c) => (c.nome || "").toLowerCase().includes(q)
                       || (chaveQ.length >= 4 && chaveDoNumero(c.numero).includes(chaveQ)));
-                    if (!lista.length) return <div style={{ padding: 20, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>{contatosLista.length ? "Nenhum contato encontrado." : "Nenhum contato salvo ainda."}</div>;
-                    return lista.map((c) => (
-                      <div key={c.id} role="button" onClick={() => abrirConversaContato(c)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", cursor: "pointer", color: C.textPrimary }} onMouseEnter={(e) => { e.currentTarget.style.background = C.divider; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
-                        <Avatar nome={c.nome || c.numero} foto={c.foto_url} size={44} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nomeDoContato(c)}</div>
-                          <div style={{ fontSize: 12.5, color: C.textSecondary }}>+{c.numero}</div>
-                        </div>
-                      </div>
-                    ));
+                    const doVantoro = linhasDoVantoro();
+                    const TITULO = { padding: "10px 16px 4px", fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3 };
+                    const RECADO = { padding: "14px 16px", textAlign: "center", color: C.textSecondary, fontSize: 13.5 };
+                    const LINHA = { display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", cursor: "pointer", color: C.textPrimary };
+                    const realce = (e, ligado) => { e.currentTarget.style.background = ligado ? C.divider : "transparent"; };
+                    return (
+                      <>
+                        <div style={TITULO}>CONTATOS</div>
+                        {lista.length ? lista.map((c) => (
+                          <div key={c.id} role="button" onClick={() => abrirConversaContato(c)} style={LINHA} onMouseEnter={(e) => realce(e, true)} onMouseLeave={(e) => realce(e, false)}>
+                            <Avatar nome={c.nome || c.numero} foto={c.foto_url} size={44} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nomeDoContato(c)}</div>
+                              <div style={{ fontSize: 12.5, color: C.textSecondary }}>+{c.numero}</div>
+                            </div>
+                          </div>
+                        )) : (
+                          <div style={RECADO}>{contatosLista.length ? "Nenhum contato salvo com esse nome." : "Nenhum contato salvo ainda."}</div>
+                        )}
+                        {/* O CADASTRO DO VANTORO. Só aparece quando há o que
+                            mostrar: uma seção vazia em toda busca ensinaria a
+                            equipe a ignorar justamente a parte nova da tela. */}
+                        {(doVantoro.length > 0 || vantoroBuscando || vantoroErro) && (
+                          <>
+                            <div style={{ ...TITULO, paddingTop: 16 }}>CLIENTES DO VANTORO</div>
+                            {!doVantoro.length && vantoroBuscando && <div style={RECADO}>Procurando no Vantoro…</div>}
+                            {!doVantoro.length && !vantoroBuscando && vantoroErro && <div style={RECADO}>{vantoroErro}</div>}
+                            {doVantoro.map((l) => (
+                              <div key={l.chave} role="button" onClick={() => conversarComClienteVantoro(l)} style={LINHA} onMouseEnter={(e) => realce(e, true)} onMouseLeave={(e) => realce(e, false)}>
+                                <Avatar nome={l.nome} size={44} />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.nome}</div>
+                                  <div style={{ fontSize: 12.5, color: C.textSecondary }}>+{l.numero}{l.segundo ? " · segundo telefone" : ""}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </>
+                        )}
+                      </>
+                    );
                   })()}
                 </>
               )}
