@@ -6,7 +6,7 @@ import {
   Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp,
   StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star,
   Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList, ShieldCheck,
-  ChevronLeft, ChevronRight, Images, ExternalLink, Pin, Copy
+  ChevronLeft, ChevronRight, Images, ExternalLink, Pin, Copy, Forward
 } from "lucide-react";
 import FichaVantoro from "./FichaVantoro";
 import { chamarPonte } from "./ponte.js";
@@ -596,16 +596,25 @@ const EMOJIS_REACAO = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 // favoritar e apagar mensagem ainda não existem no Zorvin, e um item de menu
 // que não funciona é pior que a ausência dele: ensina a equipe a desconfiar do
 // menu inteiro.
-function MenuMensagem({ C, saida, tudo, aoVerTudo, aoReagir, aoResponder, aoCopiar, temTexto }) {
-  const ancora = saida ? { right: 0 } : { left: 0 };
+function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoResponder, aoCopiar, aoEncaminhar, temTexto }) {
+  // PARA CIMA OU PARA BAIXO. Na metade de baixo da tela o menu abre para cima,
+  // senão o da última mensagem sai pela borda e fica inalcançável.
+  //
+  // `column-reverse` faz a fileira de emojis — que continua sendo o primeiro
+  // filho — descer para baixo do menu, que é como o WhatsApp desenha quando
+  // abre para cima. Sem isso a fileira ficaria colada no topo da tela, longe do
+  // dedo de quem acabou de clicar.
+  const ancora = { ...(saida ? { right: 0 } : { left: 0 }),
+                   ...(paraCima ? { bottom: 22 } : { top: 22 }) };
   const ITEM = {
     width: "100%", display: "flex", alignItems: "center", gap: 12,
     padding: "9px 14px", border: "none", background: "transparent",
     cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left",
   };
   return (
-    <div style={{ position: "absolute", top: 22, ...ancora, zIndex: 20,
-                  display: "flex", flexDirection: "column", alignItems: saida ? "flex-end" : "flex-start", gap: 6 }}>
+    <div data-menu-msg style={{ position: "absolute", ...ancora, zIndex: 20,
+                  display: "flex", flexDirection: paraCima ? "column-reverse" : "column",
+                  alignItems: saida ? "flex-end" : "flex-start", gap: 6 }}>
       {tudo ? (
         <PainelEmoji C={C} aoEscolher={aoReagir} largura={312} altura={232} />
       ) : (
@@ -642,6 +651,9 @@ function MenuMensagem({ C, saida, tudo, aoVerTudo, aoReagir, aoResponder, aoCopi
             )}
             <button onClick={aoVerTudo} style={ITEM}>
               <Smile size={17} color={C.textSecondary} /> Reagir
+            </button>
+            <button onClick={aoEncaminhar} style={ITEM}>
+              <Forward size={17} color={C.textSecondary} /> Encaminhar
             </button>
           </div>
         </>
@@ -692,6 +704,9 @@ export default function Painel({ sessao }) {
   // A janela de juntar duas conversas (só admin). `de` é a que SOME; `para` é a
   // que fica com tudo.
   const [juntar, setJuntar] = useState(null);   // null | {de, para, indo}
+  const [menuParaCima, setMenuParaCima] = useState(false); // o menu da bolha abre para cima?
+  const [encaminhar, setEncaminhar] = useState(null);      // mensagem sendo encaminhada
+  const [buscaEncaminhar, setBuscaEncaminhar] = useState("");
   const [advogadoId, setAdvogadoId] = useState(null);
   const [conversas, setConversas] = useState([]);
   const [conversaId, setConversaId] = useState(null);
@@ -2171,6 +2186,7 @@ export default function Painel({ sessao }) {
       if (imagemAberta) setImagemAberta(null);
       else if (anexoPendente) fecharAnexoPendente();
       else if (audioPronto) descartarAudioPronto();
+      else if (encaminhar) setEncaminhar(null);
       else if (reagindo) { setReagindo(null); setReagindoTudo(false); }
       else if (gravando) cancelarGravacao();
       else if (tagForm) setTagForm(null);
@@ -2199,12 +2215,20 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [reagindo, imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo, conversaId]);
+  }, [encaminhar, reagindo, imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo, conversaId]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
     function aoClicar(e) {
       if (menuEtiquetas && etiquetasRef.current && !etiquetasRef.current.contains(e.target)) setMenuEtiquetas(false);
+      // O MENU DA BOLHA fecha ao clicar em qualquer lugar fora dele.
+      // Não dá para usar um ref como os outros: existe um menu por mensagem, e
+      // guardar um ref por bolha seria um mapa que envelhece a cada rolagem. A
+      // marca no elemento resolve — se o clique não veio de dentro de algo
+      // marcado, o menu fecha.
+      if (reagindo && !(e.target.closest && e.target.closest("[data-menu-msg]"))) {
+        setReagindo(null); setReagindoTudo(false);
+      }
       if (emojiAberto && emojiRef.current && !emojiRef.current.contains(e.target)) setEmojiAberto(false);
       if (seletorAberto && seletorRef.current && !seletorRef.current.contains(e.target)) setSeletorAberto(false);
       if (tagMenuAberto && tagMenuRef.current && !tagMenuRef.current.contains(e.target)) setTagMenuAberto(false);
@@ -2212,7 +2236,7 @@ export default function Painel({ sessao }) {
     }
     document.addEventListener("mousedown", aoClicar);
     return () => document.removeEventListener("mousedown", aoClicar);
-  }, [emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas]);
+  }, [reagindo, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas]);
 
   // Fecha o menuzinho da conversa (marcar não lida) ao clicar em qualquer lugar.
   useEffect(() => {
@@ -2275,6 +2299,31 @@ export default function Painel({ sessao }) {
   // aparece três segundos depois faz a pessoa tocar duas vezes, e o segundo
   // toque desfaz o primeiro. Se o envio falhar, a fila mostra o erro e a
   // próxima leitura da conversa devolve a verdade do banco.
+  // ENCAMINHAR: manda o conteúdo desta mensagem para outra conversa.
+  //
+  // Não é "copiar a linha do banco": é um ENVIO NOVO, que entra na fila e sai
+  // pelo WhatsApp como qualquer outra mensagem. Copiar a linha faria a mensagem
+  // aparecer na tela da equipe sem nunca ter chegado ao destinatário.
+  //
+  // A mídia vai pela URL que já está no Storage — não há novo upload, e por isso
+  // encaminhar uma foto é tão rápido quanto encaminhar um texto.
+  async function enviarEncaminhada(conv) {
+    const m = encaminhar;
+    if (!m || !conv) return;
+    setEncaminhar(null);
+    const { error } = await inserirNaFila({
+      conversa_id: conv.id,
+      tipo: m.tipo || "texto",
+      texto: m.texto || null,
+      midia_url: m.midia_url || null,
+      midia_mime: m.midia_mime || null,
+      status: "pendente",
+      enviado_por: meuNome,
+    });
+    if (error) { mostrarAviso("Não consegui encaminhar. Tente de novo."); return; }
+    mostrarAviso(`Encaminhada para ${nomeDoContato(conv.contato) || "a conversa"}.`);
+  }
+
   // Copiar o texto da mensagem.
   //
   // `navigator.clipboard` só existe em página segura (https ou localhost) e
@@ -3662,13 +3711,23 @@ export default function Painel({ sessao }) {
                           <div style={{ fontSize: 12, fontWeight: 700, color: corNome(m.enviado_por, modo), marginBottom: 1 }}>{m.enviado_por}</div>
                         )}
                         {m.id_uazapi && (
-                          <button onClick={() => { setReagindoTudo(false); setReagindo((r) => (r === m.id ? null : m.id)); }} title="Mais opções" aria-label="Opções da mensagem" style={{ position: "absolute", top: 2, right: 2, border: "none", background: "transparent", cursor: "pointer", opacity: (estreito || msgHover === m.id || reagindo === m.id) ? 0.8 : 0, transition: "opacity .12s", display: "flex", padding: 2 }}>
+                          <button data-menu-msg onClick={(ev) => {
+                            // PARA CIMA OU PARA BAIXO, conforme onde a bolha está.
+                            // Aberto sempre para baixo, o menu da última mensagem
+                            // saía pela borda inferior e ficava inalcançável.
+                            const r = ev.currentTarget.getBoundingClientRect();
+                            setMenuParaCima(r.bottom > window.innerHeight * 0.55);
+                            setReagindoTudo(false);
+                            setReagindo((x) => (x === m.id ? null : m.id));
+                          }} title="Mais opções" aria-label="Opções da mensagem" style={{ position: "absolute", top: 2, right: 2, border: "none", background: "transparent", cursor: "pointer", opacity: (estreito || msgHover === m.id || reagindo === m.id) ? 0.8 : 0, transition: "opacity .12s", display: "flex", padding: 2 }}>
                             <ChevronDown size={17} color={C.textSecondary} />
                           </button>
                         )}
                         {reagindo === m.id && (
                           <MenuMensagem C={C} saida={saida} tudo={reagindoTudo}
+                            paraCima={menuParaCima}
                             temTexto={Boolean(m.texto)}
+                            aoEncaminhar={() => { setReagindo(null); setReagindoTudo(false); setBuscaEncaminhar(""); setEncaminhar(m); }}
                             aoVerTudo={() => setReagindoTudo(true)}
                             aoReagir={(e) => reagir(m, e)}
                             aoResponder={() => { setReagindo(null); setReagindoTudo(false); iniciarResposta(m); }}
@@ -4373,6 +4432,68 @@ export default function Painel({ sessao }) {
       {/* JUNTAR DUAS CONVERSAS. A lista é a das conversas VISÍVEIS agora, e o
           servidor recusa juntar conversas de telefones diferentes — misturar
           dois números apagaria por onde a conversa aconteceu. */}
+      {/* ENCAMINHAR — escolher para qual conversa.
+          Lista as conversas do advogado aberto, e não a agenda inteira: quem
+          encaminha está no meio de um atendimento, e o destino quase sempre é
+          alguém com quem já se fala. Quem precisa de outro contato usa a Nova
+          conversa e encaminha de lá. */}
+      {encaminhar && (
+        <div onClick={() => setEncaminhar(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 90,
+                   display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()}
+            style={{ width: 420, maxWidth: "100%", maxHeight: "min(70vh, 560px)", background: C.panel,
+                     border: `1px solid ${C.divider}`, borderRadius: 12, overflow: "hidden",
+                     display: "flex", flexDirection: "column", boxShadow: "0 10px 40px rgba(0,0,0,.45)" }}>
+            <div style={{ padding: "14px 16px 10px", borderBottom: `1px solid ${C.divider}` }}>
+              <div style={{ fontSize: 15.5, fontWeight: 700, color: C.textPrimary }}>Encaminhar para</div>
+              <div style={{ fontSize: 12.5, color: C.textSecondary, marginTop: 2, overflow: "hidden",
+                            textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {encaminhar.texto || rotuloMidia(encaminhar.tipo) || "Mensagem"}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.searchBg,
+                            borderRadius: 8, padding: "6px 12px", marginTop: 10 }}>
+                <Search size={16} color={C.textSecondary} />
+                <input autoFocus value={buscaEncaminhar} onChange={(e) => setBuscaEncaminhar(e.target.value)}
+                  placeholder="Pesquisar conversa"
+                  style={{ border: "none", outline: "none", background: "transparent", fontSize: 14,
+                           flex: 1, color: C.textPrimary }} />
+              </div>
+            </div>
+            <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+              {(() => {
+                const q = buscaEncaminhar.trim().toLowerCase();
+                const lista = conversas.filter((c) => c.id !== conversaId && !c.arquivada
+                  && (!q || (nomeDoContato(c.contato) || "").toLowerCase().includes(q)
+                          || (c.contato?.numero || "").includes(q.replace(/\D/g, ""))));
+                if (!lista.length) return <div style={{ padding: 22, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>Nenhuma conversa encontrada.</div>;
+                return lista.map((c) => (
+                  <button key={c.id} onClick={() => enviarEncaminhada(c)}
+                    style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "10px 16px",
+                             border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary,
+                             textAlign: "left", borderBottom: `1px solid ${C.divider}` }}>
+                    <Avatar nome={nomeDoContato(c.contato) || c.contato?.numero} foto={c.contato?.foto_url} size={40} />
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: "block", fontSize: 14.5, fontWeight: 500, overflow: "hidden",
+                                     textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {nomeDoContato(c.contato) || c.contato?.numero}
+                      </span>
+                      <span style={{ display: "block", fontSize: 12, color: C.textSecondary }}>+{c.contato?.numero}</span>
+                    </span>
+                    <Forward size={17} color={C.textSecondary} />
+                  </button>
+                ));
+              })()}
+            </div>
+            <div style={{ padding: 10, borderTop: `1px solid ${C.divider}`, textAlign: "right" }}>
+              <button onClick={() => setEncaminhar(null)}
+                style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary,
+                         borderRadius: 8, padding: "8px 16px", fontSize: 14, cursor: "pointer" }}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {juntar && (
         <div onClick={() => setJuntar(null)}
              style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 210, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
