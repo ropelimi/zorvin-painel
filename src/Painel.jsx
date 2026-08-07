@@ -6,7 +6,7 @@ import {
   Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp,
   StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star,
   Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList, ShieldCheck,
-  ChevronLeft, ChevronRight, Images, ExternalLink, Pin
+  ChevronLeft, ChevronRight, Images, ExternalLink, Pin, Copy
 } from "lucide-react";
 import FichaVantoro from "./FichaVantoro";
 import { chamarPonte } from "./ponte.js";
@@ -583,47 +583,68 @@ function Avatar({ nome, size = 40, foto }) {
 // transformaria "reagir" numa escolha. Quem quiser mais abre o painel no "+".
 const EMOJIS_REACAO = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
-// O ROSTO DE REAGIR, como no WhatsApp Web.
+// O MENU DA MENSAGEM, como no WhatsApp Web.
 //
-// Mora FORA da bolha, do lado de dentro da conversa: à esquerda de quem envia,
-// à direita de quem recebe. Antes ficava dentro da bolha, no canto de cima —
-// e ali fazia dois estragos. Disputava espaço com o texto, e a fileira de
-// emojis herdava a largura da bolha: numa mensagem curta como "ok" só cabiam
-// três dos seis emojis, e os outros ficavam fora da vista.
+// Passar o mouse na bolha mostra uma seta no canto; clicar nela abre a fileira
+// de emojis em cima e as opções embaixo.
 //
-// Fora da bolha, a fileira flutua sobre a conversa e cabe sempre.
-function BotaoReagir({ C, lado, aberto, visivel, tudo, aoAbrir, aoVerTudo, aoReagir }) {
-  const ancora = lado === "esq" ? { left: 0 } : { right: 0 };
+// Antes só existia um botão de responder no canto e um rosto flutuante ao lado
+// da bolha. Dois controles soltos para duas ações, e sem lugar para a terceira:
+// cada opção nova precisaria de mais um ícone disputando o mesmo canto.
+//
+// Só aparecem aqui as opções QUE FAZEM ALGUMA COISA. Encaminhar, fixar,
+// favoritar e apagar mensagem ainda não existem no Zorvin, e um item de menu
+// que não funciona é pior que a ausência dele: ensina a equipe a desconfiar do
+// menu inteiro.
+function MenuMensagem({ C, saida, tudo, aoVerTudo, aoReagir, aoResponder, aoCopiar, temTexto }) {
+  const ancora = saida ? { right: 0 } : { left: 0 };
+  const ITEM = {
+    width: "100%", display: "flex", alignItems: "center", gap: 12,
+    padding: "9px 14px", border: "none", background: "transparent",
+    cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left",
+  };
   return (
-    <div style={{ position: "relative", width: 26, flexShrink: 0, marginBottom: 2 }}>
-      <button onClick={aoAbrir} title="Reagir" aria-label="Reagir"
-        style={{ width: 26, height: 26, borderRadius: "50%", border: "none", background: "transparent",
-                 cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                 padding: 0, opacity: visivel ? 1 : 0, transition: "opacity .12s" }}>
-        <Smile size={19} color={C.textSecondary} />
-      </button>
-      {aberto && (
-        <div style={{ position: "absolute", bottom: 32, ...ancora, zIndex: 20 }}>
-          {tudo ? (
-            <PainelEmoji C={C} aoEscolher={aoReagir} largura={312} altura={232} />
-          ) : (
-            <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "5px 8px",
-                          borderRadius: 999, background: C.panel, border: `1px solid ${C.divider}`,
-                          boxShadow: "0 6px 20px rgba(0,0,0,.35)", whiteSpace: "nowrap" }}>
-              {EMOJIS_REACAO.map((e) => (
-                <button key={e} onClick={() => aoReagir(e)} title={`Reagir com ${e}`}
-                  style={{ border: "none", background: "transparent", cursor: "pointer",
-                           fontSize: 21, lineHeight: 1, padding: "2px 4px", borderRadius: 8 }}>{e}</button>
-              ))}
-              <button onClick={aoVerTudo} title="Mais emojis"
-                style={{ border: "none", background: C.searchBg, cursor: "pointer", marginLeft: 4,
-                         width: 26, height: 26, borderRadius: "50%", display: "flex",
-                         alignItems: "center", justifyContent: "center", padding: 0 }}>
-                <Plus size={16} color={C.textSecondary} />
+    <div style={{ position: "absolute", top: 22, ...ancora, zIndex: 20,
+                  display: "flex", flexDirection: "column", alignItems: saida ? "flex-end" : "flex-start", gap: 6 }}>
+      {tudo ? (
+        <PainelEmoji C={C} aoEscolher={aoReagir} largura={312} altura={232} />
+      ) : (
+        <>
+          {/* A FILEIRA DE EMOJIS fica ACIMA do menu, e não dentro dele: reagir
+              é um toque só, e enterrá-la numa lista transformaria o gesto mais
+              rápido no mais lento. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "5px 8px",
+                        borderRadius: 999, background: C.panel, border: `1px solid ${C.divider}`,
+                        boxShadow: "0 6px 20px rgba(0,0,0,.35)", whiteSpace: "nowrap" }}>
+            {EMOJIS_REACAO.map((e) => (
+              <button key={e} onClick={() => aoReagir(e)} title={`Reagir com ${e}`}
+                style={{ border: "none", background: "transparent", cursor: "pointer",
+                         fontSize: 21, lineHeight: 1, padding: "2px 4px", borderRadius: 8 }}>{e}</button>
+            ))}
+            <button onClick={aoVerTudo} title="Mais emojis"
+              style={{ border: "none", background: C.searchBg, cursor: "pointer", marginLeft: 4,
+                       width: 26, height: 26, borderRadius: "50%", display: "flex",
+                       alignItems: "center", justifyContent: "center", padding: 0 }}>
+              <Plus size={16} color={C.textSecondary} />
+            </button>
+          </div>
+
+          <div style={{ width: 208, background: C.panel, border: `1px solid ${C.divider}`,
+                        borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.35)",
+                        overflow: "hidden", padding: "4px 0" }}>
+            <button onClick={aoResponder} style={ITEM}>
+              <Reply size={17} color={C.textSecondary} /> Responder
+            </button>
+            {temTexto && (
+              <button onClick={aoCopiar} style={ITEM}>
+                <Copy size={17} color={C.textSecondary} /> Copiar
               </button>
-            </div>
-          )}
-        </div>
+            )}
+            <button onClick={aoVerTudo} style={ITEM}>
+              <Smile size={17} color={C.textSecondary} /> Reagir
+            </button>
+          </div>
+        </>
       )}
     </div>
   );
@@ -2254,6 +2275,35 @@ export default function Painel({ sessao }) {
   // aparece três segundos depois faz a pessoa tocar duas vezes, e o segundo
   // toque desfaz o primeiro. Se o envio falhar, a fila mostra o erro e a
   // próxima leitura da conversa devolve a verdade do banco.
+  // Copiar o texto da mensagem.
+  //
+  // `navigator.clipboard` só existe em página segura (https ou localhost) e
+  // pode ser recusado pelo navegador. O caminho antigo — um <textarea> fora da
+  // tela mais execCommand — é feio, mas funciona onde o novo não funciona, e
+  // "copiar" que não copia e não avisa é a pior das saídas.
+  async function copiarMensagem(m) {
+    const texto = m.texto || "";
+    if (!texto) return;
+    try {
+      await navigator.clipboard.writeText(texto);
+      mostrarAviso("Mensagem copiada.");
+      return;
+    } catch (_) { /* segue para o caminho antigo */ }
+    try {
+      const campo = document.createElement("textarea");
+      campo.value = texto;
+      campo.style.position = "fixed";
+      campo.style.left = "-9999px";
+      document.body.appendChild(campo);
+      campo.select();
+      const deu = document.execCommand("copy");
+      document.body.removeChild(campo);
+      mostrarAviso(deu ? "Mensagem copiada." : "Não consegui copiar.");
+    } catch (_) {
+      mostrarAviso("Não consegui copiar.");
+    }
+  }
+
   async function reagir(m, emoji) {
     setReagindo(null);
     setReagindoTudo(false);
@@ -3607,27 +3657,22 @@ export default function Painel({ sessao }) {
                       </div>
                     ) : (
                     <div data-msg-id={m.id} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6, marginTop: mesmoRemetente ? -4 : 0, marginBottom: (Array.isArray(m.reacoes) && m.reacoes.length) ? 15 : 0 }}>
-                      {/* O ROSTO DE REAGIR, como no WhatsApp Web: FORA da bolha,
-                          do lado de dentro da conversa (à esquerda de quem
-                          envia, à direita de quem recebe), aparecendo ao passar
-                          o mouse.
-                          Antes ele morava dentro da bolha, no canto de cima. Ali
-                          disputava espaço com o texto, e a fileira de emojis
-                          herdava a largura da bolha — numa bolha curta só cabiam
-                          três dos seis emojis. Fora dela, nada disso acontece. */}
-                      {m.id_uazapi && saida && (
-                        <BotaoReagir C={C} lado="esq" aberto={reagindo === m.id} visivel={estreito || msgHover === m.id || reagindo === m.id}
-                          tudo={reagindoTudo} aoAbrir={() => { setReagindoTudo(false); setReagindo((r) => (r === m.id ? null : m.id)); }}
-                          aoVerTudo={() => setReagindoTudo(true)} aoReagir={(e) => reagir(m, e)} />
-                      )}
                       <div style={{ position: "relative", maxWidth: estreito ? "84%" : "65%", background: saida ? C.bubbleOut : C.bubbleIn, color: C.textPrimary, borderRadius: 8, padding: m.tipo === "imagem" ? 4 : "6px 9px 8px", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
                         {mostrarAutor && (
                           <div style={{ fontSize: 12, fontWeight: 700, color: corNome(m.enviado_por, modo), marginBottom: 1 }}>{m.enviado_por}</div>
                         )}
                         {m.id_uazapi && (
-                          <button onClick={() => iniciarResposta(m)} title="Responder" style={{ position: "absolute", top: 3, right: 3, border: "none", background: "transparent", cursor: "pointer", opacity: (estreito || msgHover === m.id) ? 0.75 : 0, transition: "opacity .12s", display: "flex", padding: 0 }}>
-                            <Reply size={14} color={C.textSecondary} />
+                          <button onClick={() => { setReagindoTudo(false); setReagindo((r) => (r === m.id ? null : m.id)); }} title="Mais opções" aria-label="Opções da mensagem" style={{ position: "absolute", top: 2, right: 2, border: "none", background: "transparent", cursor: "pointer", opacity: (estreito || msgHover === m.id || reagindo === m.id) ? 0.8 : 0, transition: "opacity .12s", display: "flex", padding: 2 }}>
+                            <ChevronDown size={17} color={C.textSecondary} />
                           </button>
+                        )}
+                        {reagindo === m.id && (
+                          <MenuMensagem C={C} saida={saida} tudo={reagindoTudo}
+                            temTexto={Boolean(m.texto)}
+                            aoVerTudo={() => setReagindoTudo(true)}
+                            aoReagir={(e) => reagir(m, e)}
+                            aoResponder={() => { setReagindo(null); setReagindoTudo(false); iniciarResposta(m); }}
+                            aoCopiar={() => { setReagindo(null); setReagindoTudo(false); copiarMensagem(m); }} />
                         )}
                         {m.resposta_previa && (
                           <div style={{ borderLeft: `3px solid ${C.green}`, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 4, padding: "3px 8px", marginBottom: 4 }}>
@@ -3708,11 +3753,6 @@ export default function Painel({ sessao }) {
                           )}
                         </div>
                       </div>
-                      {m.id_uazapi && !saida && (
-                        <BotaoReagir C={C} lado="dir" aberto={reagindo === m.id} visivel={estreito || msgHover === m.id || reagindo === m.id}
-                          tudo={reagindoTudo} aoAbrir={() => { setReagindoTudo(false); setReagindo((r) => (r === m.id ? null : m.id)); }}
-                          aoVerTudo={() => setReagindoTudo(true)} aoReagir={(e) => reagir(m, e)} />
-                      )}
                       {saida && (
                         <div style={{ width: 28, flexShrink: 0 }}>{ultimaDoGrupo ? <Avatar nome={m.enviado_por || meuNome} foto={m.enviado_por_foto || (m.enviado_por === meuNome ? minhaFoto : null)} size={28} /> : null}</div>
                       )}
