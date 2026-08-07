@@ -583,6 +583,51 @@ function Avatar({ nome, size = 40, foto }) {
 // transformaria "reagir" numa escolha. Quem quiser mais abre o painel no "+".
 const EMOJIS_REACAO = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
+// O RODAPÉ DA BOLHA — selos, hora e as marcas de entrega.
+//
+// No WhatsApp isso NÃO é uma linha embaixo do texto: é um bloco flutuante
+// encostado à direita, que se acomoda na última linha da mensagem quando
+// sobra espaço e só desce sozinho quando não sobra. É daí que vem a bolha
+// "fina" — "Bom dia" ocupa uma linha, não duas.
+//
+// Por isso ele vem DEPOIS do texto no HTML: um float só pode ser colocado na
+// linha em que aparece ou abaixo dela. Colocado antes, o texto contornaria a
+// hora pela primeira linha, que é o oposto do que se quer.
+//
+// `flutuante = false` é o caso de quem não tem texto nenhum (áudio, vídeo,
+// figurinha): aí ele volta a ser a linha de sempre, embaixo do anexo.
+function MetaBolha({ C, m, saida, flutuante, aoReenviar }) {
+  return (
+    <span style={{
+      ...(flutuante ? { float: "right", marginLeft: 10, marginTop: 4 }
+                    : { justifyContent: "flex-end", marginTop: 2 }),
+      display: "flex", alignItems: "center", gap: 3, height: 15,
+      fontSize: 11, lineHeight: 1, whiteSpace: "nowrap", userSelect: "none",
+      color: m._status === "erro" ? "#e53935" : C.textSecondary,
+    }}>
+      {m.fixada && <Pin size={12} color={C.textSecondary} />}
+      {m.favorita && <Star size={12} color="#f4c430" fill="#f4c430" />}
+      {/* Sem este selo o texto simplesmente muda: quem leu antes e volta
+          depois vê outra coisa, sem saber se houve correção ou se a memória
+          falhou. Fica à direita, junto da hora, como no WhatsApp. */}
+      {m.editada && <span style={{ fontStyle: "italic", opacity: .85 }}>Editada</span>}
+      {horaCurta(m.criado_em)}
+      {saida && (
+        m._status === "enviando" ? (
+          <Clock size={13} color={C.textSecondary} />
+        ) : m._status === "erro" ? (
+          <span onClick={aoReenviar} title="Toque para reenviar" style={{ color: "#e53935", cursor: "pointer", display: "flex", alignItems: "center", gap: 3, fontWeight: 600 }}>
+            <AlertCircle size={13} /> não enviado · reenviar
+          </span>
+        ) : (
+          // Cinza = enviada; azul = lida (igual ao WhatsApp).
+          <CheckCheck size={15} color={marcaLida(m.status) ? "#53bdeb" : "#8696a0"} />
+        )
+      )}
+    </span>
+  );
+}
+
 // O ROSTO DE REAGIR, ao lado da bolha.
 //
 // Faz o que a seta também faz, e existe assim mesmo: reagir é a ação mais
@@ -4085,7 +4130,7 @@ export default function Painel({ sessao }) {
                           aoVerTudo={() => setReagindoTudo(true)}
                           aoReagir={(e) => { setRostoAberto(null); reagir(m, e); }} />
                       )}
-                      <div style={{ position: "relative", maxWidth: estreito ? "84%" : "65%", background: m.tipo === "figurinha" ? "transparent" : (saida ? C.bubbleOut : C.bubbleIn), color: C.textPrimary, borderRadius: 8, padding: m.tipo === "figurinha" ? 0 : (m.tipo === "imagem" ? 4 : "6px 9px 8px"), boxShadow: m.tipo === "figurinha" ? "none" : "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
+                      <div style={{ position: "relative", maxWidth: estreito ? "84%" : "65%", background: m.tipo === "figurinha" ? "transparent" : (saida ? C.bubbleOut : C.bubbleIn), color: C.textPrimary, borderRadius: 8, padding: m.tipo === "figurinha" ? 0 : (m.tipo === "imagem" ? 4 : "5px 7px 6px 9px"), boxShadow: m.tipo === "figurinha" ? "none" : "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
                         {mostrarAutor && (
                           <div style={{ fontSize: 12, fontWeight: 700, color: corNome(m.enviado_por, modo), marginBottom: 1 }}>{m.enviado_por}</div>
                         )}
@@ -4099,7 +4144,20 @@ export default function Painel({ sessao }) {
                             setReagindoTudo(false);
                             setRostoAberto(null);
                             setReagindo((x) => (x === m.id ? null : m.id));
-                          }} title="Mais opções" aria-label="Opções da mensagem" style={{ position: "absolute", top: 2, right: 2, border: "none", background: "transparent", cursor: "pointer", opacity: (estreito || msgHover === m.id || reagindo === m.id) ? 0.8 : 0, transition: "opacity .12s", display: "flex", padding: 2 }}>
+                          }} title="Mais opções" aria-label="Opções da mensagem" style={{
+                            // A SETA FICA POR CIMA DO TEXTO, com um esmaecido
+                            // atrás. Antes o texto era empurrado 42px para a
+                            // esquerda o tempo todo só para abrir espaço para
+                            // uma seta que aparece no passar do mouse — e era
+                            // esse recuo que engordava toda bolha curta. O
+                            // WhatsApp resolve assim: a seta sobrepõe, e o
+                            // degradê na cor da bolha mantém a leitura.
+                            position: "absolute", top: 0, right: 0, border: "none", cursor: "pointer",
+                            opacity: (estreito || msgHover === m.id || reagindo === m.id) ? 0.9 : 0,
+                            transition: "opacity .12s", display: "flex", alignItems: "flex-start", justifyContent: "flex-end",
+                            padding: "3px 3px 6px 30px", borderRadius: "0 8px 0 0",
+                            background: `linear-gradient(to left, ${saida ? C.bubbleOut : C.bubbleIn} 45%, transparent)`,
+                          }}>
                             <ChevronDown size={17} color={C.textSecondary} />
                           </button>
                         )}
@@ -4178,13 +4236,20 @@ export default function Painel({ sessao }) {
                             <Trash2 size={12} color="#e0a800" /> O contato apagou esta mensagem no WhatsApp
                           </div>
                         )}
-                        {m.apagada && (
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14,
-                                        fontStyle: "italic", color: C.textSecondary, paddingRight: 42 }}>
-                            <Trash2 size={14} color={C.textSecondary} /> Esta mensagem foi apagada
+                        {/* O TEXTO E O RODAPÉ NO MESMO BLOCO.
+                            `flow-root` existe para que a bolha cresça junto
+                            com a hora flutuante: sem ele o float escapa da
+                            caixa e a última linha fica por baixo do balão. */}
+                        {(m.texto || m.apagada) && (
+                          <div style={{ fontSize: 14.2, lineHeight: 1.35, marginTop: m.tipo !== "texto" ? 4 : 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere", display: "flow-root" }}>
+                            {m.apagada ? (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontStyle: "italic", color: C.textSecondary }}>
+                                <Trash2 size={14} color={C.textSecondary} /> Esta mensagem foi apagada
+                              </span>
+                            ) : formatarTexto(m.texto, C.link)}
+                            <MetaBolha C={C} m={m} saida={saida} flutuante aoReenviar={() => reenviar(m)} />
                           </div>
                         )}
-                        {m.texto && <div style={{ fontSize: 14.2, lineHeight: 1.35, paddingRight: 42, marginTop: m.tipo !== "texto" ? 4 : 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{formatarTexto(m.texto, C.link)}</div>}
                         {/* AS REAÇÕES, COMO NO WHATSAPP WEB.
                             Uma pastilha só, pendurada na quina de baixo da
                             bolha e transbordando para fora dela. A borda é da
@@ -4212,27 +4277,12 @@ export default function Painel({ sessao }) {
                             {m.reacoes.map((r, i) => <span key={i}>{r.emoji}</span>)}
                           </div>
                         )}
-                        <div style={{ fontSize: 11, color: m._status === "erro" ? "#e53935" : C.textSecondary, textAlign: "right", marginTop: 2, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 3 }}>
-                          {/* Sem este selo o texto simplesmente muda: quem leu
-                              antes e volta depois vê outra coisa, sem saber se
-                              houve correção ou se a memória falhou. */}
-                          {m.fixada && <Pin size={12} color={C.textSecondary} />}
-                          {m.favorita && <Star size={12} color="#f4c430" fill="#f4c430" />}
-                          {m.editada && <span style={{ fontStyle: "italic", opacity: .85 }}>Editada</span>}
-                          {horaCurta(m.criado_em)}
-                          {saida && (
-                            m._status === "enviando" ? (
-                              <Clock size={13} color={C.textSecondary} />
-                            ) : m._status === "erro" ? (
-                              <span onClick={() => reenviar(m)} title="Toque para reenviar" style={{ color: "#e53935", cursor: "pointer", display: "flex", alignItems: "center", gap: 3, fontWeight: 600 }}>
-                                <AlertCircle size={13} /> não enviado · reenviar
-                              </span>
-                            ) : (
-                              // Cinza = enviada; azul = lida (igual ao WhatsApp).
-                              <CheckCheck size={15} color={marcaLida(m.status) ? "#53bdeb" : "#8696a0"} />
-                            )
-                          )}
-                        </div>
+                        {/* Sem texto — áudio, vídeo, figurinha, documento — não
+                            há última linha em que caber, e o rodapé volta a ser
+                            uma linha embaixo do anexo. */}
+                        {!m.texto && !m.apagada && (
+                          <MetaBolha C={C} m={m} saida={saida} aoReenviar={() => reenviar(m)} />
+                        )}
                       </div>
                       {m.id_uazapi && !m.apagada && !saida && (
                         <RostoReagir C={C} saida={saida} tudo={reagindoTudo}
