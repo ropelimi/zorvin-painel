@@ -642,7 +642,7 @@ function RostoReagir({ C, saida, visivel, aberto, aoAbrir, aoReagir, aoVerTudo, 
 // favoritar e apagar mensagem ainda não existem no Zorvin, e um item de menu
 // que não funciona é pior que a ausência dele: ensina a equipe a desconfiar do
 // menu inteiro.
-function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoResponder, aoCopiar, aoEncaminhar, aoEditar, aoFixar, aoFavoritar, aoApagar, temTexto, podeEditar, fixada, favorita }) {
+function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoResponder, aoCopiar, aoEncaminhar, aoEditar, aoFixar, aoFavoritar, aoApagarAqui, aoApagarTodos, temTexto, podeEditar, fixada, favorita }) {
   // PARA CIMA OU PARA BAIXO. Na metade de baixo da tela o menu abre para cima,
   // senão o da última mensagem sai pela borda e fica inalcançável.
   //
@@ -728,8 +728,11 @@ function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoRespond
             {saida && (
               <>
                 <div style={{ height: 1, background: C.divider, margin: "4px 0" }} />
-                <button onClick={aoApagar} style={{ ...ITEM, color: "#e53935" }}>
-                  <Trash2 size={17} color="#e53935" /> Apagar
+                <button onClick={aoApagarAqui} style={ITEM}>
+                  <Trash2 size={17} color={C.textSecondary} /> Apagar só no Zorvin
+                </button>
+                <button onClick={aoApagarTodos} style={{ ...ITEM, color: "#e53935" }}>
+                  <Trash2 size={17} color="#e53935" /> Apagar para todos
                 </button>
               </>
             )}
@@ -2444,38 +2447,72 @@ export default function Painel({ sessao }) {
       enviado_por: meuNome, enviado_por_foto: minhaFoto, midia_url: url,
       criado_em: new Date().toISOString(), _status: "enviando",
     }]);
+    // `texto: ""` e não ausente: a coluna da fila não aceita nulo, e o insert
+    // falhava em silêncio — a figurinha da galeria nunca saía. Mesma pegadinha
+    // que derrubou o Apagar.
     const { error } = await inserirNaFila({
-      conversa_id: conversaId, tipo: "figurinha", midia_url: url,
+      conversa_id: conversaId, tipo: "figurinha", texto: "", midia_url: url,
       enviado_por: meuNome, enviado_por_foto: minhaFoto,
     });
     if (error) setMensagens((prev) => prev.map((x) => (x.id === tempId ? { ...x, _status: "erro" } : x)));
     else marcarLida(conversaId);
   }
 
-  // APAGAR PARA TODOS.
+  // APAGAR — DUAS COISAS DIFERENTES, e por isso duas opções.
   //
-  // A Uazapi não oferece "apagar só para mim": esta rota tira a mensagem da
-  // conversa dos DOIS lados, inclusive do celular do contato. Por isso pergunta
-  // antes — é a única ação do menu que não dá para desfazer.
+  //   "para todos"     tira a mensagem também do celular do contato. Não tem
+  //                    volta, nem para ele nem para nós.
+  //   "só no Zorvin"   tira da conversa AQUI. O contato continua com ela no
+  //                    aparelho dele.
   //
-  // A bolha continua no histórico do Zorvin como "Esta mensagem foi apagada".
-  // Sumir de vez deixaria um buraco silencioso: a equipe veria a resposta sem a
-  // pergunta, sem saber que algo foi removido.
-  async function apagarMensagem(m) {
-    if (!m.id_uazapi) { mostrarAviso("Esta mensagem ainda não foi confirmada pelo WhatsApp."); return; }
+  // O WhatsApp chama a segunda de "apagar para mim". Aqui não existe "mim": a
+  // conversa é a mesma para o escritório inteiro, e apagar tira da vista de
+  // todo mundo. Chamar de "para mim" faria alguém achar que só a própria tela
+  // muda — e é justamente o engano que custa caro numa equipe.
+  //
+  // A bolha não some em nenhum dos dois: vira "Esta mensagem foi apagada".
+  // Sumir de vez deixaria um buraco silencioso, com a resposta sem a pergunta.
+  async function apagarMensagem(m, paraTodos) {
     if (m.origem !== "advogado") { mostrarAviso("Só dá para apagar mensagens que o escritório enviou."); return; }
-    if (!window.confirm("Apagar esta mensagem para TODOS?\n\nEla some também do celular do contato, e isso não tem volta.")) return;
+    if (paraTodos && !m.id_uazapi) { mostrarAviso("Esta mensagem ainda não foi confirmada pelo WhatsApp."); return; }
+    const pergunta = paraTodos
+      ? "Apagar para TODOS?\n\nA mensagem some também do celular do contato, e isso não tem volta."
+      : "Apagar só no Zorvin?\n\nEla some da conversa para o escritório inteiro. O contato continua com ela no celular.";
+    if (!window.confirm(pergunta)) return;
+
+    const antes = m;
     setMensagens((prev) => prev.map((x) => (x.id === m.id ? { ...x, apagada: true, texto: null, midia_url: null } : x)));
+
+    // SÓ NO ZORVIN: nada vai para a fila — é uma marca no nosso banco, e a
+    // Uazapi não entra na história.
+    if (!paraTodos) {
+      const { data, error } = await supabase.from("mensagens")
+        .update({ apagada: true, texto: null, midia_url: null }).eq("id", m.id).select("id");
+      const naoMexeu = !error && Array.isArray(data) && data.length === 0;
+      if (error || naoMexeu) {
+        setMensagens((prev) => prev.map((x) => (x.id === m.id ? antes : x)));
+        mostrarAviso(naoMexeu
+          ? "Falta rodar o SQL 2026-08-fixar-favoritar-mensagem.sql no Supabase."
+          : `Não consegui apagar: ${error?.message || "erro desconhecido"}`);
+      }
+      return;
+    }
+
+    // `texto: ""` e não ausente: a coluna da fila não aceita nulo, e sem ele o
+    // insert falhava — era esse o "Não consegui apagar. Tente de novo".
     const { error } = await inserirNaFila({
       conversa_id: conversaId,
       tipo: "exclusao",
+      texto: "",
       responder_id_uazapi: m.id_uazapi,
       status: "pendente",
       enviado_por: meuNome,
     });
     if (error) {
-      setMensagens((prev) => prev.map((x) => (x.id === m.id ? m : x)));
-      mostrarAviso("Não consegui apagar. Tente de novo.");
+      setMensagens((prev) => prev.map((x) => (x.id === m.id ? antes : x)));
+      // A mensagem do banco vai junto: "tente de novo" não diz o que houve, e
+      // foi por isso que este defeito levou uma rodada inteira para ser achado.
+      mostrarAviso(`Não consegui apagar: ${error.message || "erro desconhecido"}`);
     }
   }
 
@@ -3999,7 +4036,7 @@ export default function Painel({ sessao }) {
                           aoVerTudo={() => setReagindoTudo(true)}
                           aoReagir={(e) => { setRostoAberto(null); reagir(m, e); }} />
                       )}
-                      <div style={{ position: "relative", maxWidth: estreito ? "84%" : "65%", background: saida ? C.bubbleOut : C.bubbleIn, color: C.textPrimary, borderRadius: 8, padding: m.tipo === "imagem" ? 4 : "6px 9px 8px", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
+                      <div style={{ position: "relative", maxWidth: estreito ? "84%" : "65%", background: m.tipo === "figurinha" ? "transparent" : (saida ? C.bubbleOut : C.bubbleIn), color: C.textPrimary, borderRadius: 8, padding: m.tipo === "figurinha" ? 0 : (m.tipo === "imagem" ? 4 : "6px 9px 8px"), boxShadow: m.tipo === "figurinha" ? "none" : "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
                         {mostrarAutor && (
                           <div style={{ fontSize: 12, fontWeight: 700, color: corNome(m.enviado_por, modo), marginBottom: 1 }}>{m.enviado_por}</div>
                         )}
@@ -4027,7 +4064,8 @@ export default function Painel({ sessao }) {
                             fixada={Boolean(m.fixada)} favorita={Boolean(m.favorita)}
                             aoFixar={() => { setReagindo(null); setReagindoTudo(false); marcarMensagem(m, "fixada", !m.fixada); }}
                             aoFavoritar={() => { setReagindo(null); setReagindoTudo(false); marcarMensagem(m, "favorita", !m.favorita); }}
-                            aoApagar={() => { setReagindo(null); setReagindoTudo(false); apagarMensagem(m); }}
+                            aoApagarAqui={() => { setReagindo(null); setReagindoTudo(false); apagarMensagem(m, false); }}
+                            aoApagarTodos={() => { setReagindo(null); setReagindoTudo(false); apagarMensagem(m, true); }}
                             aoVerTudo={() => setReagindoTudo(true)}
                             aoReagir={(e) => reagir(m, e)}
                             aoResponder={() => { setReagindo(null); setReagindoTudo(false); iniciarResposta(m); }}
@@ -4048,6 +4086,17 @@ export default function Painel({ sessao }) {
                                   style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", display: "block", borderRadius: 6 }}>
                             <img src={m.midia_url} alt="Imagem recebida na conversa" loading="lazy" decoding="async" onLoad={() => { if (pertoDoFim) fimRef.current?.scrollIntoView(); }} style={{ maxWidth: "min(260px, 62vw)", maxHeight: 320, width: "auto", height: "auto", borderRadius: 6, display: "block" }} />
                           </button>
+                        )}
+                        {/* FIGURINHA. Eu ensinei a ponte a reconhecê-la e esqueci
+                            de ensinar a TELA a desenhá-la: o tipo novo não caía
+                            em nenhum dos ramos, e a bolha aparecia vazia — tanto
+                            a recebida quanto a que o próprio Zorvin mandou.
+                            Vai sem moldura e maior que uma imagem comum, como no
+                            WhatsApp: figurinha não tem fundo, ela flutua. */}
+                        {m.tipo === "figurinha" && m.midia_url && (
+                          <img src={m.midia_url} alt="Figurinha" loading="lazy" decoding="async"
+                            onLoad={() => { if (pertoDoFim) fimRef.current?.scrollIntoView(); }}
+                            style={{ width: 140, height: 140, objectFit: "contain", display: "block" }} />
                         )}
                         {m.tipo === "audio" && <BolhaAudio C={C} saida={saida} url={m.midia_url} />}
                         {m.tipo === "video" && m.midia_url && (
