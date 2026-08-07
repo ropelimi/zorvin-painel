@@ -970,7 +970,9 @@ export default function Painel({ sessao }) {
     const mapa = {};
     (data || []).forEach((r) => {
       if (r.arquivada) return;
-      mapa[r.advogado_id] = (mapa[r.advogado_id] || 0) + (r.nao_lidas || 0);
+      // +1 por CONVERSA, e não a soma das mensagens dela: o selo tem de bater
+      // com o que a pessoa consegue contar na lista.
+      mapa[r.advogado_id] = (mapa[r.advogado_id] || 0) + 1;
     });
     setNaoLidasPorAdv(mapa);
   }, []);
@@ -2677,6 +2679,14 @@ export default function Painel({ sessao }) {
   const totalNaoLidasLista = conversas.filter((c) => !c.arquivada && (c.nao_lidas || 0) > 0).length;
   // Quantas estão arquivadas (para o contador da linha "Arquivadas").
   const totalArquivadas = conversas.filter((c) => c.arquivada).length;
+  // NÃO LIDAS QUE ESTÃO DENTRO DAS ARQUIVADAS.
+  //
+  // Elas saíram do selo do advogado, e com razão: conversa arquivada não entra
+  // na fila de atendimento. Mas "não conta lá" não pode virar "não existe" —
+  // são mensagens de cliente que ninguém leu, e sem este número elas ficariam
+  // invisíveis para sempre, atrás de uma pasta que ninguém tem motivo para
+  // abrir.
+  const naoLidasArquivadas = conversas.filter((c) => c.arquivada && (c.nao_lidas || 0) > 0).length;
 
   // A etiqueta escolhida no filtro, quando há uma. É ela que dá cor e nome à
   // pílula de etiquetas — sem isso, com o filtro ligado a lista fica curta e
@@ -2795,7 +2805,14 @@ export default function Painel({ sessao }) {
   // Não lidas de cada advogado, para o selo na barra lateral.
   // Para o advogado atual usamos a lista já carregada (que zera a conversa
   // aberta em tempo real); para os demais, o total consultado do banco.
-  const naoLidasAtual = conversas.reduce((s, c) => s + (c.arquivada ? 0 : (c.nao_lidas || 0)), 0);
+  // CONVERSAS, e não mensagens.
+  //
+  // O selo somava as mensagens: seis conversas em que uma delas tinha duas
+  // mensagens viravam "7". Mas o filtro logo ao lado diz "Não lidas 6", e a
+  // lista mostra seis linhas — o 7 não correspondia a nada que a pessoa
+  // pudesse contar na tela. O que se atende é conversa; é isso que o selo tem
+  // de dizer.
+  const naoLidasAtual = conversas.filter((c) => !c.arquivada && (c.nao_lidas || 0) > 0).length;
   function naoLidasDoAdvogado(id) {
     return id === advogadoId ? naoLidasAtual : (naoLidasPorAdv[id] || 0);
   }
@@ -3228,6 +3245,16 @@ export default function Painel({ sessao }) {
             <div onClick={() => setVerArquivadas(true)} role="button" style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 16px", borderBottom: `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary }}>
               <Archive size={20} color={C.green} />
               <span style={{ flex: 1, fontSize: 14.5, fontWeight: 600 }}>Arquivadas</span>
+              {/* O selo verde de não lidas vem ANTES da contagem de conversas,
+                  e só aparece quando existe: é a informação que pede ação, e a
+                  outra é só quantidade. Mesmo desenho do selo da lista, para
+                  não ensinar dois vocabulários para a mesma ideia. */}
+              {naoLidasArquivadas > 0 && (
+                <span title={`${naoLidasArquivadas} conversa(s) arquivada(s) com mensagem não lida`}
+                  style={{ background: C.unread, color: "#fff", fontSize: 11.5, fontWeight: 700, minWidth: 20, height: 20, borderRadius: 10, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "0 6px" }}>
+                  {naoLidasArquivadas}
+                </span>
+              )}
               <span style={{ fontSize: 12, color: C.textSecondary, fontWeight: 600 }}>{totalArquivadas}</span>
             </div>
           )}
