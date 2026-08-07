@@ -642,7 +642,7 @@ function RostoReagir({ C, saida, visivel, aberto, aoAbrir, aoReagir, aoVerTudo, 
 // favoritar e apagar mensagem ainda não existem no Zorvin, e um item de menu
 // que não funciona é pior que a ausência dele: ensina a equipe a desconfiar do
 // menu inteiro.
-function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoResponder, aoCopiar, aoEncaminhar, aoEditar, temTexto, podeEditar }) {
+function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoResponder, aoCopiar, aoEncaminhar, aoEditar, aoFixar, aoFavoritar, temTexto, podeEditar, fixada, favorita }) {
   // PARA CIMA OU PARA BAIXO. Na metade de baixo da tela o menu abre para cima,
   // senão o da última mensagem sai pela borda e fica inalcançável.
   //
@@ -710,6 +710,12 @@ function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoRespond
                 <Pencil size={17} color={C.textSecondary} /> Editar
               </button>
             )}
+            <button onClick={aoFixar} style={ITEM}>
+              <Pin size={17} color={fixada ? C.green : C.textSecondary} /> {fixada ? "Desafixar" : "Fixar"}
+            </button>
+            <button onClick={aoFavoritar} style={ITEM}>
+              <Star size={17} color={favorita ? "#f4c430" : C.textSecondary} /> {favorita ? "Desfavoritar" : "Favoritar"}
+            </button>
           </div>
         </>
       )}
@@ -2383,6 +2389,26 @@ export default function Painel({ sessao }) {
     mostrarAviso(`Encaminhada para ${nomeDoContato(conv.contato) || "a conversa"}.`);
   }
 
+  // FIXAR e FAVORITAR uma MENSAGEM (a estrela e o alfinete que já existiam são
+  // da conversa inteira — servem para achar a pessoa, não o trecho).
+  //
+  // `.select("id")` não é enfeite: sem política de atualização, o Supabase não
+  // dá erro, ele só não altera nada. O botão pareceria funcionar e a marca
+  // sumiria ao recarregar. Zero linhas alteradas é a única pista, e é por ela
+  // que se avisa quem está usando.
+  async function marcarMensagem(m, campo, valor) {
+    setMensagens((prev) => prev.map((x) => (x.id === m.id ? { ...x, [campo]: valor } : x)));
+    const { data, error } = await supabase.from("mensagens")
+      .update({ [campo]: valor }).eq("id", m.id).select("id");
+    const naoMexeu = !error && Array.isArray(data) && data.length === 0;
+    if (error || naoMexeu) {
+      setMensagens((prev) => prev.map((x) => (x.id === m.id ? { ...x, [campo]: m[campo] } : x)));
+      mostrarAviso(naoMexeu
+        ? "Falta rodar o SQL 2026-08-fixar-favoritar-mensagem.sql no Supabase."
+        : "Não consegui salvar a marca.");
+    }
+  }
+
   // O PRAZO PARA EDITAR.
   //
   // O WhatsApp só aceita editar uma mensagem por cerca de 15 minutos. Passado
@@ -3775,6 +3801,38 @@ export default function Painel({ sessao }) {
               </div>
             )}
 
+            {/* A BARRA DAS FIXADAS.
+                Fixar sem esta barra seria só uma marquinha na bolha: a mensagem
+                continuaria enterrada no meio da conversa, e achá-la daria o
+                mesmo trabalho de antes. É a barra que transforma o alfinete em
+                atalho — clicar nela leva até a mensagem.
+                Mostra a mais recente e diz quantas são, como o WhatsApp. */}
+            {(() => {
+              const fixadas = mensagens.filter((x) => x.fixada);
+              if (!fixadas.length) return null;
+              const ultima = fixadas[fixadas.length - 1];
+              return (
+                <div role="button" onClick={() => {
+                  const el = document.querySelector(`[data-msg-id="${ultima.id}"]`);
+                  if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); }
+                  else mostrarAviso("Essa mensagem está mais acima; carregue as anteriores.");
+                }}
+                  style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer",
+                           background: C.headerBar, borderBottom: `1px solid ${C.divider}`,
+                           padding: estreito ? "8px 12px" : "8px 16px", color: C.textPrimary }}>
+                  <Pin size={16} color={C.green} />
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: C.textSecondary,
+                                 overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {ultima.texto || rotuloMidia(ultima.tipo) || "Mensagem fixada"}
+                  </span>
+                  {fixadas.length > 1 && (
+                    <span style={{ fontSize: 11.5, fontWeight: 700, color: C.textSecondary }}>
+                      {fixadas.length} fixadas
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
             <div ref={listaRef} onScroll={aoRolar} style={{ flex: 1, overflowY: "auto", padding: estreito ? "16px 10px" : "20px 8%", display: "flex", flexDirection: "column", gap: 6 }}>
               {/* O degrau para subir no histórico. A conversa abre com as
                   últimas mensagens; o resto vem daqui, um lote por vez. Um
@@ -3873,6 +3931,9 @@ export default function Painel({ sessao }) {
                             aoEncaminhar={() => { setReagindo(null); setReagindoTudo(false); setBuscaEncaminhar(""); setEncaminhar(m); }}
                             podeEditar={Boolean(saida && m.texto && m.id_uazapi && dentroDoPrazoDeEdicao(m))}
                             aoEditar={() => { setReagindo(null); setReagindoTudo(false); iniciarEdicao(m); }}
+                            fixada={Boolean(m.fixada)} favorita={Boolean(m.favorita)}
+                            aoFixar={() => { setReagindo(null); setReagindoTudo(false); marcarMensagem(m, "fixada", !m.fixada); }}
+                            aoFavoritar={() => { setReagindo(null); setReagindoTudo(false); marcarMensagem(m, "favorita", !m.favorita); }}
                             aoVerTudo={() => setReagindoTudo(true)}
                             aoReagir={(e) => reagir(m, e)}
                             aoResponder={() => { setReagindo(null); setReagindoTudo(false); iniciarResposta(m); }}
@@ -3945,6 +4006,8 @@ export default function Painel({ sessao }) {
                           {/* Sem este selo o texto simplesmente muda: quem leu
                               antes e volta depois vê outra coisa, sem saber se
                               houve correção ou se a memória falhou. */}
+                          {m.fixada && <Pin size={12} color={C.textSecondary} />}
+                          {m.favorita && <Star size={12} color="#f4c430" fill="#f4c430" />}
                           {m.editada && <span style={{ fontStyle: "italic", opacity: .85 }}>Editada</span>}
                           {horaCurta(m.criado_em)}
                           {saida && (
