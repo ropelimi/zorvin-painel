@@ -3465,6 +3465,19 @@ export default function Painel({ sessao }) {
                           )
                         )}
                         {m.texto && <div style={{ fontSize: 14.2, lineHeight: 1.35, paddingRight: 42, marginTop: m.tipo !== "texto" ? 4 : 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{formatarTexto(m.texto, C.link)}</div>}
+                        {/* AS REAÇÕES DA BOLHA.
+                            Ficam presas à mensagem, e não soltas na conversa:
+                            um emoji sozinho no meio do histórico não diz a que
+                            se refere, e era assim que chegava antes. */}
+                        {Array.isArray(m.reacoes) && m.reacoes.length > 0 && (
+                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 5 }}>
+                            {m.reacoes.map((r, i) => (
+                              <span key={i} title={r.de === "advogado" ? "Reação de quem atende" : "Reação do contato"}
+                                style={{ fontSize: 13, lineHeight: 1.15, padding: "3px 7px", borderRadius: 999,
+                                         background: C.searchBg, border: `1px solid ${C.divider}` }}>{r.emoji}</span>
+                            ))}
+                          </div>
+                        )}
                         <div style={{ fontSize: 11, color: m._status === "erro" ? "#e53935" : C.textSecondary, textAlign: "right", marginTop: 2, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 3 }}>
                           {horaCurta(m.criado_em)}
                           {saida && (
