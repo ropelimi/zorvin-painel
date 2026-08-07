@@ -642,7 +642,7 @@ function RostoReagir({ C, saida, visivel, aberto, aoAbrir, aoReagir, aoVerTudo, 
 // favoritar e apagar mensagem ainda não existem no Zorvin, e um item de menu
 // que não funciona é pior que a ausência dele: ensina a equipe a desconfiar do
 // menu inteiro.
-function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoResponder, aoCopiar, aoEncaminhar, aoEditar, aoFixar, aoFavoritar, aoApagarAqui, aoApagarTodos, temTexto, podeEditar, fixada, favorita }) {
+function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoResponder, aoCopiar, aoEncaminhar, aoEditar, aoFixar, aoFavoritar, aoApagar, temTexto, podeEditar, fixada, favorita }) {
   // PARA CIMA OU PARA BAIXO. Na metade de baixo da tela o menu abre para cima,
   // senão o da última mensagem sai pela borda e fica inalcançável.
   //
@@ -725,14 +725,18 @@ function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoRespond
                 escreveu é registro do atendimento, e ninguém da equipe deve
                 poder sumir com ele. Fica separado e em vermelho porque é a
                 única opção do menu que não tem volta. */}
+            {/* UM "Apagar" só, como no WhatsApp. Ele não apaga nada: liga o
+                modo de seleção com esta mensagem já marcada. A escolha entre
+                "para todos" e "só no Zorvin" vem depois, na lixeira — e vale
+                para tudo o que foi marcado.
+                Perguntar antes de saber QUANTAS mensagens é que estava errado:
+                quem quer apagar cinco não deveria responder a mesma pergunta
+                cinco vezes. */}
             {saida && (
               <>
                 <div style={{ height: 1, background: C.divider, margin: "4px 0" }} />
-                <button onClick={aoApagarAqui} style={ITEM}>
-                  <Trash2 size={17} color={C.textSecondary} /> Apagar só no Zorvin
-                </button>
-                <button onClick={aoApagarTodos} style={{ ...ITEM, color: "#e53935" }}>
-                  <Trash2 size={17} color="#e53935" /> Apagar para todos
+                <button onClick={aoApagar} style={{ ...ITEM, color: "#e53935" }}>
+                  <Trash2 size={17} color="#e53935" /> Apagar
                 </button>
               </>
             )}
@@ -788,6 +792,9 @@ export default function Painel({ sessao }) {
   const [menuParaCima, setMenuParaCima] = useState(false); // o menu da bolha abre para cima?
   const [encaminhar, setEncaminhar] = useState(null);      // mensagem sendo encaminhada
   const [editando, setEditando] = useState(null);          // mensagem sendo editada
+  // MODO SELEÇÃO, como no WhatsApp: `null` = desligado; array = ids marcados.
+  const [selecao, setSelecao] = useState(null);
+  const [confirmarApagar, setConfirmarApagar] = useState(false);
   const [figurinhasAberto, setFigurinhasAberto] = useState(false);
   const [figurinhas, setFigurinhas] = useState([]);        // URLs já usadas neste Zorvin
   const [buscaEncaminhar, setBuscaEncaminhar] = useState("");
@@ -2272,6 +2279,8 @@ export default function Painel({ sessao }) {
       if (imagemAberta) setImagemAberta(null);
       else if (anexoPendente) fecharAnexoPendente();
       else if (audioPronto) descartarAudioPronto();
+      else if (confirmarApagar) setConfirmarApagar(false);
+      else if (selecao) setSelecao(null);
       else if (figurinhasAberto) setFigurinhasAberto(false);
       else if (editando) cancelarEdicao();
       else if (encaminhar) setEncaminhar(null);
@@ -2304,7 +2313,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [figurinhasAberto, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo, conversaId]);
+  }, [confirmarApagar, selecao, figurinhasAberto, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo, conversaId]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -2458,39 +2467,54 @@ export default function Painel({ sessao }) {
     else marcarLida(conversaId);
   }
 
-  // APAGAR — DUAS COISAS DIFERENTES, e por isso duas opções.
+  // APAGAR — DUAS COISAS DIFERENTES, escolhidas DEPOIS de marcar as mensagens.
   //
-  //   "para todos"     tira a mensagem também do celular do contato. Não tem
-  //                    volta, nem para ele nem para nós.
-  //   "só no Zorvin"   tira da conversa AQUI. O contato continua com ela no
-  //                    aparelho dele.
+  //   "para todos"     tira também do celular do contato. Não tem volta.
+  //   "só no Zorvin"   tira da conversa AQUI; o contato continua com ela.
   //
   // O WhatsApp chama a segunda de "apagar para mim". Aqui não existe "mim": a
   // conversa é a mesma para o escritório inteiro, e apagar tira da vista de
   // todo mundo. Chamar de "para mim" faria alguém achar que só a própria tela
-  // muda — e é justamente o engano que custa caro numa equipe.
+  // muda — o engano que custa caro numa equipe.
   //
   // A bolha não some em nenhum dos dois: vira "Esta mensagem foi apagada".
   // Sumir de vez deixaria um buraco silencioso, com a resposta sem a pergunta.
-  async function apagarMensagem(m, paraTodos) {
-    if (m.origem !== "advogado") { mostrarAviso("Só dá para apagar mensagens que o escritório enviou."); return; }
-    if (paraTodos && !m.id_uazapi) { mostrarAviso("Esta mensagem ainda não foi confirmada pelo WhatsApp."); return; }
-    const pergunta = paraTodos
-      ? "Apagar para TODOS?\n\nA mensagem some também do celular do contato, e isso não tem volta."
-      : "Apagar só no Zorvin?\n\nEla some da conversa para o escritório inteiro. O contato continua com ela no celular.";
-    if (!window.confirm(pergunta)) return;
+  function podeSerApagada(m) {
+    return m.origem === "advogado" && !m.apagada;
+  }
 
-    const antes = m;
-    setMensagens((prev) => prev.map((x) => (x.id === m.id ? { ...x, apagada: true, texto: null, midia_url: null } : x)));
+  function alternarSelecao(id) {
+    setSelecao((s) => {
+      if (!s) return [id];
+      return s.includes(id) ? s.filter((x) => x !== id) : [...s, id];
+    });
+  }
 
-    // SÓ NO ZORVIN: nada vai para a fila — é uma marca no nosso banco, e a
-    // Uazapi não entra na história.
+  async function apagarSelecionadas(paraTodos) {
+    const ids = selecao || [];
+    const alvos = mensagens.filter((m) => ids.includes(m.id) && podeSerApagada(m));
+    setConfirmarApagar(false);
+    setSelecao(null);
+    if (!alvos.length) return;
+
+    const antes = alvos.slice();
+    setMensagens((prev) => prev.map((x) => (ids.includes(x.id)
+      ? { ...x, apagada: true, texto: null, midia_url: null } : x)));
+
+    const voltarAtras = () => setMensagens((prev) => prev.map((x) => {
+      const orig = antes.find((a) => a.id === x.id);
+      return orig ? orig : x;
+    }));
+
     if (!paraTodos) {
+      // SÓ NO ZORVIN: nada vai para a fila — é uma marca no nosso banco, e a
+      // Uazapi não entra na história.
       const { data, error } = await supabase.from("mensagens")
-        .update({ apagada: true, texto: null, midia_url: null }).eq("id", m.id).select("id");
+        .update({ apagada: true, texto: null, midia_url: null })
+        .in("id", alvos.map((m) => m.id)).select("id");
       const naoMexeu = !error && Array.isArray(data) && data.length === 0;
       if (error || naoMexeu) {
-        setMensagens((prev) => prev.map((x) => (x.id === m.id ? antes : x)));
+        voltarAtras();
         mostrarAviso(naoMexeu
           ? "Falta rodar o SQL 2026-08-fixar-favoritar-mensagem.sql no Supabase."
           : `Não consegui apagar: ${error?.message || "erro desconhecido"}`);
@@ -2499,20 +2523,22 @@ export default function Painel({ sessao }) {
     }
 
     // `texto: ""` e não ausente: a coluna da fila não aceita nulo, e sem ele o
-    // insert falhava — era esse o "Não consegui apagar. Tente de novo".
-    const { error } = await inserirNaFila({
-      conversa_id: conversaId,
-      tipo: "exclusao",
-      texto: "",
-      responder_id_uazapi: m.id_uazapi,
-      status: "pendente",
-      enviado_por: meuNome,
-    });
-    if (error) {
-      setMensagens((prev) => prev.map((x) => (x.id === m.id ? antes : x)));
-      // A mensagem do banco vai junto: "tente de novo" não diz o que houve, e
-      // foi por isso que este defeito levou uma rodada inteira para ser achado.
-      mostrarAviso(`Não consegui apagar: ${error.message || "erro desconhecido"}`);
+    // insert falha — era esse o "Não consegui apagar. Tente de novo".
+    const semId = alvos.filter((m) => !m.id_uazapi);
+    const podem = alvos.filter((m) => m.id_uazapi);
+    for (const m of podem) {
+      const { error } = await inserirNaFila({
+        conversa_id: conversaId, tipo: "exclusao", texto: "",
+        responder_id_uazapi: m.id_uazapi, status: "pendente", enviado_por: meuNome,
+      });
+      if (error) {
+        voltarAtras();
+        mostrarAviso(`Não consegui apagar: ${error.message || "erro desconhecido"}`);
+        return;
+      }
+    }
+    if (semId.length) {
+      mostrarAviso(`${semId.length} mensagem(ns) ainda não confirmada(s) pelo WhatsApp ficaram de fora.`);
     }
   }
 
@@ -2688,7 +2714,7 @@ export default function Painel({ sessao }) {
   // `setFiltro("tudo")` junto: com um filtro de tag ativo, trocar de telefone
   // abria a lista escrita "Nenhuma conversa ainda" — e não era verdade, era o
   // filtro de outro telefone ainda ligado.
-  function trocarAdvogado(id) { setAdvogadoId(id); setConversaId(null); setSeletorAberto(false); setBusca(""); setVerArquivadas(false); setFiltro("tudo"); }
+  function trocarAdvogado(id) { setSelecao(null); setAdvogadoId(id); setConversaId(null); setSeletorAberto(false); setBusca(""); setVerArquivadas(false); setFiltro("tudo"); }
   // Troca de DEPARTAMENTO e vai para o primeiro telefone dele.
   function trocarDepartamento(id) {
     if (id === departamentoId) return;
@@ -4027,7 +4053,22 @@ export default function Painel({ sessao }) {
                         <div style={{ width: 28, flexShrink: 0 }}><Avatar nome={m.autor || "equipe"} foto={m.autor_foto || (m.autor === meuNome ? minhaFoto : null)} size={28} /></div>
                       </div>
                     ) : (
-                    <div data-msg-id={m.id} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6, marginTop: mesmoRemetente ? -4 : 0, marginBottom: (Array.isArray(m.reacoes) && m.reacoes.length) ? 15 : 0 }}>
+                    <div data-msg-id={m.id} onClick={() => { if (selecao && podeSerApagada(m)) alternarSelecao(m.id); }} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6, marginTop: mesmoRemetente ? -4 : 0, marginBottom: (Array.isArray(m.reacoes) && m.reacoes.length) ? 15 : 0 }}>
+                      {/* A CAIXINHA DE SELEÇÃO. Aparece em TODA linha para o
+                          alinhamento não dançar, mas só é clicável no que dá
+                          para apagar — o que o escritório enviou. Nas demais
+                          fica um espaço vazio, e a conversa não se desmonta ao
+                          entrar no modo. */}
+                      {selecao && (
+                        <span onClick={(e) => { e.stopPropagation(); if (podeSerApagada(m)) alternarSelecao(m.id); }}
+                          style={{ width: 22, height: 22, flexShrink: 0, marginBottom: 2, borderRadius: 5,
+                                   display: "flex", alignItems: "center", justifyContent: "center",
+                                   cursor: podeSerApagada(m) ? "pointer" : "default",
+                                   border: podeSerApagada(m) ? `2px solid ${selecao.includes(m.id) ? C.green : C.textSecondary}` : "2px solid transparent",
+                                   background: selecao.includes(m.id) ? C.green : "transparent" }}>
+                          {selecao.includes(m.id) && <Check size={14} color="#fff" />}
+                        </span>
+                      )}
                       {m.id_uazapi && !m.apagada && saida && (
                         <RostoReagir C={C} saida={saida} tudo={reagindoTudo}
                           visivel={estreito || msgHover === m.id || rostoAberto === m.id}
@@ -4064,8 +4105,7 @@ export default function Painel({ sessao }) {
                             fixada={Boolean(m.fixada)} favorita={Boolean(m.favorita)}
                             aoFixar={() => { setReagindo(null); setReagindoTudo(false); marcarMensagem(m, "fixada", !m.fixada); }}
                             aoFavoritar={() => { setReagindo(null); setReagindoTudo(false); marcarMensagem(m, "favorita", !m.favorita); }}
-                            aoApagarAqui={() => { setReagindo(null); setReagindoTudo(false); apagarMensagem(m, false); }}
-                            aoApagarTodos={() => { setReagindo(null); setReagindoTudo(false); apagarMensagem(m, true); }}
+                            aoApagar={() => { setReagindo(null); setReagindoTudo(false); setSelecao([m.id]); }}
                             aoVerTudo={() => setReagindoTudo(true)}
                             aoReagir={(e) => reagir(m, e)}
                             aoResponder={() => { setReagindo(null); setReagindoTudo(false); iniciarResposta(m); }}
@@ -4252,7 +4292,28 @@ export default function Painel({ sessao }) {
                 flutuando sobre a própria conversa — o fundo dela, com padrão e
                 tudo, continua atrás do balão. */}
             <div style={{ background: C.barraFundo, padding: estreito ? "7px 8px" : "9px 16px", display: "flex", alignItems: "flex-end", gap: estreito ? 6 : 10, position: "relative" }}>
-              {audioPronto ? (
+              {selecao ? (
+                /* A BARRA DA SELEÇÃO substitui a de digitar, como no WhatsApp.
+                   Deixar as duas na tela convidaria a escrever no meio de uma
+                   exclusão, e o Enter mandaria a mensagem em vez de apagar. */
+                <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 14, padding: "6px 4px" }}>
+                  <button onClick={() => setSelecao(null)} title="Cancelar seleção"
+                    style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", padding: 6 }}>
+                    <X size={22} color={C.textSecondary} />
+                  </button>
+                  <span style={{ flex: 1, fontSize: 15, color: C.textPrimary }}>
+                    {selecao.length === 0 ? "Selecione as mensagens"
+                      : `${selecao.length} selecionada${selecao.length > 1 ? "s" : ""}`}
+                  </span>
+                  <button onClick={() => selecao.length && setConfirmarApagar(true)}
+                    title="Apagar as selecionadas" disabled={!selecao.length}
+                    style={{ border: "none", background: "transparent",
+                             cursor: selecao.length ? "pointer" : "default",
+                             opacity: selecao.length ? 1 : .4, display: "flex", padding: 6 }}>
+                    <Trash2 size={22} color="#e53935" />
+                  </button>
+                </div>
+              ) : audioPronto ? (
                 // Prévia do áudio gravado: ouça antes de enviar.
                 <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, padding: "6px 2px" }}>
                   <button onClick={descartarAudioPronto} title="Descartar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
@@ -4877,6 +4938,43 @@ export default function Painel({ sessao }) {
           encaminha está no meio de um atendimento, e o destino quase sempre é
           alguém com quem já se fala. Quem precisa de outro contato usa a Nova
           conversa e encaminha de lá. */}
+      {/* AS TRÊS OPÇÕES, depois de escolher as mensagens. Perguntar aqui e não
+          no menu é o que permite marcar cinco e responder uma vez só. */}
+      {confirmarApagar && (
+        <div onClick={() => setConfirmarApagar(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 95,
+                   display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()}
+            style={{ width: 380, maxWidth: "100%", background: C.panel, border: `1px solid ${C.divider}`,
+                     borderRadius: 12, padding: "20px 22px", boxShadow: "0 10px 40px rgba(0,0,0,.45)" }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: C.textPrimary }}>
+              Apagar {selecao?.length === 1 ? "a mensagem" : `as ${selecao?.length} mensagens`}?
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 20 }}>
+              <button onClick={() => apagarSelecionadas(true)}
+                style={{ border: `1px solid ${C.divider}`, background: "transparent", color: "#e53935",
+                         borderRadius: 8, padding: "11px 16px", fontSize: 14.5, fontWeight: 600, cursor: "pointer" }}>
+                Apagar para todos
+              </button>
+              <button onClick={() => apagarSelecionadas(false)}
+                style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary,
+                         borderRadius: 8, padding: "11px 16px", fontSize: 14.5, cursor: "pointer" }}>
+                Apagar só no Zorvin
+              </button>
+              <button onClick={() => setConfirmarApagar(false)}
+                style={{ border: "none", background: "transparent", color: C.textSecondary,
+                         borderRadius: 8, padding: "11px 16px", fontSize: 14.5, cursor: "pointer" }}>
+                Cancelar
+              </button>
+            </div>
+            <div style={{ fontSize: 12.5, color: C.textSecondary, marginTop: 14, lineHeight: 1.4 }}>
+              "Para todos" tira também do celular do contato, e não tem volta.
+              "Só no Zorvin" tira da conversa para o escritório inteiro; o contato continua com ela.
+            </div>
+          </div>
+        </div>
+      )}
+
       {encaminhar && (
         <div onClick={() => setEncaminhar(null)}
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 90,
