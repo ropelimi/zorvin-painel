@@ -4098,7 +4098,7 @@ export default function Painel({ sessao }) {
                         <div style={{ width: 28, flexShrink: 0 }}><Avatar nome={m.autor || "equipe"} foto={m.autor_foto || (m.autor === meuNome ? minhaFoto : null)} size={28} /></div>
                       </div>
                     ) : (
-                    <div data-msg-id={m.id} onClick={() => { if (selecao && podeSerApagada(m)) alternarSelecao(m.id); }} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ position: "relative", display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6, marginTop: mesmoRemetente ? -4 : 0, marginBottom: (Array.isArray(m.reacoes) && m.reacoes.length) ? 15 : 0, paddingLeft: selecao ? 36 : 0, transition: "padding-left .12s" }}>
+                    <div data-msg-id={m.id} onClick={() => { if (selecao && podeSerApagada(m)) alternarSelecao(m.id); }} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ position: "relative", display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6, marginTop: mesmoRemetente ? -4 : 0, marginBottom: (Array.isArray(m.reacoes) && m.reacoes.length) ? 15 : 0, paddingLeft: selecao ? 34 : 0, transition: "padding-left .12s" }}>
                       {/* A CAIXINHA DE SELEÇÃO. Aparece em TODA linha para o
                           alinhamento não dançar, mas só é clicável no que dá
                           para apagar — o que o escritório enviou. Nas demais
@@ -4113,13 +4113,18 @@ export default function Painel({ sessao }) {
                           baixo. É assim que o WhatsApp desenha. */}
                       {selecao && (
                         <span onClick={(e) => { e.stopPropagation(); if (podeSerApagada(m)) alternarSelecao(m.id); }}
-                          style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)",
-                                   width: 22, height: 22, borderRadius: 5,
+                          style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)",
+                                   // Do tamanho da do WhatsApp: a caixinha é uma
+                                   // marca ao lado da conversa, não um botão a
+                                   // disputar atenção com a mensagem. A área de
+                                   // clique continua maior que o desenho, pelo
+                                   // recuo que a linha inteira ganha.
+                                   width: 18, height: 18, borderRadius: 4, boxSizing: "border-box",
                                    display: "flex", alignItems: "center", justifyContent: "center",
                                    cursor: podeSerApagada(m) ? "pointer" : "default",
-                                   border: podeSerApagada(m) ? `2px solid ${selecao.includes(m.id) ? C.green : C.textSecondary}` : "2px solid transparent",
+                                   border: podeSerApagada(m) ? `1.5px solid ${selecao.includes(m.id) ? C.green : C.textSecondary}` : "1.5px solid transparent",
                                    background: selecao.includes(m.id) ? C.green : "transparent" }}>
-                          {selecao.includes(m.id) && <Check size={14} color="#fff" />}
+                          {selecao.includes(m.id) && <Check size={12} strokeWidth={3} color="#fff" />}
                         </span>
                       )}
                       {m.id_uazapi && !m.apagada && saida && (
