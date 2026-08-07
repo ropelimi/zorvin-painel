@@ -583,6 +583,52 @@ function Avatar({ nome, size = 40, foto }) {
 // transformaria "reagir" numa escolha. Quem quiser mais abre o painel no "+".
 const EMOJIS_REACAO = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
+// O ROSTO DE REAGIR, ao lado da bolha.
+//
+// Faz o que a seta também faz, e existe assim mesmo: reagir é a ação mais
+// frequente da conversa, e pela seta ela custa dois cliques (abrir o menu,
+// escolher). Pelo rosto custa um. O WhatsApp Web mantém os dois pelo mesmo
+// motivo.
+//
+// Fica FORA da bolha, do lado de dentro da conversa: à esquerda de quem envia,
+// à direita de quem recebe.
+function RostoReagir({ C, saida, visivel, aberto, aoAbrir, aoReagir, aoVerTudo, tudo }) {
+  const ancora = saida ? { left: 0 } : { right: 0 };
+  return (
+    <div data-menu-msg style={{ position: "relative", width: 26, flexShrink: 0, marginBottom: 2 }}>
+      <button onClick={aoAbrir} title="Reagir" aria-label="Reagir"
+        style={{ width: 26, height: 26, borderRadius: "50%", border: "none", background: "transparent",
+                 cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                 padding: 0, opacity: visivel ? 1 : 0, transition: "opacity .12s" }}>
+        <Smile size={19} color={C.textSecondary} />
+      </button>
+      {aberto && (
+        <div style={{ position: "absolute", bottom: 32, ...ancora, zIndex: 20 }}>
+          {tudo ? (
+            <PainelEmoji C={C} aoEscolher={aoReagir} largura={312} altura={232} />
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "5px 8px",
+                          borderRadius: 999, background: C.panel, border: `1px solid ${C.divider}`,
+                          boxShadow: "0 6px 20px rgba(0,0,0,.35)", whiteSpace: "nowrap" }}>
+              {EMOJIS_REACAO.map((e) => (
+                <button key={e} onClick={() => aoReagir(e)} title={`Reagir com ${e}`}
+                  style={{ border: "none", background: "transparent", cursor: "pointer",
+                           fontSize: 21, lineHeight: 1, padding: "2px 4px", borderRadius: 8 }}>{e}</button>
+              ))}
+              <button onClick={aoVerTudo} title="Mais emojis"
+                style={{ border: "none", background: C.searchBg, cursor: "pointer", marginLeft: 4,
+                         width: 26, height: 26, borderRadius: "50%", display: "flex",
+                         alignItems: "center", justifyContent: "center", padding: 0 }}>
+                <Plus size={16} color={C.textSecondary} />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // O MENU DA MENSAGEM, como no WhatsApp Web.
 //
 // Passar o mouse na bolha mostra uma seta no canto; clicar nela abre a fileira
@@ -789,6 +835,7 @@ export default function Painel({ sessao }) {
   const [msgHover, setMsgHover] = useState(null); // id da bolha sob o mouse (mostra "responder")
   const [reagindo, setReagindo] = useState(null); // id da bolha com a fileira de emojis aberta
   const [reagindoTudo, setReagindoTudo] = useState(false); // a fileira virou o painel inteiro
+  const [rostoAberto, setRostoAberto] = useState(null);    // id da bolha com a fileira do rosto
   const [convHover, setConvHover] = useState(null); // id da conversa sob o mouse (realce)
   const [menuConversa, setMenuConversa] = useState(null); // id da conversa com o menuzinho aberto
   const [modoNota, setModoNota] = useState(false); // caixa de texto no modo "nota interna"
@@ -2198,6 +2245,7 @@ export default function Painel({ sessao }) {
       else if (audioPronto) descartarAudioPronto();
       else if (editando) cancelarEdicao();
       else if (encaminhar) setEncaminhar(null);
+      else if (rostoAberto) { setRostoAberto(null); setReagindoTudo(false); }
       else if (reagindo) { setReagindo(null); setReagindoTudo(false); }
       else if (gravando) cancelarGravacao();
       else if (tagForm) setTagForm(null);
@@ -2226,7 +2274,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [editando, encaminhar, reagindo, imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo, conversaId]);
+  }, [editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo, conversaId]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -2237,8 +2285,8 @@ export default function Painel({ sessao }) {
       // guardar um ref por bolha seria um mapa que envelhece a cada rolagem. A
       // marca no elemento resolve — se o clique não veio de dentro de algo
       // marcado, o menu fecha.
-      if (reagindo && !(e.target.closest && e.target.closest("[data-menu-msg]"))) {
-        setReagindo(null); setReagindoTudo(false);
+      if ((reagindo || rostoAberto) && !(e.target.closest && e.target.closest("[data-menu-msg]"))) {
+        setReagindo(null); setRostoAberto(null); setReagindoTudo(false);
       }
       if (emojiAberto && emojiRef.current && !emojiRef.current.contains(e.target)) setEmojiAberto(false);
       if (seletorAberto && seletorRef.current && !seletorRef.current.contains(e.target)) setSeletorAberto(false);
@@ -2247,7 +2295,7 @@ export default function Painel({ sessao }) {
     }
     document.addEventListener("mousedown", aoClicar);
     return () => document.removeEventListener("mousedown", aoClicar);
-  }, [reagindo, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas]);
+  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas]);
 
   // Fecha o menuzinho da conversa (marcar não lida) ao clicar em qualquer lugar.
   useEffect(() => {
@@ -3764,6 +3812,14 @@ export default function Painel({ sessao }) {
                       </div>
                     ) : (
                     <div data-msg-id={m.id} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6, marginTop: mesmoRemetente ? -4 : 0, marginBottom: (Array.isArray(m.reacoes) && m.reacoes.length) ? 15 : 0 }}>
+                      {m.id_uazapi && saida && (
+                        <RostoReagir C={C} saida={saida} tudo={reagindoTudo}
+                          visivel={estreito || msgHover === m.id || rostoAberto === m.id}
+                          aberto={rostoAberto === m.id}
+                          aoAbrir={() => { setReagindo(null); setReagindoTudo(false); setRostoAberto((r) => (r === m.id ? null : m.id)); }}
+                          aoVerTudo={() => setReagindoTudo(true)}
+                          aoReagir={(e) => { setRostoAberto(null); reagir(m, e); }} />
+                      )}
                       <div style={{ position: "relative", maxWidth: estreito ? "84%" : "65%", background: saida ? C.bubbleOut : C.bubbleIn, color: C.textPrimary, borderRadius: 8, padding: m.tipo === "imagem" ? 4 : "6px 9px 8px", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
                         {mostrarAutor && (
                           <div style={{ fontSize: 12, fontWeight: 700, color: corNome(m.enviado_por, modo), marginBottom: 1 }}>{m.enviado_por}</div>
@@ -3776,6 +3832,7 @@ export default function Painel({ sessao }) {
                             const r = ev.currentTarget.getBoundingClientRect();
                             setMenuParaCima(r.bottom > window.innerHeight * 0.55);
                             setReagindoTudo(false);
+                            setRostoAberto(null);
                             setReagindo((x) => (x === m.id ? null : m.id));
                           }} title="Mais opções" aria-label="Opções da mensagem" style={{ position: "absolute", top: 2, right: 2, border: "none", background: "transparent", cursor: "pointer", opacity: (estreito || msgHover === m.id || reagindo === m.id) ? 0.8 : 0, transition: "opacity .12s", display: "flex", padding: 2 }}>
                             <ChevronDown size={17} color={C.textSecondary} />
@@ -3876,6 +3933,14 @@ export default function Painel({ sessao }) {
                           )}
                         </div>
                       </div>
+                      {m.id_uazapi && !saida && (
+                        <RostoReagir C={C} saida={saida} tudo={reagindoTudo}
+                          visivel={estreito || msgHover === m.id || rostoAberto === m.id}
+                          aberto={rostoAberto === m.id}
+                          aoAbrir={() => { setReagindo(null); setReagindoTudo(false); setRostoAberto((r) => (r === m.id ? null : m.id)); }}
+                          aoVerTudo={() => setReagindoTudo(true)}
+                          aoReagir={(e) => { setRostoAberto(null); reagir(m, e); }} />
+                      )}
                       {saida && (
                         <div style={{ width: 28, flexShrink: 0 }}>{ultimaDoGrupo ? <Avatar nome={m.enviado_por || meuNome} foto={m.enviado_por_foto || (m.enviado_por === meuNome ? minhaFoto : null)} size={28} /> : null}</div>
                       )}
