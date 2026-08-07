@@ -3473,7 +3473,7 @@ export default function Painel({ sessao }) {
                         <div style={{ width: 28, flexShrink: 0 }}><Avatar nome={m.autor || "equipe"} foto={m.autor_foto || (m.autor === meuNome ? minhaFoto : null)} size={28} /></div>
                       </div>
                     ) : (
-                    <div data-msg-id={m.id} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6, marginTop: mesmoRemetente ? -4 : 0 }}>
+                    <div data-msg-id={m.id} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6, marginTop: mesmoRemetente ? -4 : 0, marginBottom: (Array.isArray(m.reacoes) && m.reacoes.length) ? 12 : 0 }}>
                       <div style={{ position: "relative", maxWidth: estreito ? "84%" : "65%", background: saida ? C.bubbleOut : C.bubbleIn, color: C.textPrimary, borderRadius: 8, padding: m.tipo === "imagem" ? 4 : "6px 9px 8px", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
                         {mostrarAutor && (
                           <div style={{ fontSize: 12, fontWeight: 700, color: corNome(m.enviado_por, modo), marginBottom: 1 }}>{m.enviado_por}</div>
@@ -3539,17 +3539,31 @@ export default function Painel({ sessao }) {
                           )
                         )}
                         {m.texto && <div style={{ fontSize: 14.2, lineHeight: 1.35, paddingRight: 42, marginTop: m.tipo !== "texto" ? 4 : 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{formatarTexto(m.texto, C.link)}</div>}
-                        {/* AS REAÇÕES DA BOLHA.
-                            Ficam presas à mensagem, e não soltas na conversa:
-                            um emoji sozinho no meio do histórico não diz a que
-                            se refere, e era assim que chegava antes. */}
+                        {/* AS REAÇÕES, COMO NO WHATSAPP WEB.
+                            Uma pastilha só, pendurada na quina de baixo da
+                            bolha e transbordando para fora dela. A borda é da
+                            COR DO FUNDO da conversa, e não uma linha cinza: é
+                            isso que dá o efeito de recorte: a pastilha parece
+                            colada por cima, não desenhada dentro.
+                            A primeira versão empilhava as pastilhas DENTRO da
+                            bolha, embaixo do texto — o emoji virava parte da
+                            mensagem, e duas reações ocupavam duas linhas de
+                            conversa. Aqui elas cabem todas numa pastilha só,
+                            que é como o WhatsApp agrupa.
+                            O lado acompanha o da bolha: quem recebe tem a
+                            pastilha à esquerda, quem envia à direita. Assim ela
+                            nasce sempre da quina de dentro. */}
                         {Array.isArray(m.reacoes) && m.reacoes.length > 0 && (
-                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 5 }}>
-                            {m.reacoes.map((r, i) => (
-                              <span key={i} title={r.de === "advogado" ? "Reação de quem atende" : "Reação do contato"}
-                                style={{ fontSize: 13, lineHeight: 1.15, padding: "3px 7px", borderRadius: 999,
-                                         background: C.searchBg, border: `1px solid ${C.divider}` }}>{r.emoji}</span>
-                            ))}
+                          <div title={m.reacoes.map((r) => `${r.emoji} ${r.de === "advogado" ? "de quem atende" : "do contato"}`).join("  ·  ")}
+                            style={{ position: "absolute", bottom: -11, zIndex: 2,
+                                     ...(saida ? { right: 8 } : { left: 8 }),
+                                     display: "flex", alignItems: "center", gap: 2,
+                                     padding: "1px 5px", borderRadius: 999,
+                                     background: saida ? C.bubbleOut : C.bubbleIn,
+                                     border: `2px solid ${C.chatBg}`,
+                                     boxShadow: "0 1px 2px rgba(0,0,0,.25)",
+                                     fontSize: 13, lineHeight: "17px", whiteSpace: "nowrap" }}>
+                            {m.reacoes.map((r, i) => <span key={i}>{r.emoji}</span>)}
                           </div>
                         )}
                         <div style={{ fontSize: 11, color: m._status === "erro" ? "#e53935" : C.textSecondary, textAlign: "right", marginTop: 2, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 3 }}>
