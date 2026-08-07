@@ -6,7 +6,7 @@ import {
   Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp,
   StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star,
   Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList, ShieldCheck,
-  ChevronLeft, ChevronRight, Images, ExternalLink, Pin, Copy, Forward
+  ChevronLeft, ChevronRight, Images, ExternalLink, Pin, Copy, Forward, Sticker
 } from "lucide-react";
 import FichaVantoro from "./FichaVantoro";
 import { chamarPonte } from "./ponte.js";
@@ -642,7 +642,7 @@ function RostoReagir({ C, saida, visivel, aberto, aoAbrir, aoReagir, aoVerTudo, 
 // favoritar e apagar mensagem ainda não existem no Zorvin, e um item de menu
 // que não funciona é pior que a ausência dele: ensina a equipe a desconfiar do
 // menu inteiro.
-function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoResponder, aoCopiar, aoEncaminhar, aoEditar, aoFixar, aoFavoritar, temTexto, podeEditar, fixada, favorita }) {
+function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoResponder, aoCopiar, aoEncaminhar, aoEditar, aoFixar, aoFavoritar, aoApagar, temTexto, podeEditar, fixada, favorita }) {
   // PARA CIMA OU PARA BAIXO. Na metade de baixo da tela o menu abre para cima,
   // senão o da última mensagem sai pela borda e fica inalcançável.
   //
@@ -716,6 +716,23 @@ function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoRespond
             <button onClick={aoFavoritar} style={ITEM}>
               <Star size={17} color={favorita ? "#f4c430" : C.textSecondary} /> {favorita ? "Desfavoritar" : "Favoritar"}
             </button>
+            {/* APAGAR fica separado por uma linha e em vermelho: é a única
+                opção do menu que não tem volta, e a distância do resto existe
+                para o dedo não escorregar do Favoritar para ela. */}
+            {/* APAGAR só nas mensagens que NÓS enviamos.
+                A rota da Uazapi apaga para todos e aceita mensagem recebida
+                também — mas aqui é escritório de advocacia: o que o cliente
+                escreveu é registro do atendimento, e ninguém da equipe deve
+                poder sumir com ele. Fica separado e em vermelho porque é a
+                única opção do menu que não tem volta. */}
+            {saida && (
+              <>
+                <div style={{ height: 1, background: C.divider, margin: "4px 0" }} />
+                <button onClick={aoApagar} style={{ ...ITEM, color: "#e53935" }}>
+                  <Trash2 size={17} color="#e53935" /> Apagar
+                </button>
+              </>
+            )}
           </div>
         </>
       )}
@@ -768,6 +785,8 @@ export default function Painel({ sessao }) {
   const [menuParaCima, setMenuParaCima] = useState(false); // o menu da bolha abre para cima?
   const [encaminhar, setEncaminhar] = useState(null);      // mensagem sendo encaminhada
   const [editando, setEditando] = useState(null);          // mensagem sendo editada
+  const [figurinhasAberto, setFigurinhasAberto] = useState(false);
+  const [figurinhas, setFigurinhas] = useState([]);        // URLs já usadas neste Zorvin
   const [buscaEncaminhar, setBuscaEncaminhar] = useState("");
   const [advogadoId, setAdvogadoId] = useState(null);
   const [conversas, setConversas] = useState([]);
@@ -813,6 +832,7 @@ export default function Painel({ sessao }) {
   const rascunhosRef = useRef({});
   const conversaAnteriorRef = useRef(null);
   const listaRef = useRef(null);
+  const figurinhaRef = useRef(null);
   const fileRef = useRef(null);
   const [pertoDoFim, setPertoDoFim] = useState(true);
   const [emojiAberto, setEmojiAberto] = useState(false);
@@ -2249,6 +2269,7 @@ export default function Painel({ sessao }) {
       if (imagemAberta) setImagemAberta(null);
       else if (anexoPendente) fecharAnexoPendente();
       else if (audioPronto) descartarAudioPronto();
+      else if (figurinhasAberto) setFigurinhasAberto(false);
       else if (editando) cancelarEdicao();
       else if (encaminhar) setEncaminhar(null);
       else if (rostoAberto) { setRostoAberto(null); setReagindoTudo(false); }
@@ -2280,7 +2301,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo, conversaId]);
+  }, [figurinhasAberto, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo, conversaId]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -2294,6 +2315,7 @@ export default function Painel({ sessao }) {
       if ((reagindo || rostoAberto) && !(e.target.closest && e.target.closest("[data-menu-msg]"))) {
         setReagindo(null); setRostoAberto(null); setReagindoTudo(false);
       }
+      if (figurinhasAberto && !(e.target.closest && e.target.closest("[data-figurinhas]"))) setFigurinhasAberto(false);
       if (emojiAberto && emojiRef.current && !emojiRef.current.contains(e.target)) setEmojiAberto(false);
       if (seletorAberto && seletorRef.current && !seletorRef.current.contains(e.target)) setSeletorAberto(false);
       if (tagMenuAberto && tagMenuRef.current && !tagMenuRef.current.contains(e.target)) setTagMenuAberto(false);
@@ -2301,7 +2323,7 @@ export default function Painel({ sessao }) {
     }
     document.addEventListener("mousedown", aoClicar);
     return () => document.removeEventListener("mousedown", aoClicar);
-  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas]);
+  }, [figurinhasAberto, reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas]);
 
   // Fecha o menuzinho da conversa (marcar não lida) ao clicar em qualquer lugar.
   useEffect(() => {
@@ -2387,6 +2409,74 @@ export default function Painel({ sessao }) {
     });
     if (error) { mostrarAviso("Não consegui encaminhar. Tente de novo."); return; }
     mostrarAviso(`Encaminhada para ${nomeDoContato(conv.contato) || "a conversa"}.`);
+  }
+
+  // FIGURINHAS.
+  //
+  // A galeria é montada com as figurinhas que já passaram por este Zorvin —
+  // enviadas ou recebidas. É assim que o acervo do escritório se forma sozinho,
+  // sem ninguém precisar cadastrar nada: a figurinha que alguém usou uma vez
+  // fica à mão para a próxima.
+  //
+  // Sem a galeria, "mandar figurinha" viraria "procurar um arquivo .webp no
+  // computador toda vez", que ninguém faz duas vezes.
+  const carregarFigurinhas = useCallback(async () => {
+    const { data } = await supabase.from("mensagens")
+      .select("midia_url").eq("tipo", "figurinha").not("midia_url", "is", null)
+      .order("criado_em", { ascending: false }).limit(80);
+    const vistas = new Set();
+    const lista = [];
+    (data || []).forEach((r) => {
+      if (r.midia_url && !vistas.has(r.midia_url)) { vistas.add(r.midia_url); lista.push(r.midia_url); }
+    });
+    setFigurinhas(lista.slice(0, 24));
+  }, []);
+
+  // Reenviar uma figurinha da galeria: ela já está no Storage, então é só
+  // enfileirar a URL — sem novo upload, sem esperar.
+  async function enviarFigurinhaUrl(url) {
+    setFigurinhasAberto(false);
+    if (!conversaId) return;
+    setPertoDoFim(true);
+    const tempId = "temp-" + Date.now() + "-" + Math.round(Math.random() * 1e6);
+    setMensagens((prev) => [...prev, {
+      id: tempId, conversa_id: conversaId, origem: "advogado", tipo: "figurinha",
+      enviado_por: meuNome, enviado_por_foto: minhaFoto, midia_url: url,
+      criado_em: new Date().toISOString(), _status: "enviando",
+    }]);
+    const { error } = await inserirNaFila({
+      conversa_id: conversaId, tipo: "figurinha", midia_url: url,
+      enviado_por: meuNome, enviado_por_foto: minhaFoto,
+    });
+    if (error) setMensagens((prev) => prev.map((x) => (x.id === tempId ? { ...x, _status: "erro" } : x)));
+    else marcarLida(conversaId);
+  }
+
+  // APAGAR PARA TODOS.
+  //
+  // A Uazapi não oferece "apagar só para mim": esta rota tira a mensagem da
+  // conversa dos DOIS lados, inclusive do celular do contato. Por isso pergunta
+  // antes — é a única ação do menu que não dá para desfazer.
+  //
+  // A bolha continua no histórico do Zorvin como "Esta mensagem foi apagada".
+  // Sumir de vez deixaria um buraco silencioso: a equipe veria a resposta sem a
+  // pergunta, sem saber que algo foi removido.
+  async function apagarMensagem(m) {
+    if (!m.id_uazapi) { mostrarAviso("Esta mensagem ainda não foi confirmada pelo WhatsApp."); return; }
+    if (m.origem !== "advogado") { mostrarAviso("Só dá para apagar mensagens que o escritório enviou."); return; }
+    if (!window.confirm("Apagar esta mensagem para TODOS?\n\nEla some também do celular do contato, e isso não tem volta.")) return;
+    setMensagens((prev) => prev.map((x) => (x.id === m.id ? { ...x, apagada: true, texto: null, midia_url: null } : x)));
+    const { error } = await inserirNaFila({
+      conversa_id: conversaId,
+      tipo: "exclusao",
+      responder_id_uazapi: m.id_uazapi,
+      status: "pendente",
+      enviado_por: meuNome,
+    });
+    if (error) {
+      setMensagens((prev) => prev.map((x) => (x.id === m.id ? m : x)));
+      mostrarAviso("Não consegui apagar. Tente de novo.");
+    }
   }
 
   // FIXAR e FAVORITAR uma MENSAGEM (a estrela e o alfinete que já existiam são
@@ -2792,13 +2882,16 @@ export default function Painel({ sessao }) {
     enviarArquivo(file, legenda);
   }
 
-  async function enviarArquivo(file, legenda = "", convId = conversaId) {
+  async function enviarArquivo(file, legenda = "", convId = conversaId, tipoForcado = null) {
     if (!convId || !file) return;
     setPertoDoFim(true);
     const ehImagem = file.type.startsWith("image/");
     const ehVideo = file.type.startsWith("video/");
     const ehAudio = file.type.startsWith("audio/");
-    const tipo = ehImagem ? "imagem" : ehVideo ? "video" : ehAudio ? "audio" : "documento";
+    // `tipoForcado` existe por causa da FIGURINHA: pelo mime ela é só uma
+    // imagem, e a Uazapi precisa saber que é sticker para o WhatsApp
+    // desenhá-la sem moldura e sem legenda.
+    const tipo = tipoForcado || (ehImagem ? "imagem" : ehVideo ? "video" : ehAudio ? "audio" : "documento");
     const tempId = "temp-" + Date.now() + "-" + Math.round(Math.random() * 1e6);
     // Prévia local (o remetente vê o anexo na hora, sem depender do Storage).
     const previa = tipo === "documento" ? null : URL.createObjectURL(file);
@@ -3898,7 +3991,7 @@ export default function Painel({ sessao }) {
                       </div>
                     ) : (
                     <div data-msg-id={m.id} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6, marginTop: mesmoRemetente ? -4 : 0, marginBottom: (Array.isArray(m.reacoes) && m.reacoes.length) ? 15 : 0 }}>
-                      {m.id_uazapi && saida && (
+                      {m.id_uazapi && !m.apagada && saida && (
                         <RostoReagir C={C} saida={saida} tudo={reagindoTudo}
                           visivel={estreito || msgHover === m.id || rostoAberto === m.id}
                           aberto={rostoAberto === m.id}
@@ -3910,7 +4003,7 @@ export default function Painel({ sessao }) {
                         {mostrarAutor && (
                           <div style={{ fontSize: 12, fontWeight: 700, color: corNome(m.enviado_por, modo), marginBottom: 1 }}>{m.enviado_por}</div>
                         )}
-                        {m.id_uazapi && (
+                        {m.id_uazapi && !m.apagada && (
                           <button data-menu-msg onClick={(ev) => {
                             // PARA CIMA OU PARA BAIXO, conforme onde a bolha está.
                             // Aberto sempre para baixo, o menu da última mensagem
@@ -3934,6 +4027,7 @@ export default function Painel({ sessao }) {
                             fixada={Boolean(m.fixada)} favorita={Boolean(m.favorita)}
                             aoFixar={() => { setReagindo(null); setReagindoTudo(false); marcarMensagem(m, "fixada", !m.fixada); }}
                             aoFavoritar={() => { setReagindo(null); setReagindoTudo(false); marcarMensagem(m, "favorita", !m.favorita); }}
+                            aoApagar={() => { setReagindo(null); setReagindoTudo(false); apagarMensagem(m); }}
                             aoVerTudo={() => setReagindoTudo(true)}
                             aoReagir={(e) => reagir(m, e)}
                             aoResponder={() => { setReagindo(null); setReagindoTudo(false); iniciarResposta(m); }}
@@ -3973,6 +4067,25 @@ export default function Painel({ sessao }) {
                               <span style={{ fontSize: 11, color: C.textSecondary, fontStyle: "italic", flexShrink: 0 }}>indisponível</span>
                             </div>
                           )
+                        )}
+                        {/* O CONTATO APAGOU no WhatsApp — e a mensagem FICA aqui,
+                            com texto e anexo intactos. O que o cliente escreveu
+                            é registro do atendimento; um registro que a outra
+                            parte pode apagar depois não serve nem para conferir
+                            um combinado nem para se defender de uma reclamação.
+                            O aviso existe só para a equipe saber que houve a
+                            tentativa. */}
+                        {m.apagada_pelo_contato && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5,
+                                        fontStyle: "italic", color: "#e0a800", marginBottom: 3 }}>
+                            <Trash2 size={12} color="#e0a800" /> O contato apagou esta mensagem no WhatsApp
+                          </div>
+                        )}
+                        {m.apagada && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14,
+                                        fontStyle: "italic", color: C.textSecondary, paddingRight: 42 }}>
+                            <Trash2 size={14} color={C.textSecondary} /> Esta mensagem foi apagada
+                          </div>
                         )}
                         {m.texto && <div style={{ fontSize: 14.2, lineHeight: 1.35, paddingRight: 42, marginTop: m.tipo !== "texto" ? 4 : 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{formatarTexto(m.texto, C.link)}</div>}
                         {/* AS REAÇÕES, COMO NO WHATSAPP WEB.
@@ -4024,7 +4137,7 @@ export default function Painel({ sessao }) {
                           )}
                         </div>
                       </div>
-                      {m.id_uazapi && !saida && (
+                      {m.id_uazapi && !m.apagada && !saida && (
                         <RostoReagir C={C} saida={saida} tudo={reagindoTudo}
                           visivel={estreito || msgHover === m.id || rostoAberto === m.id}
                           aberto={rostoAberto === m.id}
@@ -4164,6 +4277,49 @@ export default function Painel({ sessao }) {
                     <Paperclip size={22} color={C.textSecondary} />
                   </button>
                   <input ref={fileRef} type="file" onChange={aoEscolherArquivo} style={{ display: "none" }} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" />
+                  {/* FIGURINHAS. O painel mostra as que já passaram por este
+                      Zorvin — o acervo do escritório se forma sozinho, e a
+                      figurinha que alguém usou uma vez fica à mão para a
+                      próxima. Sem isso, "mandar figurinha" viraria "procurar um
+                      .webp no computador toda vez", que ninguém faz duas. */}
+                  <span data-figurinhas style={{ position: "relative", display: "flex" }}>
+                    {figurinhasAberto && (
+                      <div style={{ position: "absolute", bottom: 48, left: 0, zIndex: 30,
+                                    width: 300, maxWidth: "calc(100vw - 24px)", maxHeight: 260,
+                                    overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`,
+                                    borderRadius: 12, boxShadow: "0 8px 28px rgba(0,0,0,.35)", padding: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "2px 4px 8px" }}>
+                          <span style={{ fontSize: 12.5, fontWeight: 700, color: C.textSecondary }}>FIGURINHAS</span>
+                          <button onClick={() => figurinhaRef.current?.click()} title="Enviar uma figurinha nova"
+                            style={{ border: "none", background: C.searchBg, cursor: "pointer", borderRadius: 8,
+                                     padding: "4px 10px", fontSize: 12.5, color: C.textPrimary, display: "flex",
+                                     alignItems: "center", gap: 5 }}>
+                            <Plus size={14} color={C.textSecondary} /> Nova
+                          </button>
+                        </div>
+                        {figurinhas.length === 0 ? (
+                          <div style={{ padding: "18px 8px", textAlign: "center", color: C.textSecondary, fontSize: 13 }}>
+                            Nenhuma figurinha ainda. Toque em "Nova" para mandar a primeira.
+                          </div>
+                        ) : (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                            {figurinhas.map((u) => (
+                              <button key={u} onClick={() => enviarFigurinhaUrl(u)} title="Enviar esta figurinha"
+                                style={{ border: "none", background: "transparent", cursor: "pointer", padding: 2, borderRadius: 8 }}>
+                                <img src={u} alt="figurinha" style={{ width: 64, height: 64, objectFit: "contain" }} />
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <button onClick={() => { const abrir = !figurinhasAberto; setFigurinhasAberto(abrir); if (abrir) carregarFigurinhas(); }}
+                      title="Figurinhas" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
+                      <Sticker size={22} color={figurinhasAberto ? C.green : C.textSecondary} />
+                    </button>
+                  </span>
+                  <input ref={figurinhaRef} type="file" accept="image/webp,image/png,image/jpeg" style={{ display: "none" }}
+                    onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) { setFigurinhasAberto(false); enviarArquivo(f, "", conversaId, "figurinha"); } }} />
                   <textarea
                     ref={inputRef}
                     value={rascunho}
