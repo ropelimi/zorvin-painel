@@ -2383,6 +2383,26 @@ export default function Painel({ sessao }) {
     mostrarAviso(`Encaminhada para ${nomeDoContato(conv.contato) || "a conversa"}.`);
   }
 
+  // O PRAZO PARA EDITAR.
+  //
+  // O WhatsApp só aceita editar uma mensagem por cerca de 15 minutos. Passado
+  // isso, a Uazapi ainda responde OK e o aviso de edição chega ao celular do
+  // contato — mas o aparelho dele se RECUSA a aplicar. O resultado é o pior
+  // dos mundos: o contato recebe uma notificação com o texto novo, não acha
+  // mensagem nenhuma ao abrir a conversa, e a antiga continua errada. E o
+  // Zorvin mostrava "Editada" o tempo todo, então a equipe acreditava que a
+  // correção tinha chegado.
+  //
+  // Catorze minutos, e não quinze: uma mensagem que ainda pode ser editada por
+  // trinta segundos vira erro no meio do caminho, entre clicar e a ponte
+  // despachar a fila.
+  const PRAZO_EDICAO_MS = 14 * 60 * 1000;
+  function dentroDoPrazoDeEdicao(m) {
+    if (!m?.criado_em) return false;
+    const quando = new Date(m.criado_em).getTime();
+    return Number.isFinite(quando) && Date.now() - quando < PRAZO_EDICAO_MS;
+  }
+
   // EDITAR uma mensagem que NÓS enviamos.
   //
   // Reaproveita a caixa de digitar em vez de abrir uma janela: o texto antigo
@@ -2411,6 +2431,14 @@ export default function Painel({ sessao }) {
     const novo = rascunho.trim();
     if (!m) return;
     if (!novo) { mostrarAviso("A mensagem não pode ficar vazia."); return; }
+    // Segunda trava: entre abrir o menu e apertar Enter o prazo pode ter
+    // vencido. Sem ela, a mensagem sairia como notificação fantasma no celular
+    // do contato — que foi exatamente o defeito relatado.
+    if (!dentroDoPrazoDeEdicao(m)) {
+      setEditando(null); setRascunho("");
+      mostrarAviso("Passou o prazo do WhatsApp para editar (cerca de 15 minutos). Envie uma correção.");
+      return;
+    }
     if (novo === (m.texto || "")) { cancelarEdicao(); return; }
     setEditando(null);
     setRascunho("");
@@ -3843,7 +3871,7 @@ export default function Painel({ sessao }) {
                             paraCima={menuParaCima}
                             temTexto={Boolean(m.texto)}
                             aoEncaminhar={() => { setReagindo(null); setReagindoTudo(false); setBuscaEncaminhar(""); setEncaminhar(m); }}
-                            podeEditar={Boolean(saida && m.texto && m.id_uazapi)}
+                            podeEditar={Boolean(saida && m.texto && m.id_uazapi && dentroDoPrazoDeEdicao(m))}
                             aoEditar={() => { setReagindo(null); setReagindoTudo(false); iniciarEdicao(m); }}
                             aoVerTudo={() => setReagindoTudo(true)}
                             aoReagir={(e) => reagir(m, e)}
