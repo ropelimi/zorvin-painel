@@ -283,6 +283,11 @@ function comNumero(adv) {
   return n ? `${adv.nome} · ${n}` : adv.nome;
 }
 
+// O NOME DA ABA, num lugar só. Ele aparece em três pontos (o HTML inicial, o
+// contador de não lidas e a limpeza ao sair); espalhado, um deles ficaria para
+// trás na próxima vez que o nome mudar.
+const NOME_DA_ABA = "Ropelimi Zorvin";
+
 // Sempre HH:MM (usada no carimbo das bolhas; a data fica no separador).
 function horaCurta(iso) {
   if (!iso) return "";
@@ -2199,13 +2204,19 @@ export default function Painel({ sessao }) {
   // (não "puxa" a tela quem está lendo mensagens antigas).
   useEffect(() => { if (pertoDoFim) fimRef.current?.scrollIntoView({ behavior: "smooth" }); }, [mensagens.length]);
 
-  // Mostra o total de não lidas no título da aba: "(3) Zorvin".
+  // Mostra as não lidas no título da aba: "(3) Ropelimi Zorvin".
   useEffect(() => {
+    // CONVERSAS, e não mensagens. Somando mensagens, três recados seguidos da
+    // mesma pessoa viravam "(3)" na aba enquanto a lista mostrava um item só —
+    // e o mesmo número já tinha sido corrigido no selo do telefone e no filtro
+    // "Não lidas". Um contador que não bate com o que dá para contar na tela
+    // não é informação, é ruído.
+    //
     // ARQUIVADA não conta. Uma conversa arquivada com não lidas deixava o
-    // título da aba em "(2) Zorvin" e o selo vermelho no telefone para sempre:
-    // o número existia e não havia nada na lista para clicar e zerar.
-    const total = conversas.reduce((s, c) => s + (c.arquivada ? 0 : (c.nao_lidas || 0)), 0);
-    document.title = total > 0 ? `(${total}) Zorvin` : "Zorvin";
+    // título da aba com número para sempre: ele existia e não havia nada na
+    // lista para clicar e zerar.
+    const total = conversas.filter((c) => !c.arquivada && (c.nao_lidas || 0) > 0).length;
+    document.title = total > 0 ? `(${total}) ${NOME_DA_ABA}` : NOME_DA_ABA;
   }, [conversas]);
 
   // Pede permissão para notificar na área de trabalho (uma vez), quando o
@@ -2260,7 +2271,7 @@ export default function Painel({ sessao }) {
     } catch (_) { /* ignora */ }
     if (timerRef.current) clearInterval(timerRef.current);
     if (avisoTimerRef.current) clearTimeout(avisoTimerRef.current);
-    document.title = "Zorvin"; // não deixa o contador de não lidas grudado na aba após sair
+    document.title = NOME_DA_ABA; // não deixa o contador de não lidas grudado na aba após sair
   }, []);
 
   // Libera as prévias locais (blob:) do áudio gravado e do anexo pendente quando
