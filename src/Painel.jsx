@@ -596,7 +596,7 @@ const EMOJIS_REACAO = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 // favoritar e apagar mensagem ainda não existem no Zorvin, e um item de menu
 // que não funciona é pior que a ausência dele: ensina a equipe a desconfiar do
 // menu inteiro.
-function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoResponder, aoCopiar, aoEncaminhar, temTexto }) {
+function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoResponder, aoCopiar, aoEncaminhar, aoEditar, temTexto, podeEditar }) {
   // PARA CIMA OU PARA BAIXO. Na metade de baixo da tela o menu abre para cima,
   // senão o da última mensagem sai pela borda e fica inalcançável.
   //
@@ -655,6 +655,15 @@ function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoRespond
             <button onClick={aoEncaminhar} style={ITEM}>
               <Forward size={17} color={C.textSecondary} /> Encaminhar
             </button>
+            {/* EDITAR só nas mensagens que NÓS mandamos e que têm texto: a
+                Uazapi só edita o que saiu da própria linha, e não há o que
+                editar numa foto. Oferecer nos outros casos seria um botão que
+                falha sempre. */}
+            {podeEditar && (
+              <button onClick={aoEditar} style={ITEM}>
+                <Pencil size={17} color={C.textSecondary} /> Editar
+              </button>
+            )}
           </div>
         </>
       )}
@@ -706,6 +715,7 @@ export default function Painel({ sessao }) {
   const [juntar, setJuntar] = useState(null);   // null | {de, para, indo}
   const [menuParaCima, setMenuParaCima] = useState(false); // o menu da bolha abre para cima?
   const [encaminhar, setEncaminhar] = useState(null);      // mensagem sendo encaminhada
+  const [editando, setEditando] = useState(null);          // mensagem sendo editada
   const [buscaEncaminhar, setBuscaEncaminhar] = useState("");
   const [advogadoId, setAdvogadoId] = useState(null);
   const [conversas, setConversas] = useState([]);
@@ -2186,6 +2196,7 @@ export default function Painel({ sessao }) {
       if (imagemAberta) setImagemAberta(null);
       else if (anexoPendente) fecharAnexoPendente();
       else if (audioPronto) descartarAudioPronto();
+      else if (editando) cancelarEdicao();
       else if (encaminhar) setEncaminhar(null);
       else if (reagindo) { setReagindo(null); setReagindoTudo(false); }
       else if (gravando) cancelarGravacao();
@@ -2215,7 +2226,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [encaminhar, reagindo, imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo, conversaId]);
+  }, [editando, encaminhar, reagindo, imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo, conversaId]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -2322,6 +2333,52 @@ export default function Painel({ sessao }) {
     });
     if (error) { mostrarAviso("Não consegui encaminhar. Tente de novo."); return; }
     mostrarAviso(`Encaminhada para ${nomeDoContato(conv.contato) || "a conversa"}.`);
+  }
+
+  // EDITAR uma mensagem que NÓS enviamos.
+  //
+  // Reaproveita a caixa de digitar em vez de abrir uma janela: o texto antigo
+  // aparece lá, com uma faixa dizendo o que está acontecendo, e Enter salva —
+  // é o mesmo gesto de sempre. Uma janela separada obrigaria a equipe a
+  // aprender um segundo jeito de escrever.
+  //
+  // O texto novo aparece na bolha NA HORA. A ponte confirma depois; se a
+  // Uazapi recusar (o WhatsApp só permite editar por um tempo), a próxima
+  // leitura da conversa devolve a verdade do banco.
+  function iniciarEdicao(m) {
+    setRespondendo(null);
+    setModoNota(false);
+    setEditando(m);
+    setRascunho(m.texto || "");
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  function cancelarEdicao() {
+    setEditando(null);
+    setRascunho("");
+  }
+
+  async function salvarEdicao() {
+    const m = editando;
+    const novo = rascunho.trim();
+    if (!m) return;
+    if (!novo) { mostrarAviso("A mensagem não pode ficar vazia."); return; }
+    if (novo === (m.texto || "")) { cancelarEdicao(); return; }
+    setEditando(null);
+    setRascunho("");
+    setMensagens((prev) => prev.map((x) => (x.id === m.id ? { ...x, texto: novo, editada: true } : x)));
+    const { error } = await inserirNaFila({
+      conversa_id: conversaId,
+      tipo: "edicao",
+      texto: novo,
+      responder_id_uazapi: m.id_uazapi,
+      status: "pendente",
+      enviado_por: meuNome,
+    });
+    if (error) {
+      setMensagens((prev) => prev.map((x) => (x.id === m.id ? { ...x, texto: m.texto, editada: m.editada } : x)));
+      mostrarAviso("Não consegui editar. Tente de novo.");
+    }
   }
 
   // Copiar o texto da mensagem.
@@ -2504,6 +2561,7 @@ export default function Painel({ sessao }) {
 
   async function enviar() {
     if (modoNota) { enviarNota(); return; }
+    if (editando) { salvarEdicao(); return; }
     const t = rascunho.trim();
     if (!t || !conversaId) return;
     setRascunho("");
@@ -3728,6 +3786,8 @@ export default function Painel({ sessao }) {
                             paraCima={menuParaCima}
                             temTexto={Boolean(m.texto)}
                             aoEncaminhar={() => { setReagindo(null); setReagindoTudo(false); setBuscaEncaminhar(""); setEncaminhar(m); }}
+                            podeEditar={Boolean(saida && m.texto && m.id_uazapi)}
+                            aoEditar={() => { setReagindo(null); setReagindoTudo(false); iniciarEdicao(m); }}
                             aoVerTudo={() => setReagindoTudo(true)}
                             aoReagir={(e) => reagir(m, e)}
                             aoResponder={() => { setReagindo(null); setReagindoTudo(false); iniciarResposta(m); }}
@@ -3797,6 +3857,10 @@ export default function Painel({ sessao }) {
                           </div>
                         )}
                         <div style={{ fontSize: 11, color: m._status === "erro" ? "#e53935" : C.textSecondary, textAlign: "right", marginTop: 2, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 3 }}>
+                          {/* Sem este selo o texto simplesmente muda: quem leu
+                              antes e volta depois vê outra coisa, sem saber se
+                              houve correção ou se a memória falhou. */}
+                          {m.editada && <span style={{ fontStyle: "italic", opacity: .85 }}>Editada</span>}
                           {horaCurta(m.criado_em)}
                           {saida && (
                             m._status === "enviando" ? (
@@ -3827,6 +3891,21 @@ export default function Painel({ sessao }) {
               <button onClick={irParaOFim} title="Ir para o fim" style={{ position: "absolute", right: 24, bottom: 84, width: 42, height: 42, borderRadius: "50%", background: C.panel, border: `1px solid ${C.divider}`, boxShadow: "0 2px 6px rgba(0,0,0,.25)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.textSecondary, zIndex: 5 }}>
                 <ChevronDown size={22} />
               </button>
+            )}
+
+            {editando && (
+              <div style={{ background: C.barraFundo, padding: "8px 16px 0" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.searchBg, borderLeft: `4px solid #d4a017`, borderRadius: 6, padding: "6px 10px" }}>
+                  <Pencil size={16} color="#d4a017" />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: "#d4a017", fontWeight: 600, fontSize: 12 }}>Editando a mensagem</div>
+                    <div style={{ color: C.textSecondary, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{editando.texto}</div>
+                  </div>
+                  <button onClick={cancelarEdicao} title="Cancelar edição" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
+                    <X size={18} color={C.textSecondary} />
+                  </button>
+                </div>
+              </div>
             )}
 
             {respondendo && (
@@ -3978,7 +4057,7 @@ export default function Painel({ sessao }) {
                       if (e.key === "Enter" && !e.shiftKey && !e.altKey) { e.preventDefault(); enviar(); }
                     }}
                     rows={1}
-                    placeholder={modoNota ? "Escreva uma nota interna (só a equipe vê)" : "Digite uma mensagem"}
+                    placeholder={editando ? "Corrija a mensagem e aperte Enter" : (modoNota ? "Escreva uma nota interna (só a equipe vê)" : "Digite uma mensagem")}
                     style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", color: C.textPrimary, boxSizing: "border-box", padding: "10px 6px", fontSize: 14.5, resize: "none", lineHeight: "20px", maxHeight: 120, overflowY: "auto", fontFamily: "inherit", alignSelf: "flex-end" }}
                   />
                   {(rascunho.trim() || modoNota) ? (
