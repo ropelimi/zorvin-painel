@@ -946,15 +946,30 @@ export default function Painel({ sessao }) {
   useEffect(() => { carregarConversas(advogadoId); }, [advogadoId, carregarConversas]);
 
   // ---- Total de não lidas de CADA advogado (para o selo na barra lateral) ----
-  // Busca todas as conversas com não lidas e soma por advogado.
+  //
+  // A CONTA PRECISA SER A MESMA DA TELA, e não era.
+  //
+  // O selo do advogado ABERTO vem da lista carregada, que desconta as
+  // arquivadas. O dos DEMAIS vinha desta consulta, que somava tudo. O mesmo
+  // advogado aparecia com 1 quando você estava nele e com 11 quando estava em
+  // outro — e o 11 contava conversas arquivadas, que ninguém vai atender.
+  //
+  // Aqui as arquivadas também saem, e as duas contas passam a dizer a mesma
+  // coisa. Um selo que muda de número conforme onde você está não é um número:
+  // é um susto.
+  //
+  // `select("*")` em vez de pedir as colunas: `arquivada` pode não existir numa
+  // instalação antiga, e pedir coluna inexistente faz a consulta inteira falhar
+  // — os selos sumiriam todos por causa de um recurso que nem foi instalado.
   const carregarNaoLidasPorAdv = useCallback(async () => {
     const { data, error } = await supabase
       .from("conversas")
-      .select("advogado_id, nao_lidas")
+      .select("*")
       .gt("nao_lidas", 0);
     if (error) return;
     const mapa = {};
     (data || []).forEach((r) => {
+      if (r.arquivada) return;
       mapa[r.advogado_id] = (mapa[r.advogado_id] || 0) + (r.nao_lidas || 0);
     });
     setNaoLidasPorAdv(mapa);
