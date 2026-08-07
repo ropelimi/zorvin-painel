@@ -681,6 +681,7 @@ export default function Painel({ sessao }) {
   const [impProgresso, setImpProgresso] = useState(""); // texto de progresso da importação
   const [impArrastando, setImpArrastando] = useState(false); // arquivo sendo arrastado sobre a área
   const [msgHover, setMsgHover] = useState(null); // id da bolha sob o mouse (mostra "responder")
+  const [reagindo, setReagindo] = useState(null); // id da bolha com a fileira de emojis aberta
   const [convHover, setConvHover] = useState(null); // id da conversa sob o mouse (realce)
   const [menuConversa, setMenuConversa] = useState(null); // id da conversa com o menuzinho aberto
   const [modoNota, setModoNota] = useState(false); // caixa de texto no modo "nota interna"
@@ -2048,6 +2049,7 @@ export default function Painel({ sessao }) {
       if (imagemAberta) setImagemAberta(null);
       else if (anexoPendente) fecharAnexoPendente();
       else if (audioPronto) descartarAudioPronto();
+      else if (reagindo) setReagindo(null);
       else if (gravando) cancelarGravacao();
       else if (tagForm) setTagForm(null);
       else if (rapidaForm) setRapidaForm(null);
@@ -2075,7 +2077,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo, conversaId]);
+  }, [reagindo, imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo, conversaId]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -2142,6 +2144,46 @@ export default function Painel({ sessao }) {
     // Entrou na fila: cutuca a ponte para ela acordar e enviar já.
     if (!error) acordarPonte();
     return { error };
+  }
+
+  // OS SEIS EMOJIS DA REAÇÃO RÁPIDA.
+  //
+  // São os mesmos do WhatsApp, e são seis de propósito: uma reação é para ser
+  // dada num toque. Uma lista completa transformaria "reagir" numa escolha, que
+  // é justamente o que reagir não é. Quem quiser dizer mais escreve.
+  const EMOJIS_REACAO = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+
+  // Reage a uma mensagem (ou tira a reação, se tocar no mesmo emoji de novo).
+  //
+  // A pastilha aparece na hora, antes de a ponte confirmar: uma reação que só
+  // aparece três segundos depois faz a pessoa tocar duas vezes, e o segundo
+  // toque desfaz o primeiro. Se o envio falhar, a fila mostra o erro e a
+  // próxima leitura da conversa devolve a verdade do banco.
+  async function reagir(m, emoji) {
+    setReagindo(null);
+    if (!m.id_uazapi) { mostrarAviso("Esta mensagem ainda não foi confirmada pelo WhatsApp."); return; }
+    const atuais = Array.isArray(m.reacoes) ? m.reacoes : [];
+    const minha = atuais.find((r) => r && r.de === "advogado");
+    const novo = minha && minha.emoji === emoji ? "" : emoji;   // tocar de novo = tirar
+    const lista = atuais.filter((r) => r && r.de !== "advogado");
+    if (novo) lista.push({ emoji: novo, de: "advogado" });
+
+    setMensagens((prev) => prev.map((x) => (x.id === m.id ? { ...x, reacoes: lista } : x)));
+
+    const { error } = await inserirNaFila({
+      conversa_id: conversaId,
+      tipo: "reacao",
+      texto: novo,
+      responder_id_uazapi: m.id_uazapi,
+      status: "pendente",
+      enviado_por: meuNome,
+    });
+    if (error) {
+      // Devolve a bolha ao que era: manter a pastilha que não foi enviada
+      // faria a equipe achar que o contato viu uma reação que nunca saiu.
+      setMensagens((prev) => prev.map((x) => (x.id === m.id ? { ...x, reacoes: atuais } : x)));
+      mostrarAviso("Não consegui enviar a reação. Tente de novo.");
+    }
   }
 
   // Texto curto que representa uma mensagem quando ela é citada.
@@ -3428,6 +3470,26 @@ export default function Painel({ sessao }) {
                           <button onClick={() => iniciarResposta(m)} title="Responder" style={{ position: "absolute", top: 3, right: 3, border: "none", background: "transparent", cursor: "pointer", opacity: (estreito || msgHover === m.id) ? 0.75 : 0, transition: "opacity .12s", display: "flex", padding: 0 }}>
                             <Reply size={14} color={C.textSecondary} />
                           </button>
+                        )}
+                        {/* REAGIR — só nas mensagens RECEBIDAS. A Uazapi não
+                            deixa reagir ao que a própria linha enviou, e um
+                            botão que sempre falha é pior que botão nenhum. */}
+                        {m.id_uazapi && !saida && (
+                          <button onClick={() => setReagindo((r) => (r === m.id ? null : m.id))} title="Reagir" style={{ position: "absolute", top: 3, right: 22, border: "none", background: "transparent", cursor: "pointer", opacity: (estreito || msgHover === m.id || reagindo === m.id) ? 0.75 : 0, transition: "opacity .12s", display: "flex", padding: 0 }}>
+                            <Smile size={14} color={C.textSecondary} />
+                          </button>
+                        )}
+                        {/* A FILEIRA DE EMOJIS fica DENTRO da bolha, e não flutuando
+                            acima dela: a lista de mensagens tem rolagem própria, e acima
+                            da primeira bolha visível não há tela — a fileira era cortada
+                            justo na mensagem mais recente, que é a que mais se reage.
+                            Cobrir duas linhas do texto por um instante é o preço. */}
+                        {reagindo === m.id && (
+                          <div style={{ position: "absolute", top: 20, right: 2, zIndex: 5, display: "flex", gap: 2, padding: "4px 6px", borderRadius: 999, background: C.panel, border: `1px solid ${C.divider}`, boxShadow: "0 4px 14px rgba(0,0,0,.35)" }}>
+                            {EMOJIS_REACAO.map((e) => (
+                              <button key={e} onClick={() => reagir(m, e)} title={`Reagir com ${e}`} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "2px 3px" }}>{e}</button>
+                            ))}
+                          </div>
                         )}
                         {m.resposta_previa && (
                           <div style={{ borderLeft: `3px solid ${C.green}`, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 4, padding: "3px 8px", marginBottom: 4 }}>
