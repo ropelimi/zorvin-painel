@@ -1747,11 +1747,18 @@ export default function Painel({ sessao }) {
         if (doAdvogadoAtual && !jaNaLista) carregarConversas(advogadoIdRef.current);
         carregarNaoLidasPorAdv(); // selos do rail de todos os advogados
       })
-      // Status de uma mensagem mudou (ex.: foi lida) — atualiza o "tiquinho".
+      // Uma mensagem MUDOU: o tiquinho de lida, ou as reações presas nela.
+      //
+      // Este handler copiava só o `status`, e por isso a reação do contato não
+      // aparecia com a conversa aberta — só depois de sair e entrar de novo,
+      // quando a tela relia tudo do banco. Reação é UPDATE, não INSERT: chega
+      // por aqui, e era descartada em silêncio a dois passos da tela.
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "mensagens" }, (payload) => {
         const atual = payload.new;
-        if (atual.conversa_id !== conversaIdRef.current) return;
-        setMensagens((prev) => prev.map((m) => (m.id === atual.id ? { ...m, status: atual.status } : m)));
+        if (!atual || atual.conversa_id !== conversaIdRef.current) return;
+        setMensagens((prev) => prev.map((m) => (m.id === atual.id
+          ? { ...m, status: atual.status, reacoes: "reacoes" in atual ? atual.reacoes : m.reacoes }
+          : m)));
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversas" }, (payload) => {
         const cv = payload.new;
@@ -3475,7 +3482,7 @@ export default function Painel({ sessao }) {
                         <div style={{ width: 28, flexShrink: 0 }}><Avatar nome={m.autor || "equipe"} foto={m.autor_foto || (m.autor === meuNome ? minhaFoto : null)} size={28} /></div>
                       </div>
                     ) : (
-                    <div data-msg-id={m.id} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6, marginTop: mesmoRemetente ? -4 : 0, marginBottom: (Array.isArray(m.reacoes) && m.reacoes.length) ? 12 : 0 }}>
+                    <div data-msg-id={m.id} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6, marginTop: mesmoRemetente ? -4 : 0, marginBottom: (Array.isArray(m.reacoes) && m.reacoes.length) ? 15 : 0 }}>
                       <div style={{ position: "relative", maxWidth: estreito ? "84%" : "65%", background: saida ? C.bubbleOut : C.bubbleIn, color: C.textPrimary, borderRadius: 8, padding: m.tipo === "imagem" ? 4 : "6px 9px 8px", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
                         {mostrarAutor && (
                           <div style={{ fontSize: 12, fontWeight: 700, color: corNome(m.enviado_por, modo), marginBottom: 1 }}>{m.enviado_por}</div>
@@ -3573,14 +3580,14 @@ export default function Painel({ sessao }) {
                             nasce sempre da quina de dentro. */}
                         {Array.isArray(m.reacoes) && m.reacoes.length > 0 && (
                           <div title={m.reacoes.map((r) => `${r.emoji} ${r.de === "advogado" ? "de quem atende" : "do contato"}`).join("  ·  ")}
-                            style={{ position: "absolute", bottom: -11, zIndex: 2,
-                                     ...(saida ? { right: 8 } : { left: 8 }),
-                                     display: "flex", alignItems: "center", gap: 2,
-                                     padding: "1px 5px", borderRadius: 999,
+                            style={{ position: "absolute", bottom: -15, zIndex: 2,
+                                     ...(saida ? { right: 10 } : { left: 10 }),
+                                     display: "flex", alignItems: "center", justifyContent: "center", gap: 3,
+                                     minWidth: 22, height: 22, padding: "0 5px", borderRadius: 999,
                                      background: saida ? C.bubbleOut : C.bubbleIn,
                                      border: `2px solid ${C.chatBg}`,
-                                     boxShadow: "0 1px 2px rgba(0,0,0,.25)",
-                                     fontSize: 13, lineHeight: "17px", whiteSpace: "nowrap" }}>
+                                     boxShadow: "0 1px 3px rgba(0,0,0,.3)",
+                                     fontSize: 14, lineHeight: 1, whiteSpace: "nowrap" }}>
                             {m.reacoes.map((r, i) => <span key={i}>{r.emoji}</span>)}
                           </div>
                         )}
