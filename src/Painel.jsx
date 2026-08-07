@@ -4053,15 +4053,23 @@ export default function Painel({ sessao }) {
                         <div style={{ width: 28, flexShrink: 0 }}><Avatar nome={m.autor || "equipe"} foto={m.autor_foto || (m.autor === meuNome ? minhaFoto : null)} size={28} /></div>
                       </div>
                     ) : (
-                    <div data-msg-id={m.id} onClick={() => { if (selecao && podeSerApagada(m)) alternarSelecao(m.id); }} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6, marginTop: mesmoRemetente ? -4 : 0, marginBottom: (Array.isArray(m.reacoes) && m.reacoes.length) ? 15 : 0 }}>
+                    <div data-msg-id={m.id} onClick={() => { if (selecao && podeSerApagada(m)) alternarSelecao(m.id); }} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ position: "relative", display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6, marginTop: mesmoRemetente ? -4 : 0, marginBottom: (Array.isArray(m.reacoes) && m.reacoes.length) ? 15 : 0, paddingLeft: selecao ? 36 : 0, transition: "padding-left .12s" }}>
                       {/* A CAIXINHA DE SELEÇÃO. Aparece em TODA linha para o
                           alinhamento não dançar, mas só é clicável no que dá
                           para apagar — o que o escritório enviou. Nas demais
                           fica um espaço vazio, e a conversa não se desmonta ao
                           entrar no modo. */}
+                      {/* NUMA COLUNA FIXA À ESQUERDA, e não colada em cada balão.
+                          Como filha do flex, a caixinha era empurrada junto com
+                          a bolha — que é alinhada à direita quando a mensagem é
+                          nossa — e cada linha punha a dela num lugar diferente.
+                          Presa em `left: 8`, todas caem no mesmo eixo, e a linha
+                          ganha um recuo do mesmo tamanho para nada ficar por
+                          baixo. É assim que o WhatsApp desenha. */}
                       {selecao && (
                         <span onClick={(e) => { e.stopPropagation(); if (podeSerApagada(m)) alternarSelecao(m.id); }}
-                          style={{ width: 22, height: 22, flexShrink: 0, marginBottom: 2, borderRadius: 5,
+                          style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)",
+                                   width: 22, height: 22, borderRadius: 5,
                                    display: "flex", alignItems: "center", justifyContent: "center",
                                    cursor: podeSerApagada(m) ? "pointer" : "default",
                                    border: podeSerApagada(m) ? `2px solid ${selecao.includes(m.id) ? C.green : C.textSecondary}` : "2px solid transparent",
