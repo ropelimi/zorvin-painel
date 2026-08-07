@@ -682,6 +682,7 @@ export default function Painel({ sessao }) {
   const [impArrastando, setImpArrastando] = useState(false); // arquivo sendo arrastado sobre a área
   const [msgHover, setMsgHover] = useState(null); // id da bolha sob o mouse (mostra "responder")
   const [reagindo, setReagindo] = useState(null); // id da bolha com a fileira de emojis aberta
+  const [reagindoTudo, setReagindoTudo] = useState(false); // a fileira virou o painel inteiro
   const [convHover, setConvHover] = useState(null); // id da conversa sob o mouse (realce)
   const [menuConversa, setMenuConversa] = useState(null); // id da conversa com o menuzinho aberto
   const [modoNota, setModoNota] = useState(false); // caixa de texto no modo "nota interna"
@@ -2054,7 +2055,7 @@ export default function Painel({ sessao }) {
       if (imagemAberta) setImagemAberta(null);
       else if (anexoPendente) fecharAnexoPendente();
       else if (audioPronto) descartarAudioPronto();
-      else if (reagindo) setReagindo(null);
+      else if (reagindo) { setReagindo(null); setReagindoTudo(false); }
       else if (gravando) cancelarGravacao();
       else if (tagForm) setTagForm(null);
       else if (rapidaForm) setRapidaForm(null);
@@ -2166,6 +2167,7 @@ export default function Painel({ sessao }) {
   // próxima leitura da conversa devolve a verdade do banco.
   async function reagir(m, emoji) {
     setReagindo(null);
+    setReagindoTudo(false);
     if (!m.id_uazapi) { mostrarAviso("Esta mensagem ainda não foi confirmada pelo WhatsApp."); return; }
     const atuais = Array.isArray(m.reacoes) ? m.reacoes : [];
     const minha = atuais.find((r) => r && r.de === "advogado");
@@ -3473,7 +3475,7 @@ export default function Painel({ sessao }) {
                         <div style={{ width: 28, flexShrink: 0 }}><Avatar nome={m.autor || "equipe"} foto={m.autor_foto || (m.autor === meuNome ? minhaFoto : null)} size={28} /></div>
                       </div>
                     ) : (
-                    <div data-msg-id={m.id} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6, marginTop: mesmoRemetente ? -4 : 0 }}>
+                    <div data-msg-id={m.id} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6, marginTop: mesmoRemetente ? -4 : 0, marginBottom: (Array.isArray(m.reacoes) && m.reacoes.length) ? 12 : 0 }}>
                       <div style={{ position: "relative", maxWidth: estreito ? "84%" : "65%", background: saida ? C.bubbleOut : C.bubbleIn, color: C.textPrimary, borderRadius: 8, padding: m.tipo === "imagem" ? 4 : "6px 9px 8px", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
                         {mostrarAutor && (
                           <div style={{ fontSize: 12, fontWeight: 700, color: corNome(m.enviado_por, modo), marginBottom: 1 }}>{m.enviado_por}</div>
@@ -3483,11 +3485,15 @@ export default function Painel({ sessao }) {
                             <Reply size={14} color={C.textSecondary} />
                           </button>
                         )}
-                        {/* REAGIR — só nas mensagens RECEBIDAS. A Uazapi não
-                            deixa reagir ao que a própria linha enviou, e um
-                            botão que sempre falha é pior que botão nenhum. */}
-                        {m.id_uazapi && !saida && (
-                          <button onClick={() => setReagindo((r) => (r === m.id ? null : m.id))} title="Reagir" style={{ position: "absolute", top: 3, right: 22, border: "none", background: "transparent", cursor: "pointer", opacity: (estreito || msgHover === m.id || reagindo === m.id) ? 0.75 : 0, transition: "opacity .12s", display: "flex", padding: 0 }}>
+                        {/* REAGIR, em qualquer mensagem — inclusive nas que o
+                            escritório mandou. A documentação da Uazapi diz que
+                            só se reage ao que vem de outro, mas no WhatsApp se
+                            reage à própria mensagem, e é isso que a equipe
+                            espera. Se a API recusar, o item falha na fila e
+                            aparece no log — melhor descobrir assim do que
+                            esconder um botão que talvez funcionasse. */}
+                        {m.id_uazapi && (
+                          <button onClick={() => { setReagindoTudo(false); setReagindo((r) => (r === m.id ? null : m.id)); }} title="Reagir" style={{ position: "absolute", top: 3, right: 22, border: "none", background: "transparent", cursor: "pointer", opacity: (estreito || msgHover === m.id || reagindo === m.id) ? 0.75 : 0, transition: "opacity .12s", display: "flex", padding: 0 }}>
                             <Smile size={14} color={C.textSecondary} />
                           </button>
                         )}
@@ -3497,10 +3503,22 @@ export default function Painel({ sessao }) {
                             justo na mensagem mais recente, que é a que mais se reage.
                             Cobrir duas linhas do texto por um instante é o preço. */}
                         {reagindo === m.id && (
-                          <div style={{ position: "absolute", top: 20, right: 2, zIndex: 5, display: "flex", gap: 2, padding: "4px 6px", borderRadius: 999, background: C.panel, border: `1px solid ${C.divider}`, boxShadow: "0 4px 14px rgba(0,0,0,.35)" }}>
-                            {EMOJIS_REACAO.map((e) => (
+                          <div style={{ position: "absolute", top: 20, right: 2, zIndex: 5,
+                                        width: reagindoTudo ? "min(268px, 74vw)" : 208,
+                                        maxHeight: reagindoTudo ? 176 : undefined,
+                                        overflowY: reagindoTudo ? "auto" : undefined,
+                                        display: "flex", flexWrap: "wrap", gap: 2,
+                                        padding: "4px 6px", borderRadius: reagindoTudo ? 12 : 999,
+                                        background: C.panel, border: `1px solid ${C.divider}`,
+                                        boxShadow: "0 4px 14px rgba(0,0,0,.35)" }}>
+                            {(reagindoTudo ? EMOJIS : EMOJIS_REACAO).map((e) => (
                               <button key={e} onClick={() => reagir(m, e)} title={`Reagir com ${e}`} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "2px 3px" }}>{e}</button>
                             ))}
+                            {!reagindoTudo && (
+                              <button onClick={() => setReagindoTudo(true)} title="Mais emojis" style={{ border: "none", background: "transparent", cursor: "pointer", padding: "2px 3px", display: "flex", alignItems: "center" }}>
+                                <Plus size={17} color={C.textSecondary} />
+                              </button>
+                            )}
                           </div>
                         )}
                         {m.resposta_previa && (
@@ -3539,17 +3557,31 @@ export default function Painel({ sessao }) {
                           )
                         )}
                         {m.texto && <div style={{ fontSize: 14.2, lineHeight: 1.35, paddingRight: 42, marginTop: m.tipo !== "texto" ? 4 : 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{formatarTexto(m.texto, C.link)}</div>}
-                        {/* AS REAÇÕES DA BOLHA.
-                            Ficam presas à mensagem, e não soltas na conversa:
-                            um emoji sozinho no meio do histórico não diz a que
-                            se refere, e era assim que chegava antes. */}
+                        {/* AS REAÇÕES, COMO NO WHATSAPP WEB.
+                            Uma pastilha só, pendurada na quina de baixo da
+                            bolha e transbordando para fora dela. A borda é da
+                            COR DO FUNDO da conversa, e não uma linha cinza: é
+                            isso que dá o efeito de recorte: a pastilha parece
+                            colada por cima, não desenhada dentro.
+                            A primeira versão empilhava as pastilhas DENTRO da
+                            bolha, embaixo do texto — o emoji virava parte da
+                            mensagem, e duas reações ocupavam duas linhas de
+                            conversa. Aqui elas cabem todas numa pastilha só,
+                            que é como o WhatsApp agrupa.
+                            O lado acompanha o da bolha: quem recebe tem a
+                            pastilha à esquerda, quem envia à direita. Assim ela
+                            nasce sempre da quina de dentro. */}
                         {Array.isArray(m.reacoes) && m.reacoes.length > 0 && (
-                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 5 }}>
-                            {m.reacoes.map((r, i) => (
-                              <span key={i} title={r.de === "advogado" ? "Reação de quem atende" : "Reação do contato"}
-                                style={{ fontSize: 13, lineHeight: 1.15, padding: "3px 7px", borderRadius: 999,
-                                         background: C.searchBg, border: `1px solid ${C.divider}` }}>{r.emoji}</span>
-                            ))}
+                          <div title={m.reacoes.map((r) => `${r.emoji} ${r.de === "advogado" ? "de quem atende" : "do contato"}`).join("  ·  ")}
+                            style={{ position: "absolute", bottom: -11, zIndex: 2,
+                                     ...(saida ? { right: 8 } : { left: 8 }),
+                                     display: "flex", alignItems: "center", gap: 2,
+                                     padding: "1px 5px", borderRadius: 999,
+                                     background: saida ? C.bubbleOut : C.bubbleIn,
+                                     border: `2px solid ${C.chatBg}`,
+                                     boxShadow: "0 1px 2px rgba(0,0,0,.25)",
+                                     fontSize: 13, lineHeight: "17px", whiteSpace: "nowrap" }}>
+                            {m.reacoes.map((r, i) => <span key={i}>{r.emoji}</span>)}
                           </div>
                         )}
                         <div style={{ fontSize: 11, color: m._status === "erro" ? "#e53935" : C.textSecondary, textAlign: "right", marginTop: 2, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 3 }}>
