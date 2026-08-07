@@ -12,6 +12,7 @@ import FichaVantoro from "./FichaVantoro";
 import { chamarPonte } from "./ponte.js";
 import Departamentos from "./Departamentos";
 import Marca from "./Marca";
+import PainelEmoji, { guardarRecente } from "./Emojis";
 
 // ============================================================
 //  ZORVIN by Ropelimi — Painel real (conectado ao Supabase)
@@ -565,6 +566,57 @@ function Avatar({ nome, size = 40, foto }) {
   return (
     <div style={{ width: size, height: size, borderRadius: "50%", background: corDe(nome), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, fontSize: size * (inicial.length > 1 ? 0.36 : 0.42), letterSpacing: inicial.length > 1 ? "-.02em" : 0, flexShrink: 0 }}>
       {inicial}
+    </div>
+  );
+}
+
+// OS SEIS EMOJIS DA REAÇÃO RÁPIDA — os mesmos do WhatsApp. São seis de
+// propósito: uma reação é para ser dada num toque, e uma lista completa
+// transformaria "reagir" numa escolha. Quem quiser mais abre o painel no "+".
+const EMOJIS_REACAO = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+
+// O ROSTO DE REAGIR, como no WhatsApp Web.
+//
+// Mora FORA da bolha, do lado de dentro da conversa: à esquerda de quem envia,
+// à direita de quem recebe. Antes ficava dentro da bolha, no canto de cima —
+// e ali fazia dois estragos. Disputava espaço com o texto, e a fileira de
+// emojis herdava a largura da bolha: numa mensagem curta como "ok" só cabiam
+// três dos seis emojis, e os outros ficavam fora da vista.
+//
+// Fora da bolha, a fileira flutua sobre a conversa e cabe sempre.
+function BotaoReagir({ C, lado, aberto, visivel, tudo, aoAbrir, aoVerTudo, aoReagir }) {
+  const ancora = lado === "esq" ? { left: 0 } : { right: 0 };
+  return (
+    <div style={{ position: "relative", width: 26, flexShrink: 0, marginBottom: 2 }}>
+      <button onClick={aoAbrir} title="Reagir" aria-label="Reagir"
+        style={{ width: 26, height: 26, borderRadius: "50%", border: "none", background: "transparent",
+                 cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                 padding: 0, opacity: visivel ? 1 : 0, transition: "opacity .12s" }}>
+        <Smile size={19} color={C.textSecondary} />
+      </button>
+      {aberto && (
+        <div style={{ position: "absolute", bottom: 32, ...ancora, zIndex: 20 }}>
+          {tudo ? (
+            <PainelEmoji C={C} aoEscolher={aoReagir} largura={312} altura={232} />
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "5px 8px",
+                          borderRadius: 999, background: C.panel, border: `1px solid ${C.divider}`,
+                          boxShadow: "0 6px 20px rgba(0,0,0,.35)", whiteSpace: "nowrap" }}>
+              {EMOJIS_REACAO.map((e) => (
+                <button key={e} onClick={() => aoReagir(e)} title={`Reagir com ${e}`}
+                  style={{ border: "none", background: "transparent", cursor: "pointer",
+                           fontSize: 21, lineHeight: 1, padding: "2px 4px", borderRadius: 8 }}>{e}</button>
+              ))}
+              <button onClick={aoVerTudo} title="Mais emojis"
+                style={{ border: "none", background: C.searchBg, cursor: "pointer", marginLeft: 4,
+                         width: 26, height: 26, borderRadius: "50%", display: "flex",
+                         alignItems: "center", justifyContent: "center", padding: 0 }}>
+                <Plus size={16} color={C.textSecondary} />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -2159,12 +2211,6 @@ export default function Painel({ sessao }) {
     return { error };
   }
 
-  // OS SEIS EMOJIS DA REAÇÃO RÁPIDA.
-  //
-  // São os mesmos do WhatsApp, e são seis de propósito: uma reação é para ser
-  // dada num toque. Uma lista completa transformaria "reagir" numa escolha, que
-  // é justamente o que reagir não é. Quem quiser dizer mais escreve.
-  const EMOJIS_REACAO = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
   // Reage a uma mensagem (ou tira a reação, se tocar no mesmo emoji de novo).
   //
@@ -2175,6 +2221,7 @@ export default function Painel({ sessao }) {
   async function reagir(m, emoji) {
     setReagindo(null);
     setReagindoTudo(false);
+    if (emoji) guardarRecente(emoji);
     if (!m.id_uazapi) { mostrarAviso("Esta mensagem ainda não foi confirmada pelo WhatsApp."); return; }
     const atuais = Array.isArray(m.reacoes) ? m.reacoes : [];
     const minha = atuais.find((r) => r && r.de === "advogado");
@@ -3483,6 +3530,19 @@ export default function Painel({ sessao }) {
                       </div>
                     ) : (
                     <div data-msg-id={m.id} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6, marginTop: mesmoRemetente ? -4 : 0, marginBottom: (Array.isArray(m.reacoes) && m.reacoes.length) ? 15 : 0 }}>
+                      {/* O ROSTO DE REAGIR, como no WhatsApp Web: FORA da bolha,
+                          do lado de dentro da conversa (à esquerda de quem
+                          envia, à direita de quem recebe), aparecendo ao passar
+                          o mouse.
+                          Antes ele morava dentro da bolha, no canto de cima. Ali
+                          disputava espaço com o texto, e a fileira de emojis
+                          herdava a largura da bolha — numa bolha curta só cabiam
+                          três dos seis emojis. Fora dela, nada disso acontece. */}
+                      {m.id_uazapi && saida && (
+                        <BotaoReagir C={C} lado="esq" aberto={reagindo === m.id} visivel={estreito || msgHover === m.id || reagindo === m.id}
+                          tudo={reagindoTudo} aoAbrir={() => { setReagindoTudo(false); setReagindo((r) => (r === m.id ? null : m.id)); }}
+                          aoVerTudo={() => setReagindoTudo(true)} aoReagir={(e) => reagir(m, e)} />
+                      )}
                       <div style={{ position: "relative", maxWidth: estreito ? "84%" : "65%", background: saida ? C.bubbleOut : C.bubbleIn, color: C.textPrimary, borderRadius: 8, padding: m.tipo === "imagem" ? 4 : "6px 9px 8px", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
                         {mostrarAutor && (
                           <div style={{ fontSize: 12, fontWeight: 700, color: corNome(m.enviado_por, modo), marginBottom: 1 }}>{m.enviado_por}</div>
@@ -3491,42 +3551,6 @@ export default function Painel({ sessao }) {
                           <button onClick={() => iniciarResposta(m)} title="Responder" style={{ position: "absolute", top: 3, right: 3, border: "none", background: "transparent", cursor: "pointer", opacity: (estreito || msgHover === m.id) ? 0.75 : 0, transition: "opacity .12s", display: "flex", padding: 0 }}>
                             <Reply size={14} color={C.textSecondary} />
                           </button>
-                        )}
-                        {/* REAGIR, em qualquer mensagem — inclusive nas que o
-                            escritório mandou. A documentação da Uazapi diz que
-                            só se reage ao que vem de outro, mas no WhatsApp se
-                            reage à própria mensagem, e é isso que a equipe
-                            espera. Se a API recusar, o item falha na fila e
-                            aparece no log — melhor descobrir assim do que
-                            esconder um botão que talvez funcionasse. */}
-                        {m.id_uazapi && (
-                          <button onClick={() => { setReagindoTudo(false); setReagindo((r) => (r === m.id ? null : m.id)); }} title="Reagir" style={{ position: "absolute", top: 3, right: 22, border: "none", background: "transparent", cursor: "pointer", opacity: (estreito || msgHover === m.id || reagindo === m.id) ? 0.75 : 0, transition: "opacity .12s", display: "flex", padding: 0 }}>
-                            <Smile size={14} color={C.textSecondary} />
-                          </button>
-                        )}
-                        {/* A FILEIRA DE EMOJIS fica DENTRO da bolha, e não flutuando
-                            acima dela: a lista de mensagens tem rolagem própria, e acima
-                            da primeira bolha visível não há tela — a fileira era cortada
-                            justo na mensagem mais recente, que é a que mais se reage.
-                            Cobrir duas linhas do texto por um instante é o preço. */}
-                        {reagindo === m.id && (
-                          <div style={{ position: "absolute", top: 20, right: 2, zIndex: 5,
-                                        width: reagindoTudo ? "min(268px, 74vw)" : 208,
-                                        maxHeight: reagindoTudo ? 176 : undefined,
-                                        overflowY: reagindoTudo ? "auto" : undefined,
-                                        display: "flex", flexWrap: "wrap", gap: 2,
-                                        padding: "4px 6px", borderRadius: reagindoTudo ? 12 : 999,
-                                        background: C.panel, border: `1px solid ${C.divider}`,
-                                        boxShadow: "0 4px 14px rgba(0,0,0,.35)" }}>
-                            {(reagindoTudo ? EMOJIS : EMOJIS_REACAO).map((e) => (
-                              <button key={e} onClick={() => reagir(m, e)} title={`Reagir com ${e}`} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "2px 3px" }}>{e}</button>
-                            ))}
-                            {!reagindoTudo && (
-                              <button onClick={() => setReagindoTudo(true)} title="Mais emojis" style={{ border: "none", background: "transparent", cursor: "pointer", padding: "2px 3px", display: "flex", alignItems: "center" }}>
-                                <Plus size={17} color={C.textSecondary} />
-                              </button>
-                            )}
-                          </div>
                         )}
                         {m.resposta_previa && (
                           <div style={{ borderLeft: `3px solid ${C.green}`, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 4, padding: "3px 8px", marginBottom: 4 }}>
@@ -3607,6 +3631,11 @@ export default function Painel({ sessao }) {
                           )}
                         </div>
                       </div>
+                      {m.id_uazapi && !saida && (
+                        <BotaoReagir C={C} lado="dir" aberto={reagindo === m.id} visivel={estreito || msgHover === m.id || reagindo === m.id}
+                          tudo={reagindoTudo} aoAbrir={() => { setReagindoTudo(false); setReagindo((r) => (r === m.id ? null : m.id)); }}
+                          aoVerTudo={() => setReagindoTudo(true)} aoReagir={(e) => reagir(m, e)} />
+                      )}
                       {saida && (
                         <div style={{ width: 28, flexShrink: 0 }}>{ultimaDoGrupo ? <Avatar nome={m.enviado_por || meuNome} foto={m.enviado_por_foto || (m.enviado_por === meuNome ? minhaFoto : null)} size={28} /> : null}</div>
                       )}
@@ -3675,10 +3704,8 @@ export default function Painel({ sessao }) {
                 <>
                   <span ref={emojiRef} style={{ display: "flex", marginBottom: 8 }}>
                     {emojiAberto && (
-                      <div style={{ position: "absolute", bottom: 60, left: 12, width: "min(300px, calc(100vw - 24px))", maxHeight: 220, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", padding: 8, display: "flex", flexWrap: "wrap", gap: 4, zIndex: 30 }}>
-                        {EMOJIS.map((e) => (
-                          <button key={e} onClick={() => inserirEmoji(e)} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 22, lineHeight: 1, padding: 4, borderRadius: 6 }}>{e}</button>
-                        ))}
+                      <div style={{ position: "absolute", bottom: 60, left: 12, zIndex: 30 }}>
+                        <PainelEmoji C={C} aoEscolher={inserirEmoji} />
                       </div>
                     )}
                     <button onClick={() => setEmojiAberto((v) => !v)} title="Emojis" style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10 }}>
