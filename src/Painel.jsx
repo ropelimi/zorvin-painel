@@ -152,8 +152,11 @@ const TEMAS = {
     greenDark: "#008069", textPrimary: "#111b21", textSecondary: "#667781",
     divider: "#e9edef", unread: "#008069", inputBg: "#ffffff", searchBg: "#f0f2f5",
     scrollbar: "rgba(11,20,26,.24)", scrollbarForte: "rgba(11,20,26,.38)",
-    // A barra de digitar: o balão flutua sobre o fundo, sem faixa própria.
-    barraFundo: "#ffffff", balaoFundo: "#f0f2f5",
+    // A barra de digitar: SÓ O BALÃO. `barraFundo` é transparente, então o
+    // fundo da conversa — inclusive o padrão de fundo — passa por trás dele.
+    // Qualquer cor sólida aqui, mesmo a igual à da conversa, apagaria o padrão
+    // naquela faixa e devolveria a tarja que se queria eliminar.
+    barraFundo: "transparent", balaoFundo: "#ffffff",
     placeholderCircle: "#dfe5e7", link: "#027eb5",
     verdeTexto: "#017561", horaNaoLida: "#017561",
   },
@@ -163,7 +166,7 @@ const TEMAS = {
     greenDark: "#025144", textPrimary: "#e9edef", textSecondary: "#9aa8b1",
     divider: "#222d34", unread: "#008069", inputBg: "#2a3942", searchBg: "#202c33",
     scrollbar: "rgba(233,237,239,.16)", scrollbarForte: "rgba(233,237,239,.28)",
-    barraFundo: "#111b21", balaoFundo: "#2a3942",
+    barraFundo: "transparent", balaoFundo: "#2a3942",
     // Um tom acima do #8696a0 de antes: aquele dava 5,7:1 na linha comum, mas
     // só 3,9:1 na conversa SELECIONADA, que tem o fundo mais claro — e a
     // prévia da conversa aberta é justamente a que mais se lê agora que ela
@@ -3750,7 +3753,8 @@ export default function Painel({ sessao }) {
             {/* A FAIXA SAIU. Antes a barra tinha fundo próprio (C.headerBar) e o
                 balão tinha outro: duas fitas cinzentas empilhadas, e o balão
                 deixava de parecer um balão. No WhatsApp Web só existe o balão,
-                flutuando sobre o mesmo fundo do resto da tela. */}
+                flutuando sobre a própria conversa — o fundo dela, com padrão e
+                tudo, continua atrás do balão. */}
             <div style={{ background: C.barraFundo, padding: estreito ? "7px 8px" : "9px 16px", display: "flex", alignItems: "flex-end", gap: estreito ? 6 : 10, position: "relative" }}>
               {audioPronto ? (
                 // Prévia do áudio gravado: ouça antes de enviar.
