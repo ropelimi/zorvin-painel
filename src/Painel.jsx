@@ -3673,7 +3673,7 @@ export default function Painel({ sessao }) {
                 — o "Digite uma mensagem" nem cabia numa linha. Aqui o respiro
                 cai para 7 (o alvo continua com 36-38px, contra os 22 de antes)
                 e o vão para 2. */}
-            <div style={{ background: C.headerBar, padding: estreito ? "8px 8px" : "10px 16px", display: "flex", alignItems: "flex-end", gap: estreito ? 2 : 10, position: "relative" }}>
+            <div style={{ background: C.headerBar, padding: estreito ? "7px 8px" : "9px 16px", display: "flex", alignItems: "flex-end", gap: estreito ? 6 : 10, position: "relative" }}>
               {audioPronto ? (
                 // Prévia do áudio gravado: ouça antes de enviar.
                 <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, padding: "6px 2px" }}>
@@ -3702,13 +3702,29 @@ export default function Painel({ sessao }) {
                 </div>
               ) : (
                 <>
-                  <span ref={emojiRef} style={{ display: "flex", marginBottom: 8 }}>
+                  {/* A PÍLULA — tudo dentro de um retângulo arredondado só.
+                      Antes os botões ficavam SOLTOS, cada um com o seu respiro,
+                      ao lado de uma caixa de texto que era outra caixa: quatro
+                      elementos com quatro alturas e quatro cantos diferentes,
+                      alinhados por marginBottom escolhido no olho. Daí o
+                      desalinhamento.
+                      Agora existe um recipiente só. Os botões e o texto são
+                      irmãos dentro dele, centralizados pelo próprio flex, e o
+                      arredondamento é da pílula — não de cada peça. É assim que
+                      o WhatsApp Web faz, e é o que faz a barra parecer uma
+                      coisa só em vez de quatro. */}
+                  <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "flex-end",
+                                gap: 2, borderRadius: 24, padding: "4px 6px",
+                                background: modoNota ? (modo === "escuro" ? "#3a3320" : "#fff8d6") : C.inputBg,
+                                border: modoNota ? "1px solid #e6cf6a" : "1px solid transparent",
+                                boxSizing: "border-box" }}>
+                  <span ref={emojiRef} style={{ display: "flex" }}>
                     {emojiAberto && (
                       <div style={{ position: "absolute", bottom: 60, left: 12, zIndex: 30 }}>
                         <PainelEmoji C={C} aoEscolher={inserirEmoji} />
                       </div>
                     )}
-                    <button onClick={() => setEmojiAberto((v) => !v)} title="Emojis" style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10 }}>
+                    <button onClick={() => setEmojiAberto((v) => !v)} title="Emojis" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
                       <Smile size={24} color={emojiAberto ? C.green : C.textSecondary} />
                     </button>
                   </span>
@@ -3725,10 +3741,10 @@ export default function Painel({ sessao }) {
                     </div>
                   )}
                   {/* Alternar para NOTA INTERNA (comentário que não vai ao WhatsApp) */}
-                  <button onClick={() => setModoNota((v) => !v)} title={modoNota ? "Voltar para mensagem normal" : "Escrever nota interna (só a equipe vê)"} style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10, marginBottom: 1 }}>
+                  <button onClick={() => setModoNota((v) => !v)} title={modoNota ? "Voltar para mensagem normal" : "Escrever nota interna (só a equipe vê)"} style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
                     <StickyNote size={22} color={modoNota ? "#d4a017" : C.textSecondary} />
                   </button>
-                  <button onClick={() => fileRef.current?.click()} title="Anexar arquivo" style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10, marginBottom: 1 }}>
+                  <button onClick={() => fileRef.current?.click()} title="Anexar arquivo" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
                     <Paperclip size={22} color={C.textSecondary} />
                   </button>
                   <input ref={fileRef} type="file" onChange={aoEscolherArquivo} style={{ display: "none" }} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" />
@@ -3782,15 +3798,16 @@ export default function Painel({ sessao }) {
                     }}
                     rows={1}
                     placeholder={modoNota ? "Escreva uma nota interna (só a equipe vê)" : "Digite uma mensagem"}
-                    style={{ flex: 1, minWidth: 0, border: modoNota ? "1px solid #e6cf6a" : "none", outline: "none", background: modoNota ? (modo === "escuro" ? "#3a3320" : "#fff8d6") : C.inputBg, color: C.textPrimary, borderRadius: 8, padding: estreito ? "9px 11px" : "10px 14px", fontSize: 14.5, resize: "none", lineHeight: 1.35, maxHeight: 120, overflowY: "auto", fontFamily: "inherit" }}
+                    style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", color: C.textPrimary, padding: "10px 6px", fontSize: 14.5, resize: "none", lineHeight: "20px", maxHeight: 120, overflowY: "auto", fontFamily: "inherit", alignSelf: "center" }}
                   />
                   {(rascunho.trim() || modoNota) ? (
-                    <button onClick={enviar} title={modoNota ? "Salvar nota" : "Enviar"} style={{ border: "none", background: modoNota ? "#d4a017" : C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, marginBottom: 1 }}>{modoNota ? <StickyNote size={19} color="#fff" /> : <Send size={20} color="#fff" />}</button>
+                    <button onClick={enviar} title={modoNota ? "Salvar nota" : "Enviar"} style={{ border: "none", background: modoNota ? "#d4a017" : C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 36, height: 36, borderRadius: "50%", flexShrink: 0, alignSelf: "flex-end", marginBottom: 2 }}>{modoNota ? <StickyNote size={19} color="#fff" /> : <Send size={20} color="#fff" />}</button>
                   ) : (
-                    <button onClick={iniciarGravacao} title="Gravar áudio" style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10 }}>
+                    <button onClick={iniciarGravacao} title="Gravar áudio" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
                       <Mic size={24} color={C.textSecondary} />
                     </button>
                   )}
+                  </div>
                 </>
               )}
             </div>
