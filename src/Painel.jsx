@@ -682,6 +682,7 @@ export default function Painel({ sessao }) {
   const [impArrastando, setImpArrastando] = useState(false); // arquivo sendo arrastado sobre a área
   const [msgHover, setMsgHover] = useState(null); // id da bolha sob o mouse (mostra "responder")
   const [reagindo, setReagindo] = useState(null); // id da bolha com a fileira de emojis aberta
+  const [reagindoTudo, setReagindoTudo] = useState(false); // a fileira virou o painel inteiro
   const [convHover, setConvHover] = useState(null); // id da conversa sob o mouse (realce)
   const [menuConversa, setMenuConversa] = useState(null); // id da conversa com o menuzinho aberto
   const [modoNota, setModoNota] = useState(false); // caixa de texto no modo "nota interna"
@@ -2054,7 +2055,7 @@ export default function Painel({ sessao }) {
       if (imagemAberta) setImagemAberta(null);
       else if (anexoPendente) fecharAnexoPendente();
       else if (audioPronto) descartarAudioPronto();
-      else if (reagindo) setReagindo(null);
+      else if (reagindo) { setReagindo(null); setReagindoTudo(false); }
       else if (gravando) cancelarGravacao();
       else if (tagForm) setTagForm(null);
       else if (rapidaForm) setRapidaForm(null);
@@ -2166,6 +2167,7 @@ export default function Painel({ sessao }) {
   // próxima leitura da conversa devolve a verdade do banco.
   async function reagir(m, emoji) {
     setReagindo(null);
+    setReagindoTudo(false);
     if (!m.id_uazapi) { mostrarAviso("Esta mensagem ainda não foi confirmada pelo WhatsApp."); return; }
     const atuais = Array.isArray(m.reacoes) ? m.reacoes : [];
     const minha = atuais.find((r) => r && r.de === "advogado");
@@ -3483,11 +3485,15 @@ export default function Painel({ sessao }) {
                             <Reply size={14} color={C.textSecondary} />
                           </button>
                         )}
-                        {/* REAGIR — só nas mensagens RECEBIDAS. A Uazapi não
-                            deixa reagir ao que a própria linha enviou, e um
-                            botão que sempre falha é pior que botão nenhum. */}
-                        {m.id_uazapi && !saida && (
-                          <button onClick={() => setReagindo((r) => (r === m.id ? null : m.id))} title="Reagir" style={{ position: "absolute", top: 3, right: 22, border: "none", background: "transparent", cursor: "pointer", opacity: (estreito || msgHover === m.id || reagindo === m.id) ? 0.75 : 0, transition: "opacity .12s", display: "flex", padding: 0 }}>
+                        {/* REAGIR, em qualquer mensagem — inclusive nas que o
+                            escritório mandou. A documentação da Uazapi diz que
+                            só se reage ao que vem de outro, mas no WhatsApp se
+                            reage à própria mensagem, e é isso que a equipe
+                            espera. Se a API recusar, o item falha na fila e
+                            aparece no log — melhor descobrir assim do que
+                            esconder um botão que talvez funcionasse. */}
+                        {m.id_uazapi && (
+                          <button onClick={() => { setReagindoTudo(false); setReagindo((r) => (r === m.id ? null : m.id)); }} title="Reagir" style={{ position: "absolute", top: 3, right: 22, border: "none", background: "transparent", cursor: "pointer", opacity: (estreito || msgHover === m.id || reagindo === m.id) ? 0.75 : 0, transition: "opacity .12s", display: "flex", padding: 0 }}>
                             <Smile size={14} color={C.textSecondary} />
                           </button>
                         )}
@@ -3497,10 +3503,22 @@ export default function Painel({ sessao }) {
                             justo na mensagem mais recente, que é a que mais se reage.
                             Cobrir duas linhas do texto por um instante é o preço. */}
                         {reagindo === m.id && (
-                          <div style={{ position: "absolute", top: 20, right: 2, zIndex: 5, display: "flex", gap: 2, padding: "4px 6px", borderRadius: 999, background: C.panel, border: `1px solid ${C.divider}`, boxShadow: "0 4px 14px rgba(0,0,0,.35)" }}>
-                            {EMOJIS_REACAO.map((e) => (
+                          <div style={{ position: "absolute", top: 20, right: 2, zIndex: 5,
+                                        width: reagindoTudo ? "min(268px, 74vw)" : 208,
+                                        maxHeight: reagindoTudo ? 176 : undefined,
+                                        overflowY: reagindoTudo ? "auto" : undefined,
+                                        display: "flex", flexWrap: "wrap", gap: 2,
+                                        padding: "4px 6px", borderRadius: reagindoTudo ? 12 : 999,
+                                        background: C.panel, border: `1px solid ${C.divider}`,
+                                        boxShadow: "0 4px 14px rgba(0,0,0,.35)" }}>
+                            {(reagindoTudo ? EMOJIS : EMOJIS_REACAO).map((e) => (
                               <button key={e} onClick={() => reagir(m, e)} title={`Reagir com ${e}`} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "2px 3px" }}>{e}</button>
                             ))}
+                            {!reagindoTudo && (
+                              <button onClick={() => setReagindoTudo(true)} title="Mais emojis" style={{ border: "none", background: "transparent", cursor: "pointer", padding: "2px 3px", display: "flex", alignItems: "center" }}>
+                                <Plus size={17} color={C.textSecondary} />
+                              </button>
+                            )}
                           </div>
                         )}
                         {m.resposta_previa && (
