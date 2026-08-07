@@ -42,13 +42,13 @@ export function guardarRecente(emoji) {
 
 // `aoEscolher` recebe o emoji. `C` são as cores do tema, para o painel não ter
 // uma paleta própria que descolaria do resto na próxima mudança de tema.
-export default function PainelEmoji({ C, aoEscolher, largura = 340, altura = 300 }) {
+export default function PainelEmoji({ C, aoEscolher, largura = 400, altura = 320 }) {
   const [aba, setAba] = useState("recentes");
   const [termo, setTermo] = useState("");
   const [recentes, setRecentes] = useState(lerRecentes);
 
   const abas = useMemo(() => ([
-    { chave: "recentes", rotulo: "Recentes", itens: recentes.map((e) => [e, ""]) },
+    { chave: "recentes", rotulo: "Usados recentemente", itens: recentes.map((e) => [e, ""]) },
     ...CATALOGO,
   ]), [recentes]);
 
@@ -84,7 +84,18 @@ export default function PainelEmoji({ C, aoEscolher, largura = 340, altura = 300
   });
 
   return (
-    <div style={{ width: largura, maxWidth: "calc(100vw - 24px)", background: C.panel,
+    // ALTURA FIXA, e não "cresce conforme o conteúdo".
+    //
+    // A grade tem `flex: 1`, e num contêiner sem altura definida isso a deixa
+    // esticar até caber TODOS os emojis — oitocentos deles. O painel virava uma
+    // coluna de mais de 2000px, que subia muito além do topo da janela: as abas
+    // e a busca ficavam fora da tela, e o que sobrava era um paredão de rostos.
+    //
+    // Com a altura amarrada aqui, a grade rola por dentro em vez de empurrar o
+    // painel para cima.
+    <div style={{ width: largura, maxWidth: "calc(100vw - 24px)",
+                  height: altura + 92, maxHeight: "calc(100vh - 120px)",
+                  background: C.panel,
                   border: `1px solid ${C.divider}`, borderRadius: 12,
                   boxShadow: "0 8px 28px rgba(0,0,0,.35)", overflow: "hidden",
                   display: "flex", flexDirection: "column" }}>
@@ -112,7 +123,18 @@ export default function PainelEmoji({ C, aoEscolher, largura = 340, altura = 300
         </div>
       </div>
 
-      <div style={{ flex: 1, height: altura, overflowY: "auto", padding: "4px 6px 8px",
+      {/* O NOME DA CATEGORIA, como no WhatsApp: as abas dizem para onde ir, o
+          título diz onde se está. Some durante a busca, que atravessa todas. */}
+      {!termo && (
+        <div style={{ padding: "6px 12px 2px", fontSize: 12.5, fontWeight: 600, color: C.textSecondary }}>
+          {(abas.find((a) => a.chave === aba) || abas[0]).rotulo}
+        </div>
+      )}
+
+      {/* `minHeight: 0` é o que faz a rolagem funcionar dentro de um flex:
+          sem ele o item se recusa a encolher abaixo do próprio conteúdo, e a
+          barra de rolagem nunca aparece — a grade empurra o painel. */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "2px 6px 8px",
                     display: "flex", flexWrap: "wrap", alignContent: "flex-start", gap: 1 }}>
         {mostrados.length === 0 && (
           <div style={{ width: "100%", textAlign: "center", color: C.textSecondary,
