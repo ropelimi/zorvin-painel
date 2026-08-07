@@ -1169,17 +1169,22 @@ export default function Painel({ sessao }) {
   // cadastrados aparece duas vezes, porque a escolha de para qual dos dois
   // mandar a mensagem é de quem está atendendo, não nossa.
   //
-  // Some quem já está na agenda do Zorvin — essa pessoa já aparece logo acima,
-  // em CONTATOS, e listar de novo faria parecer que são duas pessoas.
-  function linhasDoVantoro() {
-    const jaNaAgenda = new Set(contatosLista.map((c) => chaveDoNumero(c.numero)));
+  // `jaVisiveis` são os contatos QUE ESTÃO NA TELA agora, e não a agenda
+  // inteira — a diferença é o que fazia gente sumir das duas listas ao mesmo
+  // tempo. O cliente estava salvo no Zorvin com um apelido ("Rodrigo"), a busca
+  // era pelo nome do cadastro ("Rodrigo Alves Sousa"), então ele não casava em
+  // CONTATOS; e como o número dele existia em algum lugar da agenda, a linha do
+  // Vantoro também era descartada. Resultado: nome certo, cadastro certo, e
+  // tela vazia. Agora só é descartado quem a pessoa está vendo logo acima.
+  function linhasDoVantoro(jaVisiveis) {
+    const naTela = new Set((jaVisiveis || []).map((c) => chaveDoNumero(c.numero)));
     const vistos = new Set();
     const linhas = [];
     (vantoroAchados || []).forEach((cli) => {
       [cli.telefone, cli.telefone2].forEach((tel, posicao) => {
         const chave = chaveDoNumero(tel);
         if (chave.length < 10) return;             // sem DDD não dá para chamar
-        if (jaNaAgenda.has(chave) || vistos.has(chave)) return;
+        if (naTela.has(chave) || vistos.has(chave)) return;
         vistos.add(chave);
         linhas.push({ chave, clienteId: cli.id, nome: cli.nome,
                       numero: numeroCanonico(tel), segundo: posicao === 1 });
@@ -2885,7 +2890,13 @@ export default function Painel({ sessao }) {
                     const chaveQ = chaveDoNumero(qDig);
                     const lista = contatosLista.filter((c) => (c.nome || "").toLowerCase().includes(q)
                       || (chaveQ.length >= 4 && chaveDoNumero(c.numero).includes(chaveQ)));
-                    const doVantoro = linhasDoVantoro();
+                    const doVantoro = linhasDoVantoro(lista);
+                    // Houve consulta ao Vantoro e ela voltou sem nada. Dizer
+                    // isso importa: sem a frase, "não achei no Vantoro" e "nem
+                    // cheguei a perguntar" são a mesma tela em branco, e não há
+                    // como saber se o cadastro está errado ou o sistema.
+                    const vantoroVazio = buscaContato.trim().length >= 3
+                      && !vantoroBuscando && !vantoroErro && !doVantoro.length;
                     const TITULO = { padding: "10px 16px 4px", fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3 };
                     const RECADO = { padding: "14px 16px", textAlign: "center", color: C.textSecondary, fontSize: 13.5 };
                     const LINHA = { display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", cursor: "pointer", color: C.textPrimary };
@@ -2907,11 +2918,12 @@ export default function Painel({ sessao }) {
                         {/* O CADASTRO DO VANTORO. Só aparece quando há o que
                             mostrar: uma seção vazia em toda busca ensinaria a
                             equipe a ignorar justamente a parte nova da tela. */}
-                        {(doVantoro.length > 0 || vantoroBuscando || vantoroErro) && (
+                        {(doVantoro.length > 0 || vantoroBuscando || vantoroErro || (vantoroVazio && !lista.length)) && (
                           <>
                             <div style={{ ...TITULO, paddingTop: 16 }}>CLIENTES DO VANTORO</div>
                             {!doVantoro.length && vantoroBuscando && <div style={RECADO}>Procurando no Vantoro…</div>}
                             {!doVantoro.length && !vantoroBuscando && vantoroErro && <div style={RECADO}>{vantoroErro}</div>}
+                            {vantoroVazio && !lista.length && <div style={RECADO}>Nenhum cliente com esse nome no Vantoro.</div>}
                             {doVantoro.map((l) => (
                               <div key={l.chave} role="button" onClick={() => conversarComClienteVantoro(l)} style={LINHA} onMouseEnter={(e) => realce(e, true)} onMouseLeave={(e) => realce(e, false)}>
                                 <Avatar nome={l.nome} size={44} />
@@ -3597,6 +3609,39 @@ export default function Painel({ sessao }) {
                     value={rascunho}
                     onChange={(e) => { setRascunho(e.target.value); setSlashIdx(0); }}
                     onKeyDown={(e) => {
+                      // ALT+ENTER TAMBÉM PULA LINHA.
+                      //
+                      // O Shift+Enter o navegador resolve sozinho — a quebra é
+                      // o comportamento padrão dele numa caixa de texto. O
+                      // Alt+Enter não faz nada por padrão, então a quebra tem
+                      // de ser inserida na mão. Quem vem do Outlook e do Excel
+                      // tem o Alt+Enter no dedo, e ali ele significa
+                      // exatamente isto.
+                      //
+                      // Vem ANTES do menu do "/" de propósito: com o menu
+                      // aberto, o Shift+Enter já quebra a linha em vez de
+                      // escolher um item, e as duas teclas precisam significar
+                      // a mesma coisa em toda situação.
+                      if (e.key === "Enter" && e.altKey) {
+                        e.preventDefault();
+                        const campo = e.target;
+                        // insertText preserva o "desfazer" do navegador e deixa
+                        // o cursor depois da quebra. O caminho manual existe
+                        // para o navegador que não tiver o comando: sem ele o
+                        // cursor saltaria para o fim do texto a cada quebra.
+                        const ok = typeof document.execCommand === "function"
+                          && document.execCommand("insertText", false, "\n");
+                        if (!ok) {
+                          const ini = campo.selectionStart;
+                          const fim = campo.selectionEnd;
+                          setRascunho(campo.value.slice(0, ini) + "\n" + campo.value.slice(fim));
+                          requestAnimationFrame(() => {
+                            campo.selectionStart = ini + 1;
+                            campo.selectionEnd = ini + 1;
+                          });
+                        }
+                        return;
+                      }
                       // Menu do "/": navega com as setas e escolhe com Enter.
                       if (slashAberto) {
                         if (e.key === "ArrowDown") { e.preventDefault(); setSlashIdx((i) => Math.min(slashLista.length - 1, i + 1)); return; }
@@ -3604,8 +3649,8 @@ export default function Painel({ sessao }) {
                         if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); escolherSlash(slashLista[Math.min(slashIdx, slashLista.length - 1)]); return; }
                         if (e.key === "Escape") { e.preventDefault(); setRascunho(""); return; }
                       }
-                      // Enter envia; Shift+Enter pula linha (como no WhatsApp Web).
-                      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); }
+                      // Enter envia; Shift+Enter e Alt+Enter pulam linha.
+                      if (e.key === "Enter" && !e.shiftKey && !e.altKey) { e.preventDefault(); enviar(); }
                     }}
                     rows={1}
                     placeholder={modoNota ? "Escreva uma nota interna (só a equipe vê)" : "Digite uma mensagem"}
