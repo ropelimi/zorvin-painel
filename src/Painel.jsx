@@ -4131,6 +4131,11 @@ export default function Painel({ sessao }) {
                 const ultimaDoGrupo = !proxima || proxima.origem !== m.origem ||
                   proxima.enviado_por !== m.enviado_por ||
                   new Date(proxima.criado_em).toDateString() !== new Date(m.criado_em).toDateString();
+                // Figurinha COM o desenho flutua sem bolha, como no WhatsApp.
+                // Sem o desenho, ela precisa da bolha de volta: o aviso de
+                // "figurinha indisponível" sobre o fundo da conversa, sem
+                // moldura, não se lê como mensagem.
+                const figurinhaNua = m.tipo === "figurinha" && Boolean(m.midia_url);
                 return (
                   <React.Fragment key={m.id}>
                     {novoDia && (
@@ -4201,7 +4206,7 @@ export default function Painel({ sessao }) {
                           aoVerTudo={() => setReagindoTudo(true)}
                           aoReagir={(e) => { setRostoAberto(null); reagir(m, e); }} />
                       )}
-                      <div style={{ position: "relative", maxWidth: estreito ? "84%" : "65%", background: m.tipo === "figurinha" ? "transparent" : (saida ? C.bubbleOut : C.bubbleIn), color: C.textPrimary, borderRadius: 8, padding: m.tipo === "figurinha" ? 0 : (m.tipo === "imagem" ? 4 : "5px 7px 6px 9px"), boxShadow: m.tipo === "figurinha" ? "none" : "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
+                      <div style={{ position: "relative", maxWidth: estreito ? "84%" : "65%", background: figurinhaNua ? "transparent" : (saida ? C.bubbleOut : C.bubbleIn), color: C.textPrimary, borderRadius: 8, padding: figurinhaNua ? 0 : (m.tipo === "imagem" ? 4 : "5px 7px 6px 9px"), boxShadow: figurinhaNua ? "none" : "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
                         {mostrarAutor && (
                           <div style={{ fontSize: 12, fontWeight: 700, color: corNome(m.enviado_por, modo), marginBottom: 1 }}>{m.enviado_por}</div>
                         )}
@@ -4270,10 +4275,24 @@ export default function Painel({ sessao }) {
                             a recebida quanto a que o próprio Zorvin mandou.
                             Vai sem moldura e maior que uma imagem comum, como no
                             WhatsApp: figurinha não tem fundo, ela flutua. */}
-                        {m.tipo === "figurinha" && m.midia_url && (
-                          <img src={m.midia_url} alt="Figurinha" loading="lazy" decoding="async"
-                            onLoad={() => { if (pertoDoFim) fimRef.current?.scrollIntoView(); }}
-                            style={{ width: 140, height: 140, objectFit: "contain", display: "block" }} />
+                        {m.tipo === "figurinha" && (
+                          m.midia_url ? (
+                            <img src={m.midia_url} alt="Figurinha" loading="lazy" decoding="async"
+                              onLoad={() => { if (pertoDoFim) fimRef.current?.scrollIntoView(); }}
+                              style={{ width: 140, height: 140, objectFit: "contain", display: "block" }} />
+                          ) : (
+                            // SEM O ARQUIVO, mas com o registro. A bolha da
+                            // figurinha não tem fundo nem texto: sem arquivo
+                            // ela virava um espaço vazio na conversa, e a
+                            // equipe não tinha como saber que algo tinha
+                            // chegado ali. O aviso é o mesmo caminho do áudio
+                            // e do documento indisponíveis.
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, color: C.textSecondary,
+                                          background: saida ? "rgba(0,0,0,.06)" : C.searchBg,
+                                          borderRadius: 6, padding: "8px 10px", fontSize: 13, fontStyle: "italic" }}>
+                              <Sticker size={18} color={C.textSecondary} /> Figurinha indisponível
+                            </div>
+                          )
                         )}
                         {m.tipo === "audio" && <BolhaAudio C={C} saida={saida} url={m.midia_url} />}
                         {m.tipo === "video" && m.midia_url && (
