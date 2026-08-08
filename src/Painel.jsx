@@ -588,6 +588,88 @@ function Avatar({ nome, size = 40, foto }) {
 // transformaria "reagir" numa escolha. Quem quiser mais abre o painel no "+".
 const EMOJIS_REACAO = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
+// AS ABAS NO PÉ DO PAINEL — emojis de um lado, figurinhas do outro.
+//
+// É o desenho do WhatsApp, e ele resolve um problema real: quem procura
+// figurinha e abre o painel de emoji não precisa fechar tudo e caçar outro
+// ícone na barra. As duas coisas moram no mesmo lugar.
+function AbasDoPainel({ C, aba, aoTrocar }) {
+  const BOTAO = (ativa) => ({
+    display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+    border: "none", cursor: "pointer", padding: "6px 18px", borderRadius: 999,
+    background: ativa ? C.searchBg : "transparent",
+    color: ativa ? C.textPrimary : C.textSecondary, fontSize: 12.5, fontWeight: 600,
+  });
+  return (
+    <div style={{ display: "flex", justifyContent: "center", gap: 6, padding: 6,
+                  borderTop: `1px solid ${C.divider}`, flexShrink: 0 }}>
+      <button onClick={() => aoTrocar("emoji")} title="Emojis" style={BOTAO(aba !== "figurinha")}>
+        <Smile size={17} color={aba !== "figurinha" ? C.green : C.textSecondary} /> Emojis
+      </button>
+      <button onClick={() => aoTrocar("figurinha")} title="Figurinhas" style={BOTAO(aba === "figurinha")}>
+        <Sticker size={17} color={aba === "figurinha" ? C.green : C.textSecondary} /> Figurinhas
+      </button>
+    </div>
+  );
+}
+
+// A GALERIA DE FIGURINHAS. Mesma moldura e mesma altura do painel de emoji,
+// para trocar de aba não fazer a caixa pular de tamanho debaixo do dedo.
+function PainelFigurinhas({ C, figurinhas, figHover, aoPassarMouse, aoEnviar, aoRemover, aoNova, rodape }) {
+  return (
+    <div style={{ width: 400, maxWidth: "calc(100vw - 24px)",
+                  height: 412, maxHeight: "calc(100vh - 120px)",
+                  background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 12,
+                  boxShadow: "0 8px 28px rgba(0,0,0,.35)", overflow: "hidden",
+                  display: "flex", flexDirection: "column" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "8px 10px", borderBottom: `1px solid ${C.divider}`, flexShrink: 0 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: C.textSecondary }}>FIGURINHAS FAVORITAS</span>
+        <button onClick={aoNova} title="Enviar uma figurinha nova"
+          style={{ border: "none", background: C.searchBg, cursor: "pointer", borderRadius: 8,
+                   padding: "4px 10px", fontSize: 12.5, color: C.textPrimary, display: "flex",
+                   alignItems: "center", gap: 5 }}>
+          <Plus size={14} color={C.textSecondary} /> Nova
+        </button>
+      </div>
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 8 }}>
+        {figurinhas.length === 0 ? (
+          <div style={{ padding: "28px 14px", textAlign: "center", color: C.textSecondary,
+                        fontSize: 12.5, lineHeight: 1.6 }}>
+            Nenhuma figurinha guardada.<br />
+            Para guardar uma, abra o menu da figurinha na conversa e toque em
+            "Adicionar às figurinhas favoritas".
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {figurinhas.map((u) => (
+              // O "×" fica AQUI, e não só no menu da mensagem: quem quer tirar
+              // uma figurinha da lista está olhando para a lista, não
+              // procurando a conversa de três semanas atrás em que ela apareceu.
+              <span key={u} onMouseEnter={() => aoPassarMouse(u)} onMouseLeave={() => aoPassarMouse(null)}
+                style={{ position: "relative", display: "flex" }}>
+                <button onClick={() => aoEnviar(u)} title="Enviar esta figurinha"
+                  style={{ border: "none", background: "transparent", cursor: "pointer", padding: 2, borderRadius: 8 }}>
+                  <img src={u} alt="figurinha" style={{ width: 72, height: 72, objectFit: "contain" }} />
+                </button>
+                <button onClick={(e) => { e.stopPropagation(); aoRemover(u); }}
+                  title="Remover das figurinhas favoritas" aria-label="Remover das figurinhas favoritas"
+                  style={{ position: "absolute", top: -2, right: -2, width: 20, height: 20, borderRadius: "50%",
+                           border: `1px solid ${C.divider}`, background: C.panel, cursor: "pointer",
+                           display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
+                           opacity: figHover === u ? 1 : 0, transition: "opacity .12s" }}>
+                  <X size={12} color={C.textSecondary} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      {rodape}
+    </div>
+  );
+}
+
 // O RODAPÉ DA BOLHA — selos, hora e as marcas de entrega.
 //
 // No WhatsApp isso NÃO é uma linha embaixo do texto: é um bloco flutuante
@@ -745,7 +827,7 @@ function RostoReagir({ C, saida, visivel, aberto, aoAbrir, aoReagir, aoVerTudo, 
 // favoritar e apagar mensagem ainda não existem no Zorvin, e um item de menu
 // que não funciona é pior que a ausência dele: ensina a equipe a desconfiar do
 // menu inteiro.
-function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoResponder, aoCopiar, aoEncaminhar, aoEditar, aoFixar, aoFavoritar, aoApagar, temTexto, podeEditar, fixada, favorita }) {
+function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoResponder, aoCopiar, aoEncaminhar, aoEditar, aoFixar, aoFavoritar, aoApagar, temTexto, podeEditar, fixada, favorita, ehFigurinha, figurinhaGuardada, aoGuardarFigurinha }) {
   // PARA CIMA OU PARA BAIXO. Na metade de baixo da tela o menu abre para cima,
   // senão o da última mensagem sai pela borda e fica inalcançável.
   //
@@ -821,6 +903,17 @@ function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoRespond
             <button onClick={aoFavoritar} style={ITEM}>
               <Star size={17} color={favorita ? "#f4c430" : C.textSecondary} /> {favorita ? "Desfavoritar" : "Favoritar"}
             </button>
+            {/* GUARDAR A FIGURINHA. Só aparece em figurinha, e o nome diz
+                "figurinhas favoritas" por inteiro: "Favoritar", logo acima,
+                é outra coisa — marca a MENSAGEM na conversa. Dois itens
+                chamados quase igual, um do lado do outro, seriam o mesmo que
+                não ter nenhum. */}
+            {ehFigurinha && (
+              <button onClick={aoGuardarFigurinha} style={ITEM}>
+                <Sticker size={17} color={figurinhaGuardada ? C.green : C.textSecondary} />
+                {figurinhaGuardada ? "Remover das figurinhas favoritas" : "Adicionar às figurinhas favoritas"}
+              </button>
+            )}
             {/* APAGAR fica separado por uma linha e em vermelho: é a única
                 opção do menu que não tem volta, e a distância do resto existe
                 para o dedo não escorregar do Favoritar para ela. */}
@@ -900,8 +993,10 @@ export default function Painel({ sessao }) {
   // MODO SELEÇÃO, como no WhatsApp: `null` = desligado; array = ids marcados.
   const [selecao, setSelecao] = useState(null);
   const [confirmarApagar, setConfirmarApagar] = useState(false);
-  const [figurinhasAberto, setFigurinhasAberto] = useState(false);
-  const [figurinhas, setFigurinhas] = useState([]);        // URLs já usadas neste Zorvin
+  // Qual aba do painel único: os emojis ou as figurinhas.
+  const [abaEmoji, setAbaEmoji] = useState("emoji");
+  const [figurinhas, setFigurinhas] = useState([]);        // URLs guardadas de propósito
+  const [figHover, setFigHover] = useState(null);          // qual delas está sob o mouse
   const [buscaEncaminhar, setBuscaEncaminhar] = useState("");
   const [advogadoId, setAdvogadoId] = useState(null);
   const [conversas, setConversas] = useState([]);
@@ -2392,7 +2487,6 @@ export default function Painel({ sessao }) {
       else if (audioPronto) descartarAudioPronto();
       else if (confirmarApagar) setConfirmarApagar(false);
       else if (selecao) setSelecao(null);
-      else if (figurinhasAberto) setFigurinhasAberto(false);
       else if (editando) cancelarEdicao();
       else if (encaminhar) setEncaminhar(null);
       else if (rostoAberto) { setRostoAberto(null); setReagindoTudo(false); }
@@ -2424,7 +2518,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, selecao, figurinhasAberto, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo, conversaId]);
+  }, [confirmarApagar, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo, conversaId]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -2438,7 +2532,6 @@ export default function Painel({ sessao }) {
       if ((reagindo || rostoAberto) && !(e.target.closest && e.target.closest("[data-menu-msg]"))) {
         setReagindo(null); setRostoAberto(null); setReagindoTudo(false);
       }
-      if (figurinhasAberto && !(e.target.closest && e.target.closest("[data-figurinhas]"))) setFigurinhasAberto(false);
       if (emojiAberto && emojiRef.current && !emojiRef.current.contains(e.target)) setEmojiAberto(false);
       if (seletorAberto && seletorRef.current && !seletorRef.current.contains(e.target)) setSeletorAberto(false);
       if (tagMenuAberto && tagMenuRef.current && !tagMenuRef.current.contains(e.target)) setTagMenuAberto(false);
@@ -2446,7 +2539,7 @@ export default function Painel({ sessao }) {
     }
     document.addEventListener("mousedown", aoClicar);
     return () => document.removeEventListener("mousedown", aoClicar);
-  }, [figurinhasAberto, reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas]);
+  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas]);
 
   // Fecha o menuzinho da conversa (marcar não lida) ao clicar em qualquer lugar.
   useEffect(() => {
@@ -2534,31 +2627,74 @@ export default function Painel({ sessao }) {
     mostrarAviso(`Encaminhada para ${nomeDoContato(conv.contato) || "a conversa"}.`);
   }
 
-  // FIGURINHAS.
+  // FIGURINHAS — A GALERIA É UMA ESCOLHA, e não o histórico.
   //
-  // A galeria é montada com as figurinhas que já passaram por este Zorvin —
-  // enviadas ou recebidas. É assim que o acervo do escritório se forma sozinho,
-  // sem ninguém precisar cadastrar nada: a figurinha que alguém usou uma vez
-  // fica à mão para a próxima.
+  // Antes ela juntava sozinha TODA figurinha que passava pelo Zorvin, enviada
+  // ou recebida. Parecia prático e não era: basta um cliente mandar uma piada,
+  // um deboche ou coisa pior para aquilo ficar guardado à mão, na mesma lista
+  // que a equipe abre para responder outro cliente. Mandar a figurinha errada
+  // por engano, num escritório de advocacia, é problema de verdade.
   //
-  // Sem a galeria, "mandar figurinha" viraria "procurar um arquivo .webp no
-  // computador toda vez", que ninguém faz duas vezes.
+  // Agora nada entra sozinho: guarda quem quer, pelo menu da mensagem.
+  //
+  // A lista é DO ESCRITÓRIO, não de cada pessoa — quem atende hoje é quem está
+  // na escala, e a figurinha que a Joana guardou precisa estar à mão da
+  // Beatriz.
   const carregarFigurinhas = useCallback(async () => {
-    const { data } = await supabase.from("mensagens")
-      .select("midia_url").eq("tipo", "figurinha").not("midia_url", "is", null)
-      .order("criado_em", { ascending: false }).limit(80);
-    const vistas = new Set();
-    const lista = [];
-    (data || []).forEach((r) => {
-      if (r.midia_url && !vistas.has(r.midia_url)) { vistas.add(r.midia_url); lista.push(r.midia_url); }
-    });
-    setFigurinhas(lista.slice(0, 24));
+    const { data } = await supabase.from("figurinhas_favoritas")
+      .select("midia_url").order("criado_em", { ascending: false }).limit(60);
+    setFigurinhas((data || []).map((r) => r.midia_url).filter(Boolean));
   }, []);
+
+  // Carregada já na abertura, e não só quando a galeria abre: é ela que diz ao
+  // menu da mensagem se a figurinha já está guardada — ou seja, se o item deve
+  // dizer "Adicionar" ou "Remover".
+  useEffect(() => { carregarFigurinhas(); }, [carregarFigurinhas]);
+
+  function figurinhaEhFavorita(url) {
+    return Boolean(url) && figurinhas.includes(url);
+  }
+
+  // Guardar ou tirar da galeria. O acerto na tela vem primeiro e é desfeito se
+  // o banco recusar: sem isso o clique parece não ter efeito por um segundo, e
+  // a pessoa clica de novo.
+  async function alternarFigurinhaFavorita(m) {
+    const url = m?.midia_url;
+    if (!url) return;
+    const jaTinha = figurinhaEhFavorita(url);
+    setFigurinhas((prev) => (jaTinha ? prev.filter((u) => u !== url) : [url, ...prev]));
+    if (jaTinha) {
+      // `.select()` para saber se ALGUMA linha saiu. Sem política de exclusão
+      // o Supabase não dá erro: ele apaga zero linhas em silêncio, e a
+      // figurinha voltaria ao recarregar.
+      const { data, error } = await supabase.from("figurinhas_favoritas")
+        .delete().eq("midia_url", url).select("id");
+      if (error || !data || data.length === 0) {
+        setFigurinhas((prev) => (prev.includes(url) ? prev : [url, ...prev]));
+        mostrarAviso("Não consegui remover a figurinha. " + (error?.message || "Rode sql/2026-08-figurinhas-favoritas.sql."));
+        return;
+      }
+      mostrarAviso("Figurinha removida das favoritas");
+    } else {
+      // `upsert` e não `insert`: duas pessoas guardando a mesma figurinha não
+      // podem virar erro na tela — a URL é única na tabela.
+      const { error } = await supabase.from("figurinhas_favoritas")
+        .upsert({ midia_url: url, midia_mime: m.midia_mime || null, adicionada_por: meuNome },
+                { onConflict: "midia_url", ignoreDuplicates: true });
+      if (error) {
+        setFigurinhas((prev) => prev.filter((u) => u !== url));
+        mostrarAviso("Não consegui guardar a figurinha. " + error.message);
+        return;
+      }
+      mostrarAviso("Figurinha adicionada às favoritas");
+    }
+    carregarFigurinhas();
+  }
 
   // Reenviar uma figurinha da galeria: ela já está no Storage, então é só
   // enfileirar a URL — sem novo upload, sem esperar.
   async function enviarFigurinhaUrl(url) {
-    setFigurinhasAberto(false);
+    setEmojiAberto(false);
     if (!conversaId) return;
     setPertoDoFim(true);
     const tempId = "temp-" + Date.now() + "-" + Math.round(Math.random() * 1e6);
@@ -4247,6 +4383,9 @@ export default function Painel({ sessao }) {
                             fixada={Boolean(m.fixada)} favorita={Boolean(m.favorita)}
                             aoFixar={() => { setReagindo(null); setReagindoTudo(false); marcarMensagem(m, "fixada", !m.fixada); }}
                             aoFavoritar={() => { setReagindo(null); setReagindoTudo(false); marcarMensagem(m, "favorita", !m.favorita); }}
+                            ehFigurinha={m.tipo === "figurinha" && Boolean(m.midia_url)}
+                            figurinhaGuardada={figurinhaEhFavorita(m.midia_url)}
+                            aoGuardarFigurinha={() => { setReagindo(null); setReagindoTudo(false); alternarFigurinhaFavorita(m); }}
                             aoApagar={() => { setReagindo(null); setReagindoTudo(false); setSelecao([m.id]); }}
                             aoVerTudo={() => setReagindoTudo(true)}
                             aoReagir={(e) => reagir(m, e)}
@@ -4505,13 +4644,30 @@ export default function Painel({ sessao }) {
                                 background: modoNota ? (modo === "escuro" ? "#3a3320" : "#fff8d6") : C.balaoFundo,
                                 border: modoNota ? "1px solid #e6cf6a" : "1px solid transparent",
                                 boxSizing: "border-box" }}>
-                  <span ref={emojiRef} style={{ display: "flex" }}>
+                  {/* UM BOTÃO SÓ para emoji e figurinha, como no WhatsApp.
+                      Eram dois, em pontas opostas da barra, e nada dizia que
+                      abriam coisas parecidas. O WhatsApp resolve com uma
+                      carinha só e duas abas no pé do painel — quem procurava
+                      figurinha e achou emoji está a um toque de distância, em
+                      vez de ter de fechar e caçar outro ícone. */}
+                  <span ref={emojiRef} data-figurinhas style={{ display: "flex" }}>
                     {emojiAberto && (
                       <div style={{ position: "absolute", bottom: 60, left: 12, zIndex: 30 }}>
-                        <PainelEmoji C={C} aoEscolher={inserirEmoji} />
+                        {abaEmoji === "figurinha" ? (
+                          <PainelFigurinhas C={C} figurinhas={figurinhas} figHover={figHover}
+                            aoPassarMouse={setFigHover}
+                            aoEnviar={enviarFigurinhaUrl}
+                            aoRemover={(u) => alternarFigurinhaFavorita({ midia_url: u })}
+                            aoNova={() => figurinhaRef.current?.click()}
+                            rodape={<AbasDoPainel C={C} aba={abaEmoji} aoTrocar={setAbaEmoji} />} />
+                        ) : (
+                          <PainelEmoji C={C} aoEscolher={inserirEmoji}
+                            rodape={<AbasDoPainel C={C} aba={abaEmoji} aoTrocar={setAbaEmoji} />} />
+                        )}
                       </div>
                     )}
-                    <button onClick={() => setEmojiAberto((v) => !v)} title="Emojis" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
+                    <button onClick={() => { const abrir = !emojiAberto; setEmojiAberto(abrir); if (abrir) carregarFigurinhas(); }}
+                      title="Emojis e figurinhas" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
                       <Smile size={24} color={emojiAberto ? C.green : C.textSecondary} />
                     </button>
                   </span>
@@ -4535,49 +4691,8 @@ export default function Painel({ sessao }) {
                     <Paperclip size={22} color={C.textSecondary} />
                   </button>
                   <input ref={fileRef} type="file" onChange={aoEscolherArquivo} style={{ display: "none" }} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" />
-                  {/* FIGURINHAS. O painel mostra as que já passaram por este
-                      Zorvin — o acervo do escritório se forma sozinho, e a
-                      figurinha que alguém usou uma vez fica à mão para a
-                      próxima. Sem isso, "mandar figurinha" viraria "procurar um
-                      .webp no computador toda vez", que ninguém faz duas. */}
-                  <span data-figurinhas style={{ position: "relative", display: "flex" }}>
-                    {figurinhasAberto && (
-                      <div style={{ position: "absolute", bottom: 48, left: 0, zIndex: 30,
-                                    width: 300, maxWidth: "calc(100vw - 24px)", maxHeight: 260,
-                                    overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`,
-                                    borderRadius: 12, boxShadow: "0 8px 28px rgba(0,0,0,.35)", padding: 8 }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "2px 4px 8px" }}>
-                          <span style={{ fontSize: 12.5, fontWeight: 700, color: C.textSecondary }}>FIGURINHAS</span>
-                          <button onClick={() => figurinhaRef.current?.click()} title="Enviar uma figurinha nova"
-                            style={{ border: "none", background: C.searchBg, cursor: "pointer", borderRadius: 8,
-                                     padding: "4px 10px", fontSize: 12.5, color: C.textPrimary, display: "flex",
-                                     alignItems: "center", gap: 5 }}>
-                            <Plus size={14} color={C.textSecondary} /> Nova
-                          </button>
-                        </div>
-                        {figurinhas.length === 0 ? (
-                          <div style={{ padding: "18px 8px", textAlign: "center", color: C.textSecondary, fontSize: 13 }}>
-                            Nenhuma figurinha ainda. Toque em "Nova" para mandar a primeira.
-                          </div>
-                        ) : (
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                            {figurinhas.map((u) => (
-                              <button key={u} onClick={() => enviarFigurinhaUrl(u)} title="Enviar esta figurinha"
-                                style={{ border: "none", background: "transparent", cursor: "pointer", padding: 2, borderRadius: 8 }}>
-                                <img src={u} alt="figurinha" style={{ width: 64, height: 64, objectFit: "contain" }} />
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    <button onClick={() => { const abrir = !figurinhasAberto; setFigurinhasAberto(abrir); if (abrir) carregarFigurinhas(); }}
-                      title="Figurinhas" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
-                      <Sticker size={22} color={figurinhasAberto ? C.green : C.textSecondary} />
-                    </button>
-                  </span>
                   <input ref={figurinhaRef} type="file" accept="image/webp,image/png,image/jpeg" style={{ display: "none" }}
-                    onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) { setFigurinhasAberto(false); enviarArquivo(f, "", conversaId, "figurinha"); } }} />
+                    onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) { setEmojiAberto(false); enviarArquivo(f, "", conversaId, "figurinha"); } }} />
                   <textarea
                     ref={inputRef}
                     value={rascunho}

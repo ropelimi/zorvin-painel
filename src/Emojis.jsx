@@ -42,7 +42,10 @@ export function guardarRecente(emoji) {
 
 // `aoEscolher` recebe o emoji. `C` são as cores do tema, para o painel não ter
 // uma paleta própria que descolaria do resto na próxima mudança de tema.
-export default function PainelEmoji({ C, aoEscolher, largura = 400, altura = 320 }) {
+// `rodape` é opcional: a barra "emojis | figurinhas" da caixa de digitação. Ela
+// entra DENTRO da moldura do painel — colada por fora, com borda própria,
+// pareceria uma segunda caixa em cima da primeira.
+export default function PainelEmoji({ C, aoEscolher, largura = 400, altura = 320, rodape = null }) {
   const [aba, setAba] = useState("recentes");
   const [termo, setTermo] = useState("");
   const [recentes, setRecentes] = useState(lerRecentes);
@@ -148,6 +151,7 @@ export default function PainelEmoji({ C, aoEscolher, largura = 400, altura = 320
                            fontSize: 22, lineHeight: 1, padding: 5, borderRadius: 6 }}>{e}</button>
         ))}
       </div>
+      {rodape}
     </div>
   );
 }
