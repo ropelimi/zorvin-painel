@@ -1856,15 +1856,48 @@ export default function Painel({ sessao }) {
   // Só entram mensagens ENVIADAS (`origem = 'advogado'`). "Quem falou com o
   // cliente" é sobre nós; o que ele mandou está na conversa.
   async function carregarHistorico(contatoId) {
-    setHistorico({ carregando: true, linhas: [], erro: "" });
+    setHistorico({ carregando: true, linhas: [], erro: "", parcial: false });
+
+    // PELA PONTE, e não direto do banco.
+    //
+    // A regra de linha do Supabase (`pode_ver_conversa`) recorta a consulta do
+    // navegador pelos telefones que a PESSOA alcança. O histórico assim
+    // recortado respondia "ninguém falou com esse cliente" quando a resposta
+    // certa era "falaram, por um telefone que você não abre" — e é justamente
+    // essa a pergunta que a tela existe para responder.
+    //
+    // A ponte usa a chave de serviço e enxerga o escritório inteiro. Ela
+    // devolve só o RESUMO: quem escreveu, quando e por qual telefone. Texto de
+    // mensagem nenhum atravessa.
+    try {
+      const r = await chamarPonte(`/historico/contato/${encodeURIComponent(contatoId)}`);
+      const linhas = (r.linhas || []).map((l) => ({
+        conversaId: l.conversa_id,
+        adv: (l.advogado_nome || l.advogado_numero)
+          ? { nome: l.advogado_nome, numero: l.advogado_numero }
+          : advogados.find((a) => String(a.id) === String(l.advogado_id)) || null,
+        primeira: l.primeira || null,
+        ultima: l.ultima || null,
+      }));
+      linhas.sort((a, b) => new Date(b.ultima?.criado_em || 0) - new Date(a.ultima?.criado_em || 0));
+      setHistorico({ carregando: false, linhas, erro: "", parcial: false });
+      return;
+    } catch (_e) {
+      // A ponte dorme no plano gratuito e pode demorar a acordar. Em vez de
+      // deixar a tela sem nada, mostramos o que ESTE navegador alcança — e
+      // dizemos, em letras, que a lista está incompleta. O erro aqui seria
+      // mostrar a lista curta com cara de completa.
+    }
+
     const { data: convs, error } = await supabase.from("conversas")
       .select("id, advogado_id").eq("contato_id", contatoId);
     if (error) {
-      setHistorico({ carregando: false, linhas: [], erro: "Não consegui ler o histórico." });
+      setHistorico({ carregando: false, linhas: [], parcial: false,
+                     erro: "Não consegui ler o histórico." });
       return;
     }
     const pontas = (v, crescente) => supabase.from("mensagens")
-      .select("enviado_por, enviado_por_foto, criado_em, tipo, texto")
+      .select("enviado_por, enviado_por_foto, criado_em")
       .eq("conversa_id", v.id).eq("origem", "advogado")
       .order("criado_em", { ascending: crescente }).limit(1);
 
@@ -1880,7 +1913,7 @@ export default function Painel({ sessao }) {
     // O telefone com movimento mais recente primeiro: é onde a conversa está
     // viva, e é a linha que quase sempre se procura.
     linhas.sort((a, b) => new Date(b.ultima?.criado_em || 0) - new Date(a.ultima?.criado_em || 0));
-    setHistorico({ carregando: false, linhas, erro: "" });
+    setHistorico({ carregando: false, linhas, erro: "", parcial: true });
   }
 
   // Abre a conversa do link, criando o contato só se ele ainda não existir.
@@ -5113,7 +5146,9 @@ export default function Painel({ sessao }) {
                     Ninguém do escritório enviou mensagem para este cliente ainda —
                     {historico.linhas.length
                       ? " a conversa existe, mas só com o que ele mandou."
-                      : " não há conversa com ele em nenhum telefone que você alcança."}
+                      : (historico.parcial
+                          ? " não há conversa com ele nos telefones que você alcança (e não consegui consultar os outros agora)."
+                          : " não há conversa com ele em nenhum telefone do escritório.")}
                   </div>
                 );
               }
@@ -5160,14 +5195,18 @@ export default function Painel({ sessao }) {
                         )}
                       </div>
                     ))}
-                    {/* Dito, e não escondido: o banco só entrega os
-                        telefones que esta pessoa alcança, então a lista
-                        pode ser menor do que a verdade — e quem lê
-                        precisa saber disso antes de concluir "ninguém
-                        respondeu". */}
-                    <div style={{ fontSize: 11.5, color: C.textSecondary, lineHeight: 1.5, marginTop: 4 }}>
-                      Só aparecem os telefones que você tem permissão para ver.
-                    </div>
+                    {/* O aviso só aparece quando a lista ESTÁ mesmo
+                        incompleta — quando a ponte não respondeu e o que se vê
+                        é o recorte deste navegador. Fixo, ele faria a tela
+                        desmentir a si mesma no caso normal, que agora é o de
+                        mostrar o escritório inteiro. */}
+                    {historico.parcial && (
+                      <div style={{ fontSize: 11.5, color: C.textSecondary, lineHeight: 1.5, marginTop: 4 }}>
+                        Lista incompleta: não consegui falar com a ponte agora, então
+                        aparecem só os telefones que você mesmo alcança. Tente de novo
+                        em alguns segundos para ver o escritório inteiro.
+                      </div>
+                    )}
                   </div>
                 </>
               );
