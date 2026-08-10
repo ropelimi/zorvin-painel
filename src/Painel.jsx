@@ -6,7 +6,8 @@ import {
   Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp,
   StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star,
   Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList, ShieldCheck,
-  ChevronLeft, ChevronRight, Images, ExternalLink, Pin, Copy, Forward, Sticker
+  ChevronLeft, ChevronRight, Images, ExternalLink, Pin, Copy, Forward, Sticker,
+  History
 } from "lucide-react";
 import FichaVantoro from "./FichaVantoro";
 import { chamarPonte } from "./ponte.js";
@@ -254,6 +255,20 @@ function horaDe(iso) {
   const mesmoDia = d.toDateString() === hoje.toDateString();
   if (mesmoDia) return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+
+// Data e hora por extenso — "05/08/2026 às 18:38".
+//
+// `horaDe` encurta de propósito (só a hora quando é hoje, só o dia quando não
+// é): na lista de conversas o espaço é de um canto de linha. No histórico é o
+// contrário — a pergunta é justamente QUANDO, e "05/08" sem o ano não responde
+// nada num cliente de três anos atrás.
+function dataHoraDe(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })
+       + " às " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
 // O NÚMERO DE QUEM ESTÁ ATENDENDO, legível.
@@ -1006,6 +1021,9 @@ export default function Painel({ sessao }) {
   const [conversaId, setConversaId] = useState(null);
   // Ficha do cliente no Vantoro (abre ao lado da conversa).
   const [fichaAberta, setFichaAberta] = useState(false);
+  // "Histórico de atendimento": quem falou com este cliente, quando e por qual
+  // telefone do escritório. `null` = fechado.
+  const [historico, setHistorico] = useState(null);
   const [mensagens, setMensagens] = useState([]);
   const [seletorAberto, setSeletorAberto] = useState(false);
   const [verArquivadas, setVerArquivadas] = useState(false); // exibindo a lista de arquivadas
@@ -1064,7 +1082,6 @@ export default function Painel({ sessao }) {
   const [idDivisorNaoLidas, setIdDivisorNaoLidas] = useState(null); // id da 1ª msg não lida ao abrir
   const [temMaisAntigas, setTemMaisAntigas] = useState(false); // há histórico acima do que está na tela
   const [buscandoAntigas, setBuscandoAntigas] = useState(false);
-  const [infoAberta, setInfoAberta] = useState(false); // painel de dados do contato
   const [importando, setImportando] = useState(false); // gravando no banco
   const [impAdvId, setImpAdvId] = useState(""); // advogado dono das conversas importadas
   const [impMeuNome, setImpMeuNome] = useState(""); // nome do advogado como aparece nos .txt
@@ -1819,6 +1836,53 @@ export default function Painel({ sessao }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [advogadoId]);
 
+  // ---- HISTÓRICO DE ATENDIMENTO DESTE CLIENTE ----
+  //
+  // A pergunta que ele responde é "quem já falou com esta pessoa, quando, e
+  // por qual dos nossos telefones". Ela aparece toda semana — antes de cobrar,
+  // antes de ligar, antes de responder uma reclamação de "ninguém me
+  // respondeu" — e a única forma de responder era rolar a conversa até o
+  // começo, uma conversa de cada vez, telefone por telefone.
+  //
+  // É por CONTATO, e não por conversa: o mesmo cliente costuma ter conversa
+  // com mais de um telefone do escritório, e é justamente aí que a resposta
+  // some. Quem olha uma conversa só vê metade da história.
+  //
+  // PRIMEIRA e ÚLTIMA são consultas separadas, com `limit(1)` em cada sentido,
+  // e não uma leitura de tudo para depois escolher: a conversa de um cliente
+  // antigo tem milhares de mensagens, e trazer todas para mostrar duas seria
+  // pagar o preço inteiro pela informação mais barata da tela.
+  //
+  // Só entram mensagens ENVIADAS (`origem = 'advogado'`). "Quem falou com o
+  // cliente" é sobre nós; o que ele mandou está na conversa.
+  async function carregarHistorico(contatoId) {
+    setHistorico({ carregando: true, linhas: [], erro: "" });
+    const { data: convs, error } = await supabase.from("conversas")
+      .select("id, advogado_id").eq("contato_id", contatoId);
+    if (error) {
+      setHistorico({ carregando: false, linhas: [], erro: "Não consegui ler o histórico." });
+      return;
+    }
+    const pontas = (v, crescente) => supabase.from("mensagens")
+      .select("enviado_por, enviado_por_foto, criado_em, tipo, texto")
+      .eq("conversa_id", v.id).eq("origem", "advogado")
+      .order("criado_em", { ascending: crescente }).limit(1);
+
+    const linhas = await Promise.all((convs || []).map(async (v) => {
+      const [pri, ult] = await Promise.all([pontas(v, true), pontas(v, false)]);
+      return {
+        conversaId: v.id,
+        adv: advogados.find((a) => String(a.id) === String(v.advogado_id)) || null,
+        primeira: (pri.data || [])[0] || null,
+        ultima: (ult.data || [])[0] || null,
+      };
+    }));
+    // O telefone com movimento mais recente primeiro: é onde a conversa está
+    // viva, e é a linha que quase sempre se procura.
+    linhas.sort((a, b) => new Date(b.ultima?.criado_em || 0) - new Date(a.ultima?.criado_em || 0));
+    setHistorico({ carregando: false, linhas, erro: "" });
+  }
+
   // Abre a conversa do link, criando o contato só se ele ainda não existir.
   // A criação fica para DEPOIS da escolha do telefone de propósito: quem
   // desiste no meio não deixa para trás um contato que ninguém pediu.
@@ -2464,7 +2528,7 @@ export default function Painel({ sessao }) {
     const guardado = conversaId ? rascunhosRef.current[conversaId] : null;
     setRascunho(guardado ? guardado.texto : "");
     setModoNota(guardado ? !!guardado.nota : false);
-    setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); setRespondendo(null); setInfoAberta(false); setFichaAberta(false); setTagMenuAberto(false);
+    setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); setRespondendo(null); setFichaAberta(false); setHistorico(null); setTagMenuAberto(false);
     requestAnimationFrame(() => { fimRef.current?.scrollIntoView(); if (conversaId && !estreito) inputRef.current?.focus(); });
   }, [conversaId]);
 
@@ -2683,15 +2747,15 @@ export default function Painel({ sessao }) {
       else if (tagMenuAberto) setTagMenuAberto(false);
       else if (emojiAberto) setEmojiAberto(false);
       else if (seletorAberto) setSeletorAberto(false);
+      else if (historico) setHistorico(null);
       else if (fichaAberta) setFichaAberta(false);
-      else if (infoAberta) setInfoAberta(false);
       else if (buscaAberta) { setBuscaAberta(false); setBuscaConversa(""); }
       else if (respondendo) setRespondendo(null);
       else if (conversaId) setConversaId(null);
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, infoAberta, fichaAberta, buscaAberta, respondendo, conversaId]);
+  }, [confirmarApagar, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -3881,7 +3945,7 @@ export default function Painel({ sessao }) {
           rolagem lateral e a lista aparecia cortada, sem a hora nem o contador
           de não lidas. Com o zero, ela encolhe para o que sobra (330px) e quem
           rola é só a fita de filtros, que já foi feita para isso. */}
-      <div style={{ position: "relative", width: estreito ? "auto" : 380, flex: estreito ? 1 : "none", minWidth: 0, borderRight: `1px solid ${C.divider}`, display: ((estreito && conversaId) || fichaAberta) ? "none" : "flex", flexDirection: "column", background: C.panel }}>
+      <div style={{ position: "relative", width: estreito ? "auto" : 380, flex: estreito ? 1 : "none", minWidth: 0, borderRight: `1px solid ${C.divider}`, display: ((estreito && conversaId) || fichaAberta || historico) ? "none" : "flex", flexDirection: "column", background: C.panel }}>
         {/* NOVA CONVERSA (⊞) — estilo WhatsApp Web: busca, novo contato e agenda */}
         {novaConversaAberta && (
           <div style={{ position: "absolute", inset: 0, zIndex: 40, background: C.panel, display: "flex", flexDirection: "column" }}>
@@ -4261,7 +4325,7 @@ export default function Painel({ sessao }) {
       {/* Mesmo motivo da coluna da lista: sem `minWidth: 0` a conversa aberta
           no celular fica mais larga que a tela por causa de uma mensagem
           comprida. */}
-      <div style={{ flex: 1, minWidth: 0, display: ((estreito && !conversaId) || (estreito && fichaAberta)) ? "none" : "flex", flexDirection: "column", background: C.chatBg, backgroundImage: modo === "escuro" ? PADRAO_CHAT_ESCURO : PADRAO_CHAT_CLARO, position: "relative" }}>
+      <div style={{ flex: 1, minWidth: 0, display: ((estreito && !conversaId) || (estreito && (fichaAberta || historico))) ? "none" : "flex", flexDirection: "column", background: C.chatBg, backgroundImage: modo === "escuro" ? PADRAO_CHAT_ESCURO : PADRAO_CHAT_CLARO, position: "relative" }}>
         {!conversa ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: C.textSecondary, gap: 16 }}>
             <div style={{ width: 90, height: 90, borderRadius: "50%", background: C.placeholderCircle, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -4280,8 +4344,18 @@ export default function Painel({ sessao }) {
                   <ArrowLeft size={20} color={C.textSecondary} />
                 </button>
               )}
-              <div onClick={() => setInfoAberta(true)} title="Ver dados do contato" style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, cursor: "pointer", minWidth: 0 }}>
-              <Avatar nome={conversa.contato?.nome || conversa.contato?.numero} foto={conversa.contato?.foto_url} size={40} />
+              {/* O NOME NÃO ABRE MAIS NADA. O painel "Dados do contato" trazia
+                  três coisas — a foto grande, o nome e o número —, e as três já
+                  estão aqui: o nome e o número escritos, a foto no avatar. Ele
+                  só interrompia a conversa a cada clique sem querer no lugar
+                  mais clicável do cabeçalho. A foto grande continua a um clique
+                  de distância, mas na FOTO, que é onde se espera. */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
+              <span onClick={() => { if (conversa.contato?.foto_url) setImagemAberta(conversa.contato.foto_url); }}
+                    title={conversa.contato?.foto_url ? "Ver a foto" : undefined}
+                    style={{ display: "flex", cursor: conversa.contato?.foto_url ? "pointer" : "default" }}>
+                <Avatar nome={conversa.contato?.nome || conversa.contato?.numero} foto={conversa.contato?.foto_url} size={40} />
+              </span>
               {/* TUDO AQUI DENTRO CABE EM UMA LINHA CADA.
                   Sem as reticências, "Maria Aparecida da Silva Nascimento"
                   quebrava em QUATRO linhas no celular, as tags quebravam em
@@ -4297,7 +4371,19 @@ export default function Painel({ sessao }) {
                     <AlertCircle size={13} style={{ flexShrink: 0 }} /> {atendidoPorOutro(conversa.id)} também está nesta conversa
                   </div>
                 ) : (
-                  <div style={{ fontSize: 12, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>via {comNumero(advogado)}</div>
+                  /* O TELEFONE DO CLIENTE, e não o nosso.
+                     Aqui ficava "via Audiências · (11) 91355-9990" — o telefone
+                     DO ESCRITÓRIO, que já está escrito em "ATENDENDO COMO", na
+                     coluna ao lado, e que não muda de uma conversa para a
+                     outra. Ou seja: a linha logo abaixo do nome do cliente,
+                     onde o olho procura quem é ele, gastava-se repetindo quem
+                     somos nós. O número do cliente é o que se precisa ler dali
+                     — para conferir, para ditar, para procurar no cadastro. */
+                  <div style={{ fontSize: 12, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {String(conversa.contato?.numero || "").startsWith("grupo:")
+                      ? "Grupo"
+                      : (numeroBonito(conversa.contato?.numero) || "sem número")}
+                  </div>
                 )}
                 {!estreito && tagsDaConversa(conversa.id).length > 0 && (
                   <div style={{ display: "flex", gap: 4, marginTop: 4, overflow: "hidden" }}>
@@ -4332,6 +4418,18 @@ export default function Painel({ sessao }) {
                       title="Ficha do cliente no Vantoro"
                       style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10, background: fichaAberta ? C.listActive : "transparent" }}>
                 <ClipboardList size={19} color={fichaAberta ? C.green : C.textSecondary} />
+              </button>
+              {/* Histórico de atendimento: quem falou com este cliente, quando
+                  e por qual telefone. Ao lado da ficha porque respondem à mesma
+                  pergunta — "o que já aconteceu com esta pessoa" —, uma no
+                  cadastro do Vantoro e a outra no atendimento. */}
+              <button onClick={() => {
+                        if (historico) { setHistorico(null); return; }
+                        if (conversa.contato?.id) carregarHistorico(conversa.contato.id);
+                      }}
+                      title="Histórico de atendimento deste cliente"
+                      style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10, background: historico ? C.listActive : "transparent" }}>
+                <History size={19} color={historico ? C.green : C.textSecondary} />
               </button>
               {/* Avatares dos atendentes que já interagiram com este contato */}
               {!estreito && atendentesInteragiram.length > 0 && (
@@ -4375,28 +4473,6 @@ export default function Painel({ sessao }) {
                 <Search size={19} color={buscaAberta ? C.green : C.textSecondary} />
               </button>
             </div>
-
-            {infoAberta && (
-              <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: estreito ? "100%" : 360, background: C.panel, borderLeft: `1px solid ${C.divider}`, zIndex: 45, display: "flex", flexDirection: "column", boxShadow: "-2px 0 12px rgba(0,0,0,.15)" }}>
-                <div style={{ background: C.headerBar, padding: "14px 16px", display: "flex", alignItems: "center", gap: 16, borderBottom: `1px solid ${C.divider}` }}>
-                  <button onClick={() => setInfoAberta(false)} title="Fechar" style={BOTAO_ICONE}>
-                    <X size={22} color={C.textSecondary} />
-                  </button>
-                  <span style={{ fontSize: 16, fontWeight: 600 }}>Dados do contato</span>
-                </div>
-                <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", padding: "28px 20px", gap: 10 }}>
-                  <div onClick={() => { if (conversa.contato?.foto_url) setImagemAberta(conversa.contato.foto_url); }} style={{ cursor: conversa.contato?.foto_url ? "pointer" : "default" }}>
-                    <Avatar nome={conversa.contato?.nome || conversa.contato?.numero} foto={conversa.contato?.foto_url} size={150} />
-                  </div>
-                  <div style={{ fontSize: 20, fontWeight: 600, textAlign: "center", marginTop: 6 }}>{nomeDoContato(conversa.contato)}</div>
-                  <div style={{ fontSize: 15, color: C.textSecondary }}>{String(conversa.contato?.numero || "").startsWith("grupo:") ? "Grupo" : ("+" + conversa.contato?.numero)}</div>
-                  <div style={{ width: "100%", borderTop: `1px solid ${C.divider}`, marginTop: 14, paddingTop: 16 }}>
-                    <div style={{ fontSize: 12, color: C.textSecondary, fontWeight: 600, letterSpacing: 0.3 }}>ATENDIDO POR</div>
-                    <div style={{ fontSize: 15, marginTop: 4 }}>{advogado?.nome || "—"}</div>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {buscaAberta && (
               <div style={{ background: C.headerBar, padding: "0 16px 10px" }}>
@@ -4991,6 +5067,104 @@ export default function Painel({ sessao }) {
           onAviso={mostrarAviso}
         />
       )}
+
+      {/* HISTÓRICO DE ATENDIMENTO — coluna ao lado da conversa, como a ficha,
+          e não uma camada por cima. Por cima, ela cobria o próprio botão que a
+          abriu: o ícone ficava verde debaixo do painel, dizendo "estou aberto"
+          para ninguém, e não dava para fechar por onde se abriu. No celular
+          não cabem as duas, e aí ela ocupa a tela inteira. */}
+      {historico && (
+        <div style={{ width: estreito ? "100%" : 360, flex: estreito ? 1 : "none",
+                      background: C.panel, borderLeft: `1px solid ${C.divider}`,
+                      display: "flex", flexDirection: "column", minWidth: 0 }}>
+          <div style={{ background: C.headerBar, padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, borderBottom: `1px solid ${C.divider}` }}>
+            <button onClick={() => setHistorico(null)} title="Fechar" style={BOTAO_ICONE}>
+              <X size={22} color={C.textSecondary} />
+            </button>
+            <span style={{ fontSize: 16, fontWeight: 600 }}>Histórico de atendimento</span>
+          </div>
+          <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+            {historico.carregando && <div style={{ fontSize: 13, color: C.textSecondary }}>Levantando…</div>}
+            {!!historico.erro && <div style={{ fontSize: 13, color: C.textSecondary }}>{historico.erro}</div>}
+            {!historico.carregando && !historico.erro && (() => {
+              const comEnvio = historico.linhas.filter((l) => l.primeira);
+              // A PRIMEIRA e a ÚLTIMA de todas: a conta é entre os
+              // telefones, e não dentro de um. Quem abriu a relação com o
+              // cliente pode ter sido um telefone que hoje está calado.
+              const primeira = comEnvio.reduce((m, l) =>
+                (!m || new Date(l.primeira.criado_em) < new Date(m.primeira.criado_em)) ? l : m, null);
+              const ultima = comEnvio.reduce((m, l) =>
+                (!m || new Date(l.ultima.criado_em) > new Date(m.ultima.criado_em)) ? l : m, null);
+
+              if (!comEnvio.length) {
+                return (
+                  <div style={{ fontSize: 13.5, color: C.textSecondary, lineHeight: 1.6 }}>
+                    Ninguém do escritório enviou mensagem para este cliente ainda —
+                    {historico.linhas.length
+                      ? " a conversa existe, mas só com o que ele mandou."
+                      : " não há conversa com ele em nenhum telefone que você alcança."}
+                  </div>
+                );
+              }
+              const Marco = ({ rotulo, l, msg }) => (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, color: C.textSecondary, fontWeight: 700, letterSpacing: 0.3, textTransform: "uppercase", marginBottom: 6 }}>{rotulo}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                    <Avatar nome={msg.enviado_por || "equipe"} foto={msg.enviado_por_foto} size={32} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {msg.enviado_por || "equipe"}
+                      </div>
+                      <div style={{ fontSize: 12, color: C.textSecondary }}>
+                        {dataHoraDe(msg.criado_em)} · por {l.adv ? comNumero(l.adv) : "telefone removido"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+              return (
+                <>
+                  <Marco rotulo="Primeira mensagem enviada" l={primeira} msg={primeira.primeira} />
+                  <Marco rotulo="Última mensagem enviada" l={ultima} msg={ultima.ultima} />
+                  <div style={{ borderTop: `1px solid ${C.divider}`, paddingTop: 14 }}>
+                    <div style={{ fontSize: 11, color: C.textSecondary, fontWeight: 700, letterSpacing: 0.3, textTransform: "uppercase", marginBottom: 8 }}>
+                      Por telefone ({historico.linhas.length})
+                    </div>
+                    {historico.linhas.map((l) => (
+                      <div key={l.conversaId} style={{ border: `1px solid ${C.divider}`, borderRadius: 10, padding: "9px 11px", marginBottom: 8 }}>
+                        <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 4 }}>
+                          {l.adv ? comNumero(l.adv) : "telefone removido"}
+                        </div>
+                        {l.ultima ? (
+                          <>
+                            <div style={{ fontSize: 12, color: C.textSecondary }}>
+                              última: <b style={{ color: C.textPrimary, fontWeight: 600 }}>{l.ultima.enviado_por || "equipe"}</b> · {dataHoraDe(l.ultima.criado_em)}
+                            </div>
+                            <div style={{ fontSize: 12, color: C.textSecondary }}>
+                              primeira: {l.primeira.enviado_por || "equipe"} · {dataHoraDe(l.primeira.criado_em)}
+                            </div>
+                          </>
+                        ) : (
+                          <div style={{ fontSize: 12, color: C.textSecondary }}>ainda não respondemos por aqui</div>
+                        )}
+                      </div>
+                    ))}
+                    {/* Dito, e não escondido: o banco só entrega os
+                        telefones que esta pessoa alcança, então a lista
+                        pode ser menor do que a verdade — e quem lê
+                        precisa saber disso antes de concluir "ninguém
+                        respondeu". */}
+                    <div style={{ fontSize: 11.5, color: C.textSecondary, lineHeight: 1.5, marginTop: 4 }}>
+                      Só aparecem os telefones que você tem permissão para ver.
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
 
       {/* CONFIGURAÇÕES — perfil, aparência, sair e mensagens rápidas */}
       {configAberta && (
