@@ -1730,6 +1730,58 @@ export default function Painel({ sessao }) {
     await abrirConversaContato(cont);
   }
 
+  // ---- ABRIR A CONVERSA A PARTIR DO ENDEREÇO: ?telefone=55… ----
+  //
+  // É o que faz o botão do Zorvin na Esteira do Vantoro levar A ALGUM LUGAR.
+  // Sem isto, o link abriria o painel na última conversa aberta e a pessoa
+  // teria de procurar o cliente na lista — que é exatamente o trabalho que o
+  // botão existe para poupar.
+  //
+  // `nome` é opcional e só serve para o contato nascer com nome quando ele
+  // ainda não existe aqui. O número manda: se já houver contato com esse
+  // telefone (em qualquer das formas — com ou sem 55, com ou sem o nono
+  // dígito), é a conversa DELE que abre, e nada é criado.
+  //
+  // Roda uma vez só. O endereço é limpo em seguida, senão atualizar a página
+  // reabriria a conversa por cima de onde a pessoa estivesse — e um F5 que
+  // muda de conversa sozinho é um painel que não se deixa usar.
+  const linkJaUsado = useRef(false);
+  useEffect(() => {
+    if (linkJaUsado.current || !advogadoId) return;
+    let params;
+    try { params = new URLSearchParams(window.location.search); } catch (_) { return; }
+    const pedido = params.get("telefone") || params.get("numero");
+    if (!pedido) return;
+    linkJaUsado.current = true;
+
+    // Limpa o endereço ANTES de abrir: se algo falhar no meio, o F5 seguinte
+    // não repete a tentativa em silêncio.
+    try {
+      window.history.replaceState({}, "", window.location.pathname);
+    } catch (_) { /* navegador sem history: segue */ }
+
+    (async () => {
+      const numero = numeroCanonico(pedido);
+      if (numero.length < 8) { mostrarAviso("O link veio com um número incompleto."); return; }
+      const nome = (params.get("nome") || "").trim();
+      const jaExiste = await contatoExistente(numero);
+      let cont = jaExiste;
+      if (!cont) {
+        const { data, error } = await supabase.from("contatos")
+          .upsert(nome ? { numero, nome } : { numero }, { onConflict: "numero" })
+          .select("id").single();
+        if (error || !data) { mostrarAviso("Não consegui abrir a conversa desse número."); return; }
+        cont = data;
+        carregarContatos();
+      }
+      await abrirConversaContato(cont);
+    })();
+    // `advogadoId` é a única dependência de verdade: é ele que decide de QUAL
+    // telefone do escritório a conversa é, e ele chega depois da primeira
+    // pintura (vem do banco). O resto são funções do próprio componente.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [advogadoId]);
+
   // ---- Importar histórico do WhatsApp em LOTE (vários .txt exportados) ----
   // Extrai um número de telefone de um texto (nome do arquivo ou do contato).
   function numeroDeTexto(str) {
