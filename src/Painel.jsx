@@ -983,6 +983,9 @@ export default function Painel({ sessao }) {
   const [erroPermissoes, setErroPermissoes] = useState("");
   const [departamentoId, setDepartamentoId] = useState(null);
   const [souAdmin, setSouAdmin] = useState(false);
+  // "Por qual telefone você quer falar?" — só aparece quando o link do Vantoro
+  // chega e a pessoa alcança mais de um telefone do escritório.
+  const [escolhaTelefone, setEscolhaTelefone] = useState(null);
   const [telaAdmin, setTelaAdmin] = useState(false);
   // A janela de juntar duas conversas (só admin). `de` é a que SOME; `para` é a
   // que fica com tudo.
@@ -1680,10 +1683,23 @@ export default function Painel({ sessao }) {
   }
 
   // Abre (ou cria) a conversa do advogado atual com este contato.
-  async function abrirConversaContato(cont) {
-    if (!advogadoId) { mostrarAviso("Escolha um advogado na barra lateral primeiro."); return; }
+  // `advAlvo` é para quando a conversa NÃO é do telefone que está aberto —
+  // hoje só o link da Esteira do Vantoro faz isso, quando a pessoa escolhe por
+  // qual dos telefones do escritório quer falar. Sem o parâmetro, é o de
+  // sempre: o telefone selecionado na barra lateral.
+  async function abrirConversaContato(cont, advAlvo) {
+    const advId = advAlvo || advogadoId;
+    if (!advId) { mostrarAviso("Escolha um advogado na barra lateral primeiro."); return; }
+    // Trocar de telefone é trocar de departamento junto: a barra lateral filtra
+    // os telefones pelo departamento aberto, e deixar os dois em desacordo
+    // esconderia da lista justamente a conversa que se acabou de abrir.
+    if (advId !== advogadoId) {
+      const adv = advogados.find((a) => a.id === advId);
+      if (adv && adv.departamento_id) setDepartamentoId(adv.departamento_id);
+      setAdvogadoId(advId);
+    }
     const { data: conv, error } = await supabase.from("conversas")
-      .upsert({ advogado_id: advogadoId, contato_id: cont.id }, { onConflict: "advogado_id,contato_id" })
+      .upsert({ advogado_id: advId, contato_id: cont.id }, { onConflict: "advogado_id,contato_id" })
       .select("id").single();
     if (error || !conv) {
       // A causa quase sempre é a mesma, e é uma só: falta a política de INSERÇÃO
@@ -1698,7 +1714,7 @@ export default function Painel({ sessao }) {
     setContatoForm(null);
     setBuscaContato("");
     setVerArquivadas(false);
-    await carregarConversas(advogadoId);
+    await carregarConversas(advId);
     setConversaId(conv.id);
   }
 
@@ -1742,6 +1758,12 @@ export default function Painel({ sessao }) {
   // telefone (em qualquer das formas — com ou sem 55, com ou sem o nono
   // dígito), é a conversa DELE que abre, e nada é criado.
   //
+  // QUEM ALCANÇA MAIS DE UM TELEFONE ESCOLHE POR QUAL VAI FALAR. O link diz com
+  // QUEM falar, não POR ONDE — e "por onde" muda o que o cliente vê chegar. O
+  // painel abria pelo último telefone usado, que é um chute silencioso: a
+  // pessoa só descobria o telefone errado depois de a mensagem ter saído.
+  // Com um telefone só não há o que escolher, e nada é perguntado.
+  //
   // Roda uma vez só. O endereço é limpo em seguida, senão atualizar a página
   // reabriria a conversa por cima de onde a pessoa estivesse — e um F5 que
   // muda de conversa sozinho é um painel que não se deixa usar.
@@ -1764,23 +1786,54 @@ export default function Painel({ sessao }) {
       const numero = numeroCanonico(pedido);
       if (numero.length < 8) { mostrarAviso("O link veio com um número incompleto."); return; }
       const nome = (params.get("nome") || "").trim();
-      const jaExiste = await contatoExistente(numero);
-      let cont = jaExiste;
-      if (!cont) {
-        const { data, error } = await supabase.from("contatos")
-          .upsert(nome ? { numero, nome } : { numero }, { onConflict: "numero" })
-          .select("id").single();
-        if (error || !data) { mostrarAviso("Não consegui abrir a conversa desse número."); return; }
-        cont = data;
-        carregarContatos();
+      const cont = await contatoExistente(numero);
+
+      if (advogadosPermitidos.length <= 1) { await conversarPeloLink(cont, numero, nome); return; }
+
+      // ONDE JÁ EXISTE CONVERSA COM ESTA PESSOA. É o que transforma a escolha
+      // numa decisão informada: em vez de dois nomes de advogado, quem escolhe
+      // vê onde está o histórico e desde quando. Sem contato no banco não há o
+      // que consultar — todas as opções começam do zero.
+      let ondeTem = [];
+      if (cont) {
+        const { data } = await supabase.from("conversas")
+          .select("advogado_id, ultima_atividade").eq("contato_id", cont.id);
+        ondeTem = data || [];
       }
-      await abrirConversaContato(cont);
+      const opcoes = advogadosPermitidos.map((adv) => {
+        const c = ondeTem.find((x) => String(x.advogado_id) === String(adv.id));
+        return { adv, ultima: (c && c.ultima_atividade) || null, temConversa: !!c };
+      });
+      // Quem já tem conversa vem primeiro, do mais recente para o mais antigo:
+      // é quase sempre a resposta certa, e deixá-la no topo poupa a leitura.
+      opcoes.sort((a, b) => {
+        if (a.temConversa !== b.temConversa) return a.temConversa ? -1 : 1;
+        if (a.ultima && b.ultima) return new Date(b.ultima) - new Date(a.ultima);
+        return String(a.adv.nome || "").localeCompare(String(b.adv.nome || ""));
+      });
+      setEscolhaTelefone({ contato: cont, numero, nome, opcoes });
     })();
     // `advogadoId` é a única dependência de verdade: é ele que decide de QUAL
     // telefone do escritório a conversa é, e ele chega depois da primeira
     // pintura (vem do banco). O resto são funções do próprio componente.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [advogadoId]);
+
+  // Abre a conversa do link, criando o contato só se ele ainda não existir.
+  // A criação fica para DEPOIS da escolha do telefone de propósito: quem
+  // desiste no meio não deixa para trás um contato que ninguém pediu.
+  async function conversarPeloLink(contato, numero, nome, advAlvo) {
+    let cont = contato;
+    if (!cont) {
+      const { data, error } = await supabase.from("contatos")
+        .upsert(nome ? { numero, nome } : { numero }, { onConflict: "numero" })
+        .select("id").single();
+      if (error || !data) { mostrarAviso("Não consegui abrir a conversa desse número."); return; }
+      cont = data;
+      carregarContatos();
+    }
+    await abrirConversaContato(cont, advAlvo);
+  }
 
   // ---- Importar histórico do WhatsApp em LOTE (vários .txt exportados) ----
   // Extrai um número de telefone de um texto (nome do arquivo ou do contato).
@@ -5453,6 +5506,59 @@ export default function Painel({ sessao }) {
               <button onClick={() => setEncaminhar(null)}
                 style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary,
                          borderRadius: 8, padding: "8px 16px", fontSize: 14, cursor: "pointer" }}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* POR QUAL TELEFONE FALAR — só quando o link do Vantoro chega e a
+          pessoa alcança mais de um telefone do escritório. O link diz com QUEM
+          falar; por ONDE falar muda o que o cliente vê chegar, e isso é
+          decisão de gente, não do último telefone que por acaso ficou aberto. */}
+      {escolhaTelefone && (
+        <div onClick={() => setEscolhaTelefone(null)}
+             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 215, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()}
+               style={{ background: C.panel, color: C.textPrimary, borderRadius: 14, width: "100%", maxWidth: 440, padding: 18, boxShadow: "0 24px 60px rgba(0,0,0,.35)" }}>
+            <div style={{ fontSize: 15.5, fontWeight: 700, marginBottom: 4 }}>Falar por qual telefone?</div>
+            <div style={{ fontSize: 12.5, color: C.textSecondary, lineHeight: 1.5, marginBottom: 14 }}>
+              Com {escolhaTelefone.contato?.nome || escolhaTelefone.nome || numeroBonito(escolhaTelefone.numero)}
+              {escolhaTelefone.contato?.nome || escolhaTelefone.nome
+                ? ` · ${numeroBonito(escolhaTelefone.numero)}` : ""}.
+              {" "}É por este número que a mensagem vai chegar para o cliente.
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 7, maxHeight: "52vh", overflowY: "auto" }}>
+              {escolhaTelefone.opcoes.map(({ adv, temConversa, ultima }) => (
+                <button key={adv.id}
+                        onClick={async () => {
+                          const e = escolhaTelefone;
+                          setEscolhaTelefone(null);
+                          await conversarPeloLink(e.contato, e.numero, e.nome, adv.id);
+                        }}
+                        style={{ display: "flex", alignItems: "center", gap: 10, textAlign: "left", width: "100%",
+                                 border: `1px solid ${adv.id === advogadoId ? C.green : C.divider}`,
+                                 background: C.inputBg, color: C.textPrimary, borderRadius: 10,
+                                 padding: "9px 11px", cursor: "pointer", font: "inherit" }}>
+                  <Avatar nome={adv.nome} foto={adv.foto_url} size={34} />
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: "block", fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {adv.nome}
+                    </span>
+                    <span style={{ display: "block", fontSize: 12, color: C.textSecondary }}>
+                      {numeroBonito(adv.numero) || "sem número"}
+                      {/* "já tem conversa" é o que faz a escolha ser informada:
+                          é onde está o histórico, e quase sempre a resposta. */}
+                      {temConversa
+                        ? ` · já tem conversa${ultima ? ` · ${horaDe(ultima)}` : ""}`
+                        : " · conversa nova"}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+              <button onClick={() => setEscolhaTelefone(null)}
+                      style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textSecondary, borderRadius: 8, padding: "8px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>Cancelar</button>
             </div>
           </div>
         </div>
