@@ -1534,7 +1534,14 @@ export default function Painel({ sessao }) {
     if (chave.length < 8) return null;
     const { data } = await supabase.from("contatos")
       .select("id, nome, numero").in("numero", [chave, "55" + chave]);
-    return (data && data[0]) || null;
+    if (data && data[0]) return data[0];
+    // O `in` só acha as DUAS formas limpas. Um número que entrou com máscara
+    // — "(11) 93404-2997", como o cadastro às vezes devolve — não casa com
+    // nenhuma delas, e o contato seria criado de novo. A agenda já está na
+    // memória, então a segunda tentativa não custa consulta: compara pela
+    // chave, que ignora máscara, DDI e pontuação.
+    const naAgenda = (contatosLista || []).find((c) => chaveDoNumero(c.numero) === chave);
+    return naAgenda || null;
   }
 
   // ---- O CADASTRO DO VANTORO DENTRO DA "NOVA CONVERSA" ----
@@ -1608,10 +1615,19 @@ export default function Painel({ sessao }) {
   // ninguém digita nada: nome, número e o vínculo com a ficha do Vantoro vêm
   // prontos, e era esse trabalho manual que se queria evitar.
   async function conversarComClienteVantoro(linha) {
-    const jaExiste = await contatoExistente(linha.numero);
+    // O NÚMERO ENTRA NA FORMA CANÔNICA, como em todo outro caminho.
+    //
+    // Este era o único que gravava o telefone do jeito que o Vantoro devolve —
+    // às vezes com máscara, quase sempre sem o 55. O WhatsApp devolve sempre
+    // com o 55, então o mesmo cliente virava DOIS contatos: um criado aqui, na
+    // hora de mandar a primeira mensagem, e outro criado pela ponte quando ele
+    // respondia. Duas conversas, cada uma com metade do diálogo — a enviada
+    // numa, a resposta na outra.
+    const numero = numeroCanonico(linha.numero);
+    const jaExiste = await contatoExistente(numero);
     const gravar = (campos) => (jaExiste
       ? supabase.from("contatos").update(campos).eq("id", jaExiste.id).select("id").single()
-      : supabase.from("contatos").upsert({ numero: linha.numero, ...campos }, { onConflict: "numero" })
+      : supabase.from("contatos").upsert({ numero, ...campos }, { onConflict: "numero" })
           .select("id").single());
 
     let { data: cont, error } = await gravar({
@@ -2123,7 +2139,11 @@ export default function Painel({ sessao }) {
             if (nova.origem === "advogado") {
               let removido = false;
               base = prev.filter((m) => {
-                if (!removido && String(m.id).startsWith("temp-") && m._status === "enviando" &&
+                // "saiu" é a provisória que a FILA já confirmou. Ela continua
+                // sendo provisória, e a linha real tem de substituí-la do
+                // mesmo jeito — senão a mensagem apareceria duas vezes.
+                if (!removido && String(m.id).startsWith("temp-") &&
+                    (m._status === "enviando" || m._status === "saiu") &&
                     ((nova.texto && m.texto === nova.texto) || (nova.midia_url && m._midiaUrlFinal === nova.midia_url))) {
                   removido = true;
                   // Libera a prévia local (blob) para não vazar memória.
@@ -2220,7 +2240,35 @@ export default function Painel({ sessao }) {
       // Se a ponte não conseguir enviar, a fila vira "erro" — aviso na tela.
       .on("postgres_changes", { event: "*", schema: "public", table: "fila_envio" }, (payload) => {
         const row = payload.new;
-        if (!row || row.conversa_id !== conversaIdRef.current || row.status !== "erro") return;
+        if (!row || row.conversa_id !== conversaIdRef.current) return;
+        // A FILA JÁ DISSE QUE SAIU: o relógio tem de parar aqui.
+        //
+        // Quem tirava o relógio era só a chegada da mensagem "de verdade" pelo
+        // Realtime. Quando essa linha não chega — e ela não chega quando o
+        // contato está duplicado e a ponte grava na OUTRA conversa — a bolha
+        // ficava "aguardando" para sempre, embora o cliente já tivesse
+        // recebido. Foi o que a equipe descreveu: a mensagem só "aparecia
+        // enviada" ao sair e entrar na conversa.
+        //
+        // A fila é uma fonte de verdade tão boa quanto: se ela está 'enviada',
+        // a Uazapi aceitou. O tique fica cinza (enviada, ainda não entregue) —
+        // se a linha real chegar depois, ela substitui esta bolha e traz o
+        // status verdadeiro.
+        if (row.status === "enviada") {
+          setMensagens((prev) => {
+            let marcado = false;
+            return prev.map((m) => {
+              if (marcado) return m;
+              const casa = String(m.id).startsWith("temp-") && m._status === "enviando" &&
+                ((row.texto && m.texto === row.texto) || (row.midia_url && m._midiaUrlFinal === row.midia_url));
+              if (!casa) return m;
+              marcado = true;
+              return { ...m, _status: "saiu" };
+            });
+          });
+          return;
+        }
+        if (row.status !== "erro") return;
         // Marca APENAS a primeira provisória que casa — a mesma trava dos
         // outros dois handlers. Sem ela, mandar "ok" duas vezes e a ponte
         // falhar uma pintava as DUAS de vermelho; reenviando as duas, o
