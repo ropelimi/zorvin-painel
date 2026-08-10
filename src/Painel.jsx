@@ -4423,9 +4423,20 @@ export default function Painel({ sessao }) {
                   e por qual telefone. Ao lado da ficha porque respondem à mesma
                   pergunta — "o que já aconteceu com esta pessoa" —, uma no
                   cadastro do Vantoro e a outra no atendimento. */}
+              {/* O ID VEM DA CONVERSA (`contato_id`), e não de `contato.id`.
+                  A lista de conversas pede do contato só nome, número e foto —
+                  não o id —, então `conversa.contato.id` é `undefined` e o
+                  botão não fazia NADA ao ser clicado: sem erro, sem aviso, sem
+                  painel. O `contato.id` fica como segunda opção, para o caso de
+                  a consulta um dia passar a trazê-lo. */}
               <button onClick={() => {
                         if (historico) { setHistorico(null); return; }
-                        if (conversa.contato?.id) carregarHistorico(conversa.contato.id);
+                        const id = conversa.contato_id || conversa.contato?.id;
+                        if (id) carregarHistorico(id);
+                        // Falar é melhor do que não fazer nada: um botão mudo
+                        // faz a pessoa clicar cinco vezes e desistir sem saber
+                        // se o problema é dela.
+                        else mostrarAviso("Não consegui identificar o contato desta conversa.");
                       }}
                       title="Histórico de atendimento deste cliente"
                       style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10, background: historico ? C.listActive : "transparent" }}>
