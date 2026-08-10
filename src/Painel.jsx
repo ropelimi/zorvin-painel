@@ -1521,8 +1521,21 @@ export default function Painel({ sessao }) {
   // inteiro.
   function chaveDoNumero(bruto) {
     const d = String(bruto || "").replace(/\D/g, "");
-    if (d.startsWith("55") && (d.length === 12 || d.length === 13)) return d.slice(2);
-    return d;
+    const nacional = (d.startsWith("55") && (d.length === 12 || d.length === 13)) ? d.slice(2) : d;
+    // O NONO DÍGITO ENTRA NA CHAVE.
+    //
+    // Tirar o 55 não basta: o mesmo celular aparece com 8 e com 9 dígitos
+    // locais, porque o Brasil pôs um 9 na frente e o WhatsApp devolve umas
+    // contas na forma antiga. "31 99945-6790" e "31 9945-6790" são a MESMA
+    // linha, e era essa diferença que criava duas conversas para a mesma
+    // pessoa — cada uma com metade do diálogo.
+    //
+    // A chave é sempre a forma COM o 9. Só para celular: fixo tem 8 dígitos
+    // começando em 2..5, e pôr um 9 nele inventaria um número que não existe.
+    if (nacional.length === 10 && "6789".includes(nacional[2])) {
+      return nacional.slice(0, 2) + "9" + nacional.slice(2);
+    }
+    return nacional;
   }
 
   // Procura no banco um contato que JÁ seja este telefone, escrito de qualquer
@@ -1532,8 +1545,15 @@ export default function Painel({ sessao }) {
   async function contatoExistente(bruto) {
     const chave = chaveDoNumero(bruto);
     if (chave.length < 8) return null;
+    // As quatro formas em que o mesmo celular pode estar gravado: com e sem o
+    // 55, com e sem o nono dígito.
+    const formas = new Set([chave, "55" + chave]);
+    if (chave.length === 11 && chave[2] === "9") {
+      const semNono = chave.slice(0, 2) + chave.slice(3);
+      formas.add(semNono); formas.add("55" + semNono);
+    }
     const { data } = await supabase.from("contatos")
-      .select("id, nome, numero").in("numero", [chave, "55" + chave]);
+      .select("id, nome, numero").in("numero", [...formas]);
     if (data && data[0]) return data[0];
     // O `in` só acha as DUAS formas limpas. Um número que entrou com máscara
     // — "(11) 93404-2997", como o cadastro às vezes devolve — não casa com
