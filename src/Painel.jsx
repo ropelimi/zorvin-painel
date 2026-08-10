@@ -1873,6 +1873,7 @@ export default function Painel({ sessao }) {
       const r = await chamarPonte(`/historico/contato/${encodeURIComponent(contatoId)}`);
       const linhas = (r.linhas || []).map((l) => ({
         conversaId: l.conversa_id,
+        advogadoId: l.advogado_id,
         adv: (l.advogado_nome || l.advogado_numero)
           ? { nome: l.advogado_nome, numero: l.advogado_numero }
           : advogados.find((a) => String(a.id) === String(l.advogado_id)) || null,
@@ -1905,6 +1906,7 @@ export default function Painel({ sessao }) {
       const [pri, ult] = await Promise.all([pontas(v, true), pontas(v, false)]);
       return {
         conversaId: v.id,
+        advogadoId: v.advogado_id,
         adv: advogados.find((a) => String(a.id) === String(v.advogado_id)) || null,
         primeira: (pri.data || [])[0] || null,
         ultima: (ult.data || [])[0] || null,
@@ -1914,6 +1916,26 @@ export default function Painel({ sessao }) {
     // viva, e é a linha que quase sempre se procura.
     linhas.sort((a, b) => new Date(b.ultima?.criado_em || 0) - new Date(a.ultima?.criado_em || 0));
     setHistorico({ carregando: false, linhas, erro: "", parcial: true });
+  }
+
+  // "Ver a conversa" de uma linha do histórico: troca para aquele telefone e
+  // abre a conversa que JÁ existe ali. Nada é criado — a linha só existe
+  // porque a conversa existe.
+  //
+  // A LEITURA continua valendo a permissão. O histórico mostra o escritório
+  // inteiro (é resumo: nome, data, telefone), mas ABRIR uma conversa é ler as
+  // mensagens dela, e isso o banco não entrega a quem não alcança o telefone.
+  // Em vez de trocar de telefone e cair numa lista vazia — o que pareceria
+  // defeito —, o botão nem aparece, e a linha diz por quê.
+  async function verConversaDoHistorico(l) {
+    const adv = advogadosPermitidos.find((a) => String(a.id) === String(l.advogadoId));
+    if (!adv) { mostrarAviso("Você não tem acesso a este telefone."); return; }
+    setHistorico(null);
+    setVerArquivadas(false);
+    if (adv.departamento_id) setDepartamentoId(adv.departamento_id);
+    setAdvogadoId(adv.id);
+    await carregarConversas(adv.id);
+    setConversaId(l.conversaId);
   }
 
   // Abre a conversa do link, criando o contato só se ele ainda não existir.
@@ -5192,6 +5214,30 @@ export default function Painel({ sessao }) {
                           </>
                         ) : (
                           <div style={{ fontSize: 12, color: C.textSecondary }}>ainda não respondemos por aqui</div>
+                        )}
+                        {/* VER A CONVERSA. O caminho curto entre "descobri que
+                            falaram por outro telefone" e "quero ler o que
+                            disseram" — que sem isto era: fechar o painel,
+                            trocar de telefone na barra, procurar o cliente na
+                            lista. A conversa aberta é a MESMA linha do
+                            histórico, e não uma nova: nada é criado aqui.
+                            No telefone que a pessoa não alcança, o botão não
+                            aparece; a linha diz o motivo, em vez de abrir uma
+                            conversa vazia que pareceria defeito. */}
+                        {advogadosPermitidos.some((a) => String(a.id) === String(l.advogadoId)) ? (
+                          <button onClick={() => verConversaDoHistorico(l)}
+                                  style={{ marginTop: 7, border: `1px solid ${C.divider}`,
+                                           background: "transparent", color: C.verdeTexto,
+                                           borderRadius: 8, padding: "5px 10px", cursor: "pointer",
+                                           font: "inherit", fontSize: 12, fontWeight: 600,
+                                           display: "inline-flex", alignItems: "center", gap: 5 }}>
+                            <MessageSquare size={13} />
+                            {String(l.advogadoId) === String(advogadoId) ? "Ver a conversa" : "Abrir neste telefone"}
+                          </button>
+                        ) : (
+                          <div style={{ marginTop: 6, fontSize: 11.5, color: C.textSecondary, fontStyle: "italic" }}>
+                            você não tem acesso a este telefone
+                          </div>
                         )}
                       </div>
                     ))}
