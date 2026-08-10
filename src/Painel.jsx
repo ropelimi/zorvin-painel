@@ -5423,8 +5423,19 @@ export default function Painel({ sessao }) {
                 <select value={juntar[campo]} onChange={(e) => setJuntar((j) => ({ ...j, [campo]: e.target.value }))}
                         style={{ width: "100%", border: `1px solid ${C.divider}`, background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "9px 10px", fontSize: 13.5 }}>
                   <option value="">Escolha…</option>
+                  {/* O NÚMERO E A ÚLTIMA ATIVIDADE VÃO NO RÓTULO.
+                      Só o nome não serve justamente no caso em que esta tela
+                      existe: as duas conversas a juntar são da MESMA pessoa, e
+                      duas linhas escritas "MARIA DE JESUS DA SILVA" viram
+                      sorteio. Quem escolhe precisa ver qual é qual — e o
+                      número é o que difere, porque é dele que nasceu a
+                      duplicata. */}
                   {conversasFiltradas.map((c) => (
-                    <option key={c.id} value={c.id}>{nomeDoContato(c.contato)}</option>
+                    <option key={c.id} value={c.id}>
+                      {nomeDoContato(c.contato)}
+                      {c.contato?.numero ? ` · ${numeroBonito(c.contato.numero)}` : ""}
+                      {c.ultima_atividade ? ` · ${horaDe(c.ultima_atividade)}` : ""}
+                    </option>
                   ))}
                 </select>
               </div>
