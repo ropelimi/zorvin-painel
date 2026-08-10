@@ -3226,6 +3226,49 @@ export default function Painel({ sessao }) {
     setAnexoPendente({ file, url, tipo, nome: file.name });
   }
 
+  // COLAR UM PRINT DIRETO NA CONVERSA (Ctrl+V).
+  //
+  // Quem tira print com a Ferramenta de Captura fica com a imagem só na área
+  // de transferência. Para mandar pelo Zorvin era preciso salvar em arquivo,
+  // lembrar em que pasta caiu e anexar — três passos para o que o WhatsApp Web
+  // resolve com um Ctrl+V.
+  //
+  // A IMAGEM NÃO SAI NA HORA: ela cai na mesma prévia dos outros anexos, com
+  // legenda e confirmação. O que está na área de transferência nem sempre é o
+  // que a pessoa pensa que está, e do outro lado tem um cliente.
+  //
+  // Colar TEXTO continua igual: o desvio só acontece quando há imagem, e é por
+  // isso que o `preventDefault` fica depois da verificação, e não antes.
+  useEffect(() => {
+    if (!conversaId) return undefined;
+    function aoColar(e) {
+      // Com uma prévia já aberta, ou no meio de editar/encaminhar, o Ctrl+V é
+      // para o campo de texto que está ali — não para começar outro anexo.
+      if (anexoPendente || editando || encaminhar || imagemAberta) return;
+      const itens = Array.from((e.clipboardData && e.clipboardData.items) || []);
+      const imagens = itens.filter((i) => i.kind === "file" && String(i.type).startsWith("image/"));
+      if (!imagens.length) return;
+      const bruto = imagens[0].getAsFile();
+      if (!bruto) return;
+      e.preventDefault();
+      // NOME COM DATA E HORA. O print vem da área de transferência chamado
+      // "image.png", sempre — e um Storage cheio de "image.png" não deixa
+      // ninguém achar nada depois.
+      const ext = (String(bruto.type).split("/")[1] || "png").split("+")[0];
+      const agora = new Date();
+      const doisDigitos = (n) => String(n).padStart(2, "0");
+      const carimbo = `${agora.getFullYear()}-${doisDigitos(agora.getMonth() + 1)}-${doisDigitos(agora.getDate())}`
+                    + `-${doisDigitos(agora.getHours())}h${doisDigitos(agora.getMinutes())}`;
+      const nome = `print-${carimbo}.${ext}`;
+      const file = new File([bruto], nome, { type: bruto.type });
+      setLegendaAnexo("");
+      setAnexoPendente({ file, url: URL.createObjectURL(file), tipo: "imagem", nome });
+      if (imagens.length > 1) mostrarAviso("Colei a primeira imagem — mande uma de cada vez.");
+    }
+    document.addEventListener("paste", aoColar);
+    return () => document.removeEventListener("paste", aoColar);
+  }, [conversaId, anexoPendente, editando, encaminhar, imagemAberta]);
+
   function fecharAnexoPendente() {
     if (anexoPendente?.url && String(anexoPendente.url).startsWith("blob:")) URL.revokeObjectURL(anexoPendente.url);
     setAnexoPendente(null);
