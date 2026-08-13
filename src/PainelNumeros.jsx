@@ -1,14 +1,24 @@
 // PAINEL — quanto se falou, por telefone e por atendente.
 //
-// A pergunta que ele responde é "quem está atendendo e quanto", e ela vinha
-// sendo respondida por estimativa. Duas leituras, porque são duas perguntas:
+// A pergunta que ele responde é "quem está atendendo e quanto". Duas leituras,
+// porque são duas perguntas:
 //
 //   POR TELEFONE   quanto entrou e quanto saiu em cada linha do escritório.
-//                  Serve para ver qual número está afogado e qual está parado.
+//                  Serve para ver qual número está afogado e qual está parado —
+//                  por isso a lista traz TODOS os telefones, inclusive os que
+//                  ficaram em zero. Telefone parado sumindo da tabela é a
+//                  informação mais útil da tela indo embora.
 //   POR ATENDENTE  quanto CADA PESSOA enviou. Recebida não tem atendente —
 //                  ela chega no telefone, não em alguém —, e por isso a tabela
 //                  de gente não tem coluna de recebidas: inventar uma seria
 //                  dividir por quem abriu a conversa, que não é quem atendeu.
+//
+// A CONTA É FEITA NO BANCO, e isso não é preferência: a API do Supabase
+// devolve no máximo 1000 linhas por consulta e não avisa que cortou. A
+// primeira versão desta tela baixava as mensagens para contar no navegador, e
+// por isso travava em 1000, escondia os telefones que não couberam na fatia, e
+// dava o mesmo número para "7 dias" e para "Tudo". Quem conta agora é a função
+// `painel_numeros` (sql/2026-08-painel-conta-no-banco.sql, na ponte).
 //
 // QUEM ENVIOU É CONTADO PELO ID, com o nome como reserva. O nome muda quando
 // alguém edita o perfil, e uma pessoa vira duas no relatório. O id não muda —
@@ -18,7 +28,7 @@
 // diferença.
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft, RefreshCw, AlertCircle } from "lucide-react";
 
 /** Períodos oferecidos. `dias: null` = tudo o que existe. */
 const PERIODOS = [
@@ -28,14 +38,14 @@ const PERIODOS = [
   { chave: "tudo", rotulo: "Tudo", dias: null },
 ];
 
-const numero = (n) => (n || 0).toLocaleString("pt-BR");
+const numero = (n) => Number(n || 0).toLocaleString("pt-BR");
 
 export default function PainelNumeros({ C, advogados = [], departamentos = [], aoFechar }) {
   const [periodo, setPeriodo] = useState("30");
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
-  const [linhas, setLinhas] = useState([]);       // mensagens cruas do período
-  const [conversas, setConversas] = useState([]); // para saber de qual telefone é cada conversa
+  const [faltaSql, setFaltaSql] = useState(false);
+  const [bruto, setBruto] = useState(null);
 
   const desde = useMemo(() => {
     const d = PERIODOS.find((p) => p.chave === periodo)?.dias;
@@ -48,90 +58,65 @@ export default function PainelNumeros({ C, advogados = [], departamentos = [], a
   useEffect(() => {
     let vivo = true;
     (async () => {
-      setCarregando(true); setErro("");
-      // As conversas dizem de qual TELEFONE é cada mensagem — a mensagem só
-      // conhece a conversa dela.
-      const conv = await supabase.from("conversas").select("id, advogado_id");
-      let q = supabase.from("mensagens").select("conversa_id, origem, enviado_por, enviado_por_id, criado_em");
-      if (desde) q = q.gte("criado_em", desde);
-      const msg = await q;
+      setCarregando(true); setErro(""); setFaltaSql(false);
+      const { data, error } = await supabase.rpc("painel_numeros", { p_desde: desde });
       if (!vivo) return;
-      if (msg.error) {
-        // Base sem o SQL de agosto/2026: repete sem a coluna nova, para a tela
-        // funcionar (contando só pelo nome) em vez de não abrir.
-        if (/enviado_por_id/i.test(msg.error.message || "")) {
-          let q2 = supabase.from("mensagens").select("conversa_id, origem, enviado_por, criado_em");
-          if (desde) q2 = q2.gte("criado_em", desde);
-          const msg2 = await q2;
-          if (!vivo) return;
-          if (msg2.error) { setErro(msg2.error.message); setCarregando(false); return; }
-          setLinhas(msg2.data || []);
-        } else {
-          setErro(msg.error.message); setCarregando(false); return;
-        }
-      } else {
-        setLinhas(msg.data || []);
+      if (error) {
+        // Banco sem a função ainda. Aqui NÃO existe plano B honesto: contar no
+        // navegador é justamente o que dava número errado. Melhor a tela dizer
+        // o que falta do que mostrar um total que parece certo.
+        const m = (error.message || "") + (error.code || "");
+        if (/painel_numeros|PGRST202|does not exist|Could not find/i.test(m)) setFaltaSql(true);
+        else setErro(error.message || "Erro desconhecido");
+        setCarregando(false);
+        return;
       }
-      setConversas(conv.data || []);
+      setBruto(data || null);
       setCarregando(false);
     })();
     return () => { vivo = false; };
   }, [desde]);
 
   const dados = useMemo(() => {
-    const telefoneDaConversa = new Map(conversas.map((c) => [String(c.id), String(c.advogado_id)]));
-    const nomeDoTelefone = new Map(advogados.map((a) => [String(a.id), a.nome || a.numero || a.id]));
-    const depDoTelefone = new Map(advogados.map((a) => [String(a.id), a.departamento_id]));
+    const b = bruto || {};
     const nomeDoDep = new Map(departamentos.map((d) => [String(d.id), d.nome]));
+    const doBanco = new Map((b.por_telefone || []).map((t) => [String(t.advogado_id), t]));
 
-    const porTelefone = new Map();
-    const porPessoa = new Map();
-    let semId = 0, enviadas = 0, recebidas = 0, notas = 0;
-
-    for (const m of linhas) {
-      // NOTA INTERNA NÃO É MENSAGEM TROCADA. Ela nunca saiu do escritório;
-      // somá-la a "enviadas" inflaria o trabalho de quem escreve muita nota.
-      if (m.origem === "nota") { notas++; continue; }
-      const ehEnviada = m.origem === "advogado";
-      if (ehEnviada) enviadas++; else recebidas++;
-
-      const tel = telefoneDaConversa.get(String(m.conversa_id));
-      if (tel) {
-        const r = porTelefone.get(tel) || { enviadas: 0, recebidas: 0 };
-        r[ehEnviada ? "enviadas" : "recebidas"]++;
-        porTelefone.set(tel, r);
-      }
-
-      if (!ehEnviada) continue;
-      // Pelo ID quando existe; pelo nome quando não. A chave leva o prefixo
-      // para um id nunca colidir com um nome.
-      const chave = m.enviado_por_id ? `id:${m.enviado_por_id}` : `nome:${(m.enviado_por || "").trim() || "(sem nome)"}`;
-      if (!m.enviado_por_id) semId++;
-      const r = porPessoa.get(chave) || { enviadas: 0, nome: (m.enviado_por || "").trim() || "(sem nome)", temId: !!m.enviado_por_id };
-      r.enviadas++;
-      // Um nome mais recente vale mais do que um antigo para rotular a linha.
-      if (m.enviado_por) r.nome = m.enviado_por.trim();
-      porPessoa.set(chave, r);
+    // Todos os telefones que a pessoa alcança, e não só os que tiveram
+    // movimento. Zero é resposta.
+    const vistos = new Set();
+    const telefones = advogados.map((a) => {
+      const id = String(a.id);
+      vistos.add(id);
+      const r = doBanco.get(id) || {};
+      const recebidas = Number(r.recebidas || 0), enviadas = Number(r.enviadas || 0);
+      return { id, nome: a.nome || a.numero || id,
+               departamento: nomeDoDep.get(String(a.departamento_id)) || "",
+               recebidas, enviadas, total: recebidas + enviadas };
+    });
+    // Telefone que saiu do cadastro mas tem mensagem no período: continua
+    // contando, com o nome que der. Some da lista de telefones, não da conta.
+    for (const [id, r] of doBanco) {
+      if (vistos.has(id)) continue;
+      const recebidas = Number(r.recebidas || 0), enviadas = Number(r.enviadas || 0);
+      telefones.push({ id, nome: "(telefone removido do cadastro)", departamento: "",
+                       recebidas, enviadas, total: recebidas + enviadas });
     }
+    telefones.sort((a, b2) => b2.total - a.total);
 
-    const telefones = [...porTelefone.entries()]
-      .map(([id, r]) => ({
-        id, nome: nomeDoTelefone.get(id) || "(telefone removido)",
-        departamento: nomeDoDep.get(String(depDoTelefone.get(id))) || "",
-        ...r, total: r.enviadas + r.recebidas,
-      }))
-      .sort((a, b) => b.total - a.total);
+    const pessoas = (b.por_pessoa || [])
+      .map((p) => ({ chave: p.chave, nome: p.nome || "(sem nome)",
+                     temId: !!p.enviado_por_id, enviadas: Number(p.enviadas || 0) }))
+      .sort((a, b2) => b2.enviadas - a.enviadas);
 
-    const pessoas = [...porPessoa.entries()]
-      .map(([chave, r]) => ({ chave, ...r }))
-      .sort((a, b) => b.enviadas - a.enviadas);
-
-    return { telefones, pessoas, enviadas, recebidas, notas, semId,
-             total: enviadas + recebidas };
-  }, [linhas, conversas, advogados, departamentos]);
+    const recebidas = Number(b.recebidas || 0), enviadas = Number(b.enviadas || 0);
+    return { telefones, pessoas, recebidas, enviadas, total: recebidas + enviadas,
+             notas: Number(b.notas || 0), aparelho: Number(b.aparelho || 0),
+             semId: Number(b.sem_id || 0), outras: Number(b.outras || 0) };
+  }, [bruto, advogados, departamentos]);
 
   const maiorTel = Math.max(1, ...dados.telefones.map((t) => t.total));
-  const maiorPes = Math.max(1, ...dados.pessoas.map((p) => p.enviadas));
+  const maiorPes = Math.max(1, ...dados.pessoas.map((p) => p.enviadas), dados.aparelho);
 
   // A paleta tem `headerBar` (fundo de tela) e `panel` (cartão); não tem `bg`.
   // Chave inexistente não dá erro: rende `background: undefined` e a tela sai
@@ -146,6 +131,7 @@ export default function PainelNumeros({ C, advogados = [], departamentos = [], a
   // celular os três títulos encostavam e viravam "RECEBIDASENVIADASTOTAL".
   const thNum = { ...th, textAlign: "right", paddingLeft: 14, whiteSpace: "nowrap" };
   const num = { ...td, textAlign: "right", paddingLeft: 14, fontVariantNumeric: "tabular-nums", fontWeight: 600 };
+  const nota = { fontSize: 12.5, color: C.textSecondary, lineHeight: 1.55 };
 
   /** Barrinha proporcional — o número diz quanto, a barra diz quanto comparado. */
   const barra = (parte, todo, cor) => (
@@ -155,17 +141,13 @@ export default function PainelNumeros({ C, advogados = [], departamentos = [], a
   );
 
   return (
-    // `data-tela` é para o teste conseguir apontar para DENTRO desta tela. A
-    // lista de conversas, lá atrás, também tem um botão escrito "Tudo", e sem
-    // uma âncora o teste clicava naquele e concluía que o filtro de período
-    // não funcionava.
     <div data-tela="painel"
          style={{ position: "fixed", inset: 0, background: C.headerBar, color: C.textPrimary, zIndex: 200, overflowY: "auto" }}>
       {/* `flexWrap` para o celular: sem ele os quatro períodos espremiam o
           título até "7 dias" quebrar em duas linhas dentro do próprio botão. */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 18px", flexWrap: "wrap",
                     background: C.panel, borderBottom: `1px solid ${C.divider}`, position: "sticky", top: 0, zIndex: 2 }}>
-        <button onClick={aoFechar} title="Voltar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
+        <button onClick={aoFechar} title="Voltar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", minHeight: 32, alignItems: "center" }}>
           <ArrowLeft size={20} color={C.textSecondary} />
         </button>
         <div style={{ fontSize: 16, fontWeight: 700, flex: "1 1 auto" }}>Painel</div>
@@ -188,13 +170,36 @@ export default function PainelNumeros({ C, advogados = [], departamentos = [], a
             <RefreshCw size={16} /> Contando as mensagens…
           </div>
         )}
-        {!!erro && (
-          <div style={{ ...cartao, borderColor: "#e5573f", color: "#e5573f" }}>
-            Não consegui ler as mensagens: {erro}
+
+        {faltaSql && (
+          <div style={{ ...cartao, display: "flex", gap: 12, alignItems: "flex-start" }}>
+            <AlertCircle size={20} color="#d99a1e" style={{ flexShrink: 0, marginTop: 2 }} />
+            <div style={{ lineHeight: 1.6, fontSize: 14 }}>
+              <b>Falta um passo no banco.</b>
+              <div style={{ ...nota, marginTop: 6 }}>
+                Este painel conta as mensagens dentro do banco, e a função que faz
+                essa conta ainda não foi criada. Rode o arquivo
+                {" "}<code style={{ background: C.headerBar, padding: "1px 5px", borderRadius: 4 }}>
+                  sql/2026-08-painel-conta-no-banco.sql
+                </code>{" "}
+                (repositório da ponte) no SQL Editor do Supabase e abra esta tela de novo.
+                <div style={{ marginTop: 8 }}>
+                  Não mostro número nenhum enquanto isso: a conta feita aqui fora dá
+                  resultado errado em base grande, e errado com cara de certo é pior
+                  do que vazio.
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
-        {!carregando && !erro && (
+        {!!erro && (
+          <div style={{ ...cartao, borderColor: "#e5573f", color: "#e5573f" }}>
+            Não consegui contar as mensagens: {erro}
+          </div>
+        )}
+
+        {!carregando && !erro && !faltaSql && (
           <>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 }}>
               <div style={cartao}><div style={rotulo}>Recebidas</div><div style={valor}>{numero(dados.recebidas)}</div></div>
@@ -205,8 +210,19 @@ export default function PainelNumeros({ C, advogados = [], departamentos = [], a
                 <div style={{ ...valor, color: C.textSecondary }}>{numero(dados.notas)}</div></div>
             </div>
 
+            {/* `origem` fora das duas conhecidas. Enquanto for zero, não ocupa
+                espaço; se um dia deixar de ser, aparece em vez de engordar as
+                recebidas em silêncio. */}
+            {dados.outras > 0 && (
+              <div style={{ ...cartao, marginTop: 12, ...nota }}>
+                <b style={{ color: C.textPrimary }}>{numero(dados.outras)}</b> mensagens não são
+                nem recebidas nem enviadas (têm uma origem que este painel não conhece) e ficaram
+                fora das duas colunas. Se esse número crescer, me avise.
+              </div>
+            )}
+
             <h3 style={{ fontSize: 14.5, fontWeight: 700, margin: "22px 0 8px" }}>Por telefone</h3>
-            {dados.telefones.length === 0 && <div style={{ ...cartao, color: C.textSecondary }}>Nenhuma mensagem no período.</div>}
+            {dados.telefones.length === 0 && <div style={{ ...cartao, color: C.textSecondary }}>Nenhum telefone cadastrado.</div>}
             {dados.telefones.length > 0 && (
               <div style={cartao}>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -235,7 +251,7 @@ export default function PainelNumeros({ C, advogados = [], departamentos = [], a
             )}
 
             <h3 style={{ fontSize: 14.5, fontWeight: 700, margin: "22px 0 8px" }}>Por atendente</h3>
-            <div style={{ fontSize: 12.5, color: C.textSecondary, marginBottom: 8, lineHeight: 1.5 }}>
+            <div style={{ ...nota, marginBottom: 8 }}>
               Só ENVIADAS. Mensagem recebida chega no telefone, não em uma pessoa —
               atribuí-la a alguém seria inventar quem atendeu.
             </div>
@@ -274,8 +290,24 @@ export default function PainelNumeros({ C, advogados = [], departamentos = [], a
               </div>
             )}
 
+            {/* ISTO NÃO É UMA PESSOA. Mensagem enviada pelo aparelho, fora do
+                Zorvin, chega com o rótulo "WhatsApp" em quem enviou. Na lista de
+                atendentes ela aparecia como um colega — em geral no topo. */}
+            {dados.aparelho > 0 && (
+              <div style={{ ...cartao, marginTop: 12, ...nota }}>
+                {/* Mesmo formato da observação de baixo, de propósito: um título
+                    grande e um ícone faziam isto parecer mais uma seção de
+                    ranking, quando é justamente o contrário — é o que foi TIRADO
+                    do ranking. */}
+                <b style={{ color: C.textPrimary }}>{numero(dados.aparelho)}</b> mensagens enviadas
+                pelo aparelho — saíram pelo WhatsApp no celular, fora do Zorvin. Contam no total
+                do telefone, mas não dá para saber quem escreveu, por isso ficam fora da lista de
+                atendentes.
+              </div>
+            )}
+
             {dados.semId > 0 && (
-              <div style={{ ...cartao, marginTop: 12, fontSize: 13, color: C.textSecondary, lineHeight: 1.55 }}>
+              <div style={{ ...cartao, marginTop: 12, ...nota }}>
                 <b style={{ color: C.textPrimary }}>{numero(dados.semId)}</b> das mensagens enviadas neste período
                 não guardam quem as escreveu e foram contadas pelo nome. São as anteriores a agosto/2026;
                 daqui em diante toda mensagem sai identificada, e este aviso some sozinho.
