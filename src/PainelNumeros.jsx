@@ -109,10 +109,18 @@ export default function PainelNumeros({ C, advogados = [], departamentos = [], a
                      temId: !!p.enviado_por_id, enviadas: Number(p.enviadas || 0) }))
       .sort((a, b2) => b2.enviadas - a.enviadas);
 
+    // Rótulos marcados no de-para como "isto não é pessoa" — nome de linha que
+    // veio do importador de histórico, mensagem sem autor. Saem do ranking de
+    // atendentes, mas continuam na tela e na conta do telefone.
+    const rotulos = (b.por_rotulo || [])
+      .map((r) => ({ nome: r.nome || "(sem nome)", enviadas: Number(r.enviadas || 0) }))
+      .sort((a, b2) => b2.enviadas - a.enviadas);
+
     const recebidas = Number(b.recebidas || 0), enviadas = Number(b.enviadas || 0);
-    return { telefones, pessoas, recebidas, enviadas, total: recebidas + enviadas,
+    return { telefones, pessoas, rotulos, recebidas, enviadas, total: recebidas + enviadas,
              notas: Number(b.notas || 0), aparelho: Number(b.aparelho || 0),
-             semId: Number(b.sem_id || 0), outras: Number(b.outras || 0) };
+             semId: Number(b.sem_id || 0), outras: Number(b.outras || 0),
+             totalRotulos: rotulos.reduce((t, r) => t + r.enviadas, 0) };
   }, [bruto, advogados, departamentos]);
 
   const maiorTel = Math.max(1, ...dados.telefones.map((t) => t.total));
@@ -293,6 +301,33 @@ export default function PainelNumeros({ C, advogados = [], departamentos = [], a
             {/* ISTO NÃO É UMA PESSOA. Mensagem enviada pelo aparelho, fora do
                 Zorvin, chega com o rótulo "WhatsApp" em quem enviou. Na lista de
                 atendentes ela aparecia como um colega — em geral no topo. */}
+            {/* NÃO É GENTE. O importador de histórico assina as mensagens com o
+                nome da LINHA como estava salvo no celular de quem exportou
+                ("Cadastro - C&A"), e isso entrava no ranking como se fosse um
+                colega — em geral no topo, porque são milhares. Aqui elas
+                aparecem separadas, e discriminadas: sair do ranking não é a
+                mesma coisa que sumir. */}
+            {dados.rotulos.length > 0 && (
+              <div style={{ ...cartao, marginTop: 12 }}>
+                <div style={{ ...nota, marginBottom: 10 }}>
+                  <b style={{ color: C.textPrimary }}>{numero(dados.totalRotulos)}</b> mensagens
+                  enviadas com um rótulo que não é atendente — nome de linha vindo do histórico
+                  importado, ou mensagem sem autor. Contam no total do telefone e ficam fora do
+                  ranking de gente.
+                </div>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <tbody>
+                    {dados.rotulos.map((r) => (
+                      <tr key={r.nome}>
+                        <td style={{ ...td, fontSize: 13.5 }}>{r.nome}</td>
+                        <td style={{ ...num, fontSize: 13.5 }}>{numero(r.enviadas)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             {dados.aparelho > 0 && (
               <div style={{ ...cartao, marginTop: 12, ...nota }}>
                 {/* Mesmo formato da observação de baixo, de propósito: um título

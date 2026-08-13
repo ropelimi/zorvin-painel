@@ -94,10 +94,16 @@ for (const adv of ADVOGADOS) {
 // 4. "WhatsApp" em `enviado_por`: é o rótulo que a ponte grava quando a
 //    mensagem saiu pelo aparelho, fora do Zorvin. Não é uma pessoa.
 const AUTORES = [
-  { id: "u1", nome: "Rodrigo Alves" },
+  { id: "u1", nome: "Rodrigo Sousa" },
   { id: "u2", nome: "Camila Souza" },
   { id: null, nome: "Atendente Antigo" },   // histórico: só o nome sobrou
 ];
+
+// RÓTULO QUE NÃO É PESSOA. O importador de histórico assina as mensagens
+// enviadas com o nome da LINHA como estava salvo no celular de quem exportou.
+// Isso entrava na lista de atendentes como se fosse um colega, e no topo,
+// porque são milhares. Marcado no de-para, sai do ranking sem sumir da conta.
+const ROTULOS_NAO_PESSOA = ["Cadastro - C&A", "Atendimento Estratégico"];
 
 const dia = 86400e3;
 const MENSAGENS = [];
@@ -110,6 +116,13 @@ export const ESPERADO = {
   porTelefone: {},       // id do advogado -> {recebidas, enviadas}
   porTelefoneNome: {},   // o mesmo, pelo NOME — que é o que a tela mostra
   porAutor: {},          // nome de GENTE -> enviadas ("WhatsApp" fica de fora)
+  porRotulo: {},         // rótulo que NÃO é gente -> enviadas
+  rotulos7: 0,
+  // Um autor de cada tipo, para o teste não precisar cravar nome nenhum. Um
+  // nome escrito à mão no teste vira reprovação falsa no dia em que a bancada
+  // muda — foi o que aconteceu ao trocar "Rodrigo Alves" por "Rodrigo Sousa".
+  autorComId: AUTORES.find((a) => a.id)?.nome || null,
+  autorSemId: AUTORES.find((a) => !a.id)?.nome || null,
 };
 
 let giro = 0;
@@ -149,7 +162,26 @@ ADVOGADOS.forEach((adv, i) => {
       criado_em: new Date(Date.now() - (k % 3) * dia).toISOString() });
   }
   ESPERADO.aparelho7 += aparelho;
-  ESPERADO.enviadas7 += env + aparelho; ESPERADO.enviadasTudo += env + aparelho;
+
+  // Só no primeiro telefone, e em volume grande — como no banco de verdade.
+  let deRotulo = 0;
+  if (i === 0) {
+    ROTULOS_NAO_PESSOA.forEach((nomeRotulo, j) => {
+      const quantas = 40 + j * 20;
+      for (let k = 0; k < quantas; k++) {
+        MENSAGENS.push({ id: `m-rot${j}-${k}`, conversa_id: conv(k), origem: "advogado",
+          tipo: "texto", texto: `Importada ${k + 1}`, enviado_por: nomeRotulo, enviado_por_id: null,
+          criado_em: new Date(Date.now() - (k % 3) * dia).toISOString() });
+      }
+      ESPERADO.porRotulo[nomeRotulo] = quantas;
+      deRotulo += quantas;
+    });
+  }
+  ESPERADO.porTelefone[adv.id].enviadas += deRotulo;
+  ESPERADO.porTelefoneNome[adv.nome].enviadas += deRotulo;
+  ESPERADO.rotulos7 += deRotulo;
+  ESPERADO.enviadas7 += env + aparelho + deRotulo;
+  ESPERADO.enviadasTudo += env + aparelho + deRotulo;
 
   // NOTA INTERNA MORA EM `notas`. Nunca houve linha de nota em `mensagens`;
   // procurar `origem = 'nota'` lá dava zero e o cartão mentia com cara de certo.
@@ -294,8 +326,17 @@ export const supabase = {
     const dentro = (t) => !desde || String(t) >= desde;
     const telDaConversa = new Map(CONVERSAS.map((c) => [String(c.id), String(c.advogado_id)]));
 
+    // O de-para da bancada: os mesmos dois papéis da tabela de verdade —
+    // "isto não é pessoa" e "este nome antigo é fulano".
+    const naoPessoa = new Set(ROTULOS_NAO_PESSOA.map((r) => r.toLowerCase()));
+    // E o reconhecimento pelo CADASTRO, que é o que junta "rodrigo" com
+    // "Rodrigo Sousa" sem precisar de de-para nenhum.
+    const idPeloNome = new Map(TABELAS.usuarios
+      .filter((u) => (u.nome || "").trim())
+      .map((u) => [u.nome.trim().toLowerCase(), u.id]));
+
     let recebidas = 0, enviadas = 0, outras = 0, aparelho = 0, semId = 0;
-    const porTel = new Map(), porPessoa = new Map();
+    const porTel = new Map(), porPessoa = new Map(), porRotulo = new Map();
     for (const m of MENSAGENS) {
       if (!dentro(m.criado_em)) continue;
       const ehEnv = m.origem === "advogado", ehRec = m.origem === "contato";
@@ -311,16 +352,22 @@ export const supabase = {
 
       const quem = (m.enviado_por || "").trim();
       if (quem === "WhatsApp") { aparelho++; continue; }
-      if (!m.enviado_por_id) semId++;
-      const chave = m.enviado_por_id ? `id:${m.enviado_por_id}` : `nome:${quem || "(sem nome)"}`;
-      const r = porPessoa.get(chave) || { chave, enviado_por_id: m.enviado_por_id || null, nome: quem || "(sem nome)", enviadas: 0 };
+      if (!m.enviado_por_id && naoPessoa.has(quem.toLowerCase())) {
+        porRotulo.set(quem, (porRotulo.get(quem) || 0) + 1);
+        continue;
+      }
+      const id = m.enviado_por_id || idPeloNome.get(quem.toLowerCase()) || null;
+      if (!id) semId++;
+      const chave = id ? `id:${id}` : `nome:${quem || "(sem nome)"}`;
+      const r = porPessoa.get(chave) || { chave, enviado_por_id: id, nome: quem || "(sem nome)", enviadas: 0 };
       r.enviadas++;
       if (quem) r.nome = quem;
       porPessoa.set(chave, r);
     }
     const notas = NOTAS.filter((n) => dentro(n.criado_em)).length;
     return { data: { recebidas, enviadas, outras, aparelho, sem_id: semId, notas,
-                     por_telefone: [...porTel.values()], por_pessoa: [...porPessoa.values()] },
+                     por_telefone: [...porTel.values()], por_pessoa: [...porPessoa.values()],
+                     por_rotulo: [...porRotulo.entries()].map(([nome, enviadas]) => ({ nome, enviadas })) },
              error: null };
   },
   auth: {
