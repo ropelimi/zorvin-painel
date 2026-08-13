@@ -27,7 +27,7 @@ const DEPARTAMENTOS = [
 const ADVOGADOS = [
   { id: "a1", nome: "Dr. Jorge Mesquita", numero: "5511976378160", foto_url: null, departamento_id: 1, ativo: true },
   { id: "a2", nome: "Comercial", numero: "5511993289441", foto_url: null, departamento_id: 2, ativo: true },
-  { id: "a3", nome: "SDC CCR", numero: "5511950473847", foto_url: null, departamento_id: 3, ativo: true },
+  { id: "a3", nome: "SDC CCR", numero: "5511950473857", foto_url: null, departamento_id: 3, ativo: true },
   { id: "a4", nome: "Sucesso do Cliente", numero: "5511995941666", foto_url: null, departamento_id: 3, ativo: true },
   { id: "a5", nome: "SAC", numero: "5511969401932", foto_url: null, departamento_id: 3, ativo: true },
   { id: "a6", nome: "Audiências", numero: "5511913559990", foto_url: null, departamento_id: 4, ativo: true },
