@@ -97,9 +97,28 @@ function consulta(tabela) {
     order() { return eu; }, limit() { return eu; }, range() { return eu; },
     single() { return eu.then((r) => ({ data: r.data[0] || null, error: null })); },
     maybeSingle() { return eu.then((r) => ({ data: r.data[0] || null, error: null })); },
-    insert() { return Promise.resolve({ data: null, error: null }); },
-    update() { return eu; },
-    upsert() { return Promise.resolve({ data: null, error: null }); },
+    // GRAVAR TAMBÉM É ENCADEÁVEL. O painel escreve `upsert(...).select("id")
+    // .single()`, e devolver uma Promise aqui quebrava a corrente com
+    // "upsert(...).select is not a function" — a bancada acusava um defeito
+    // que o painel não tem. Além de encadear, estas guardam a linha: sem isso
+    // o contato criado pelo link não existia na consulta seguinte, e o teste
+    // do link nunca chegava ao fim.
+    insert(reg) { return eu.gravar(reg); },
+    upsert(reg) { return eu.gravar(reg); },
+    gravar(reg) {
+      const novos = (Array.isArray(reg) ? reg : [reg]).map((r, i) => ({
+        id: r.id || `${tabela}-${(TABELAS[tabela] || []).length + i + 1}`, ...r,
+      }));
+      const tab = TABELAS[tabela] || (TABELAS[tabela] = []);
+      for (const n of novos) {
+        // "onConflict: numero" é o uso real: mesmo número, mesma linha.
+        const j = tab.findIndex((l) => (n.numero && l.numero === n.numero) || l.id === n.id);
+        if (j >= 0) tab[j] = { ...tab[j], ...n }; else tab.push(n);
+      }
+      linhas = novos;
+      return eu;
+    },
+    update(reg) { linhas = linhas.map((l) => Object.assign(l, reg)); return eu; },
     delete() { return eu; },
     async then(resolver) {
       if (tabela === "conversas") await espera(ATRASO_CONVERSAS);
