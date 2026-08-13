@@ -1838,6 +1838,27 @@ export default function Painel({ sessao }) {
 
       if (advogadosPermitidos.length <= 1) { await conversarPeloLink(cont, numero, nome); return; }
 
+      // O LINK PODE DIZER "POR ONDE", e aí não há o que perguntar.
+      //
+      // Perguntar é o certo quando quem clica é que decide — o número escolhido
+      // é o que o cliente vê chegar no WhatsApp dele. Mas há telas em que a
+      // resposta é sempre a mesma linha: a de Audiências do Vantoro abre a
+      // conversa pela linha de avisos de audiência, e só por ela. Repetir a
+      // pergunta todo dia, com uma resposta só, é atrito sem ganho.
+      //
+      // Casa pela CHAVE do número, não pelo texto: o Vantoro manda "55…" e o
+      // Zorvin pode ter gravado sem o 55 ou sem o nono dígito.
+      //
+      // Se a pessoa não alcançar aquela linha, a pergunta VOLTA — abrir por
+      // outro telefone escondido seria mandar mensagem por um número que ela
+      // não escolheu, que é justamente o que a pergunta existe para evitar.
+      const pedidoDe = (params.get("de") || "").trim();
+      if (pedidoDe) {
+        const alvo = advogadosPermitidos.find(
+          (a) => chaveDoNumero(a.numero) === chaveDoNumero(pedidoDe));
+        if (alvo) { await conversarPeloLink(cont, numero, nome, alvo.id); return; }
+      }
+
       // ONDE JÁ EXISTE CONVERSA COM ESTA PESSOA. É o que transforma a escolha
       // numa decisão informada: em vez de dois nomes de advogado, quem escolhe
       // vê onde está o histórico e desde quando. Sem contato no banco não há o
