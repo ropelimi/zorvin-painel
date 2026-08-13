@@ -10,6 +10,14 @@
 // que é o mesmo defeito em câmera lenta.
 const ATRASO_CONVERSAS = 700;
 
+// O TETO DE LINHAS É DE PROPÓSITO, e é o mesmo da API do Supabase: um `select`
+// sem paginação devolve no máximo isto e CALA — não vem erro, não vem aviso,
+// vem uma lista curta com cara de lista inteira. Enquanto o painel só lia 120
+// mensagens por conversa, isso nunca apareceu. A tela de contagem foi a
+// primeira a ler em bloco, e sem este teto aqui ela passava em todos os testes
+// da bancada e mentia no banco de verdade.
+const LIMITE_LINHAS = 1000;
+
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const DEPARTAMENTOS = [
@@ -36,6 +44,10 @@ const ADVOGADOS = [
   { id: "a9", nome: "Subsidio Emenda", numero: "5511992057503", foto_url: null, departamento_id: 6, ativo: true },
   { id: "a10", nome: "Trabalhista", numero: "5511955556666", foto_url: null, departamento_id: 7, ativo: true },
   { id: "a11", nome: "Financeiro", numero: "5511977778888", foto_url: null, departamento_id: 8, ativo: true },
+  // MUDO de propósito: nenhuma mensagem. O Painel serve para ver qual número
+  // está parado, e um telefone parado só aparece se a tela listar os que estão
+  // em zero em vez de só os que tiveram movimento.
+  { id: "a12", nome: "Plantão", numero: "5511900001111", foto_url: null, departamento_id: 8, ativo: true },
 ];
 
 // Quantas conversas NÃO LIDAS cada telefone tem. São números bem diferentes de
@@ -69,62 +81,81 @@ for (const adv of ADVOGADOS) {
 
 // MENSAGENS — para o Painel ter o que contar.
 //
-// Os números são de propósito diferentes uns dos outros (11+i recebidas, 6+i
-// enviadas por telefone): se a tela trocar uma coluna pela outra, ou somar o
-// telefone errado, dá para ver a olho nu em vez de descobrir por acaso.
+// A primeira versão disto tinha 300 mensagens, três autores certinhos e o
+// valor "cliente" em `origem`. Passava em tudo e não provava nada: o banco de
+// verdade tem MILHARES de linhas, `origem` é "contato", as notas moram noutra
+// tabela, e há mensagem enviada que não é de atendente nenhum. Agora a bancada
+// tem os quatro problemas.
 //
-// Três autores, e o terceiro NÃO TEM id — é o histórico anterior ao SQL de
-// agosto/2026. Sem ele na bancada, o selo "pelo nome" e o rodapé de aviso
-// nunca apareceriam num teste, e eu estaria enviando código que ninguém viu
-// rodar.
+// 1. VOLUME acima do teto de linhas que a API do Supabase devolve (ver
+//    LIMITE_LINHAS). É o que quebra qualquer contagem feita baixando tudo.
+// 2. `origem` com os valores REAIS: "contato" e "advogado".
+// 3. NOTAS na tabela `notas` — nunca em `mensagens`.
+// 4. "WhatsApp" em `enviado_por`: é o rótulo que a ponte grava quando a
+//    mensagem saiu pelo aparelho, fora do Zorvin. Não é uma pessoa.
 const AUTORES = [
   { id: "u1", nome: "Rodrigo Alves" },
   { id: "u2", nome: "Camila Souza" },
-  { id: null, nome: "Atendente Antigo" },   // mensagem velha: só o nome
+  { id: null, nome: "Atendente Antigo" },   // histórico: só o nome sobrou
 ];
 
 const dia = 86400e3;
 const MENSAGENS = [];
+const NOTAS = [];
 // O que a bancada CONTÉM, contado enquanto se monta — não pelo mesmo caminho
-// que a tela usa para contar. É contra isto que o teste compara.
+// que a tela usa. É contra isto que o teste compara.
 export const ESPERADO = {
-  recebidas7: 0, enviadas7: 0, notas7: 0, semId7: 0,
+  recebidas7: 0, enviadas7: 0, notas7: 0, semId7: 0, aparelho7: 0,
   recebidasTudo: 0, enviadasTudo: 0,
   porTelefone: {},       // id do advogado -> {recebidas, enviadas}
   porTelefoneNome: {},   // o mesmo, pelo NOME — que é o que a tela mostra
-  porAutor: {},      // nome -> enviadas
+  porAutor: {},          // nome de GENTE -> enviadas ("WhatsApp" fica de fora)
 };
 
 let giro = 0;
 ADVOGADOS.forEach((adv, i) => {
   const daqui = CONVERSAS.filter((c) => c.advogado_id === adv.id);
   const conv = (k) => daqui[k % daqui.length].id;
-  const rec = 11 + i, env = 6 + i, notas = 2;
-  ESPERADO.porTelefone[adv.id] = { recebidas: rec, enviadas: env };
-  ESPERADO.porTelefoneNome[adv.nome] = { recebidas: rec, enviadas: env };
+  // Volumes bem diferentes entre telefones, e grandes o bastante para o total
+  // passar do teto de linhas da API.
+  const mudo = adv.id === "a12";
+  const rec = mudo ? 0 : 100 + i * 10, env = mudo ? 0 : 50 + i * 5,
+        aparelho = mudo ? 0 : 5 + i, notas = mudo ? 0 : 3;
+  ESPERADO.porTelefone[adv.id] = { recebidas: rec, enviadas: env + aparelho };
+  ESPERADO.porTelefoneNome[adv.nome] = { recebidas: rec, enviadas: env + aparelho };
 
   for (let k = 0; k < rec; k++) {
-    MENSAGENS.push({ id: `m-${adv.id}-r${k}`, conversa_id: conv(k), origem: "cliente", tipo: "texto", texto: `Recebida ${k + 1}`,
-      enviado_por: null, enviado_por_id: null,
+    MENSAGENS.push({ id: `m-${adv.id}-r${k}`, conversa_id: conv(k), origem: "contato",
+      tipo: "texto", texto: `Recebida ${k + 1}`, enviado_por: null, enviado_por_id: null,
       criado_em: new Date(Date.now() - (k % 3) * dia).toISOString() });
   }
   ESPERADO.recebidas7 += rec; ESPERADO.recebidasTudo += rec;
 
   for (let k = 0; k < env; k++) {
     const a = AUTORES[giro++ % AUTORES.length];
-    MENSAGENS.push({ id: `m-${adv.id}-e${k}`, conversa_id: conv(k), origem: "advogado", tipo: "texto", texto: `Enviada ${k + 1}`,
-      enviado_por: a.nome, enviado_por_id: a.id,
+    MENSAGENS.push({ id: `m-${adv.id}-e${k}`, conversa_id: conv(k), origem: "advogado",
+      tipo: "texto", texto: `Enviada ${k + 1}`, enviado_por: a.nome, enviado_por_id: a.id,
       criado_em: new Date(Date.now() - (k % 3) * dia).toISOString() });
     ESPERADO.porAutor[a.nome] = (ESPERADO.porAutor[a.nome] || 0) + 1;
     if (!a.id) ESPERADO.semId7++;
   }
-  ESPERADO.enviadas7 += env; ESPERADO.enviadasTudo += env;
 
-  // Nota interna: fica de fora de enviadas e de recebidas.
+  // Saiu pelo APARELHO, não pelo Zorvin. Conta como enviada do telefone, mas
+  // não é atendente nenhum — e listar "WhatsApp" no meio da equipe, em geral
+  // no topo, é exatamente o tipo de número errado que se lê como certo.
+  for (let k = 0; k < aparelho; k++) {
+    MENSAGENS.push({ id: `m-${adv.id}-w${k}`, conversa_id: conv(k), origem: "advogado",
+      tipo: "texto", texto: `Pelo aparelho ${k + 1}`, enviado_por: "WhatsApp", enviado_por_id: null,
+      criado_em: new Date(Date.now() - (k % 3) * dia).toISOString() });
+  }
+  ESPERADO.aparelho7 += aparelho;
+  ESPERADO.enviadas7 += env + aparelho; ESPERADO.enviadasTudo += env + aparelho;
+
+  // NOTA INTERNA MORA EM `notas`. Nunca houve linha de nota em `mensagens`;
+  // procurar `origem = 'nota'` lá dava zero e o cartão mentia com cara de certo.
   for (let k = 0; k < notas; k++) {
-    MENSAGENS.push({ id: `m-${adv.id}-n${k}`, conversa_id: conv(k), origem: "nota", tipo: "texto", texto: `Nota ${k + 1}`,
-      enviado_por: "Rodrigo Alves", enviado_por_id: "u1",
-      criado_em: new Date(Date.now() - k * dia).toISOString() });
+    NOTAS.push({ id: `n-${adv.id}-${k}`, conversa_id: conv(k), texto: `Nota ${k + 1}`,
+      autor: "Rodrigo Alves", criado_em: new Date(Date.now() - k * dia).toISOString() });
   }
   ESPERADO.notas7 += notas;
 });
@@ -132,18 +163,25 @@ ADVOGADOS.forEach((adv, i) => {
 // Um lote VELHO, só no primeiro telefone: é o que faz "7 dias" e "Tudo" darem
 // respostas diferentes. Sem ele, o filtro de período passaria no teste mesmo
 // se não filtrasse nada.
-const VELHAS = 20;
+const VELHAS = 200;
 for (let k = 0; k < VELHAS; k++) {
-  MENSAGENS.push({ id: `m-velha-${k}`, conversa_id: CONVERSAS[0].id, origem: "cliente", tipo: "texto", texto: `Antiga ${k + 1}`,
-    enviado_por: null, enviado_por_id: null,
+  MENSAGENS.push({ id: `m-velha-${k}`, conversa_id: CONVERSAS[0].id, origem: "contato",
+    tipo: "texto", texto: `Antiga ${k + 1}`, enviado_por: null, enviado_por_id: null,
     criado_em: new Date(Date.now() - 100 * dia).toISOString() });
 }
 ESPERADO.recebidasTudo += VELHAS;
+ESPERADO.totalDeLinhas = MENSAGENS.length;
 
 // O teste lê daqui. É o que a BANCADA contém, contado na hora de montar; a
 // tela conta por outro caminho. Se os dois baterem, a tela está certa; se eu
 // escrevesse os números à mão no teste, estaria conferindo a minha aritmética.
-if (typeof globalThis !== "undefined") globalThis.__ESPERADO = ESPERADO;
+if (typeof globalThis !== "undefined") {
+  globalThis.__ESPERADO = ESPERADO;
+  // Liga e desliga a função `painel_numeros` da bancada. Ligada por padrão; o
+  // teste desliga para conferir o que a tela mostra num banco onde o SQL ainda
+  // não foi rodado — que é um estado real, não hipotético.
+  if (globalThis.__TEM_FUNCAO_PAINEL === undefined) globalThis.__TEM_FUNCAO_PAINEL = true;
+}
 
 const TABELAS = {
   advogados: ADVOGADOS,
@@ -151,7 +189,7 @@ const TABELAS = {
   conversas: CONVERSAS,
   usuarios: [{ id: "u1", admin: true, nome: "Rodrigo Alves" }],
   permissoes: [],            // vazio + admin = alcança tudo
-  mensagens: MENSAGENS, contatos: [], notas: [], tags: [], conversa_tags: [],
+  mensagens: MENSAGENS, contatos: [], notas: NOTAS, tags: [], conversa_tags: [],
   mensagens_rapidas: [], figurinhas_favoritas: [], fila_envio: [],
 };
 
@@ -167,6 +205,7 @@ function comparar(a, b) {
 /** Uma consulta encadeável que devolve sempre `{data, error}` no final. */
 function consulta(tabela) {
   let linhas = (TABELAS[tabela] || []).slice();
+  let inicio = 0, corte = Infinity;
   const eu = {
     select() { return eu; },
     eq(col, val) { linhas = linhas.filter((l) => String(l[col]) === String(val)); return eu; },
@@ -185,7 +224,15 @@ function consulta(tabela) {
     lt(col, val) { linhas = linhas.filter((l) => comparar(l[col], val) < 0); return eu; },
     lte(col, val) { linhas = linhas.filter((l) => comparar(l[col], val) <= 0); return eu; },
     or() { return eu; }, not() { return eu; }, contains() { return eu; }, ilike() { return eu; },
-    order() { return eu; }, limit() { return eu; }, range() { return eu; },
+    // `order`, `limit` e `range` PRECISAM valer, agora que a bancada tem
+    // milhares de linhas: são eles que a paginação usa para sair do teto.
+    order(col, opc) {
+      const cres = !(opc && opc.ascending === false);
+      linhas = linhas.slice().sort((a, b) => (cres ? 1 : -1) * comparar(a[col], b[col]));
+      return eu;
+    },
+    limit(n) { corte = Math.min(corte, n); return eu; },
+    range(de, ate) { inicio = de; corte = ate - de + 1; return eu; },
     single() { return eu.then((r) => ({ data: r.data[0] || null, error: null })); },
     maybeSingle() { return eu.then((r) => ({ data: r.data[0] || null, error: null })); },
     // GRAVAR TAMBÉM É ENCADEÁVEL. O painel escreve `upsert(...).select("id")
@@ -213,7 +260,10 @@ function consulta(tabela) {
     delete() { return eu; },
     async then(resolver) {
       if (tabela === "conversas") await espera(ATRASO_CONVERSAS);
-      return resolver({ data: linhas, error: null });
+      // O teto entra AQUI, no fim, igual à API de verdade: depois de filtrar e
+      // ordenar, e sem avisar ninguém de que sobrou coisa para trás.
+      const fatia = linhas.slice(inicio, inicio + Math.min(corte, LIMITE_LINHAS));
+      return resolver({ data: fatia, error: null });
     },
   };
   return eu;
@@ -221,7 +271,53 @@ function consulta(tabela) {
 
 export const supabase = {
   from: (t) => consulta(t),
-  rpc: () => Promise.resolve({ data: null, error: null }),
+  // A função `painel_numeros`, de mentira. Faz o que a de verdade faz — e,
+  // principalmente, faz A CONTA INTEIRA: não passa pelo teto de linhas, porque
+  // a de verdade também não passa. É o ponto todo da correção.
+  //
+  // Quem chamar uma função que não existe recebe o mesmo erro que o Supabase
+  // devolve (PGRST202), para o caminho de "falta rodar o SQL" também ser
+  // testável em vez de imaginado.
+  rpc: async (nome, args) => {
+    if (nome !== "painel_numeros") {
+      return { data: null, error: { code: "PGRST202", message: `Could not find the function public.${nome}` } };
+    }
+    if (!globalThis.__TEM_FUNCAO_PAINEL) {
+      return { data: null, error: { code: "PGRST202", message: "Could not find the function public.painel_numeros" } };
+    }
+    const desde = args && args.p_desde ? String(args.p_desde) : null;
+    const dentro = (t) => !desde || String(t) >= desde;
+    const telDaConversa = new Map(CONVERSAS.map((c) => [String(c.id), String(c.advogado_id)]));
+
+    let recebidas = 0, enviadas = 0, outras = 0, aparelho = 0, semId = 0;
+    const porTel = new Map(), porPessoa = new Map();
+    for (const m of MENSAGENS) {
+      if (!dentro(m.criado_em)) continue;
+      const ehEnv = m.origem === "advogado", ehRec = m.origem === "contato";
+      if (ehEnv) enviadas++; else if (ehRec) recebidas++; else { outras++; continue; }
+
+      const tel = telDaConversa.get(String(m.conversa_id));
+      if (tel) {
+        const r = porTel.get(tel) || { advogado_id: tel, recebidas: 0, enviadas: 0 };
+        r[ehEnv ? "enviadas" : "recebidas"]++;
+        porTel.set(tel, r);
+      }
+      if (!ehEnv) continue;
+
+      const quem = (m.enviado_por || "").trim();
+      if (quem === "WhatsApp") { aparelho++; continue; }
+      if (!m.enviado_por_id) semId++;
+      const chave = m.enviado_por_id ? `id:${m.enviado_por_id}` : `nome:${quem || "(sem nome)"}`;
+      const r = porPessoa.get(chave) || { chave, enviado_por_id: m.enviado_por_id || null, nome: quem || "(sem nome)", enviadas: 0 };
+      r.enviadas++;
+      if (quem) r.nome = quem;
+      porPessoa.set(chave, r);
+    }
+    const notas = NOTAS.filter((n) => dentro(n.criado_em)).length;
+    return { data: { recebidas, enviadas, outras, aparelho, sem_id: semId, notas,
+                     por_telefone: [...porTel.values()], por_pessoa: [...porPessoa.values()] },
+             error: null };
+  },
   auth: {
     getSession: async () => ({ data: { session: { user: { id: "u1", email: "demo@ropelimi", user_metadata: { nome: "Rodrigo Alves" } } } } }),
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
