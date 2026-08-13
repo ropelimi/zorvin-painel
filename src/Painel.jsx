@@ -1018,7 +1018,27 @@ export default function Painel({ sessao }) {
   const [buscaEncaminhar, setBuscaEncaminhar] = useState("");
   const [advogadoId, setAdvogadoId] = useState(null);
   const [conversas, setConversas] = useState([]);
+  // DE QUEM É a lista que está em `conversas` neste instante.
+  //
+  // Sem isto, `conversas` era tratada como sendo sempre do telefone
+  // selecionado — e, entre o clique e a resposta da consulta, ela ainda é do
+  // telefone ANTERIOR. Era o "pisca": o selo do telefone novo, o chip
+  // "Não lidas N" e a própria lista mostravam, por um instante, o dado do
+  // telefone que acabou de sair da tela. Numa rede lenta o instante vira
+  // segundos, e alguém responde a conversa errada achando que é a que via.
+  const [conversasDe, setConversasDe] = useState(null);
   const [conversaId, setConversaId] = useState(null);
+  // A lista carregada é do telefone que está aberto? Enquanto não for, NADA que
+  // venha dela pode ser mostrado como se fosse dele — nem o selo, nem o chip
+  // "Não lidas N", nem as linhas da lista.
+  const listaEhDoTelefoneAberto = Boolean(advogadoId) && conversasDe === advogadoId;
+  // O que a tela pode desenhar agora. Um lugar só: usando `conversas` direto,
+  // cada contador precisaria lembrar sozinho de conferir, e um deles esqueceria.
+  // Sem telefone aberto a lista é vazia — `carregarConversas` sai cedo quando
+  // não há telefone, então `conversas` guardaria a do departamento anterior.
+  const conversasNaTela = listaEhDoTelefoneAberto ? conversas : [];
+  // Tem telefone escolhido, mas a lista dele ainda não chegou.
+  const trocandoDeTelefone = Boolean(advogadoId) && !listaEhDoTelefoneAberto;
   // Ficha do cliente no Vantoro (abre ao lado da conversa).
   const [fichaAberta, setFichaAberta] = useState(false);
   // "Histórico de atendimento": quem falou com este cliente, quando e por qual
@@ -1108,6 +1128,8 @@ export default function Painel({ sessao }) {
   const [tagMenuAberto, setTagMenuAberto] = useState(false); // menu de aplicar tags na conversa aberta
   const [menuTopoAberto, setMenuTopoAberto] = useState(false); // menu ⋮ do topo da lista
   const [menuEtiquetas, setMenuEtiquetas] = useState(false); // lista de etiquetas para filtrar
+  const [menuDepartamentos, setMenuDepartamentos] = useState(false); // lista de departamentos
+  const [buscaDepartamento, setBuscaDepartamento] = useState("");
   const [largura, setLargura] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1200));
   const gravadorRef = useRef(null);
   const chunksRef = useRef([]);
@@ -1121,6 +1143,7 @@ export default function Painel({ sessao }) {
   const txtRef = useRef(null); // input de arquivo .txt (importar histórico)
   const menuTopoRef = useRef(null);
   const etiquetasRef = useRef(null); // menu ⋮ do topo (fecha ao clicar fora)
+  const departamentosRef = useRef(null); // seletor de departamento (fecha ao clicar fora)
 
   const C = TEMAS[modo];
   const estreito = largura < 768; // layout de celular: mostra lista OU conversa
@@ -1147,6 +1170,11 @@ export default function Painel({ sessao }) {
   // era pior ainda: parecia acesso que ela não tinha.
   const departamentosVisiveis = departamentos.filter(
     (d) => advogadosPermitidos.some((a) => a.departamento_id === d.id));
+  const departamentoAtual = departamentos.find((d) => d.id === departamentoId) || null;
+  // O que a lista do seletor mostra agora (a busca só existe quando são muitos).
+  const departamentosParaEscolher = departamentosVisiveis.filter((d) =>
+    !buscaDepartamento.trim()
+    || (d.nome || "").toLowerCase().includes(buscaDepartamento.trim().toLowerCase()));
 
   // O contato está digitando nesta conversa agora? (janela curta que expira).
   function digitandoAtivo(convId) {
@@ -1295,6 +1323,9 @@ export default function Painel({ sessao }) {
     // A conversa aberta mantém o contador dela: abrir não é responder.
     const lista = (data || []).slice().sort(porFixada);
     setConversas(lista);
+    // A lista e o dono dela mudam JUNTOS — é o que garante que ninguém leia
+    // esta lista como sendo de outro telefone.
+    setConversasDe(advId);
     carregarAtendimentos(advId);
     carregarUltimasMidias(advId);
     carregarDigitando(advId);
@@ -2799,6 +2830,7 @@ export default function Painel({ sessao }) {
       else if (menuConversa) setMenuConversa(null);
       else if (menuTopoAberto) setMenuTopoAberto(false);
       else if (menuEtiquetas) setMenuEtiquetas(false);
+      else if (menuDepartamentos) setMenuDepartamentos(false);
       else if (tagMenuAberto) setTagMenuAberto(false);
       else if (emojiAberto) setEmojiAberto(false);
       else if (seletorAberto) setSeletorAberto(false);
@@ -2828,10 +2860,11 @@ export default function Painel({ sessao }) {
       if (seletorAberto && seletorRef.current && !seletorRef.current.contains(e.target)) setSeletorAberto(false);
       if (tagMenuAberto && tagMenuRef.current && !tagMenuRef.current.contains(e.target)) setTagMenuAberto(false);
       if (menuTopoAberto && menuTopoRef.current && !menuTopoRef.current.contains(e.target)) setMenuTopoAberto(false);
+      if (menuDepartamentos && departamentosRef.current && !departamentosRef.current.contains(e.target)) setMenuDepartamentos(false);
     }
     document.addEventListener("mousedown", aoClicar);
     return () => document.removeEventListener("mousedown", aoClicar);
-  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas]);
+  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas, menuDepartamentos]);
 
   // Fecha o menuzinho da conversa (marcar não lida) ao clicar em qualquer lugar.
   useEffect(() => {
@@ -3260,13 +3293,26 @@ export default function Painel({ sessao }) {
     setDepartamentoId(id);
     setConversaId(null);
     setBusca(""); setVerArquivadas(false); setFiltro("tudo");
-    // A lista PERMITIDA, não a lista crua. `advogados` vem do banco sem filtro
-    // (é leitura livre, ver `filtrarPermitidos`): usá-la aqui jogava a pessoa
-    // num telefone que ela não pode abrir, e a lista de conversas aparecia
-    // vazia sem dizer por quê.
-    const primeiro = advogadosVisiveis.find((a) => a.departamento_id === id)
-                  || advogadosVisiveis[0] || null;
-    setAdvogadoId(primeiro ? primeiro.id : null);
+    // DO DEPARTAMENTO NOVO, e não de `advogadosVisiveis`.
+    //
+    // `advogadosVisiveis` está filtrado pelo departamento ANTIGO — o `setState`
+    // acima ainda não valeu nesta renderização. Então o `find` procurava um
+    // telefone do departamento novo dentro da lista do velho e nunca achava
+    // nada; caía no `[0]`, que é o primeiro telefone do departamento ANTERIOR.
+    // A tela ficava permanentemente um departamento atrás: clicar em "Acordos"
+    // deixava você em "Sucesso do Cliente", e clicar em "Audiências" levava a
+    // "Acordos". Era o defeito do vídeo.
+    //
+    // A lista PERMITIDA, e não a crua: `advogados` vem do banco sem filtro (é
+    // leitura livre, ver `filtrarPermitidos`), e usá-la aqui jogaria a pessoa
+    // num telefone que ela não pode abrir.
+    const doDepartamento = advogadosPermitidos.filter((a) => a.departamento_id === id);
+    // COM MAIS DE UM TELEFONE, QUEM ESCOLHE É A PESSOA.
+    //
+    // Escolher por ela significava começar a atender por um número sem ter
+    // decidido isso — e o número escolhido é o que o cliente vê chegar no
+    // WhatsApp dele. Com um telefone só não há o que perguntar.
+    setAdvogadoId(doDepartamento.length === 1 ? doDepartamento[0].id : null);
   }
 
   // Marca a conversa como não lida (mostra o selo verde) ou como lida.
@@ -3692,9 +3738,9 @@ export default function Painel({ sessao }) {
 
   // Quantas conversas não lidas há (para o número na aba "Não lidas"). Só conta
   // as que estão à vista (não arquivadas).
-  const totalNaoLidasLista = conversas.filter((c) => !c.arquivada && (c.nao_lidas || 0) > 0).length;
+  const totalNaoLidasLista = conversasNaTela.filter((c) => !c.arquivada && (c.nao_lidas || 0) > 0).length;
   // Quantas estão arquivadas (para o contador da linha "Arquivadas").
-  const totalArquivadas = conversas.filter((c) => c.arquivada).length;
+  const totalArquivadas = conversasNaTela.filter((c) => c.arquivada).length;
   // NÃO LIDAS QUE ESTÃO DENTRO DAS ARQUIVADAS.
   //
   // Elas saíram do selo do advogado, e com razão: conversa arquivada não entra
@@ -3812,7 +3858,7 @@ export default function Painel({ sessao }) {
     return !!achadosMsg[c.id] || !!achadosCad[c.id];
   }
 
-  const conversasFiltradas = conversas.filter((c) =>
+  const conversasFiltradas = conversasNaTela.filter((c) =>
     (!!c.arquivada === verArquivadas) && // arquivadas só aparecem na visão de arquivadas
     casaNaBusca(c) &&
     passaNoFiltro(c)
@@ -3828,9 +3874,15 @@ export default function Painel({ sessao }) {
   // lista mostra seis linhas — o 7 não correspondia a nada que a pessoa
   // pudesse contar na tela. O que se atende é conversa; é isso que o selo tem
   // de dizer.
-  const naoLidasAtual = conversas.filter((c) => !c.arquivada && (c.nao_lidas || 0) > 0).length;
+  const naoLidasAtual = conversasNaTela.filter((c) => !c.arquivada && (c.nao_lidas || 0) > 0).length;
   function naoLidasDoAdvogado(id) {
-    return id === advogadoId ? naoLidasAtual : (naoLidasPorAdv[id] || 0);
+    // Enquanto a lista não for deste telefone, o selo vem do total consultado
+    // no banco — que é por telefone e está certo para todos. Era daqui que
+    // saía o "pisca": `naoLidasAtual` vinha da lista do telefone ANTERIOR e era
+    // carimbada como sendo do novo.
+    return id === advogadoId && !trocandoDeTelefone
+      ? naoLidasAtual
+      : (naoLidasPorAdv[id] || 0);
   }
 
   // Atendentes que já interagiram nesta conversa (para o grupinho de avatares
@@ -4156,30 +4208,94 @@ export default function Painel({ sessao }) {
           {/* Seletor de DEPARTAMENTO. Aparece quando a pessoa alcança mais de
               um — com um só, o botão não teria para onde levar. Quem alcança o
               quê é decidido pelo banco (as permissões), não por esta tela. */}
+          {/* O DEPARTAMENTO ERA UMA FITA QUE ROLAVA DE LADO.
+              Com oito departamentos, medido nesta tela: TRÊS apareciam e cinco
+              ficavam fora, atrás de 485px de rolagem horizontal — e não melhora
+              numa janela maior, porque esta coluna tem largura fixa. Quem não
+              soubesse arrastar para o lado não descobria que existiam.
+
+              Agora é um botão só, que diz onde você está, e abre a lista
+              inteira: nome, cor, quantos números e quantas não lidas de cada
+              um. A lista rola PARA BAIXO, que é a direção que todo mundo já
+              sabe que rola. Com busca quando passam de seis. */}
           {departamentosVisiveis.length > 1 && (
-            <div className="sem-scrollbar fita" style={{ display: "flex", gap: 6, marginBottom: 10, "--fita-fundo": C.headerBar }}>
-              {departamentosVisiveis.map((d) => {
-                const ativo = departamentoId === d.id;
-                return (
-                  <button key={d.id} onClick={() => trocarDepartamento(d.id)} title={d.nome}
-                    /* O departamento escolhido é SEMPRE o mesmo verde, e não a
-                       cor cadastrada dele. A cor mudando a cada troca fazia o
-                       topo da tela mudar de cor sem que nada de importante
-                       tivesse mudado — e verde, azul e dourado no mesmo lugar
-                       não significam nada: quem escolhe é a pessoa, não o
-                       sistema avisando de algo. A cor de cada departamento
-                       continua no banco e continua servindo onde ela de fato
-                       identifica um: no pontinho ao lado do nome. */
-                    style={{ flex: "1 0 auto", minHeight: 34, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, border: `1px solid ${ativo ? C.greenDark : C.divider}`, background: ativo ? C.greenDark : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 8, padding: "7px 10px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
-                    {d.cor && !ativo && <span style={{ width: 7, height: 7, borderRadius: "50%", background: d.cor, flexShrink: 0 }} />}
-                    {d.nome}
-                  </button>
-                );
-              })}
-              <span aria-hidden className="fita-borda" />
+            <div ref={departamentosRef} style={{ position: "relative", marginBottom: 10 }}>
+              <button onClick={() => setMenuDepartamentos((v) => !v)}
+                      aria-expanded={menuDepartamentos} aria-haspopup="listbox"
+                      title="Trocar de departamento"
+                      style={{ width: "100%", minHeight: 38, display: "flex", alignItems: "center", gap: 9,
+                               border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary,
+                               borderRadius: 9, padding: "7px 11px", cursor: "pointer", textAlign: "left" }}>
+                <span style={{ width: 9, height: 9, borderRadius: "50%", flexShrink: 0,
+                               background: (departamentoAtual && departamentoAtual.cor) || C.textSecondary }} />
+                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 13.5, fontWeight: 600 }}>
+                  {departamentoAtual ? departamentoAtual.nome : "Escolha um departamento"}
+                </span>
+                <span style={{ flexShrink: 0, fontSize: 11.5, color: C.textSecondary }}>
+                  {departamentosVisiveis.length} deptos.
+                </span>
+                <ChevronDown size={16} color={C.textSecondary} style={{ flexShrink: 0, transform: menuDepartamentos ? "rotate(180deg)" : "none", transition: "transform .12s" }} />
+              </button>
+              {menuDepartamentos && (
+                <div role="listbox" style={{ position: "absolute", top: 44, left: 0, right: 0, zIndex: 60,
+                                             background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10,
+                                             boxShadow: "0 8px 24px rgba(0,0,0,.32)", overflow: "hidden" }}>
+                  {/* A busca só entra quando a lista fica longa. Com quatro
+                      departamentos, um campo de busca é mais trabalho do que
+                      correr o olho. */}
+                  {departamentosVisiveis.length > 6 && (
+                    <div style={{ padding: "8px 10px", borderBottom: `1px solid ${C.divider}` }}>
+                      <input autoFocus value={buscaDepartamento} onChange={(e) => setBuscaDepartamento(e.target.value)}
+                             placeholder="Buscar departamento"
+                             /* `border-box` porque o recheio entra na largura:
+                                sem isto o campo ficava 100% + 20px e escapava
+                                para fora do painel. */
+                             style={{ width: "100%", boxSizing: "border-box", border: "none", outline: "none",
+                                      background: C.searchBg, color: C.textPrimary,
+                                      borderRadius: 7, padding: "7px 10px", fontSize: 13 }} />
+                    </div>
+                  )}
+                  <div style={{ maxHeight: 300, overflowY: "auto" }}>
+                    {departamentosParaEscolher.length === 0 && (
+                      <div style={{ padding: 16, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>Nenhum departamento com esse nome.</div>
+                    )}
+                    {departamentosParaEscolher.map((d) => {
+                      const ativo = departamentoId === d.id;
+                      const fones = advogadosPermitidos.filter((a) => a.departamento_id === d.id);
+                      const naoLidas = fones.reduce((soma, a) => soma + naoLidasDoAdvogado(a.id), 0);
+                      return (
+                        <button key={d.id} role="option" aria-selected={ativo}
+                          onClick={() => { setMenuDepartamentos(false); setBuscaDepartamento(""); trocarDepartamento(d.id); }}
+                          style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, minHeight: 46,
+                                   padding: "9px 12px", border: "none", borderLeft: `3px solid ${ativo ? C.greenDark : "transparent"}`,
+                                   background: ativo ? C.headerBar : "transparent", color: C.textPrimary,
+                                   cursor: "pointer", textAlign: "left" }}>
+                          <span style={{ width: 9, height: 9, borderRadius: "50%", flexShrink: 0, background: d.cor || C.textSecondary }} />
+                          <span style={{ flex: 1, minWidth: 0 }}>
+                            <span style={{ display: "block", fontSize: 13.5, fontWeight: ativo ? 700 : 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.nome}</span>
+                            <span style={{ display: "block", fontSize: 11.5, color: C.textSecondary }}>
+                              {fones.length} {fones.length === 1 ? "número" : "números"}
+                            </span>
+                          </span>
+                          {naoLidas > 0 && (
+                            <span style={{ flexShrink: 0, minWidth: 20, height: 20, borderRadius: 10, background: C.green, color: "#fff",
+                                           fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 6px" }}>{naoLidas}</span>
+                          )}
+                          {ativo && <Check size={16} color={C.green} style={{ flexShrink: 0 }} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
-          <div style={{ fontSize: 11, color: C.textSecondary, fontWeight: 600, letterSpacing: 0.3 }}>ATENDENDO COMO</div>
+          {/* Sem telefone escolhido não há "atendendo como": o traço solto
+              embaixo do rótulo parecia dado faltando, e não escolha pendente. */}
+          <div style={{ fontSize: 11, color: C.textSecondary, fontWeight: 600, letterSpacing: 0.3 }}>
+            {advogado ? "ATENDENDO COMO" : "ESCOLHA UM NÚMERO ABAIXO"}
+          </div>
+          {advogado && (<>
           {/* Nome e número na MESMA linha. Quem encolhe é o nome (`minWidth: 0`
               com reticências); o número fica inteiro (`flexShrink: 0`) porque é
               o dado que se copia — meio número não serve para nada, e um nome
@@ -4194,8 +4310,12 @@ export default function Painel({ sessao }) {
               </span>
             )}
           </div>
+          </>)}
         </div>
 
+        {/* Buscar e filtrar uma lista que ainda não existe é oferecer botão que
+            não faz nada. Só aparecem com um telefone escolhido. */}
+        {advogadoId && (<>
         <div style={{ padding: "8px 12px", background: C.panel }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.searchBg, borderRadius: 8, padding: "6px 12px" }}>
             <Search size={16} color={C.textSecondary} />
@@ -4263,8 +4383,52 @@ export default function Painel({ sessao }) {
             )}
           </span>
         </div>
+        </>)}
 
         <div style={{ flex: 1, overflowY: "auto" }}>
+          {/* ESCOLHA O TELEFONE.
+              Aparece quando se troca para um departamento com mais de um
+              número. Antes a tela escolhia sozinha — e o número escolhido é o
+              que o cliente vê chegar no WhatsApp dele, então não é escolha de
+              máquina. Com um telefone só, `trocarDepartamento` já entra direto
+              e este bloco não aparece. */}
+          {!advogadoId && advogadosVisiveis.length > 0 && (
+            <div style={{ padding: "18px 16px" }}>
+              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 3 }}>Por qual número você vai atender?</div>
+              <div style={{ fontSize: 13, color: C.textSecondary, marginBottom: 14, lineHeight: 1.45 }}>
+                {departamentoAtual ? <><b style={{ color: C.textPrimary }}>{departamentoAtual.nome}</b> tem {advogadosVisiveis.length} números.</> : null}
+                {" "}É este número que o cliente vê chegar no WhatsApp dele.
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {advogadosVisiveis.map((a) => {
+                  const n = naoLidasDoAdvogado(a.id);
+                  return (
+                    <button key={a.id} onClick={() => trocarAdvogado(a.id)} title={`Atender por ${a.nome}`}
+                      style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left",
+                               border: `1px solid ${C.divider}`, background: C.headerBar, color: C.textPrimary,
+                               borderRadius: 12, padding: "11px 13px", cursor: "pointer", minHeight: 56 }}>
+                      <Avatar nome={a.nome} foto={a.foto_url} size={38} />
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: "block", fontSize: 14.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nome}</span>
+                        <span style={{ display: "block", fontSize: 12.5, color: C.textSecondary, fontVariantNumeric: "tabular-nums" }}>{numeroBonito(a.numero) || "sem número"}</span>
+                      </span>
+                      {n > 0 && (
+                        <span style={{ flexShrink: 0, minWidth: 22, height: 22, borderRadius: 11, background: C.green, color: "#fff",
+                                       fontSize: 11.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 6px" }}>{n}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {!advogadoId && advogadosVisiveis.length === 0 && (
+            <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>
+              Você não tem nenhum número liberado neste departamento.
+            </div>
+          )}
+          {/* Daqui para baixo, só com um telefone escolhido. */}
+          {!advogadoId ? null : <>
           {/* Cabeçalho da visão "Arquivadas" (botão de voltar) */}
           {verArquivadas && (
             <div onClick={() => setVerArquivadas(false)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: `1px solid ${C.divider}`, cursor: "pointer", background: C.headerBar }}>
@@ -4290,8 +4454,14 @@ export default function Painel({ sessao }) {
               <span style={{ fontSize: 12, color: C.textSecondary, fontWeight: 600 }}>{totalArquivadas}</span>
             </div>
           )}
+          {/* "Nenhuma conversa ainda" durante a troca de telefone era mentira:
+              a lista não está vazia, ela ainda não chegou. Quem lia isso podia
+              concluir que o telefone novo não tinha atendimento nenhum. */}
           {conversasFiltradas.length === 0 && (
-            <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>{verArquivadas ? "Nenhuma conversa arquivada." : "Nenhuma conversa ainda."}</div>
+            <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>
+              {trocandoDeTelefone ? "Carregando as conversas…"
+                : verArquivadas ? "Nenhuma conversa arquivada." : "Nenhuma conversa ainda."}
+            </div>
           )}
           {conversasFiltradas.map((c) => {
             const nome = nomeDoContato(c.contato);
@@ -4373,6 +4543,7 @@ export default function Painel({ sessao }) {
               </div>
             );
           })}
+          </>}
         </div>
       </div>
 
