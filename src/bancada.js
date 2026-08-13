@@ -187,7 +187,12 @@ const TABELAS = {
   advogados: ADVOGADOS,
   departamentos: DEPARTAMENTOS,
   conversas: CONVERSAS,
-  usuarios: [{ id: "u1", admin: true, nome: "Rodrigo Alves" }],
+  // O NOME AQUI É O DO VANTORO — e é de propósito que ele seja DIFERENTE do
+  // que está no `user_metadata` logo abaixo. É a situação real de quem entrou
+  // antes de o Vantoro ter o nome completo: o cadastro já diz "Rodrigo Sousa",
+  // e a conta do Supabase ficou parada em "rodrigo". A tela tem de mostrar o
+  // do cadastro.
+  usuarios: [{ id: "u1", admin: true, nome: "Rodrigo Sousa" }],
   permissoes: [],            // vazio + admin = alcança tudo
   mensagens: MENSAGENS, contatos: [], notas: NOTAS, tags: [], conversa_tags: [],
   mensagens_rapidas: [], figurinhas_favoritas: [], fila_envio: [],
@@ -319,7 +324,10 @@ export const supabase = {
              error: null };
   },
   auth: {
-    getSession: async () => ({ data: { session: { user: { id: "u1", email: "demo@ropelimi", user_metadata: { nome: "Rodrigo Alves" } } } } }),
+    getSession: async () => ({ data: { session: { user: { id: "u1", email: "rodrigo@ropelimi",
+      // O nome VELHO, congelado na criação da conta. Se a tela mostrar este,
+      // a correção não funcionou.
+      user_metadata: { nome: "rodrigo" } } } } }),
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
     signOut: async () => ({ error: null }),
     updateUser: async () => ({ error: null }),

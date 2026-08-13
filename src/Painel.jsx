@@ -999,6 +999,9 @@ export default function Painel({ sessao }) {
   const [erroPermissoes, setErroPermissoes] = useState("");
   const [departamentoId, setDepartamentoId] = useState(null);
   const [souAdmin, setSouAdmin] = useState(false);
+  // A minha linha em `usuarios` — o espelho do cadastro do Vantoro. É de onde
+  // sai o nome que a equipe vê.
+  const [meuCadastro, setMeuCadastro] = useState(null);
   // "Por qual telefone você quer falar?" — só aparece quando o link do Vantoro
   // chega e a pessoa alcança mais de um telefone do escritório.
   const [escolhaTelefone, setEscolhaTelefone] = useState(null);
@@ -1131,7 +1134,6 @@ export default function Painel({ sessao }) {
   const [slashIdx, setSlashIdx] = useState(0); // item destacado no menu do "/"
   const [configAberta, setConfigAberta] = useState(false); // tela de Configurações aberta
   const [abaConfig, setAbaConfig] = useState("perfil"); // perfil | aparencia | rapidas
-  const [cfgNome, setCfgNome] = useState(""); // rascunho do nome no perfil
   const [rapidaForm, setRapidaForm] = useState(null); // { id?, titulo, texto } sendo criada/editada
   const [tags, setTags] = useState([]); // definições das tags (id, nome, cor)
   const [tagsPorConversa, setTagsPorConversa] = useState({}); // { conversaId: [tagId,...] }
@@ -1161,8 +1163,19 @@ export default function Painel({ sessao }) {
   const estreito = largura < 768; // layout de celular: mostra lista OU conversa
   const advogado = advogados.find((a) => a.id === advogadoId) || null;
   const conversa = conversas.find((c) => c.id === conversaId) || null;
-  // Nome e foto do atendente logado (guardados no perfil do Supabase Auth).
+  // O NOME VEM DO CADASTRO DO VANTORO. A ordem abaixo é essa por um motivo:
+  // `usuarios.nome` é reescrito a cada login com o que está no Vantoro, então
+  // é a cópia mais nova que existe aqui. O `user_metadata` vem logo atrás
+  // (a ponte também o realinha, mas quem não entrou desde então ainda tem o
+  // valor velho lá).
+  //
+  // O PEDAÇO DO E-MAIL É O ÚLTIMO RECURSO, e foi ele que criou o problema:
+  // quem entrou antes de o Vantoro ter o nome completo virou "rodrigo",
+  // "max", "isabelle" — e era isso que assinava a bolha e ia para o Painel.
+  // Ele fica porque uma tela sem nome nenhum é pior, mas agora só aparece se
+  // as duas fontes de verdade estiverem vazias.
   const meuNome =
+    (meuCadastro?.nome || "").trim() ||
     sessao?.user?.user_metadata?.nome ||
     sessao?.user?.user_metadata?.name ||
     sessao?.user?.user_metadata?.full_name ||
@@ -1216,7 +1229,7 @@ export default function Painel({ sessao }) {
           .eq("ativo", true).order("nome"),
         supabase.from("departamentos").select("id, nome, slug, cor, ordem")
           .eq("ativo", true).order("ordem"),
-        supabase.from("usuarios").select("admin").eq("id", sessao?.user?.id || "").maybeSingle(),
+        supabase.from("usuarios").select("admin, nome").eq("id", sessao?.user?.id || "").maybeSingle(),
         // AS MINHAS permissões. O banco só deixa cada pessoa ler as próprias
         // (`permissoes_leitura`), então isto não conta a ninguém o que os
         // outros alcançam.
@@ -1225,6 +1238,7 @@ export default function Painel({ sessao }) {
       ]);
       if (!vivo) return;
       const ehAdmin = Boolean(eu.data && eu.data.admin);
+      setMeuCadastro(eu.data || null);
       setAdvogados(tel.data || []);
       setDepartamentos(dep.data || []);
       setSouAdmin(ehAdmin);
@@ -1486,15 +1500,11 @@ export default function Painel({ sessao }) {
     inputRef.current?.focus();
   }
 
-  // ---- Perfil do atendente (nome e foto ficam no Supabase Auth) ----
-  async function salvarNomePerfil() {
-    const nome = cfgNome.trim();
-    if (!nome) { mostrarAviso("Digite seu nome."); return; }
-    const meta = sessao?.user?.user_metadata || {};
-    const { error } = await supabase.auth.updateUser({ data: { ...meta, nome } });
-    if (error) { mostrarAviso("Não consegui salvar o nome."); return; }
-    mostrarAviso("Nome atualizado!");
-  }
+  // ---- Perfil do atendente ----
+  // `salvarNomePerfil` saiu junto com o campo. Ela chamava `auth.updateUser`,
+  // que só alcança a PRÓPRIA conta — então nunca serviria para um
+  // administrador arrumar o nome de outra pessoa, que é o que se queria. Quem
+  // faz isso é o Vantoro, e a ponte traz o resultado no login seguinte.
 
   async function trocarFotoPerfil(file) {
     if (!file) return;
@@ -1517,7 +1527,6 @@ export default function Painel({ sessao }) {
 
   // Abre a tela de Configurações já com o nome atual no campo.
   function abrirConfig() {
-    setCfgNome(meuNome);
     setAbaConfig("perfil");
     setRapidaForm(null);
     setTagForm(null);
@@ -5601,7 +5610,11 @@ export default function Painel({ sessao }) {
               <button onClick={() => setConfigAberta(false)} title="Fechar" style={{ ...BOTAO_ICONE, position: "absolute", top: 8, right: 8, color: C.textSecondary }}><X size={24} /></button>
 
               {abaConfig === "perfil" && (
-                <div style={{ maxWidth: 420 }}>
+                // `data-tela` para o teste apontar para DENTRO do perfil: a
+                // busca da lista de conversas continua no DOM, atrás da janela,
+                // e sem âncora o teste a encontrava e a tomava por um campo de
+                // nome que eu tinha acabado de remover.
+                <div data-tela="perfil" style={{ maxWidth: 420 }}>
                   <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Meu perfil</div>
                   <div style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20 }}>Como você aparece para o resto da equipe.</div>
                   <div style={{ display: "flex", justifyContent: "center", marginBottom: 22 }}>
@@ -5613,11 +5626,23 @@ export default function Painel({ sessao }) {
                       <input ref={fotoPerfilRef} type="file" accept="image/*" onChange={(e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (f) trocarFotoPerfil(f); }} style={{ display: "none" }} />
                     </div>
                   </div>
-                  <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, letterSpacing: 0.3 }}>NOME</label>
-                  <input value={cfgNome} onChange={(e) => setCfgNome(e.target.value)} placeholder="Seu nome" style={{ width: "100%", boxSizing: "border-box", marginTop: 6, marginBottom: 16, border: `1px solid ${C.divider}`, outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "10px 12px", fontSize: 14.5 }} />
+                  {/* O NOME NÃO SE EDITA AQUI, pelo mesmo motivo do e-mail: é
+                      cadastro de pessoa, e cadastro de pessoa mora no Vantoro.
+                      Enquanto cada um escrevia o próprio, o mesmo atendente
+                      aparecia de vários jeitos no relatório e não havia como
+                      saber qual era o certo. */}
+                  <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, letterSpacing: 0.3 }}>NOME (não editável)</label>
+                  <div style={{ marginTop: 6, marginBottom: 6, padding: "10px 12px", background: C.searchBg, borderRadius: 8, fontSize: 14, color: C.textPrimary, fontWeight: 600 }}>{meuNome}</div>
+                  <div style={{ fontSize: 12.5, color: C.textSecondary, marginBottom: 18, lineHeight: 1.5 }}>
+                    É o nome do seu cadastro no Vantoro, e é ele que assina tudo o que
+                    você envia. Para mudar, fale com quem administra: a alteração é
+                    feita lá e chega aqui na sua próxima entrada.
+                  </div>
                   <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, letterSpacing: 0.3 }}>E-MAIL (não editável)</label>
                   <div style={{ marginTop: 6, marginBottom: 20, padding: "10px 12px", background: C.searchBg, borderRadius: 8, fontSize: 14, color: C.textSecondary }}>{sessao?.user?.email || "—"}</div>
-                  <button onClick={salvarNomePerfil} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "10px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Salvar alterações</button>
+                  {/* Sem botão de salvar: a foto grava no instante em que é
+                      escolhida, e não sobrou mais nada nesta aba para guardar.
+                      Botão que não faz nada é pior do que botão nenhum. */}
                 </div>
               )}
 
