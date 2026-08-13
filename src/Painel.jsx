@@ -7,11 +7,12 @@ import {
   StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star,
   Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList, ShieldCheck,
   ChevronLeft, ChevronRight, Images, ExternalLink, Pin, Copy, Forward, Sticker,
-  History
+  History, BarChart3
 } from "lucide-react";
 import FichaVantoro from "./FichaVantoro";
 import { chamarPonte } from "./ponte.js";
 import Departamentos from "./Departamentos";
+import PainelNumeros from "./PainelNumeros";
 import Marca from "./Marca";
 import PainelEmoji, { guardarRecente } from "./Emojis";
 
@@ -1002,6 +1003,8 @@ export default function Painel({ sessao }) {
   // chega e a pessoa alcança mais de um telefone do escritório.
   const [escolhaTelefone, setEscolhaTelefone] = useState(null);
   const [telaAdmin, setTelaAdmin] = useState(false);
+  // O Painel de números (quanto se falou, por telefone e por atendente).
+  const [telaPainel, setTelaPainel] = useState(false);
   // A janela de juntar duas conversas (só admin). `de` é a que SOME; `para` é a
   // que fica com tudo.
   const [juntar, setJuntar] = useState(null);   // null | {de, para, indo}
@@ -1166,6 +1169,9 @@ export default function Painel({ sessao }) {
     (sessao?.user?.email || "").split("@")[0] ||
     "atendente";
   const minhaFoto = sessao?.user?.user_metadata?.foto_url || null;
+  // O ID não muda quando alguém edita o próprio nome. `meuNome` continua sendo
+  // o que a bolha mostra — o nome de então; `meuId` é o que o Painel conta.
+  const meuId = sessao?.user?.id || null;
   // Quem administra: sai da tabela `usuarios` (espelho do Vantoro), e não mais
   // de um metadado escrito à mão no Supabase. Quem é superusuário no Vantoro
   // administra aqui — uma lista de gente, não duas. Está em `souAdmin`.
@@ -2859,6 +2865,7 @@ export default function Painel({ sessao }) {
       else if (juntar) setJuntar(null);
       else if (midiasAberta) setMidiasAberta(false);
       else if (telaAdmin) setTelaAdmin(false);
+      else if (telaPainel) setTelaPainel(false);
       else if (configAberta) setConfigAberta(false);
       else if (novaConversaAberta) setNovaConversaAberta(false);
       else if (menuConversa) setMenuConversa(null);
@@ -2876,7 +2883,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId]);
+  }, [confirmarApagar, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, telaPainel, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -2943,10 +2950,19 @@ export default function Painel({ sessao }) {
   // banco (SQL não rodou), tenta de novo sem ela — o envio nunca trava por isso.
   async function inserirNaFila(payload) {
     let { error } = await supabase.from("fila_envio").insert(payload);
+    // Base sem o SQL de agosto/2026: tira só o id e tenta de novo — o nome
+    // ainda pode existir, e desistir dos dois de uma vez perderia informação
+    // que a base aguenta guardar.
+    if (error && /enviado_por_id/i.test(error.message || "")) {
+      const semId = { ...payload };
+      delete semId.enviado_por_id;
+      ({ error } = await supabase.from("fila_envio").insert(semId));
+    }
     if (error && /enviado_por/i.test(error.message || "")) {
       const semAutor = { ...payload };
       delete semAutor.enviado_por;
       delete semAutor.enviado_por_foto;
+      delete semAutor.enviado_por_id;
       ({ error } = await supabase.from("fila_envio").insert(semAutor));
     }
     // Entrou na fila: cutuca a ponte para ela acordar e enviar já.
@@ -2980,7 +2996,7 @@ export default function Painel({ sessao }) {
       midia_url: m.midia_url || null,
       midia_mime: m.midia_mime || null,
       status: "pendente",
-      enviado_por: meuNome,
+      enviado_por: meuNome, enviado_por_id: meuId,
     });
     if (error) { mostrarAviso("Não consegui encaminhar. Tente de novo."); return; }
     mostrarAviso(`Encaminhada para ${nomeDoContato(conv.contato) || "a conversa"}.`);
@@ -3059,7 +3075,7 @@ export default function Painel({ sessao }) {
     const tempId = "temp-" + Date.now() + "-" + Math.round(Math.random() * 1e6);
     setMensagens((prev) => [...prev, {
       id: tempId, conversa_id: conversaId, origem: "advogado", tipo: "figurinha",
-      enviado_por: meuNome, enviado_por_foto: minhaFoto, midia_url: url,
+      enviado_por: meuNome, enviado_por_id: meuId, enviado_por_foto: minhaFoto, midia_url: url,
       criado_em: new Date().toISOString(), _status: "enviando",
     }]);
     // `texto: ""` e não ausente: a coluna da fila não aceita nulo, e o insert
@@ -3067,7 +3083,7 @@ export default function Painel({ sessao }) {
     // que derrubou o Apagar.
     const { error } = await inserirNaFila({
       conversa_id: conversaId, tipo: "figurinha", texto: "", midia_url: url,
-      enviado_por: meuNome, enviado_por_foto: minhaFoto,
+      enviado_por: meuNome, enviado_por_id: meuId, enviado_por_foto: minhaFoto,
     });
     if (error) setMensagens((prev) => prev.map((x) => (x.id === tempId ? { ...x, _status: "erro" } : x)));
     else marcarLida(conversaId);
@@ -3135,7 +3151,7 @@ export default function Painel({ sessao }) {
     for (const m of podem) {
       const { error } = await inserirNaFila({
         conversa_id: conversaId, tipo: "exclusao", texto: "",
-        responder_id_uazapi: m.id_uazapi, status: "pendente", enviado_por: meuNome,
+        responder_id_uazapi: m.id_uazapi, status: "pendente", enviado_por: meuNome, enviado_por_id: meuId,
       });
       if (error) {
         voltarAtras();
@@ -3234,7 +3250,7 @@ export default function Painel({ sessao }) {
       texto: novo,
       responder_id_uazapi: m.id_uazapi,
       status: "pendente",
-      enviado_por: meuNome,
+      enviado_por: meuNome, enviado_por_id: meuId,
     });
     if (error) {
       setMensagens((prev) => prev.map((x) => (x.id === m.id ? { ...x, texto: m.texto, editada: m.editada } : x)));
@@ -3290,7 +3306,7 @@ export default function Painel({ sessao }) {
       texto: novo,
       responder_id_uazapi: m.id_uazapi,
       status: "pendente",
-      enviado_por: meuNome,
+      enviado_por: meuNome, enviado_por_id: meuId,
     });
     if (error) {
       // Devolve a bolha ao que era: manter a pastilha que não foi enviada
@@ -3446,14 +3462,14 @@ export default function Painel({ sessao }) {
     // Mostra a mensagem NA HORA (provisória, com relóginho), como o WhatsApp Web.
     const tempId = "temp-" + Date.now() + "-" + Math.round(Math.random() * 1e6);
     const provisoria = {
-      id: tempId, conversa_id: conversaId, origem: "advogado", enviado_por: meuNome, enviado_por_foto: minhaFoto,
+      id: tempId, conversa_id: conversaId, origem: "advogado", enviado_por: meuNome, enviado_por_id: meuId, enviado_por_foto: minhaFoto,
       tipo: "texto", texto: t, criado_em: new Date().toISOString(), _status: "enviando",
       resposta_previa: alvo?.previa || null, resposta_autor: alvo?.autor || null,
       _responderId: alvo?.id_uazapi || null,
     };
     setMensagens((prev) => [...prev, provisoria]);
     // Coloca na fila de envio; a ponte processa e manda pela Uazapi.
-    const payload = { conversa_id: conversaId, texto: t, enviado_por: meuNome, enviado_por_foto: minhaFoto };
+    const payload = { conversa_id: conversaId, texto: t, enviado_por: meuNome, enviado_por_id: meuId, enviado_por_foto: minhaFoto };
     if (alvo) {
       payload.responder_id_uazapi = alvo.id_uazapi;
       payload.resposta_previa = alvo.previa;
@@ -3712,7 +3728,7 @@ export default function Painel({ sessao }) {
     // Prévia local (o remetente vê o anexo na hora, sem depender do Storage).
     const previa = tipo === "documento" ? null : URL.createObjectURL(file);
     setMensagens((prev) => [...prev, {
-      id: tempId, conversa_id: convId, origem: "advogado", tipo, enviado_por: meuNome, enviado_por_foto: minhaFoto,
+      id: tempId, conversa_id: convId, origem: "advogado", tipo, enviado_por: meuNome, enviado_por_id: meuId, enviado_por_foto: minhaFoto,
       texto: legenda || null, midia_url: previa, midia_mime: file.type, midia_nome: file.name,
       criado_em: new Date().toISOString(), _status: "enviando",
       _file: file, _legenda: legenda, // guardados para poder reenviar se falhar
@@ -3730,7 +3746,7 @@ export default function Painel({ sessao }) {
       setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _midiaUrlFinal: url } : m)));
       const { error: filaErr } = await inserirNaFila({
         conversa_id: convId, texto: legenda || "", tipo,
-        midia_url: url, midia_mime: file.type, midia_nome: nome, enviado_por: meuNome, enviado_por_foto: minhaFoto,
+        midia_url: url, midia_mime: file.type, midia_nome: nome, enviado_por: meuNome, enviado_por_id: meuId, enviado_por_foto: minhaFoto,
       });
       if (filaErr) throw new Error("Falha ao colocar na fila (banco): " + (filaErr.message || filaErr));
       // Anexo também é resposta ao contato: a conversa deixa de estar pendente.
@@ -4311,6 +4327,13 @@ export default function Painel({ sessao }) {
                 <div style={{ position: "absolute", top: 26, right: 0, width: 230, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.28)", zIndex: 50, overflow: "hidden" }}>
                   <button onClick={marcarTodasLidas} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><CheckCheck size={17} color={C.textSecondary} /> Marcar todas como lidas</button>
                   <button onClick={() => { setMenuTopoAberto(false); abrirConfig(); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><Settings size={17} color={C.textSecondary} /> Configurações</button>
+                  {/* O Painel conta o que TODO MUNDO enviou, e quem só alcança
+                      alguns telefones veria um total pela metade e o tomaria
+                      pelo total. É por isso que ele fica com quem administra —
+                      não porque o número seja segredo. */}
+                  {souAdmin && (
+                    <button onClick={() => { setMenuTopoAberto(false); setTelaPainel(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><BarChart3 size={17} color={C.textSecondary} /> Painel</button>
+                  )}
                   {/* Quem administra no Vantoro administra aqui. Esconder o botão
                       é cortesia, não segurança: quem não é admin esbarra nas
                       regras do banco de qualquer forma. */}
@@ -6337,6 +6360,14 @@ export default function Painel({ sessao }) {
             setAdvogados(t.data || []);
           });
         }} />
+      )}
+
+      {/* O Painel recebe os telefones e os departamentos já carregados: são os
+          nomes das linhas do relatório, e refazer as consultas aqui daria uma
+          segunda lista que pode divergir da que está na tela. */}
+      {telaPainel && (
+        <PainelNumeros C={C} advogados={advogados} departamentos={departamentos}
+                       aoFechar={() => setTelaPainel(false)} />
       )}
     </div>
   );

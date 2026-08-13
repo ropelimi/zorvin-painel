@@ -67,15 +67,102 @@ for (const adv of ADVOGADOS) {
   }
 }
 
+// MENSAGENS — para o Painel ter o que contar.
+//
+// Os números são de propósito diferentes uns dos outros (11+i recebidas, 6+i
+// enviadas por telefone): se a tela trocar uma coluna pela outra, ou somar o
+// telefone errado, dá para ver a olho nu em vez de descobrir por acaso.
+//
+// Três autores, e o terceiro NÃO TEM id — é o histórico anterior ao SQL de
+// agosto/2026. Sem ele na bancada, o selo "pelo nome" e o rodapé de aviso
+// nunca apareceriam num teste, e eu estaria enviando código que ninguém viu
+// rodar.
+const AUTORES = [
+  { id: "u1", nome: "Rodrigo Alves" },
+  { id: "u2", nome: "Camila Souza" },
+  { id: null, nome: "Atendente Antigo" },   // mensagem velha: só o nome
+];
+
+const dia = 86400e3;
+const MENSAGENS = [];
+// O que a bancada CONTÉM, contado enquanto se monta — não pelo mesmo caminho
+// que a tela usa para contar. É contra isto que o teste compara.
+export const ESPERADO = {
+  recebidas7: 0, enviadas7: 0, notas7: 0, semId7: 0,
+  recebidasTudo: 0, enviadasTudo: 0,
+  porTelefone: {},       // id do advogado -> {recebidas, enviadas}
+  porTelefoneNome: {},   // o mesmo, pelo NOME — que é o que a tela mostra
+  porAutor: {},      // nome -> enviadas
+};
+
+let giro = 0;
+ADVOGADOS.forEach((adv, i) => {
+  const daqui = CONVERSAS.filter((c) => c.advogado_id === adv.id);
+  const conv = (k) => daqui[k % daqui.length].id;
+  const rec = 11 + i, env = 6 + i, notas = 2;
+  ESPERADO.porTelefone[adv.id] = { recebidas: rec, enviadas: env };
+  ESPERADO.porTelefoneNome[adv.nome] = { recebidas: rec, enviadas: env };
+
+  for (let k = 0; k < rec; k++) {
+    MENSAGENS.push({ id: `m-${adv.id}-r${k}`, conversa_id: conv(k), origem: "cliente", tipo: "texto", texto: `Recebida ${k + 1}`,
+      enviado_por: null, enviado_por_id: null,
+      criado_em: new Date(Date.now() - (k % 3) * dia).toISOString() });
+  }
+  ESPERADO.recebidas7 += rec; ESPERADO.recebidasTudo += rec;
+
+  for (let k = 0; k < env; k++) {
+    const a = AUTORES[giro++ % AUTORES.length];
+    MENSAGENS.push({ id: `m-${adv.id}-e${k}`, conversa_id: conv(k), origem: "advogado", tipo: "texto", texto: `Enviada ${k + 1}`,
+      enviado_por: a.nome, enviado_por_id: a.id,
+      criado_em: new Date(Date.now() - (k % 3) * dia).toISOString() });
+    ESPERADO.porAutor[a.nome] = (ESPERADO.porAutor[a.nome] || 0) + 1;
+    if (!a.id) ESPERADO.semId7++;
+  }
+  ESPERADO.enviadas7 += env; ESPERADO.enviadasTudo += env;
+
+  // Nota interna: fica de fora de enviadas e de recebidas.
+  for (let k = 0; k < notas; k++) {
+    MENSAGENS.push({ id: `m-${adv.id}-n${k}`, conversa_id: conv(k), origem: "nota", tipo: "texto", texto: `Nota ${k + 1}`,
+      enviado_por: "Rodrigo Alves", enviado_por_id: "u1",
+      criado_em: new Date(Date.now() - k * dia).toISOString() });
+  }
+  ESPERADO.notas7 += notas;
+});
+
+// Um lote VELHO, só no primeiro telefone: é o que faz "7 dias" e "Tudo" darem
+// respostas diferentes. Sem ele, o filtro de período passaria no teste mesmo
+// se não filtrasse nada.
+const VELHAS = 20;
+for (let k = 0; k < VELHAS; k++) {
+  MENSAGENS.push({ id: `m-velha-${k}`, conversa_id: CONVERSAS[0].id, origem: "cliente", tipo: "texto", texto: `Antiga ${k + 1}`,
+    enviado_por: null, enviado_por_id: null,
+    criado_em: new Date(Date.now() - 100 * dia).toISOString() });
+}
+ESPERADO.recebidasTudo += VELHAS;
+
+// O teste lê daqui. É o que a BANCADA contém, contado na hora de montar; a
+// tela conta por outro caminho. Se os dois baterem, a tela está certa; se eu
+// escrevesse os números à mão no teste, estaria conferindo a minha aritmética.
+if (typeof globalThis !== "undefined") globalThis.__ESPERADO = ESPERADO;
+
 const TABELAS = {
   advogados: ADVOGADOS,
   departamentos: DEPARTAMENTOS,
   conversas: CONVERSAS,
   usuarios: [{ id: "u1", admin: true, nome: "Rodrigo Alves" }],
   permissoes: [],            // vazio + admin = alcança tudo
-  mensagens: [], contatos: [], notas: [], tags: [], conversa_tags: [],
+  mensagens: MENSAGENS, contatos: [], notas: [], tags: [], conversa_tags: [],
   mensagens_rapidas: [], figurinhas_favoritas: [], fila_envio: [],
 };
+
+/** Compara número com número e texto com texto. Data em ISO ordena sozinha
+    como texto, que é o que o Postgres faz com `timestamptz` de qualquer jeito. */
+function comparar(a, b) {
+  const na = Number(a), nb = Number(b);
+  if (a !== null && a !== "" && b !== null && b !== "" && !isNaN(na) && !isNaN(nb)) return na - nb;
+  const sa = String(a ?? ""), sb = String(b ?? "");
+  return sa < sb ? -1 : sa > sb ? 1 : 0;
+}
 
 /** Uma consulta encadeável que devolve sempre `{data, error}` no final. */
 function consulta(tabela) {
@@ -89,10 +176,14 @@ function consulta(tabela) {
     // `gt` PRECISA filtrar de verdade: o selo da barra lateral sai de
     // `.gt("nao_lidas", 0)`, e com um cano vazio aqui ele contava também as
     // conversas já lidas — a bancada acusava um defeito que o painel não tem.
-    gt(col, val) { linhas = linhas.filter((l) => Number(l[col]) > Number(val)); return eu; },
-    gte(col, val) { linhas = linhas.filter((l) => Number(l[col]) >= Number(val)); return eu; },
-    lt(col, val) { linhas = linhas.filter((l) => Number(l[col]) < Number(val)); return eu; },
-    lte(col, val) { linhas = linhas.filter((l) => Number(l[col]) <= Number(val)); return eu; },
+    // E precisa comparar TEXTO também: o corte de período do Painel é
+    // `.gte("criado_em", "2026-…")`. Passando por `Number()`, aquilo virava
+    // NaN >= NaN, que é falso sempre — a bancada devolvia zero mensagem e a
+    // tela parecia quebrada quando quem estava quebrado era o instrumento.
+    gt(col, val) { linhas = linhas.filter((l) => comparar(l[col], val) > 0); return eu; },
+    gte(col, val) { linhas = linhas.filter((l) => comparar(l[col], val) >= 0); return eu; },
+    lt(col, val) { linhas = linhas.filter((l) => comparar(l[col], val) < 0); return eu; },
+    lte(col, val) { linhas = linhas.filter((l) => comparar(l[col], val) <= 0); return eu; },
     or() { return eu; }, not() { return eu; }, contains() { return eu; }, ilike() { return eu; },
     order() { return eu; }, limit() { return eu; }, range() { return eu; },
     single() { return eu.then((r) => ({ data: r.data[0] || null, error: null })); },
