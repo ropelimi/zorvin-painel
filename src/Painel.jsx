@@ -1096,8 +1096,17 @@ export default function Painel({ sessao }) {
   const [tempoGravacao, setTempoGravacao] = useState(0); // segundos gravados
   const [imagemAberta, setImagemAberta] = useState(null); // URL da imagem em tela cheia
   const [aviso, setAviso] = useState(null); // toast discreto (texto)
-  const [anexoPendente, setAnexoPendente] = useState(null); // { file, url, tipo } aguardando legenda
-  const [legendaAnexo, setLegendaAnexo] = useState("");
+  // A FILA DE ANEXOS aguardando envio. Era UM anexo por vez: colar três prints
+  // mandava o primeiro e descartava os outros dois em silêncio, e quem mandava
+  // cinco fotos de um documento repetia cinco vezes o mesmo caminho.
+  // Cada item: { file, url, tipo, nome, legenda }.
+  const [anexosPendentes, setAnexosPendentes] = useState([]);
+  // Qual deles está grande na prévia. A legenda é DE CADA arquivo, como no
+  // WhatsApp: uma legenda só para o lote descreveria errado quatro dos cinco.
+  const [anexoAtivo, setAnexoAtivo] = useState(0);
+  // Há um arquivo sendo arrastado sobre a janela? Serve só para a faixa
+  // "solte aqui": sem retorno visual, quem arrasta não sabe se pode soltar.
+  const [arrastandoArquivo, setArrastandoArquivo] = useState(false);
   const [buscaIdx, setBuscaIdx] = useState(0); // ocorrência atual na busca da conversa
   const [idDivisorNaoLidas, setIdDivisorNaoLidas] = useState(null); // id da 1ª msg não lida ao abrir
   const [temMaisAntigas, setTemMaisAntigas] = useState(false); // há histórico acima do que está na tela
@@ -2716,7 +2725,11 @@ export default function Painel({ sessao }) {
   // Libera as prévias locais (blob:) do áudio gravado e do anexo pendente quando
   // elas mudam ou ao sair, para não vazar memória.
   useEffect(() => () => { if (audioPronto && String(audioPronto.url).startsWith("blob:")) URL.revokeObjectURL(audioPronto.url); }, [audioPronto]);
-  useEffect(() => () => { if (anexoPendente && String(anexoPendente.url).startsWith("blob:")) URL.revokeObjectURL(anexoPendente.url); }, [anexoPendente]);
+  useEffect(() => () => {
+    for (const a of anexosPendentes) {
+      if (a.url && String(a.url).startsWith("blob:")) URL.revokeObjectURL(a.url);
+    }
+  }, [anexosPendentes]);
 
   // ---- A GALERIA DA CONVERSA ----
   //
@@ -2827,7 +2840,7 @@ export default function Painel({ sessao }) {
     function aoTeclar(e) {
       if (e.key !== "Escape") return;
       if (imagemAberta) setImagemAberta(null);
-      else if (anexoPendente) fecharAnexoPendente();
+      else if (anexosPendentes.length) fecharAnexoPendente();
       else if (audioPronto) descartarAudioPronto();
       else if (confirmarApagar) setConfirmarApagar(false);
       else if (selecao) setSelecao(null);
@@ -2863,7 +2876,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexoPendente, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId]);
+  }, [confirmarApagar, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -3526,15 +3539,35 @@ export default function Painel({ sessao }) {
 
   // Anexos: ao escolher o arquivo, abre a PRÉVIA para digitar uma legenda
   // antes de enviar (como no WhatsApp Web).
+  /** Transforma arquivos soltos em itens da prévia. Um lugar só — o clipe, o
+      Ctrl+V e o arrastar caem todos aqui, então as três portas se comportam
+      igual em vez de cada uma ter a sua regra. */
+  function paraAnexos(arquivos) {
+    return Array.from(arquivos || []).map((file) => {
+      const t = file.type || "";
+      const tipo = t.startsWith("image/") ? "imagem" : t.startsWith("video/") ? "video"
+                 : t.startsWith("audio/") ? "audio" : "documento";
+      return { file, tipo, nome: file.name,
+               url: tipo === "documento" ? null : URL.createObjectURL(file),
+               legenda: "" };
+    });
+  }
+
+  /** Põe arquivos na prévia. Somando à fila: quem já colou dois e arrasta um
+      terceiro quer os três, não o terceiro sozinho. */
+  function abrirAnexos(arquivos) {
+    const novos = paraAnexos(arquivos);
+    if (!novos.length) return;
+    setAnexosPendentes((antes) => {
+      setAnexoAtivo(antes.length);   // o recém-chegado é o que aparece grande
+      return [...antes, ...novos];
+    });
+  }
+
   function aoEscolherArquivo(e) {
-    const file = e.target.files && e.target.files[0];
+    const arquivos = e.target.files;
     e.target.value = ""; // permite escolher o mesmo arquivo de novo depois
-    if (!file) return;
-    const t = file.type || "";
-    const tipo = t.startsWith("image/") ? "imagem" : t.startsWith("video/") ? "video" : t.startsWith("audio/") ? "audio" : "documento";
-    const url = tipo === "documento" ? null : URL.createObjectURL(file);
-    setLegendaAnexo("");
-    setAnexoPendente({ file, url, tipo, nome: file.name });
+    abrirAnexos(arquivos);
   }
 
   // COLAR UM PRINT DIRETO NA CONVERSA (Ctrl+V).
@@ -3555,43 +3588,114 @@ export default function Painel({ sessao }) {
     function aoColar(e) {
       // Com uma prévia já aberta, ou no meio de editar/encaminhar, o Ctrl+V é
       // para o campo de texto que está ali — não para começar outro anexo.
-      if (anexoPendente || editando || encaminhar || imagemAberta) return;
+      if (editando || encaminhar || imagemAberta) return;
       const itens = Array.from((e.clipboardData && e.clipboardData.items) || []);
-      const imagens = itens.filter((i) => i.kind === "file" && String(i.type).startsWith("image/"));
-      if (!imagens.length) return;
-      const bruto = imagens[0].getAsFile();
-      if (!bruto) return;
+      // QUALQUER ARQUIVO, e não só imagem. O filtro era `image/`: um vídeo
+      // copiado caía aqui, não casava, e o Ctrl+V não fazia absolutamente
+      // nada — sem erro, sem aviso, como se a tecla não existisse.
+      const arquivos = itens.filter((i) => i.kind === "file");
+      if (!arquivos.length) return;
+      const brutos = arquivos.map((i) => i.getAsFile()).filter(Boolean);
+      if (!brutos.length) return;
       e.preventDefault();
       // NOME COM DATA E HORA. O print vem da área de transferência chamado
       // "image.png", sempre — e um Storage cheio de "image.png" não deixa
       // ninguém achar nada depois.
-      const ext = (String(bruto.type).split("/")[1] || "png").split("+")[0];
       const agora = new Date();
       const doisDigitos = (n) => String(n).padStart(2, "0");
       const carimbo = `${agora.getFullYear()}-${doisDigitos(agora.getMonth() + 1)}-${doisDigitos(agora.getDate())}`
                     + `-${doisDigitos(agora.getHours())}h${doisDigitos(agora.getMinutes())}`;
-      const nome = `print-${carimbo}.${ext}`;
-      const file = new File([bruto], nome, { type: bruto.type });
-      setLegendaAnexo("");
-      setAnexoPendente({ file, url: URL.createObjectURL(file), tipo: "imagem", nome });
-      if (imagens.length > 1) mostrarAviso("Colei a primeira imagem — mande uma de cada vez.");
+      const comNome = brutos.map((bruto, i) => {
+        // O arquivo da área de transferência costuma vir sem nome de verdade
+        // ("image.png", sempre) — e um Storage cheio de "image.png" não deixa
+        // ninguém achar nada depois. Quem já tem nome próprio mantém o dele.
+        const generico = !bruto.name || /^image\.\w+$/i.test(bruto.name);
+        if (!generico) return bruto;
+        const ext = (String(bruto.type).split("/")[1] || "png").split("+")[0];
+        const sufixo = brutos.length > 1 ? `-${i + 1}` : "";
+        return new File([bruto], `print-${carimbo}${sufixo}.${ext}`, { type: bruto.type });
+      });
+      abrirAnexos(comNome);
     }
     document.addEventListener("paste", aoColar);
     return () => document.removeEventListener("paste", aoColar);
-  }, [conversaId, anexoPendente, editando, encaminhar, imagemAberta]);
+  }, [conversaId, editando, encaminhar, imagemAberta]);
+
+  // ARRASTAR UM ARQUIVO PARA DENTRO DA CONVERSA.
+  //
+  // Não existia. Arrastar uma foto para cá fazia o NAVEGADOR abrir o arquivo
+  // por cima do painel — a conversa sumia e a pessoa tinha de voltar. É o
+  // comportamento padrão de quem não trata o `drop`, e ele é pior do que não
+  // fazer nada, porque parece que o sistema quebrou.
+  //
+  // No documento, e não numa `div`: o mesmo lugar do Ctrl+V, pelo mesmo
+  // motivo — o alvo do arrasto é a janela inteira, e amarrar a um retângulo
+  // faria a foto funcionar no meio da tela e falhar dois centímetros ao lado.
+  //
+  // O `dragover` precisa de `preventDefault` para o `drop` acontecer; é isso
+  // que também impede o navegador de navegar para o arquivo.
+  useEffect(() => {
+    if (!conversaId) return undefined;
+    const daZonaPropria = (e) => e.target?.closest && e.target.closest("[data-zona-propria]");
+    function aoArrastar(e) {
+      if (daZonaPropria(e)) return;
+      if (!Array.from(e.dataTransfer?.types || []).includes("Files")) return;
+      e.preventDefault();
+      if (!arrastandoArquivo) setArrastandoArquivo(true);
+    }
+    function aoSair(e) {
+      // `relatedTarget` nulo = o ponteiro saiu da janela, e não passou de um
+      // elemento para outro dentro dela. Sem esta distinção a faixa piscava a
+      // cada borda cruzada no caminho até o meio da tela.
+      if (!e.relatedTarget) setArrastandoArquivo(false);
+    }
+    function aoSoltar(e) {
+      if (daZonaPropria(e)) return;
+      const arquivos = e.dataTransfer?.files;
+      if (!arquivos || !arquivos.length) return;
+      e.preventDefault();
+      setArrastandoArquivo(false);
+      if (editando || encaminhar || imagemAberta) return;
+      abrirAnexos(arquivos);
+    }
+    document.addEventListener("dragover", aoArrastar);
+    document.addEventListener("dragleave", aoSair);
+    document.addEventListener("drop", aoSoltar);
+    return () => {
+      document.removeEventListener("dragover", aoArrastar);
+      document.removeEventListener("dragleave", aoSair);
+      document.removeEventListener("drop", aoSoltar);
+    };
+  }, [conversaId, editando, encaminhar, imagemAberta, arrastandoArquivo]);
 
   function fecharAnexoPendente() {
-    if (anexoPendente?.url && String(anexoPendente.url).startsWith("blob:")) URL.revokeObjectURL(anexoPendente.url);
-    setAnexoPendente(null);
-    setLegendaAnexo("");
+    for (const a of anexosPendentes) {
+      if (a.url && String(a.url).startsWith("blob:")) URL.revokeObjectURL(a.url);
+    }
+    setAnexosPendentes([]);
+    setAnexoAtivo(0);
+  }
+
+  /** Tira um da fila sem fechar a prévia — para quem colou quatro e quer três. */
+  function tirarAnexo(i) {
+    setAnexosPendentes((antes) => {
+      const alvo = antes[i];
+      if (alvo?.url && String(alvo.url).startsWith("blob:")) URL.revokeObjectURL(alvo.url);
+      const resto = antes.filter((_, j) => j !== i);
+      setAnexoAtivo((at) => Math.max(0, Math.min(at > i ? at - 1 : at, resto.length - 1)));
+      return resto;
+    });
   }
 
   function confirmarEnviarAnexo() {
-    if (!anexoPendente) return;
-    const { file } = anexoPendente;
-    const legenda = legendaAnexo.trim();
-    fecharAnexoPendente();
-    enviarArquivo(file, legenda);
+    if (!anexosPendentes.length) return;
+    // A ORDEM É A DA PRÉVIA. `enviarArquivo` é assíncrono, mas cada um já entra
+    // na tela no instante em que é chamado — disparar em sequência mantém a
+    // ordem que a pessoa viu, que é a ordem em que o cliente vai receber.
+    const lote = anexosPendentes.map((a) => ({ file: a.file, legenda: (a.legenda || "").trim() }));
+    setAnexosPendentes([]);          // sem revogar: as prévias locais das
+    setAnexoAtivo(0);                // mensagens ainda apontam para os blobs
+    for (const { file, legenda } of lote) enviarArquivo(file, legenda);
   }
 
   async function enviarArquivo(file, legenda = "", convId = conversaId, tipoForcado = null) {
@@ -5240,7 +5344,7 @@ export default function Painel({ sessao }) {
                   <button onClick={() => fileRef.current?.click()} title="Anexar arquivo" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
                     <Paperclip size={22} color={C.textSecondary} />
                   </button>
-                  <input ref={fileRef} type="file" onChange={aoEscolherArquivo} style={{ display: "none" }} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" />
+                  <input ref={fileRef} type="file" multiple onChange={aoEscolherArquivo} style={{ display: "none" }} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" />
                   <input ref={figurinhaRef} type="file" accept="image/webp,image/png,image/jpeg" style={{ display: "none" }}
                     onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) { setEmojiAberto(false); enviarArquivo(f, "", conversaId, "figurinha"); } }} />
                   <textarea
@@ -5697,6 +5801,7 @@ export default function Painel({ sessao }) {
                     onDragOver={(e) => { e.preventDefault(); if (!impArrastando) setImpArrastando(true); }}
                     onDragLeave={(e) => { e.preventDefault(); setImpArrastando(false); }}
                     onDrop={aoSoltarImport}
+                    data-zona-propria
                     style={{
                       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8,
                       border: `2px dashed ${impArrastando ? C.green : C.divider}`,
@@ -5837,29 +5942,79 @@ export default function Painel({ sessao }) {
       )}
 
       {/* Prévia do anexo com legenda antes de enviar (estilo WhatsApp) */}
-      {anexoPendente && (
+      {/* "Solte aqui" — só enquanto há arquivo sobre a janela e nenhuma prévia
+          aberta. `pointerEvents: none` porque uma cortina que recebe o mouse
+          engole o próprio `drop` que ela está anunciando. */}
+      {arrastandoArquivo && !anexosPendentes.length && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 95, pointerEvents: "none",
+                      background: "rgba(0,0,0,.55)", display: "grid", placeItems: "center" }}>
+          <div style={{ border: `3px dashed ${C.green}`, borderRadius: 16, padding: "34px 46px",
+                        background: C.panel, color: C.textPrimary, textAlign: "center" }}>
+            <Paperclip size={30} color={C.green} />
+            <div style={{ fontSize: 17, fontWeight: 700, marginTop: 8 }}>Solte para anexar</div>
+            <div style={{ fontSize: 13, color: C.textSecondary, marginTop: 3 }}>
+              Foto, vídeo, áudio ou documento — pode soltar vários de uma vez.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {anexosPendentes.length > 0 && (() => {
+        const atual = anexosPendentes[Math.min(anexoAtivo, anexosPendentes.length - 1)] || anexosPendentes[0];
+        const trocarLegenda = (v) => setAnexosPendentes((antes) =>
+          antes.map((a, i) => (i === anexoAtivo ? { ...a, legenda: v } : a)));
+        return (
         <div onClick={fecharAnexoPendente} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,.85)", zIndex: 100, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: 20 }}>
           <button onClick={(e) => { e.stopPropagation(); fecharAnexoPendente(); }} title="Cancelar" style={{ position: "absolute", top: 16, right: 20, background: "transparent", border: "none", cursor: "pointer", color: "#fff", display: "flex" }}>
             <X size={28} />
           </button>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480, width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
-            {anexoPendente.tipo === "imagem" && <img src={anexoPendente.url} alt="prévia" style={{ maxWidth: "100%", maxHeight: "60vh", borderRadius: 8, objectFit: "contain" }} />}
-            {anexoPendente.tipo === "video" && <video src={anexoPendente.url} controls style={{ maxWidth: "100%", maxHeight: "60vh", borderRadius: 8 }} />}
-            {anexoPendente.tipo === "audio" && <audio src={anexoPendente.url} controls style={{ width: "100%" }} />}
-            {anexoPendente.tipo === "documento" && (
+            {atual.tipo === "imagem" && <img src={atual.url} alt="prévia" style={{ maxWidth: "100%", maxHeight: "50vh", borderRadius: 8, objectFit: "contain" }} />}
+            {atual.tipo === "video" && <video src={atual.url} controls style={{ maxWidth: "100%", maxHeight: "50vh", borderRadius: 8 }} />}
+            {atual.tipo === "audio" && <audio src={atual.url} controls style={{ width: "100%" }} />}
+            {atual.tipo === "documento" && (
               <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#fff", background: "rgba(255,255,255,.1)", borderRadius: 8, padding: "16px 20px" }}>
-                <FileText size={32} /> <span style={{ fontSize: 15 }}>{anexoPendente.nome}</span>
+                <FileText size={32} /> <span style={{ fontSize: 15 }}>{atual.nome}</span>
+              </div>
+            )}
+            {/* A TIRA DOS OUTROS ARQUIVOS. Só aparece havendo mais de um: com
+                um arquivo só ela seria uma fileira de um item, que não ajuda
+                ninguém e rouba altura da prévia. */}
+            {anexosPendentes.length > 1 && (
+              <div style={{ display: "flex", gap: 8, width: "100%", overflowX: "auto", paddingBottom: 4 }}>
+                {anexosPendentes.map((a, i) => (
+                  <div key={i} style={{ position: "relative", flex: "0 0 auto" }}>
+                    <button onClick={() => setAnexoAtivo(i)} title={a.nome}
+                      style={{ width: 58, height: 58, borderRadius: 8, overflow: "hidden", cursor: "pointer", padding: 0,
+                               border: `2px solid ${i === anexoAtivo ? C.green : "rgba(255,255,255,.25)"}`,
+                               background: "rgba(255,255,255,.1)", display: "grid", placeItems: "center" }}>
+                      {a.tipo === "imagem" ? <img src={a.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                       : a.tipo === "video" ? <video src={a.url} muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                       : <FileText size={22} color="#fff" />}
+                    </button>
+                    {/* Tirar um do lote sem perder os outros. */}
+                    <button onClick={(e) => { e.stopPropagation(); tirarAnexo(i); }} title={`Tirar ${a.nome}`}
+                      style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%",
+                               border: "none", background: "#333", color: "#fff", cursor: "pointer",
+                               display: "grid", placeItems: "center", fontSize: 12, lineHeight: 1 }}>×</button>
+                  </div>
+                ))}
               </div>
             )}
             <div style={{ display: "flex", alignItems: "flex-end", gap: 10, width: "100%", background: C.headerBar, borderRadius: 10, padding: "8px 12px" }}>
-              <input autoFocus value={legendaAnexo} onChange={(e) => setLegendaAnexo(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); confirmarEnviarAnexo(); } }} placeholder="Adicione uma legenda…" style={{ flex: 1, border: "none", outline: "none", background: "transparent", color: C.textPrimary, fontSize: 14.5, padding: "8px 4px" }} />
-              <button onClick={confirmarEnviarAnexo} title="Enviar" style={{ border: "none", background: C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 44, height: 44, borderRadius: "50%", flexShrink: 0 }}>
+              <input autoFocus value={atual.legenda || ""} onChange={(e) => trocarLegenda(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); confirmarEnviarAnexo(); } }}
+                placeholder={anexosPendentes.length > 1 ? `Legenda de ${atual.nome}…` : "Adicione uma legenda…"}
+                style={{ flex: 1, border: "none", outline: "none", background: "transparent", color: C.textPrimary, fontSize: 14.5, padding: "8px 4px" }} />
+              <button onClick={confirmarEnviarAnexo} title={anexosPendentes.length > 1 ? `Enviar os ${anexosPendentes.length}` : "Enviar"}
+                style={{ border: "none", background: C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, minWidth: 44, height: 44, borderRadius: 22, padding: "0 14px", flexShrink: 0 }}>
                 <Send size={20} color="#fff" />
+                {anexosPendentes.length > 1 && <span style={{ color: "#fff", fontWeight: 700, fontSize: 14 }}>{anexosPendentes.length}</span>}
               </button>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Toast discreto (avisos não bloqueantes) */}
       {aviso && (
