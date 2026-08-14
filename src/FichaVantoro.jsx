@@ -124,7 +124,7 @@ async function buscarCep(cep) {
   };
 }
 
-export default function FichaVantoro({ numero, nomeContato, C, estreito, onFechar, onAviso }) {
+export default function FichaVantoro({ numero, nomeContato, C, estreito, onFechar, onAviso, aoLigarCadastro }) {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [cliente, setCliente] = useState(null);
@@ -144,6 +144,31 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     });
   }
 
+  // O NOME DO CADASTRO PRECISA VOLTAR PARA O CONTATO DO ZORVIN.
+  //
+  // O título da conversa sai de `nomeDoContato`, que já prefere
+  // `contatos.vantoro_nome` ao nome que veio do WhatsApp. Só que esse campo era
+  // gravado num único lugar: na ponte, quando chega mensagem E a classificação
+  // em cache já venceu (sete dias). Quem preenchia a ficha aqui via o cadastro
+  // certo do lado direito e o apelido do WhatsApp — "Deus", "Eu", o nome da
+  // loja — continuar no cabeçalho por até uma semana.
+  //
+  // Agora a ficha grava na hora. É o mesmo campo, escrito pelo lado que acabou
+  // de saber o nome.
+  async function ligarContatoAoCadastro(dadosCliente) {
+    const nome = (dadosCliente?.nome || "").trim();
+    if (!numero || !nome) return;
+    const campos = { vantoro_nome: nome };
+    if (dadosCliente.id) campos.vantoro_cliente_id = dadosCliente.id;
+    // Instalação sem as colunas de vínculo: perder o vínculo é aceitável, a
+    // ficha ter falhado por causa dele não é. É a mesma tolerância que a ponte
+    // já tem do outro lado ao gravar.
+    const { error } = await supabase.from("contatos").update(campos).eq("numero", numero);
+    if (error && /vantoro_/i.test(error.message || "")) return;
+    if (error) return;
+    aoLigarCadastro && aoLigarCadastro({ numero, nome, clienteId: dadosCliente.id || null });
+  }
+
   async function buscar() {
     setCarregando(true);
     setErro("");
@@ -153,6 +178,10 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       if (r.opcoes?.estado_civil?.length) setOpcoes(r.opcoes);
       setCliente(achado);
       setEdicao(achado ? { ...achado } : {});
+      // Só ABRIR a ficha já conserta o nome da conversa. Sem isto, os contatos
+      // que ficaram para trás só se acertariam quando alguém os editasse — e
+      // ninguém edita uma ficha que já está certa.
+      if (achado) ligarContatoAoCadastro(achado);
     } catch (e) {
       setErro(e.message);
     } finally {
@@ -175,6 +204,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       });
       setCliente(r.cliente);
       setEdicao({ ...r.cliente });
+      await ligarContatoAoCadastro(r.cliente);
       onAviso && onAviso(r.criado ? "Pré-cadastro criado no Vantoro." : "Cliente já existia no Vantoro.");
     } catch (e) {
       onAviso && onAviso(e.message);
@@ -198,6 +228,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       });
       setCliente(r.cliente);
       setEdicao({ ...r.cliente });
+      await ligarContatoAoCadastro(r.cliente);
       onAviso && onAviso("Cadastro atualizado no Vantoro.");
     } catch (e) {
       onAviso && onAviso(e.message);

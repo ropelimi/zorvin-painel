@@ -5459,6 +5459,18 @@ export default function Painel({ sessao }) {
           estreito={estreito}
           onFechar={() => setFichaAberta(false)}
           onAviso={mostrarAviso}
+          // O cabeçalho da conversa muda NA HORA, sem recarregar a página. A
+          // ficha já gravou `vantoro_nome` no contato; aqui a lista em memória
+          // acompanha, senão a tela continuaria mostrando o apelido do
+          // WhatsApp até alguém atualizar o navegador.
+          aoLigarCadastro={({ numero, nome, clienteId }) => {
+            setConversas((prev) => prev.map((c) => (
+              c.contato && c.contato.numero === numero
+                ? { ...c, contato: { ...c.contato, vantoro_nome: nome,
+                                     vantoro_cliente_id: clienteId ?? c.contato.vantoro_cliente_id } }
+                : c
+            )));
+          }}
         />
       )}
 
