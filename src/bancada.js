@@ -657,7 +657,10 @@ function agregar({ desde, ate, quem }) {
     },
     antes: {
       atendimentos: anteriores.length, enviadas: mAntes.enviadas, recebidas: mAntes.recebidas,
-      existe: tamanho != null && antesDe >= Math.min(...ROTEIRO.map((a) => a.inicio)),
+      // O mesmo teto do SQL: acima de 92 dias a comparação não sai, porque
+      // calculá-la obrigaria a ler o dobro do período.
+      existe: tamanho != null && tamanho <= 92 * dia
+              && antesDe >= Math.min(...ROTEIRO.map((a) => a.inicio)),
     },
     por_periodo,
     por_hora: mapa,
