@@ -39,6 +39,18 @@ const BRIDGE_URL = (import.meta.env.VITE_BRIDGE_URL || "").replace(/\/$/, "");
 // Saíram os selos, as abas de filtro por grupo e o que só existia para
 // desenhá-los. As tags de verdade — as que se criam na tela de tags — continuam
 // intactas, e agora são as únicas coisas coloridas na lista.
+// O QUE CADA LINHA DO HISTÓRICO DIZ, em português de gente.
+//
+// Fica aqui fora, e não espalhado em `if`s no meio do desenho: quando aparecer
+// um tipo novo, é uma linha aqui — e um tipo desconhecido cai num texto
+// genérico em vez de mostrar o código cru para quem está atendendo.
+const RESUMO_ALTERACAO = {
+  cadastro: "alterou o cadastro do cliente",
+  nota_criada: "escreveu uma nota interna",
+  nota_editada: "editou uma nota interna",
+  nota_apagada: "apagou uma nota interna",
+};
+
 // COMO UM CONTATO SE CHAMA NA TELA.
 //
 // Sem nome salvo, mostra-se o número — mas GRUPO não tem número: a chave dele é
@@ -1014,6 +1026,10 @@ export default function Painel({ sessao }) {
   const [menuParaCima, setMenuParaCima] = useState(false); // o menu da bolha abre para cima?
   const [encaminhar, setEncaminhar] = useState(null);      // mensagem sendo encaminhada
   const [editando, setEditando] = useState(null);          // mensagem sendo editada
+  // Nota que está prestes a ser apagada (mostra a confirmação). Apagar sem
+  // perguntar seria irreversível num clique — e a lixeira fica ao lado do
+  // lápis, a três milímetros dele.
+  const [notaParaApagar, setNotaParaApagar] = useState(null);
   // MODO SELEÇÃO, como no WhatsApp: `null` = desligado; array = ids marcados.
   const [selecao, setSelecao] = useState(null);
   const [confirmarApagar, setConfirmarApagar] = useState(false);
@@ -1932,7 +1948,23 @@ export default function Painel({ sessao }) {
   // Só entram mensagens ENVIADAS (`origem = 'advogado'`). "Quem falou com o
   // cliente" é sobre nós; o que ele mandou está na conversa.
   async function carregarHistorico(contatoId) {
-    setHistorico({ carregando: true, linhas: [], erro: "", parcial: false });
+    setHistorico({ carregando: true, linhas: [], erro: "", parcial: false, alteracoes: [] });
+
+    // O HISTÓRICO DE ALTERAÇÕES, direto do banco. É do escritório inteiro e
+    // não passa pela ponte: são linhas do Zorvin, não do Vantoro, e a regra de
+    // leitura já libera para quem está dentro.
+    //
+    // Vai numa promessa à parte, sem `await` travando o resto: se esta tabela
+    // não existir (SQL não rodado), a lista de telefones continua aparecendo.
+    supabase.from("alteracoes")
+      .select("tipo, alvo, antes, depois, autor, criado_em")
+      .eq("contato_id", contatoId)
+      .order("criado_em", { ascending: false })
+      .limit(80)
+      .then(({ data, error }) => {
+        if (error) return;
+        setHistorico((h) => (h ? { ...h, alteracoes: data || [] } : h));
+      });
 
     // PELA PONTE, e não direto do banco.
     //
@@ -1957,7 +1989,9 @@ export default function Painel({ sessao }) {
         ultima: l.ultima || null,
       }));
       linhas.sort((a, b) => new Date(b.ultima?.criado_em || 0) - new Date(a.ultima?.criado_em || 0));
-      setHistorico({ carregando: false, linhas, erro: "", parcial: false });
+      // Forma funcional: as alterações chegam por outra promessa, e trocar o
+      // objeto inteiro aqui apagaria as que já tivessem chegado.
+      setHistorico((h) => ({ ...(h || {}), carregando: false, linhas, erro: "", parcial: false }));
       return;
     } catch (_e) {
       // A ponte dorme no plano gratuito e pode demorar a acordar. Em vez de
@@ -1969,8 +2003,8 @@ export default function Painel({ sessao }) {
     const { data: convs, error } = await supabase.from("conversas")
       .select("id, advogado_id").eq("contato_id", contatoId);
     if (error) {
-      setHistorico({ carregando: false, linhas: [], parcial: false,
-                     erro: "Não consegui ler o histórico." });
+      setHistorico((h) => ({ ...(h || {}), carregando: false, linhas: [], parcial: false,
+                             erro: "Não consegui ler o histórico." }));
       return;
     }
     const pontas = (v, crescente) => supabase.from("mensagens")
@@ -1991,7 +2025,7 @@ export default function Painel({ sessao }) {
     // O telefone com movimento mais recente primeiro: é onde a conversa está
     // viva, e é a linha que quase sempre se procura.
     linhas.sort((a, b) => new Date(b.ultima?.criado_em || 0) - new Date(a.ultima?.criado_em || 0));
-    setHistorico({ carregando: false, linhas, erro: "", parcial: true });
+    setHistorico((h) => ({ ...(h || {}), carregando: false, linhas, erro: "", parcial: true }));
   }
 
   // "Ver a conversa" de uma linha do histórico: troca para aquele telefone e
@@ -2859,6 +2893,7 @@ export default function Painel({ sessao }) {
       else if (audioPronto) descartarAudioPronto();
       else if (confirmarApagar) setConfirmarApagar(false);
       else if (selecao) setSelecao(null);
+      else if (notaParaApagar) setNotaParaApagar(null);
       else if (editando) cancelarEdicao();
       else if (encaminhar) setEncaminhar(null);
       else if (rostoAberto) { setRostoAberto(null); setReagindoTudo(false); }
@@ -2892,7 +2927,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, telaPainel, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId]);
+  }, [confirmarApagar, notaParaApagar, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, telaPainel, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -3240,6 +3275,13 @@ export default function Painel({ sessao }) {
     const m = editando;
     const novo = rascunho.trim();
     if (!m) return;
+    // NOTA INTERNA segue por outro caminho: ela não passa pelo WhatsApp, então
+    // não tem prazo de edição nem fila de envio. É o mesmo botão e a mesma
+    // caixa — o desvio é só aqui, para não haver duas telas de edição.
+    if (m.origem === "nota") {
+      if (!novo) { mostrarAviso("A nota não pode ficar vazia."); return; }
+      return salvarEdicaoDeNota(m, novo);
+    }
     if (!novo) { mostrarAviso("A mensagem não pode ficar vazia."); return; }
     // Segunda trava: entre abrir o menu e apertar Enter o prazo pode ter
     // vencido. Sem ela, a mensagem sairia como notificação fantasma no celular
@@ -3495,6 +3537,76 @@ export default function Painel({ sessao }) {
     marcarLida(conversaId);
   }
 
+  /** Guarda uma linha no histórico de alterações. Nunca derruba a ação que a
+      gerou: histórico perdido é ruim, atendente travado é pior. */
+  async function registrarAlteracao(linha) {
+    try {
+      const { error } = await supabase.from("alteracoes").insert({
+        contato_id: conversa?.contato_id || conversa?.contato?.id || null,
+        conversa_id: conversaId,
+        autor: meuNome, autor_id: meuId,
+        ...linha,
+      });
+      // Base sem o SQL de agosto/2026: o recurso fica dormente, sem encher o
+      // log do Postgres de erro a cada nota escrita.
+      if (error && /alteracoes/i.test(error.message || "")) return;
+    } catch (_) { /* histórico é um extra */ }
+  }
+
+  // QUEM PODE MEXER NUMA NOTA: quem a escreveu, e quem administra.
+  //
+  // Editar a nota de outra pessoa é reescrever o que ela disse ter combinado
+  // com o cliente — e a nota é justamente onde isso fica registrado. Apagar
+  // segue a mesma regra, e mesmo assim deixa lápide: some o texto, fica quem
+  // apagou.
+  function podeMexerNaNota(m) {
+    if (!m || m.origem !== "nota" || m.apagada_em) return false;
+    if (souAdmin) return true;
+    if (m.autor_id && meuId) return String(m.autor_id) === String(meuId);
+    return (m.autor || "") === meuNome;
+  }
+
+  async function salvarEdicaoDeNota(m, novoTexto) {
+    const antes = m.texto || "";
+    if (novoTexto === antes) { cancelarEdicao(); return; }
+    setEditando(null);
+    setRascunho("");
+    setMensagens((prev) => prev.map((x) => (
+      x.id === m.id ? { ...x, texto: novoTexto, editada_em: new Date().toISOString(),
+                        editada_por: meuNome } : x)));
+    // O id na tabela não tem o prefixo "nota-" que a tela põe para as duas
+    // linhas do tempo não colidirem.
+    const idReal = String(m.id).replace(/^nota-/, "");
+    const { error } = await supabase.from("notas")
+      .update({ texto: novoTexto, editada_em: new Date().toISOString(), editada_por: meuNome })
+      .eq("id", idReal);
+    if (error) {
+      setMensagens((prev) => prev.map((x) => (x.id === m.id ? { ...x, texto: antes } : x)));
+      mostrarAviso("Não consegui editar a nota. Tente de novo.");
+      return;
+    }
+    registrarAlteracao({ tipo: "nota_editada", alvo: idReal, antes, depois: novoTexto });
+  }
+
+  async function apagarNota(m) {
+    const idReal = String(m.id).replace(/^nota-/, "");
+    const agora = new Date().toISOString();
+    setMensagens((prev) => prev.map((x) => (
+      x.id === m.id ? { ...x, apagada_em: agora, apagada_por: meuNome } : x)));
+    // O TEXTO NÃO É LIMPO no banco. Some da tela; continua guardado. Quem
+    // apaga não decide sozinho que o escritório perde o que estava escrito.
+    const { error } = await supabase.from("notas")
+      .update({ apagada_em: agora, apagada_por: meuNome, apagada_por_id: meuId })
+      .eq("id", idReal);
+    if (error) {
+      setMensagens((prev) => prev.map((x) => (
+        x.id === m.id ? { ...x, apagada_em: null, apagada_por: null } : x)));
+      mostrarAviso("Não consegui apagar a nota. Tente de novo.");
+      return;
+    }
+    registrarAlteracao({ tipo: "nota_apagada", alvo: idReal, antes: m.texto || "", depois: null });
+  }
+
   // Salva uma NOTA INTERNA (comentário da equipe). Não vai para o WhatsApp:
   // grava direto na tabela "notas", que só o painel enxerga.
   async function enviarNota() {
@@ -3509,7 +3621,12 @@ export default function Painel({ sessao }) {
       texto: t, autor: meuNome, autor_foto: minhaFoto, criado_em: new Date().toISOString(), _status: "enviando",
     };
     setMensagens((prev) => [...prev, provisoria].sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em)));
-    let { error } = await supabase.from("notas").insert({ conversa_id: conversaId, texto: t, autor: meuNome, autor_foto: minhaFoto });
+    let { error } = await supabase.from("notas").insert({ conversa_id: conversaId, texto: t, autor: meuNome, autor_foto: minhaFoto, autor_id: meuId });
+    // Base sem a coluna nova: grava sem ela. Quem pode mexer na nota cai para
+    // a comparação por nome, que é o que havia antes.
+    if (error && /autor_id/i.test(error.message || "")) {
+      ({ error } = await supabase.from("notas").insert({ conversa_id: conversaId, texto: t, autor: meuNome, autor_foto: minhaFoto }));
+    }
     if (error && /autor_foto/i.test(error.message || "")) {
       // Coluna de foto ainda não existe: salva a nota sem ela.
       ({ error } = await supabase.from("notas").insert({ conversa_id: conversaId, texto: t, autor: meuNome }));
@@ -4980,13 +5097,51 @@ export default function Painel({ sessao }) {
                             <span style={{ fontSize: 12.5, fontWeight: 700, color: corNome(m.autor, modo) }}>{m.autor || "equipe"}</span>
                             <span style={{ fontSize: 11, color: C.textSecondary }}>• {horaCurta(m.criado_em)}</span>
                           </div>
-                          <div style={{ background: "#a35e0c", color: "#fff", borderRadius: 8, padding: "7px 11px 6px", boxShadow: "0 1px 0.5px rgba(0,0,0,.2)", minWidth: 120 }}>
+                          {/* A NOTA APAGADA VIRA LÁPIDE, e não some da conversa.
+                              Nota interna é onde fica registrado o que se
+                              combinou com o cliente; uma que desaparece sem
+                              rastro vira "eu jurava que tinha anotado". O texto
+                              sai da tela — mas quem apagou, e quando, ficam.
+                              A bolha perde a cor: o laranja é para o que se lê,
+                              e ali não há mais nada para ler. */}
+                          {m.apagada_em ? (
+                            <div style={{ background: C.bubbleIn, color: C.textSecondary, borderRadius: 8,
+                                          padding: "7px 11px 6px", border: `1px dashed ${C.divider}`,
+                                          minWidth: 120, fontSize: 13, fontStyle: "italic",
+                                          display: "flex", alignItems: "center", gap: 6 }}>
+                              <Trash2 size={13} />
+                              Nota interna apagada por {m.apagada_por || "alguém"} · {horaCurta(m.apagada_em)}
+                            </div>
+                          ) : (
+                          <div style={{ position: "relative", background: "#a35e0c", color: "#fff", borderRadius: 8, padding: "7px 11px 6px", boxShadow: "0 1px 0.5px rgba(0,0,0,.2)", minWidth: 120 }}>
                             <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 1 }}>{m.autor || "equipe"}:</div>
                             <div style={{ fontSize: 14, lineHeight: 1.35, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{formatarTexto(m.texto, "#fff3d6")}</div>
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, fontSize: 10.5, color: "rgba(255,255,255,.85)", marginTop: 3 }}>
+                              {/* "editada" fica junto do horário, como nas
+                                  mensagens: quem lê precisa saber que o que
+                                  está ali não é o que foi escrito primeiro. */}
+                              {m.editada_em && <span title={`Editada por ${m.editada_por || "alguém"}`}>editada ·</span>}
                               <StickyNote size={11} /> Mensagem interna{m._status === "enviando" ? " · salvando…" : ""}
                             </div>
+                            {/* O menu aparece ao passar o rato, como o das
+                                mensagens. Só para quem pode mexer — oferecer e
+                                depois recusar é pior do que não oferecer. */}
+                            {podeMexerNaNota(m) && !m._status && (
+                              <span style={{ position: "absolute", top: 2, right: 4, display: "flex", gap: 2 }}>
+                                <button onClick={() => { setRespondendo(null); setModoNota(false); setEditando(m); setRascunho(m.texto || ""); setTimeout(() => inputRef.current?.focus(), 0); }}
+                                        title="Editar nota"
+                                        style={{ border: "none", background: "transparent", cursor: "pointer", color: "rgba(255,255,255,.75)", padding: 3, display: "flex", minHeight: 24, minWidth: 24, alignItems: "center", justifyContent: "center" }}>
+                                  <Pencil size={13} />
+                                </button>
+                                <button onClick={() => setNotaParaApagar(m)}
+                                        title="Apagar nota"
+                                        style={{ border: "none", background: "transparent", cursor: "pointer", color: "rgba(255,255,255,.75)", padding: 3, display: "flex", minHeight: 24, minWidth: 24, alignItems: "center", justifyContent: "center" }}>
+                                  <Trash2 size={13} />
+                                </button>
+                              </span>
+                            )}
                           </div>
+                          )}
                         </div>
                         <div style={{ width: 28, flexShrink: 0 }}><Avatar nome={m.autor || "equipe"} foto={m.autor_foto || (m.autor === meuNome ? minhaFoto : null)} size={28} /></div>
                       </div>
@@ -5492,6 +5647,43 @@ export default function Painel({ sessao }) {
           <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
             {historico.carregando && <div style={{ fontSize: 13, color: C.textSecondary }}>Levantando…</div>}
             {!!historico.erro && <div style={{ fontSize: 13, color: C.textSecondary }}>{historico.erro}</div>}
+            {/* ALTERAÇÕES — quem mexeu no quê.
+                Vem ANTES da lista de telefones e FORA do bloco dela, de
+                propósito: pode haver alteração de cadastro num cliente com
+                quem ninguém trocou mensagem ainda, e naquele bloco a lista
+                sairia com um "ninguém enviou mensagem" e mais nada. */}
+            {!historico.carregando && !!(historico.alteracoes || []).length && (
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ fontSize: 11, color: C.textSecondary, fontWeight: 700, letterSpacing: 0.3, textTransform: "uppercase", marginBottom: 8 }}>
+                  Alterações ({historico.alteracoes.length})
+                </div>
+                {historico.alteracoes.map((a, i) => (
+                  <div key={i} style={{ display: "flex", gap: 9, marginBottom: 10 }}>
+                    <div style={{ marginTop: 2 }}><Avatar nome={a.autor || "equipe"} size={28} /></div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 13.5, lineHeight: 1.45 }}>
+                        <b>{a.autor || "alguém"}</b> {RESUMO_ALTERACAO[a.tipo] || "mexeu no cadastro"}
+                        {a.tipo === "cadastro" && a.alvo && (
+                          <> — <span style={{ color: C.textSecondary }}>{a.alvo}</span></>
+                        )}
+                      </div>
+                      {/* O DE-PARA, quando há. É a diferença entre "alguém
+                          mexeu no telefone" e "alguém trocou este telefone por
+                          aquele" — e é a segunda que responde a pergunta. */}
+                      {(a.antes || a.depois) && (
+                        <div style={{ fontSize: 12.5, color: C.textSecondary, marginTop: 2, lineHeight: 1.45, overflowWrap: "anywhere" }}>
+                          {a.antes ? <s>{a.antes}</s> : <i>(vazio)</i>}
+                          {" → "}
+                          {a.depois ? a.depois : <i>(apagado)</i>}
+                        </div>
+                      )}
+                      <div style={{ fontSize: 11.5, color: C.textSecondary, marginTop: 2 }}>{dataHoraDe(a.criado_em)}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {!historico.carregando && !historico.erro && (() => {
               const comEnvio = historico.linhas.filter((l) => l.primeira);
               // A PRIMEIRA e a ÚLTIMA de todas: a conta é entre os
@@ -6096,6 +6288,34 @@ export default function Painel({ sessao }) {
           conversa e encaminha de lá. */}
       {/* AS TRÊS OPÇÕES, depois de escolher as mensagens. Perguntar aqui e não
           no menu é o que permite marcar cinco e responder uma vez só. */}
+      {notaParaApagar && (
+        <div onClick={() => setNotaParaApagar(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 95,
+                   display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()}
+            style={{ width: 380, maxWidth: "100%", background: C.panel, border: `1px solid ${C.divider}`,
+                     borderRadius: 12, padding: "20px 22px", boxShadow: "0 10px 40px rgba(0,0,0,.45)" }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: C.textPrimary }}>Apagar esta nota interna?</div>
+            <div style={{ fontSize: 13.5, color: C.textSecondary, marginTop: 8, lineHeight: 1.5 }}>
+              A conversa vai passar a mostrar que a nota foi apagada, e por quem.
+              Fica registrado no histórico do cliente.
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 20 }}>
+              <button onClick={() => { const n = notaParaApagar; setNotaParaApagar(null); apagarNota(n); }}
+                style={{ border: `1px solid ${C.divider}`, background: "transparent", color: "#e53935",
+                         borderRadius: 8, padding: "11px 16px", fontSize: 14.5, fontWeight: 600, cursor: "pointer" }}>
+                Apagar a nota
+              </button>
+              <button onClick={() => setNotaParaApagar(null)}
+                style={{ border: "none", background: "transparent", color: C.textSecondary,
+                         borderRadius: 8, padding: "9px 16px", fontSize: 14, cursor: "pointer" }}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {confirmarApagar && (
         <div onClick={() => setConfirmarApagar(false)}
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 95,
