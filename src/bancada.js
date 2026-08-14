@@ -495,18 +495,25 @@ const media = (v) => (v.length ? v.reduce((a, b) => a + b, 0) / v.length : null)
 const soDia = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d; };
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
-function agregar({ desde, ate, quem }) {
+function agregar({ desde, ate, quem, telefone, departamento }) {
   const t0 = desde ? new Date(desde).getTime() : -Infinity;
   const t1 = ate ? new Date(ate).getTime() : Date.now();
   const agora = Date.now(), janela = JANELA_H * 3600e3;
   const meu = (a) => !quem || (a.dono && a.dono.id === quem);
 
-  const noPeriodo = ROTEIRO.filter((a) => a.inicio >= t0 && a.inicio <= t1);
+  // OS RECORTES DE LUGAR entram antes de tudo, como no banco: um telefone, ou
+  // todos os telefones de um departamento.
+  const doDep = new Map(ADVOGADOS.map((a) => [String(a.id), String(a.departamento_id)]));
+  const lugar = (advId) =>
+    (!telefone || String(advId) === String(telefone)) &&
+    (!departamento || doDep.get(String(advId)) === String(departamento));
+
+  const noPeriodo = ROTEIRO.filter((a) => a.inicio >= t0 && a.inicio <= t1 && lugar(a.adv));
   const meus = noPeriodo.filter(meu);
   const tamanho = t0 === -Infinity ? null : t1 - t0;
   const antesDe = tamanho == null ? null : t0 - tamanho;
   const anteriores = tamanho == null ? [] :
-    ROTEIRO.filter((a) => a.inicio >= antesDe && a.inicio < t0).filter(meu);
+    ROTEIRO.filter((a) => a.inicio >= antesDe && a.inicio < t0 && lugar(a.adv)).filter(meu);
 
   // ---- mensagens ----
   const conta = (de, ateQuando, comEscopo) => {
@@ -516,6 +523,7 @@ function agregar({ desde, ate, quem }) {
       const t = new Date(m.criado_em).getTime();
       if (t < de || t > ateQuando) continue;
       const a = ROTEIRO[ATEND_DA_MSG.get(m.id)];
+      if (!lugar(TEL_DA_CONVERSA.get(String(m.conversa_id)))) continue;
       const enviada = m.origem === "advogado";
       const rotulo = (m.enviado_por || "").trim();
       const ehAparelho = rotulo === "WhatsApp";
@@ -579,6 +587,7 @@ function agregar({ desde, ate, quem }) {
   for (const msg of MENSAGENS) {
     const t = new Date(msg.criado_em).getTime();
     if (t < t0 || t > t1) continue;
+    if (!lugar(TEL_DA_CONVERSA.get(String(msg.conversa_id)))) continue;
     const a = ROTEIRO[ATEND_DA_MSG.get(msg.id)];
     const enviada = msg.origem === "advogado";
     if (quem) {
@@ -638,6 +647,7 @@ function agregar({ desde, ate, quem }) {
   return {
     de: desde || null, ate: new Date(t1).toISOString(), fuso: "bancada", passo,
     janela_horas: JANELA_H, so_meu: !!quem, quem: quem || null,
+    telefone: telefone || null, departamento: departamento || null,
     total: {
       atendimentos: meus.length,
       aguardando: meus.filter((a) => a.espera == null).length,
@@ -689,10 +699,13 @@ export const ESPERADO = {
   telefoneMudo: ADVOGADOS[ADVOGADOS.length - 1].nome,
   janelaHoras: JANELA_H,
   /** O mesmo que a tela vai pedir, para o teste comparar número a número. */
-  painel: (dias, quem) => agregar({
+  painel: (dias, quem, telefone, departamento) => agregar({
     desde: dias == null ? null : new Date(Date.now() - dias * dia).toISOString(),
-    ate: null, quem: quem || null,
+    ate: null, quem: quem || null, telefone: telefone || null,
+    departamento: departamento || null,
   }),
+  telefones: ADVOGADOS.map((a) => ({ id: a.id, nome: a.nome, departamento_id: a.departamento_id })),
+  departamentos: DEPARTAMENTOS.map((x) => ({ id: x.id, nome: x.nome })),
 };
 if (typeof globalThis !== "undefined") globalThis.__ESPERADO = ESPERADO;
 
@@ -709,7 +722,11 @@ export const supabase = {
     // escolhe. A função de verdade faz o mesmo, com `zorvin_admin()`.
     const souAdmin = !!(TABELAS.usuarios[0] && TABELAS.usuarios[0].admin);
     const quem = souAdmin ? (args && args.p_quem) || null : (TABELAS.usuarios[0] || {}).id || null;
-    return { data: agregar({ desde: args && args.p_desde, ate: args && args.p_ate, quem }), error: null };
+    return { data: agregar({
+      desde: args && args.p_desde, ate: args && args.p_ate, quem,
+      telefone: (args && args.p_telefone) || null,
+      departamento: (args && args.p_departamento) || null,
+    }), error: null };
   },
   auth: {
     getSession: async () => ({ data: { session: { access_token: "jwt-de-mentira", user: { id: "u1", email: "rodrigo@ropelimi",
