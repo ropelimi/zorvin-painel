@@ -61,12 +61,21 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase";
 import { ArrowLeft, RefreshCw, AlertCircle, Table2, BarChart3, Info } from "lucide-react";
 
-/** Períodos oferecidos. `dias: null` = tudo o que existe. */
+// OS PERÍODOS SÃO TODOS LIMITADOS, e o maior é um ano.
+//
+// Havia um "Tudo" aqui. Ele derrubava a tela: a API do Supabase corta qualquer
+// consulta em 8 segundos, e percorrer o histórico inteiro procurando os
+// silêncios de 6 horas passa disso numa base de porte real. A tela abria com
+// "canceling statement due to statement timeout".
+//
+// Um botão que às vezes explode é pior do que um botão a menos — e um ano é
+// mais do que se usa para decidir qualquer coisa nesta tela. Se um dia a base
+// permitir, o "Tudo" volta com uma linha.
 const PERIODOS = [
   { chave: "7", rotulo: "7 dias", dias: 7 },
   { chave: "30", rotulo: "30 dias", dias: 30 },
   { chave: "90", rotulo: "90 dias", dias: 90 },
-  { chave: "tudo", rotulo: "Tudo", dias: null },
+  { chave: "365", rotulo: "12 meses", dias: 365 },
 ];
 
 const DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
