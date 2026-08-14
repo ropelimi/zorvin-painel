@@ -215,6 +215,51 @@ if (typeof globalThis !== "undefined") {
   if (globalThis.__TEM_FUNCAO_PAINEL === undefined) globalThis.__TEM_FUNCAO_PAINEL = true;
 }
 
+// O CASO DO APELIDO DO WHATSAPP.
+//
+// O contato mandou mensagem e o WhatsApp devolveu o nome que ELE escreveu no
+// aparelho — "Deus". Depois alguém preencheu a ficha no Vantoro com o nome de
+// verdade, e o cabeçalho da conversa continuou mostrando o apelido.
+//
+// `vantoro_nome` começa NULO de propósito: é esse estado que a tela precisa
+// consertar. Começando preenchido, o teste passaria sem que nada funcionasse.
+const APELIDO = {
+  id: "ct-apelido",
+  nome: "Deus",
+  numero: "5567992183107",
+  vantoro_nome: null,
+  vantoro_cliente_id: null,
+  foto_url: null,
+};
+// O nome que está no cadastro do Vantoro, e que o teste espera ver no
+// cabeçalho depois de abrir a ficha.
+export const NOME_NO_VANTORO = "ANDREIA CRISTINA MARTINS";
+
+// Entra como uma conversa NOVA, e não por cima de uma existente. Reaproveitar
+// uma conversa que já estava ali mudaria o que os outros testes da bancada
+// encontram — e um teste que quebra por causa do vizinho não diz nada sobre o
+// que ele deveria estar medindo.
+//
+// No telefone que o painel ABRE: ele pede os telefones com `.order("nome")` e
+// abre o primeiro, que por ordem alfabética é "Acordos 1" e não o primeiro do
+// array. Preso ao índice 0, o contato de prova nascia numa conversa que a tela
+// não mostrava.
+//
+// `nao_lidas: 0` para não mexer nos contadores que outros testes conferem.
+const PRIMEIRO_TELEFONE = ADVOGADOS.slice()
+  .sort((a, b) => a.nome.localeCompare(b.nome))[0];
+CONVERSAS.push({
+  id: `${PRIMEIRO_TELEFONE.id}-apelido`,
+  advogado_id: PRIMEIRO_TELEFONE.id,
+  contato_id: APELIDO.id,
+  nao_lidas: 0,
+  arquivada: false, fixada: false, favorita: false,
+  ultima_atividade: new Date().toISOString(),
+  ultima_mensagem: "Boa tarde, tudo bem?",
+  frente: null, vantoro_nome: null, digitando_ate: null,
+  contato: { ...APELIDO },
+});
+
 const TABELAS = {
   advogados: ADVOGADOS,
   departamentos: DEPARTAMENTOS,
@@ -226,9 +271,14 @@ const TABELAS = {
   // do cadastro.
   usuarios: [{ id: "u1", admin: true, nome: "Rodrigo Sousa" }],
   permissoes: [],            // vazio + admin = alcança tudo
-  mensagens: MENSAGENS, contatos: [], notas: NOTAS, tags: [], conversa_tags: [],
+  mensagens: MENSAGENS, contatos: [{ ...APELIDO }], notas: NOTAS, tags: [], conversa_tags: [],
   mensagens_rapidas: [], figurinhas_favoritas: [], fila_envio: [],
 };
+
+// O teste lê a tabela de contatos daqui para conferir o que foi GRAVADO, e não
+// só o que apareceu na tela. Uma tela que mostra o nome certo sem ter gravado
+// nada volta ao apelido no próximo carregamento.
+if (typeof globalThis !== "undefined") globalThis.__TABELAS = TABELAS;
 
 /** Compara número com número e texto com texto. Data em ISO ordena sozinha
     como texto, que é o que o Postgres faz com `timestamptz` de qualquer jeito. */
@@ -242,7 +292,7 @@ function comparar(a, b) {
 /** Uma consulta encadeável que devolve sempre `{data, error}` no final. */
 function consulta(tabela) {
   let linhas = (TABELAS[tabela] || []).slice();
-  let inicio = 0, corte = Infinity;
+  let inicio = 0, corte = Infinity, patch = null;
   const eu = {
     select() { return eu; },
     eq(col, val) { linhas = linhas.filter((l) => String(l[col]) === String(val)); return eu; },
@@ -293,10 +343,28 @@ function consulta(tabela) {
       linhas = novos;
       return eu;
     },
-    update(reg) { linhas = linhas.map((l) => Object.assign(l, reg)); return eu; },
+    // GRAVA SÓ NO FIM, e não no instante da chamada. O painel escreve
+    // `update(campos).eq("numero", n)` — o filtro vem DEPOIS do update, e o
+    // Supabase de verdade aplica os dois juntos. Aplicando na hora, a bancada
+    // gravava em TODAS as linhas e depois filtrava, o que faria um teste passar
+    // mesmo se o painel esquecesse o filtro e reescrevesse o cadastro inteiro.
+    update(reg) { patch = { ...(patch || {}), ...reg }; return eu; },
     delete() { return eu; },
     async then(resolver) {
       if (tabela === "conversas") await espera(ATRASO_CONVERSAS);
+      if (patch) linhas.forEach((l) => Object.assign(l, patch));
+      // O "join" com contatos, refeito na hora. No Supabase a lista de
+      // conversas traz o contato por junção, então uma gravação em `contatos`
+      // aparece na consulta seguinte. Aqui o contato era uma CÓPIA presa à
+      // conversa, e a lista continuava mostrando o nome velho depois de o
+      // cadastro ter sido gravado — a bancada mentia a favor do defeito.
+      if (tabela === "conversas") {
+        for (const l of linhas) {
+          if (!l.contato || !l.contato.numero) continue;
+          const atual = (TABELAS.contatos || []).find((c) => c.numero === l.contato.numero);
+          if (atual) l.contato = { ...l.contato, ...atual };
+        }
+      }
       // O teto entra AQUI, no fim, igual à API de verdade: depois de filtrar e
       // ordenar, e sem avisar ninguém de que sobrou coisa para trás.
       const fatia = linhas.slice(inicio, inicio + Math.min(corte, LIMITE_LINHAS));
@@ -371,7 +439,7 @@ export const supabase = {
              error: null };
   },
   auth: {
-    getSession: async () => ({ data: { session: { user: { id: "u1", email: "rodrigo@ropelimi",
+    getSession: async () => ({ data: { session: { access_token: "jwt-de-mentira", user: { id: "u1", email: "rodrigo@ropelimi",
       // O nome VELHO, congelado na criação da conta. Se a tela mostrar este,
       // a correção não funcionou.
       user_metadata: { nome: "rodrigo" } } } } }),
