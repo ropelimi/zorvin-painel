@@ -79,20 +79,35 @@ for (const adv of ADVOGADOS) {
   }
 }
 
-// MENSAGENS — para o Painel ter o que contar.
+// MENSAGENS — e, antes delas, ATENDIMENTOS.
 //
 // A primeira versão disto tinha 300 mensagens, três autores certinhos e o
 // valor "cliente" em `origem`. Passava em tudo e não provava nada: o banco de
 // verdade tem MILHARES de linhas, `origem` é "contato", as notas moram noutra
-// tabela, e há mensagem enviada que não é de atendente nenhum. Agora a bancada
-// tem os quatro problemas.
+// tabela, e há mensagem enviada que não é de atendente nenhum.
 //
-// 1. VOLUME acima do teto de linhas que a API do Supabase devolve (ver
-//    LIMITE_LINHAS). É o que quebra qualquer contagem feita baixando tudo.
+// A segunda versão consertou isso e criou outro problema: todas as mensagens
+// de uma conversa nasciam no MESMO instante (`Date.now() - (k % 3) * dia`).
+// Serve para contar mensagem; não serve para nada que dependa de TEMPO. Numa
+// base assim, uma conversa inteira é um atendimento só, o tempo de resposta é
+// sempre zero e o mapa de horários tem uma coluna. O Painel novo teria passado
+// em todos os testes sem que uma linha dele estivesse certa.
+//
+// AGORA A BANCADA É CONSTRUÍDA AO CONTRÁRIO: primeiro um ROTEIRO de
+// atendimentos — este começou terça às 9h, esperou 15 minutos por resposta,
+// teve três idas e vindas, quem atendeu foi a Camila —, e as mensagens NASCEM
+// dele. O esperado é o roteiro, e não uma segunda contagem que poderia repetir
+// o mesmo engano da primeira.
+//
+// O que ela continua tendo, porque tudo isso é real:
+//
+// 1. VOLUME acima do teto de linhas da API do Supabase (ver LIMITE_LINHAS).
 // 2. `origem` com os valores REAIS: "contato" e "advogado".
 // 3. NOTAS na tabela `notas` — nunca em `mensagens`.
-// 4. "WhatsApp" em `enviado_por`: é o rótulo que a ponte grava quando a
-//    mensagem saiu pelo aparelho, fora do Zorvin. Não é uma pessoa.
+// 4. "WhatsApp" em `enviado_por`: mensagem que saiu pelo aparelho. Não é gente.
+// 5. Rótulo de importação assinando mensagem. Também não é gente.
+// 6. Atendente antigo sem id, contado só pelo nome.
+// 7. Um telefone MUDO, e atendimentos que ninguém respondeu.
 const AUTORES = [
   { id: "u1", nome: "Rodrigo Sousa" },
   { id: "u2", nome: "Camila Souza" },
@@ -102,116 +117,173 @@ const AUTORES = [
 // RÓTULO QUE NÃO É PESSOA. O importador de histórico assina as mensagens
 // enviadas com o nome da LINHA como estava salvo no celular de quem exportou.
 // Isso entrava na lista de atendentes como se fosse um colega, e no topo,
-// porque são milhares. Marcado no de-para, sai do ranking sem sumir da conta.
+// porque são milhares.
 const ROTULOS_NAO_PESSOA = ["Cadastro - C&A", "Atendimento Estratégico"];
+const APARELHO = { id: null, nome: "WhatsApp", aparelho: true };
 
+// A MESMA JANELA DA FUNÇÃO DE VERDADE. Todo atendimento do roteiro cabe em
+// menos de 3 horas e dois atendimentos nunca caem no mesmo dia da mesma
+// conversa — então cada um é, de fato, um atendimento só.
+const JANELA_H = 6;
 const dia = 86400e3;
 const MENSAGENS = [];
 const NOTAS = [];
-// O que a bancada CONTÉM, contado enquanto se monta — não pelo mesmo caminho
-// que a tela usa. É contra isto que o teste compara.
-export const ESPERADO = {
-  recebidas7: 0, enviadas7: 0, notas7: 0, semId7: 0, aparelho7: 0,
-  recebidasTudo: 0, enviadasTudo: 0,
-  porTelefone: {},       // id do advogado -> {recebidas, enviadas}
-  porTelefoneNome: {},   // o mesmo, pelo NOME — que é o que a tela mostra
-  porAutor: {},          // nome de GENTE -> enviadas ("WhatsApp" fica de fora)
-  porRotulo: {},         // rótulo que NÃO é gente -> enviadas
-  rotulos7: 0,
-  // Um autor de cada tipo, para o teste não precisar cravar nome nenhum. Um
-  // nome escrito à mão no teste vira reprovação falsa no dia em que a bancada
-  // muda — foi o que aconteceu ao trocar "Rodrigo Alves" por "Rodrigo Sousa".
-  autorComId: AUTORES.find((a) => a.id)?.nome || null,
-  autorSemId: AUTORES.find((a) => !a.id)?.nome || null,
-};
+const ROTEIRO = [];
+// Qual atendimento cada mensagem integra. Fica de fora da linha de `mensagens`
+// de propósito: a tabela de verdade não tem esta coluna, e o painel não pode
+// aprender a depender dela.
+const ATEND_DA_MSG = new Map();
 
-let giro = 0;
+// Espera (segundos) até a primeira resposta, e tempo de cada resposta seguinte.
+// Listas fixas: o teste precisa de mediana previsível, e `Math.random()` faria
+// a bancada mudar de resposta entre duas execuções do mesmo teste.
+const ESPERAS = [60, 300, 900, 1800, 3600];
+const RESPOSTAS = [30, 120, 600, 1500];
+
+/** Um instante a `dias` atrás, na `hora` cheia, no relógio de quem está
+    olhando — que é o mesmo relógio que o teste usa para conferir. */
+function quando(dias, hora) {
+  const d = new Date();
+  d.setDate(d.getDate() - dias);
+  d.setHours(hora, 0, 0, 0);
+  return d;
+}
+
+/** Escreve um atendimento no roteiro E as mensagens dele. */
+function atendimento({ adv, conversa, dias, hora, autor, espera, pares, resposta }) {
+  const idx = ROTEIRO.length;
+  const t0 = quando(dias, hora).getTime();
+  const põe = (origem, quem, t) => {
+    const id = `m-${idx}-${MENSAGENS.length}`;
+    MENSAGENS.push({
+      id, conversa_id: conversa, origem, tipo: "texto",
+      texto: origem === "contato" ? "Mensagem do cliente" : "Resposta",
+      enviado_por: quem ? quem.nome : null,
+      enviado_por_id: quem ? quem.id : null,
+      criado_em: new Date(t).toISOString(),
+    });
+    ATEND_DA_MSG.set(id, idx);
+    return t;
+  };
+
+  põe("contato", null, t0);
+  let fim = t0, recebidas = 1, enviadas = 0;
+
+  if (espera != null) {
+    fim = põe("advogado", autor, t0 + espera * 1000);
+    enviadas = 1;
+    // Cada ida e volta a mais: o cliente escreve 45 minutos depois, e a
+    // resposta vem em `resposta` segundos. Tudo dentro da janela de 6 horas.
+    for (let p = 1; p < pares; p++) {
+      const tq = t0 + espera * 1000 + p * 45 * 60e3;
+      põe("contato", null, tq);
+      fim = põe("advogado", autor, tq + resposta * 1000);
+      recebidas++; enviadas++;
+    }
+  }
+
+  ROTEIRO.push({
+    idx, adv, conversa, inicio: t0, fim, recebidas, enviadas,
+    espera,                                  // null = ninguém respondeu ainda
+    respostas: espera == null ? [] : [espera, ...Array(Math.max(0, pares - 1)).fill(resposta)],
+    autor: espera == null ? null : autor,
+    // Quem "pegou" o atendimento. O aparelho respondeu, mas não é ninguém: o
+    // atendimento fica sem dono, e é isso que a tela precisa saber dizer.
+    dono: espera == null || !autor || autor.aparelho ? null : autor,
+  });
+  return idx;
+}
+
 ADVOGADOS.forEach((adv, i) => {
   const daqui = CONVERSAS.filter((c) => c.advogado_id === adv.id);
-  const conv = (k) => daqui[k % daqui.length].id;
-  // Volumes bem diferentes entre telefones, e grandes o bastante para o total
-  // passar do teto de linhas da API.
   const mudo = adv.id === "a12";
-  const rec = mudo ? 0 : 100 + i * 10, env = mudo ? 0 : 50 + i * 5,
-        aparelho = mudo ? 0 : 5 + i, notas = mudo ? 0 : 3;
-  ESPERADO.porTelefone[adv.id] = { recebidas: rec, enviadas: env + aparelho };
-  ESPERADO.porTelefoneNome[adv.nome] = { recebidas: rec, enviadas: env + aparelho };
+  // Volumes bem diferentes entre telefones. `quantos` fica sempre abaixo de
+  // 6 × (conversas do telefone), que é o que garante um atendimento por
+  // (conversa, dia) — sem isso dois deles cairiam no mesmo dia da mesma
+  // conversa e o banco de verdade os leria como UM.
+  const quantos = mudo ? 0 : Math.min(5 + i * 3, 6 * daqui.length - 1);
 
-  for (let k = 0; k < rec; k++) {
-    MENSAGENS.push({ id: `m-${adv.id}-r${k}`, conversa_id: conv(k), origem: "contato",
-      tipo: "texto", texto: `Recebida ${k + 1}`, enviado_por: null, enviado_por_id: null,
-      criado_em: new Date(Date.now() - (k % 3) * dia).toISOString() });
-  }
-  ESPERADO.recebidas7 += rec; ESPERADO.recebidasTudo += rec;
-
-  for (let k = 0; k < env; k++) {
-    const a = AUTORES[giro++ % AUTORES.length];
-    MENSAGENS.push({ id: `m-${adv.id}-e${k}`, conversa_id: conv(k), origem: "advogado",
-      tipo: "texto", texto: `Enviada ${k + 1}`, enviado_por: a.nome, enviado_por_id: a.id,
-      criado_em: new Date(Date.now() - (k % 3) * dia).toISOString() });
-    ESPERADO.porAutor[a.nome] = (ESPERADO.porAutor[a.nome] || 0) + 1;
-    if (!a.id) ESPERADO.semId7++;
-  }
-
-  // Saiu pelo APARELHO, não pelo Zorvin. Conta como enviada do telefone, mas
-  // não é atendente nenhum — e listar "WhatsApp" no meio da equipe, em geral
-  // no topo, é exatamente o tipo de número errado que se lê como certo.
-  for (let k = 0; k < aparelho; k++) {
-    MENSAGENS.push({ id: `m-${adv.id}-w${k}`, conversa_id: conv(k), origem: "advogado",
-      tipo: "texto", texto: `Pelo aparelho ${k + 1}`, enviado_por: "WhatsApp", enviado_por_id: null,
-      criado_em: new Date(Date.now() - (k % 3) * dia).toISOString() });
-  }
-  ESPERADO.aparelho7 += aparelho;
-
-  // Só no primeiro telefone, e em volume grande — como no banco de verdade.
-  let deRotulo = 0;
-  if (i === 0) {
-    ROTULOS_NAO_PESSOA.forEach((nomeRotulo, j) => {
-      const quantas = 40 + j * 20;
-      for (let k = 0; k < quantas; k++) {
-        MENSAGENS.push({ id: `m-rot${j}-${k}`, conversa_id: conv(k), origem: "advogado",
-          tipo: "texto", texto: `Importada ${k + 1}`, enviado_por: nomeRotulo, enviado_por_id: null,
-          criado_em: new Date(Date.now() - (k % 3) * dia).toISOString() });
-      }
-      ESPERADO.porRotulo[nomeRotulo] = quantas;
-      deRotulo += quantas;
+  for (let k = 0; k < quantos; k++) {
+    const semResposta = k % 7 === 6;                       // ainda aguardando
+    const peloAparelho = !semResposta && k % 11 === 10;    // respondeu o celular
+    atendimento({
+      adv: adv.id,
+      conversa: daqui[k % daqui.length].id,
+      dias: Math.floor(k / daqui.length) % 6,
+      hora: 8 + ((k * 3) % 9),                             // das 8h às 16h
+      autor: peloAparelho ? APARELHO : AUTORES[(i + k) % AUTORES.length],
+      espera: semResposta ? null : ESPERAS[k % ESPERAS.length],
+      pares: 1 + (k % 3),
+      resposta: RESPOSTAS[k % RESPOSTAS.length],
     });
   }
-  ESPERADO.porTelefone[adv.id].enviadas += deRotulo;
-  ESPERADO.porTelefoneNome[adv.nome].enviadas += deRotulo;
-  ESPERADO.rotulos7 += deRotulo;
-  ESPERADO.enviadas7 += env + aparelho + deRotulo;
-  ESPERADO.enviadasTudo += env + aparelho + deRotulo;
 
-  // NOTA INTERNA MORA EM `notas`. Nunca houve linha de nota em `mensagens`;
-  // procurar `origem = 'nota'` lá dava zero e o cartão mentia com cara de certo.
-  for (let k = 0; k < notas; k++) {
-    NOTAS.push({ id: `n-${adv.id}-${k}`, conversa_id: conv(k), texto: `Nota ${k + 1}`,
-      autor: "Rodrigo Alves", criado_em: new Date(Date.now() - k * dia).toISOString() });
+  if (mudo) return;
+
+  // Mensagens que saíram pelo APARELHO, no meio de um atendimento que já
+  // existe. Contam como enviadas do telefone e não são de atendente nenhum.
+  const primeiro = ROTEIRO.find((a) => a.adv === adv.id);
+  for (let k = 0; k < 5 + i; k++) {
+    const id = `m-ap-${adv.id}-${k}`;
+    MENSAGENS.push({ id, conversa_id: primeiro.conversa, origem: "advogado", tipo: "texto",
+      texto: "Pelo aparelho", enviado_por: "WhatsApp", enviado_por_id: null,
+      criado_em: new Date(primeiro.inicio + (k + 1) * 60e3).toISOString() });
+    ATEND_DA_MSG.set(id, primeiro.idx);
+    primeiro.enviadas++;
   }
-  ESPERADO.notas7 += notas;
+
+  for (let k = 0; k < 3; k++) {
+    NOTAS.push({ id: `n-${adv.id}-${k}`, conversa_id: daqui[k % daqui.length].id,
+      texto: `Nota ${k + 1}`, autor: "Rodrigo Sousa", autor_id: "u1",
+      criado_em: new Date(Date.now() - k * 3600e3).toISOString() });
+  }
 });
 
-// Um lote VELHO, só no primeiro telefone: é o que faz "7 dias" e "Tudo" darem
-// respostas diferentes. Sem ele, o filtro de período passaria no teste mesmo
-// se não filtrasse nada.
-const VELHAS = 200;
-for (let k = 0; k < VELHAS; k++) {
-  MENSAGENS.push({ id: `m-velha-${k}`, conversa_id: CONVERSAS[0].id, origem: "contato",
-    tipo: "texto", texto: `Antiga ${k + 1}`, enviado_por: null, enviado_por_id: null,
-    criado_em: new Date(Date.now() - 100 * dia).toISOString() });
-}
-ESPERADO.recebidasTudo += VELHAS;
-ESPERADO.totalDeLinhas = MENSAGENS.length;
+// O histórico importado, em volume, só no primeiro telefone — como no banco de
+// verdade, onde são milhares e aparecem no topo do ranking.
+ROTULOS_NAO_PESSOA.forEach((rotulo, j) => {
+  const alvo = ROTEIRO.filter((a) => a.adv === ADVOGADOS[0].id);
+  for (let k = 0; k < 40 + j * 20; k++) {
+    const a = alvo[k % alvo.length];
+    const id = `m-rot${j}-${k}`;
+    MENSAGENS.push({ id, conversa_id: a.conversa, origem: "advogado", tipo: "texto",
+      texto: "Importada", enviado_por: rotulo, enviado_por_id: null,
+      criado_em: new Date(a.inicio + 90e3).toISOString() });
+    ATEND_DA_MSG.set(id, a.idx);
+    a.enviadas++;
+  }
+});
 
-// O teste lê daqui. É o que a BANCADA contém, contado na hora de montar; a
-// tela conta por outro caminho. Se os dois baterem, a tela está certa; se eu
-// escrevesse os números à mão no teste, estaria conferindo a minha aritmética.
+// LOTES MAIS ANTIGOS: é o que faz "7 dias", "30", "90" e "Tudo" darem respostas
+// diferentes. Sem eles, o filtro de período passaria no teste mesmo se não
+// filtrasse nada — e foi o que aconteceu na primeira execução: o lote principal
+// cabia todo nos últimos 6 dias, então "7 dias" e "30 dias" davam o mesmo 221.
+//
+// As bases estão a 5 dias ou mais umas das outras, e cada lote ocupa 5 dias
+// seguidos: nunca há dois atendimentos no mesmo dia da mesma conversa, que é o
+// que faria o banco de verdade ler os dois como UM.
+[10, 18, 40, 45, 200, 210].forEach((diasAtras, j) => {
+  const daqui = CONVERSAS.filter((c) => c.advogado_id === ADVOGADOS[1].id);
+  for (let k = 0; k < 5; k++) {
+    atendimento({
+      adv: ADVOGADOS[1].id, conversa: daqui[(j * 5 + k) % daqui.length].id,
+      dias: diasAtras + k, hora: 9 + (k % 6),
+      autor: AUTORES[k % AUTORES.length],
+      espera: ESPERAS[(k + j) % ESPERAS.length], pares: 1 + (k % 2),
+      resposta: RESPOSTAS[k % RESPOSTAS.length],
+    });
+  }
+});
+
+// Um atendimento fora do horário comercial, para o mapa de horários não ser um
+// bloco só de 8h às 16h.
+atendimento({ adv: ADVOGADOS[2].id, conversa: CONVERSAS.find((c) => c.advogado_id === ADVOGADOS[2].id).id,
+  dias: 1, hora: 22, autor: AUTORES[0], espera: 300, pares: 1, resposta: 120 });
+
 if (typeof globalThis !== "undefined") {
-  globalThis.__ESPERADO = ESPERADO;
-  // Liga e desliga a função `painel_numeros` da bancada. Ligada por padrão; o
-  // teste desliga para conferir o que a tela mostra num banco onde o SQL ainda
-  // não foi rodado — que é um estado real, não hipotético.
+  // Liga e desliga a função do painel na bancada. Ligada por padrão; o teste
+  // desliga para conferir o que a tela mostra num banco onde o SQL ainda não
+  // foi rodado — que é um estado real, não hipotético.
   if (globalThis.__TEM_FUNCAO_PAINEL === undefined) globalThis.__TEM_FUNCAO_PAINEL = true;
 }
 
@@ -287,7 +359,10 @@ const TABELAS = {
   // antes de o Vantoro ter o nome completo: o cadastro já diz "Rodrigo Sousa",
   // e a conta do Supabase ficou parada em "rodrigo". A tela tem de mostrar o
   // do cadastro.
-  usuarios: [{ id: "u1", admin: true, nome: "Rodrigo Sousa" }],
+  // ADMIN OU NÃO — o teste troca por `__SOU_ADMIN`. O Painel agora é de todo
+  // mundo, e o que muda entre um caso e outro (o botão de escopo, e o recorte
+  // que o banco impõe a quem não administra) só se prova entrando nos dois.
+  usuarios: [{ id: "u1", admin: (typeof globalThis !== "undefined" && globalThis.__SOU_ADMIN === false) ? false : true, nome: "Rodrigo Sousa" }],
   permissoes: [],            // vazio + admin = alcança tudo
   mensagens: MENSAGENS, contatos: [{ ...APELIDO }], notas: NOTAS, tags: [], conversa_tags: [],
   // O histórico de alterações começa VAZIO: as linhas nascem do que se faz na
@@ -395,69 +470,243 @@ function consulta(tabela) {
   return eu;
 }
 
+/* ==================================================================
+   `painel_dashboard`, de mentira
+   ==================================================================
+   Ela AGREGA O ROTEIRO — não redescobre os atendimentos a partir das
+   mensagens. Redescobrir seria escrever, em JavaScript, a mesma lógica de
+   janela de silêncio que já está no SQL; se as duas errassem igual, o teste
+   passaria e o painel mentiria. A lógica do SQL é provada onde ela roda, num
+   Postgres de verdade (sql/2026-08-painel-completo.sql). O papel da bancada é
+   outro: entregar à tela um resultado CERTO e realista, para que o teste
+   possa cobrar da tela que ela mostre exatamente isso.
+
+   E, como a de verdade, ela faz A CONTA INTEIRA: não passa pelo teto de
+   linhas da API. É o ponto todo da correção que originou esta tela. */
+const NAO_PESSOA = new Set(ROTULOS_NAO_PESSOA.map((r) => r.toLowerCase()));
+const TEL_DA_CONVERSA = new Map(CONVERSAS.map((c) => [String(c.id), String(c.advogado_id)]));
+
+const mediana = (v) => {
+  if (!v.length) return null;
+  const s = v.slice().sort((a, b) => a - b), m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+const media = (v) => (v.length ? v.reduce((a, b) => a + b, 0) / v.length : null);
+const soDia = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d; };
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+function agregar({ desde, ate, quem }) {
+  const t0 = desde ? new Date(desde).getTime() : -Infinity;
+  const t1 = ate ? new Date(ate).getTime() : Date.now();
+  const agora = Date.now(), janela = JANELA_H * 3600e3;
+  const meu = (a) => !quem || (a.dono && a.dono.id === quem);
+
+  const noPeriodo = ROTEIRO.filter((a) => a.inicio >= t0 && a.inicio <= t1);
+  const meus = noPeriodo.filter(meu);
+  const tamanho = t0 === -Infinity ? null : t1 - t0;
+  const antesDe = tamanho == null ? null : t0 - tamanho;
+  const anteriores = tamanho == null ? [] :
+    ROTEIRO.filter((a) => a.inicio >= antesDe && a.inicio < t0).filter(meu);
+
+  // ---- mensagens ----
+  const conta = (de, ateQuando, comEscopo) => {
+    let enviadas = 0, recebidas = 0, aparelho = 0, semId = 0;
+    const porTel = new Map(), porPessoa = new Map(), porRotulo = new Map();
+    for (const m of MENSAGENS) {
+      const t = new Date(m.criado_em).getTime();
+      if (t < de || t > ateQuando) continue;
+      const a = ROTEIRO[ATEND_DA_MSG.get(m.id)];
+      const enviada = m.origem === "advogado";
+      const rotulo = (m.enviado_por || "").trim();
+      const ehAparelho = rotulo === "WhatsApp";
+      const ehRotulo = !m.enviado_por_id && NAO_PESSOA.has(rotulo.toLowerCase());
+      const id = m.enviado_por_id || null;
+
+      if (comEscopo && quem) {
+        // A minha ENVIADA é a que eu escrevi. A minha RECEBIDA é a que chegou
+        // num atendimento que eu peguei — mensagem que chega não tem autor.
+        if (enviada && id !== quem) continue;
+        if (!enviada && !(a && a.dono && a.dono.id === quem)) continue;
+      }
+      if (enviada) enviadas++; else recebidas++;
+
+      const tel = TEL_DA_CONVERSA.get(String(m.conversa_id));
+      if (tel) {
+        const r = porTel.get(tel) || { advogado_id: tel, atendimentos: 0, recebidas: 0, enviadas: 0 };
+        r[enviada ? "enviadas" : "recebidas"]++;
+        porTel.set(tel, r);
+      }
+      if (!enviada) continue;
+      if (ehAparelho) { aparelho++; continue; }
+      if (ehRotulo) { porRotulo.set(rotulo, (porRotulo.get(rotulo) || 0) + 1); continue; }
+      if (!id) semId++;
+      const chave = id ? `id:${id}` : `nome:${rotulo || "(sem nome)"}`;
+      const r = porPessoa.get(chave) || { chave, id, nome: rotulo || "(sem nome)", enviadas: 0 };
+      r.enviadas++;
+      porPessoa.set(chave, r);
+    }
+    return { enviadas, recebidas, aparelho, semId, porTel, porPessoa, porRotulo };
+  };
+
+  const m = conta(t0, t1, true);            // recortado em mim
+  const mTodos = conta(t0, t1, false);      // o escritório, para o ranking
+  const mAntes = tamanho == null ? { enviadas: 0, recebidas: 0 } : conta(antesDe, t0 - 1, true);
+
+  // ---- as séries ----
+  const dias = tamanho == null
+    ? (Date.now() - Math.min(...ROTEIRO.map((a) => a.inicio))) / dia
+    : tamanho / dia;
+  const passo = dias <= 62 ? "day" : dias <= 400 ? "week" : "month";
+  const balde = (t) => {
+    const d = soDia(t);
+    if (passo === "week") d.setDate(d.getDate() - ((d.getDay() + 6) % 7));   // segunda
+    if (passo === "month") d.setDate(1);
+    return iso(d);
+  };
+  const inicioReal = tamanho == null ? Math.min(...ROTEIRO.map((a) => a.inicio)) : t0;
+  const serie = new Map();
+  for (let d = soDia(inicioReal); d.getTime() <= t1; d.setDate(d.getDate() + 1)) {
+    const b = balde(d.getTime());
+    if (!serie.has(b)) serie.set(b, { quando: b, atendimentos: 0, enviadas: 0, recebidas: 0, resp: [], esp: [] });
+  }
+  const pega = (t) => serie.get(balde(t));
+  meus.forEach((a) => {
+    const s = pega(a.inicio); if (!s) return;
+    s.atendimentos++;
+    if (a.espera != null) s.esp.push(a.espera);
+    a.respostas.forEach((r) => s.resp.push(r));
+  });
+  for (const msg of MENSAGENS) {
+    const t = new Date(msg.criado_em).getTime();
+    if (t < t0 || t > t1) continue;
+    const a = ROTEIRO[ATEND_DA_MSG.get(msg.id)];
+    const enviada = msg.origem === "advogado";
+    if (quem) {
+      if (enviada && msg.enviado_por_id !== quem) continue;
+      if (!enviada && !(a && a.dono && a.dono.id === quem)) continue;
+    }
+    const s = pega(t); if (!s) continue;
+    s[enviada ? "enviadas" : "recebidas"]++;
+  }
+  const por_periodo = [...serie.values()]
+    .sort((a, b) => (a.quando < b.quando ? -1 : 1))
+    .map((s) => ({ quando: s.quando, atendimentos: s.atendimentos, enviadas: s.enviadas,
+                   recebidas: s.recebidas, resposta: mediana(s.resp), espera: mediana(s.esp) }));
+
+  // ---- mapa de horários: a grade inteira, com os zeros ----
+  const mapa = [];
+  for (let d = 0; d < 7; d++) for (let h = 0; h < 24; h++) mapa.push({ dia: d, hora: h, atendimentos: 0 });
+  meus.forEach((a) => {
+    const q = new Date(a.inicio);
+    mapa[q.getDay() * 24 + q.getHours()].atendimentos++;
+  });
+
+  // ---- telefones ----
+  const porTel = m.porTel;
+  meus.forEach((a) => {
+    const r = porTel.get(a.adv) || { advogado_id: a.adv, atendimentos: 0, recebidas: 0, enviadas: 0 };
+    r.atendimentos++;
+    porTel.set(a.adv, r);
+  });
+
+  // ---- ranking: SEMPRE o escritório inteiro ----
+  const rank = new Map();
+  noPeriodo.forEach((a) => {
+    if (!a.dono) return;
+    // A MESMA CHAVE QUE AS MENSAGENS USAM. Com `id:null` para quem não tem id,
+    // o "Atendente Antigo" saía DUAS VEZES no ranking — uma com os
+    // atendimentos e nenhuma mensagem, outra com as mensagens e nenhum
+    // atendimento. É a mesma cara do defeito do "Max Canaverde duplicado", e
+    // apareceu na primeira olhada na tela pronta.
+    const chave = a.dono.id ? `id:${a.dono.id}` : `nome:${a.dono.nome}`;
+    const r = rank.get(chave) || { chave, id: a.dono.id, nome: a.dono.nome, atendimentos: 0, enviadas: 0, esp: [], resp: [] };
+    r.atendimentos++;
+    if (a.espera != null) r.esp.push(a.espera);
+    a.respostas.forEach((x) => r.resp.push(x));
+    rank.set(chave, r);
+  });
+  mTodos.porPessoa.forEach((p, chave) => {
+    const r = rank.get(chave) || { chave, id: p.id, nome: p.nome, atendimentos: 0, enviadas: 0, esp: [], resp: [] };
+    r.enviadas = p.enviadas;
+    if (!r.nome) r.nome = p.nome;
+    rank.set(chave, r);
+  });
+
+  const esperas = meus.filter((a) => a.espera != null).map((a) => a.espera);
+  const respostas = meus.flatMap((a) => a.respostas);
+
+  return {
+    de: desde || null, ate: new Date(t1).toISOString(), fuso: "bancada", passo,
+    janela_horas: JANELA_H, so_meu: !!quem, quem: quem || null,
+    total: {
+      atendimentos: meus.length,
+      aguardando: meus.filter((a) => a.espera == null).length,
+      em_andamento: meus.filter((a) => a.espera != null && agora - a.fim <= janela).length,
+      // `espera != null` também aqui: os três estados são excludentes e têm de
+      // somar o total. Sem isso o atendimento sem resposta e já frio entrava em
+      // "aguardando" E em "encerrados", e a barra somava mais do que o total.
+      encerrados: meus.filter((a) => a.espera != null && agora - a.fim > janela).length,
+      enviadas: m.enviadas, recebidas: m.recebidas,
+      notas: NOTAS.filter((n) => {
+        const t = new Date(n.criado_em).getTime();
+        return t >= t0 && t <= t1 && (!quem || n.autor_id === quem);
+      }).length,
+      respostas: respostas.length, resposta_mediana: mediana(respostas), resposta_media: media(respostas),
+      esperas: esperas.length, espera_mediana: mediana(esperas), espera_media: media(esperas),
+      sem_atendente: noPeriodo.filter((a) => !a.dono).length,
+    },
+    antes: {
+      atendimentos: anteriores.length, enviadas: mAntes.enviadas, recebidas: mAntes.recebidas,
+      existe: tamanho != null && antesDe >= Math.min(...ROTEIRO.map((a) => a.inicio)),
+    },
+    por_periodo,
+    por_hora: mapa,
+    por_telefone: [...porTel.values()],
+    por_atendente: [...rank.values()].map((r) => ({
+      chave: r.chave, id: r.id, nome: r.nome, atendimentos: r.atendimentos, enviadas: r.enviadas,
+      espera_mediana: mediana(r.esp), resposta_mediana: mediana(r.resp),
+    })),
+    por_rotulo: [...mTodos.porRotulo.entries()].map(([nome, enviadas]) => ({ nome, enviadas })),
+    aparelho: mTodos.aparelho, sem_id: mTodos.semId, outras: 0,
+  };
+}
+
+// O que a bancada CONTÉM, para o teste conferir contra a tela. Sai do roteiro,
+// que é a origem de tudo — e não de uma segunda leitura das mensagens.
+export const ESPERADO = {
+  totalDeLinhas: MENSAGENS.length,
+  atendimentos: ROTEIRO.length,
+  // Um autor de cada tipo, para o teste não precisar cravar nome nenhum. Um
+  // nome escrito à mão no teste vira reprovação falsa no dia em que a bancada
+  // muda — foi o que aconteceu ao trocar "Rodrigo Alves" por "Rodrigo Sousa".
+  eu: { id: "u1", nome: AUTORES[0].nome },
+  outroAutor: AUTORES[1].nome,
+  autorSemId: AUTORES[2].nome,
+  rotulos: ROTULOS_NAO_PESSOA,
+  telefoneMudo: ADVOGADOS[ADVOGADOS.length - 1].nome,
+  janelaHoras: JANELA_H,
+  /** O mesmo que a tela vai pedir, para o teste comparar número a número. */
+  painel: (dias, quem) => agregar({
+    desde: dias == null ? null : new Date(Date.now() - dias * dia).toISOString(),
+    ate: null, quem: quem || null,
+  }),
+};
+if (typeof globalThis !== "undefined") globalThis.__ESPERADO = ESPERADO;
+
 export const supabase = {
   from: (t) => consulta(t),
-  // A função `painel_numeros`, de mentira. Faz o que a de verdade faz — e,
-  // principalmente, faz A CONTA INTEIRA: não passa pelo teto de linhas, porque
-  // a de verdade também não passa. É o ponto todo da correção.
-  //
   // Quem chamar uma função que não existe recebe o mesmo erro que o Supabase
   // devolve (PGRST202), para o caminho de "falta rodar o SQL" também ser
   // testável em vez de imaginado.
   rpc: async (nome, args) => {
-    if (nome !== "painel_numeros") {
+    if (nome !== "painel_dashboard" || !globalThis.__TEM_FUNCAO_PAINEL) {
       return { data: null, error: { code: "PGRST202", message: `Could not find the function public.${nome}` } };
     }
-    if (!globalThis.__TEM_FUNCAO_PAINEL) {
-      return { data: null, error: { code: "PGRST202", message: "Could not find the function public.painel_numeros" } };
-    }
-    const desde = args && args.p_desde ? String(args.p_desde) : null;
-    const dentro = (t) => !desde || String(t) >= desde;
-    const telDaConversa = new Map(CONVERSAS.map((c) => [String(c.id), String(c.advogado_id)]));
-
-    // O de-para da bancada: os mesmos dois papéis da tabela de verdade —
-    // "isto não é pessoa" e "este nome antigo é fulano".
-    const naoPessoa = new Set(ROTULOS_NAO_PESSOA.map((r) => r.toLowerCase()));
-    // E o reconhecimento pelo CADASTRO, que é o que junta "rodrigo" com
-    // "Rodrigo Sousa" sem precisar de de-para nenhum.
-    const idPeloNome = new Map(TABELAS.usuarios
-      .filter((u) => (u.nome || "").trim())
-      .map((u) => [u.nome.trim().toLowerCase(), u.id]));
-
-    let recebidas = 0, enviadas = 0, outras = 0, aparelho = 0, semId = 0;
-    const porTel = new Map(), porPessoa = new Map(), porRotulo = new Map();
-    for (const m of MENSAGENS) {
-      if (!dentro(m.criado_em)) continue;
-      const ehEnv = m.origem === "advogado", ehRec = m.origem === "contato";
-      if (ehEnv) enviadas++; else if (ehRec) recebidas++; else { outras++; continue; }
-
-      const tel = telDaConversa.get(String(m.conversa_id));
-      if (tel) {
-        const r = porTel.get(tel) || { advogado_id: tel, recebidas: 0, enviadas: 0 };
-        r[ehEnv ? "enviadas" : "recebidas"]++;
-        porTel.set(tel, r);
-      }
-      if (!ehEnv) continue;
-
-      const quem = (m.enviado_por || "").trim();
-      if (quem === "WhatsApp") { aparelho++; continue; }
-      if (!m.enviado_por_id && naoPessoa.has(quem.toLowerCase())) {
-        porRotulo.set(quem, (porRotulo.get(quem) || 0) + 1);
-        continue;
-      }
-      const id = m.enviado_por_id || idPeloNome.get(quem.toLowerCase()) || null;
-      if (!id) semId++;
-      const chave = id ? `id:${id}` : `nome:${quem || "(sem nome)"}`;
-      const r = porPessoa.get(chave) || { chave, enviado_por_id: id, nome: quem || "(sem nome)", enviadas: 0 };
-      r.enviadas++;
-      if (quem) r.nome = quem;
-      porPessoa.set(chave, r);
-    }
-    const notas = NOTAS.filter((n) => dentro(n.criado_em)).length;
-    return { data: { recebidas, enviadas, outras, aparelho, sem_id: semId, notas,
-                     por_telefone: [...porTel.values()], por_pessoa: [...porPessoa.values()],
-                     por_rotulo: [...porRotulo.entries()].map(([nome, enviadas]) => ({ nome, enviadas })) },
-             error: null };
+    // O RECORTE É DO BANCO, e não do navegador: quem não administra não
+    // escolhe. A função de verdade faz o mesmo, com `zorvin_admin()`.
+    const souAdmin = !!(TABELAS.usuarios[0] && TABELAS.usuarios[0].admin);
+    const quem = souAdmin ? (args && args.p_quem) || null : (TABELAS.usuarios[0] || {}).id || null;
+    return { data: agregar({ desde: args && args.p_desde, ate: args && args.p_ate, quem }), error: null };
   },
   auth: {
     getSession: async () => ({ data: { session: { access_token: "jwt-de-mentira", user: { id: "u1", email: "rodrigo@ropelimi",
