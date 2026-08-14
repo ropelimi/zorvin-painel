@@ -260,6 +260,21 @@ CONVERSAS.push({
   contato: { ...APELIDO },
 });
 
+// UMA NOTA NA CONVERSA DE PROVA, escrita pelo próprio usuário logado — é dele
+// a permissão de editar e apagar. `apagada_em` nula: é o estado que a tela
+// precisa saber mudar.
+NOTAS.push({
+  id: "nota-de-prova",
+  conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
+  texto: "Cliente pediu para ligar depois das 18h",
+  autor: "Rodrigo Sousa",
+  autor_id: "u1",
+  autor_foto: null,
+  editada_em: null, editada_por: null,
+  apagada_em: null, apagada_por: null, apagada_por_id: null,
+  criado_em: new Date(Date.now() - 3600e3).toISOString(),
+});
+
 const TABELAS = {
   advogados: ADVOGADOS,
   departamentos: DEPARTAMENTOS,
@@ -272,6 +287,9 @@ const TABELAS = {
   usuarios: [{ id: "u1", admin: true, nome: "Rodrigo Sousa" }],
   permissoes: [],            // vazio + admin = alcança tudo
   mensagens: MENSAGENS, contatos: [{ ...APELIDO }], notas: NOTAS, tags: [], conversa_tags: [],
+  // O histórico de alterações começa VAZIO: as linhas nascem do que se faz na
+  // tela, e semear alguma aqui esconderia uma tela que não grava nada.
+  alteracoes: [],
   mensagens_rapidas: [], figurinhas_favoritas: [], fila_envio: [],
 };
 
