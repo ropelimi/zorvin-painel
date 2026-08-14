@@ -4500,13 +4500,16 @@ export default function Painel({ sessao }) {
                 <div style={{ position: "absolute", top: 26, right: 0, width: 230, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.28)", zIndex: 50, overflow: "hidden" }}>
                   <button onClick={marcarTodasLidas} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><CheckCheck size={17} color={C.textSecondary} /> Marcar todas como lidas</button>
                   <button onClick={() => { setMenuTopoAberto(false); abrirConfig(); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><Settings size={17} color={C.textSecondary} /> Configurações</button>
-                  {/* O Painel conta o que TODO MUNDO enviou, e quem só alcança
-                      alguns telefones veria um total pela metade e o tomaria
-                      pelo total. É por isso que ele fica com quem administra —
-                      não porque o número seja segredo. */}
-                  {souAdmin && (
-                    <button onClick={() => { setMenuTopoAberto(false); setTelaPainel(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><BarChart3 size={17} color={C.textSecondary} /> Painel</button>
-                  )}
+                  {/* O PAINEL É DE TODO MUNDO.
+                      Ele ficava só com quem administra por um motivo real: o
+                      total do escritório visto por quem alcança poucos
+                      telefones é um total pela metade, e quem o lê o toma pelo
+                      total. O que mudou não foi a permissão — foi a tela: agora
+                      quem não administra vê os PRÓPRIOS números, que são
+                      inteiros, e o recorte é feito no banco (`painel_dashboard`
+                      ignora o "quem" que o navegador manda quando quem chama
+                      não é administrador). */}
+                  <button onClick={() => { setMenuTopoAberto(false); setTelaPainel(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><BarChart3 size={17} color={C.textSecondary} /> Painel</button>
                   {/* Quem administra no Vantoro administra aqui. Esconder o botão
                       é cortesia, não segurança: quem não é admin esbarra nas
                       regras do banco de qualquer forma. */}
@@ -6714,7 +6717,8 @@ export default function Painel({ sessao }) {
           nomes das linhas do relatório, e refazer as consultas aqui daria uma
           segunda lista que pode divergir da que está na tela. */}
       {telaPainel && (
-        <PainelNumeros C={C} advogados={advogados} departamentos={departamentos}
+        <PainelNumeros C={C} modo={modo} advogados={advogados} departamentos={departamentos}
+                       souAdmin={souAdmin} meuId={sessao?.user?.id || null} meuNome={meuNome}
                        aoFechar={() => setTelaPainel(false)} />
       )}
     </div>
