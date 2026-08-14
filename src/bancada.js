@@ -335,6 +335,90 @@ CONVERSAS.push({
   contato: { ...APELIDO },
 });
 
+// ------------------------------------------------------------------
+//  O NOME QUE SE VÊ NÃO É SEMPRE O `nome` DO CONTATO
+// ------------------------------------------------------------------
+// Três contatos, três origens de nome — e é exatamente aqui que a busca
+// falhava: ela procurava só em `contato.nome`, enquanto a lista mostra
+// `vantoro_nome` ou `nome_zorvin` quando eles existem. Quem procurava pelo
+// nome que estava vendo na tela não achava nada.
+const RENOMEADOS = [
+  { id: "ct-do-vantoro", numero: "5567991110001", foto_url: null,
+    nome: "Deusdete",                       // o apelido do WhatsApp
+    vantoro_nome: "MARIA DAS GRAÇAS PEREIRA", // o cadastro manda
+    nome_zorvin: null, vantoro_cliente_id: "v-1" },
+  { id: "ct-do-zorvin", numero: "5567991110002", foto_url: null,
+    nome: null,                             // nunca deixou nome no WhatsApp
+    vantoro_nome: null,
+    nome_zorvin: "Lead Feira do Livro",     // a equipe batizou aqui dentro
+    vantoro_cliente_id: null },
+  { id: "ct-so-numero", numero: "5567991110003", foto_url: null,
+    nome: "JOSEFA BATISTA DE ANDRADE", vantoro_nome: null, nome_zorvin: null,
+    vantoro_cliente_id: null },
+];
+RENOMEADOS.forEach((ct, i) => {
+  CONVERSAS.push({
+    id: `${PRIMEIRO_TELEFONE.id}-ren${i}`,
+    advogado_id: PRIMEIRO_TELEFONE.id,
+    contato_id: ct.id,
+    nao_lidas: 0, arquivada: false, fixada: false, favorita: false,
+    ultima_atividade: new Date(Date.now() - (i + 2) * 3600e3).toISOString(),
+    ultima_mensagem: "Combinado, obrigado",
+    frente: null, vantoro_nome: null, digitando_ate: null,
+    contato: { ...ct },
+  });
+});
+
+// ------------------------------------------------------------------
+//  UM TELEFONE COM MAIS DE MIL CONVERSAS
+// ------------------------------------------------------------------
+// A API do Supabase devolve no máximo 1000 linhas por consulta e CALA. A lista
+// de conversas para aí — e uma busca feita sobre a lista não alcança ninguém
+// que esteja depois disso. Num telefone com dois anos de histórico, isso é a
+// maior parte da agenda.
+//
+// O contato lá no fundo tem nome próprio para o teste poder procurá-lo pelo
+// nome, como uma pessoa faria.
+// No MESMO departamento do telefone que o painel abre primeiro, para o teste
+// alcançá-lo com um clique — a barra lateral só mostra os do departamento atual.
+const TELEFONE_FUNDO = { id: "a13", nome: "Arquivo", numero: "5511900002222",
+                         foto_url: null, departamento_id: 5, ativo: true };
+ADVOGADOS.push(TELEFONE_FUNDO);
+export const NOME_LA_NO_FUNDO = "ZULMIRA ANTUNES DO PRADO";
+const FUNDO = [];
+for (let i = 0; i < 1200; i++) {
+  const ct = {
+    id: `ct-fundo-${i}`,
+    numero: `55679${String(20000000 + i)}`,
+    nome: i === 1150 ? NOME_LA_NO_FUNDO : `${NOMES[i % NOMES.length]} ${i}`,
+    vantoro_nome: null, nome_zorvin: null, vantoro_cliente_id: null, foto_url: null,
+  };
+  FUNDO.push(ct);
+  CONVERSAS.push({
+    id: `a13-c${i}`,
+    advogado_id: "a13",
+    contato_id: ct.id,
+    nao_lidas: 0, arquivada: false, fixada: false, favorita: false,
+    // O DE TRÁS É O MAIS ANTIGO: a lista vem por `ultima_atividade` desc, então
+    // o teto de 1000 corta justamente os do fim.
+    ultima_atividade: new Date(Date.now() - i * 3600e3).toISOString(),
+    ultima_mensagem: "Conversa arquivada",
+    frente: null, vantoro_nome: null, digitando_ate: null,
+    contato: { ...ct },
+  });
+}
+
+// UMA MENSAGEM COM TEXTO PRÓPRIO, numa conversa que está DEPOIS da milésima.
+// Serve para provar as duas coisas de uma vez: que a busca procura dentro das
+// mensagens, e que ela alcança conversa que a lista não trouxe.
+export const TEXTO_LA_NO_FUNDO = "protocolo 8891 do INSS";
+MENSAGENS.push({
+  id: "m-fundo-texto", conversa_id: "a13-c1180", origem: "contato", tipo: "texto",
+  texto: `Boa tarde, é sobre o ${TEXTO_LA_NO_FUNDO}`,
+  enviado_por: null, enviado_por_id: null,
+  criado_em: new Date(Date.now() - 1180 * 3600e3).toISOString(),
+});
+
 // UMA NOTA NA CONVERSA DE PROVA, escrita pelo próprio usuário logado — é dele
 // a permissão de editar e apagar. `apagada_em` nula: é o estado que a tela
 // precisa saber mudar.
@@ -364,7 +448,18 @@ const TABELAS = {
   // que o banco impõe a quem não administra) só se prova entrando nos dois.
   usuarios: [{ id: "u1", admin: (typeof globalThis !== "undefined" && globalThis.__SOU_ADMIN === false) ? false : true, nome: "Rodrigo Sousa" }],
   permissoes: [],            // vazio + admin = alcança tudo
-  mensagens: MENSAGENS, contatos: [{ ...APELIDO }], notas: NOTAS, tags: [], conversa_tags: [],
+  mensagens: MENSAGENS,
+  // TODOS OS CONTATOS, e não só o de prova. A tabela de verdade tem uma linha
+  // por pessoa, e a busca nova consulta ELA em vez de filtrar a lista que está
+  // na tela — que é o que a fazia parar no teto de 1000 linhas.
+  contatos: [
+    { ...APELIDO },
+    ...RENOMEADOS.map((c) => ({ ...c })),
+    ...FUNDO.map((c) => ({ ...c })),
+    ...CONVERSAS.filter((c) => c.contato && c.contato.numero && !c.contato_id.startsWith("ct-"))
+      .map((c) => ({ id: c.contato_id, ...c.contato, vantoro_nome: null, nome_zorvin: null })),
+  ],
+  notas: NOTAS, tags: [], conversa_tags: [],
   // O histórico de alterações começa VAZIO: as linhas nascem do que se faz na
   // tela, e semear alguma aqui esconderia uma tela que não grava nada.
   alteracoes: [],
@@ -375,6 +470,31 @@ const TABELAS = {
 // só o que apareceu na tela. Uma tela que mostra o nome certo sem ter gravado
 // nada volta ao apelido no próximo carregamento.
 if (typeof globalThis !== "undefined") globalThis.__TABELAS = TABELAS;
+
+/** O `%` do PostgREST vira o `.*` de uma expressão regular, sem diferenciar
+    maiúscula de minúscula — e o resto do padrão é escapado, para um ponto de
+    CPF não virar "qualquer caractere". */
+function comoIlike(padrao) {
+  const corpo = String(padrao ?? "")
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/%/g, ".*")
+    .replace(/_/g, ".");
+  return new RegExp(`^${corpo}$`, "i");
+}
+
+/** Separa `a.ilike.%x%,b.eq.1` nos seus pedaços, respeitando parênteses. */
+function separarOr(expr) {
+  const limpo = expr.startsWith("(") && expr.endsWith(")") ? expr.slice(1, -1) : expr;
+  const saida = []; let atual = "", nivel = 0;
+  for (const ch of limpo) {
+    if (ch === "(") nivel++;
+    if (ch === ")") nivel--;
+    if (ch === "," && nivel === 0) { saida.push(atual); atual = ""; continue; }
+    atual += ch;
+  }
+  if (atual) saida.push(atual);
+  return saida;
+}
 
 /** Compara número com número e texto com texto. Data em ISO ordena sozinha
     como texto, que é o que o Postgres faz com `timestamptz` de qualquer jeito. */
@@ -406,7 +526,28 @@ function consulta(tabela) {
     gte(col, val) { linhas = linhas.filter((l) => comparar(l[col], val) >= 0); return eu; },
     lt(col, val) { linhas = linhas.filter((l) => comparar(l[col], val) < 0); return eu; },
     lte(col, val) { linhas = linhas.filter((l) => comparar(l[col], val) <= 0); return eu; },
-    or() { return eu; }, not() { return eu; }, contains() { return eu; }, ilike() { return eu; },
+    not() { return eu; }, contains() { return eu; },
+    // `ilike` E `or` ERAM CANO VAZIO, e é por isso que o defeito da busca
+    // atravessou todos os testes: a bancada devolvia TUDO para qualquer termo,
+    // então a tela parecia achar o que na verdade ela nunca procurou.
+    ilike(col, padrao) {
+      const re = comoIlike(padrao);
+      linhas = linhas.filter((l) => re.test(String(l[col] ?? "")));
+      return eu;
+    },
+    // `or("a.ilike.%x%,b.ilike.%x%")` — a mesma forma que o PostgREST aceita.
+    // Só o que o painel usa: `ilike` e `eq`.
+    or(expr) {
+      const partes = separarOr(String(expr || ""));
+      linhas = linhas.filter((l) => partes.some((p) => {
+        const [col, op, ...resto] = p.split(".");
+        const valor = resto.join(".");
+        if (op === "ilike") return comoIlike(valor).test(String(l[col] ?? ""));
+        if (op === "eq") return String(l[col] ?? "") === valor;
+        return false;
+      }));
+      return eu;
+    },
     // `order`, `limit` e `range` PRECISAM valer, agora que a bancada tem
     // milhares de linhas: são eles que a paginação usa para sair do teto.
     order(col, opc) {

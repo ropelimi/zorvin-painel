@@ -4080,12 +4080,31 @@ export default function Painel({ sessao }) {
   }
 
   // ---- Busca ampla ------------------------------------------------------
-  // A busca da lista achava só pelo nome e pelo número do contato. Faltavam as
-  // duas formas que mais se usam no dia a dia: procurar pelo que foi DITO na
-  // conversa (como no WhatsApp) e procurar pelo CADASTRO — CPF ou número do
-  // processo, que é o que o atendente costuma ter em mãos.
+  // ------------------------------------------------------------------
+  //  A BUSCA PERGUNTA AO BANCO — e não à lista que está na tela
+  // ------------------------------------------------------------------
+  //
+  // A versão anterior filtrava o array de conversas já carregado. Isso a
+  // deixava com dois furos que davam o mesmo sintoma — "às vezes acha, às
+  // vezes não":
+  //
+  //   1. O NOME QUE ELA PROCURAVA NÃO ERA O QUE A TELA MOSTRA. A lista escreve
+  //      `vantoro_nome` (o cadastro) ou `nome_zorvin` (o nome que a equipe deu
+  //      aqui dentro) quando eles existem; a busca olhava só `contato.nome`, o
+  //      apelido que a pessoa deixou no WhatsApp. Quem procurava pelo nome que
+  //      estava lendo na tela não achava nada.
+  //
+  //   2. A LISTA PARA EM 1000. É o teto da API do Supabase, que corta e não
+  //      avisa. Num telefone com dois anos de conversa, a maior parte da agenda
+  //      fica fora da lista — e do que a busca conseguia enxergar.
+  //
+  // Agora a busca é uma CONSULTA: procura os contatos no banco pelas três
+  // colunas de nome e pelo número, procura o termo dentro das mensagens, e
+  // traz as conversas que casaram mesmo que elas não estivessem na lista.
   const [achadosMsg, setAchadosMsg] = useState({});   // conversa_id → trecho
   const [achadosCad, setAchadosCad] = useState({});   // conversa_id → motivo
+  const [achadosNome, setAchadosNome] = useState({}); // conversa_id → nome que casou
+  const [extras, setExtras] = useState([]);           // conversas que a lista não tinha
   const [buscando, setBuscando] = useState(false);
 
   useEffect(() => {
@@ -4093,33 +4112,99 @@ export default function Painel({ sessao }) {
     // Limpa ANTES de consultar, sempre. Sem isso, os achados da busca anterior
     // sobrevivem até a nova responder — e por um instante a lista mostra
     // conversas que não têm nada a ver com o que está escrito na caixa.
-    setAchadosMsg({});
-    setAchadosCad({});
+    setAchadosMsg({}); setAchadosCad({}); setAchadosNome({}); setExtras([]);
     if (termo.length < 3) { setBuscando(false); return; }
 
     let cancelado = false;
     setBuscando(true);
+    const advId = advogadoId;
     const tarefa = setTimeout(async () => {
-      const ids = conversas.map((c) => c.id);
+      // A vírgula e os parênteses separam condições dentro de um `or` do
+      // PostgREST: deixá-los passar não devolve "nenhum resultado", devolve
+      // ERRO — e a busca inteira morria em silêncio ao procurar "(67) 9…".
+      const seguro = termo.replace(/[,()*]/g, " ").trim();
+      const chave = chaveDoNumero(termo);
 
-      // 1) Dentro das mensagens. Em lotes porque a lista de ids vai na URL —
-      //    com centenas de conversas de uma vez, a consulta seria recusada.
-      const porMsg = {};
+      // ---- 1) os CONTATOS, pelos três nomes e pelo número ----
+      const condicoes = () => {
+        const p = [];
+        if (seguro.length >= 3) {
+          p.push(`nome.ilike.%${seguro}%`);
+          if (TEM_NOME_DO_CADASTRO) {
+            p.push(`vantoro_nome.ilike.%${seguro}%`);
+            p.push(`nome_zorvin.ilike.%${seguro}%`);
+          }
+        }
+        if (chave.length >= 4) p.push(`numero.ilike.%${chave}%`);
+        return p;
+      };
+      let contatos = [];
       try {
-        for (let i = 0; i < ids.length; i += 150) {
-          const { data } = await supabase.from("mensagens")
-            .select("conversa_id, texto")
-            .in("conversa_id", ids.slice(i, i + 150))
-            .ilike("texto", `%${termo}%`)
-            .order("criado_em", { ascending: false })
-            .limit(300);
-          (data || []).forEach((m) => {
-            if (!porMsg[m.conversa_id]) porMsg[m.conversa_id] = m.texto || "";
+        const pedir = () => supabase.from("contatos")
+          .select(colunasDoContato("id, nome, numero, foto_url"))
+          .or(condicoes().join(","))
+          .limit(400);
+        if (condicoes().length) {
+          let { data, error } = await pedir();
+          // Base sem o SQL dos nomes: tira as duas colunas do pedido e repete.
+          if (error && TEM_NOME_DO_CADASTRO && faltaColuna(error)) {
+            TEM_NOME_DO_CADASTRO = false;
+            ({ data, error } = await pedir());
+          }
+          if (!error) contatos = data || [];
+        }
+      } catch (_e) { /* a busca por mensagem segue */ }
+
+      // ---- 2) as conversas DESTE telefone com esses contatos ----
+      const porNome = {};
+      const encontradas = [];
+      if (contatos.length) {
+        const idsCt = contatos.map((c) => c.id);
+        const nomePorCt = new Map(contatos.map((c) => [String(c.id), nomeDoContato(c)]));
+        for (let i = 0; i < idsCt.length; i += 150) {
+          const { data } = await supabase.from("conversas")
+            .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
+            .eq("advogado_id", advId)
+            .in("contato_id", idsCt.slice(i, i + 150));
+          (data || []).forEach((c) => {
+            porNome[c.id] = nomePorCt.get(String(c.contato_id)) || "";
+            encontradas.push(c);
           });
         }
+      }
+
+      // ---- 3) dentro das MENSAGENS ----
+      //
+      // Uma consulta só, e não uma por lote de conversas: as regras do banco já
+      // limitam o que cada pessoa enxerga, e o que vier de outro telefone é
+      // descartado aqui. A versão anterior pedia em lotes de 150 conversas com
+      // teto de 300 mensagens por lote — e um termo comum estourava esse teto,
+      // fazendo sumir conversas que TINHAM a palavra.
+      const porMsg = {};
+      try {
+        const { data } = await supabase.from("mensagens")
+          .select("conversa_id, texto")
+          .ilike("texto", `%${termo}%`)
+          .order("criado_em", { ascending: false })
+          .limit(1000);
+        (data || []).forEach((m) => {
+          if (!porMsg[m.conversa_id]) porMsg[m.conversa_id] = m.texto || "";
+        });
       } catch (_e) { /* sem resultado por mensagem; a busca por nome segue */ }
 
-      // 2) No cadastro do Vantoro (nome, CPF, processo) → casa pelo telefone.
+      // As conversas com mensagem casada que ainda não temos em mãos.
+      const faltando = Object.keys(porMsg)
+        .filter((id) => !conversas.some((c) => String(c.id) === String(id))
+                     && !encontradas.some((c) => String(c.id) === String(id)));
+      for (let i = 0; i < faltando.length; i += 150) {
+        const { data } = await supabase.from("conversas")
+          .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
+          .eq("advogado_id", advId)
+          .in("id", faltando.slice(i, i + 150));
+        (data || []).forEach((c) => encontradas.push(c));
+      }
+
+      // ---- 4) no cadastro do Vantoro (CPF, processo) → casa pelo telefone ----
       const porCad = {};
       try {
         if (BRIDGE_URL) {
@@ -4129,16 +4214,15 @@ export default function Painel({ sessao }) {
             const r = await fetch(`${BRIDGE_URL}/vantoro/buscar?q=${encodeURIComponent(termo)}`,
               { headers: { Authorization: "Bearer " + jwt } });
             const corpo = await r.json().catch(() => ({}));
+            const candidatas = [...conversas, ...encontradas];
             (corpo.clientes || []).forEach((cl) => {
               // Os últimos 8 dígitos são o miolo do número: não mudam com DDD,
               // com o 9 extra nem com o código do país. É por eles que casamos.
               [cl.telefone, cl.telefone2].forEach((tel) => {
-                const chave = String(tel || "").replace(/\D/g, "").slice(-8);
-                if (chave.length < 8) return;
-                conversas.forEach((c) => {
-                  if (String(c.contato?.numero || "").endsWith(chave)) {
-                    porCad[c.id] = cl.nome;
-                  }
+                const k = String(tel || "").replace(/\D/g, "").slice(-8);
+                if (k.length < 8) return;
+                candidatas.forEach((c) => {
+                  if (String(c.contato?.numero || "").endsWith(k)) porCad[c.id] = cl.nome;
                 });
               });
             });
@@ -4146,9 +4230,21 @@ export default function Painel({ sessao }) {
         }
       } catch (_e) { /* Vantoro fora do ar não pode atrapalhar a busca local */ }
 
-      if (cancelado) return;
+      // Troquei de telefone (ou de termo) enquanto isto vinha? A resposta é de
+      // outra pergunta: descarta.
+      if (cancelado || advogadoIdRef.current !== advId) return;
       setAchadosMsg(porMsg);
       setAchadosCad(porCad);
+      setAchadosNome(porNome);
+      // Só o que a lista NÃO tem. O resto já está lá, com o estado em dia.
+      const jaNaLista = new Set(conversas.map((c) => String(c.id)));
+      const vistos = new Set();
+      setExtras(encontradas.filter((c) => {
+        const id = String(c.id);
+        if (jaNaLista.has(id) || vistos.has(id)) return false;
+        vistos.add(id);
+        return true;
+      }));
       setBuscando(false);
     }, 350);
 
@@ -4156,11 +4252,16 @@ export default function Painel({ sessao }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [busca, conversas.length, advogadoId]);
 
+  /** Todos os nomes por que um contato pode ser chamado — inclusive o que a
+   *  tela mostra, que nem sempre é o `nome`. */
+  function nomesDoContato(ct) {
+    return [ct?.vantoro_nome, ct?.nome_zorvin, ct?.nome, ct?.numero];
+  }
+
   function casaNaBusca(c) {
     const termo = busca.trim().toLowerCase();
     if (!termo) return true;
-    const nome = (c.contato?.nome || c.contato?.numero || "").toLowerCase();
-    if (nome.includes(termo)) return true;
+    if (nomesDoContato(c.contato).some((n) => String(n || "").toLowerCase().includes(termo))) return true;
     // Por NÚMERO, comparando as chaves: assim "(11) 99999-9999" acha um
     // contato salvo como "5511999999999". Antes a busca era texto contra
     // texto, e a pontuação bastava para não achar nada.
@@ -4169,14 +4270,26 @@ export default function Painel({ sessao }) {
       const chaveContato = chaveDoNumero(c.contato?.numero);
       if (chaveContato && chaveContato.includes(chaveTermo)) return true;
     }
-    return !!achadosMsg[c.id] || !!achadosCad[c.id];
+    return !!achadosMsg[c.id] || !!achadosCad[c.id] || !!achadosNome[c.id];
   }
 
-  const conversasFiltradas = conversasNaTela.filter((c) =>
-    (!!c.arquivada === verArquivadas) && // arquivadas só aparecem na visão de arquivadas
-    casaNaBusca(c) &&
-    passaNoFiltro(c)
-  );
+  const conversasFiltradas = (() => {
+    const daLista = conversasNaTela.filter((c) =>
+      (!!c.arquivada === verArquivadas) && // arquivadas só aparecem na visão de arquivadas
+      casaNaBusca(c) &&
+      passaNoFiltro(c)
+    );
+    if (!busca.trim()) return daLista;
+    // As que vieram do banco e não estavam na lista. Entram na mesma ordem de
+    // sempre — recente primeiro —, e não emendadas no fim, que faria a mais
+    // nova de todas aparecer embaixo da mais velha.
+    const jaTem = new Set(daLista.map((c) => String(c.id)));
+    const doBanco = extras.filter((c) => !jaTem.has(String(c.id))
+      && (!!c.arquivada === verArquivadas) && passaNoFiltro(c));
+    if (!doBanco.length) return daLista;
+    return [...daLista, ...doBanco].sort((a, b) =>
+      String(b.ultima_atividade || "").localeCompare(String(a.ultima_atividade || "")));
+  })();
 
   // Não lidas de cada advogado, para o selo na barra lateral.
   // Para o advogado atual usamos a lista já carregada (que zera a conversa
@@ -4317,6 +4430,7 @@ export default function Painel({ sessao }) {
               <button
                 key={a.id}
                 onClick={() => trocarAdvogado(a.id)}
+                data-telefone={a.nome}
                 title={`${a.nome}${n > 0 ? ` — ${n} não lida${n > 1 ? "s" : ""}` : ""}`}
                 style={{ position: "relative", border: "none", background: "transparent", cursor: "pointer", padding: 0, display: "flex", borderRadius: "50%", flexShrink: 0, boxShadow: atual ? `0 0 0 2px ${C.green}` : "none", opacity: atual ? 1 : 0.7, transition: "opacity .12s" }}
               >
@@ -4795,7 +4909,7 @@ export default function Painel({ sessao }) {
             const bruto = c.ultima_mensagem || "";
             const previa = midiaTipo && (bruto === "[anexo]" || bruto === "") ? rotuloMidia(midiaTipo) : bruto;
             return (
-              <div key={c.id} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); naoLidasRef.current = c.nao_lidas || 0; setConversaId(c.id); } }} onClick={() => { naoLidasRef.current = c.nao_lidas || 0; setConversaId(c.id); }} onMouseEnter={() => setConvHover(c.id)} onMouseLeave={() => setConvHover((h) => (h === c.id ? null : h))} style={{ position: "relative", width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: c.id === conversaId ? C.listActive : (convHover === c.id ? C.divider : C.panel), borderBottom: `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary }}>
+              <div key={c.id} data-conversa-nome={nome} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); naoLidasRef.current = c.nao_lidas || 0; setConversaId(c.id); } }} onClick={() => { naoLidasRef.current = c.nao_lidas || 0; setConversaId(c.id); }} onMouseEnter={() => setConvHover(c.id)} onMouseLeave={() => setConvHover((h) => (h === c.id ? null : h))} style={{ position: "relative", width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: c.id === conversaId ? C.listActive : (convHover === c.id ? C.divider : C.panel), borderBottom: `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary }}>
                 <Avatar nome={nome} foto={c.contato?.foto_url} size={48} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
@@ -4823,7 +4937,7 @@ export default function Painel({ sessao }) {
                       resultado que casou pelo texto de uma mensagem antiga
                       parece ter vindo do nada. */}
                   {busca.trim().length >= 3 && (achadosMsg[c.id] || achadosCad[c.id]) &&
-                   !(c.contato?.nome || c.contato?.numero || "").toLowerCase().includes(busca.trim().toLowerCase()) && (
+                   !nomesDoContato(c.contato).some((n) => String(n || "").toLowerCase().includes(busca.trim().toLowerCase())) && (
                     <div style={{ marginTop: 3, fontSize: 11.5, color: C.verdeTexto, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 260 }}>
                       {achadosMsg[c.id]
                         ? '💬 ' + achadosMsg[c.id]
