@@ -229,6 +229,9 @@ const APELIDO = {
   numero: "5567992183107",
   vantoro_nome: null,
   vantoro_cliente_id: null,
+  // O nome que a EQUIPE daria aqui dentro. Começa nulo: é o estado que a tela
+  // precisa saber criar, e semeá-lo faria o teste passar sem nada funcionar.
+  nome_zorvin: null,
   foto_url: null,
 };
 // O nome que está no cadastro do Vantoro, e que o teste espera ver no

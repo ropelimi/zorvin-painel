@@ -49,6 +49,7 @@ const RESUMO_ALTERACAO = {
   nota_criada: "escreveu uma nota interna",
   nota_editada: "editou uma nota interna",
   nota_apagada: "apagou uma nota interna",
+  contato_renomeado: "deu um nome ao contato",
 };
 
 // COMO UM CONTATO SE CHAMA NA TELA.
@@ -67,6 +68,12 @@ const RESUMO_ALTERACAO = {
 function nomeDoContato(contato) {
   if (!contato) return "";
   if (contato.vantoro_nome) return contato.vantoro_nome;
+  // O NOME QUE A EQUIPE DEU AQUI DENTRO. Fica entre o cadastro e o WhatsApp,
+  // e a ordem é a resposta a duas perguntas diferentes: quem tem ficha é
+  // conhecido pelo nome dela (o painel não é dono do nome de quem o Vantoro já
+  // conhece); quem não tem — um lead, quase sempre — passa a poder ser
+  // chamado pelo nome de verdade sem que se crie um cadastro só para isso.
+  if (contato.nome_zorvin) return contato.nome_zorvin;
   if (contato.nome) return contato.nome;
   const numero = String(contato.numero || "");
   return numero.startsWith("grupo:") ? "Grupo" : "+" + numero;
@@ -81,7 +88,7 @@ function nomeDoContato(contato) {
 // sessão. É a mesma tolerância que a Ponte já tem do outro lado ao gravar.
 let TEM_NOME_DO_CADASTRO = true;
 const colunasDoContato = (base) =>
-  TEM_NOME_DO_CADASTRO ? base + ", vantoro_nome" : base;
+  TEM_NOME_DO_CADASTRO ? base + ", vantoro_nome, nome_zorvin" : base;
 
 // RECURSOS QUE DEPENDEM DE COLUNA QUE PODE NÃO EXISTIR.
 //
@@ -1030,6 +1037,9 @@ export default function Painel({ sessao }) {
   // perguntar seria irreversível num clique — e a lixeira fica ao lado do
   // lápis, a três milímetros dele.
   const [notaParaApagar, setNotaParaApagar] = useState(null);
+  // Renomear o contato aqui dentro, sem passar pelo Vantoro. `null` = fechado;
+  // uma string = o rascunho do nome.
+  const [renomeando, setRenomeando] = useState(null);
   // MODO SELEÇÃO, como no WhatsApp: `null` = desligado; array = ids marcados.
   const [selecao, setSelecao] = useState(null);
   const [confirmarApagar, setConfirmarApagar] = useState(false);
@@ -2893,6 +2903,7 @@ export default function Painel({ sessao }) {
       else if (audioPronto) descartarAudioPronto();
       else if (confirmarApagar) setConfirmarApagar(false);
       else if (selecao) setSelecao(null);
+      else if (renomeando !== null) setRenomeando(null);
       else if (notaParaApagar) setNotaParaApagar(null);
       else if (editando) cancelarEdicao();
       else if (encaminhar) setEncaminhar(null);
@@ -2927,7 +2938,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, notaParaApagar, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, telaPainel, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId]);
+  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, telaPainel, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -3535,6 +3546,42 @@ export default function Painel({ sessao }) {
     }
     // Respondi o contato: a conversa deixa de estar pendente.
     marcarLida(conversaId);
+  }
+
+  /** Dá ao contato um nome aqui dentro, sem criar cadastro no Vantoro.
+   *
+   *  É o caso de vendas: o lead se identifica na conversa, e o WhatsApp mostra
+   *  o apelido que ele escolheu no aparelho. Criar um cadastro só para
+   *  consertar o nome enche a base do escritório de gente que nunca virou
+   *  cliente.
+   *
+   *  `nome` — o que o WhatsApp mandou — NÃO é tocado: é o registro do que
+   *  chegou, e é o que aparece para quem ninguém tocou ainda.
+   */
+  async function salvarNomeDoContato(texto) {
+    const novo = (texto || "").trim();
+    const ct = conversa?.contato;
+    if (!ct) return;
+    const antes = ct.nome_zorvin || "";
+    if (novo === antes) { setRenomeando(null); return; }
+    setRenomeando(null);
+    // Some da tela na hora; volta se o banco recusar.
+    setConversas((prev) => prev.map((c) => (
+      c.contato && c.contato.numero === ct.numero
+        ? { ...c, contato: { ...c.contato, nome_zorvin: novo || null } } : c)));
+    const { error } = await supabase.from("contatos")
+      .update({ nome_zorvin: novo || null }).eq("id", ct.id);
+    if (error) {
+      setConversas((prev) => prev.map((c) => (
+        c.contato && c.contato.numero === ct.numero
+          ? { ...c, contato: { ...c.contato, nome_zorvin: ct.nome_zorvin } } : c)));
+      mostrarAviso(/nome_zorvin/i.test(error.message || "")
+        ? "Falta rodar o SQL do nome do contato."
+        : "Não consegui salvar o nome. Tente de novo.");
+      return;
+    }
+    registrarAlteracao({ tipo: "contato_renomeado", alvo: ct.numero,
+                         antes: antes || (ct.nome || ""), depois: novo });
   }
 
   /** Guarda uma linha no histórico de alterações. Nunca derruba a ação que a
@@ -4863,7 +4910,47 @@ export default function Painel({ sessao }) {
                   gasto para dizer com quem se está falando, empurrando a
                   conversa para fora. */}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 15, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nomeDoContato(conversa.contato)}</div>
+                {/* O NOME, E O LÁPIS PARA TROCÁ-LO.
+                    Só quem NÃO tem cadastro no Vantoro pode ser renomeado
+                    aqui: quem tem é conhecido pelo nome da ficha, e oferecer
+                    uma edição que a tela ia ignorar seria pior do que não
+                    oferecer. Nesse caso o caminho é a ficha, que fica a um
+                    botão de distância no mesmo cabeçalho. */}
+                {renomeando === null ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nomeDoContato(conversa.contato)}</div>
+                    {!conversa.contato?.vantoro_nome && (
+                      <button onClick={() => setRenomeando(conversa.contato?.nome_zorvin || "")}
+                              title="Dar um nome a este contato (só no Zorvin)"
+                              style={{ border: "none", background: "transparent", cursor: "pointer",
+                                       color: C.textSecondary, padding: 2, display: "flex", flexShrink: 0,
+                                       minHeight: 24, minWidth: 24, alignItems: "center", justifyContent: "center" }}>
+                        <Pencil size={13} />
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                    <input autoFocus value={renomeando}
+                           onChange={(e) => setRenomeando(e.target.value)}
+                           onKeyDown={(e) => {
+                             if (e.key === "Enter") { e.preventDefault(); salvarNomeDoContato(renomeando); }
+                             if (e.key === "Escape") { e.preventDefault(); setRenomeando(null); }
+                           }}
+                           placeholder={conversa.contato?.nome || "Nome do contato"}
+                           style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, padding: "3px 8px",
+                                    border: `1px solid ${C.green}`, borderRadius: 6, outline: "none",
+                                    background: C.inputBg, color: C.textPrimary }} />
+                    <button onClick={() => salvarNomeDoContato(renomeando)} title="Salvar"
+                            style={{ border: "none", background: "transparent", cursor: "pointer", color: C.green, padding: 2, display: "flex", minHeight: 24, minWidth: 24, alignItems: "center", justifyContent: "center" }}>
+                      <Check size={16} />
+                    </button>
+                    <button onClick={() => setRenomeando(null)} title="Cancelar"
+                            style={{ border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, padding: 2, display: "flex", minHeight: 24, minWidth: 24, alignItems: "center", justifyContent: "center" }}>
+                      <X size={16} />
+                    </button>
+                  </div>
+                )}
                 {digitandoAtivo(conversa.id) ? (
                   <div style={{ fontSize: 12, color: C.verdeTexto, fontWeight: 600 }}>digitando…</div>
                 ) : atendidoPorOutro(conversa.id) ? (
@@ -5609,7 +5696,11 @@ export default function Painel({ sessao }) {
       {fichaAberta && conversa && (
         <FichaVantoro
           numero={conversa.contato?.numero}
-          nomeContato={conversa.contato?.nome}
+          // O NOME QUE ESTÁ NA TELA, e não o cru do WhatsApp. É daqui que sai o
+          // nome do pré-cadastro quando a equipe decide transformar o lead em
+          // cliente — e seria absurdo ter acabado de renomear o contato para
+          // "Maria Aparecida" e ver o Vantoro nascer com "Deus".
+          nomeContato={nomeDoContato(conversa.contato)}
           C={C}
           estreito={estreito}
           onFechar={() => setFichaAberta(false)}
