@@ -380,13 +380,38 @@ RENOMEADOS.forEach((ct, i) => {
 // não funcionava. Ela está numa mensagem ENVIADA pelo escritório, e não
 // recebida — foi assim que o relato veio.
 export const PALAVRA_NA_CONVERSA = "teste";
+// LONGE DO FIM, de propósito. A conversa abre mostrando as 120 mensagens mais
+// recentes; esta é de três meses atrás e tem 200 mensagens depois dela. Se o
+// teste a pusesse perto do fim, "abrir na mensagem" passaria sem que nada
+// tivesse sido feito — a mensagem já estaria na tela.
+export const MSG_ACHADA = "m-palavra";
+const HA_TRES_MESES = Date.now() - 90 * 24 * 3600e3;
 MENSAGENS.push({
-  id: "m-palavra", conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
+  id: MSG_ACHADA, conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
   origem: "advogado", tipo: "texto",
   texto: "Bom dia, este é um teste de envio pelo sistema",
   enviado_por: "Rodrigo Sousa", enviado_por_id: "u1",
-  criado_em: new Date(Date.now() - 2 * 3600e3).toISOString(),
+  criado_em: new Date(HA_TRES_MESES).toISOString(),
 });
+// Antes e depois dela, para haver conversa de verdade em volta.
+for (let i = 1; i <= 60; i++) {
+  MENSAGENS.push({
+    id: `m-antes-${i}`, conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
+    origem: i % 2 ? "contato" : "advogado", tipo: "texto",
+    texto: `mensagem anterior ${i}`,
+    enviado_por: i % 2 ? null : "Rodrigo Sousa", enviado_por_id: i % 2 ? null : "u1",
+    criado_em: new Date(HA_TRES_MESES - i * 60e3).toISOString(),
+  });
+}
+for (let i = 1; i <= 200; i++) {
+  MENSAGENS.push({
+    id: `m-depois-${i}`, conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
+    origem: i % 2 ? "contato" : "advogado", tipo: "texto",
+    texto: `mensagem posterior ${i}`,
+    enviado_por: i % 2 ? null : "Rodrigo Sousa", enviado_por_id: i % 2 ? null : "u1",
+    criado_em: new Date(HA_TRES_MESES + i * 60e3).toISOString(),
+  });
+}
 
 // A MESMA PALAVRA, MUITAS VEZES, EM OUTROS TELEFONES.
 //
@@ -555,6 +580,7 @@ const TABELAS = {
 if (typeof globalThis !== "undefined") {
   globalThis.__TABELAS = TABELAS;
   globalThis.__PALAVRA_NA_CONVERSA = PALAVRA_NA_CONVERSA;
+  globalThis.__MSG_ACHADA = MSG_ACHADA;
 }
 
 /** O `%` do PostgREST vira o `.*` de uma expressão regular, sem diferenciar
@@ -1050,7 +1076,8 @@ export const supabase = {
           if (saida.has(k)) continue;
           const c = minhas.find((x) => String(x.id) === k);
           saida.set(k, { id: m.conversa_id, motivo: "mensagem", trecho: m.texto,
-                         ultima_atividade: c && c.ultima_atividade });
+                         ultima_atividade: c && c.ultima_atividade,
+                         mensagem_id: String(m.id), mensagem_em: m.criado_em });
         }
       }
       const lista = [...saida.values()]

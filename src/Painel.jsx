@@ -1179,6 +1179,16 @@ export default function Painel({ sessao }) {
   const [buscaIdx, setBuscaIdx] = useState(0); // ocorrência atual na busca da conversa
   const [idDivisorNaoLidas, setIdDivisorNaoLidas] = useState(null); // id da 1ª msg não lida ao abrir
   const [temMaisAntigas, setTemMaisAntigas] = useState(false); // há histórico acima do que está na tela
+  // QUAL mensagem casou em cada conversa achada pela busca — não só o texto.
+  // É o que permite abrir a conversa NELA em vez de no fim: quem procurou uma
+  // palavra dita há três meses achou a conversa e ainda teria de procurar
+  // dentro dela, rolando. No WhatsApp, clicar no resultado leva à mensagem.
+  const [alvoDaBusca, setAlvoDaBusca] = useState({});   // conversaId → {id, em}
+  // Vai de mão em mão até `carregarMensagens`. Ref, e não estado: ele é lido
+  // uma vez, na abertura, e um estado aqui provocaria um redesenho a mais no
+  // exato momento em que a tela está montando a conversa inteira.
+  const alvoParaAbrirRef = useRef(null);
+  const [msgDestacada, setMsgDestacada] = useState(null);
   const [buscandoAntigas, setBuscandoAntigas] = useState(false);
   const [importando, setImportando] = useState(false); // gravando no banco
   const [impAdvId, setImpAdvId] = useState(""); // advogado dono das conversas importadas
@@ -2577,27 +2587,57 @@ export default function Painel({ sessao }) {
   const TETO_MENSAGENS = 120;
 
   // ---- Carrega as mensagens da conversa aberta ----
+  // ANTES DO ALVO: quantas mensagens vêm acima da que foi achada na busca.
+  // Um punhado basta para dar contexto ("do que se estava falando"), e é o que
+  // cabe sem fazer a abertura ficar pesada.
+  const ANTES_DO_ALVO = 40;
+
   const carregarMensagens = useCallback(async (convId) => {
     if (!convId) { setMensagens([]); setTemMaisAntigas(false); return; }
-    const { data, error } = await supabase
-      .from("mensagens")
-      .select("*")
-      .eq("conversa_id", convId)
-      .order("criado_em", { ascending: false })
-      .limit(TETO_MENSAGENS);
+
+    // A conversa aberta a partir de um resultado de busca não começa no fim:
+    // começa na mensagem que casou. O alvo é consumido aqui — uma vez só, na
+    // abertura —, para reabrir a mesma conversa depois voltar ao normal.
+    const alvo = alvoParaAbrirRef.current;
+    alvoParaAbrirRef.current = null;
+
+    let recentes = [], erro = null, maisAntigas = false;
+    if (alvo && alvo.em) {
+      const [antes, depois] = await Promise.all([
+        supabase.from("mensagens").select("*").eq("conversa_id", convId)
+          .lt("criado_em", alvo.em)
+          .order("criado_em", { ascending: false }).limit(ANTES_DO_ALVO),
+        supabase.from("mensagens").select("*").eq("conversa_id", convId)
+          .gte("criado_em", alvo.em)
+          .order("criado_em", { ascending: true }).limit(TETO_MENSAGENS),
+      ]);
+      erro = antes.error || depois.error;
+      recentes = [...(antes.data || []).slice().reverse(), ...(depois.data || [])];
+      maisAntigas = (antes.data || []).length >= ANTES_DO_ALVO;
+    } else {
+      const { data, error } = await supabase
+        .from("mensagens")
+        .select("*")
+        .eq("conversa_id", convId)
+        .order("criado_em", { ascending: false })
+        .limit(TETO_MENSAGENS);
+      erro = error;
+      // Vieram de trás para a frente (para pegar as últimas); a tela quer na
+      // ordem do tempo.
+      recentes = (data || []).slice().reverse();
+      maisAntigas = (data || []).length >= TETO_MENSAGENS;
+    }
+
     // ERRO NÃO É LISTA VAZIA. Sem esta guarda, uma oscilação de 4G ao tocar na
     // conversa abria uma tela EM BRANCO — e, dez linhas abaixo, zerava o
     // contador de não lidas no banco. As cinco mensagens do cliente sumiam da
     // lista e do título da aba, e ninguém mais sabia que existiam. O
     // zeramento é o "eu li": ele só pode acontecer depois de uma leitura que
     // deu certo.
-    if (error) {
+    if (erro) {
       mostrarAviso("Não consegui carregar as mensagens. Toque na conversa de novo.");
       return;
     }
-    // Vieram de trás para a frente (para pegar as últimas); a tela quer na
-    // ordem do tempo.
-    const recentes = (data || []).slice().reverse();
     // Também carrega as NOTAS internas (comentários da equipe) e mistura na
     // linha do tempo, em ordem de horário. Notas ficam numa tabela separada
     // e nunca são enviadas para o WhatsApp.
@@ -2638,7 +2678,9 @@ export default function Painel({ sessao }) {
     }
     setIdDivisorNaoLidas(alvoId);
     // Veio o lote cheio? Então provavelmente há mais para trás.
-    setTemMaisAntigas((data || []).length >= TETO_MENSAGENS);
+    setTemMaisAntigas(maisAntigas);
+    // A mensagem achada fica marcada para a tela rolar até ela e destacá-la.
+    setMsgDestacada(alvo ? String(alvo.id ?? "") : null);
     naoLidasRef.current = 0; // usa só na abertura
     // AQUI ZERAVA O CONTADOR. Não zera mais.
     //
@@ -2962,8 +3004,37 @@ export default function Painel({ sessao }) {
     setRascunho(guardado ? guardado.texto : "");
     setModoNota(guardado ? !!guardado.nota : false);
     setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); setRespondendo(null); setFichaAberta(false); setHistorico(null); setTagMenuAberto(false);
-    requestAnimationFrame(() => { fimRef.current?.scrollIntoView(); if (conversaId && !estreito) inputRef.current?.focus(); });
+    // A rolagem para o fim NÃO acontece quando a conversa foi aberta a partir
+    // de um resultado de busca por mensagem: nesse caso quem manda é o efeito
+    // logo abaixo, que leva até a mensagem achada. Sem esta condição as duas
+    // rolagens brigavam e a tela terminava no fim, que é o que a pessoa estava
+    // justamente tentando evitar.
+    if (!alvoParaAbrirRef.current) {
+      requestAnimationFrame(() => { fimRef.current?.scrollIntoView(); if (conversaId && !estreito) inputRef.current?.focus(); });
+    } else if (conversaId && !estreito) {
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
   }, [conversaId]);
+
+  // ------------------------------------------------------------
+  //  LEVA ATÉ A MENSAGEM ACHADA, E MOSTRA QUAL É
+  //
+  //  Rolar até ela sem marcá-la não resolve: a tela para no meio de uma
+  //  conversa e não há nada dizendo qual das bolhas é a que respondeu à busca.
+  //  O destaque apaga sozinho depois de alguns segundos — ele serve para o
+  //  momento da chegada, e uma marca que fica vira sujeira.
+  useEffect(() => {
+    if (!msgDestacada) return;
+    let apagar = null;
+    const id = requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-msg-id="${msgDestacada}"]`);
+      if (el) el.scrollIntoView({ block: "center" });
+      else fimRef.current?.scrollIntoView();   // não achou: melhor o fim que o nada
+      setPertoDoFim(false);
+      apagar = setTimeout(() => setMsgDestacada(null), 4000);
+    });
+    return () => { cancelAnimationFrame(id); if (apagar) clearTimeout(apagar); };
+  }, [msgDestacada]);
 
   // Mensagem nova: só rola até o fim se o atendente já estava no fim
   // (não "puxa" a tela quem está lendo mensagens antigas).
@@ -4423,7 +4494,7 @@ export default function Painel({ sessao }) {
     // sobrevivem até a nova responder — e por um instante a lista mostra
     // conversas que não têm nada a ver com o que está escrito na caixa.
     setAchadosMsg({}); setAchadosCad({}); setAchadosNome({}); setExtras([]);
-    setErroBusca("");
+    setErroBusca(""); setAlvoDaBusca({});
     if (termo.length < 3) { setBuscando(false); return; }
 
     let cancelado = false;
@@ -4459,12 +4530,17 @@ export default function Painel({ sessao }) {
 
         if (!error) {
           if (temBuscaNoBanco !== true) setTemBuscaNoBanco(true);
-          const porMsg = {}, porNome = {};
+          const porMsg = {}, porNome = {}, alvos = {};
           const ids = [];
           for (const a of achados || []) {
             ids.push(a.id);
-            if (a.motivo === "mensagem") porMsg[a.id] = a.trecho || "";
-            else porNome[a.id] = termo;
+            if (a.motivo === "mensagem") {
+              porMsg[a.id] = a.trecho || "";
+              // `mensagem_em` pode não vir: é uma coluna que o SQL
+              // `2026-08-busca-ir-para-a-mensagem.sql` acrescenta. Sem ela a
+              // conversa abre no fim, como abria antes — e não quebra.
+              if (a.mensagem_em) alvos[a.id] = { id: a.mensagem_id, em: a.mensagem_em };
+            } else porNome[a.id] = termo;
           }
           const encontradas = [];
           for (let i = 0; i < ids.length; i += 150) {
@@ -4477,6 +4553,7 @@ export default function Painel({ sessao }) {
           if (cancelado || advogadoIdRef.current !== advId) return;
           setAchadosMsg(porMsg);
           setAchadosNome(porNome);
+          setAlvoDaBusca(alvos);
           setAchadosCad(await procurarNoVantoro(termo, encontradas));
           if (cancelado || advogadoIdRef.current !== advId) return;
           const jaNaLista = new Set(conversas.map((c) => String(c.id)));
@@ -4645,6 +4722,16 @@ export default function Painel({ sessao }) {
   useEffect(() => { setQuantasNaLista(PAGINA); },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [advogadoId, busca, filtro, verArquivadas]);
+
+  /** ABRE UMA CONVERSA — e, se ela veio da busca por mensagem, abre NELA.
+   *
+   *  O clique e o Enter passam os dois por aqui: eram duas cópias da mesma
+   *  linha, e uma teria ficado para trás na primeira mudança. */
+  function abrirConversa(c) {
+    naoLidasRef.current = c.nao_lidas || 0;
+    alvoParaAbrirRef.current = alvoDaBusca[c.id] || null;
+    setConversaId(c.id);
+  }
 
   /** Mostra mais um punhado — e, se o que temos acabou, pede outra página ao
    *  banco. Depois de trazer a página, cresce a fatia desenhada TAMBÉM: sem
@@ -5357,7 +5444,7 @@ export default function Painel({ sessao }) {
             const bruto = c.ultima_mensagem || "";
             const previa = midiaTipo && (bruto === "[anexo]" || bruto === "") ? rotuloMidia(midiaTipo) : bruto;
             return (
-              <div key={c.id} data-conversa-nome={nome} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); naoLidasRef.current = c.nao_lidas || 0; setConversaId(c.id); } }} onClick={() => { naoLidasRef.current = c.nao_lidas || 0; setConversaId(c.id); }} onMouseEnter={() => setConvHover(c.id)} onMouseLeave={() => setConvHover((h) => (h === c.id ? null : h))} style={{ position: "relative", width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: c.id === conversaId ? C.listActive : (convHover === c.id ? C.divider : C.panel), borderBottom: `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary }}>
+              <div key={c.id} data-conversa-nome={nome} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrirConversa(c); } }} onClick={() => abrirConversa(c)} onMouseEnter={() => setConvHover(c.id)} onMouseLeave={() => setConvHover((h) => (h === c.id ? null : h))} style={{ position: "relative", width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: c.id === conversaId ? C.listActive : (convHover === c.id ? C.divider : C.panel), borderBottom: `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary }}>
                 <Avatar nome={nome} foto={c.contato?.foto_url} size={48} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
@@ -5821,7 +5908,14 @@ export default function Painel({ sessao }) {
                         <div style={{ width: 28, flexShrink: 0 }}><Avatar nome={m.autor || "equipe"} foto={m.autor_foto || (m.autor === meuNome ? minhaFoto : null)} size={28} /></div>
                       </div>
                     ) : (
-                    <div data-msg-id={m.id} onClick={() => { if (selecao && podeSerApagada(m)) alternarSelecao(m.id); }} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ position: "relative", display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6, marginTop: mesmoRemetente ? -4 : 0, marginBottom: (Array.isArray(m.reacoes) && m.reacoes.length) ? 15 : 0, paddingLeft: selecao ? 34 : 0, transition: "padding-left .12s" }}>
+                    <div data-msg-id={m.id} onClick={() => { if (selecao && podeSerApagada(m)) alternarSelecao(m.id); }} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ position: "relative", display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6,
+                      /* A bolha que respondeu à busca. Rolar até ela sem marcá-la
+                         deixaria a pessoa no meio da conversa sem saber qual é. */
+                      ...(String(m.id) === msgDestacada
+                          ? { background: C.listActive, borderRadius: 10, padding: "4px 6px",
+                              margin: "2px -6px", transition: "background .4s" }
+                          : null),
+                      marginTop: mesmoRemetente ? -4 : 0, marginBottom: (Array.isArray(m.reacoes) && m.reacoes.length) ? 15 : 0, paddingLeft: selecao ? 34 : 0, transition: "padding-left .12s" }}>
                       {/* A CAIXINHA DE SELEÇÃO. Aparece em TODA linha para o
                           alinhamento não dançar, mas só é clicável no que dá
                           para apagar — o que o escritório enviou. Nas demais
