@@ -177,13 +177,17 @@ export default function Departamentos({ C, aoFechar }) {
 
         <div style={cx.corpo}>
           {erro && (
-            <div style={{ background: "#fdecea", border: "1px solid #f5c2c0", color: "#a32b2b", borderRadius: 10, padding: "10px 13px", fontSize: 13, marginBottom: 14 }}>{erro}</div>
+            /* As cores saem do tema, e não escritas à mão. No tema escuro, a
+               caixa rosa-clara com letra vermelha ficava gritando no meio de
+               uma tela escura — e a mensagem de erro é justamente a que
+               precisa ser lida com calma. */
+            <div role="alert" style={{ background: C.panel, border: "1px solid #e5573f", color: C.textPrimary, borderLeft: "4px solid #e5573f", borderRadius: 10, padding: "10px 13px", fontSize: 13, marginBottom: 14, lineHeight: 1.5 }}>{erro}</div>
           )}
           {/* O aviso vem ANTES de a pessoa tentar. Descobrir que não tinha
               permissão só depois de renomear três departamentos e ver os três
               voltarem ao nome antigo é o pior jeito de descobrir. */}
           {adminNoBanco === false && (
-            <div style={{ background: "#fff6e0", border: "1px solid #e6cf6a", color: "#6b4e00", borderRadius: 10, padding: "10px 13px", fontSize: 13, marginBottom: 14, lineHeight: 1.5 }}>
+            <div style={{ background: C.panel, border: `1px solid ${C.divider}`, borderLeft: "4px solid #d99a1e", color: C.textPrimary, borderRadius: 10, padding: "10px 13px", fontSize: 13, marginBottom: 14, lineHeight: 1.5 }}>
               <b>Você consegue ver esta tela, mas não consegue salvar nada nela.</b><br />
               O banco de dados não reconhece a sua conta como administradora do
               Zorvin. Quem administra o Zorvin precisa liberar a sua conta —
@@ -211,7 +215,7 @@ export default function Departamentos({ C, aoFechar }) {
 
               {departamentos.map((d) => (
                 <Departamento key={d.id} d={d} cx={cx} C={C}
-                  telefones={telefones} releituras={releituras}
+                  telefones={telefones} departamentos={departamentos} releituras={releituras}
                   aoRenomear={(nome) => gravar("dep", () => supabase.from("departamentos").update({ nome }).eq("id", d.id).select("id"))}
                   aoApagar={() => gravar("dep", () => supabase.from("departamentos").delete().eq("id", d.id).select("id"))}
                   aoMoverTelefone={(telId) => gravar("tel", () => supabase.from("advogados").update({ departamento_id: d.id }).eq("id", telId).select("id"))}
@@ -231,7 +235,9 @@ export default function Departamentos({ C, aoFechar }) {
 }
 
 // ---------- um departamento, com os telefones que atendem por ele ----------
-function Departamento({ d, cx, C, telefones, releituras, aoRenomear, aoApagar, aoMoverTelefone }) {
+function Departamento({ d, cx, C, telefones, departamentos, releituras, aoRenomear, aoApagar, aoMoverTelefone }) {
+  const nomeDoDepartamento = (id) =>
+    (departamentos.find((x) => x.id === id) || {}).nome || "";
   const [nome, setNome] = useState(d.nome);
   // Volta ao que o BANCO tem A CADA RELEITURA — e não só quando o nome muda.
   //
@@ -241,7 +247,14 @@ function Departamento({ d, cx, C, telefones, releituras, aoRenomear, aoApagar, a
   // dizia uma coisa e o banco tinha outra.
   useEffect(() => { setNome(d.nome); }, [d.nome, releituras]);
   const meus = telefones.filter((t) => t.departamento_id === d.id);
-  const soltos = telefones.filter((t) => !t.departamento_id);
+  // TODOS OS QUE NÃO ESTÃO AQUI — e não só os que não estão em lugar nenhum.
+  //
+  // A lista oferecia apenas os telefones SEM departamento. Quem pusesse um
+  // número no departamento errado ficava sem saída: não havia como tirá-lo de
+  // lá nem trazê-lo para cá, e a única correção era mexer no banco. Agora
+  // aparecem também os que estão em outro departamento, dizendo de onde vêm —
+  // sem isso, escolher um da lista seria uma mudança às cegas.
+  const deFora = telefones.filter((t) => t.departamento_id !== d.id);
 
   return (
     <div style={{ ...cx.secao, borderLeft: `4px solid ${d.cor || C.green}` }}>
@@ -274,16 +287,29 @@ function Departamento({ d, cx, C, telefones, releituras, aoRenomear, aoApagar, a
       {meus.length === 0 && <div style={cx.dica}>Nenhum telefone aqui ainda.</div>}
       {meus.map((t) => (
         <div key={t.id} style={{ ...cx.linha, fontSize: 13.5 }}>
-          <span style={{ flex: 1 }}>{t.nome} <span style={{ color: "#8696a0" }}>· {t.numero}</span></span>
-          {!t.ativo && <span style={{ fontSize: 11.5, color: "#8696a0" }}>inativo</span>}
+          <span style={{ flex: 1 }}>{t.nome} <span style={{ color: C.textSecondary }}>· {t.numero}</span></span>
+          {!t.ativo && <span style={{ fontSize: 11.5, color: C.textSecondary }}>inativo</span>}
         </div>
       ))}
-      {soltos.length > 0 && (
+      {deFora.length > 0 && (
         <div style={{ marginTop: 8 }}>
-          <select defaultValue="" onChange={(e) => e.target.value && aoMoverTelefone(e.target.value)}
+          {/* `value=""` fixo e sem `defaultValue`: a lista volta para "escolha
+              um…" depois de mover, em vez de ficar mostrando o telefone que
+              acabou de sair dela. Os dois juntos são o aviso do React de
+              "controlado ou não controlado, escolha um". */}
+          <select value=""
+                  onChange={(e) => e.target.value && aoMoverTelefone(e.target.value)}
+                  aria-label={`Trazer um telefone para o departamento ${d.nome}`}
                   style={{ ...cx.campo, width: "100%" }}>
-            <option value="">Trazer um telefone sem departamento para cá…</option>
-            {soltos.map((t) => <option key={t.id} value={t.id}>{t.nome} · {t.numero}</option>)}
+            <option value="">Trazer um telefone para cá…</option>
+            {deFora.map((t) => {
+              const onde = nomeDoDepartamento(t.departamento_id);
+              return (
+                <option key={t.id} value={t.id}>
+                  {t.nome} · {t.numero}{onde ? ` — hoje em ${onde}` : " — sem departamento"}
+                </option>
+              );
+            })}
           </select>
         </div>
       )}

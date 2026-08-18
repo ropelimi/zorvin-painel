@@ -24,6 +24,14 @@ A bancada não é um banco de brinquedo. Ela tem, de propósito:
 - **mensagens nascidas de um roteiro de atendimentos**, com horário e espera
   reais — sem isso, tudo o que depende de tempo mede zero e passa.
 
+### A ponte também é de mentira
+
+`VITE_BRIDGE_URL` aponta para um endereço que não existe, e quem responde por
+ele é a própria prova, interceptando a rede do navegador. Sem isso
+`chamarPonte` desiste na primeira linha ("falta a variável") e a ficha do
+cliente **passa no teste mostrando a mensagem de erro** — que foi exatamente o
+que aconteceu enquanto ela não tinha prova própria.
+
 ## Dois servidores, de propósito
 
 | prova | servidor | por quê |

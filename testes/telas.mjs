@@ -135,6 +135,63 @@ await tela("tudo de novo, no tema escuro", async () => {
   await page.locator("[data-conversa-nome]").first().click();
 }, "textarea, [contenteditable]");
 
+// ==================================================================
+//  O QUE AS TELAS FAZEM, e não só se elas abrem
+// ==================================================================
+
+console.log("\nEmojis");
+{
+  await fecharTudo();
+  await page.locator("[data-conversa-nome]").first().click();
+  await page.waitForTimeout(900);
+  const b = page.getByRole("button", { name: /Emojis/ });
+  if (await b.count()) await b.first().click();
+  await page.waitForTimeout(600);
+
+  const caixa = page.locator('input[placeholder="Pesquisar emoji"]');
+  // Conta os EMOJIS desenhados, e não todos os botões do painel: as abas
+  // também são botões, e contá-las faria "não achou nada" parecer "achou oito".
+  const quantos = async (termo) => {
+    await caixa.fill(termo);
+    await page.waitForTimeout(450);
+    const vazio = await page.getByText("Nenhum emoji com esse nome.").count();
+    if (vazio) return 0;
+    return page.locator('button[title]').filter({ hasNotText: /\w{4}/ }).count();
+  };
+
+  // "coração" é como se escreve. Os sinônimos do catálogo estão sem acento, e
+  // a comparação era letra por letra — quem digitava certo não achava nada, e
+  // concluía que o painel não tinha aquele emoji.
+  ok('procurar "coração" acha alguma coisa', await quantos("coração") > 0,
+     "os sinônimos estão escritos sem acento e a comparação era literal");
+  ok('e "coracao", sem acento, também', await quantos("coracao") > 0);
+  ok('"atenção" também acha', await quantos("atenção") > 0);
+  ok("e uma palavra que não existe não acha nada", await quantos("xilofonezinho") === 0);
+  await caixa.fill("");
+  await page.keyboard.press("Escape");
+}
+
+console.log("\nDepartamentos");
+{
+  await fecharTudo();
+  await page.getByRole("button", { name: "Menu" }).click();
+  await page.getByRole("button", { name: "Departamentos e acessos" }).click();
+  await page.waitForTimeout(1500);
+
+  // Um telefone posto no departamento errado precisa ter como sair de lá. A
+  // lista oferecia só os telefones SEM departamento nenhum — quem errasse
+  // ficava sem saída, e a única correção era mexer no banco.
+  const opcoes = await page.locator("select").first().locator("option").allTextContents();
+  ok("dá para trazer para cá um telefone que está em outro departamento",
+     opcoes.some((o) => /hoje em /.test(o)),
+     `as opções são: ${JSON.stringify(opcoes.slice(0, 4))}`);
+  ok("e a opção diz de onde ele vem",
+     opcoes.some((o) => /hoje em \S/.test(o)),
+     "escolher da lista sem saber de onde o número sai é uma mudança às cegas");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(500);
+}
+
 console.log(`\nerros de console no total: ${erros.length}`);
 erros.slice(0, 6).forEach((e) => console.log("   • " + e.slice(0, 160)));
 

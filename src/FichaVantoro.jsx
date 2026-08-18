@@ -255,6 +255,31 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     }
   }
 
+  // O QUE FOI DIGITADO E AINDA NÃO FOI GRAVADO.
+  //
+  // Esta ficha é um formulário: CPF, endereço, nascimento, profissão, senhas.
+  // Fechar descartava tudo, calado. Quem preencheu meia ficha e tocou no X sem
+  // querer perdia o trabalho e não recebia nem um aviso — e nem sabia que
+  // tinha perdido, porque a coluna simplesmente sumia.
+  //
+  // A comparação é a MESMA que `salvar()` usa para decidir o que mandar ao
+  // Vantoro. Duas contas diferentes de "mudou" acabariam discordando, e a
+  // pergunta apareceria na hora errada — que é o jeito de ensinar as pessoas a
+  // clicar em "sim" sem ler.
+  function mudouAlgumaCoisa() {
+    if (!cliente) return false;
+    return TODOS_CAMPOS.some(({ chave }) => (edicao[chave] || "") !== (cliente[chave] || ""));
+  }
+
+  function tentarFechar() {
+    if (mudouAlgumaCoisa()
+        && !window.confirm("Você preencheu campos que ainda não foram salvos no Vantoro.\n\n"
+                         + "Fechar agora descarta o que foi digitado. Fechar mesmo assim?")) {
+      return;
+    }
+    onFechar();
+  }
+
   const rotulo = { fontSize: 11, color: C.textSecondary, marginBottom: 3, display: "block" };
   const campo = {
     width: "100%", boxSizing: "border-box", background: C.inputBg, color: C.textPrimary,
@@ -277,13 +302,13 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       <div key={c.chave} style={{ marginBottom: 10 }}>
         <label style={rotulo}>{c.rotulo}{c.dica ? ` (${c.dica})` : ""}</label>
         {lista ? (
-          <select style={campo} value={edicao[c.chave] || ""}
+          <select data-campo={c.chave} style={campo} value={edicao[c.chave] || ""}
                   onChange={(e) => setEdicao({ ...edicao, [c.chave]: e.target.value })}>
             <option value="">—</option>
             {lista.map((o) => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
           </select>
         ) : (
-          <input style={campo} value={edicao[c.chave] || ""}
+          <input data-campo={c.chave} style={campo} value={edicao[c.chave] || ""}
                  inputMode={(c.data || c.cep) ? "numeric" : undefined}
                  placeholder={c.data ? "DD/MM/AAAA" : c.cep ? "00000-000" : undefined}
                  onChange={(e) => {
@@ -315,10 +340,14 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
         alignItems: "center", gap: 10, borderBottom: `1px solid ${C.divider}`,
       }}>
         <span style={{ flex: 1, fontSize: 15, fontWeight: 600, color: C.textPrimary }}>Ficha do cliente</span>
-        <button onClick={buscar} title="Atualizar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
+        {/* Atualizar relê o cadastro e substitui os campos — descarta o que foi
+            digitado do mesmo jeito que fechar. Pergunta pelo mesmo motivo. */}
+        <button onClick={() => { if (!mudouAlgumaCoisa()
+              || window.confirm("Atualizar descarta o que você digitou e ainda não salvou. Continuar?")) buscar(); }}
+                title="Atualizar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
           <RefreshCw size={16} color={C.textSecondary} />
         </button>
-        <button onClick={onFechar} title="Fechar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
+        <button onClick={tentarFechar} title="Fechar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
           <X size={18} color={C.textSecondary} />
         </button>
       </div>
@@ -366,8 +395,12 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
                 <div style={{ fontSize: 11, color: C.textSecondary, marginBottom: 5 }}>
                   ORDEM DE SERVIÇO · {cliente.ordem_servico.status}
                 </div>
-                {cliente.ordem_servico.pendencias.length ? (
-                  cliente.ordem_servico.pendencias.map((p) => (
+                {/* `pendencias` pode não vir. Sem esta guarda, `.length` estoura —
+                    e no React 18 um erro assim não mostra mensagem nenhuma: ele
+                    MATA a árvore onde aconteceu. A ficha inteira sumia, e o que
+                    sobrava era uma coluna em branco ao lado da conversa. */}
+                {(cliente.ordem_servico.pendencias || []).length ? (
+                  (cliente.ordem_servico.pendencias || []).map((p) => (
                     <div key={p.id} style={{ fontSize: 12.5, color: C.textPrimary, marginTop: 3 }}>
                       • {p.titulo}
                       <span style={{ color: C.textSecondary }}>
@@ -430,12 +463,12 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
               <Save size={15} /> {salvando ? "Salvando…" : "Salvar no Vantoro"}
             </button>
 
-            {cliente.processos?.length > 0 && (
+            {(cliente.processos || []).length > 0 && (
               <div style={{ marginTop: 16 }}>
                 <div style={{ fontSize: 11, color: C.textSecondary, marginBottom: 6 }}>
-                  PROCESSOS · {cliente.processos.length}
+                  PROCESSOS · {(cliente.processos || []).length}
                 </div>
-                {cliente.processos.slice(0, 12).map((p) => (
+                {(cliente.processos || []).slice(0, 12).map((p) => (
                   <div key={p.id} style={{ fontSize: 12.5, color: C.textPrimary, marginBottom: 6, lineHeight: 1.4 }}>
                     {p.tipo_acao || p.numero || "processo"}
                     <span style={{ display: "block", color: C.textSecondary, fontSize: 11.5 }}>
@@ -447,7 +480,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
             )}
 
             <div style={{ marginTop: 16, fontSize: 12, color: C.textSecondary }}>
-              {cliente.documentos} documento(s) no cadastro.
+              {cliente.documentos || 0} documento(s) no cadastro.
             </div>
           </div>
         )}

@@ -151,8 +151,13 @@ export default function Login() {
             <Mail size={18} color={foco === "email" ? C.green : C.textSecondary} style={{ flexShrink: 0 }} />
             <input
               className="zv-input" type="text" autoComplete="username" autoCapitalize="none"
+              // O cursor já começa aqui. É a primeira coisa que se faz nesta
+              // tela — não há outra —, e obrigar um clique antes de digitar é
+              // um passo que não serve para nada. Quem entra pelo celular
+              // ganha o teclado abrindo sozinho.
+              autoFocus
               placeholder="Digite o mesmo usuário do Vantoro" value={email}
-              onChange={(e) => setEmail(e.target.value)} onFocus={() => setFoco("email")} onBlur={() => setFoco("")}
+              onChange={(e) => { setEmail(e.target.value); if (erro) setErro(""); }} onFocus={() => setFoco("email")} onBlur={() => setFoco("")}
               required style={inputEstilo}
             />
           </div>
@@ -163,7 +168,7 @@ export default function Login() {
             <input
               className="zv-input" type={verSenha ? "text" : "password"} autoComplete="current-password"
               placeholder="••••••••" value={senha}
-              onChange={(e) => setSenha(e.target.value)} onFocus={() => setFoco("senha")} onBlur={() => setFoco("")}
+              onChange={(e) => { setSenha(e.target.value); if (erro) setErro(""); }} onFocus={() => setFoco("senha")} onBlur={() => setFoco("")}
               required style={inputEstilo}
             />
             <button type="button" onClick={() => setVerSenha((v) => !v)} title={verSenha ? "Ocultar senha" : "Mostrar senha"}
@@ -172,8 +177,12 @@ export default function Login() {
             </button>
           </div>
 
+          {/* `role="alert"` faz o leitor de tela ANUNCIAR a mensagem quando ela
+              aparece. Sem isso, quem não enxerga a tela aperta "Entrar", não
+              acontece nada aparente, e não há como saber que a senha estava
+              errada — a mensagem existe, mas em silêncio. */}
           {erro && (
-            <div style={{ display: "flex", alignItems: "center", gap: 7, color: "#fff", background: "#e5573f", fontSize: 13, fontWeight: 500, marginTop: 16, padding: "9px 12px", borderRadius: 10 }}>
+            <div role="alert" style={{ display: "flex", alignItems: "center", gap: 7, color: "#fff", background: "#e5573f", fontSize: 13, fontWeight: 500, marginTop: 16, padding: "9px 12px", borderRadius: 10 }}>
               {erro}
             </div>
           )}
