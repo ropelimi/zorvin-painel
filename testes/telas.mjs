@@ -25,6 +25,23 @@ await page.goto(URL);
 await page.waitForSelector('input[placeholder*="Buscar por nome"]');
 await page.waitForTimeout(2000);
 
+/** FECHA O QUE ESTIVER ABERTO, e confere que fechou.
+ *
+ *  Antes era um `Escape` solto depois de cada tela. Isso é uma aposta: se o
+ *  painel ainda não terminou de abrir, o `Escape` não fecha nada e ele fica
+ *  ali — escondendo a lista de conversas e derrubando a conferência SEGUINTE,
+ *  que não tem nada a ver com o defeito. Um teste que depende de o servidor
+ *  responder rápido não está medindo a tela; está medindo a rede. */
+async function fecharTudo() {
+  for (let i = 0; i < 10; i++) {
+    const aberto = await page.getByRole("button", { name: "Nova conversa" }).count() === 0;
+    if (!aberto) return true;
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(350);
+  }
+  return false;
+}
+
 /** Abre algo, espera, e diz se o marcador esperado apareceu. */
 async function tela(nome, abrir, marcador) {
   const antes = erros.length;
@@ -53,13 +70,14 @@ await tela("ficha do cliente", async () => {
   const b = page.getByRole("button", { name: /Ficha|Cliente/ });
   if (await b.count()) await b.first().click();
 });
-await page.keyboard.press("Escape");
+await fecharTudo();
 
 await tela("histórico de atendimento", async () => {
   const b = page.getByRole("button", { name: /Histórico/ });
   if (await b.count()) await b.first().click();
 });
-await page.keyboard.press("Escape");
+ok("dá para fechar o que foi aberto", await fecharTudo(),
+   "algo continuou aberto por cima da lista de conversas");
 
 await tela("nova conversa (agenda)",
   () => page.getByRole("button", { name: "Nova conversa" }).click(),

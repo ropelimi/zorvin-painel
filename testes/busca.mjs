@@ -238,6 +238,72 @@ console.log("\nBusca por nome");
        "sem marca, a tela para no meio da conversa e nada diz qual bolha respondeu à busca");
   }
 
+  // ---- E DE NOVO, COM OUTRA PALAVRA DA MESMA CONVERSA ----
+  //
+  // É o caso do relato: a primeira busca leva à mensagem; a segunda, na mesma
+  // conversa, abre no fim. Duas coisas conspiram aqui — a conversa já está
+  // aberta (então nada é recarregado) e a rolagem automática para o fim, que
+  // devia ter sido travada, não é.
+  const outra = await page.evaluate(() => globalThis.__OUTRA_PALAVRA);
+  const alvo2 = await page.evaluate(() => globalThis.__MSG_ACHADA_2);
+  await procurar(outra);
+  await page.locator("[data-conversa-nome]").first().click();
+  await page.waitForTimeout(2500);
+
+  const bolha2 = page.locator(`[data-msg-id="${alvo2}"]`);
+  const naTela2 = await bolha2.count()
+    ? await bolha2.first().evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return r.top >= 0 && r.bottom <= window.innerHeight && r.height > 0;
+      })
+    : false;
+  ok("procurar outra palavra da MESMA conversa também leva até ela",
+     naTela2,
+     "a segunda busca abriu a conversa no fim — foi exatamente este o relato");
+
+  // ---- E DEPOIS DE FECHAR E ABRIR OUTRA VEZ ----
+  //
+  // Fechar a conversa e voltar pela busca é o gesto de quem está conferindo
+  // várias — e é onde um alvo consumido no lugar errado deixa de valer.
+  await page.locator("[data-conversa-nome]").first().click().catch(() => {});
+  await procurar(palavra);
+  await page.locator("[data-conversa-nome]").first().click();
+  await page.waitForTimeout(2500);
+  const devolta = await page.locator(`[data-msg-id="${alvo}"]`).count()
+    ? await page.locator(`[data-msg-id="${alvo}"]`).first().evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return r.top >= 0 && r.bottom <= window.innerHeight && r.height > 0;
+      })
+    : false;
+  ok("e voltar à primeira palavra leva de volta à primeira mensagem", devolta,
+     "a terceira busca não levou a lugar nenhum");
+
+  // ---- E COM A PÁGINA RECÉM-CARREGADA ----
+  //
+  // No relato, atualizar a página e fazer a PRIMEIRA busca também falhava, com
+  // os mesmos passos que tinham funcionado minutos antes. Duas execuções
+  // iguais com resultados diferentes é a assinatura de uma corrida: o salto só
+  // aparecia quando ganhava da rolagem automática para o fim. Cinco voltas,
+  // porque uma corrida ganha às vezes.
+  let saltouSempre = true;
+  for (let volta = 1; volta <= 5; volta++) {
+    await page.reload();
+    await page.waitForSelector("[data-conversa-nome]");
+    await page.waitForTimeout(1500);
+    await procurar(palavra);
+    await page.locator("[data-conversa-nome]").first().click();
+    await page.waitForTimeout(2500);
+    const viu = await page.locator(`[data-msg-id="${alvo}"]`).count()
+      ? await page.locator(`[data-msg-id="${alvo}"]`).first().evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          return r.top >= 0 && r.bottom <= window.innerHeight && r.height > 0;
+        })
+      : false;
+    if (!viu) { saltouSempre = false; console.log(`     falhou na volta ${volta}`); }
+  }
+  ok("com a página recém-carregada, leva até a mensagem TODA vez", saltouSempre,
+     "às vezes vai e às vezes não — é corrida, não acaso");
+
   // Abrir a MESMA conversa de novo, agora sem busca, tem de voltar ao normal:
   // o alvo é de uma busca, não uma propriedade da conversa.
   await procurar("");

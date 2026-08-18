@@ -10,6 +10,12 @@
 // que é o mesmo defeito em câmera lenta.
 const ATRASO_CONVERSAS = 700;
 
+// E as MENSAGENS também demoram. Sem isto, a bancada respondia num piscar e a
+// tela terminava de montar antes de qualquer rolagem automática acontecer —
+// escondendo uma corrida que em produção é ganha pelo lado errado. Foi assim
+// que "abrir a conversa na mensagem achada" passou no teste e falhou no uso.
+const ATRASO_MENSAGENS = 250;
+
 // O TETO DE LINHAS É DE PROPÓSITO, e é o mesmo da API do Supabase: um `select`
 // sem paginação devolve no máximo isto e CALA — não vem erro, não vem aviso,
 // vem uma lista curta com cara de lista inteira. Enquanto o painel só lia 120
@@ -403,6 +409,21 @@ for (let i = 1; i <= 60; i++) {
     criado_em: new Date(HA_TRES_MESES - i * 60e3).toISOString(),
   });
 }
+// UMA SEGUNDA PALAVRA, NA MESMA CONVERSA.
+//
+// É o caso do relato: procura-se uma palavra, clica-se e vai; procura-se outra
+// palavra da MESMA conversa, clica-se e não vai. Sem duas palavras na mesma
+// conversa, nenhum teste chega perto disso.
+export const OUTRA_PALAVRA = "dinossauro";
+export const MSG_ACHADA_2 = "m-palavra-2";
+MENSAGENS.push({
+  id: MSG_ACHADA_2, conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
+  origem: "contato", tipo: "texto",
+  texto: "meu filho quer ver o dinossauro do museu",
+  enviado_por: null, enviado_por_id: null,
+  criado_em: new Date(HA_TRES_MESES + 30 * 60e3).toISOString(),
+});
+
 for (let i = 1; i <= 200; i++) {
   MENSAGENS.push({
     id: `m-depois-${i}`, conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
@@ -581,6 +602,8 @@ if (typeof globalThis !== "undefined") {
   globalThis.__TABELAS = TABELAS;
   globalThis.__PALAVRA_NA_CONVERSA = PALAVRA_NA_CONVERSA;
   globalThis.__MSG_ACHADA = MSG_ACHADA;
+  globalThis.__OUTRA_PALAVRA = OUTRA_PALAVRA;
+  globalThis.__MSG_ACHADA_2 = MSG_ACHADA_2;
 }
 
 /** O `%` do PostgREST vira o `.*` de uma expressão regular, sem diferenciar
@@ -719,6 +742,7 @@ function consulta(tabela) {
     delete() { apagando = true; return eu; },
     async then(resolver) {
       if (tabela === "conversas") await espera(ATRASO_CONVERSAS);
+      if (tabela === "mensagens") await espera(ATRASO_MENSAGENS);
       if (patch) linhas.forEach((l) => Object.assign(l, patch));
       if (apagando) {
         const tab = TABELAS[tabela] || [];
