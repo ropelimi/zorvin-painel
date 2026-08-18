@@ -427,6 +427,44 @@ MENSAGENS.push({
   criado_em: new Date(Date.now() - 1180 * 3600e3).toISOString(),
 });
 
+// ETIQUETAS, E ONDE ELAS ESTÃO PENDURADAS.
+//
+// A bancada nascia com `tags: []` e `conversa_tags: []` — quer dizer que a
+// etiqueta, do filtro ao selo na linha, nunca foi exercitada uma vez sequer.
+//
+// A "Urgente" está pendurada em cinco conversas do telefone do fundo, e de
+// propósito ESPALHADA: duas dentro da primeira página que a tela carrega, três
+// depois dela. É a diferença entre um filtro que pergunta ao banco e um que
+// filtra a lista que está na tela — este último acha duas e diz que são todas.
+export const TAG_URGENTE = "t-urgente";
+export const URGENTE_TOTAL = 5;
+const CONVERSAS_URGENTES = ["a13-c3", "a13-c40", "a13-c700", "a13-c980", "a13-c1150"];
+const TAGS = [
+  { id: TAG_URGENTE, nome: "Urgente", cor: "#c0392b" },
+  { id: "t-aguardando", nome: "Aguardando cliente", cor: "#2a78d6" },
+];
+const CONVERSA_TAGS = CONVERSAS_URGENTES.map((cid, i) => ({
+  id: `ct-tag-${i}`, conversa_id: cid, tag_id: TAG_URGENTE,
+}));
+// Uma segunda etiqueta numa conversa das primeiras, para provar que o filtro
+// separa uma da outra em vez de mostrar tudo o que tem etiqueta.
+CONVERSA_TAGS.push({ id: "ct-tag-x", conversa_id: "a13-c3", tag_id: "t-aguardando" });
+
+// UMA CONVERSA FIXADA LÁ NO FUNDO.
+//
+// Fixar serve para uma conversa ficar à vista todo dia, acima das outras. A
+// ordenação, porém, é feita sobre a lista já carregada — então uma conversa
+// fixada que esteja na página 6 do banco só sobe quando alguém rolar até a
+// página 6. Que é o mesmo que não estar fixada.
+export const NOME_FIXADA = "CONVERSA QUE FOI FIXADA";
+{
+  const alvo = CONVERSAS.find((c) => c.id === "a13-c1000");
+  const contato = FUNDO.find((c) => c.id === alvo.contato_id);
+  alvo.fixada = true;
+  contato.nome = NOME_FIXADA;
+  alvo.contato = { ...contato };
+}
+
 // UMA NOTA NA CONVERSA DE PROVA, escrita pelo próprio usuário logado — é dele
 // a permissão de editar e apagar. `apagada_em` nula: é o estado que a tela
 // precisa saber mudar.
@@ -467,7 +505,7 @@ const TABELAS = {
     ...CONVERSAS.filter((c) => c.contato && c.contato.numero && !c.contato_id.startsWith("ct-"))
       .map((c) => ({ id: c.contato_id, ...c.contato, vantoro_nome: null, nome_zorvin: null })),
   ],
-  notas: NOTAS, tags: [], conversa_tags: [],
+  notas: NOTAS, tags: TAGS, conversa_tags: CONVERSA_TAGS,
   // O histórico de alterações começa VAZIO: as linhas nascem do que se faz na
   // tela, e semear alguma aqui esconderia uma tela que não grava nada.
   alteracoes: [],
@@ -516,7 +554,7 @@ function comparar(a, b) {
 /** Uma consulta encadeável que devolve sempre `{data, error}` no final. */
 function consulta(tabela) {
   let linhas = (TABELAS[tabela] || []).slice();
-  let inicio = 0, corte = Infinity, patch = null, contando = false, semLinhas = false;
+  let inicio = 0, corte = Infinity, patch = null, contando = false, semLinhas = false, apagando = false;
   const eu = {
     // `select("id", { count: "exact", head: true })` — o jeito de pedir só a
     // CONTAGEM. A bancada precisa saber disso desde que os selos de não lidas
@@ -601,10 +639,20 @@ function consulta(tabela) {
     // gravava em TODAS as linhas e depois filtrava, o que faria um teste passar
     // mesmo se o painel esquecesse o filtro e reescrevesse o cadastro inteiro.
     update(reg) { patch = { ...(patch || {}), ...reg }; return eu; },
-    delete() { return eu; },
+    // APAGAR PRECISA APAGAR. Era um cano vazio: devolvia a corrente e não
+    // tirava linha nenhuma. Tirar uma etiqueta de uma conversa, apagar uma
+    // etiqueta, apagar uma nota — tudo isso passava na bancada sem que nada
+    // saísse da tabela, e um teste que conferisse o resultado passaria mesmo
+    // com o painel esquecendo de apagar. Como o `update`, ela guarda a
+    // intenção e executa no fim, depois de os filtros terem sido aplicados.
+    delete() { apagando = true; return eu; },
     async then(resolver) {
       if (tabela === "conversas") await espera(ATRASO_CONVERSAS);
       if (patch) linhas.forEach((l) => Object.assign(l, patch));
+      if (apagando) {
+        const tab = TABELAS[tabela] || [];
+        for (const l of linhas) { const i = tab.indexOf(l); if (i >= 0) tab.splice(i, 1); }
+      }
       // O "join" com contatos, refeito na hora. No Supabase a lista de
       // conversas traz o contato por junção, então uma gravação em `contatos`
       // aparece na consulta seguinte. Aqui o contato era uma CÓPIA presa à
