@@ -1184,10 +1184,26 @@ export default function Painel({ sessao }) {
   // palavra dita há três meses achou a conversa e ainda teria de procurar
   // dentro dela, rolando. No WhatsApp, clicar no resultado leva à mensagem.
   const [alvoDaBusca, setAlvoDaBusca] = useState({});   // conversaId → {id, em}
-  // Vai de mão em mão até `carregarMensagens`. Ref, e não estado: ele é lido
-  // uma vez, na abertura, e um estado aqui provocaria um redesenho a mais no
-  // exato momento em que a tela está montando a conversa inteira.
+  // O ALVO GUARDA DE QUAL CONVERSA ELE É — `{ conversa, id, em }`.
+  //
+  // A primeira versão era só `{ id, em }`, e `carregarMensagens` a CONSUMIA
+  // (zerava) logo na primeira linha. Só que ela roda ANTES do efeito que
+  // decide se a tela rola para o fim: quando esse efeito ia conferir se havia
+  // alvo, já não havia. A trava contra a rolagem para o fim nunca valeu, e o
+  // salto até a mensagem só aparecia quando ganhava a corrida — o que dependia
+  // de a resposta do banco chegar na hora certa.
+  //
+  // Levando junto de qual conversa ele é, ninguém precisa zerá-lo na hora
+  // exata: um alvo de outra conversa simplesmente não vale.
   const alvoParaAbrirRef = useRef(null);
+  const alvoDe = (convId) => {
+    const a = alvoParaAbrirRef.current;
+    return a && String(a.conversa) === String(convId) ? a : null;
+  };
+  // Cada pedido de salto é um objeto novo, com um contador. Procurar a MESMA
+  // palavra duas vezes seguidas dá o mesmo id de mensagem — e um efeito que
+  // dependesse só do id não rodaria na segunda vez.
+  const [salto, setSalto] = useState(null);          // { id, n }
   const [msgDestacada, setMsgDestacada] = useState(null);
   const [buscandoAntigas, setBuscandoAntigas] = useState(false);
   const [importando, setImportando] = useState(false); // gravando no banco
@@ -2596,10 +2612,9 @@ export default function Painel({ sessao }) {
     if (!convId) { setMensagens([]); setTemMaisAntigas(false); return; }
 
     // A conversa aberta a partir de um resultado de busca não começa no fim:
-    // começa na mensagem que casou. O alvo é consumido aqui — uma vez só, na
-    // abertura —, para reabrir a mesma conversa depois voltar ao normal.
-    const alvo = alvoParaAbrirRef.current;
-    alvoParaAbrirRef.current = null;
+    // começa na mensagem que casou. Aqui o alvo é só LIDO — quem o apaga é o
+    // efeito que faz o salto, depois de ele acontecer.
+    const alvo = alvoDe(convId);
 
     let recentes = [], erro = null, maisAntigas = false;
     if (alvo && alvo.em) {
@@ -2680,7 +2695,8 @@ export default function Painel({ sessao }) {
     // Veio o lote cheio? Então provavelmente há mais para trás.
     setTemMaisAntigas(maisAntigas);
     // A mensagem achada fica marcada para a tela rolar até ela e destacá-la.
-    setMsgDestacada(alvo ? String(alvo.id ?? "") : null);
+    if (alvo) setSalto((s) => ({ id: String(alvo.id ?? ""), n: (s?.n || 0) + 1 }));
+    else { setSalto(null); setMsgDestacada(null); }
     naoLidasRef.current = 0; // usa só na abertura
     // AQUI ZERAVA O CONTADOR. Não zera mais.
     //
@@ -3009,7 +3025,7 @@ export default function Painel({ sessao }) {
     // logo abaixo, que leva até a mensagem achada. Sem esta condição as duas
     // rolagens brigavam e a tela terminava no fim, que é o que a pessoa estava
     // justamente tentando evitar.
-    if (!alvoParaAbrirRef.current) {
+    if (!alvoDe(conversaId)) {
       requestAnimationFrame(() => { fimRef.current?.scrollIntoView(); if (conversaId && !estreito) inputRef.current?.focus(); });
     } else if (conversaId && !estreito) {
       requestAnimationFrame(() => inputRef.current?.focus());
@@ -3024,21 +3040,34 @@ export default function Painel({ sessao }) {
   //  O destaque apaga sozinho depois de alguns segundos — ele serve para o
   //  momento da chegada, e uma marca que fica vira sujeira.
   useEffect(() => {
-    if (!msgDestacada) return;
-    let apagar = null;
-    const id = requestAnimationFrame(() => {
-      const el = document.querySelector(`[data-msg-id="${msgDestacada}"]`);
+    if (!salto) return;
+    setMsgDestacada(salto.id);
+    setPertoDoFim(false);
+    const quadro = requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-msg-id="${salto.id}"]`);
       if (el) el.scrollIntoView({ block: "center" });
       else fimRef.current?.scrollIntoView();   // não achou: melhor o fim que o nada
-      setPertoDoFim(false);
-      apagar = setTimeout(() => setMsgDestacada(null), 4000);
+      // Só agora o alvo deixa de valer: o salto já aconteceu.
+      alvoParaAbrirRef.current = null;
     });
-    return () => { cancelAnimationFrame(id); if (apagar) clearTimeout(apagar); };
-  }, [msgDestacada]);
+    const apagar = setTimeout(() => setMsgDestacada(null), 4000);
+    return () => { cancelAnimationFrame(quadro); clearTimeout(apagar); };
+  }, [salto]);
 
   // Mensagem nova: só rola até o fim se o atendente já estava no fim
   // (não "puxa" a tela quem está lendo mensagens antigas).
-  useEffect(() => { if (pertoDoFim) fimRef.current?.scrollIntoView({ behavior: "smooth" }); }, [mensagens.length]);
+  useEffect(() => {
+    // A conversa aberta numa mensagem achada não é puxada para o fim. O
+    // `pertoDoFim` não serve de trava aqui: ele é estado, e o efeito acima
+    // acabou de pedir para desligá-lo — nesta rodada ele ainda vale `true`. O
+    // alvo é uma referência, muda na hora, e por isso é ele quem decide.
+    //
+    // E a rolagem para o fim é SUAVE: uma animação que continua correndo
+    // depois. Ela terminava por cima do salto, e a tela parava no fim da
+    // conversa — que é exatamente o que se estava tentando evitar.
+    if (alvoParaAbrirRef.current) return;
+    if (pertoDoFim) fimRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [mensagens.length]);
 
   // Mostra as não lidas no título da aba: "(3) Ropelimi Zorvin".
   useEffect(() => {
@@ -4729,7 +4758,19 @@ export default function Painel({ sessao }) {
    *  linha, e uma teria ficado para trás na primeira mudança. */
   function abrirConversa(c) {
     naoLidasRef.current = c.nao_lidas || 0;
-    alvoParaAbrirRef.current = alvoDaBusca[c.id] || null;
+    const achado = alvoDaBusca[c.id];
+    alvoParaAbrirRef.current = achado ? { conversa: c.id, ...achado } : null;
+
+    // A CONVERSA JÁ ABERTA NÃO RECARREGA SOZINHA.
+    //
+    // `setConversaId` com o mesmo valor não muda nada, e o efeito que carrega
+    // as mensagens não roda de novo. Era metade do defeito relatado: procurar
+    // uma palavra e ir até ela funcionava; procurar OUTRA palavra da mesma
+    // conversa não fazia nada, porque a conversa já estava na tela.
+    if (String(c.id) === String(conversaId)) {
+      if (achado) { setPertoDoFim(false); carregarMensagens(c.id); }
+      return;
+    }
     setConversaId(c.id);
   }
 
