@@ -20,6 +20,7 @@ const PROVAS = [
   { nome: "busca",       servidor: "dev" },
   { nome: "etiquetas",   servidor: "dev" },
   { nome: "painel",      servidor: "dev" },
+  { nome: "ficha",       servidor: "dev" },
   { nome: "desempenho",  servidor: "producao" },
 ];
 
@@ -44,7 +45,12 @@ function subirServidor(tipo) {
   // medição de desempenho acabou feita contra o servidor de desenvolvimento —
   // exatamente o que ela não pode medir.
   return spawn("npx", args, {
-    env: { ...process.env, VITE_BANCADA: "1" },
+    // A ponte aponta para um endereço que não existe — quem responde por ele é
+    // o próprio teste, interceptando a rede. Sem isto `chamarPonte` desiste na
+    // primeira linha ("falta a variável"), e a ficha do cliente nunca chega a
+    // ser exercitada: ela passava no teste mostrando a mensagem de erro.
+    env: { ...process.env, VITE_BANCADA: "1",
+           VITE_BRIDGE_URL: "http://127.0.0.1:5199/ponte-de-mentira" },
     stdio: ["ignore", "ignore", "inherit"],
     detached: true,
   });
@@ -93,7 +99,8 @@ for (const tipo of ["dev", "producao"]) {
 
   if (tipo === "producao") {
     console.log("\n--- build de produção ---");
-    const b = rodar("npx", ["vite", "build"], { env: { ...process.env, VITE_BANCADA: "1" } });
+    const b = rodar("npx", ["vite", "build"], { env: { ...process.env, VITE_BANCADA: "1",
+      VITE_BRIDGE_URL: "http://127.0.0.1:5199/ponte-de-mentira" } });
     if (await esperarSair(b) !== 0) { console.error("o build falhou"); process.exit(1); }
   }
 
