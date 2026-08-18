@@ -87,6 +87,8 @@ function nomeDoContato(contato) {
 // existe", descemos para o conjunto de sempre e não perguntamos de novo nesta
 // sessão. É a mesma tolerância que a Ponte já tem do outro lado ao gravar.
 let TEM_NOME_DO_CADASTRO = true;
+// `conversas.arquivada` também é de um SQL que pode não ter sido rodado.
+let TEM_ARQUIVADA = true;
 const colunasDoContato = (base) =>
   TEM_NOME_DO_CADASTRO ? base + ", vantoro_nome, nome_zorvin" : base;
 
@@ -268,13 +270,29 @@ function corNome(txt, modo) {
   return arr[h];
 }
 
+// OS FORMATADORES NASCEM UMA VEZ, e não a cada chamada.
+//
+// `toLocaleTimeString("pt-BR", {...})` constrói um `Intl.DateTimeFormat` novo
+// por dentro TODA vez que é chamado, e isso é caro: num perfil da tela, com a
+// lista de conversas na frente, `horaDe` sozinha respondia por 30% do tempo de
+// cada tecla digitada na busca. Ela é chamada uma vez por linha da lista e uma
+// vez por mensagem na conversa — as duas coisas que mais se redesenham aqui.
+//
+// Reaproveitando o formatador, a mesma conta custa uma fração disso.
+const HORA = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" });
+const DIA_MES = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" });
+const DIA_MES_ANO = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+
 function horaDe(iso) {
   if (!iso) return "";
   const d = new Date(iso);
   const hoje = new Date();
-  const mesmoDia = d.toDateString() === hoje.toDateString();
-  if (mesmoDia) return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  // Comparando os três números, e não duas strings: `toDateString()` monta e
+  // joga fora uma string por chamada, e são milhares por segundo aqui.
+  const mesmoDia = d.getDate() === hoje.getDate()
+                && d.getMonth() === hoje.getMonth()
+                && d.getFullYear() === hoje.getFullYear();
+  return mesmoDia ? HORA.format(d) : DIA_MES.format(d);
 }
 
 // Data e hora por extenso — "05/08/2026 às 18:38".
@@ -287,8 +305,7 @@ function dataHoraDe(iso) {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })
-       + " às " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return DIA_MES_ANO.format(d) + " às " + HORA.format(d);
 }
 
 // O NÚMERO DE QUEM ESTÁ ATENDENDO, legível.
@@ -326,7 +343,7 @@ const NOME_DA_ABA = "Ropelimi Zorvin";
 // Sempre HH:MM (usada no carimbo das bolhas; a data fica no separador).
 function horaCurta(iso) {
   if (!iso) return "";
-  return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return HORA.format(new Date(iso));
 }
 
 // Rótulo de dia para o separador de datas (HOJE / ONTEM / dd/mm/aaaa).
@@ -340,7 +357,7 @@ function rotuloData(iso) {
     a.getDate() === b.getDate() && a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
   if (mesmoDia(d, hoje)) return "HOJE";
   if (mesmoDia(d, ontem)) return "ONTEM";
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return DIA_MES_ANO.format(d);
 }
 
 // Marca de status (tiquinhos) de uma mensagem que EU enviei, estilo WhatsApp.
@@ -1097,6 +1114,26 @@ export default function Painel({ sessao }) {
   const [digitandos, setDigitandos] = useState({}); // { conversaId: digitando_ate (ISO) }
   const [naoLidasPorAdv, setNaoLidasPorAdv] = useState({}); // { advogadoId: total de não lidas }
   const [tique, setTique] = useState(0); // força re-render p/ esconder "digitando…" ao expirar
+
+  // QUANTAS CONVERSAS A LISTA DESENHA DE UMA VEZ.
+  //
+  // Ela desenhava TODAS. Num telefone com dois anos de histórico são as 1000 que
+  // a API devolve, e cada linha tem avatar, nome, prévia, hora e selos: medido
+  // num computador de escritório (processador 4× mais lento que o meu), o
+  // navegador ficava com 13 mil elementos na tela e cada tecla digitada na
+  // busca levava 297 ms para aparecer. Digitar "andre" travava a tela por um
+  // segundo e meio.
+  //
+  // Agora ela desenha uma página, e mais uma a cada vez que a rolagem se
+  // aproxima do fim. O que está fora da tela não custa nada — e ninguém lê a
+  // conversa número 700 sem rolar até ela.
+  const PAGINA = 40;
+  const [quantasNaLista, setQuantasNaLista] = useState(PAGINA);
+  // Quantas conversas vêm do BANCO por vez, e se ainda há mais para buscar.
+  const PAGINA_BANCO = 200;
+  const [paginaConversas, setPaginaConversas] = useState(0);
+  const [temMaisConversas, setTemMaisConversas] = useState(false);
+  const [buscandoMais, setBuscandoMais] = useState(false);
   const fimRef = useRef(null);
   const inputRef = useRef(null);
   const conversaIdRef = useRef(null);
@@ -1348,13 +1385,26 @@ export default function Painel({ sessao }) {
   }, []);
 
   // ---- Carrega as conversas do advogado selecionado ----
-  const carregarConversas = useCallback(async (advId) => {
+  //
+  // EM PÁGINAS, e não a lista inteira.
+  //
+  // A consulta sem recorte parava em 1000 — teto da API do Supabase, que corta
+  // e não avisa. Num telefone com dois anos de conversa, a conversa número 1200
+  // simplesmente não existia: não estava na lista, não aparecia rolando, e o
+  // rodapé dizia "de 1000" com toda a confiança.
+  //
+  // Agora vem uma página por vez, e a rolagem pede a próxima. Além de acabar
+  // com o teto, a primeira tela chega mais rápido: 200 conversas em vez de
+  // 1000.
+  const carregarConversas = useCallback(async (advId, pagina = 0) => {
     if (!advId) return;
+    const de = pagina * PAGINA_BANCO;
     const buscar = () => supabase
       .from("conversas")
       .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
       .eq("advogado_id", advId)
-      .order("ultima_atividade", { ascending: false });
+      .order("ultima_atividade", { ascending: false })
+      .range(de, de + PAGINA_BANCO - 1);
     let { data, error } = await buscar();
     // Base sem o SQL das frentes: tira `vantoro_nome` do pedido e repete. Uma
     // vez só — depois disso a coluna já não é pedida.
@@ -1375,9 +1425,19 @@ export default function Painel({ sessao }) {
     // existir: pedi-la no `order` faria a consulta inteira falhar, e a lista de
     // conversas sumiria por causa de um recurso que nem foi instalado.
     const porFixada = (a, b) => (b.fixada ? 1 : 0) - (a.fixada ? 1 : 0);
+    const veio = data || [];
+    // Página cheia = provavelmente há mais. Página curta = acabou.
+    setTemMaisConversas(veio.length === PAGINA_BANCO);
+    setPaginaConversas(pagina);
     // A conversa aberta mantém o contador dela: abrir não é responder.
-    const lista = (data || []).slice().sort(porFixada);
-    setConversas(lista);
+    setConversas((antes) => {
+      // Na primeira página a lista é substituída; nas seguintes, emendada — e
+      // sem repetir quem já veio, porque uma conversa que recebe mensagem entre
+      // uma página e outra desce de posição e apareceria duas vezes.
+      const base = pagina === 0 ? [] : antes;
+      const vistos = new Set(base.map((c) => String(c.id)));
+      return [...base, ...veio.filter((c) => !vistos.has(String(c.id)))].slice().sort(porFixada);
+    });
     // A lista e o dono dela mudam JUNTOS — é o que garante que ninguém leia
     // esta lista como sendo de outro telefone.
     setConversasDe(advId);
@@ -1404,21 +1464,52 @@ export default function Painel({ sessao }) {
   // `select("*")` em vez de pedir as colunas: `arquivada` pode não existir numa
   // instalação antiga, e pedir coluna inexistente faz a consulta inteira falhar
   // — os selos sumiriam todos por causa de um recurso que nem foi instalado.
+  //
+  // ELA CONTA NO BANCO, e não baixando as conversas.
+  //
+  // A versão anterior pedia `select("*")` de TODAS as conversas não lidas, de
+  // todos os telefones, e contava aqui. Dois problemas, um de correção e um de
+  // custo:
+  //
+  //   * a API do Supabase devolve no máximo 1000 linhas e cala. Num escritório
+  //     com mais de mil conversas não lidas, os selos passavam a mentir — e a
+  //     mentira era para MENOS, que é a pior direção: some o aviso de que há
+  //     gente esperando;
+  //   * cada chamada trazia até 1000 conversas INTEIRAS (prévia, datas, tudo)
+  //     só para somar 1 por linha. E ela é chamada a cada mensagem que chega,
+  //     em qualquer telefone — num dia de movimento, isso é um megabyte de
+  //     JSON por minuto para produzir uma dúzia de números.
+  //
+  // Agora é uma contagem por telefone, com `head: true`: o banco responde só o
+  // número, sem linha nenhuma. São poucas requisições minúsculas em vez de uma
+  // enorme, e o resultado é exato em qualquer tamanho de base.
   const carregarNaoLidasPorAdv = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("conversas")
-      .select("*")
-      .gt("nao_lidas", 0);
-    if (error) return;
-    const mapa = {};
-    (data || []).forEach((r) => {
-      if (r.arquivada) return;
-      // +1 por CONVERSA, e não a soma das mensagens dela: o selo tem de bater
+    if (!advogados.length) return;
+    const contar = (a) => {
+      let q = supabase.from("conversas")
+        .select("id", { count: "exact", head: true })
+        .eq("advogado_id", a.id)
+        .gt("nao_lidas", 0);
+      // As arquivadas não contam: ninguém vai atendê-las, e o selo tem de bater
       // com o que a pessoa consegue contar na lista.
-      mapa[r.advogado_id] = (mapa[r.advogado_id] || 0) + 1;
-    });
+      if (TEM_ARQUIVADA) q = q.eq("arquivada", false);
+      return q;
+    };
+    const pares = await Promise.all(advogados.map(async (a) => {
+      let { count, error } = await contar(a);
+      // Instalação sem a coluna `arquivada`: desliga o filtro uma vez e repete.
+      if (error && TEM_ARQUIVADA && faltaColuna(error)) {
+        TEM_ARQUIVADA = false;
+        ({ count, error } = await contar(a));
+      }
+      return [a.id, error ? null : (count || 0)];
+    }));
+    const mapa = {};
+    // Telefone cuja contagem falhou fica de FORA do mapa, e não em zero: zero é
+    // uma afirmação ("não há ninguém esperando") que a consulta não fez.
+    pares.forEach(([id, n]) => { if (n != null) mapa[id] = n; });
     setNaoLidasPorAdv(mapa);
-  }, []);
+  }, [advogados]);
 
   useEffect(() => { carregarNaoLidasPorAdv(); }, [carregarNaoLidasPorAdv]);
 
@@ -1443,22 +1534,41 @@ export default function Painel({ sessao }) {
     } catch (_) { /* tabela ainda não criada */ }
   }, []);
 
+  // AS ETIQUETAS DAS CONVERSAS QUE ESTÃO NA LISTA — e não a tabela inteira.
+  //
+  // `conversa_tags` tem uma linha por (conversa, etiqueta): num escritório que
+  // etiqueta o que atende, ela passa de mil linhas em poucos meses. A consulta
+  // sem recorte parava no teto de 1000 da API, e as etiquetas simplesmente
+  // sumiam das conversas que não couberam — sem erro, sem aviso.
   const carregarTagsConversas = useCallback(async () => {
+    const ids = conversasRef.current.map((c) => c.id);
+    if (!ids.length) { setTagsPorConversa({}); return; }
     try {
-      const { data, error } = await supabase.from("conversa_tags").select("conversa_id, tag_id");
-      if (error) return;
       const mapa = {};
-      (data || []).forEach((r) => { (mapa[r.conversa_id] = mapa[r.conversa_id] || []).push(r.tag_id); });
+      // Em lotes porque a lista de ids vai na URL: com centenas de conversas de
+      // uma vez, a consulta seria recusada pelo tamanho.
+      for (let i = 0; i < ids.length; i += 150) {
+        const { data, error } = await supabase.from("conversa_tags")
+          .select("conversa_id, tag_id")
+          .in("conversa_id", ids.slice(i, i + 150));
+        if (error) return;
+        (data || []).forEach((r) => { (mapa[r.conversa_id] = mapa[r.conversa_id] || []).push(r.tag_id); });
+      }
       setTagsPorConversa(mapa);
     } catch (_) { /* tabela ainda não criada */ }
   }, []);
 
-  useEffect(() => { carregarTags(); carregarTagsConversas(); }, [carregarTags, carregarTagsConversas]);
+  useEffect(() => { carregarTags(); }, [carregarTags]);
+  // As etiquetas seguem a LISTA: quando ela troca de telefone ou chega uma
+  // conversa nova, são outras conversas para etiquetar.
+  useEffect(() => { carregarTagsConversas(); },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [conversas, carregarTagsConversas]);
 
   async function salvarTagForm() {
     const nome = (tagForm?.nome || "").trim();
     const cor = tagForm?.cor || CORES_TAG[0];
-    if (!nome) { mostrarAviso("Digite o nome da tag."); return; }
+    if (!nome) { mostrarAviso("Digite o nome da etiqueta."); return; }
     let error;
     if (tagForm.id) {
       ({ error } = await supabase.from("tags").update({ nome, cor }).eq("id", tagForm.id));
@@ -1470,9 +1580,9 @@ export default function Painel({ sessao }) {
   }
 
   async function apagarTag(id) {
-    if (!window.confirm("Apagar esta tag? Ela sai de todas as conversas.")) return;
+    if (!window.confirm("Apagar esta etiqueta? Ela sai de todas as conversas.")) return;
     const { error } = await supabase.from("tags").delete().eq("id", id);
-    if (error) { mostrarAviso("Não consegui apagar a tag."); return; }
+    if (error) { mostrarAviso("Não consegui apagar a etiqueta."); return; }
     carregarTags(); carregarTagsConversas();
   }
 
@@ -1490,7 +1600,7 @@ export default function Painel({ sessao }) {
       await supabase.from("conversa_tags").delete().eq("conversa_id", conversaId).eq("tag_id", tagId);
     } else {
       const { error } = await supabase.from("conversa_tags").insert({ conversa_id: conversaId, tag_id: tagId });
-      if (error) { mostrarAviso("Não consegui aplicar a tag."); carregarTagsConversas(); }
+      if (error) { mostrarAviso("Não consegui aplicar a etiqueta."); carregarTagsConversas(); }
     }
   }
 
@@ -1561,11 +1671,40 @@ export default function Painel({ sessao }) {
   }
 
   // ---- Agenda de contatos (ver todos / criar novo) ----
-  const carregarContatos = useCallback(async () => {
+  const carregarContatos = useCallback(async (termo) => {
     try {
-      const buscar = () => supabase.from("contatos")
-        .select(colunasDoContato("id, nome, numero, foto_url"))
-        .order("nome", { ascending: true });
+      // O TERMO VAI PARA O BANCO, e a agenda deixa de ser uma lista inteira
+      // baixada e filtrada aqui.
+      //
+      // Era o mesmo defeito da busca de conversas: a API devolve no máximo 1000
+      // linhas, em ordem alfabética — quem estivesse depois do milésimo nome
+      // não existia para a agenda, e o painel dizia "Nenhum contato salvo com
+      // esse nome" com toda a confiança.
+      //
+      // A vírgula e os parênteses saem do termo porque separam condições dentro
+      // de um `or` do PostgREST: com eles, a consulta não devolve vazio —
+      // devolve erro.
+      const seguro = String(termo || "").replace(/[,()*]/g, " ").trim();
+      const chave = chaveDoNumero(termo || "");
+      const buscar = () => {
+        let q = supabase.from("contatos")
+          .select(colunasDoContato("id, nome, numero, foto_url"))
+          .order("nome", { ascending: true })
+          // Sem termo, a agenda mostra um começo — ninguém rola dez mil nomes,
+          // e desenhá-los custa o mesmo que a lista de conversas custava.
+          .limit(seguro || chave.length >= 4 ? 300 : 200);
+        const partes = [];
+        if (seguro.length >= 2) {
+          partes.push(`nome.ilike.%${seguro}%`);
+          if (TEM_NOME_DO_CADASTRO) {
+            partes.push(`vantoro_nome.ilike.%${seguro}%`);
+            partes.push(`nome_zorvin.ilike.%${seguro}%`);
+          }
+        }
+        if (chave.length >= 4) partes.push(`numero.ilike.%${chave}%`);
+        if (partes.length) q = q.or(partes.join(","));
+        return q;
+      };
       let { data, error } = await buscar();
       // `faltaColuna` junto: sem ele, uma queda de rede era lida como "a coluna
       // não existe" e o nome do cadastro do Vantoro ficava desligado pelo resto
@@ -1581,7 +1720,13 @@ export default function Painel({ sessao }) {
     } catch (_) { /* ignora */ }
   }, []);
 
-  useEffect(() => { carregarContatos(); }, [carregarContatos]);
+  // A agenda recarrega quando a caixa de busca dela muda — com uma pausa, para
+  // não disparar uma consulta por tecla.
+  useEffect(() => {
+    if (!novaConversaAberta) return;
+    const t = setTimeout(() => carregarContatos(buscaContato), 300);
+    return () => clearTimeout(t);
+  }, [buscaContato, novaConversaAberta, carregarContatos]);
 
   // O NÚMERO COMO O WHATSAPP O ESCREVE — sempre com o código do país.
   //
@@ -2180,8 +2325,23 @@ export default function Painel({ sessao }) {
     const semNumero = validos.filter((it) => !it.numero && !it.ehGrupo);
     if (semNumero.length) {
       try {
-        const { data: agenda } = await supabase.from("contatos").select("nome, numero");
-        if (agenda && agenda.length) {
+        // A AGENDA INTEIRA, EM PÁGINAS. Aqui não dá para recortar por termo: o
+        // casamento é por nome normalizado (minúsculas, espaços colapsados), e
+        // um `in` com a grafia original erraria justamente os casos que este
+        // trecho existe para acertar. Então lê tudo — mas só duas colunas, e
+        // paginando, porque um `select` solto pararia em 1000 e deixaria os
+        // contatos do fim do alfabeto sem número, em silêncio.
+        //
+        // É uma importação: acontece raramente e vale a paciência.
+        const agenda = [];
+        for (let pag = 0; pag < 40; pag++) {
+          const { data: parte, error: erroAgenda } = await supabase.from("contatos")
+            .select("nome, numero").range(pag * 1000, pag * 1000 + 999);
+          if (erroAgenda || !parte || !parte.length) break;
+          agenda.push(...parte);
+          if (parte.length < 1000) break;
+        }
+        if (agenda.length) {
           const norm = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
           const mapa = new Map();
           agenda.forEach((c) => { if (c.nome && c.numero) mapa.set(norm(c.nome), c.numero); });
@@ -3478,20 +3638,25 @@ export default function Painel({ sessao }) {
   }
 
   // Menu ⋮ do topo: marca TODAS as conversas do advogado como lidas.
+  // "TODAS" QUER DIZER TODAS, e não as que estão carregadas.
+  //
+  // Ela montava a lista de ids a partir de `conversas` — que agora é só a
+  // primeira página. O botão dizia "todas marcadas como lidas" e deixava as
+  // outras 1000 intocadas.
+  //
+  // O recorte vai para o banco: um `update` com `advogado_id` e `nao_lidas > 0`
+  // alcança o telefone inteiro, sem lista de ids e sem lotes.
   async function marcarTodasLidas() {
     setMenuTopoAberto(false);
-    const ids = conversas.filter((c) => (c.nao_lidas || 0) > 0).map((c) => c.id);
-    if (!ids.length) { mostrarAviso("Nenhuma conversa não lida."); return; }
+    const advId = advogadoId;
+    if (!advId) return;
+    if (!(naoLidasPorAdv[advId] || 0)) { mostrarAviso("Nenhuma conversa não lida."); return; }
     setConversas((prev) => prev.map((c) => ({ ...c, nao_lidas: 0 })));
-    // Em lotes: a lista de ids vai na URL, e com centenas de conversas a
-    // consulta inteira seria recusada — o mesmo cuidado que a busca já tem.
-    let erro = null;
-    for (let i = 0; i < ids.length && !erro; i += 100) {
-      const { error } = await supabase.from("conversas").update({ nao_lidas: 0 }).in("id", ids.slice(i, i + 100));
-      erro = error;
-    }
+    setNaoLidasPorAdv((m) => ({ ...m, [advId]: 0 }));
+    const { error } = await supabase.from("conversas")
+      .update({ nao_lidas: 0 }).eq("advogado_id", advId).gt("nao_lidas", 0);
     carregarNaoLidasPorAdv();
-    if (erro) { mostrarAviso("Não consegui marcar todas. Tente de novo."); carregarConversas(advogadoId); return; }
+    if (error) { mostrarAviso("Não consegui marcar todas. Tente de novo."); carregarConversas(advId); return; }
     mostrarAviso("Todas marcadas como lidas");
   }
 
@@ -3503,7 +3668,16 @@ export default function Painel({ sessao }) {
   // nada, e o cliente continua esperando exatamente como estava.
   const marcarLida = useCallback(async (convId) => {
     if (!convId) return;
-    setConversas((prev) => prev.map((c) => (c.id === convId ? { ...c, nao_lidas: 0 } : c)));
+    // Desconta do selo NA HORA: sem isto, o número da barra lateral só cai
+    // depois da ida-e-volta ao banco, e o clique parece não ter surtido efeito.
+    setConversas((prev) => {
+      const alvo = prev.find((c) => c.id === convId);
+      if (alvo && (alvo.nao_lidas || 0) > 0) {
+        setNaoLidasPorAdv((m) => ({ ...m,
+          [alvo.advogado_id]: Math.max(0, (m[alvo.advogado_id] || 0) - 1) }));
+      }
+      return prev.map((c) => (c.id === convId ? { ...c, nao_lidas: 0 } : c));
+    });
     const { error } = await supabase.from("conversas").update({ nao_lidas: 0 }).eq("id", convId);
     // Não deu para gravar: devolve o que o banco tem, senão a tela diz "lida"
     // e o resto da equipe continua vendo o selo.
@@ -4273,6 +4447,31 @@ export default function Painel({ sessao }) {
     return !!achadosMsg[c.id] || !!achadosCad[c.id] || !!achadosNome[c.id];
   }
 
+  // A PÁGINA VOLTA AO COMEÇO quando a lista muda de assunto. Sem isto, quem
+  // rolou 400 conversas e depois digitou uma busca continuaria desenhando 400
+  // linhas — o custo que a paginação existe para evitar.
+  useEffect(() => { setQuantasNaLista(PAGINA); },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [advogadoId, busca, filtro, verArquivadas]);
+
+  /** Mostra mais um punhado — e, se o que temos acabou, pede outra página ao
+   *  banco. Depois de trazer a página, cresce a fatia desenhada TAMBÉM: sem
+   *  isso, quem chegou ao fim rolando ficava preso — a lista carregava 200
+   *  conversas novas e continuava desenhando as mesmas 200, então não havia
+   *  para onde rolar e o próximo passo nunca acontecia. */
+  const mostrarMais = (passo) => {
+    if (quantasNaLista < conversasFiltradas.length) {
+      setQuantasNaLista((n) => n + (passo || PAGINA));
+      return;
+    }
+    if (!temMaisConversas || buscandoMais || busca.trim()) return;
+    setBuscandoMais(true);
+    carregarConversas(advogadoId, paginaConversas + 1).finally(() => {
+      setBuscandoMais(false);
+      setQuantasNaLista((n) => n + (passo || PAGINA));
+    });
+  };
+
   const conversasFiltradas = (() => {
     const daLista = conversasNaTela.filter((c) =>
       (!!c.arquivada === verArquivadas) && // arquivadas só aparecem na visão de arquivadas
@@ -4302,14 +4501,25 @@ export default function Painel({ sessao }) {
   // pudesse contar na tela. O que se atende é conversa; é isso que o selo tem
   // de dizer.
   const naoLidasAtual = conversasNaTela.filter((c) => !c.arquivada && (c.nao_lidas || 0) > 0).length;
+  // O SELO VEM SEMPRE DA CONTAGEM DO BANCO, inclusive o do telefone aberto.
+  //
+  // Ele vinha da lista carregada quando o telefone era o atual. Isso resolvia um
+  // problema antigo (o selo mudava de número conforme onde você estava) e criou
+  // outro assim que a lista passou a vir em páginas: a lista tem 200 conversas,
+  // o telefone tem 1200, e o selo passava a contar só o pedaço carregado.
+  //
+  // Agora as duas contas são a MESMA — a do banco —, e o desconto de quem
+  // acabou de ler é feito na hora, aqui mesmo, para o selo não esperar a
+  // ida-e-volta.
   function naoLidasDoAdvogado(id) {
-    // Enquanto a lista não for deste telefone, o selo vem do total consultado
-    // no banco — que é por telefone e está certo para todos. Era daqui que
-    // saía o "pisca": `naoLidasAtual` vinha da lista do telefone ANTERIOR e era
-    // carimbada como sendo do novo.
-    return id === advogadoId && !trocandoDeTelefone
-      ? naoLidasAtual
-      : (naoLidasPorAdv[id] || 0);
+    return naoLidasPorAdv[id] || 0;
+  }
+
+  /** Tira `quantas` do selo do telefone na hora, e confere com o banco depois. */
+  function descontarDoSelo(advId, quantas) {
+    if (!advId || !quantas) return;
+    setNaoLidasPorAdv((m) => ({ ...m, [advId]: Math.max(0, (m[advId] || 0) - quantas) }));
+    carregarNaoLidasPorAdv();
   }
 
   // Atendentes que já interagiram nesta conversa (para o grupinho de avatares
@@ -4823,7 +5033,15 @@ export default function Painel({ sessao }) {
         </div>
         </>)}
 
-        <div style={{ flex: 1, overflowY: "auto" }}>
+        <div style={{ flex: 1, overflowY: "auto" }}
+             onScroll={(e) => {
+               // Mais uma página quando faltam 600px para o fim: o tempo de
+               // desenhar a próxima cabe dentro do que ainda há para rolar, e
+               // ninguém vê a lista "acabar".
+               const el = e.currentTarget;
+               if (el.scrollHeight - el.scrollTop - el.clientHeight > 600) return;
+               mostrarMais();
+             }}>
           {/* ESCOLHA O TELEFONE.
               Aparece quando se troca para um departamento com mais de um
               número. Antes a tela escolhia sozinha — e o número escolhido é o
@@ -4901,7 +5119,7 @@ export default function Painel({ sessao }) {
                 : verArquivadas ? "Nenhuma conversa arquivada." : "Nenhuma conversa ainda."}
             </div>
           )}
-          {conversasFiltradas.map((c) => {
+          {conversasFiltradas.slice(0, quantasNaLista).map((c) => {
             const nome = nomeDoContato(c.contato);
             // Prévia: se a última mensagem é mídia (e sem legenda), mostra
             // "📷 Foto", "🎤 Mensagem de voz" etc. em vez de "[anexo]".
@@ -4981,6 +5199,29 @@ export default function Painel({ sessao }) {
               </div>
             );
           })}
+
+          {/* O FIM DA FATIA, ESCRITO. A rolagem já traz mais sozinha; este
+              rodapé existe para o corte não ser invisível — e para quem navega
+              por teclado, que não dispara rolagem, ter um botão. */}
+          {(conversasFiltradas.length > quantasNaLista || (temMaisConversas && !busca.trim())) && (
+            <div style={{ padding: "14px 16px 20px", textAlign: "center" }} data-teste="fim-da-lista">
+              <button
+                onClick={() => mostrarMais(PAGINA * 4)}
+                disabled={buscandoMais}
+                style={{ minHeight: 34, padding: "6px 16px", borderRadius: 20,
+                         cursor: buscandoMais ? "default" : "pointer",
+                         border: `1px solid ${C.divider}`, background: "transparent",
+                         color: C.textSecondary, fontSize: 12.5, fontWeight: 600 }}>
+                {buscandoMais ? "Buscando…" : "Mostrar mais"}
+              </button>
+              {/* "de 1200 conversas" seria mentira: só sabemos o que já veio, e
+                  o banco pode ter mais. O "+" diz isso sem inventar número. */}
+              <div style={{ marginTop: 8, fontSize: 11.5, color: C.textSecondary }}>
+                {Math.min(quantasNaLista, conversasFiltradas.length)} de {conversasFiltradas.length}
+                {temMaisConversas && !busca.trim() ? "+" : ""} conversas
+              </div>
+            </div>
+          )}
           </>}
         </div>
       </div>
@@ -5161,7 +5402,7 @@ export default function Painel({ sessao }) {
               )}
               {/* Etiquetar a conversa: abre um menu para marcar/desmarcar tags */}
               <span ref={tagMenuRef} style={{ position: "relative", display: "flex" }}>
-                <button aria-label="Etiquetas" onClick={() => setTagMenuAberto((v) => !v)} title="Etiquetas (tags)" style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10 }}>
+                <button aria-label="Etiquetas" onClick={() => setTagMenuAberto((v) => !v)} title="Etiquetas" style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10 }}>
                   <Tag size={19} color={tagMenuAberto || (tagsPorConversa[conversa.id] || []).length ? C.green : C.textSecondary} />
                 </button>
                 {tagMenuAberto && (
@@ -5180,7 +5421,7 @@ export default function Painel({ sessao }) {
                         </button>
                       );
                     })}
-                    <button onClick={() => { setTagMenuAberto(false); setAbaConfig("tags"); setTagForm(null); setConfigAberta(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 6, padding: "10px 12px", border: "none", borderTop: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.verdeTexto, fontSize: 13, fontWeight: 600 }}><Plus size={15} /> Gerenciar tags</button>
+                    <button onClick={() => { setTagMenuAberto(false); setAbaConfig("tags"); setTagForm(null); setConfigAberta(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 6, padding: "10px 12px", border: "none", borderTop: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.verdeTexto, fontSize: 13, fontWeight: 600 }}><Plus size={15} /> Gerenciar etiquetas</button>
                   </div>
                 )}
               </span>
@@ -6010,7 +6251,7 @@ export default function Painel({ sessao }) {
             <div style={{ width: estreito ? "100%" : 210, background: C.headerBar, borderRight: estreito ? "none" : `1px solid ${C.divider}`, borderBottom: estreito ? `1px solid ${C.divider}` : "none", display: "flex", flexDirection: estreito ? "row" : "column", padding: estreito ? 8 : 14, gap: 4, overflowX: estreito ? "auto" : "visible", "--fita-fundo": C.headerBar }}
                  className={estreito ? "sem-scrollbar fita" : undefined}>
               <div style={{ fontSize: 16, fontWeight: 700, padding: "6px 10px 14px", color: C.textPrimary, display: estreito ? "none" : "block" }}>Configurações</div>
-              {[["perfil", "Perfil"], ["aparencia", "Aparência"], ["contatos", "Contatos"], ["rapidas", "Mensagens rápidas"], ["tags", "Tags"], ["importar", "Importar histórico"]].map(([k, label]) => (
+              {[["perfil", "Perfil"], ["aparencia", "Aparência"], ["contatos", "Contatos"], ["rapidas", "Mensagens rápidas"], ["tags", "Etiquetas"], ["importar", "Importar histórico"]].map(([k, label]) => (
                 <button key={k} onClick={() => { setAbaConfig(k); setRapidaForm(null); setTagForm(null); setContatoForm(null); }} style={{ textAlign: "left", border: "none", background: abaConfig === k ? C.listActive : "transparent", color: C.textPrimary, borderRadius: 8, padding: "10px 12px", fontSize: 14, fontWeight: abaConfig === k ? 600 : 500, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{label}</button>
               ))}
               {estreito && <span aria-hidden className="fita-borda" />}
@@ -6130,7 +6371,7 @@ export default function Painel({ sessao }) {
                 <div style={{ maxWidth: 560 }}>
                   <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
                     <div>
-                      <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Tags</div>
+                      <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Etiquetas</div>
                       <div style={{ fontSize: 13, color: C.textSecondary }}>Etiquetas coloridas para organizar e filtrar as conversas.</div>
                     </div>
                     {!tagForm && (
@@ -6140,7 +6381,7 @@ export default function Painel({ sessao }) {
 
                   {tagForm ? (
                     <div style={{ border: `1px solid ${C.divider}`, borderRadius: 10, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-                      <div style={{ fontSize: 15, fontWeight: 700 }}>{tagForm.id ? "Editar tag" : "Nova tag"}</div>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>{tagForm.id ? "Editar etiqueta" : "Nova etiqueta"}</div>
                       <div>
                         <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary }}>NOME</label>
                         <input value={tagForm.nome} onChange={(e) => setTagForm((f) => ({ ...f, nome: e.target.value }))} placeholder="Ex.: Documentação pendente" style={{ width: "100%", boxSizing: "border-box", marginTop: 5, border: `1px solid ${C.divider}`, outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "9px 12px", fontSize: 14 }} />
@@ -6155,7 +6396,7 @@ export default function Painel({ sessao }) {
                       </div>
                       <div>
                         <span style={{ fontSize: 12, color: C.textSecondary }}>Prévia: </span>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: "#fff", background: tagForm.cor, borderRadius: 4, padding: "2px 8px" }}>{tagForm.nome || "Nome da tag"}</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "#fff", background: tagForm.cor, borderRadius: 4, padding: "2px 8px" }}>{tagForm.nome || "Nome da etiqueta"}</span>
                       </div>
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                         <button onClick={() => setTagForm(null)} style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary, borderRadius: 8, padding: "9px 16px", fontSize: 14, cursor: "pointer" }}>Cancelar</button>

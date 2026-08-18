@@ -385,6 +385,9 @@ const TELEFONE_FUNDO = { id: "a13", nome: "Arquivo", numero: "5511900002222",
                          foto_url: null, departamento_id: 5, ativo: true };
 ADVOGADOS.push(TELEFONE_FUNDO);
 export const NOME_LA_NO_FUNDO = "ZULMIRA ANTUNES DO PRADO";
+/** Quantas conversas o telefone do fundo tem, e quantas delas são não lidas. */
+export const FUNDO_TOTAL = 1200;
+export const FUNDO_NAO_LIDAS = 1100;
 const FUNDO = [];
 for (let i = 0; i < 1200; i++) {
   const ct = {
@@ -398,7 +401,12 @@ for (let i = 0; i < 1200; i++) {
     id: `a13-c${i}`,
     advogado_id: "a13",
     contato_id: ct.id,
-    nao_lidas: 0, arquivada: false, fixada: false, favorita: false,
+    // MAIS DE MIL NÃO LIDAS, de propósito. O selo do telefone era contado
+    // baixando TODAS as conversas não lidas de TODOS os telefones — e a API
+    // para em 1000. Passando disso, o selo mentia para menos: sumia o aviso de
+    // que havia gente esperando.
+    nao_lidas: i >= 100 ? 1 : 0,
+    arquivada: false, fixada: false, favorita: false,
     // O DE TRÁS É O MAIS ANTIGO: a lista vem por `ultima_atividade` desc, então
     // o teto de 1000 corta justamente os do fim.
     ultima_atividade: new Date(Date.now() - i * 3600e3).toISOString(),
@@ -508,9 +516,16 @@ function comparar(a, b) {
 /** Uma consulta encadeável que devolve sempre `{data, error}` no final. */
 function consulta(tabela) {
   let linhas = (TABELAS[tabela] || []).slice();
-  let inicio = 0, corte = Infinity, patch = null;
+  let inicio = 0, corte = Infinity, patch = null, contando = false, semLinhas = false;
   const eu = {
-    select() { return eu; },
+    // `select("id", { count: "exact", head: true })` — o jeito de pedir só a
+    // CONTAGEM. A bancada precisa saber disso desde que os selos de não lidas
+    // pararam de baixar mil conversas para somar uma dúzia de números.
+    select(_cols, opc) {
+      if (opc && opc.count) contando = true;
+      if (opc && opc.head) semLinhas = true;
+      return eu;
+    },
     eq(col, val) { linhas = linhas.filter((l) => String(l[col]) === String(val)); return eu; },
     in(col, vals) { linhas = linhas.filter((l) => vals.map(String).includes(String(l[col]))); return eu; },
     is(col, val) { linhas = linhas.filter((l) => l[col] === val); return eu; },
@@ -604,8 +619,13 @@ function consulta(tabela) {
       }
       // O teto entra AQUI, no fim, igual à API de verdade: depois de filtrar e
       // ordenar, e sem avisar ninguém de que sobrou coisa para trás.
-      const fatia = linhas.slice(inicio, inicio + Math.min(corte, LIMITE_LINHAS));
-      return resolver({ data: fatia, error: null });
+      // A CONTAGEM NÃO PASSA PELO TETO DE LINHAS, como no banco de verdade: o
+      // `count` é feito lá dentro e vem completo.
+      const total = linhas.length;
+      const fatia = semLinhas ? [] : linhas.slice(inicio, inicio + Math.min(corte, LIMITE_LINHAS));
+      return resolver(contando
+        ? { data: fatia, count: total, error: null }
+        : { data: fatia, error: null });
     },
   };
   return eu;
@@ -837,7 +857,13 @@ export const ESPERADO = {
   outroAutor: AUTORES[1].nome,
   autorSemId: AUTORES[2].nome,
   rotulos: ROTULOS_NAO_PESSOA,
-  telefoneMudo: ADVOGADOS[ADVOGADOS.length - 1].nome,
+  telefoneMudo: ADVOGADOS.find((a) => a.id === "a12").nome,
+  // O telefone com mais de mil conversas, para os testes que só fazem sentido
+  // em base grande. Vem por aqui, e não por `import("/src/bancada.js")`: no
+  // build de produção esse caminho não existe, e é justamente o build de
+  // produção que a equipe usa.
+  fundo: { telefone: TELEFONE_FUNDO.nome, nome: NOME_LA_NO_FUNDO,
+           texto: TEXTO_LA_NO_FUNDO, total: FUNDO_TOTAL, naoLidas: FUNDO_NAO_LIDAS },
   janelaHoras: JANELA_H,
   /** O mesmo que a tela vai pedir, para o teste comparar número a número. */
   painel: (dias, quem, telefone, departamento) => agregar({
