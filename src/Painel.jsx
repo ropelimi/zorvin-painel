@@ -1426,9 +1426,42 @@ export default function Painel({ sessao }) {
     // conversas sumiria por causa de um recurso que nem foi instalado.
     const porFixada = (a, b) => (b.fixada ? 1 : 0) - (a.fixada ? 1 : 0);
     const veio = data || [];
-    // Página cheia = provavelmente há mais. Página curta = acabou.
+    // Página cheia = provavelmente há mais. Página curta = acabou. Conta só a
+    // PÁGINA — as fixadas que vêm à parte, logo abaixo, não dizem nada sobre
+    // quanto ainda falta.
     setTemMaisConversas(veio.length === PAGINA_BANCO);
     setPaginaConversas(pagina);
+
+    // ------------------------------------------------------------
+    //  AS FIXADAS VÊM À PARTE, E VÊM SEMPRE
+    //
+    //  Fixar é dizer "esta conversa fica à vista todo dia, acima das outras".
+    //  A subida, porém, era feita ordenando o array já carregado — e a lista
+    //  vem do banco em páginas de 200, da mais recente para a mais antiga. Uma
+    //  conversa fixada mas parada há meses mora na página 6: ela só subia
+    //  quando alguém rolasse até lá. Ou seja, para toda conversa que não fosse
+    //  recente — que é justamente o caso em que fixar serve para alguma coisa —
+    //  o botão não fazia nada, e nada na tela dizia isso.
+    //
+    //  Agora elas são buscadas por conta própria, junto da primeira página. São
+    //  poucas por definição: fixar é uma escolha de quem atende, não um acúmulo.
+    //
+    //  Se a coluna `fixada` ainda não existir nesta instalação, a consulta
+    //  falha e sobra a lista sem fixadas — como era antes do recurso existir.
+    //  Nada some por causa disso.
+    let fixadas = [];
+    if (pagina === 0) {
+      const { data: fix, error: erroFix } = await supabase
+        .from("conversas")
+        .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
+        .eq("advogado_id", advId)
+        .eq("fixada", true)
+        .order("ultima_atividade", { ascending: false })
+        .limit(200);
+      if (!erroFix) fixadas = fix || [];
+      if (advogadoIdRef.current !== advId) return;
+    }
+
     // A conversa aberta mantém o contador dela: abrir não é responder.
     setConversas((antes) => {
       // Na primeira página a lista é substituída; nas seguintes, emendada — e
@@ -1436,7 +1469,13 @@ export default function Painel({ sessao }) {
       // uma página e outra desce de posição e apareceria duas vezes.
       const base = pagina === 0 ? [] : antes;
       const vistos = new Set(base.map((c) => String(c.id)));
-      return [...base, ...veio.filter((c) => !vistos.has(String(c.id)))].slice().sort(porFixada);
+      const juntas = [...base];
+      for (const c of [...fixadas, ...veio]) {
+        if (vistos.has(String(c.id))) continue;
+        vistos.add(String(c.id));
+        juntas.push(c);
+      }
+      return juntas.sort(porFixada);
     });
     // A lista e o dono dela mudam JUNTOS — é o que garante que ninguém leia
     // esta lista como sendo de outro telefone.
@@ -1557,6 +1596,65 @@ export default function Painel({ sessao }) {
       setTagsPorConversa(mapa);
     } catch (_) { /* tabela ainda não criada */ }
   }, []);
+
+  // ------------------------------------------------------------
+  //  FILTRAR POR ETIQUETA É PERGUNTAR AO BANCO
+  //
+  //  O filtro percorria a lista carregada e olhava `tagsPorConversa`, que só é
+  //  preenchido para as conversas dessa lista. Num telefone com 1.200
+  //  conversas, a lista tem 200 — então o filtro enxergava um sexto do
+  //  escritório e mostrava o resultado como se fosse o total.
+  //
+  //  Não havia erro, não havia aviso: quem filtrasse por "Urgente" via duas
+  //  conversas e concluía que eram duas. É o mesmo defeito que a busca tinha, e
+  //  a correção é a mesma — a pergunta vai ao banco, e o que voltar entra na
+  //  lista mesmo não estando nela.
+  //
+  //  Vem de `conversa_tags`, paginado: num escritório que etiqueta o que
+  //  atende, uma etiqueta muito usada passa fácil das mil linhas, e é
+  //  exatamente aí que o teto da API corta sem avisar.
+  const [extrasEtiqueta, setExtrasEtiqueta] = useState([]);
+
+  useEffect(() => {
+    let cancelado = false;
+    const tagId = filtro.startsWith("tag:") ? filtro.slice(4) : null;
+    setExtrasEtiqueta([]);
+    if (!tagId || !advogadoId) return;
+    const advId = advogadoId;
+    (async () => {
+      try {
+        const ids = [];
+        for (let pagina = 0; pagina < 50; pagina++) {
+          const { data, error } = await supabase.from("conversa_tags")
+            .select("conversa_id").eq("tag_id", tagId)
+            .order("conversa_id").range(pagina * 1000, (pagina + 1) * 1000 - 1);
+          if (error) return;
+          ids.push(...(data || []).map((r) => r.conversa_id));
+          if (!data || data.length < 1000) break;
+        }
+        if (cancelado || !ids.length) return;
+
+        // As conversas em si, em lotes — a lista de ids vai na URL, e centenas
+        // de uma vez fariam o pedido ser recusado pelo tamanho.
+        const achadas = [];
+        for (let i = 0; i < ids.length; i += 150) {
+          const { data, error } = await supabase
+            .from("conversas")
+            .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
+            .eq("advogado_id", advId)
+            .in("id", ids.slice(i, i + 150));
+          if (error) return;
+          achadas.push(...(data || []));
+        }
+        // Troquei de telefone ou de etiqueta enquanto isto vinha? É resposta de
+        // outra pergunta: descarta.
+        if (cancelado || advogadoIdRef.current !== advId) return;
+        setExtrasEtiqueta(achadas);
+      } catch (_) { /* tabela ainda não criada */ }
+    })();
+    return () => { cancelado = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtro, advogadoId]);
 
   useEffect(() => { carregarTags(); }, [carregarTags]);
   // As etiquetas seguem a LISTA: quando ela troca de telefone ou chega uma
@@ -4464,7 +4562,10 @@ export default function Painel({ sessao }) {
       setQuantasNaLista((n) => n + (passo || PAGINA));
       return;
     }
-    if (!temMaisConversas || buscandoMais || busca.trim()) return;
+    // Com etiqueta escolhida, o banco JÁ deu todas as que a carregam:
+    // pedir mais páginas da lista geral não acrescenta nada ao que está
+    // sendo mostrado.
+    if (!temMaisConversas || buscandoMais || busca.trim() || filtro.startsWith("tag:")) return;
     setBuscandoMais(true);
     carregarConversas(advogadoId, paginaConversas + 1).finally(() => {
       setBuscandoMais(false);
@@ -4478,17 +4579,38 @@ export default function Painel({ sessao }) {
       casaNaBusca(c) &&
       passaNoFiltro(c)
     );
-    if (!busca.trim()) return daLista;
+    // Sem busca e sem etiqueta não há nada a emendar, e o de baixo custaria um
+    // `Set` sobre a lista inteira a cada redesenho — trabalho de sobra em cima
+    // do caminho mais quente que esta tela tem.
+    if (!busca.trim() && !filtro.startsWith("tag:")) return daLista;
     // As que vieram do banco e não estavam na lista. Entram na mesma ordem de
-    // sempre — recente primeiro —, e não emendadas no fim, que faria a mais
-    // nova de todas aparecer embaixo da mais velha.
+    // sempre — fixada em cima, depois recente primeiro —, e não emendadas no
+    // fim, que faria a mais nova de todas aparecer embaixo da mais velha.
     const jaTem = new Set(daLista.map((c) => String(c.id)));
-    const doBanco = extras.filter((c) => !jaTem.has(String(c.id))
-      && (!!c.arquivada === verArquivadas) && passaNoFiltro(c));
+    const doBanco = busca.trim()
+      ? extras.filter((c) => !jaTem.has(String(c.id))
+          && (!!c.arquivada === verArquivadas) && passaNoFiltro(c))
+      // As da etiqueta não passam por `passaNoFiltro`: elas vieram do banco
+      // JUSTAMENTE por carregarem a etiqueta escolhida, e `tagsPorConversa` só
+      // conhece as conversas da lista — perguntar a ele por uma conversa que a
+      // lista não tem devolveria "não tem etiqueta" e derrubaria de novo o que
+      // acabou de ser encontrado.
+      // (sem `casaNaBusca`: este ramo só existe quando a caixa de busca está
+      // vazia — o de cima é que trata a busca.)
+      : extrasEtiqueta.filter((c) => !jaTem.has(String(c.id))
+          && (!!c.arquivada === verArquivadas));
     if (!doBanco.length) return daLista;
     return [...daLista, ...doBanco].sort((a, b) =>
-      String(b.ultima_atividade || "").localeCompare(String(a.ultima_atividade || "")));
+      ((b.fixada ? 1 : 0) - (a.fixada ? 1 : 0))
+      || String(b.ultima_atividade || "").localeCompare(String(a.ultima_atividade || "")));
   })();
+
+  // O "+" no rodapé quer dizer "o banco tem mais do que isto". Com uma busca
+  // ou uma etiqueta escolhida, ele NÃO tem: as duas já perguntaram ao banco e
+  // trouxeram tudo o que casa. Deixar o "+" ali diria que ainda falta alguma
+  // coisa — e quem estivesse conferindo uma etiqueta não saberia se o número
+  // na tela é o número de verdade.
+  const listaPodeCrescer = !busca.trim() && !filtro.startsWith("tag:");
 
   // Não lidas de cada advogado, para o selo na barra lateral.
   // Para o advogado atual usamos a lista já carregada (que zera a conversa
@@ -5203,7 +5325,7 @@ export default function Painel({ sessao }) {
           {/* O FIM DA FATIA, ESCRITO. A rolagem já traz mais sozinha; este
               rodapé existe para o corte não ser invisível — e para quem navega
               por teclado, que não dispara rolagem, ter um botão. */}
-          {(conversasFiltradas.length > quantasNaLista || (temMaisConversas && !busca.trim())) && (
+          {(conversasFiltradas.length > quantasNaLista || (temMaisConversas && listaPodeCrescer)) && (
             <div style={{ padding: "14px 16px 20px", textAlign: "center" }} data-teste="fim-da-lista">
               <button
                 onClick={() => mostrarMais(PAGINA * 4)}
@@ -5218,7 +5340,7 @@ export default function Painel({ sessao }) {
                   o banco pode ter mais. O "+" diz isso sem inventar número. */}
               <div style={{ marginTop: 8, fontSize: 11.5, color: C.textSecondary }}>
                 {Math.min(quantasNaLista, conversasFiltradas.length)} de {conversasFiltradas.length}
-                {temMaisConversas && !busca.trim() ? "+" : ""} conversas
+                {temMaisConversas && listaPodeCrescer ? "+" : ""} conversas
               </div>
             </div>
           )}
