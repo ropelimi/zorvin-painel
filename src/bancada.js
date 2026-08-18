@@ -370,6 +370,43 @@ RENOMEADOS.forEach((ct, i) => {
 });
 
 // ------------------------------------------------------------------
+//  O QUE FOI DITO DENTRO DA CONVERSA
+// ------------------------------------------------------------------
+// No WhatsApp, procurar uma palavra acha a conversa em que ela foi escrita.
+// Aqui isso é a diferença entre encontrar um cliente pelo que ele contou e ter
+// de lembrar o nome dele.
+//
+// A palavra é "teste" de propósito: é a que o escritório usou para relatar que
+// não funcionava. Ela está numa mensagem ENVIADA pelo escritório, e não
+// recebida — foi assim que o relato veio.
+export const PALAVRA_NA_CONVERSA = "teste";
+MENSAGENS.push({
+  id: "m-palavra", conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
+  origem: "advogado", tipo: "texto",
+  texto: "Bom dia, este é um teste de envio pelo sistema",
+  enviado_por: "Rodrigo Sousa", enviado_por_id: "u1",
+  criado_em: new Date(Date.now() - 2 * 3600e3).toISOString(),
+});
+
+// A MESMA PALAVRA, MUITAS VEZES, EM OUTROS TELEFONES.
+//
+// A busca por mensagem pedia as 1000 mensagens mais recentes que casassem —
+// de TODO o escritório — e só depois descartava as de outros telefones. Uma
+// palavra comum enche as mil vagas com conversa alheia, e a conversa certa,
+// mais antiga, fica de fora. Some sem erro nenhum: é a outra metade do "às
+// vezes acha, às vezes não".
+for (let i = 0; i < 1400; i++) {
+  MENSAGENS.push({
+    id: `m-ruido-${i}`, conversa_id: `a13-c${i % 1200}`,
+    origem: "contato", tipo: "texto",
+    texto: `mais um teste ${i}`,
+    enviado_por: null, enviado_por_id: null,
+    // MAIS RECENTES que a de cima: são elas que ocupam as vagas.
+    criado_em: new Date(Date.now() - i * 60e3).toISOString(),
+  });
+}
+
+// ------------------------------------------------------------------
 //  UM TELEFONE COM MAIS DE MIL CONVERSAS
 // ------------------------------------------------------------------
 // A API do Supabase devolve no máximo 1000 linhas por consulta e CALA. A lista
@@ -515,7 +552,10 @@ const TABELAS = {
 // O teste lê a tabela de contatos daqui para conferir o que foi GRAVADO, e não
 // só o que apareceu na tela. Uma tela que mostra o nome certo sem ter gravado
 // nada volta ao apelido no próximo carregamento.
-if (typeof globalThis !== "undefined") globalThis.__TABELAS = TABELAS;
+if (typeof globalThis !== "undefined") {
+  globalThis.__TABELAS = TABELAS;
+  globalThis.__PALAVRA_NA_CONVERSA = PALAVRA_NA_CONVERSA;
+}
 
 /** O `%` do PostgREST vira o `.*` de uma expressão regular, sem diferenciar
     maiúscula de minúscula — e o resto do padrão é escapado, para um ponto de
@@ -554,6 +594,10 @@ function comparar(a, b) {
 /** Uma consulta encadeável que devolve sempre `{data, error}` no final. */
 function consulta(tabela) {
   let linhas = (TABELAS[tabela] || []).slice();
+  // O QUE FOI PEDIDO, e não só o resultado. É por isto que dá para saber se a
+  // consulta varreu a tabela inteira ou entrou por um recorte — a diferença
+  // entre uma busca que responde e uma que estoura o tempo.
+  const pedidos = [];
   let inicio = 0, corte = Infinity, patch = null, contando = false, semLinhas = false, apagando = false;
   const eu = {
     // `select("id", { count: "exact", head: true })` — o jeito de pedir só a
@@ -564,8 +608,8 @@ function consulta(tabela) {
       if (opc && opc.head) semLinhas = true;
       return eu;
     },
-    eq(col, val) { linhas = linhas.filter((l) => String(l[col]) === String(val)); return eu; },
-    in(col, vals) { linhas = linhas.filter((l) => vals.map(String).includes(String(l[col]))); return eu; },
+    eq(col, val) { pedidos.push(col); linhas = linhas.filter((l) => String(l[col]) === String(val)); return eu; },
+    in(col, vals) { pedidos.push(col); linhas = linhas.filter((l) => vals.map(String).includes(String(l[col]))); return eu; },
     is(col, val) { linhas = linhas.filter((l) => l[col] === val); return eu; },
     neq(col, val) { linhas = linhas.filter((l) => String(l[col]) !== String(val)); return eu; },
     // `gt` PRECISA filtrar de verdade: o selo da barra lateral sai de
@@ -584,6 +628,7 @@ function consulta(tabela) {
     // atravessou todos os testes: a bancada devolvia TUDO para qualquer termo,
     // então a tela parecia achar o que na verdade ela nunca procurou.
     ilike(col, padrao) {
+      pedidos.push(col);
       const re = comoIlike(padrao);
       linhas = linhas.filter((l) => re.test(String(l[col] ?? "")));
       return eu;
@@ -665,6 +710,38 @@ function consulta(tabela) {
           if (atual) l.contato = { ...l.contato, ...atual };
         }
       }
+      // ------------------------------------------------------------
+      //  O TEMPO ESTOURA — como estoura no banco de verdade
+      //
+      //  `ilike '%palavra%'` não usa índice: o `%` na frente obriga a ler a
+      //  tabela linha por linha. Em `mensagens`, que é a maior tabela do
+      //  sistema, isso é uma varredura completa — e a API do Supabase corta a
+      //  consulta em 8 segundos.
+      //
+      //  O que volta é `data: null` com um erro. Quem não confere o erro vê uma
+      //  lista vazia e conclui que não há resultado. Foi exatamente esse o
+      //  relato: procurar uma palavra que existe na conversa e não achar nada.
+      //
+      //  A bancada não tinha como reproduzir isso — ela devolvia as três mil
+      //  linhas dela num piscar. Agora ela recusa a mesma consulta que o banco
+      //  recusa: varrer `mensagens` inteira sem dizer de qual conversa.
+      // Falha sob encomenda, para o teste poder ver o que a tela faz quando a
+      // consulta não responde. Sem isto, o caminho do erro nunca é exercitado —
+      // e é justamente o caminho em que a tela mentia.
+      if (typeof globalThis !== "undefined" && globalThis.__QUEBRAR_BUSCA
+          && (tabela === "contatos" || tabela === "mensagens")) {
+        return resolver({ data: null, error: {
+          code: "57014", message: "canceling statement due to statement timeout" } });
+      }
+      if (tabela === "mensagens" && pedidos.includes("texto")
+          && !pedidos.includes("conversa_id") && linhas.length >= 0
+          && !pedidos.some((c) => c !== "texto")) {
+        return resolver({ data: null, error: {
+          code: "57014",
+          message: "canceling statement due to statement timeout",
+        } });
+      }
+
       // O teto entra AQUI, no fim, igual à API de verdade: depois de filtrar e
       // ordenar, e sem avisar ninguém de que sobrou coisa para trás.
       // A CONTAGEM NÃO PASSA PELO TETO DE LINHAS, como no banco de verdade: o
@@ -930,6 +1007,59 @@ export const supabase = {
   // devolve (PGRST202), para o caminho de "falta rodar o SQL" também ser
   // testável em vez de imaginado.
   rpc: async (nome, args) => {
+    // A BUSCA DO BANCO.
+    //
+    // A de verdade compara SEM ACENTO (é o `zorvin_sem_acento` do SQL) e nasce
+    // recortada no telefone. As duas coisas são o conserto, então as duas
+    // precisam estar aqui — uma bancada que compare com acento, ou que olhe o
+    // escritório inteiro, deixaria o defeito passar de novo.
+    if (nome === "buscar_conversas") {
+      if (globalThis.__SEM_BUSCA_NO_BANCO) {
+        return { data: null, error: { code: "PGRST202", message: `Could not find the function public.${nome}` } };
+      }
+      if (globalThis.__QUEBRAR_BUSCA) {
+        return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } };
+      }
+      const semAcento = (t) => String(t ?? "").normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      const termo = semAcento(args && args.p_termo);
+      const digitos = String((args && args.p_termo) || "").replace(/\D/g, "");
+      const advId = args && args.p_advogado;
+      const minhas = TABELAS.conversas.filter((c) => String(c.advogado_id) === String(advId));
+      const porId = new Map(TABELAS.contatos.map((ct) => [String(ct.id), ct]));
+      const saida = new Map();
+
+      for (const c of minhas) {
+        const ct = porId.get(String(c.contato_id)) || c.contato || {};
+        const campo = semAcento([ct.nome, ct.vantoro_nome, ct.nome_zorvin, ct.numero].join(" "));
+        if (termo.length >= 3 && campo.includes(termo)) {
+          saida.set(String(c.id), { id: c.id, motivo: "nome", trecho: null,
+                                    ultima_atividade: c.ultima_atividade });
+        } else if (digitos.length >= 4 && String(ct.numero || "").includes(digitos)) {
+          saida.set(String(c.id), { id: c.id, motivo: "numero", trecho: null,
+                                    ultima_atividade: c.ultima_atividade });
+        }
+      }
+      if (termo.length >= 3) {
+        const daqui = new Set(minhas.map((c) => String(c.id)));
+        const recentes = TABELAS.mensagens
+          .filter((m) => daqui.has(String(m.conversa_id)) && semAcento(m.texto).includes(termo))
+          .sort((a, b) => String(b.criado_em || "").localeCompare(String(a.criado_em || "")));
+        for (const m of recentes) {
+          const k = String(m.conversa_id);
+          if (saida.has(k)) continue;
+          const c = minhas.find((x) => String(x.id) === k);
+          saida.set(k, { id: m.conversa_id, motivo: "mensagem", trecho: m.texto,
+                         ultima_atividade: c && c.ultima_atividade });
+        }
+      }
+      const lista = [...saida.values()]
+        .sort((a, b) => String(b.ultima_atividade || "").localeCompare(String(a.ultima_atividade || "")))
+        .slice(0, (args && args.p_limite) || 80);
+      await espera(120);
+      return { data: lista, error: null };
+    }
+
     if (nome !== "painel_dashboard" || !globalThis.__TEM_FUNCAO_PAINEL) {
       return { data: null, error: { code: "PGRST202", message: `Could not find the function public.${nome}` } };
     }

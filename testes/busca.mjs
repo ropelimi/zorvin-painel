@@ -99,7 +99,9 @@ console.log("\nBusca por nome");
   ok(`acha pelo que foi DITO na conversa ("${texto}")`, achados.length > 0,
      `veio: ${JSON.stringify(achados.slice(0, 5))}`);
   ok("e explica por que aquela conversa apareceu",
-     /💬/.test(await page.locator('[data-conversa-nome]').first().innerText()));
+     achados.length > 0
+       && /💬/.test(await page.locator("[data-conversa-nome]").first().innerText()),
+     "sem conversa na lista não há o que explicar");
 }
 
 // ---- 7. termo com parêntese não derruba a busca ----
@@ -120,6 +122,98 @@ console.log("\nBusca por nome");
 {
   const achados = await procurar("");
   ok("apagar a busca devolve a lista inteira", achados.length > 5, `veio ${achados.length}`);
+}
+
+// ==================================================================
+//  9. O ACENTO
+// ==================================================================
+//
+// Ninguém digita "MARIA DAS GRAÇAS" com cedilha numa caixa de busca. Digita-se
+// "gracas", e o teclado do celular nem oferece o resto.
+//
+// O `ilike` do Postgres compara letra por letra: "ç" não é "c", "ã" não é "a".
+// Então o cliente cadastrado com acento no nome — que é a maioria dos nomes
+// brasileiros — não aparece. E aparece o de nome sem acento, o que faz o
+// defeito parecer aleatório: "em alguns casos não aparece, mesmo cadastrado".
+{
+  console.log("\nO acento");
+  const achados = await procurar("gracas");
+  ok('procurar "gracas" acha "MARIA DAS GRAÇAS PEREIRA"',
+     achados.some((n) => /GRA[ÇC]AS/i.test(n || "")),
+     `veio: ${JSON.stringify(achados.slice(0, 5))} — ninguém digita cedilha na busca`);
+
+  const comAcento = await procurar("GRAÇAS");
+  ok("e procurar com o acento continua achando",
+     comAcento.some((n) => /GRA[ÇC]AS/i.test(n || "")),
+     `veio: ${JSON.stringify(comAcento.slice(0, 5))}`);
+}
+
+// ==================================================================
+//  10. O QUE FOI DITO DENTRO DA CONVERSA
+// ==================================================================
+//
+// No WhatsApp, procurar uma palavra acha a conversa em que ela foi escrita.
+// Aqui a palavra é "teste", que é comum: ela existe nesta conversa e em outras
+// 1.400 mensagens mais recentes, de outros telefones.
+//
+// A busca pedia as 1000 mensagens mais recentes que casassem, do escritório
+// INTEIRO, e só depois jogava fora as de outros telefones. Uma palavra comum
+// enche as mil vagas com conversa alheia e a certa fica de fora — sem erro
+// nenhum na tela.
+//
+// E, antes disso, a consulta varria `mensagens` inteira: `ilike '%teste%'` não
+// usa índice, e a API corta em 8 segundos. O que voltava era um erro que
+// ninguém conferia — `data` nulo, lista vazia, nada dito.
+{
+  console.log("\nO que foi dito dentro da conversa");
+  await trocarTelefone("Acordos 1");
+  const palavra = await page.evaluate(() => globalThis.__PALAVRA_NA_CONVERSA || "teste");
+  const achados = await procurar(palavra);
+  ok(`procurar "${palavra}" acha a conversa em que essa palavra foi escrita`,
+     achados.length > 0,
+     `não veio nada — a palavra está numa mensagem enviada por este telefone`);
+  ok("e a conversa aparece marcada como achada pela mensagem",
+     achados.length > 0
+       && /💬/.test(await page.locator("[data-conversa-nome]").first().innerText()),
+     "sem o balãozinho, quem procurou não sabe por que aquela conversa apareceu");
+}
+
+// ==================================================================
+//  11. QUANDO A BUSCA NÃO CONSEGUE, ELA PRECISA DIZER
+// ==================================================================
+//
+// Uma busca que falha e mostra lista vazia é pior do que uma que falha e avisa:
+// a lista vazia é uma RESPOSTA — "esse cliente não existe aqui" —, e quem leu
+// isso para de procurar.
+{
+  console.log("\nQuando não dá");
+  await page.evaluate(() => { globalThis.__QUEBRAR_BUSCA = true; });
+  const achados = await procurar("qualquercoisa");
+  const texto = await page.locator("body").innerText();
+  ok("busca que falha avisa, em vez de dizer que não há nada",
+     /não consegui|tente de novo|falhou/i.test(texto),
+     `a tela mostrou ${achados.length} conversa(s) e nenhum aviso`);
+  await page.evaluate(() => { globalThis.__QUEBRAR_BUSCA = false; });
+}
+
+// ==================================================================
+//  12. ANTES DE O SQL SER RODADO
+// ==================================================================
+//
+// O código vai para o ar antes do script — sempre vai, porque são duas ações
+// diferentes feitas por mãos diferentes. Nesse intervalo a busca precisa
+// continuar funcionando COMO ESTAVA, e não pior: quem não rodou o SQL ainda
+// não tem a comparação sem acento, mas tem de continuar achando pelo nome.
+{
+  console.log("\nAntes de o SQL ser rodado");
+  await page.evaluate(() => { globalThis.__SEM_BUSCA_NO_BANCO = true; });
+  await trocarTelefone("Acordos 1");
+  const achados = await procurar("JOSEFA");
+  ok("sem a função no banco, a busca por nome continua achando",
+     achados.some((n) => /JOSEFA/i.test(n || "")),
+     `veio: ${JSON.stringify(achados.slice(0, 5))} — o caminho antigo precisa `
+     + "continuar de pé enquanto o script não é rodado");
+  await page.evaluate(() => { globalThis.__SEM_BUSCA_NO_BANCO = false; });
 }
 
 await ctx.close();
