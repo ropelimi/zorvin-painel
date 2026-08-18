@@ -4378,6 +4378,44 @@ export default function Painel({ sessao }) {
   const [achadosNome, setAchadosNome] = useState({}); // conversa_id → nome que casou
   const [extras, setExtras] = useState([]);           // conversas que a lista não tinha
   const [buscando, setBuscando] = useState(false);
+  // O QUE DEU ERRADO, quando deu. Uma busca que falha e mostra lista vazia é
+  // pior do que uma que falha e avisa: a lista vazia é uma RESPOSTA — "esse
+  // cliente não existe aqui" —, e quem lê isso para de procurar. Foi assim que
+  // dois defeitos desta tela ficaram meses sem ninguém saber que eram defeitos.
+  const [erroBusca, setErroBusca] = useState("");
+  // A função de busca do banco existe? `null` enquanto não se sabe.
+  const [temBuscaNoBanco, setTemBuscaNoBanco] = useState(null);
+
+  /** O que o cadastro do Vantoro sabe sobre estes números (CPF, processo).
+   *  Fica em função porque os dois caminhos da busca — a função do banco e o
+   *  caminho antigo — precisam dela igual, e duas cópias divergiriam na
+   *  primeira mudança. O Vantoro fora do ar não pode atrapalhar a busca local:
+   *  o que falhar aqui vira "sem achado no cadastro", e nada mais. */
+  async function procurarNoVantoro(termo, encontradas) {
+    const porCad = {};
+    try {
+      if (!BRIDGE_URL) return porCad;
+      const { data: sessao } = await supabase.auth.getSession();
+      const jwt = sessao?.session?.access_token;
+      if (!jwt) return porCad;
+      const r = await fetch(`${BRIDGE_URL}/vantoro/buscar?q=${encodeURIComponent(termo)}`,
+        { headers: { Authorization: "Bearer " + jwt } });
+      const corpo = await r.json().catch(() => ({}));
+      const candidatas = [...conversasRef.current, ...encontradas];
+      (corpo.clientes || []).forEach((cl) => {
+        // Os últimos 8 dígitos são o miolo do número: não mudam com DDD, com o
+        // 9 extra nem com o código do país. É por eles que casamos.
+        [cl.telefone, cl.telefone2].forEach((tel) => {
+          const k = String(tel || "").replace(/\D/g, "").slice(-8);
+          if (k.length < 8) return;
+          candidatas.forEach((c) => {
+            if (String(c.contato?.numero || "").endsWith(k)) porCad[c.id] = cl.nome;
+          });
+        });
+      });
+    } catch (_e) { /* Vantoro fora do ar não pode atrapalhar a busca local */ }
+    return porCad;
+  }
 
   useEffect(() => {
     const termo = busca.trim();
@@ -4385,17 +4423,94 @@ export default function Painel({ sessao }) {
     // sobrevivem até a nova responder — e por um instante a lista mostra
     // conversas que não têm nada a ver com o que está escrito na caixa.
     setAchadosMsg({}); setAchadosCad({}); setAchadosNome({}); setExtras([]);
+    setErroBusca("");
     if (termo.length < 3) { setBuscando(false); return; }
 
     let cancelado = false;
     setBuscando(true);
     const advId = advogadoId;
     const tarefa = setTimeout(async () => {
+      // ------------------------------------------------------------
+      //  PRIMEIRO, A FUNÇÃO DO BANCO
+      //
+      //  Ela responde as três perguntas de uma vez — nome, número e o que foi
+      //  dito dentro da conversa —, sem acento e recortada NESTE telefone.
+      //
+      //  As duas coisas que ela conserta não davam para consertar aqui:
+      //
+      //  1. O ACENTO. O `ilike` compara letra por letra: "ç" não é "c". Quem
+      //     procurava "gracas" não achava "MARIA DAS GRAÇAS PEREIRA" — e como
+      //     o cliente de nome sem acento aparecia, o defeito parecia aleatório.
+      //     Tirar o acento do que se digita não adianta: o acento está no dado.
+      //
+      //  2. A PALAVRA COMUM. A busca por mensagem pedia as mil mensagens mais
+      //     recentes que casassem no escritório INTEIRO e só depois jogava fora
+      //     as dos outros telefones. Medido num banco de verdade com 264 mil
+      //     mensagens: das mil mais recentes com "teste", ZERO eram do telefone
+      //     de quem procurava. A conversa certa não tinha como aparecer.
+      //
+      //  Enquanto o SQL não for rodado, o caminho antigo continua valendo — a
+      //  busca fica como estava, e não pior.
+      if (temBuscaNoBanco !== false) {
+        const { data: achados, error } = await supabase.rpc("buscar_conversas", {
+          p_advogado: advId, p_termo: termo, p_limite: 80,
+        });
+        if (cancelado || advogadoIdRef.current !== advId) return;
+
+        if (!error) {
+          if (temBuscaNoBanco !== true) setTemBuscaNoBanco(true);
+          const porMsg = {}, porNome = {};
+          const ids = [];
+          for (const a of achados || []) {
+            ids.push(a.id);
+            if (a.motivo === "mensagem") porMsg[a.id] = a.trecho || "";
+            else porNome[a.id] = termo;
+          }
+          const encontradas = [];
+          for (let i = 0; i < ids.length; i += 150) {
+            const { data } = await supabase.from("conversas")
+              .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
+              .eq("advogado_id", advId)
+              .in("id", ids.slice(i, i + 150));
+            encontradas.push(...(data || []));
+          }
+          if (cancelado || advogadoIdRef.current !== advId) return;
+          setAchadosMsg(porMsg);
+          setAchadosNome(porNome);
+          setAchadosCad(await procurarNoVantoro(termo, encontradas));
+          if (cancelado || advogadoIdRef.current !== advId) return;
+          const jaNaLista = new Set(conversas.map((c) => String(c.id)));
+          const vistos = new Set();
+          setExtras(encontradas.filter((c) => {
+            const id = String(c.id);
+            if (jaNaLista.has(id) || vistos.has(id)) return false;
+            vistos.add(id);
+            return true;
+          }));
+          setBuscando(false);
+          return;
+        }
+
+        // Função ainda não existe neste banco: segue pelo caminho antigo, uma
+        // vez só — não adianta perguntar de novo a cada tecla.
+        if (/PGRST202/.test(error.code || "") || /Could not find the function/i.test(error.message || "")) {
+          setTemBuscaNoBanco(false);
+        } else {
+          setErroBusca("Não consegui completar a busca agora. Tente de novo em alguns segundos.");
+          setBuscando(false);
+          return;
+        }
+      }
+
       // A vírgula e os parênteses separam condições dentro de um `or` do
       // PostgREST: deixá-los passar não devolve "nenhum resultado", devolve
       // ERRO — e a busca inteira morria em silêncio ao procurar "(67) 9…".
       const seguro = termo.replace(/[,()*]/g, " ").trim();
       const chave = chaveDoNumero(termo);
+      // O erro do banco não pode mais ser engolido. Era ele que transformava
+      // uma consulta que estourou o tempo numa lista vazia — e lista vazia é
+      // uma resposta, não um aviso.
+      let falhou = false;
 
       // ---- 1) os CONTATOS, pelos três nomes e pelo número ----
       const condicoes = () => {
@@ -4423,9 +4538,9 @@ export default function Painel({ sessao }) {
             TEM_NOME_DO_CADASTRO = false;
             ({ data, error } = await pedir());
           }
-          if (!error) contatos = data || [];
+          if (error) falhou = true; else contatos = data || [];
         }
-      } catch (_e) { /* a busca por mensagem segue */ }
+      } catch (_e) { falhou = true; }
 
       // ---- 2) as conversas DESTE telefone com esses contatos ----
       const porNome = {};
@@ -4454,15 +4569,16 @@ export default function Painel({ sessao }) {
       // fazendo sumir conversas que TINHAM a palavra.
       const porMsg = {};
       try {
-        const { data } = await supabase.from("mensagens")
+        const { data, error } = await supabase.from("mensagens")
           .select("conversa_id, texto")
           .ilike("texto", `%${termo}%`)
           .order("criado_em", { ascending: false })
           .limit(1000);
+        if (error) falhou = true;
         (data || []).forEach((m) => {
           if (!porMsg[m.conversa_id]) porMsg[m.conversa_id] = m.texto || "";
         });
-      } catch (_e) { /* sem resultado por mensagem; a busca por nome segue */ }
+      } catch (_e) { falhou = true; }
 
       // As conversas com mensagem casada que ainda não temos em mãos.
       const faltando = Object.keys(porMsg)
@@ -4477,30 +4593,7 @@ export default function Painel({ sessao }) {
       }
 
       // ---- 4) no cadastro do Vantoro (CPF, processo) → casa pelo telefone ----
-      const porCad = {};
-      try {
-        if (BRIDGE_URL) {
-          const { data: sessao } = await supabase.auth.getSession();
-          const jwt = sessao?.session?.access_token;
-          if (jwt) {
-            const r = await fetch(`${BRIDGE_URL}/vantoro/buscar?q=${encodeURIComponent(termo)}`,
-              { headers: { Authorization: "Bearer " + jwt } });
-            const corpo = await r.json().catch(() => ({}));
-            const candidatas = [...conversas, ...encontradas];
-            (corpo.clientes || []).forEach((cl) => {
-              // Os últimos 8 dígitos são o miolo do número: não mudam com DDD,
-              // com o 9 extra nem com o código do país. É por eles que casamos.
-              [cl.telefone, cl.telefone2].forEach((tel) => {
-                const k = String(tel || "").replace(/\D/g, "").slice(-8);
-                if (k.length < 8) return;
-                candidatas.forEach((c) => {
-                  if (String(c.contato?.numero || "").endsWith(k)) porCad[c.id] = cl.nome;
-                });
-              });
-            });
-          }
-        }
-      } catch (_e) { /* Vantoro fora do ar não pode atrapalhar a busca local */ }
+      const porCad = await procurarNoVantoro(termo, encontradas);
 
       // Troquei de telefone (ou de termo) enquanto isto vinha? A resposta é de
       // outra pergunta: descarta.
@@ -4508,6 +4601,7 @@ export default function Painel({ sessao }) {
       setAchadosMsg(porMsg);
       setAchadosCad(porCad);
       setAchadosNome(porNome);
+      if (falhou) setErroBusca("Não consegui completar a busca agora. Tente de novo em alguns segundos.");
       // Só o que a lista NÃO tem. O resto já está lá, com o estado em dia.
       const jaNaLista = new Set(conversas.map((c) => String(c.id)));
       const vistos = new Set();
@@ -5235,9 +5329,23 @@ export default function Painel({ sessao }) {
           {/* "Nenhuma conversa ainda" durante a troca de telefone era mentira:
               a lista não está vazia, ela ainda não chegou. Quem lia isso podia
               concluir que o telefone novo não tinha atendimento nenhum. */}
-          {conversasFiltradas.length === 0 && (
+          {/* A BUSCA QUE NÃO CONSEGUIU PRECISA DIZER QUE NÃO CONSEGUIU.
+              Antes ela caía no "Nenhuma conversa ainda" logo abaixo, que é uma
+              RESPOSTA — "esse cliente não existe aqui" — e quem lê isso para de
+              procurar. Foi assim que dois defeitos desta tela ficaram meses
+              sem ninguém saber que eram defeitos. */}
+          {erroBusca && (
+            <div role="alert" style={{ margin: "12px 14px", padding: "10px 12px", borderRadius: 10,
+                                       background: C.listActive, border: `1px solid ${C.divider}`,
+                                       color: C.textPrimary, fontSize: 12.5, lineHeight: 1.5 }}>
+              {erroBusca}
+            </div>
+          )}
+          {conversasFiltradas.length === 0 && !erroBusca && (
             <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>
               {trocandoDeTelefone ? "Carregando as conversas…"
+                : buscando ? "Procurando…"
+                : busca.trim() ? "Nada encontrado para essa busca."
                 : verArquivadas ? "Nenhuma conversa arquivada." : "Nenhuma conversa ainda."}
             </div>
           )}
