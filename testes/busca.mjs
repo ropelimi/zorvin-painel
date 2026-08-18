@@ -197,7 +197,63 @@ console.log("\nBusca por nome");
 }
 
 // ==================================================================
-//  12. ANTES DE O SQL SER RODADO
+//  12. CLICAR NO RESULTADO LEVA ATÉ A MENSAGEM
+// ==================================================================
+//
+// Achar a conversa é meio caminho. Se a palavra foi dita há três meses, abrir
+// a conversa no fim deixa a pessoa procurando dentro dela, rolando — que é o
+// trabalho que a busca deveria ter poupado.
+//
+// A mensagem de prova está a três meses de distância, com 200 mensagens depois
+// dela: fora, portanto, das 120 que a conversa carrega ao abrir. Se ela
+// estivesse perto do fim, esta conferência passaria sem que nada tivesse sido
+// feito.
+{
+  console.log("\nClicar no resultado leva até a mensagem");
+  await trocarTelefone("Acordos 1");
+  const palavra = await page.evaluate(() => globalThis.__PALAVRA_NA_CONVERSA || "teste");
+  const alvo = await page.evaluate(() => globalThis.__MSG_ACHADA);
+  const achados = await procurar(palavra);
+  ok("a busca acha a conversa", achados.length > 0);
+
+  await page.locator("[data-conversa-nome]").first().click();
+  await page.waitForTimeout(2000);
+
+  const bolha = page.locator(`[data-msg-id="${alvo}"]`);
+  ok("a mensagem achada é carregada, mesmo estando fora das últimas 120",
+     await bolha.count() > 0,
+     "a conversa abriu no fim, e a mensagem de três meses atrás nem foi buscada");
+
+  if (await bolha.count()) {
+    const naTela = await bolha.first().evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return r.top >= 0 && r.bottom <= window.innerHeight && r.height > 0;
+    });
+    ok("e a tela está nela, sem ninguém rolar", naTela,
+       "a mensagem está carregada mas fora da vista — quem clicou continua procurando");
+
+    const marcada = await bolha.first().evaluate(
+      (el) => getComputedStyle(el).backgroundColor !== "rgba(0, 0, 0, 0)");
+    ok("e ela vem destacada, para dar para saber qual é", marcada,
+       "sem marca, a tela para no meio da conversa e nada diz qual bolha respondeu à busca");
+  }
+
+  // Abrir a MESMA conversa de novo, agora sem busca, tem de voltar ao normal:
+  // o alvo é de uma busca, não uma propriedade da conversa.
+  await procurar("");
+  await page.locator("[data-conversa-nome]").first().click();
+  await page.waitForTimeout(1800);
+  const ultima = await page.evaluate(() => {
+    const todas = [...document.querySelectorAll("[data-msg-id]")];
+    return todas.length ? todas[todas.length - 1].getAttribute("data-msg-id") : null;
+  });
+  ok("abrir a conversa sem busca volta a mostrar o fim",
+     ultima !== null && ultima !== alvo,
+     `a última bolha desenhada é "${ultima}"`);
+}
+
+// ==================================================================
+//  13. ANTES DE O SQL SER RODADO
 // ==================================================================
 //
 // O código vai para o ar antes do script — sempre vai, porque são duas ações
