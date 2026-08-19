@@ -8,7 +8,7 @@ import {
   StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star,
   Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList, ShieldCheck,
   ChevronLeft, ChevronRight, Images, ExternalLink, Pin, Copy, Forward, Sticker,
-  History, BarChart3, Users, Smartphone
+  History, BarChart3, Users, Smartphone, ArrowDownUp
 } from "lucide-react";
 import FichaVantoro from "./FichaVantoro";
 import { chamarPonte } from "./ponte.js";
@@ -1236,6 +1236,29 @@ export default function Painel({ sessao }) {
   const [vantoroAchados, setVantoroAchados] = useState([]);
   const [vantoroBuscando, setVantoroBuscando] = useState(false);
   const [vantoroErro, setVantoroErro] = useState("");
+  // A ORDEM DA LISTA — mais recentes ou mais antigas primeiro.
+  //
+  // Pedida por quem administra. O uso é achar o que ficou para trás: com a
+  // lista sempre pela mais recente, uma conversa parada há três semanas fica
+  // no fim de tudo e ninguém rola até lá.
+  //
+  // ELA VAI PARA A CONSULTA, e não para uma reordenação da lista já carregada.
+  // A lista vem do banco em páginas de 200: virar o que já está na tela
+  // mostraria a mais antiga DAS CARREGADAS, que numa conta com mil conversas
+  // não é nem de longe a mais antiga. Seria uma resposta errada com cara de
+  // certa — e é justamente para essa pergunta que o filtro existe.
+  const [ordem, setOrdem] = useState(() => {
+    try { return localStorage.getItem("zorvin_ordem") === "antigas" ? "antigas" : "recentes"; }
+    catch (_) { return "recentes"; }
+  });
+  const ordemRef = useRef(ordem);
+  useEffect(() => {
+    ordemRef.current = ordem;
+    try { localStorage.setItem("zorvin_ordem", ordem); } catch (_) { /* ignora */ }
+  }, [ordem]);
+  const [menuOrdem, setMenuOrdem] = useState(false);
+  const ordemMenuRef = useRef(null);
+
   const [busca, setBusca] = useState("");
   const [rascunho, setRascunho] = useState("");
   const [atendimentos, setAtendimentos] = useState({}); // { conversaId: { por, em } }
@@ -1745,7 +1768,10 @@ export default function Painel({ sessao }) {
       .from("conversas")
       .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
       .eq("advogado_id", advId)
-      .order("ultima_atividade", { ascending: false })
+      // A ORDEM É DAQUI, e não de uma reordenação depois. Ver o comentário em
+      // `ordem`: virar a lista já carregada mostraria "a mais antiga das 200
+      // que vieram", que não é a mais antiga de nada.
+      .order("ultima_atividade", { ascending: ordem === "antigas" })
       .range(de, de + PAGINA_BANCO - 1);
     let { data, error } = await buscar();
     // Base sem o SQL das frentes: tira `vantoro_nome` do pedido e repete. Uma
@@ -1766,7 +1792,13 @@ export default function Painel({ sessao }) {
     // ordenação é feita aqui e não no banco porque a coluna pode ainda não
     // existir: pedi-la no `order` faria a consulta inteira falhar, e a lista de
     // conversas sumiria por causa de um recurso que nem foi instalado.
-    const porFixada = (a, b) => (b.fixada ? 1 : 0) - (a.fixada ? 1 : 0);
+    // Fixadas no alto; entre iguais, a ordem escolhida. O empate por
+    // `ultima_atividade` importa porque a lista é emendada de duas fontes (as
+    // fixadas e a página), e sem critério de desempate elas se intercalavam
+    // pela ordem de chegada.
+    const sinal = ordem === "antigas" ? -1 : 1;
+    const porFixada = (a, b) => (b.fixada ? 1 : 0) - (a.fixada ? 1 : 0)
+      || sinal * (new Date(b.ultima_atividade) - new Date(a.ultima_atividade));
     const veio = data || [];
     // Página cheia = provavelmente há mais. Página curta = acabou. Conta só a
     // PÁGINA — as fixadas que vêm à parte, logo abaixo, não dizem nada sobre
@@ -1798,7 +1830,7 @@ export default function Painel({ sessao }) {
         .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
         .eq("advogado_id", advId)
         .eq("fixada", true)
-        .order("ultima_atividade", { ascending: false })
+        .order("ultima_atividade", { ascending: ordem === "antigas" })
         .limit(200);
       if (!erroFix) fixadas = fix || [];
       if (advogadoIdRef.current !== advId) return;
@@ -1825,7 +1857,7 @@ export default function Painel({ sessao }) {
     carregarAtendimentos(advId);
     carregarUltimasMidias(advId);
     carregarDigitando(advId);
-  }, [carregarAtendimentos, carregarUltimasMidias, carregarDigitando]);
+  }, [ordem, carregarAtendimentos, carregarUltimasMidias, carregarDigitando]);
 
   useEffect(() => { carregarConversas(advogadoId); }, [advogadoId, carregarConversas]);
 
@@ -3441,9 +3473,12 @@ export default function Painel({ sessao }) {
             // esta tela já sabe.
             fixada: cv.fixada ?? c.fixada,
           } : c);
-          // Fixadas no alto; entre iguais, a mais recente primeiro.
+          // Fixadas no alto; entre iguais, a ordem que a pessoa escolheu.
+          // Pelo `ref` e não pelo estado: este tratador é registrado uma vez e
+          // ficaria preso na ordem que valia naquele instante.
+          const sentido = ordemRef.current === "antigas" ? -1 : 1;
           return patched.sort((a, b) => (b.fixada ? 1 : 0) - (a.fixada ? 1 : 0)
-            || new Date(b.ultima_atividade) - new Date(a.ultima_atividade));
+            || sentido * (new Date(b.ultima_atividade) - new Date(a.ultima_atividade)));
         });
         carregarNaoLidasPorAdv();
       })
@@ -3817,6 +3852,7 @@ export default function Painel({ sessao }) {
       else if (novaConversaAberta) setNovaConversaAberta(false);
       else if (menuConversa) setMenuConversa(null);
       else if (menuDaConversa) setMenuDaConversa(false);
+      else if (menuOrdem) setMenuOrdem(false);
       else if (menuTopoAberto) setMenuTopoAberto(false);
       else if (menuQuem) setMenuQuem(false);
       else if (quemParticipou) setQuemParticipou(false);
@@ -3833,7 +3869,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, menuConversa, menuDaConversa, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId]);
+  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -3857,12 +3893,13 @@ export default function Painel({ sessao }) {
       if (emojiAberto && emojiRef.current && !emojiRef.current.contains(e.target)) setEmojiAberto(false);
       if (seletorAberto && seletorRef.current && !seletorRef.current.contains(e.target)) setSeletorAberto(false);
       if (tagMenuAberto && !dentroDoMenu && tagMenuRef.current && !tagMenuRef.current.contains(e.target)) setTagMenuAberto(false);
+      if (menuOrdem && ordemMenuRef.current && !ordemMenuRef.current.contains(e.target)) setMenuOrdem(false);
       if (menuTopoAberto && menuTopoRef.current && !menuTopoRef.current.contains(e.target)) setMenuTopoAberto(false);
       if (menuDepartamentos && departamentosRef.current && !departamentosRef.current.contains(e.target)) setMenuDepartamentos(false);
     }
     document.addEventListener("mousedown", aoClicar);
     return () => document.removeEventListener("mousedown", aoClicar);
-  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, menuDaConversa, menuDepartamentos]);
+  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, menuDaConversa, menuOrdem, menuDepartamentos]);
 
   // Fecha o menuzinho da conversa (marcar não lida) ao clicar em qualquer lugar.
   useEffect(() => {
@@ -6168,6 +6205,64 @@ export default function Painel({ sessao }) {
               <button key={k} onClick={() => setFiltro(k)} style={{ flexShrink: 0, minHeight: 32, border: `1px solid ${ativo ? C.greenDark : C.divider}`, background: ativo ? C.greenDark : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 20, padding: "5px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
             );
           })}
+          {/* A ORDEM DA LISTA.
+              Fica aqui, ao lado dos outros filtros, porque é o mesmo tipo de
+              coisa: muda o que a lista mostra e precisa dizer, sem ser
+              perguntado, qual regra está valendo. Um botão que só troca e não
+              conta em que estado está transforma "achei estranho" em "está
+              quebrado".
+              Por isso a pílula ESCREVE a ordem em vez de ser só uma setinha —
+              e fica verde quando não é a de sempre, igual às outras. */}
+          <span ref={ordemMenuRef} style={{ position: "relative", display: "flex", flexShrink: 0 }}>
+            <button data-ordem onClick={() => setMenuOrdem((v) => !v)}
+                    aria-expanded={menuOrdem}
+                    title="Em que ordem a lista aparece"
+                    style={{ display: "flex", alignItems: "center", gap: 5, minHeight: 32,
+                             border: `1px solid ${ordem === "antigas" ? C.greenDark : C.divider}`,
+                             background: ordem === "antigas" ? C.greenDark : "transparent",
+                             color: ordem === "antigas" ? "#fff" : C.textSecondary,
+                             borderRadius: 20, padding: "5px 11px", fontSize: 12.5, fontWeight: 600,
+                             cursor: "pointer", whiteSpace: "nowrap" }}>
+              <ArrowDownUp size={13} />
+              {ordem === "antigas" ? "Mais antigas" : "Mais recentes"}
+              <ChevronDown size={13} style={{ opacity: 0.8 }} />
+            </button>
+            {menuOrdem && (
+              <div data-menu-ordem
+                   style={{ position: "absolute", top: 38, left: 0, zIndex: 46, width: 244,
+                            background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10,
+                            boxShadow: "0 6px 20px rgba(0,0,0,.25)", overflow: "hidden" }}>
+                <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.divider}`,
+                              fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3 }}>
+                  ORDEM DA LISTA
+                </div>
+                {[["recentes", "Mais recentes primeiro", "Quem falou por último aparece no alto. É a ordem de sempre."],
+                  ["antigas", "Mais antigas primeiro", "Quem está esperando há mais tempo aparece no alto."]]
+                  .map(([chave, titulo, explica]) => (
+                  <button key={chave} data-ordem-opcao={chave}
+                          onClick={() => { setOrdem(chave); setMenuOrdem(false); }}
+                          style={{ ...ITEM_DO_MENU, alignItems: "flex-start", color: C.textPrimary,
+                                   background: ordem === chave ? C.listActive : "transparent" }}>
+                    <Check size={16} color={ordem === chave ? C.green : "transparent"}
+                           style={{ flexShrink: 0, marginTop: 2 }} />
+                    <span style={{ display: "block" }}>
+                      {titulo}
+                      {/* A FRASE EMBAIXO existe porque "mais antigas" é ambíguo
+                          para quem lê rápido: antiga é a conversa que começou
+                          faz tempo, ou a que ninguém responde faz tempo? São a
+                          mesma coisa aqui, e dizer qual das duas evita a
+                          pergunta. */}
+                      <span style={{ display: "block", fontSize: 11.5, fontWeight: 400,
+                                     color: C.textSecondary, marginTop: 2, whiteSpace: "normal" }}>
+                        {explica}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </span>
+
           {/* O RASTRO DO FILTRO DE ATENDENTES.
               O botão em si subiu para o topo da coluna, ao lado de "Nova
               conversa" e do menu. Mas filtro ligado longe da lista é a receita
