@@ -120,11 +120,17 @@ for (const aba of ["Mensagens rápidas", "Etiquetas"]) {
 await page.keyboard.press("Escape");
 await page.waitForTimeout(500);
 
-await tela("Juntar duas conversas", async () => {
+// "JUNTAR DUAS CONVERSAS" SAIU DO MENU, a pedido de quem administra: ninguém
+// nunca usou, e ela apagava uma conversa inteira em duas escolhas, sem
+// desfazer. Aqui a conferência vira o contrário — a de que ela NÃO está mais
+// lá. Um teste que só some junto com a tela deixaria de avisar se ela voltasse.
+{
   await page.getByRole("button", { name: "Menu" }).click();
-  await page.getByRole("button", { name: "Juntar duas conversas" }).click();
-});
-await page.keyboard.press("Escape");
+  await page.waitForTimeout(400);
+  ok("o menu do topo não oferece mais juntar conversas",
+     await page.getByRole("button", { name: "Juntar duas conversas" }).count() === 0);
+  await page.keyboard.press("Escape");
+}
 
 // ---- o tema escuro desenha tudo? ----
 await page.evaluate(() => localStorage.setItem("zorvin_modo", "escuro"));

@@ -218,10 +218,30 @@ function chaveDeNome(t) {
     .toLowerCase().trim().replace(/\s+/g, " ");
 }
 
+// O PISO DE 40×40 É DO DEDO, e não do desenho.
+//
+// A medição no iPhone achou "Nova conversa" com 39, o filtro de quem com 37 e
+// o ⋮ de cada conversa com 30. Parece pouca diferença no monitor; no aparelho é
+// a diferença entre acertar e abrir outra coisa. 40 é o mínimo que a Apple
+// recomenda para qualquer coisa que se toque, e no computador nada muda de
+// aparência: os botões já tinham 39.
 const BOTAO_ICONE = {
   border: "none", background: "transparent", cursor: "pointer",
   display: "flex", alignItems: "center", justifyContent: "center",
   padding: 10, borderRadius: 8, flexShrink: 0,
+  minWidth: 40, minHeight: 40,
+};
+
+// UMA LINHA DE MENU QUE O DEDO ACERTA.
+//
+// 12px em cima e embaixo de um texto de 14 dão 44 pontos de altura — a medida
+// que a Apple recomenda para qualquer coisa que se toque. Errar a linha num
+// menu de celular abre a tela errada, e quem errou não sabe que errou: só vê
+// aparecer outra coisa.
+const ITEM_DO_MENU = {
+  width: "100%", display: "flex", alignItems: "center", gap: 10,
+  padding: "12px 14px", border: "none", background: "transparent",
+  cursor: "pointer", fontSize: 14, textAlign: "left",
 };
 
 // Cores disponíveis ao criar uma tag (o usuário escolhe uma).
@@ -1107,9 +1127,20 @@ export default function Painel({ sessao }) {
   const [telaAdmin, setTelaAdmin] = useState(false);
   // O Painel de números (quanto se falou, por telefone e por atendente).
   const [telaPainel, setTelaPainel] = useState(false);
-  // A janela de juntar duas conversas (só admin). `de` é a que SOME; `para` é a
-  // que fica com tudo.
-  const [juntar, setJuntar] = useState(null);   // null | {de, para, indo}
+  // JUNTAR DUAS CONVERSAS SAIU DO PAINEL — a pedido de quem administra.
+  //
+  // Era um item de menu que apagava uma conversa inteira em duas escolhas:
+  // "esta some" e "as mensagens dela vão para". Sem desfazer. Ficava ao lado
+  // de "Configurações", alcançável por qualquer administrador, e em toda a
+  // vida do Zorvin ninguém nunca usou — nem o próprio administrador.
+  //
+  // Risco de um lado, uso zero do outro. Quando duas conversas precisarem
+  // virar uma de verdade — o caso do grupo que nasceu com número esquisito —,
+  // isso passa a ser feito no banco, com quem sabe o que está fazendo, e não
+  // por um botão que se alcança sem querer no celular.
+  //
+  // A rota `/conversas/juntar` continua existindo na ponte, sem porta de
+  // entrada no painel: é por ela que a correção manual passa quando precisar.
   const [menuParaCima, setMenuParaCima] = useState(false); // o menu da bolha abre para cima?
   const [encaminhar, setEncaminhar] = useState(null);      // mensagem sendo encaminhada
   const [editando, setEditando] = useState(null);          // mensagem sendo editada
@@ -1305,6 +1336,13 @@ export default function Painel({ sessao }) {
   const [tagForm, setTagForm] = useState(null); // { id?, nome, cor } sendo criada/editada
   const [tagMenuAberto, setTagMenuAberto] = useState(false); // menu de aplicar tags na conversa aberta
   const [menuTopoAberto, setMenuTopoAberto] = useState(false); // menu ⋮ do topo da lista
+  // O MENU ⋮ DO CABEÇALHO DA CONVERSA — só no celular.
+  //
+  // No computador as ações da conversa cabem escritas no cabeçalho. Em 390
+  // pontos de tela, não: eram sete botões, e o nome do contato ficava com UM
+  // pixel. Aqui elas viram uma lista com as palavras escritas, que é o que se
+  // lê quando se procura alguma coisa pelo nome dela.
+  const [menuDaConversa, setMenuDaConversa] = useState(false);
   const [menuEtiquetas, setMenuEtiquetas] = useState(false); // lista de etiquetas para filtrar
   const [menuDepartamentos, setMenuDepartamentos] = useState(false); // lista de departamentos
   const [buscaDepartamento, setBuscaDepartamento] = useState("");
@@ -1320,6 +1358,7 @@ export default function Painel({ sessao }) {
   const tagMenuRef = useRef(null); // menu de aplicar tags (fecha ao clicar fora)
   const txtRef = useRef(null); // input de arquivo .txt (importar histórico)
   const menuTopoRef = useRef(null);
+  const acoesRef = useRef(null); // o ⋮ do cabeçalho da conversa (celular)
   const etiquetasRef = useRef(null); // menu ⋮ do topo (fecha ao clicar fora)
   const departamentosRef = useRef(null); // seletor de departamento (fecha ao clicar fora)
 
@@ -3696,13 +3735,13 @@ export default function Painel({ sessao }) {
       // escada, faltar não era "o Esc não faz nada": ele descia até o último
       // degrau e FECHAVA A CONVERSA lá atrás, por baixo do que estava aberto.
       // A pessoa fechava as Mídias e a conversa tinha sumido.
-      else if (juntar) setJuntar(null);
       else if (midiasAberta) setMidiasAberta(false);
       else if (telaAdmin) setTelaAdmin(false);
       else if (telaPainel) setTelaPainel(false);
       else if (configAberta) setConfigAberta(false);
       else if (novaConversaAberta) setNovaConversaAberta(false);
       else if (menuConversa) setMenuConversa(null);
+      else if (menuDaConversa) setMenuDaConversa(false);
       else if (menuTopoAberto) setMenuTopoAberto(false);
       else if (menuQuem) setMenuQuem(false);
       else if (quemParticipou) setQuemParticipou(false);
@@ -3719,14 +3758,19 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, telaPainel, menuConversa, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId]);
+  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, menuConversa, menuDaConversa, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
     function aoClicar(e) {
       if (menuEtiquetas && etiquetasRef.current && !etiquetasRef.current.contains(e.target)) setMenuEtiquetas(false);
       if (menuQuem && quemRef.current && !quemRef.current.contains(e.target)) setMenuQuem(false);
-      if (quemParticipou && quemParticipouRef.current && !quemParticipouRef.current.contains(e.target)) setQuemParticipou(false);
+      // NO CELULAR AS DUAS LISTINHAS PENDEM DO ⋮, e não dos botões que as
+      // abriam no computador — esses saíram do cabeçalho. Sem contar o ⋮ como
+      // "dentro", o próprio clique que abre a listinha já a fechava.
+      const dentroDoMenu = acoesRef.current && acoesRef.current.contains(e.target);
+      if (menuDaConversa && !dentroDoMenu) setMenuDaConversa(false);
+      if (quemParticipou && !dentroDoMenu && quemParticipouRef.current && !quemParticipouRef.current.contains(e.target)) setQuemParticipou(false);
       // O MENU DA BOLHA fecha ao clicar em qualquer lugar fora dele.
       // Não dá para usar um ref como os outros: existe um menu por mensagem, e
       // guardar um ref por bolha seria um mapa que envelhece a cada rolagem. A
@@ -3737,13 +3781,13 @@ export default function Painel({ sessao }) {
       }
       if (emojiAberto && emojiRef.current && !emojiRef.current.contains(e.target)) setEmojiAberto(false);
       if (seletorAberto && seletorRef.current && !seletorRef.current.contains(e.target)) setSeletorAberto(false);
-      if (tagMenuAberto && tagMenuRef.current && !tagMenuRef.current.contains(e.target)) setTagMenuAberto(false);
+      if (tagMenuAberto && !dentroDoMenu && tagMenuRef.current && !tagMenuRef.current.contains(e.target)) setTagMenuAberto(false);
       if (menuTopoAberto && menuTopoRef.current && !menuTopoRef.current.contains(e.target)) setMenuTopoAberto(false);
       if (menuDepartamentos && departamentosRef.current && !departamentosRef.current.contains(e.target)) setMenuDepartamentos(false);
     }
     document.addEventListener("mousedown", aoClicar);
     return () => document.removeEventListener("mousedown", aoClicar);
-  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, menuDepartamentos]);
+  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, menuDaConversa, menuDepartamentos]);
 
   // Fecha o menuzinho da conversa (marcar não lida) ao clicar em qualquer lugar.
   useEffect(() => {
@@ -5405,6 +5449,70 @@ export default function Painel({ sessao }) {
     if (el) el.scrollIntoView({ block: "center" });
   }
 
+  // AS DUAS LISTINHAS DO CABEÇALHO, ESCRITAS UMA VEZ SÓ.
+  //
+  // No computador cada uma pende do seu próprio botão. No celular esses botões
+  // saíram do cabeçalho — não cabiam — e as duas passaram a pender do ⋮. O
+  // conteúdo é o mesmo nos dois lugares, então mora aqui: duplicado, um dia só
+  // uma das cópias seria corrigida, e ninguém descobriria pelo monitor.
+  const listaDeParticipantes = !conversa ? null : (
+    <div style={{ position: "absolute", top: estreito ? 44 : 36, right: 0, zIndex: 60, width: 264, maxHeight: 340, overflowY: "auto",
+                  background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
+      <div style={{ padding: "10px 12px 8px", borderBottom: `1px solid ${C.divider}`, fontSize: 13.5, fontWeight: 700, color: C.textPrimary }}>
+        Quem participou desta conversa
+        <div style={{ fontSize: 11.5, fontWeight: 400, color: C.textSecondary, marginTop: 2 }}>
+          {atendentesInteragiram.length === 1
+            ? "1 pessoa do escritório escreveu aqui"
+            : `${atendentesInteragiram.length} pessoas do escritório escreveram aqui`}
+        </div>
+      </div>
+      {atendentesInteragiram.map((a) => (
+        <div key={a.id || a.nome} data-participante={a.nome}
+             style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 12px" }}>
+          <Avatar nome={a.nome} foto={a.foto} size={30} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13.5, color: C.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nome}</div>
+            {/* "3 mensagens · ontem" — quantas e quando, que é o
+                que separa quem passou por aqui de quem atende. */}
+            <div style={{ fontSize: 11.5, color: C.textSecondary }}>
+              {a.quantas} {a.quantas === 1 ? "mensagem" : "mensagens"}
+              {a.ultimaEm ? ` · ${rotuloData(a.ultimaEm).toLowerCase()}` : ""}
+            </div>
+          </div>
+        </div>
+      ))}
+      {/* SÓ O QUE ESTÁ CARREGADO. A conversa abre com as
+          mensagens recentes e traz o resto ao rolar para cima —
+          então esta lista cresce conforme se sobe. Dizer isso é
+          melhor do que deixar alguém concluir que fulano nunca
+          falou com o cliente. */}
+      <div style={{ padding: "8px 12px 10px", borderTop: `1px solid ${C.divider}`, fontSize: 11, color: C.textSecondary, lineHeight: 1.4 }}>
+        Conta o que já está aberto na conversa. Role para cima
+        para carregar o mais antigo.
+      </div>
+    </div>
+  );
+
+  const listaDeEtiquetas = !conversa ? null : (
+    <div style={{ position: "absolute", top: estreito ? 44 : 30, right: 0, width: 240, maxHeight: 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 46 }}>
+      <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.divider}`, fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3, position: "sticky", top: 0, background: C.panel }}>MARCAR TAGS</div>
+      {tags.length === 0 && (
+        <div style={{ padding: 14, fontSize: 13, color: C.textSecondary, textAlign: "center" }}>Nenhuma tag ainda. Crie em Configurações → Tags.</div>
+      )}
+      {tags.map((t) => {
+        const marcada = (tagsPorConversa[conversa.id] || []).includes(t.id);
+        return (
+          <button key={t.id} onClick={() => alternarTagConversa(t.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, textAlign: "left" }}>
+            <span style={{ width: 12, height: 12, borderRadius: 3, background: t.cor, flexShrink: 0 }} />
+            <span style={{ flex: 1, fontSize: 13.5 }}>{t.nome}</span>
+            {marcada && <Check size={16} color={C.green} />}
+          </button>
+        );
+      })}
+      <button onClick={() => { setTagMenuAberto(false); setAbaConfig("tags"); setTagForm(null); setConfigAberta(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 6, padding: "10px 12px", border: "none", borderTop: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.verdeTexto, fontSize: 13, fontWeight: 600 }}><Plus size={15} /> Gerenciar etiquetas</button>
+    </div>
+  );
+
   // `100dvh` e não `100vh`. No Safari do iPhone o `vh` é a altura da tela COM a
   // barra do navegador recolhida — uma altura que, na prática, quase nunca é a
   // que se tem. Resultado: os últimos ~90px do painel ficavam embaixo da barra
@@ -5418,6 +5526,41 @@ export default function Painel({ sessao }) {
       <style>{`
         *:focus { outline: none; }
         *:focus-visible { outline: 2px solid ${C.green}; outline-offset: 2px; border-radius: 4px; }
+
+        /* NO CELULAR, NADA MENOR DO QUE 40 PONTOS DE ALTURA.
+           A varredura a 390 pontos achou dezenas de coisas para tocar com 27,
+           30, 32 e 36: as pílulas de filtro, as abas das Configurações, os
+           campos dos Departamentos, o "Fechar" de cada painel. Cada uma dessas
+           é um toque que erra — e errar num painel de administração é abrir
+           outra aba sem entender por quê.
+           Uma regra só, e no lugar onde o navegador já sabe qual é a tela: 40
+           é o mínimo que a Apple recomenda. Cresce em ALTURA, que é para onde
+           a tela do celular tem espaço de sobra; nada aqui mexe em largura,
+           porque é a largura que falta.
+           O "important" é necessário e não é preguiça: quase toda altura
+           pequena está escrita na própria etiqueta (style={{ minHeight: 32 }}),
+           e estilo escrito ali vence folha de estilo sempre. Sem ele, a regra
+           não encostaria justamente nos casos que existem. A alternativa seria
+           caçar as três dezenas de lugares em cinco arquivos e pôr um
+           "estreito ? 40 : 32" em cada um — trinta chances de esquecer um, e
+           mais trinta a cada tela nova.
+           A marca data-compacto é a saída para quando alguma fileira precisar
+           desobedecer. Hoje ninguém usa, e é de propósito que a exceção exista
+           escrita em vez de aparecer como um "important" solto mais adiante. */
+        @media (max-width: 767px) {
+          button, [role="button"], select,
+          input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),
+          textarea { min-height: 40px !important; }
+          /* E O BOTÃO QUE É SÓ UM DESENHO precisa dos 40 na LARGURA também.
+             Ele não tem palavra dentro para esticá-lo: sobrou o ícone de 16
+             pontos mais um respiro, e deu 30. São as setas de mês do Painel, o
+             X que fecha os Departamentos, a câmera que troca a foto. Só estes
+             ganham largura — um botão com texto já é largo, e forçar largura
+             onde o que falta é largura seria trocar um defeito por outro. */
+          button:has(> svg:only-child) { min-width: 40px !important; }
+          [data-compacto], [data-compacto] button, [data-compacto] input { min-height: 0 !important; }
+          [data-compacto] button:has(> svg:only-child) { min-width: 0 !important; }
+        }
         .sem-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
         .sem-scrollbar::-webkit-scrollbar { display: none; }
 
@@ -5526,6 +5669,7 @@ export default function Painel({ sessao }) {
              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrirConfig(); } }}
              title={`${meuNome} — configurações`}
              style={{ cursor: "pointer", marginTop: 4, marginBottom: 14, borderRadius: "50%", display: "flex",
+                      minWidth: 40, minHeight: 40, alignItems: "center", justifyContent: "center",
                       boxShadow: configAberta ? `0 0 0 2px ${C.green}` : "none" }}>
           <Avatar nome={meuNome} foto={minhaFoto} size={36} />
         </div>
@@ -5784,13 +5928,6 @@ export default function Painel({ sessao }) {
                       regras do banco de qualquer forma. */}
                   {souAdmin && (
                     <button onClick={() => { setMenuTopoAberto(false); setTelaAdmin(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><ShieldCheck size={17} color={C.textSecondary} /> Departamentos e acessos</button>
-                  )}
-                  {/* Duas conversas que são a MESMA coisa — o caso do grupo que
-                      nasceu partido. A junção automática só alcança o que ela
-                      reconhece e só roda quando chega mensagem nova; aqui quem
-                      OLHA a tela aponta as duas, e não há o que adivinhar. */}
-                  {souAdmin && (
-                    <button onClick={() => { setMenuTopoAberto(false); setJuntar({ de: "", para: "", indo: false }); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><MessageSquarePlus size={17} color={C.textSecondary} /> Juntar duas conversas</button>
                   )}
                   <div style={{ height: 1, background: C.divider }} />
                   <button onClick={() => { setMenuTopoAberto(false); sair(); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: "#e5573f", fontSize: 14, fontWeight: 600, textAlign: "left" }}><LogOut size={17} /> Desconectar</button>
@@ -6139,7 +6276,7 @@ export default function Painel({ sessao }) {
             const bruto = c.ultima_mensagem || "";
             const previa = midiaTipo && (bruto === "[anexo]" || bruto === "") ? rotuloMidia(midiaTipo) : bruto;
             return (
-              <div key={c.id} data-conversa-nome={nome} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrirConversa(c); } }} onClick={() => abrirConversa(c)} onMouseEnter={() => setConvHover(c.id)} onMouseLeave={() => setConvHover((h) => (h === c.id ? null : h))} style={{ position: "relative", width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: c.id === conversaId ? C.listActive : (convHover === c.id ? C.divider : C.panel), borderBottom: `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary }}>
+              <div key={c.id} data-conversa-nome={nome} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrirConversa(c); } }} onClick={() => abrirConversa(c)} onMouseEnter={() => setConvHover(c.id)} onMouseLeave={() => setConvHover((h) => (h === c.id ? null : h))} style={{ position: "relative", width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: estreito ? 10 : 12, padding: estreito ? "10px 8px" : "10px 14px", background: c.id === conversaId ? C.listActive : (convHover === c.id ? C.divider : C.panel), borderBottom: `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary }}>
                 <Avatar nome={nome} foto={c.contato?.foto_url} size={48} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
@@ -6189,7 +6326,7 @@ export default function Painel({ sessao }) {
                     dois temas, com o horário riscado por um chevron meio
                     transparente. Aqui ele é um irmão do bloco de texto: ocupa a
                     sua faixa e não tem como cobrir nada. */}
-                <button aria-label="Opções da conversa" onClick={(e) => { e.stopPropagation(); setMenuConversa(menuConversa === c.id ? null : c.id); }} title="Opções" style={{ alignSelf: "center", flexShrink: 0, border: "none", background: "transparent", borderRadius: 8, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 6, marginRight: -6, color: C.textSecondary, opacity: (convHover === c.id || menuConversa === c.id) ? 1 : 0.6, transition: "opacity .12s" }}>
+                <button aria-label="Opções da conversa" onClick={(e) => { e.stopPropagation(); setMenuConversa(menuConversa === c.id ? null : c.id); }} title="Opções" style={{ alignSelf: "center", flexShrink: 0, border: "none", background: "transparent", borderRadius: 8, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 6, marginRight: -6, minWidth: 40, minHeight: 40, color: C.textSecondary, opacity: (convHover === c.id || menuConversa === c.id) ? 1 : 0.6, transition: "opacity .12s" }}>
                   <ChevronDown size={18} color={C.textSecondary} />
                 </button>
                 {menuConversa === c.id && (
@@ -6255,9 +6392,9 @@ export default function Painel({ sessao }) {
           </div>
         ) : (
           <>
-            <div style={{ background: C.headerBar, padding: "10px 16px", display: "flex", alignItems: "center", gap: 12, borderBottom: `1px solid ${C.divider}` }}>
+            <div data-topo-conversa style={{ background: C.headerBar, padding: estreito ? "8px 10px" : "10px 16px", display: "flex", alignItems: "center", gap: estreito ? 6 : 12, borderBottom: `1px solid ${C.divider}` }}>
               {estreito && (
-                <button onClick={() => setConversaId(null)} title="Voltar" style={BOTAO_ICONE}>
+                <button onClick={() => setConversaId(null)} title="Voltar" aria-label="Voltar" style={BOTAO_ICONE}>
                   <ArrowLeft size={20} color={C.textSecondary} />
                 </button>
               )}
@@ -6267,7 +6404,7 @@ export default function Painel({ sessao }) {
                   só interrompia a conversa a cada clique sem querer no lugar
                   mais clicável do cabeçalho. A foto grande continua a um clique
                   de distância, mas na FOTO, que é onde se espera. */}
-              <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: estreito ? 9 : 12, flex: 1, minWidth: 0 }}>
               <span onClick={() => { if (conversa.contato?.foto_url) { setLarguraDoRetrato(0); setRetratoAberto(true); setImagemAberta(conversa.contato.foto_url); } }}
                     title={conversa.contato?.foto_url ? "Ver a foto" : undefined}
                     style={{ display: "flex", cursor: conversa.contato?.foto_url ? "pointer" : "default" }}>
@@ -6288,8 +6425,12 @@ export default function Painel({ sessao }) {
                     botão de distância no mesmo cabeçalho. */}
                 {renomeando === null ? (
                   <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                    <div style={{ fontSize: 15, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nomeDoContato(conversa.contato)}</div>
-                    {!conversa.contato?.vantoro_nome && (
+                    <div data-nome-do-contato style={{ fontSize: 15, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nomeDoContato(conversa.contato)}</div>
+                    {/* O LÁPIS SÓ NO COMPUTADOR. Ele tinha 24×24 — metade do
+                        que um dedo acerta — e ficava colado no nome, que é
+                        justamente onde se toca para nada acontecer. No celular
+                        ele virou uma linha escrita dentro do menu ⋮. */}
+                    {!estreito && !conversa.contato?.vantoro_nome && (
                       <button onClick={() => setRenomeando(conversa.contato?.nome_zorvin || "")}
                               title="Dar um nome a este contato (só no Zorvin)"
                               style={{ border: "none", background: "transparent", cursor: "pointer",
@@ -6312,11 +6453,11 @@ export default function Painel({ sessao }) {
                                     border: `1px solid ${C.green}`, borderRadius: 6, outline: "none",
                                     background: C.inputBg, color: C.textPrimary }} />
                     <button onClick={() => salvarNomeDoContato(renomeando)} title="Salvar"
-                            style={{ border: "none", background: "transparent", cursor: "pointer", color: C.green, padding: 2, display: "flex", minHeight: 24, minWidth: 24, alignItems: "center", justifyContent: "center" }}>
+                            style={{ border: "none", background: "transparent", cursor: "pointer", color: C.green, padding: 2, display: "flex", minHeight: estreito ? 40 : 24, minWidth: estreito ? 40 : 24, alignItems: "center", justifyContent: "center" }}>
                       <Check size={16} />
                     </button>
                     <button onClick={() => setRenomeando(null)} title="Cancelar"
-                            style={{ border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, padding: 2, display: "flex", minHeight: 24, minWidth: 24, alignItems: "center", justifyContent: "center" }}>
+                            style={{ border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, padding: 2, display: "flex", minHeight: estreito ? 40 : 24, minWidth: estreito ? 40 : 24, alignItems: "center", justifyContent: "center" }}>
                       <X size={16} />
                     </button>
                   </div>
@@ -6351,148 +6492,192 @@ export default function Painel({ sessao }) {
                 )}
               </div>
               </div>
-              {/* MARCAR COMO LIDA — só aparece quando há o que marcar.
-                  Responder o contato já marca sozinho; este botão é para o
-                  outro caso, o de "olhei, não precisa de resposta, resolvido".
-                  Sem ele, uma conversa que não pede resposta ficaria com o selo
-                  vermelho para sempre.
-                  No computador vem com a palavra escrita: um tique sozinho não
-                  diz o que faz, e este botão apaga um aviso que a equipe
-                  inteira está vendo. No celular fica só o tique, por espaço,
-                  mas com o mesmo `title`. */}
-              {(conversa.nao_lidas || 0) > 0 && (
-                <button onClick={() => marcarLida(conversa.id)}
-                        title="Marcar esta conversa como lida"
-                        style={{ ...BOTAO_ICONE, padding: estreito ? 7 : "7px 11px", gap: 6,
-                                 background: C.searchBg, color: C.verdeTexto,
-                                 fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>
-                  <CheckCheck size={17} />
-                  {!estreito && "Marcar como lida"}
+              {/* AS AÇÕES DA CONVERSA — E ONDE ELAS CABEM.
+                  No computador, todas no cabeçalho. No celular, não: em 390
+                  pontos de tela eram sete botões disputando espaço com o nome
+                  do contato, e o nome perdia. Perdia feio — a medição deu UM
+                  pixel para ele, que é o "KAIO…" do relato.
+                  Então no celular ficam a seta de voltar, a foto, o nome e um
+                  ⋮. O resto mudou de lugar, não sumiu: virou lista escrita
+                  dentro do ⋮, com as palavras inteiras — melhor do que ícone
+                  para quem procura alguma coisa pelo nome dela. É o mesmo
+                  arranjo do WhatsApp no celular, e por isso não há o que
+                  aprender. */}
+              {!estreito && (
+                <>
+                {/* MARCAR COMO LIDA — só aparece quando há o que marcar.
+                    Responder o contato já marca sozinho; este botão é para o
+                    outro caso, o de "olhei, não precisa de resposta, resolvido".
+                    Sem ele, uma conversa que não pede resposta ficaria com o selo
+                    vermelho para sempre.
+                    Vem com a palavra escrita: um tique sozinho não diz o que
+                    faz, e este botão apaga um aviso que a equipe inteira está
+                    vendo. No celular ele é a primeira linha do menu ⋮, também
+                    escrita — e o pingo verde no ⋮ é o que avisa que ela está
+                    lá. */}
+                {(conversa.nao_lidas || 0) > 0 && (
+                  <button onClick={() => marcarLida(conversa.id)}
+                          title="Marcar esta conversa como lida"
+                          style={{ ...BOTAO_ICONE, padding: "7px 11px", gap: 6,
+                                   background: C.searchBg, color: C.verdeTexto,
+                                   fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>
+                    <CheckCheck size={17} />
+                    Marcar como lida
+                  </button>
+                )}
+                {/* Ficha do cliente no Vantoro (cadastro, esteira, processos) */}
+                <button onClick={() => setFichaAberta((v) => !v)}
+                        title="Ficha no Vantoro"
+                        style={{ ...BOTAO_ICONE, padding: 10, background: fichaAberta ? C.listActive : "transparent" }}>
+                  <ClipboardList size={19} color={fichaAberta ? C.green : C.textSecondary} />
                 </button>
+                {/* Histórico de atendimento: quem falou com este cliente, quando
+                    e por qual telefone. Ao lado da ficha porque respondem à mesma
+                    pergunta — "o que já aconteceu com esta pessoa" —, uma no
+                    cadastro do Vantoro e a outra no atendimento. */}
+                {/* O ID VEM DA CONVERSA (`contato_id`), e não de `contato.id`.
+                    A lista de conversas pede do contato só nome, número e foto —
+                    não o id —, então `conversa.contato.id` é `undefined` e o
+                    botão não fazia NADA ao ser clicado: sem erro, sem aviso, sem
+                    painel. O `contato.id` fica como segunda opção, para o caso de
+                    a consulta um dia passar a trazê-lo. */}
+                <button onClick={() => {
+                          if (historico) { setHistorico(null); return; }
+                          const id = conversa.contato_id || conversa.contato?.id;
+                          if (id) carregarHistorico(id);
+                          // Falar é melhor do que não fazer nada: um botão mudo
+                          // faz a pessoa clicar cinco vezes e desistir sem saber
+                          // se o problema é dela.
+                          else mostrarAviso("Não consegui identificar o contato desta conversa.");
+                        }}
+                        title="Histórico de atendimento"
+                        style={{ ...BOTAO_ICONE, padding: 10, background: historico ? C.listActive : "transparent" }}>
+                  <History size={19} color={historico ? C.green : C.textSecondary} />
+                </button>
+                {/* QUEM PARTICIPOU DESTA CONVERSA.
+                    O grupinho mostra quatro rostos e um "+3" — e o "+3" era um
+                    beco: ele DIZ que há mais gente e não dá jeito nenhum de ver
+                    quem. Havia um `title`, mas title é uma linha de texto que
+                    demora a aparecer, some ao mexer o rato, não existe no toque e
+                    corta quando cresce; para saber quem atendeu um cliente, não
+                    serve.
+                    Agora o grupinho é um botão e abre a lista inteira, com quem,
+                    quantas mensagens e quando foi a última — que é o que responde
+                    "com quem eu falo sobre este cliente". */}
+                {atendentesInteragiram.length > 0 && (
+                  <span ref={quemParticipouRef} style={{ position: "relative", display: "flex", marginRight: 2 }}>
+                    <button data-quem-participou onClick={() => setQuemParticipou((v) => !v)}
+                            aria-label={`Quem participou da conversa (${atendentesInteragiram.length})`}
+                            aria-expanded={quemParticipou}
+                            title="Quem participou desta conversa"
+                            style={{ display: "flex", alignItems: "center", border: "none", background: "transparent",
+                                     cursor: "pointer", padding: 2, borderRadius: 20 }}>
+                      {atendentesInteragiram.slice(0, 4).map((a, idx) => (
+                        <span key={a.id || a.nome} style={{ marginLeft: idx === 0 ? 0 : -8, borderRadius: "50%", border: `2px solid ${C.headerBar}`, display: "flex" }}>
+                          <Avatar nome={a.nome} foto={a.foto} size={26} />
+                        </span>
+                      ))}
+                      {atendentesInteragiram.length > 4 && (
+                        <span style={{ marginLeft: -8, width: 26, height: 26, borderRadius: "50%", background: C.divider, color: C.textSecondary, fontSize: 10.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${C.headerBar}` }}>+{atendentesInteragiram.length - 4}</span>
+                      )}
+                    </button>
+                    {quemParticipou && listaDeParticipantes}
+                  </span>
+                )}
+                {/* Etiquetar a conversa: abre um menu para marcar/desmarcar tags */}
+                <span ref={tagMenuRef} style={{ position: "relative", display: "flex" }}>
+                  <button aria-label="Etiquetas" onClick={() => setTagMenuAberto((v) => !v)} title="Etiquetas" style={{ ...BOTAO_ICONE, padding: 10 }}>
+                    <Tag size={19} color={tagMenuAberto || (tagsPorConversa[conversa.id] || []).length ? C.green : C.textSecondary} />
+                  </button>
+                  {tagMenuAberto && listaDeEtiquetas}
+                </span>
+                <button aria-label="Buscar na conversa" onClick={() => setBuscaAberta((v) => !v)} title="Buscar na conversa" style={{ ...BOTAO_ICONE, padding: 10 }}>
+                  <Search size={19} color={buscaAberta ? C.green : C.textSecondary} />
+                </button>
+                </>
               )}
-              {/* Ficha do cliente no Vantoro (cadastro, esteira, processos) */}
-              <button onClick={() => setFichaAberta((v) => !v)}
-                      title="Ficha no Vantoro"
-                      style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10, background: fichaAberta ? C.listActive : "transparent" }}>
-                <ClipboardList size={19} color={fichaAberta ? C.green : C.textSecondary} />
-              </button>
-              {/* Histórico de atendimento: quem falou com este cliente, quando
-                  e por qual telefone. Ao lado da ficha porque respondem à mesma
-                  pergunta — "o que já aconteceu com esta pessoa" —, uma no
-                  cadastro do Vantoro e a outra no atendimento. */}
-              {/* O ID VEM DA CONVERSA (`contato_id`), e não de `contato.id`.
-                  A lista de conversas pede do contato só nome, número e foto —
-                  não o id —, então `conversa.contato.id` é `undefined` e o
-                  botão não fazia NADA ao ser clicado: sem erro, sem aviso, sem
-                  painel. O `contato.id` fica como segunda opção, para o caso de
-                  a consulta um dia passar a trazê-lo. */}
-              <button onClick={() => {
-                        if (historico) { setHistorico(null); return; }
-                        const id = conversa.contato_id || conversa.contato?.id;
-                        if (id) carregarHistorico(id);
-                        // Falar é melhor do que não fazer nada: um botão mudo
-                        // faz a pessoa clicar cinco vezes e desistir sem saber
-                        // se o problema é dela.
-                        else mostrarAviso("Não consegui identificar o contato desta conversa.");
-                      }}
-                      title="Histórico de atendimento"
-                      style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10, background: historico ? C.listActive : "transparent" }}>
-                <History size={19} color={historico ? C.green : C.textSecondary} />
-              </button>
-              {/* QUEM PARTICIPOU DESTA CONVERSA.
-                  O grupinho mostra quatro rostos e um "+3" — e o "+3" era um
-                  beco: ele DIZ que há mais gente e não dá jeito nenhum de ver
-                  quem. Havia um `title`, mas title é uma linha de texto que
-                  demora a aparecer, some ao mexer o rato, não existe no toque e
-                  corta quando cresce; para saber quem atendeu um cliente, não
-                  serve.
-                  Agora o grupinho é um botão e abre a lista inteira, com quem,
-                  quantas mensagens e quando foi a última — que é o que responde
-                  "com quem eu falo sobre este cliente". */}
-              {!estreito && atendentesInteragiram.length > 0 && (
-                <span ref={quemParticipouRef} style={{ position: "relative", display: "flex", marginRight: 2 }}>
-                  <button data-quem-participou onClick={() => setQuemParticipou((v) => !v)}
-                          aria-label={`Quem participou da conversa (${atendentesInteragiram.length})`}
-                          aria-expanded={quemParticipou}
-                          title="Quem participou desta conversa"
-                          style={{ display: "flex", alignItems: "center", border: "none", background: "transparent",
-                                   cursor: "pointer", padding: 2, borderRadius: 20 }}>
-                    {atendentesInteragiram.slice(0, 4).map((a, idx) => (
-                      <span key={a.id || a.nome} style={{ marginLeft: idx === 0 ? 0 : -8, borderRadius: "50%", border: `2px solid ${C.headerBar}`, display: "flex" }}>
-                        <Avatar nome={a.nome} foto={a.foto} size={26} />
-                      </span>
-                    ))}
-                    {atendentesInteragiram.length > 4 && (
-                      <span style={{ marginLeft: -8, width: 26, height: 26, borderRadius: "50%", background: C.divider, color: C.textSecondary, fontSize: 10.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${C.headerBar}` }}>+{atendentesInteragiram.length - 4}</span>
+
+              {estreito && (
+                <span ref={acoesRef} style={{ position: "relative", display: "flex" }}>
+                  <button aria-label="Mais opções desta conversa" title="Mais opções desta conversa"
+                          onClick={() => { setQuemParticipou(false); setTagMenuAberto(false); setMenuDaConversa((v) => !v); }}
+                          aria-expanded={menuDaConversa}
+                          style={{ ...BOTAO_ICONE, minWidth: 40, minHeight: 40, position: "relative" }}>
+                    <MoreVertical size={20} color={C.textSecondary} />
+                    {/* O PINGO VERDE — porque "marcar como lida" e as etiquetas
+                        entraram no menu, e o que entra num menu fica invisível.
+                        Sem ele, uma conversa com mensagem por ler deixaria de
+                        avisar qualquer coisa depois de aberta no celular. */}
+                    {((conversa.nao_lidas || 0) > 0 || (tagsPorConversa[conversa.id] || []).length > 0) && (
+                      <span style={{ position: "absolute", top: 5, right: 5, width: 8, height: 8, borderRadius: "50%", background: C.green, border: `2px solid ${C.headerBar}` }} />
                     )}
                   </button>
-                  {quemParticipou && (
-                    <div style={{ position: "absolute", top: 36, right: 0, zIndex: 60, width: 264, maxHeight: 340, overflowY: "auto",
-                                  background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
-                      <div style={{ padding: "10px 12px 8px", borderBottom: `1px solid ${C.divider}`, fontSize: 13.5, fontWeight: 700, color: C.textPrimary }}>
-                        Quem participou desta conversa
-                        <div style={{ fontSize: 11.5, fontWeight: 400, color: C.textSecondary, marginTop: 2 }}>
-                          {atendentesInteragiram.length === 1
-                            ? "1 pessoa do escritório escreveu aqui"
-                            : `${atendentesInteragiram.length} pessoas do escritório escreveram aqui`}
-                        </div>
-                      </div>
-                      {atendentesInteragiram.map((a) => (
-                        <div key={a.id || a.nome} data-participante={a.nome}
-                             style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 12px" }}>
-                          <Avatar nome={a.nome} foto={a.foto} size={30} />
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13.5, color: C.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nome}</div>
-                            {/* "3 mensagens · ontem" — quantas e quando, que é o
-                                que separa quem passou por aqui de quem atende. */}
-                            <div style={{ fontSize: 11.5, color: C.textSecondary }}>
-                              {a.quantas} {a.quantas === 1 ? "mensagem" : "mensagens"}
-                              {a.ultimaEm ? ` · ${rotuloData(a.ultimaEm).toLowerCase()}` : ""}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      {/* SÓ O QUE ESTÁ CARREGADO. A conversa abre com as
-                          mensagens recentes e traz o resto ao rolar para cima —
-                          então esta lista cresce conforme se sobe. Dizer isso é
-                          melhor do que deixar alguém concluir que fulano nunca
-                          falou com o cliente. */}
-                      <div style={{ padding: "8px 12px 10px", borderTop: `1px solid ${C.divider}`, fontSize: 11, color: C.textSecondary, lineHeight: 1.4 }}>
-                        Conta o que já está aberto na conversa. Role para cima
-                        para carregar o mais antigo.
-                      </div>
+
+                  {menuDaConversa && (
+                    <div data-menu-conversa
+                         style={{ position: "absolute", top: 44, right: 0, zIndex: 60, width: 252,
+                                  background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10,
+                                  boxShadow: "0 6px 20px rgba(0,0,0,.3)", overflow: "hidden" }}>
+                      {(conversa.nao_lidas || 0) > 0 && (
+                        <button onClick={() => { setMenuDaConversa(false); marcarLida(conversa.id); }}
+                                style={{ ...ITEM_DO_MENU, color: C.verdeTexto, fontWeight: 600 }}>
+                          <CheckCheck size={17} color={C.green} /> Marcar como lida
+                        </button>
+                      )}
+                      <button onClick={() => { setMenuDaConversa(false); setFichaAberta(true); }}
+                              style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
+                        <ClipboardList size={17} color={C.textSecondary} /> Ficha no Vantoro
+                      </button>
+                      <button onClick={() => {
+                                setMenuDaConversa(false);
+                                const id = conversa.contato_id || conversa.contato?.id;
+                                if (id) carregarHistorico(id);
+                                else mostrarAviso("Não consegui identificar o contato desta conversa.");
+                              }}
+                              style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
+                        <History size={17} color={C.textSecondary} /> Histórico de atendimento
+                      </button>
+                      <button onClick={() => { setMenuDaConversa(false); setTagMenuAberto(true); }}
+                              style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
+                        <Tag size={17} color={(tagsPorConversa[conversa.id] || []).length ? C.green : C.textSecondary} />
+                        Etiquetas
+                        {(tagsPorConversa[conversa.id] || []).length > 0 && (
+                          <span style={{ marginLeft: "auto", fontSize: 12, color: C.textSecondary }}>
+                            {(tagsPorConversa[conversa.id] || []).length}
+                          </span>
+                        )}
+                      </button>
+                      {/* QUEM PARTICIPOU — no celular isto NUNCA existiu: a
+                          fileirinha de rostos era escondida por falta de
+                          espaço, e junto com ela ia embora a única resposta
+                          para "com quem eu falo sobre esta pessoa". Escrita,
+                          cabe. */}
+                      {atendentesInteragiram.length > 0 && (
+                        <button onClick={() => { setMenuDaConversa(false); setQuemParticipou(true); }}
+                                style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
+                          <Users size={17} color={C.textSecondary} /> Quem participou
+                          <span style={{ marginLeft: "auto", fontSize: 12, color: C.textSecondary }}>
+                            {atendentesInteragiram.length}
+                          </span>
+                        </button>
+                      )}
+                      <button onClick={() => { setMenuDaConversa(false); setBuscaAberta(true); }}
+                              style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
+                        <Search size={17} color={C.textSecondary} /> Buscar nesta conversa
+                      </button>
+                      {!conversa.contato?.vantoro_nome && (
+                        <button onClick={() => { setMenuDaConversa(false); setRenomeando(conversa.contato?.nome_zorvin || ""); }}
+                                style={{ ...ITEM_DO_MENU, color: C.textPrimary, borderTop: `1px solid ${C.divider}` }}>
+                          <Pencil size={17} color={C.textSecondary} /> Dar um nome a este contato
+                        </button>
+                      )}
                     </div>
                   )}
+
+                  {tagMenuAberto && listaDeEtiquetas}
+                  {quemParticipou && listaDeParticipantes}
                 </span>
               )}
-              {/* Etiquetar a conversa: abre um menu para marcar/desmarcar tags */}
-              <span ref={tagMenuRef} style={{ position: "relative", display: "flex" }}>
-                <button aria-label="Etiquetas" onClick={() => setTagMenuAberto((v) => !v)} title="Etiquetas" style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10 }}>
-                  <Tag size={19} color={tagMenuAberto || (tagsPorConversa[conversa.id] || []).length ? C.green : C.textSecondary} />
-                </button>
-                {tagMenuAberto && (
-                  <div style={{ position: "absolute", top: 30, right: 0, width: 240, maxHeight: 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 46 }}>
-                    <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.divider}`, fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3, position: "sticky", top: 0, background: C.panel }}>MARCAR TAGS</div>
-                    {tags.length === 0 && (
-                      <div style={{ padding: 14, fontSize: 13, color: C.textSecondary, textAlign: "center" }}>Nenhuma tag ainda. Crie em Configurações → Tags.</div>
-                    )}
-                    {tags.map((t) => {
-                      const marcada = (tagsPorConversa[conversa.id] || []).includes(t.id);
-                      return (
-                        <button key={t.id} onClick={() => alternarTagConversa(t.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, textAlign: "left" }}>
-                          <span style={{ width: 12, height: 12, borderRadius: 3, background: t.cor, flexShrink: 0 }} />
-                          <span style={{ flex: 1, fontSize: 13.5 }}>{t.nome}</span>
-                          {marcada && <Check size={16} color={C.green} />}
-                        </button>
-                      );
-                    })}
-                    <button onClick={() => { setTagMenuAberto(false); setAbaConfig("tags"); setTagForm(null); setConfigAberta(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 6, padding: "10px 12px", border: "none", borderTop: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.verdeTexto, fontSize: 13, fontWeight: 600 }}><Plus size={15} /> Gerenciar etiquetas</button>
-                  </div>
-                )}
-              </span>
-              <button aria-label="Buscar na conversa" onClick={() => setBuscaAberta((v) => !v)} title="Buscar na conversa" style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10 }}>
-                <Search size={19} color={buscaAberta ? C.green : C.textSecondary} />
-              </button>
             </div>
 
             {buscaAberta && (
@@ -6647,12 +6832,12 @@ export default function Painel({ sessao }) {
                               <span style={{ position: "absolute", top: 2, right: 4, display: "flex", gap: 2 }}>
                                 <button onClick={() => { setRespondendo(null); setModoNota(false); setEditando(m); setRascunho(m.texto || ""); setTimeout(() => inputRef.current?.focus(), 0); }}
                                         title="Editar nota"
-                                        style={{ border: "none", background: "transparent", cursor: "pointer", color: "rgba(255,255,255,.75)", padding: 3, display: "flex", minHeight: 24, minWidth: 24, alignItems: "center", justifyContent: "center" }}>
+                                        style={{ border: "none", background: "transparent", cursor: "pointer", color: "rgba(255,255,255,.75)", padding: 3, display: "flex", minHeight: estreito ? 40 : 24, minWidth: estreito ? 40 : 24, alignItems: "center", justifyContent: "center" }}>
                                   <Pencil size={13} />
                                 </button>
                                 <button onClick={() => setNotaParaApagar(m)}
                                         title="Apagar nota"
-                                        style={{ border: "none", background: "transparent", cursor: "pointer", color: "rgba(255,255,255,.75)", padding: 3, display: "flex", minHeight: 24, minWidth: 24, alignItems: "center", justifyContent: "center" }}>
+                                        style={{ border: "none", background: "transparent", cursor: "pointer", color: "rgba(255,255,255,.75)", padding: 3, display: "flex", minHeight: estreito ? 40 : 24, minWidth: estreito ? 40 : 24, alignItems: "center", justifyContent: "center" }}>
                                   <Trash2 size={13} />
                                 </button>
                               </span>
@@ -7904,9 +8089,6 @@ export default function Painel({ sessao }) {
       {/* Departamentos, telefones e permissões. Ao fechar, os cadastros são
           relidos: renomear um departamento tem de aparecer na hora, senão a
           pessoa acha que não salvou e faz de novo. */}
-      {/* JUNTAR DUAS CONVERSAS. A lista é a das conversas VISÍVEIS agora, e o
-          servidor recusa juntar conversas de telefones diferentes — misturar
-          dois números apagaria por onde a conversa aconteceu. */}
       {/* ENCAMINHAR — escolher para qual conversa.
           Lista as conversas do advogado aberto, e não a agenda inteira: quem
           encaminha está no meio de um atendimento, e o destino quase sempre é
@@ -8082,68 +8264,6 @@ export default function Painel({ sessao }) {
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
               <button onClick={() => setEscolhaTelefone(null)}
                       style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textSecondary, borderRadius: 8, padding: "8px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>Cancelar</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {juntar && (
-        <div onClick={() => setJuntar(null)}
-             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 210, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-          <div onClick={(e) => e.stopPropagation()}
-               style={{ background: C.panel, color: C.textPrimary, borderRadius: 14, width: "100%", maxWidth: 460, padding: 18, boxShadow: "0 24px 60px rgba(0,0,0,.35)" }}>
-            <div style={{ fontSize: 15.5, fontWeight: 700, marginBottom: 6 }}>Juntar duas conversas</div>
-            <div style={{ fontSize: 12.5, color: C.textSecondary, lineHeight: 1.5, marginBottom: 14 }}>
-              Para quando a MESMA conversa nasceu duas vezes — o caso do grupo que
-              apareceu com um número esquisito. As mensagens da primeira vão para a
-              segunda, e a primeira deixa de existir. Não dá para desfazer.
-            </div>
-            {[["de", "Esta conversa SOME…"], ["para", "…e as mensagens dela vão para"]].map(([campo, rotulo]) => (
-              <div key={campo} style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 11.5, color: C.textSecondary, fontWeight: 600, marginBottom: 4 }}>{rotulo}</div>
-                <select value={juntar[campo]} onChange={(e) => setJuntar((j) => ({ ...j, [campo]: e.target.value }))}
-                        style={{ width: "100%", border: `1px solid ${C.divider}`, background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "9px 10px", fontSize: 13.5 }}>
-                  <option value="">Escolha…</option>
-                  {/* O NÚMERO E A ÚLTIMA ATIVIDADE VÃO NO RÓTULO.
-                      Só o nome não serve justamente no caso em que esta tela
-                      existe: as duas conversas a juntar são da MESMA pessoa, e
-                      duas linhas escritas "MARIA DE JESUS DA SILVA" viram
-                      sorteio. Quem escolhe precisa ver qual é qual — e o
-                      número é o que difere, porque é dele que nasceu a
-                      duplicata. */}
-                  {conversasFiltradas.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {nomeDoContato(c.contato)}
-                      {c.contato?.numero ? ` · ${numeroBonito(c.contato.numero)}` : ""}
-                      {c.ultima_atividade ? ` · ${horaDe(c.ultima_atividade)}` : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ))}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
-              <button onClick={() => setJuntar(null)}
-                      style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textSecondary, borderRadius: 8, padding: "8px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>Cancelar</button>
-              <button disabled={!juntar.de || !juntar.para || juntar.de === juntar.para || juntar.indo}
-                      onClick={async () => {
-                        setJuntar((j) => ({ ...j, indo: true }));
-                        try {
-                          const r = await chamarPonte("/conversas/juntar", {
-                            method: "POST",
-                            body: JSON.stringify({ de: juntar.de, para: juntar.para }),
-                          });
-                          setJuntar(null);
-                          if (String(conversaId) === String(juntar.de)) setConversaId(juntar.para);
-                          mostrarAviso(`Pronto: ${r.movidas} mensagem(ns) juntada(s).`);
-                          carregarConversas(advogadoId);
-                        } catch (e) {
-                          setJuntar((j) => ({ ...j, indo: false }));
-                          mostrarAviso(e.message || "Não consegui juntar.");
-                        }
-                      }}
-                      style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "8px 16px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", opacity: (!juntar.de || !juntar.para || juntar.de === juntar.para || juntar.indo) ? 0.5 : 1 }}>
-                {juntar.indo ? "Juntando…" : "Juntar"}
-              </button>
             </div>
           </div>
         </div>
