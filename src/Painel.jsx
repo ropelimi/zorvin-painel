@@ -7,7 +7,7 @@ import {
   StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star,
   Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList, ShieldCheck,
   ChevronLeft, ChevronRight, Images, ExternalLink, Pin, Copy, Forward, Sticker,
-  History, BarChart3
+  History, BarChart3, Users
 } from "lucide-react";
 import FichaVantoro from "./FichaVantoro";
 import { chamarPonte } from "./ponte.js";
@@ -1694,11 +1694,93 @@ export default function Painel({ sessao }) {
   //  atende, uma etiqueta muito usada passa fácil das mil linhas, e é
   //  exatamente aí que o teto da API corta sem avisar.
   const [extrasEtiqueta, setExtrasEtiqueta] = useState([]);
+  // Os ids que o BANCO deu para a etiqueta. `tagsPorConversa` só conhece as
+  // conversas carregadas, então perguntar a ele por uma conversa que a lista
+  // não tem devolve "não tem etiqueta" — e ela cai fora justamente depois de
+  // ter sido encontrada. Este conjunto é a resposta para essas.
+  const [idsEtiqueta, setIdsEtiqueta] = useState(null);
+
+  // ------------------------------------------------------------
+  //  DE QUAIS CONVERSAS EU PARTICIPEI
+  //
+  //  "Participei" é: em algum momento eu escrevi alguma coisa ali. Não é a
+  //  conversa que está comigo agora, nem a que abri para ler. Quem divide os
+  //  mesmos telefones com o escritório inteiro não tinha nenhum jeito de achar
+  //  de volta as suas.
+  //
+  //  DOIS MODOS, e a diferença é o ponto todo:
+  //    "qualquer"  Rodrigo ou Jenifer → onde pelo menos um dos dois falou.
+  //    "todos"     Rodrigo e Jenifer → só onde os DOIS falaram, na MESMA
+  //                conversa. É o que se procura quando um atendimento passou de
+  //                mão em mão e é preciso reconstituir o que aconteceu.
+  //
+  //  A pergunta vai ao banco. Filtrar no navegador enxergaria só as conversas
+  //  já carregadas — foi assim que o filtro por etiqueta mostrava três quando
+  //  havia trinta.
+  const [atendentes, setAtendentes] = useState([]);        // quem já falou por este telefone
+  const [quemFiltra, setQuemFiltra] = useState([]);        // ids marcados
+  const [modoQuem, setModoQuem] = useState("qualquer");    // "qualquer" | "todos"
+  const [menuQuem, setMenuQuem] = useState(false);
+  const [extrasQuem, setExtrasQuem] = useState([]);
+  const [idsQuem, setIdsQuem] = useState(null);            // null = sem filtro
+  const quemRef = useRef(null);
+
+  // A lista de quem escolher sai de quem REALMENTE escreveu por este telefone.
+  // Oferecer o escritório inteiro faria uma lista longa em que a maioria dos
+  // nomes devolveria zero conversa — e procurar numa lista assim é pior do que
+  // não ter lista.
+  useEffect(() => {
+    let vivo = true;
+    setAtendentes([]);
+    if (!advogadoId) return;
+    (async () => {
+      const { data, error } = await supabase.rpc("atendentes_do_telefone", { p_advogado: advogadoId });
+      if (!vivo || error) return;   // sem a função no banco: a pílula não aparece
+      setAtendentes(data || []);
+    })();
+    return () => { vivo = false; };
+  }, [advogadoId]);
+
+  // Trocar de telefone zera a escolha: os atendentes são outros.
+  useEffect(() => { setQuemFiltra([]); setMenuQuem(false); }, [advogadoId]);
+
+  useEffect(() => {
+    let vivo = true;
+    setExtrasQuem([]);
+    if (!quemFiltra.length || !advogadoId) { setIdsQuem(null); return; }
+    const advId = advogadoId;
+    (async () => {
+      const { data, error } = await supabase.rpc("conversas_por_atendente", {
+        p_advogado: advId, p_usuarios: quemFiltra,
+        p_todos: modoQuem === "todos", p_limite: 500,
+      });
+      if (!vivo || advogadoIdRef.current !== advId) return;
+      if (error) { setIdsQuem(null); return; }
+      const ids = (data || []).map((r) => String(r.id));
+      setIdsQuem(new Set(ids));
+
+      // As que a lista ainda não tem — mesmo caminho da busca e da etiqueta.
+      const jaNaLista = new Set(conversasRef.current.map((c) => String(c.id)));
+      const faltando = ids.filter((id) => !jaNaLista.has(id));
+      const achadas = [];
+      for (let i = 0; i < faltando.length; i += 150) {
+        const { data: cs } = await supabase.from("conversas")
+          .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
+          .eq("advogado_id", advId)
+          .in("id", faltando.slice(i, i + 150));
+        achadas.push(...(cs || []));
+      }
+      if (!vivo || advogadoIdRef.current !== advId) return;
+      setExtrasQuem(achadas);
+    })();
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quemFiltra, modoQuem, advogadoId, conversas.length]);
 
   useEffect(() => {
     let cancelado = false;
     const tagId = filtro.startsWith("tag:") ? filtro.slice(4) : null;
-    setExtrasEtiqueta([]);
+    setExtrasEtiqueta([]); setIdsEtiqueta(null);
     if (!tagId || !advogadoId) return;
     const advId = advogadoId;
     (async () => {
@@ -1730,6 +1812,7 @@ export default function Painel({ sessao }) {
         // outra pergunta: descarta.
         if (cancelado || advogadoIdRef.current !== advId) return;
         setExtrasEtiqueta(achadas);
+        setIdsEtiqueta(new Set(ids.map(String)));
       } catch (_) { /* tabela ainda não criada */ }
     })();
     return () => { cancelado = true; };
@@ -3378,6 +3461,7 @@ export default function Painel({ sessao }) {
       else if (novaConversaAberta) setNovaConversaAberta(false);
       else if (menuConversa) setMenuConversa(null);
       else if (menuTopoAberto) setMenuTopoAberto(false);
+      else if (menuQuem) setMenuQuem(false);
       else if (menuEtiquetas) setMenuEtiquetas(false);
       else if (menuDepartamentos) setMenuDepartamentos(false);
       else if (tagMenuAberto) setTagMenuAberto(false);
@@ -3391,12 +3475,13 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, telaPainel, menuConversa, menuTopoAberto, menuEtiquetas, tagMenuAberto, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId]);
+  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, telaPainel, menuConversa, menuTopoAberto, menuEtiquetas, menuQuem, tagMenuAberto, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
     function aoClicar(e) {
       if (menuEtiquetas && etiquetasRef.current && !etiquetasRef.current.contains(e.target)) setMenuEtiquetas(false);
+      if (menuQuem && quemRef.current && !quemRef.current.contains(e.target)) setMenuQuem(false);
       // O MENU DA BOLHA fecha ao clicar em qualquer lugar fora dele.
       // Não dá para usar um ref como os outros: existe um menu por mensagem, e
       // guardar um ref por bolha seria um mapa que envelhece a cada rolagem. A
@@ -3413,7 +3498,7 @@ export default function Painel({ sessao }) {
     }
     document.addEventListener("mousedown", aoClicar);
     return () => document.removeEventListener("mousedown", aoClicar);
-  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas, menuDepartamentos]);
+  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas, menuQuem, menuDepartamentos]);
 
   // Fecha o menuzinho da conversa (marcar não lida) ao clicar em qualquer lugar.
   useEffect(() => {
@@ -4560,9 +4645,19 @@ export default function Painel({ sessao }) {
 
   // Aplica a aba/filtro selecionado a uma conversa.
   function passaNoFiltro(c) {
+    // O filtro de atendentes é INDEPENDENTE dos outros: dá para pedir "as não
+    // lidas em que eu participei". São perguntas diferentes, e obrigar a
+    // escolher uma delas seria estreitar a tela sem motivo.
+    if (idsQuem && !idsQuem.has(String(c.id))) return false;
     if (filtro === "naolidas") return (c.nao_lidas || 0) > 0;
     if (filtro === "favoritas") return !!c.favorita;
-    if (filtro.startsWith("tag:")) return (tagsPorConversa[c.id] || []).includes(filtro.slice(4));
+    if (filtro.startsWith("tag:")) {
+      // Nos dois lugares: o mapa das conversas carregadas E a resposta do
+      // banco. Só o mapa derrubaria as conversas que o banco achou e a lista
+      // não tinha — que são exatamente as que este filtro existe para trazer.
+      if ((tagsPorConversa[c.id] || []).includes(filtro.slice(4))) return true;
+      return idsEtiqueta ? idsEtiqueta.has(String(c.id)) : false;
+    }
     return true; // 'tudo'
   }
 
@@ -4865,7 +4960,7 @@ export default function Painel({ sessao }) {
   // linhas — o custo que a paginação existe para evitar.
   useEffect(() => { setQuantasNaLista(PAGINA); },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [advogadoId, busca, filtro, verArquivadas]);
+    [advogadoId, busca, filtro, verArquivadas, quemFiltra, modoQuem]);
 
   /** ABRE UMA CONVERSA — e, se ela veio da busca por mensagem, abre NELA.
    *
@@ -4902,7 +4997,8 @@ export default function Painel({ sessao }) {
     // Com etiqueta escolhida, o banco JÁ deu todas as que a carregam:
     // pedir mais páginas da lista geral não acrescenta nada ao que está
     // sendo mostrado.
-    if (!temMaisConversas || buscandoMais || busca.trim() || filtro.startsWith("tag:")) return;
+    if (!temMaisConversas || buscandoMais || busca.trim()
+        || filtro.startsWith("tag:") || quemFiltra.length) return;
     setBuscandoMais(true);
     carregarConversas(advogadoId, paginaConversas + 1).finally(() => {
       setBuscandoMais(false);
@@ -4916,10 +5012,10 @@ export default function Painel({ sessao }) {
       casaNaBusca(c) &&
       passaNoFiltro(c)
     );
-    // Sem busca e sem etiqueta não há nada a emendar, e o de baixo custaria um
-    // `Set` sobre a lista inteira a cada redesenho — trabalho de sobra em cima
-    // do caminho mais quente que esta tela tem.
-    if (!busca.trim() && !filtro.startsWith("tag:")) return daLista;
+    // Sem busca, sem etiqueta e sem atendente escolhido não há nada a emendar,
+    // e o de baixo custaria um `Set` sobre a lista inteira a cada redesenho —
+    // trabalho de sobra em cima do caminho mais quente que esta tela tem.
+    if (!busca.trim() && !filtro.startsWith("tag:") && !quemFiltra.length) return daLista;
     // As que vieram do banco e não estavam na lista. Entram na mesma ordem de
     // sempre — fixada em cima, depois recente primeiro —, e não emendadas no
     // fim, que faria a mais nova de todas aparecer embaixo da mais velha.
@@ -4934,8 +5030,8 @@ export default function Painel({ sessao }) {
       // acabou de ser encontrado.
       // (sem `casaNaBusca`: este ramo só existe quando a caixa de busca está
       // vazia — o de cima é que trata a busca.)
-      : extrasEtiqueta.filter((c) => !jaTem.has(String(c.id))
-          && (!!c.arquivada === verArquivadas));
+      : [...extrasEtiqueta, ...extrasQuem].filter((c) => !jaTem.has(String(c.id))
+          && (!!c.arquivada === verArquivadas) && passaNoFiltro(c));
     if (!doBanco.length) return daLista;
     return [...daLista, ...doBanco].sort((a, b) =>
       ((b.fixada ? 1 : 0) - (a.fixada ? 1 : 0))
@@ -4947,7 +5043,7 @@ export default function Painel({ sessao }) {
   // trouxeram tudo o que casa. Deixar o "+" ali diria que ainda falta alguma
   // coisa — e quem estivesse conferindo uma etiqueta não saberia se o número
   // na tela é o número de verdade.
-  const listaPodeCrescer = !busca.trim() && !filtro.startsWith("tag:");
+  const listaPodeCrescer = !busca.trim() && !filtro.startsWith("tag:") && !quemFiltra.length;
 
   // Não lidas de cada advogado, para o selo na barra lateral.
   // Para o advogado atual usamos a lista já carregada (que zera a conversa
@@ -5449,6 +5545,75 @@ export default function Painel({ sessao }) {
               <button key={k} onClick={() => setFiltro(k)} style={{ flexShrink: 0, minHeight: 32, border: `1px solid ${ativo ? C.greenDark : C.divider}`, background: ativo ? C.greenDark : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 20, padding: "5px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
             );
           })}
+          {/* A PÍLULA DOS ATENDENTES.
+              Só aparece quando há mais de uma pessoa que já escreveu por este
+              telefone: num número atendido por uma só, o filtro não separa nada
+              e seria mais um botão para entender à toa. */}
+          {atendentes.length > 1 && (
+          <span ref={quemRef} style={{ position: "relative", display: "flex", minWidth: 0 }}>
+            <button data-grupo="quem" onClick={() => setMenuQuem((v) => !v)}
+                    title={quemFiltra.length ? "Filtrando por quem participou" : "Filtrar por quem participou da conversa"}
+                    style={{ flexShrink: 0, minHeight: 32, border: `1px solid ${quemFiltra.length ? C.greenDark : C.divider}`, background: quemFiltra.length ? C.greenDark : "transparent", color: quemFiltra.length ? "#fff" : C.textSecondary, borderRadius: 20, padding: "5px 11px 5px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+              <Users size={14} style={{ flexShrink: 0 }} />
+              {quemFiltra.length === 0 ? "Quem participou"
+                : quemFiltra.length === 1
+                  ? (atendentes.find((a) => a.id === quemFiltra[0])?.nome || "1 pessoa")
+                  : `${quemFiltra.length} pessoas`}
+              <ChevronDown size={14} style={{ flexShrink: 0, opacity: .8 }} />
+            </button>
+            {menuQuem && (
+              <div style={{ position: "absolute", top: 38, left: 0, zIndex: 40, width: 268, maxHeight: 360, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
+                {/* PRIMEIRO A REGRA, DEPOIS OS NOMES. Marcando duas pessoas sem
+                    saber qual das duas contas está valendo, o resultado parece
+                    aleatório — e a diferença entre "ou" e "e" é justamente o
+                    que este filtro tem de mais útil. */}
+                <div style={{ padding: "10px 12px 8px", borderBottom: `1px solid ${C.divider}` }}>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {[["qualquer", "Qualquer um"], ["todos", "Todos juntos"]].map(([k, r]) => (
+                      <button key={k} onClick={() => setModoQuem(k)}
+                              style={{ flex: 1, minHeight: 30, borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 600,
+                                       border: `1px solid ${modoQuem === k ? C.greenDark : C.divider}`,
+                                       background: modoQuem === k ? C.greenDark : "transparent",
+                                       color: modoQuem === k ? "#fff" : C.textSecondary }}>{r}</button>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 6, fontSize: 11.5, color: C.textSecondary, lineHeight: 1.4 }}>
+                    {modoQuem === "todos"
+                      ? "Conversas em que TODAS as pessoas marcadas falaram, na mesma conversa."
+                      : "Conversas em que pelo menos UMA das pessoas marcadas falou."}
+                  </div>
+                </div>
+
+                {atendentes.map((a) => {
+                  const marcado = quemFiltra.includes(a.id);
+                  return (
+                    <button key={a.id} data-quem={a.nome}
+                            onClick={() => setQuemFiltra((atual) =>
+                              marcado ? atual.filter((x) => x !== a.id) : [...atual, a.id])}
+                            style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
+                      <span style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                                     border: `1.5px solid ${marcado ? C.green : C.divider}`, background: marcado ? C.green : "transparent" }}>
+                        {marcado && <Check size={12} color="#fff" />}
+                      </span>
+                      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nome}</span>
+                      {/* Quantas conversas cada um tem: responde "quanto vou ver
+                          se marcar este?" antes de marcar. */}
+                      <span style={{ flexShrink: 0, fontSize: 11.5, color: C.textSecondary, fontVariantNumeric: "tabular-nums" }}>{a.conversas}</span>
+                    </button>
+                  );
+                })}
+
+                {quemFiltra.length > 0 && (
+                  <button onClick={() => { setQuemFiltra([]); setMenuQuem(false); }}
+                          style={{ width: "100%", padding: "10px 12px", border: "none", borderTop: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.verdeTexto, fontSize: 13, fontWeight: 600, textAlign: "left" }}>
+                    Limpar a escolha
+                  </button>
+                )}
+              </div>
+            )}
+          </span>
+          )}
+
           {/* A pílula das etiquetas. Quando há uma escolhida, ela mostra a cor e
               o nome da etiqueta — é o que responde "por que a lista está
               curta?" sem precisar abrir nada. */}

@@ -575,6 +575,61 @@ const FILA_COM_ERRO = [
     criado_em: new Date(Date.now() - 20 * 60e3).toISOString() },
 ];
 
+// O CENÁRIO DO FILTRO POR ATENDENTE — o exemplo do relato, literal.
+//
+// Duas conversas no mesmo telefone. Na da MARIA falaram RODRIGO e JENIFER; na
+// do JOÃO falaram RODRIGO e ISABELA. É a menor montagem que separa os dois
+// modos do filtro:
+//
+//   RODRIGO sozinho            → as duas
+//   ISABELA sozinha            → só JOÃO
+//   RODRIGO+JENIFER, juntos    → só MARIA (é onde os dois se cruzam)
+//   RODRIGO+JENIFER, qualquer  → as duas
+//   JENIFER+ISABELA, juntos    → nenhuma (nunca se cruzaram)
+//
+// E uma terceira, do CARLOS, com mensagem SEM `enviado_por_id` — o histórico
+// anterior à coluna existir. Sem ela, "as conversas em que eu participei"
+// começaria no dia em que a coluna foi criada, e o recurso serve justamente
+// para achar coisa antiga.
+export const USUARIOS_FILTRO = [
+  { id: "u1", nome: "Rodrigo Sousa" },
+  { id: "u-jenifer", nome: "JENIFER ALMEIDA" },
+  { id: "u-isabela", nome: "ISABELA GUEDES" },
+];
+const CONTATOS_FILTRO = [
+  { id: "ct-maria",  numero: "5567993330001", nome: "MARIA DO FILTRO",  vantoro_nome: null, nome_zorvin: null, foto_url: null },
+  { id: "ct-joao",   numero: "5567993330002", nome: "JOAO DO FILTRO",   vantoro_nome: null, nome_zorvin: null, foto_url: null },
+  { id: "ct-carlos", numero: "5567993330003", nome: "CARLOS ANTIGO",    vantoro_nome: null, nome_zorvin: null, foto_url: null },
+];
+CONTATOS_FILTRO.forEach((ct, i) => {
+  CONVERSAS.push({
+    id: `${PRIMEIRO_TELEFONE.id}-quem${i}`,
+    advogado_id: PRIMEIRO_TELEFONE.id,
+    contato_id: ct.id,
+    nao_lidas: 0, arquivada: false, fixada: false, favorita: false,
+    ultima_atividade: new Date(Date.now() - (i + 6) * 3600e3).toISOString(),
+    ultima_mensagem: "Conversa do filtro por atendente",
+    frente: null, vantoro_nome: null, digitando_ate: null,
+    contato: { ...ct },
+  });
+});
+const FALAS = [
+  ["quem0", "Rodrigo Sousa", "u1"],
+  ["quem0", "JENIFER ALMEIDA", "u-jenifer"],
+  ["quem1", "Rodrigo Sousa", "u1"],
+  ["quem1", "ISABELA GUEDES", "u-isabela"],
+  // O histórico antigo: nome escrito diferente e SEM id.
+  ["quem2", "jenifer almeida", null],
+];
+FALAS.forEach(([conv, nome, id], i) => {
+  MENSAGENS.push({
+    id: `m-quem-${i}`, conversa_id: `${PRIMEIRO_TELEFONE.id}-${conv}`,
+    origem: "advogado", tipo: "texto", texto: `mensagem de ${nome}`,
+    enviado_por: nome, enviado_por_id: id,
+    criado_em: new Date(Date.now() - (i + 6) * 3600e3).toISOString(),
+  });
+});
+
 // UMA NOTA NA CONVERSA DE PROVA, escrita pelo próprio usuário logado — é dele
 // a permissão de editar e apagar. `apagada_em` nula: é o estado que a tela
 // precisa saber mudar.
@@ -602,7 +657,11 @@ const TABELAS = {
   // ADMIN OU NÃO — o teste troca por `__SOU_ADMIN`. O Painel agora é de todo
   // mundo, e o que muda entre um caso e outro (o botão de escopo, e o recorte
   // que o banco impõe a quem não administra) só se prova entrando nos dois.
-  usuarios: [{ id: "u1", admin: (typeof globalThis !== "undefined" && globalThis.__SOU_ADMIN === false) ? false : true, nome: "Rodrigo Sousa" }],
+  usuarios: [
+    { id: "u1", admin: (typeof globalThis !== "undefined" && globalThis.__SOU_ADMIN === false) ? false : true, nome: "Rodrigo Sousa" },
+    { id: "u-jenifer", admin: false, nome: "JENIFER ALMEIDA" },
+    { id: "u-isabela", admin: false, nome: "ISABELA GUEDES" },
+  ],
   permissoes: [],            // vazio + admin = alcança tudo
   mensagens: MENSAGENS,
   // TODOS OS CONTATOS, e não só o de prova. A tabela de verdade tem uma linha
@@ -633,6 +692,7 @@ if (typeof globalThis !== "undefined") {
   globalThis.__MSG_ACHADA_2 = MSG_ACHADA_2;
   globalThis.__MOTIVO_CONHECIDO = MOTIVO_CONHECIDO;
   globalThis.__ERRO_CRU = ERRO_CRU;
+  globalThis.__USUARIOS_FILTRO = USUARIOS_FILTRO;
 }
 
 /** O `%` do PostgREST vira o `.*` de uma expressão regular, sem diferenciar
@@ -1086,6 +1146,71 @@ export const supabase = {
   // devolve (PGRST202), para o caminho de "falta rodar o SQL" também ser
   // testável em vez de imaginado.
   rpc: async (nome, args) => {
+    // QUEM JÁ ESCREVEU POR ESTE TELEFONE, e as conversas de quem se escolher.
+    //
+    // A de verdade casa por id E, no histórico antigo que não tem id, pelo
+    // NOME sem acento. As duas coisas precisam estar aqui: uma bancada que
+    // casasse só por id deixaria passar um filtro que não acha nada do que foi
+    // dito antes de a coluna existir — e isso é a maior parte do histórico.
+    const semAcentoN = (t) => String(t ?? "").normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    if (nome === "atendentes_do_telefone" || nome === "conversas_por_atendente") {
+      if (globalThis.__SEM_FILTRO_DE_ATENDENTE) {
+        return { data: null, error: { code: "PGRST202", message: `Could not find the function public.${nome}` } };
+      }
+      const advId = args && args.p_advogado;
+      const minhas = TABELAS.conversas.filter((c) => String(c.advogado_id) === String(advId));
+      const daqui = new Map(minhas.map((c) => [String(c.id), c]));
+      const porNomeDoUsuario = new Map(
+        (TABELAS.usuarios || []).map((u) => [semAcentoN(u.nome), String(u.id)]));
+
+      /** Quem falou em cada conversa deste telefone — id quando há, e o nome
+       *  resolvido para id quando não há. */
+      const quemFalou = new Map();   // conversaId → Set(usuarioId)
+      // O NOME QUE A MENSAGEM CARREGA, para quem não está em `usuarios`.
+      // A função de verdade faz `coalesce(nome do usuário, nome da mensagem)`:
+      // há ids em `mensagens` de gente que saiu do escritório, e sem essa queda
+      // a lista mostraria "(sem nome)" onde a produção mostra o nome da pessoa.
+      const nomeDaMensagem = new Map();
+      for (const m of TABELAS.mensagens) {
+        const k = String(m.conversa_id);
+        if (!daqui.has(k)) continue;
+        const id = m.enviado_por_id
+          ? String(m.enviado_por_id)
+          : porNomeDoUsuario.get(semAcentoN(m.enviado_por));
+        if (!id) continue;
+        if (m.enviado_por && !nomeDaMensagem.has(id)) nomeDaMensagem.set(id, m.enviado_por);
+        if (!quemFalou.has(k)) quemFalou.set(k, new Set());
+        quemFalou.get(k).add(id);
+      }
+
+      if (nome === "atendentes_do_telefone") {
+        const conta = new Map();
+        for (const ids of quemFalou.values()) for (const id of ids) conta.set(id, (conta.get(id) || 0) + 1);
+        const lista = [...conta.entries()].map(([id, conversas]) => ({
+          id,
+          nome: ((TABELAS.usuarios || []).find((u) => String(u.id) === id) || {}).nome
+                || nomeDaMensagem.get(id) || "(sem nome)",
+          conversas,
+        })).sort((a, b) => b.conversas - a.conversas || String(a.nome).localeCompare(String(b.nome)));
+        await espera(120);
+        return { data: lista, error: null };
+      }
+
+      const pedidos = (args && args.p_usuarios) || [];
+      const todos = !!(args && args.p_todos);
+      const saida = [];
+      for (const [k, ids] of quemFalou) {
+        const quantos = pedidos.filter((u) => ids.has(String(u))).length;
+        if (todos ? quantos === pedidos.length : quantos > 0) {
+          saida.push({ id: daqui.get(k).id, ultima_atividade: daqui.get(k).ultima_atividade });
+        }
+      }
+      saida.sort((a, b) => String(b.ultima_atividade || "").localeCompare(String(a.ultima_atividade || "")));
+      await espera(150);
+      return { data: saida.slice(0, (args && args.p_limite) || 500), error: null };
+    }
+
     // A BUSCA DO BANCO.
     //
     // A de verdade compara SEM ACENTO (é o `zorvin_sem_acento` do SQL) e nasce
