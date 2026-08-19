@@ -9,6 +9,10 @@
 // É a menor montagem que separa os dois modos do filtro — com uma conversa só,
 // ou com as mesmas pessoas nas duas, "qualquer um" e "todos juntos" dariam a
 // mesma resposta e o teste não mediria nada.
+//
+// E um segundo telefone, o ANTIGO, em que o filtro não aparecia: o histórico
+// dele é todo anterior à coluna `enviado_por_id`, então a lista de atendentes
+// vinha vazia e a tela escondia o botão.
 import { abrirNavegador, ENDERECO } from "./navegador.mjs";
 
 const PAGINA = ENDERECO;
@@ -29,7 +33,8 @@ await page.goto(PAGINA);
 await page.waitForSelector("[data-conversa-nome]");
 await page.waitForTimeout(1800);
 
-const pilula = page.locator('[data-grupo="quem"]');
+const botao = page.locator('[data-grupo="quem"]');
+const rastro = page.locator("[data-filtro-quem]");
 // O ATRIBUTO, e não o texto do cartão. `allTextContents` devolve a linha
 // inteira desenhada ("MFMARIA18/08Conversa do filtro..."), com as iniciais do
 // avatar grudadas na frente — comparar isso com o nome nunca bateria, e a falha
@@ -40,7 +45,7 @@ const nomesNaTela = () =>
 
 /** Abre o menu, escolhe o modo e marca exatamente estas pessoas. */
 async function filtrar(pessoas, modo) {
-  await pilula.click();
+  await botao.click();
   await page.waitForTimeout(300);
   await page.getByRole("button", { name: modo === "todos" ? "Todos juntos" : "Qualquer um" }).click();
   await page.waitForTimeout(200);
@@ -63,15 +68,38 @@ const doCenario = (nomes) =>
   nomes.filter((n) => /MARIA DO FILTRO|JOAO DO FILTRO|CARLOS ANTIGO/.test(n))
        .map((n) => n.replace(/ DO FILTRO| ANTIGO/, "")).sort();
 
-console.log("\nO filtro existe e diz o que faz");
+console.log("\nOnde o botão mora");
 {
-  ok("a pílula de quem participou aparece", await pilula.count() > 0,
-     "sem ela não há como filtrar por atendente");
-  await pilula.click();
+  ok("o filtro de quem participou aparece", await botao.count() > 0,
+     "sem ele não há como filtrar por atendente");
+
+  // O LUGAR IMPORTA, e dá para conferir sem olhar a tela: ele tem de estar na
+  // MESMA linha de "Nova conversa" e do "Menu", e ENTRE os dois. Estava na
+  // fita de filtros, embaixo da busca, misturado com "Tudo / Não lidas /
+  // Favoritas / Etiquetas" — que respondem outra pergunta.
+  const ordem = await page.evaluate(() => {
+    const b = document.querySelector('[data-grupo="quem"]');
+    const nova = document.querySelector('[aria-label="Nova conversa"]');
+    const menu = document.querySelector('[aria-label="Menu"]');
+    if (!b || !nova || !menu) return null;
+    const linha = nova.parentElement;
+    const mesmaLinha = linha.contains(b) && linha.contains(menu);
+    // `compareDocumentPosition` & FOLLOWING = "o segundo vem depois do primeiro".
+    const depoisDaNova = !!(nova.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    const antesDoMenu  = !!(b.compareDocumentPosition(menu) & Node.DOCUMENT_POSITION_FOLLOWING);
+    return { mesmaLinha, depoisDaNova, antesDoMenu };
+  });
+  ok("fica na barra de cima, entre Nova conversa e Menu",
+     !!(ordem && ordem.mesmaLinha && ordem.depoisDaNova && ordem.antesDoMenu),
+     `posição: ${JSON.stringify(ordem)}`);
+
+  await botao.click();
   await page.waitForTimeout(400);
   const texto = await page.locator("body").innerText();
-  ok("o menu explica a diferença entre os dois modos",
-     /pelo menos UMA/i.test(texto),
+  // Sem rótulo no botão, é o menu que diz o que ele é.
+  ok("o menu se apresenta", /Quem participou da conversa/i.test(texto),
+     "um ícone sozinho não diz o que filtra");
+  ok("e explica a diferença entre os dois modos", /pelo menos UMA/i.test(texto),
      "marcar duas pessoas sem saber qual regra vale faz o resultado parecer aleatório");
   ok("e mostra quantas conversas cada pessoa tem",
      await page.locator('[data-quem="Rodrigo Sousa"]').count() > 0);
@@ -107,6 +135,37 @@ console.log("\nO exemplo do relato");
      `veio: ${JSON.stringify(nunca)} — elas nunca falaram na mesma conversa`);
 }
 
+console.log("\nO rastro de que o filtro está ligado");
+{
+  // O botão subiu para o topo; a lista fica embaixo. Filtro ligado longe da
+  // lista é a receita da lista misteriosamente curta — some conversa e não há
+  // nada na tela dizendo por quê. Por isso o rastro na fita de filtros.
+  await filtrar(["Rodrigo Sousa", "JENIFER ALMEIDA"], "todos");
+  ok("ligado, ele deixa um rastro na fita de filtros", await rastro.count() > 0,
+     "sem isso a lista encolhe sem explicação");
+  const t = (await rastro.innerText()).replace(/\s+/g, " ");
+  // UM NOME E QUANTOS FALTAM, e não "2 pessoas". Com dois marcados a pílula
+  // não cabe os dois inteiros; um nome de verdade mais o "+1" diz mais do que
+  // uma contagem sozinha, e o nome que aparece é o primeiro que se marcou.
+  ok("o rastro diz QUEM está marcado", /Rodrigo|JENIFER/i.test(t), `dizia: "${t}"`);
+  ok("e avisa que há mais de um", /\+1/.test(t), `dizia: "${t}"`);
+  ok("e diz qual das duas regras está valendo", /juntos/i.test(t), `dizia: "${t}"`);
+
+  // Visível de verdade, e não só presente no DOM.
+  const cabe = await rastro.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return r.width > 40 && r.height > 10 && r.top >= 0;
+  });
+  ok("e está visível na tela", cabe);
+
+  const antes = (await nomesNaTela()).length;
+  await page.getByRole("button", { name: "Tirar o filtro de quem participou" }).click();
+  await page.waitForTimeout(1500);
+  const depois = (await nomesNaTela()).length;
+  ok("o × do rastro desliga o filtro", await rastro.count() === 0);
+  ok("e a lista volta a crescer", depois > antes, `${antes} antes, ${depois} depois`);
+}
+
 console.log("\nO histórico antigo, que não tem o id de quem escreveu");
 {
   // A coluna `enviado_por_id` é recente. Procurando só por ela, "as conversas
@@ -120,12 +179,34 @@ console.log("\nO histórico antigo, que não tem o id de quem escreveu");
 
 console.log("\nLimpar devolve a lista");
 {
-  await pilula.click();
+  await botao.click();
   await page.waitForTimeout(300);
   await page.getByRole("button", { name: "Limpar a escolha" }).click();
   await page.waitForTimeout(1800);
   const todas = await nomesNaTela();
   ok("limpar a escolha devolve a lista inteira", todas.length > 5, `ficaram ${todas.length}`);
+}
+
+console.log("\nO telefone antigo — onde o filtro não aparecia");
+{
+  // O relato: "existem alguns telefones em que não apareceu essa opção". Era
+  // este caso. Todo o histórico deste número é anterior à coluna
+  // `enviado_por_id`, então a lista de atendentes vinha vazia — e a tela, que
+  // só mostrava o botão com mais de um nome, escondia o filtro inteiro.
+  await page.locator('[data-telefone="Acordos 2"]').first().click();
+  await page.waitForTimeout(2200);
+  ok("o filtro aparece também no telefone antigo", await botao.count() > 0,
+     "é o número em que ele sumia");
+
+  await botao.click();
+  await page.waitForTimeout(600);
+  const nomes = await page.locator("[data-quem]").evaluateAll(
+    (ns) => ns.map((n) => n.getAttribute("data-quem")));
+  ok("e a lista traz quem escreveu, achado pelo NOME",
+     nomes.includes("Rodrigo Sousa") && nomes.includes("JENIFER ALMEIDA"),
+     `veio: ${JSON.stringify(nomes)} — nenhuma dessas mensagens tem id`);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
 }
 
 console.log("\nSem a função no banco");
@@ -139,10 +220,9 @@ console.log("\nSem a função no banco");
   await page.reload();
   await page.waitForSelector("[data-conversa-nome]");
   await page.waitForTimeout(1800);
-  ok("sem a função, a pílula nem aparece", await pilula.count() === 0,
+  ok("sem a função, o botão nem aparece", await botao.count() === 0,
      "um filtro que não filtra é pior do que filtro nenhum");
   ok("e a lista continua inteira", (await nomesNaTela()).length > 5);
-
 }
 
 console.log(`\nerros de página: ${erros.length}`);
