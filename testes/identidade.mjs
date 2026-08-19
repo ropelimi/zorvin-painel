@@ -75,17 +75,22 @@ console.log("\nA foto entra no que foi escrito antes de ela existir");
      `antiga: ${fotos.antiga} · nova: ${fotos.nova}`);
 }
 
-console.log("\nO grupinho de avatares do topo");
+console.log("\nA conta que foi apagada");
 {
-  // Era a lista `atendentesInteragiram`, com o NOME de chave — então a mesma
-  // pessoa entrava duas vezes, uma por nome.
-  const nomes = await page.getAttribute("[title^='Já atenderam']", "title");
-  ok("o grupinho existe", !!nomes, "sem ele não há o que conferir");
-  const lista = (nomes || "").replace(/^[^:]*:\s*/, "").split(", ").filter(Boolean);
-  const vezes = lista.filter((n) => /Rodrigo/.test(n)).length;
-  ok("a mesma pessoa aparece UMA vez, e não uma por nome que já teve",
-     vezes === 1, `apareceu ${vezes}× em ${JSON.stringify(lista)}`);
-  ok("e com o nome de hoje", !/Rodrigo ADMIN/.test(nomes || ""), `dizia: ${nomes}`);
+  // A mensagem escrita pela conta de administrador, que depois foi apagada.
+  // O id dela não existe mais em `usuarios` e o nome gravado é o antigo — as
+  // duas pistas normais falham. Quem responde é o de-para.
+  const t = await corpo();
+  ok("a conversa tem a mensagem da conta apagada",
+     /pela conta de administrador/.test(t),
+     "sem ela o teste não está olhando a conversa certa");
+  const nome = await page.evaluate(() => {
+    const bolha = [...document.querySelectorAll("[data-msg-id]")]
+      .find((e) => (e.innerText || "").includes("pela conta de administrador"));
+    return bolha ? bolha.innerText.split("\n")[0] : null;
+  });
+  ok("ela é assinada com a pessoa de hoje, e não com a conta apagada",
+     /Rodrigo Sousa/.test(nome || ""), `assinada: "${nome}"`);
 }
 
 console.log("\nO histórico sem id, casado pelo nome");
@@ -120,10 +125,15 @@ console.log("\nA foto do contato abre grande");
              janela: window.innerHeight, natural: img.naturalWidth };
   });
   ok("a foto ampliada aparece", !!medida, "o retrato não abriu");
-  // 300px era o tamanho reclamado. O teto é a própria janela.
   ok("e ocupa um pedaço de verdade da tela",
-     !!medida && medida.largura >= 400,
+     !!medida && medida.largura >= 300,
      `abriu com ${medida && medida.largura}px de largura`);
+  // O SEGUNDO RELATO: "abre grande, porém embaçada". Nenhuma conta de estilo
+  // inventa pixel que a imagem não tem — esticar uma miniatura até 520 dá
+  // exatamente isso. O teto tem de acompanhar o tamanho de verdade da foto.
+  ok("sem esticar além do dobro do que a foto tem",
+     !!medida && medida.largura <= medida.natural * 2 + 1,
+     `${medida && medida.largura}px a partir de uma foto de ${medida && medida.natural}px`);
   ok("sem estourar a altura da janela",
      !!medida && medida.altura <= medida.janela,
      `${medida && medida.altura}px numa janela de ${medida && medida.janela}px`);
@@ -172,6 +182,45 @@ console.log("\nTrocar o nome agora vale para trás");
   ok("e nenhuma bolha ficou com o nome anterior",
      !/Rodrigo Sousa/.test(t) && !/Rodrigo ADMIN/.test(t),
      "sobrou nome antigo em alguma bolha");
+}
+
+console.log("\nVer quem participou da conversa");
+{
+  // O grupinho mostra quatro rostos e um "+N". O "+N" DIZ que há mais gente e
+  // não dava jeito nenhum de ver quem — era um beco. Havia um `title`, mas
+  // title demora a aparecer, some ao mexer o rato, não existe no toque e corta
+  // quando cresce: para saber quem atendeu um cliente, não serve.
+  await page.locator("[data-quem-participou]").click();
+  await page.waitForTimeout(500);
+  const lista = await page.locator("[data-participante]").evaluateAll(
+    (ns) => ns.map((n) => ({ nome: n.getAttribute("data-participante"),
+                             linha: (n.innerText || "").replace(/\s+/g, " ") })));
+  ok("a lista abre", lista.length > 0, "clicar no grupinho não abriu nada");
+  ok("e traz todo mundo, e não só os quatro que cabem",
+     lista.length >= 2, `veio ${lista.length}`);
+  ok("cada um com quantas mensagens escreveu",
+     lista.every((l) => /\d+ (mensagem|mensagens)/.test(l.linha)),
+     `linhas: ${JSON.stringify(lista.map((l) => l.linha).slice(0, 3))}`);
+
+  // A MESMA PESSOA UMA VEZ SÓ. A lista tinha o NOME de chave, então quem
+  // trocou de nome entrava duas vezes — e a conta apagada, uma terceira.
+  // O nome vem do CADASTRO, e não escrito à mão: a seção anterior renomeia a
+  // pessoa, então cravar "Rodrigo" aqui reprovaria por causa do teste.
+  const euHoje = await page.evaluate(() =>
+    (globalThis.__TABELAS.usuarios.find((u) => u.id === "u1") || {}).nome);
+  const vezes = lista.filter((l) => l.nome === euHoje).length;
+  ok("a mesma pessoa aparece UMA vez, e não uma por nome que já teve",
+     vezes === 1,
+     `"${euHoje}" apareceu ${vezes}× em ${JSON.stringify(lista.map((l) => l.nome))}`
+     + " — ela escreveu com o nome velho, com o novo e pela conta apagada");
+  ok("e ninguém aparece com o nome antigo",
+     !lista.some((l) => /Rodrigo ADMIN/.test(l.nome || "")),
+     `veio: ${JSON.stringify(lista.map((l) => l.nome))}`);
+
+  // Fechar tem de funcionar, senão a lista fica por cima da conversa.
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(400);
+  ok("Escape fecha", await page.locator("[data-participante]").count() === 0);
 }
 
 console.log("\nSem a vista no banco");

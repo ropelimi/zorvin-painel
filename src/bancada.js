@@ -490,6 +490,22 @@ MENSAGENS.push({
   criado_em: new Date(Date.now() - 4.5 * 3600e3).toISOString(),
 });
 
+// A CONTA QUE FOI APAGADA, e cujas mensagens ficaram.
+//
+// O relato: "o Rodrigo ADMIN era o usuário administrador, eu alterei para o
+// Rodrigo Sousa e excluí o administrador". A mensagem ficou assinada com um id
+// que não existe mais em `usuarios` — nem o id acha ninguém, nem o nome, porque
+// o nome gravado é justamente o velho. Sem uma terceira pista ela não tem como
+// voltar para a pessoa; a pista é `atendentes_de_para`.
+export const CONTA_APAGADA = "u-admin-apagado";
+MENSAGENS.push({
+  id: "m-conta-apagada", conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
+  origem: "advogado", tipo: "texto",
+  texto: "escrevi isto pela conta de administrador, que depois foi apagada",
+  enviado_por: NOME_VELHO, enviado_por_id: CONTA_APAGADA, enviado_por_foto: null,
+  criado_em: new Date(Date.now() - 5.5 * 3600e3).toISOString(),
+});
+
 // UMA IMAGEM NA CONVERSA, para o visor em tela cheia ter o que abrir. A regra
 // de tamanho dele é diferente da do retrato do contato, e sem uma foto de
 // conversa aqui não haveria como provar que uma não estragou a outra.
@@ -778,6 +794,15 @@ const TABELAS = {
   // tela, e semear alguma aqui esconderia uma tela que não grava nada.
   alteracoes: [],
   mensagens_rapidas: [], figurinhas_favoritas: [], fila_envio: FILA_COM_ERRO,
+  // O DE-PARA, que já existia para o Painel não contar "rodrigo" e "Rodrigo
+  // Sousa" como duas pessoas. A conversa passou a consultá-lo pelo mesmo
+  // motivo: é a única pista que sobra quando o id foi apagado e o nome gravado
+  // é o antigo. `e_pessoa: false` é o rótulo que não é gente — o nome da linha
+  // no celular de quem exportou o histórico — e não pode virar atendente.
+  atendentes_de_para: [
+    { nome_antigo: NOME_VELHO, usuario_id: "u1", nome_novo: null, e_pessoa: true },
+    { nome_antigo: "Cadastro - C&A", usuario_id: null, nome_novo: null, e_pessoa: false },
+  ],
   // A VISTA `equipe`: as três colunas que a tela desenha, e nada mais.
   //
   // Um `get`, e não uma cópia: no banco ela é uma vista, então enxerga na hora

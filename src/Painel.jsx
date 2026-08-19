@@ -1234,6 +1234,9 @@ export default function Painel({ sessao }) {
   // tela de 1400 — a foto "abria pequena". Aqui ela é ampliada, como no
   // WhatsApp Web.
   const [retratoAberto, setRetratoAberto] = useState(false);
+  // Quantos pixels a foto TEM de verdade. Ampliar além do dobro disso não
+  // mostra mais nada — só borra o que já estava lá.
+  const [larguraDoRetrato, setLarguraDoRetrato] = useState(0);
   const [aviso, setAviso] = useState(null); // toast discreto (texto)
   // A FILA DE ANEXOS aguardando envio. Era UM anexo por vez: colar três prints
   // mandava o primeiro e descartava os outros dois em silêncio, e quem mandava
@@ -1394,12 +1397,41 @@ export default function Painel({ sessao }) {
         porId[q.id] = q;
         if (q.nome) porNome[chaveDeNome(q.nome)] = q;
       }
+
+      // O DE-PARA: a conta que foi APAGADA, e cujas mensagens ficaram.
+      //
+      // Quem tinha duas contas (uma de administrador e a de pessoa), juntou as
+      // duas e apagou uma, deixou para trás mensagens assinadas com um id que
+      // não existe mais em `usuarios`. Nem o id acha ninguém, nem o nome — o
+      // nome gravado é justamente o velho ("Rodrigo ADMIN"). Sem uma terceira
+      // pista, essas mensagens não têm como voltar para a pessoa.
+      //
+      // `atendentes_de_para` é essa pista, e ela já existia: foi feita para o
+      // Painel parar de contar "rodrigo" e "Rodrigo Sousa" como duas pessoas.
+      // É a mesma pergunta, então é a mesma tabela — uma linha lá arruma a
+      // conta E a conversa, e quem administra não precisa aprender dois lugares.
+      const { data: dePara } = await supabase.from("atendentes_de_para")
+        .select("nome_antigo, usuario_id, nome_novo, e_pessoa").limit(1000);
+      if (!vivo) return;
+      for (const d of dePara || []) {
+        if (d.e_pessoa === false) continue;         // rótulo que não é gente
+        const alvo = (d.usuario_id && porId[String(d.usuario_id)])
+                  || (d.nome_novo ? { id: null, nome: d.nome_novo, foto: null } : null);
+        if (!alvo) continue;
+        const chave = chaveDeNome(d.nome_antigo);
+        // Não atropela quem existe de verdade com esse nome.
+        if (!porNome[chave]) porNome[chave] = alvo;
+      }
       setEquipe({ porId, porNome });
     })();
     return () => { vivo = false; };
   }, [sessao]);
 
-  /** A pessoa de hoje, a partir do id (ou, sem id, do nome que ficou gravado). */
+  /** A pessoa de hoje, a partir do id (ou, sem id, do nome que ficou gravado).
+   *
+   *  O NOME É CONSULTADO MESMO HAVENDO ID, quando o id não acha ninguém: é o
+   *  caso da conta apagada. Procurar só pelo id ali seria desistir na primeira
+   *  pista, tendo uma segunda na mão. */
   function deHoje(id, nomeGravado) {
     return (id && equipe.porId[String(id)])
         || (nomeGravado && equipe.porNome[chaveDeNome(nomeGravado)])
@@ -1829,6 +1861,11 @@ export default function Painel({ sessao }) {
   const [extrasQuem, setExtrasQuem] = useState([]);
   const [idsQuem, setIdsQuem] = useState(null);            // null = sem filtro
   const quemRef = useRef(null);
+  // A lista de quem participou DESTA conversa (o grupinho de rostos do topo).
+  // Não confundir com o filtro acima: aquele escolhe conversas por pessoa, este
+  // só mostra quem escreveu na conversa aberta.
+  const [quemParticipou, setQuemParticipou] = useState(false);
+  const quemParticipouRef = useRef(null);
 
   // A lista de quem escolher sai de quem REALMENTE escreveu por este telefone.
   // Oferecer o escritório inteiro faria uma lista longa em que a maioria dos
@@ -1859,6 +1896,10 @@ export default function Painel({ sessao }) {
     })();
     return () => { vivo = false; };
   }, [advogadoId]);
+
+  // Trocar de conversa fecha a lista de quem participou: ela é de UMA conversa,
+  // e deixá-la aberta mostraria os rostos da anterior sobre a nova.
+  useEffect(() => { setQuemParticipou(false); }, [conversaId]);
 
   // Trocar de telefone zera a escolha: os atendentes são outros.
   useEffect(() => { setQuemFiltra([]); setMenuQuem(false); }, [advogadoId]);
@@ -3597,6 +3638,7 @@ export default function Painel({ sessao }) {
       else if (menuConversa) setMenuConversa(null);
       else if (menuTopoAberto) setMenuTopoAberto(false);
       else if (menuQuem) setMenuQuem(false);
+      else if (quemParticipou) setQuemParticipou(false);
       else if (menuEtiquetas) setMenuEtiquetas(false);
       else if (menuDepartamentos) setMenuDepartamentos(false);
       else if (tagMenuAberto) setTagMenuAberto(false);
@@ -3610,13 +3652,14 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, telaPainel, menuConversa, menuTopoAberto, menuEtiquetas, menuQuem, tagMenuAberto, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId]);
+  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, juntar, midiasAberta, telaAdmin, telaPainel, menuConversa, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
     function aoClicar(e) {
       if (menuEtiquetas && etiquetasRef.current && !etiquetasRef.current.contains(e.target)) setMenuEtiquetas(false);
       if (menuQuem && quemRef.current && !quemRef.current.contains(e.target)) setMenuQuem(false);
+      if (quemParticipou && quemParticipouRef.current && !quemParticipouRef.current.contains(e.target)) setQuemParticipou(false);
       // O MENU DA BOLHA fecha ao clicar em qualquer lugar fora dele.
       // Não dá para usar um ref como os outros: existe um menu por mensagem, e
       // guardar um ref por bolha seria um mapa que envelhece a cada rolagem. A
@@ -3633,7 +3676,7 @@ export default function Painel({ sessao }) {
     }
     document.addEventListener("mousedown", aoClicar);
     return () => document.removeEventListener("mousedown", aoClicar);
-  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas, menuQuem, menuDepartamentos]);
+  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, menuDepartamentos]);
 
   // Fecha o menuzinho da conversa (marcar não lida) ao clicar em qualquer lugar.
   useEffect(() => {
@@ -5219,6 +5262,11 @@ export default function Painel({ sessao }) {
   // aparecia DUAS vezes no grupinho — a mesma pessoa, com o nome de antes e com
   // o de agora, uma delas sem foto. Pelo id ela é uma só; o nome só serve de
   // chave no histórico anterior ao id existir, e ali não há o que fazer.
+  //
+  // Cada um vem com QUANTAS mensagens escreveu e QUANDO foi a última. São as
+  // duas coisas que a lista de "quem participou" precisa dizer para não ser só
+  // uma fileira de rostos: sem elas, quem escreveu uma vez em março e quem
+  // tocou a conversa a semana inteira aparecem iguais.
   const atendentesInteragiram = (() => {
     const mapa = new Map();
     for (const m of mensagens) {
@@ -5226,11 +5274,16 @@ export default function Painel({ sessao }) {
       const q = quemFalou(m);
       if (!q.nome) continue;
       const chave = q.id || "nome:" + q.nome.trim().toLowerCase();
-      if (!mapa.has(chave)) mapa.set(chave, q);
+      const antes = mapa.get(chave);
+      if (!antes) { mapa.set(chave, { ...q, quantas: 1, ultimaEm: m.criado_em }); continue; }
+      antes.quantas++;
+      if (new Date(m.criado_em) > new Date(antes.ultimaEm)) antes.ultimaEm = m.criado_em;
       // A primeira aparição pode ser de antes da foto existir; a de depois tem.
-      else if (!mapa.get(chave).foto && q.foto) mapa.set(chave, q);
+      if (!antes.foto && q.foto) antes.foto = q.foto;
     }
-    return [...mapa.values()];
+    // Quem falou mais na frente: é a ordem que responde "quem está tocando este
+    // atendimento", que é a pergunta de quem olha o grupinho.
+    return [...mapa.values()].sort((a, b) => b.quantas - a.quantas);
   })();
 
   // Os nomes de quem está marcado no filtro de atendentes, na ordem em que
@@ -6121,7 +6174,7 @@ export default function Painel({ sessao }) {
                   mais clicável do cabeçalho. A foto grande continua a um clique
                   de distância, mas na FOTO, que é onde se espera. */}
               <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
-              <span onClick={() => { if (conversa.contato?.foto_url) { setRetratoAberto(true); setImagemAberta(conversa.contato.foto_url); } }}
+              <span onClick={() => { if (conversa.contato?.foto_url) { setLarguraDoRetrato(0); setRetratoAberto(true); setImagemAberta(conversa.contato.foto_url); } }}
                     title={conversa.contato?.foto_url ? "Ver a foto" : undefined}
                     style={{ display: "flex", cursor: conversa.contato?.foto_url ? "pointer" : "default" }}>
                 <Avatar nome={conversa.contato?.nome || conversa.contato?.numero} foto={conversa.contato?.foto_url} size={40} />
@@ -6252,18 +6305,71 @@ export default function Painel({ sessao }) {
                       style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10, background: historico ? C.listActive : "transparent" }}>
                 <History size={19} color={historico ? C.green : C.textSecondary} />
               </button>
-              {/* Avatares dos atendentes que já interagiram com este contato */}
+              {/* QUEM PARTICIPOU DESTA CONVERSA.
+                  O grupinho mostra quatro rostos e um "+3" — e o "+3" era um
+                  beco: ele DIZ que há mais gente e não dá jeito nenhum de ver
+                  quem. Havia um `title`, mas title é uma linha de texto que
+                  demora a aparecer, some ao mexer o rato, não existe no toque e
+                  corta quando cresce; para saber quem atendeu um cliente, não
+                  serve.
+                  Agora o grupinho é um botão e abre a lista inteira, com quem,
+                  quantas mensagens e quando foi a última — que é o que responde
+                  "com quem eu falo sobre este cliente". */}
               {!estreito && atendentesInteragiram.length > 0 && (
-                <div title={`Já atenderam este contato: ${atendentesInteragiram.map((a) => a.nome).join(", ")}`} style={{ display: "flex", alignItems: "center", marginRight: 2 }}>
-                  {atendentesInteragiram.slice(0, 4).map((a, idx) => (
-                    <div key={a.nome} style={{ marginLeft: idx === 0 ? 0 : -8, borderRadius: "50%", border: `2px solid ${C.headerBar}`, display: "flex" }}>
-                      <Avatar nome={a.nome} foto={a.foto} size={26} />
+                <span ref={quemParticipouRef} style={{ position: "relative", display: "flex", marginRight: 2 }}>
+                  <button data-quem-participou onClick={() => setQuemParticipou((v) => !v)}
+                          aria-label={`Quem participou da conversa (${atendentesInteragiram.length})`}
+                          aria-expanded={quemParticipou}
+                          title="Quem participou desta conversa"
+                          style={{ display: "flex", alignItems: "center", border: "none", background: "transparent",
+                                   cursor: "pointer", padding: 2, borderRadius: 20 }}>
+                    {atendentesInteragiram.slice(0, 4).map((a, idx) => (
+                      <span key={a.id || a.nome} style={{ marginLeft: idx === 0 ? 0 : -8, borderRadius: "50%", border: `2px solid ${C.headerBar}`, display: "flex" }}>
+                        <Avatar nome={a.nome} foto={a.foto} size={26} />
+                      </span>
+                    ))}
+                    {atendentesInteragiram.length > 4 && (
+                      <span style={{ marginLeft: -8, width: 26, height: 26, borderRadius: "50%", background: C.divider, color: C.textSecondary, fontSize: 10.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${C.headerBar}` }}>+{atendentesInteragiram.length - 4}</span>
+                    )}
+                  </button>
+                  {quemParticipou && (
+                    <div style={{ position: "absolute", top: 36, right: 0, zIndex: 60, width: 264, maxHeight: 340, overflowY: "auto",
+                                  background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
+                      <div style={{ padding: "10px 12px 8px", borderBottom: `1px solid ${C.divider}`, fontSize: 13.5, fontWeight: 700, color: C.textPrimary }}>
+                        Quem participou desta conversa
+                        <div style={{ fontSize: 11.5, fontWeight: 400, color: C.textSecondary, marginTop: 2 }}>
+                          {atendentesInteragiram.length === 1
+                            ? "1 pessoa do escritório escreveu aqui"
+                            : `${atendentesInteragiram.length} pessoas do escritório escreveram aqui`}
+                        </div>
+                      </div>
+                      {atendentesInteragiram.map((a) => (
+                        <div key={a.id || a.nome} data-participante={a.nome}
+                             style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 12px" }}>
+                          <Avatar nome={a.nome} foto={a.foto} size={30} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13.5, color: C.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nome}</div>
+                            {/* "3 mensagens · ontem" — quantas e quando, que é o
+                                que separa quem passou por aqui de quem atende. */}
+                            <div style={{ fontSize: 11.5, color: C.textSecondary }}>
+                              {a.quantas} {a.quantas === 1 ? "mensagem" : "mensagens"}
+                              {a.ultimaEm ? ` · ${rotuloData(a.ultimaEm).toLowerCase()}` : ""}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      {/* SÓ O QUE ESTÁ CARREGADO. A conversa abre com as
+                          mensagens recentes e traz o resto ao rolar para cima —
+                          então esta lista cresce conforme se sobe. Dizer isso é
+                          melhor do que deixar alguém concluir que fulano nunca
+                          falou com o cliente. */}
+                      <div style={{ padding: "8px 12px 10px", borderTop: `1px solid ${C.divider}`, fontSize: 11, color: C.textSecondary, lineHeight: 1.4 }}>
+                        Conta o que já está aberto na conversa. Role para cima
+                        para carregar o mais antigo.
+                      </div>
                     </div>
-                  ))}
-                  {atendentesInteragiram.length > 4 && (
-                    <div style={{ marginLeft: -8, width: 26, height: 26, borderRadius: "50%", background: C.divider, color: C.textSecondary, fontSize: 10.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${C.headerBar}` }}>+{atendentesInteragiram.length - 4}</div>
                   )}
-                </div>
+                </span>
               )}
               {/* Etiquetar a conversa: abre um menu para marcar/desmarcar tags */}
               <span ref={tagMenuRef} style={{ position: "relative", display: "flex" }}>
@@ -7518,11 +7624,25 @@ export default function Painel({ sessao }) {
               de 1400. Era a "foto que abre pequena": ela não estava encolhida,
               estava do tamanho natural.
               `width` fixa com `height: auto` amplia mantendo a proporção; o
-              `min()` impede que uma foto alta estoure a altura da janela. */}
+              `min()` impede que uma foto alta estoure a altura da janela.
+
+              MAS AMPLIAR TEM LIMITE, e foi o segundo relato: "abre grande,
+              porém embaçada". Nenhuma conta de estilo inventa pixel que a
+              imagem não tem — esticar uma miniatura de 100 pixels até 520 dá
+              exatamente isso. Então o teto passa a ser também o DOBRO do
+              tamanho que a foto tem de verdade: 520 quando ela aguenta, menos
+              quando não aguenta, e nunca menos de 300 (uma foto pequena que
+              abre pequena volta a ser o defeito de antes).
+              A causa de raiz é outra e está na ponte: era a MINIATURA que
+              vinha sendo guardada, e não a foto cheia. Corrigido lá; as fotos
+              já guardadas melhoram sozinhas quando o contato mandar a próxima
+              mensagem. Este teto é o que faz o meio-tempo ficar apresentável. */}
           <img src={imagemAberta} alt={retratoAberto ? "Foto do contato" : "imagem"} onClick={(e) => e.stopPropagation()}
                data-retrato={retratoAberto ? "1" : undefined}
+               onLoad={(e) => { if (retratoAberto) setLarguraDoRetrato(e.target.naturalWidth || 0); }}
                style={retratoAberto
-                 ? { width: "min(86vw, 74vh, 520px)", height: "auto", borderRadius: 12, objectFit: "contain" }
+                 ? { width: `min(86vw, 74vh, ${larguraDoRetrato ? Math.max(300, Math.min(520, larguraDoRetrato * 2)) : 520}px)`,
+                     height: "auto", borderRadius: 12, objectFit: "contain" }
                  : { maxWidth: "88%", maxHeight: temGaleria ? "76%" : "92%", borderRadius: 8, objectFit: "contain" }} />
 
           {/* A FITA. Rola sozinha até a imagem aberta, senão numa conversa com
