@@ -18,6 +18,41 @@
     <link rel="icon" href="/zorvin.ico" sizes="any" />
     <link rel="icon" href="/zorvin.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/zorvin-180.png" />
+
+    <style>
+      /*
+        O TECLADO DO IPHONE NÃO PODE DAR ZOOM NA TELA.
+
+        Relato: "ao clicar no campo de texto ele está expandindo a tela,
+        ficando desproporcional". Não é o teclado, e não é o layout — é uma
+        regra do Safari do iPhone que quase ninguém conhece: ao focar um campo
+        com letra MENOR QUE 16 PIXELS, ele dá zoom na página inteira para
+        aproximar o texto. E não desfaz sozinho ao sair do campo.
+
+        O resultado é exatamente o descrito: a conversa "cresce", o cabeçalho
+        sai pela esquerda, e para voltar ao normal é preciso pinçar a tela com
+        dois dedos. A caixa de escrever tinha 14,5px; a de entrar, 15; a busca,
+        14. Todas abaixo do corte.
+
+        A solução conhecida do problema é `maximum-scale=1` na etiqueta do
+        viewport, e ela NÃO está aqui de propósito: aquilo desliga o pinçar
+        para AMPLIAR em todo o site, o que tira de quem enxerga mal a única
+        ferramenta que essa pessoa tem. Levar a letra a 16px resolve a mesma
+        coisa sem tirar nada de ninguém — e ainda deixa o texto maior no
+        celular, que é onde ele estava pequeno demais.
+
+        Aqui e não dentro do painel: a tela de ENTRAR também tem campos, e é a
+        primeira que a equipe toca todo dia.
+
+        `!important` porque cada campo traz o seu tamanho escrito na própria
+        etiqueta, e estilo escrito ali vence folha de estilo sempre.
+      */
+      @media (max-width: 767px) {
+        input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),
+        textarea,
+        select { font-size: 16px !important; }
+      }
+    </style>
   </head>
   <body style="margin:0">
     <div id="root"></div>
