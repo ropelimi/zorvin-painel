@@ -28,6 +28,7 @@ const PROVAS = [
   { nome: "anexos",      servidor: "dev" },
   { nome: "previa",      servidor: "dev" },
   { nome: "presenca",    servidor: "dev" },
+  { nome: "ordem",       servidor: "dev" },
   { nome: "desempenho",  servidor: "producao" },
 ];
 
