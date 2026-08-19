@@ -209,6 +209,15 @@ const TEMAS = {
 //
 // 10px de respiro em volta de um ícone de 20 dão 40px de alvo sem mudar nada
 // do que se vê: o desenho continua do mesmo tamanho, no mesmo lugar.
+/** Nome comparável: sem acento, sem maiúscula, sem espaço sobrando.
+ *  O mesmo tratamento que o banco faz em `zorvin_sem_acento` — os dois lados
+ *  precisam concordar, senão "JENIFER ALMEIDA" e "Jenifer Almeida" viram duas
+ *  pessoas de um lado e uma do outro. */
+function chaveDeNome(t) {
+  return String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .toLowerCase().trim().replace(/\s+/g, " ");
+}
+
 const BOTAO_ICONE = {
   border: "none", background: "transparent", cursor: "pointer",
   display: "flex", alignItems: "center", justifyContent: "center",
@@ -1218,6 +1227,13 @@ export default function Painel({ sessao }) {
   const [audioPronto, setAudioPronto] = useState(null); // { file, url, convId } aguardando prévia/envio
   const [tempoGravacao, setTempoGravacao] = useState(0); // segundos gravados
   const [imagemAberta, setImagemAberta] = useState(null); // URL da imagem em tela cheia
+  // A imagem aberta é a FOTO DE PERFIL do contato, e não uma foto da conversa.
+  // As duas usam a mesma tela preta, mas pedem tamanhos opostos: a da conversa
+  // é grande e só precisa caber; a de perfil costuma vir com 200 ou 300 pixels
+  // de lado, e sem `width` o navegador desenha esses 300 pixels no meio de uma
+  // tela de 1400 — a foto "abria pequena". Aqui ela é ampliada, como no
+  // WhatsApp Web.
+  const [retratoAberto, setRetratoAberto] = useState(false);
   const [aviso, setAviso] = useState(null); // toast discreto (texto)
   // A FILA DE ANEXOS aguardando envio. Era UM anexo por vez: colar três prints
   // mandava o primeiro e descartava os outros dois em silêncio, e quem mandava
@@ -1325,9 +1341,97 @@ export default function Painel({ sessao }) {
     (sessao?.user?.email || "").split("@")[0] ||
     "atendente";
   const minhaFoto = sessao?.user?.user_metadata?.foto_url || null;
-  // O ID não muda quando alguém edita o próprio nome. `meuNome` continua sendo
-  // o que a bolha mostra — o nome de então; `meuId` é o que o Painel conta.
+  // O ID não muda quando alguém edita o próprio nome. É por ele que a bolha
+  // reencontra o nome e a foto de hoje — ver `equipe` e `quemFalou` logo
+  // abaixo.
   const meuId = sessao?.user?.id || null;
+
+  // ------------------------------------------------------------
+  //  O NOME E A FOTO DE HOJE
+  //
+  //  Cada mensagem guarda `enviado_por` e `enviado_por_foto` — o nome e a foto
+  //  NO DIA DO ENVIO. Era de propósito, para uma mensagem antiga aparecer
+  //  assinada com o nome de então. Na prática deu o contrário do que se quer:
+  //  quem trocava de nome ficava com metade da conversa assinada com o nome
+  //  velho, e quem punha foto depois de já ter escrito ficava com uma bolinha
+  //  de iniciais no meio de uma conversa que já tinha foto. Pior: no grupinho
+  //  de avatares do topo, a mesma pessoa aparecia duas vezes.
+  //
+  //  Agora a tela desenha o de hoje. O que está gravado na linha fica onde
+  //  está — nada foi apagado, e é só isto aqui que decide o que aparece.
+  //
+  //  `porNome` existe para o histórico anterior à coluna `enviado_por_id`:
+  //  ali não há id, e casar pelo nome é o único jeito de dar foto àquelas
+  //  mensagens. Só acerta quem não trocou de nome — para quem trocou, não há
+  //  o que ligar uma coisa na outra, e a mensagem fica como está.
+  const [equipe, setEquipe] = useState({ porId: {}, porNome: {} });
+
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      // `equipe` é uma vista com três colunas — id, nome, foto. A tabela
+      // `usuarios` continua fechada: ninguém lê o e-mail nem o "é admin" de
+      // ninguém por aqui.
+      //
+      // DE MIL EM MIL, com `order` fixo. O PostgREST corta em mil linhas e não
+      // avisa — a resposta chega com cara de resposta inteira. Hoje o
+      // escritório cabe folgado numa página; no dia em que não couber, o que
+      // aconteceria sem isto não é um erro na tela, é meia dúzia de pessoas
+      // voltando a aparecer com o nome antigo, sem nada explicando por quê.
+      const linhas = [];
+      for (let pagina = 0; pagina < 20; pagina++) {
+        const { data, error } = await supabase.from("equipe")
+          .select("id, nome, foto_url")
+          .order("id").range(pagina * 1000, (pagina + 1) * 1000 - 1);
+        if (error) return;          // sem a vista no banco: fica como era antes
+        linhas.push(...(data || []));
+        if (!data || data.length < 1000) break;
+      }
+      if (!vivo) return;
+      const porId = {}, porNome = {};
+      for (const u of linhas) {
+        const q = { id: String(u.id), nome: u.nome || null, foto: u.foto_url || null };
+        porId[q.id] = q;
+        if (q.nome) porNome[chaveDeNome(q.nome)] = q;
+      }
+      setEquipe({ porId, porNome });
+    })();
+    return () => { vivo = false; };
+  }, [sessao]);
+
+  /** A pessoa de hoje, a partir do id (ou, sem id, do nome que ficou gravado). */
+  function deHoje(id, nomeGravado) {
+    return (id && equipe.porId[String(id)])
+        || (nomeGravado && equipe.porNome[chaveDeNome(nomeGravado)])
+        || null;
+  }
+
+  /** Só o nome de hoje — para as linhas que não têm avatar (a lápide da nota
+   *  apagada, o "editada por"). */
+  function nomeDeHoje(id, nomeGravado) {
+    const atual = deHoje(id, nomeGravado);
+    return (atual && atual.nome) || nomeGravado || null;
+  }
+
+  /** Quem escreveu esta mensagem (ou esta nota), com o nome e a foto de hoje. */
+  function quemFalou(m) {
+    if (!m) return { id: null, nome: null, foto: null };
+    const ehNota = m.origem === "nota";
+    const id = (ehNota ? m.autor_id : m.enviado_por_id) || null;
+    const nomeGravado = (ehNota ? m.autor : m.enviado_por) || null;
+    const fotoGravada = (ehNota ? m.autor_foto : m.enviado_por_foto) || null;
+    const atual = deHoje(id, nomeGravado);
+    // A MINHA foto vem da sessão quando existe: quem acabou de trocar a foto
+    // vê a nova na hora, sem esperar a próxima leitura da equipe.
+    const souEu = (id && String(id) === String(meuId)) || (!id && nomeGravado === meuNome);
+    return {
+      id: (atual && atual.id) || (id ? String(id) : null),
+      nome: (atual && atual.nome) || nomeGravado || null,
+      // O que está gravado só entra se não houver nada de hoje: mostrar a foto
+      // antiga é melhor do que mostrar iniciais.
+      foto: (souEu && minhaFoto) || (atual && atual.foto) || fotoGravada || null,
+    };
+  }
   // Quem administra: sai da tabela `usuarios` (espelho do Vantoro), e não mais
   // de um metadado escrito à mão no Supabase. Quem é superusuário no Vantoro
   // administra aqui — uma lista de gente, não duas. Está em `souAdmin`.
@@ -1931,6 +2035,18 @@ export default function Painel({ sessao }) {
       const meta = sessao?.user?.user_metadata || {};
       const { error } = await supabase.auth.updateUser({ data: { ...meta, foto_url: url } });
       if (error) throw error;
+      // E TAMBÉM ONDE OS OUTROS CONSEGUEM LER.
+      // O `user_metadata` só o dono da conta alcança — era por isso que a foto
+      // precisava viajar copiada dentro de cada mensagem, e por isso que trocar
+      // de foto não mudava nada no que já estava escrito. `salvar_minha_foto`
+      // grava na linha da pessoa em `usuarios`, que a vista `equipe` publica
+      // para a equipe inteira. Se o SQL ainda não tiver sido rodado, a foto
+      // continua valendo para quem a trocou e o resto segue como antes.
+      const { error: erroEquipe } = await supabase.rpc("salvar_minha_foto", { p_url: url });
+      if (erroEquipe) console.log("foto salva na conta, mas não na equipe:", erroEquipe.message);
+      else setEquipe((e) => (meuId && e.porId[meuId]
+        ? { ...e, porId: { ...e.porId, [meuId]: { ...e.porId[meuId], foto: url } } }
+        : e));
       mostrarAviso("Foto atualizada!");
     } catch (_) {
       mostrarAviso("Não consegui atualizar a foto.");
@@ -2439,7 +2555,7 @@ export default function Painel({ sessao }) {
       return;
     }
     const pontas = (v, crescente) => supabase.from("mensagens")
-      .select("enviado_por, enviado_por_foto, criado_em")
+      .select("enviado_por, enviado_por_id, enviado_por_foto, criado_em")
       .eq("conversa_id", v.id).eq("origem", "advogado")
       .order("criado_em", { ascending: crescente }).limit(1);
 
@@ -2843,6 +2959,10 @@ export default function Painel({ sessao }) {
         midia_url: f.midia_url || null,
         midia_mime: f.midia_mime || null,
         enviado_por: f.enviado_por || null,
+        // O ID VEM JUNTO. Sem ele a mensagem que não saiu era a única da
+        // conversa que continuava assinada com o nome de antes — e é logo ela
+        // que a pessoa vai reler para decidir se reenvia.
+        enviado_por_id: f.enviado_por_id || null,
         enviado_por_foto: f.enviado_por_foto || null,
         criado_em: f.criado_em,
         _status: "erro",
@@ -3449,7 +3569,7 @@ export default function Painel({ sessao }) {
   useEffect(() => {
     function aoTeclar(e) {
       if (e.key !== "Escape") return;
-      if (imagemAberta) setImagemAberta(null);
+      if (imagemAberta) { setImagemAberta(null); setRetratoAberto(false); }
       else if (anexosPendentes.length) fecharAnexoPendente();
       else if (audioPronto) descartarAudioPronto();
       else if (confirmarApagar) setConfirmarApagar(false);
@@ -5094,13 +5214,21 @@ export default function Painel({ sessao }) {
 
   // Atendentes que já interagiram nesta conversa (para o grupinho de avatares
   // no topo). Junta quem enviou mensagens e quem escreveu notas.
+  //
+  // A CHAVE É O ID, e não o nome. Era o nome, e por isso quem trocasse de nome
+  // aparecia DUAS vezes no grupinho — a mesma pessoa, com o nome de antes e com
+  // o de agora, uma delas sem foto. Pelo id ela é uma só; o nome só serve de
+  // chave no histórico anterior ao id existir, e ali não há o que fazer.
   const atendentesInteragiram = (() => {
     const mapa = new Map();
     for (const m of mensagens) {
-      let nome = null, foto = null;
-      if (m.origem === "advogado" && m.enviado_por) { nome = m.enviado_por; foto = m.enviado_por_foto || null; }
-      else if (m.origem === "nota" && m.autor) { nome = m.autor; foto = m.autor_foto || null; }
-      if (nome && !mapa.has(nome)) mapa.set(nome, { nome, foto });
+      if (m.origem !== "advogado" && m.origem !== "nota") continue;
+      const q = quemFalou(m);
+      if (!q.nome) continue;
+      const chave = q.id || "nome:" + q.nome.trim().toLowerCase();
+      if (!mapa.has(chave)) mapa.set(chave, q);
+      // A primeira aparição pode ser de antes da foto existir; a de depois tem.
+      else if (!mapa.get(chave).foto && q.foto) mapa.set(chave, q);
     }
     return [...mapa.values()];
   })();
@@ -5993,7 +6121,7 @@ export default function Painel({ sessao }) {
                   mais clicável do cabeçalho. A foto grande continua a um clique
                   de distância, mas na FOTO, que é onde se espera. */}
               <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
-              <span onClick={() => { if (conversa.contato?.foto_url) setImagemAberta(conversa.contato.foto_url); }}
+              <span onClick={() => { if (conversa.contato?.foto_url) { setRetratoAberto(true); setImagemAberta(conversa.contato.foto_url); } }}
                     title={conversa.contato?.foto_url ? "Ver a foto" : undefined}
                     style={{ display: "flex", cursor: conversa.contato?.foto_url ? "pointer" : "default" }}>
                 <Avatar nome={conversa.contato?.nome || conversa.contato?.numero} foto={conversa.contato?.foto_url} size={40} />
@@ -6246,11 +6374,18 @@ export default function Painel({ sessao }) {
                 // (para saber qual participante escreveu, como no WhatsApp).
                 const ehGrupoConversa = String(conversa?.contato?.numero || "").startsWith("grupo:");
                 const mostrarAutor = (saida || ehGrupoConversa) && !!m.enviado_por;
+                // Quem escreveu, com o nome e a foto DE HOJE.
+                const quem = quemFalou(m);
                 // Última mensagem de uma sequência do mesmo remetente: recebe o
                 // avatarzinho à direita (como o WhatsApp mostra a foto do grupo).
+                //
+                // A comparação é pelo NOME DE HOJE, e não pelo gravado: quem
+                // trocou de nome no meio de uma sequência tinha a sequência
+                // partida em duas, com um avatar sobrando no meio — a tela
+                // desenhava duas pessoas onde há uma.
                 const proxima = mensagens[i + 1];
                 const ultimaDoGrupo = !proxima || proxima.origem !== m.origem ||
-                  proxima.enviado_por !== m.enviado_por ||
+                  quemFalou(proxima).nome !== quem.nome ||
                   new Date(proxima.criado_em).toDateString() !== new Date(m.criado_em).toDateString();
                 // Figurinha COM o desenho flutua sem bolha, como no WhatsApp.
                 // Sem o desenho, ela precisa da bolha de volta: o aviso de
@@ -6276,7 +6411,7 @@ export default function Painel({ sessao }) {
                       <div data-msg-id={m.id} style={{ display: "flex", justifyContent: "flex-end", alignItems: "flex-end", gap: 6, marginTop: 4 }}>
                         <div style={{ maxWidth: estreito ? "88%" : "70%", display: "flex", flexDirection: "column", alignItems: "flex-end", opacity: m._status === "enviando" ? 0.7 : 1 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2, marginRight: 2 }}>
-                            <span style={{ fontSize: 12.5, fontWeight: 700, color: corNome(m.autor, modo) }}>{m.autor || "equipe"}</span>
+                            <span style={{ fontSize: 12.5, fontWeight: 700, color: corNome(quem.nome, modo) }}>{quem.nome || "equipe"}</span>
                             <span style={{ fontSize: 11, color: C.textSecondary }}>• {horaCurta(m.criado_em)}</span>
                           </div>
                           {/* A NOTA APAGADA VIRA LÁPIDE, e não some da conversa.
@@ -6292,17 +6427,17 @@ export default function Painel({ sessao }) {
                                           minWidth: 120, fontSize: 13, fontStyle: "italic",
                                           display: "flex", alignItems: "center", gap: 6 }}>
                               <Trash2 size={13} />
-                              Nota interna apagada por {m.apagada_por || "alguém"} · {horaCurta(m.apagada_em)}
+                              Nota interna apagada por {nomeDeHoje(m.apagada_por_id, m.apagada_por) || "alguém"} · {horaCurta(m.apagada_em)}
                             </div>
                           ) : (
                           <div style={{ position: "relative", background: "#a35e0c", color: "#fff", borderRadius: 8, padding: "7px 11px 6px", boxShadow: "0 1px 0.5px rgba(0,0,0,.2)", minWidth: 120 }}>
-                            <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 1 }}>{m.autor || "equipe"}:</div>
+                            <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 1 }}>{quem.nome || "equipe"}:</div>
                             <div style={{ fontSize: 14, lineHeight: 1.35, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{formatarTexto(m.texto, "#fff3d6")}</div>
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, fontSize: 10.5, color: "rgba(255,255,255,.85)", marginTop: 3 }}>
                               {/* "editada" fica junto do horário, como nas
                                   mensagens: quem lê precisa saber que o que
                                   está ali não é o que foi escrito primeiro. */}
-                              {m.editada_em && <span title={`Editada por ${m.editada_por || "alguém"}`}>editada ·</span>}
+                              {m.editada_em && <span title={`Editada por ${nomeDeHoje(m.editada_por_id, m.editada_por) || "alguém"}`}>editada ·</span>}
                               <StickyNote size={11} /> Mensagem interna{m._status === "enviando" ? " · salvando…" : ""}
                             </div>
                             {/* O menu aparece ao passar o rato, como o das
@@ -6325,7 +6460,7 @@ export default function Painel({ sessao }) {
                           </div>
                           )}
                         </div>
-                        <div style={{ width: 28, flexShrink: 0 }}><Avatar nome={m.autor || "equipe"} foto={m.autor_foto || (m.autor === meuNome ? minhaFoto : null)} size={28} /></div>
+                        <div style={{ width: 28, flexShrink: 0 }}><Avatar nome={quem.nome || "equipe"} foto={quem.foto} size={28} /></div>
                       </div>
                     ) : (
                     <div data-msg-id={m.id} onClick={() => { if (selecao && podeSerApagada(m)) alternarSelecao(m.id); }} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ position: "relative", display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6,
@@ -6374,7 +6509,7 @@ export default function Painel({ sessao }) {
                       )}
                       <div style={{ position: "relative", maxWidth: estreito ? "84%" : "65%", background: figurinhaNua ? "transparent" : (saida ? C.bubbleOut : C.bubbleIn), color: C.textPrimary, borderRadius: 8, padding: figurinhaNua ? 0 : (m.tipo === "imagem" ? 4 : "5px 7px 6px 9px"), boxShadow: figurinhaNua ? "none" : "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
                         {mostrarAutor && (
-                          <div style={{ fontSize: 12, fontWeight: 700, color: corNome(m.enviado_por, modo), marginBottom: 1 }}>{m.enviado_por}</div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: corNome(quem.nome, modo), marginBottom: 1 }}>{quem.nome}</div>
                         )}
                         {m.id_uazapi && !m.apagada && (
                           <button data-menu-msg onClick={(ev) => {
@@ -6433,7 +6568,7 @@ export default function Painel({ sessao }) {
                           // `<img onClick>` solto, ela abria no clique e não
                           // abria de jeito nenhum pelo teclado — e o leitor de
                           // tela anunciava "imagem", não "abrir imagem".
-                          <button onClick={() => setImagemAberta(m.midia_url)} aria-label="Abrir a imagem em tela cheia"
+                          <button onClick={() => { setRetratoAberto(false); setImagemAberta(m.midia_url); }} aria-label="Abrir a imagem em tela cheia"
                                   style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", display: "block", borderRadius: 6 }}>
                             <img src={m.midia_url} alt="Imagem recebida na conversa" loading="lazy" decoding="async" onLoad={() => { if (pertoDoFim) fimRef.current?.scrollIntoView(); }} style={{ maxWidth: "min(260px, 62vw)", maxHeight: 320, width: "auto", height: "auto", borderRadius: 6, display: "block" }} />
                           </button>
@@ -6552,7 +6687,7 @@ export default function Painel({ sessao }) {
                           aoReagir={(e) => { setRostoAberto(null); reagir(m, e); }} />
                       )}
                       {saida && (
-                        <div style={{ width: 28, flexShrink: 0 }}>{ultimaDoGrupo ? <Avatar nome={m.enviado_por || meuNome} foto={m.enviado_por_foto || (m.enviado_por === meuNome ? minhaFoto : null)} size={28} /> : null}</div>
+                        <div style={{ width: 28, flexShrink: 0 }}>{ultimaDoGrupo ? <Avatar nome={quem.nome || meuNome} foto={quem.foto} size={28} /> : null}</div>
                       )}
                     </div>
                     )}
@@ -6905,14 +7040,16 @@ export default function Painel({ sessao }) {
                   </div>
                 );
               }
-              const Marco = ({ rotulo, l, msg }) => (
+              const Marco = ({ rotulo, l, msg }) => {
+                const quem = quemFalou(msg);
+                return (
                 <div style={{ marginBottom: 14 }}>
                   <div style={{ fontSize: 11, color: C.textSecondary, fontWeight: 700, letterSpacing: 0.3, textTransform: "uppercase", marginBottom: 6 }}>{rotulo}</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                    <Avatar nome={msg.enviado_por || "equipe"} foto={msg.enviado_por_foto} size={32} />
+                    <Avatar nome={quem.nome || "equipe"} foto={quem.foto} size={32} />
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {msg.enviado_por || "equipe"}
+                        {quem.nome || "equipe"}
                       </div>
                       <div style={{ fontSize: 12, color: C.textSecondary }}>
                         {dataHoraDe(msg.criado_em)} · por {l.adv ? comNumero(l.adv) : "telefone removido"}
@@ -6921,6 +7058,7 @@ export default function Painel({ sessao }) {
                   </div>
                 </div>
               );
+              };
               return (
                 <>
                   <Marco rotulo="Primeira mensagem enviada" l={primeira} msg={primeira.primeira} />
@@ -7339,7 +7477,7 @@ export default function Painel({ sessao }) {
           conversa e há mais de uma — na foto de perfil, ampliada pelo cabeçalho,
           não há próxima nem anterior. */}
       {imagemAberta && (
-        <div onClick={() => setImagemAberta(null)} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,.9)", zIndex: 100, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+        <div onClick={() => { setImagemAberta(null); setRetratoAberto(false); }} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,.9)", zIndex: 100, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
           <div style={{ position: "absolute", top: 16, right: 20, display: "flex", gap: 18, alignItems: "center" }}>
             {temGaleria && (
               <span style={{ color: "rgba(255,255,255,.75)", fontSize: 13, fontVariantNumeric: "tabular-nums" }}>
@@ -7349,7 +7487,7 @@ export default function Painel({ sessao }) {
             <button onClick={(e) => { e.stopPropagation(); baixarImagem(imagemAberta); }} title="Baixar imagem" style={{ background: "transparent", border: "none", cursor: "pointer", color: "#fff", display: "flex" }}>
               <Download size={26} />
             </button>
-            <button onClick={() => setImagemAberta(null)} title="Fechar" style={{ ...BOTAO_ICONE, color: "#fff" }}>
+            <button onClick={() => { setImagemAberta(null); setRetratoAberto(false); }} title="Fechar" style={{ ...BOTAO_ICONE, color: "#fff" }}>
               <X size={28} />
             </button>
           </div>
@@ -7371,8 +7509,21 @@ export default function Painel({ sessao }) {
             </button>
           )}
 
-          <img src={imagemAberta} alt="imagem" onClick={(e) => e.stopPropagation()}
-               style={{ maxWidth: "88%", maxHeight: temGaleria ? "76%" : "92%", borderRadius: 8, objectFit: "contain" }} />
+          {/* A FOTO DE PERFIL PRECISA SER AMPLIADA; a da conversa, não.
+              As duas caíam na mesma regra, e essa regra só dizia até onde a
+              imagem podia CRESCER. Foto de conversa chega com 1500 ou 3000
+              pixels de lado, e para ela é justamente esse teto que importa.
+              Foto de perfil chega com 200 ou 300 — e, sem nada mandando
+              ampliar, o navegador desenhava os 300 pixels no meio de uma tela
+              de 1400. Era a "foto que abre pequena": ela não estava encolhida,
+              estava do tamanho natural.
+              `width` fixa com `height: auto` amplia mantendo a proporção; o
+              `min()` impede que uma foto alta estoure a altura da janela. */}
+          <img src={imagemAberta} alt={retratoAberto ? "Foto do contato" : "imagem"} onClick={(e) => e.stopPropagation()}
+               data-retrato={retratoAberto ? "1" : undefined}
+               style={retratoAberto
+                 ? { width: "min(86vw, 74vh, 520px)", height: "auto", borderRadius: 12, objectFit: "contain" }
+                 : { maxWidth: "88%", maxHeight: temGaleria ? "76%" : "92%", borderRadius: 8, objectFit: "contain" }} />
 
           {/* A FITA. Rola sozinha até a imagem aberta, senão numa conversa com
               trinta fotos a marcada fica fora da vista e a fita parece travada. */}
@@ -7380,7 +7531,7 @@ export default function Painel({ sessao }) {
             <div className="sem-scrollbar" onClick={(e) => e.stopPropagation()}
                  style={{ position: "absolute", bottom: 16, left: 0, right: 0, display: "flex", gap: 8, justifyContent: "safe center", overflowX: "auto", padding: "0 18px" }}>
               {imagensDaConversa.map((url, i) => (
-                <button key={url + i} onClick={() => setImagemAberta(url)}
+                <button key={url + i} onClick={() => { setRetratoAberto(false); setImagemAberta(url); }}
                         ref={i === posNaGaleria ? (el) => el && el.scrollIntoView({ block: "nearest", inline: "center" }) : undefined}
                         title={`Imagem ${i + 1}`}
                         style={{ flex: "none", width: 62, height: 62, padding: 0, borderRadius: 6, cursor: "pointer", overflow: "hidden", background: "rgba(255,255,255,.08)", border: i === posNaGaleria ? "2px solid #25d366" : "2px solid transparent", opacity: i === posNaGaleria ? 1 : 0.6 }}>
@@ -7766,7 +7917,7 @@ export default function Painel({ sessao }) {
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8 }}>
                   {acervoFiltrado.map((m) => (
                     <button key={m.id}
-                            onClick={() => { if (m.tipo === "imagem") { setMidiasAberta(false); setImagemAberta(m.midia_url); } else { window.open(m.midia_url, "_blank", "noopener"); } }}
+                            onClick={() => { if (m.tipo === "imagem") { setMidiasAberta(false); setRetratoAberto(false); setImagemAberta(m.midia_url); } else { window.open(m.midia_url, "_blank", "noopener"); } }}
                             title={nomePorConversa[m.conversa_id] || ""}
                             style={{ position: "relative", border: "none", padding: 0, aspectRatio: "1 / 1", borderRadius: 8, overflow: "hidden", cursor: "pointer", background: C.inputBg }}>
                       {m.tipo === "imagem"
