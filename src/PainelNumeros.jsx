@@ -436,10 +436,10 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
                           gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
               <Tempo C={C} estilos={estilos} etiqueta="Tempo de resposta"
                      mediana={t.resposta_mediana} media={t.resposta_media} quantos={t.respostas}
-                     ajuda="Do momento em que o cliente escreve até a nossa primeira resposta. Mensagens seguidas dele contam como uma pergunta só." />
+                     ajuda="Do momento em que o contato escreve até a nossa primeira resposta. Mensagens seguidas dele contam como uma pergunta só." />
               <Tempo C={C} estilos={estilos} etiqueta="Tempo para atender"
                      mediana={t.espera_mediana} media={t.espera_media} quantos={t.esperas}
-                     ajuda="Do início do atendimento até a primeira resposta. Só vale quando foi o cliente quem procurou: quando nós procuramos primeiro, não há espera para medir." />
+                     ajuda="Do início do atendimento até a primeira resposta. Só vale quando foi o contato quem procurou: quando nós procuramos primeiro, não há espera para medir." />
             </div>
 
             <Situacao t={t} C={C} cores={cores} estilos={estilos} />
@@ -795,7 +795,7 @@ function Situacao({ t, C, cores, estilos }) {
       </div>
       <div style={{ ...estilos.nota, marginTop: 12 }}>
         Os três somam o total: cada atendimento está em um, e num só.
-        {" "}<b style={{ color: C.textPrimary }}>Aguardando</b> é o cliente que escreveu e não teve
+        {" "}<b style={{ color: C.textPrimary }}>Aguardando</b> é o contato que escreveu e não teve
         resposta nenhuma — inclusive os antigos, que são justamente os que doem.
         {" "}<b style={{ color: C.textPrimary }}>Encerrado</b> é o que foi respondido e está parado
         há mais de 6 horas; ninguém precisa clicar em nada para encerrar.
@@ -1157,7 +1157,7 @@ function Atendentes({ C, estilos, cores, dados, meuId, selecionado, podeEscolher
           <th style={estilos.th}>Atendente</th>
           <th style={estilos.thNum}>Atendimentos</th>
           <th style={estilos.thNum}>Enviadas</th>
-          <th style={estilos.thNum} title="Mediana do tempo entre o cliente escrever e esta pessoa responder">Resposta</th>
+          <th style={estilos.thNum} title="Mediana do tempo entre o contato escrever e esta pessoa responder">Resposta</th>
           <th style={estilos.thNum} title="Mediana do tempo entre o atendimento começar e esta pessoa pegá-lo">Atender</th>
         </tr></thead>
         <tbody>

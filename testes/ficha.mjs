@@ -62,7 +62,7 @@ async function abrir(nomeDaConversa) {
   await page.waitForTimeout(1200);
 }
 async function abrirFicha() {
-  const b = page.getByRole("button", { name: /Ficha do cliente/ });
+  const b = page.getByRole("button", { name: /Ficha no Vantoro/ });
   if (await b.count()) await b.first().click();
   await page.waitForTimeout(1500);
 }

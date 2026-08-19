@@ -45,7 +45,7 @@ const BRIDGE_URL = (import.meta.env.VITE_BRIDGE_URL || "").replace(/\/$/, "");
 // um tipo novo, é uma linha aqui — e um tipo desconhecido cai num texto
 // genérico em vez de mostrar o código cru para quem está atendendo.
 const RESUMO_ALTERACAO = {
-  cadastro: "alterou o cadastro do cliente",
+  cadastro: "alterou o cadastro do contato",
   nota_criada: "escreveu uma nota interna",
   nota_editada: "editou uma nota interna",
   nota_apagada: "apagou uma nota interna",
@@ -5623,10 +5623,10 @@ export default function Painel({ sessao }) {
                             equipe a ignorar justamente a parte nova da tela. */}
                         {(doVantoro.length > 0 || vantoroBuscando || vantoroErro || (vantoroVazio && !lista.length)) && (
                           <>
-                            <div style={{ ...TITULO, paddingTop: 16 }}>CLIENTES DO VANTORO</div>
+                            <div style={{ ...TITULO, paddingTop: 16 }}>PESSOAS DO VANTORO</div>
                             {!doVantoro.length && vantoroBuscando && <div style={RECADO}>Procurando no Vantoro…</div>}
                             {!doVantoro.length && !vantoroBuscando && vantoroErro && <div style={RECADO}>{vantoroErro}</div>}
-                            {vantoroVazio && !lista.length && <div style={RECADO}>Nenhum cliente com esse nome no Vantoro.</div>}
+                            {vantoroVazio && !lista.length && <div style={RECADO}>Nenhuma pessoa com esse nome no Vantoro.</div>}
                             {doVantoro.map((l) => (
                               <div key={l.chave} role="button" onClick={() => conversarComClienteVantoro(l)} style={LINHA} onMouseEnter={(e) => realce(e, true)} onMouseLeave={(e) => realce(e, false)}>
                                 <Avatar nome={l.nome} size={44} />
@@ -6372,7 +6372,7 @@ export default function Painel({ sessao }) {
               )}
               {/* Ficha do cliente no Vantoro (cadastro, esteira, processos) */}
               <button onClick={() => setFichaAberta((v) => !v)}
-                      title="Ficha do cliente no Vantoro"
+                      title="Ficha no Vantoro"
                       style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10, background: fichaAberta ? C.listActive : "transparent" }}>
                 <ClipboardList size={19} color={fichaAberta ? C.green : C.textSecondary} />
               </button>
@@ -6395,7 +6395,7 @@ export default function Painel({ sessao }) {
                         // se o problema é dela.
                         else mostrarAviso("Não consegui identificar o contato desta conversa.");
                       }}
-                      title="Histórico de atendimento deste cliente"
+                      title="Histórico de atendimento"
                       style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10, background: historico ? C.listActive : "transparent" }}>
                 <History size={19} color={historico ? C.green : C.textSecondary} />
               </button>
