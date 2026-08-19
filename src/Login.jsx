@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "./supabase.js";
 import { instalarSessao } from "./sessao.js";
+import { aplicarAparencia } from "./aparencia.js";
 import { Mail, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
 import Marca from "./Marca";
 
@@ -59,6 +60,14 @@ export default function Login() {
   }, []);
 
   const C = escuro ? PALETA.escuro : PALETA.claro;
+
+  // O NAVEGADOR PRECISA SABER O TEMA AQUI TAMBÉM. Esta é a primeira tela do
+  // dia, e é a que tem campos: sem o aviso, o iPhone põe uma faixa branca em
+  // cima do teclado assim que se toca em "Usuário".
+  // A cor sólida é a do fundo do degradê — é ela que aparece nas bordas.
+  useEffect(() => {
+    aplicarAparencia(escuro, escuro ? "#0b141a" : "#eef2f1");
+  }, [escuro]);
 
   async function entrar(e) {
     e.preventDefault();

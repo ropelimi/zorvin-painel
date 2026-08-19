@@ -312,6 +312,73 @@ console.log("\nA barra de escrever");
      barra ? `tinha ${barra.largura}px` : "");
 }
 
+console.log("\nO navegador sabe que o Zorvin está no escuro");
+{
+  // O RELATO, COM FOTO: no iPhone, ao tocar na caixa de escrever, aparece uma
+  // faixa BRANCA em cima do teclado, e bordas brancas embaixo. Num app todo
+  // escuro, salta aos olhos.
+  //
+  // A faixa é do iPhone e NÃO dá para tirar de dentro de uma página — o
+  // aplicativo do WhatsApp consegue porque é um aplicativo de verdade. O que
+  // dá é ela não ser branca: o Safari desenha as coisas dele na cor clara
+  // enquanto a página não disser que está no escuro, e o Zorvin nunca dizia.
+  async function comOTema(qual) {
+    await page.evaluate((m) => localStorage.setItem("zorvin_modo", m), qual);
+    await page.reload();
+    await page.waitForSelector("[data-conversa-nome]");
+    await page.waitForTimeout(600);
+    return page.evaluate(() => ({
+      esquema: getComputedStyle(document.documentElement).colorScheme,
+      fundoDoHtml: getComputedStyle(document.documentElement).backgroundColor,
+      fundoDoBody: getComputedStyle(document.body).backgroundColor,
+      barraDoNavegador: (document.querySelector('meta[name="theme-color"]') || {})
+        .getAttribute?.("content") || null,
+    }));
+  }
+
+  /** Uma cor é clara? Serve para dizer "isto vai aparecer branco no escuro".
+   *
+   *  Aceita as duas formas, e não é capricho: o navegador devolve os fundos
+   *  calculados como "rgb(…)", e a etiqueta do tema guarda o que foi escrito,
+   *  que é "#202c33". Ler só uma delas dava a mesma resposta para as duas
+   *  cores — foi assim que esta conferência reprovou uma correção que estava
+   *  certa. */
+  const ehClara = (cor) => {
+    const t = String(cor || "").trim();
+    let r, g, b;
+    const hex = t.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+    if (hex) {
+      const h = hex[1].length === 3 ? hex[1].replace(/./g, (c) => c + c) : hex[1];
+      [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+    } else {
+      const n = t.match(/[\d.]+/g);
+      if (!n || n.length < 3) return true;           // transparente conta como claro
+      if (n.length > 3 && Number(n[3]) === 0) return true;
+      [r, g, b] = n.slice(0, 3).map(Number);
+    }
+    return (r * 299 + g * 587 + b * 114) / 1000 > 128;
+  };
+
+  const escuro = await comOTema("escuro");
+  ok("no tema escuro, a página se declara escura", escuro.esquema === "dark",
+     `dizia "${escuro.esquema}" — é isto que faz o Safari desenhar a barra do teclado no escuro`);
+  ok("e o papel embaixo de tudo não é claro", !ehClara(escuro.fundoDoHtml),
+     `o html estava ${escuro.fundoDoHtml} — é esta a "borda branca" que aparece quando a tela balança`);
+  ok("nem o do corpo da página", !ehClara(escuro.fundoDoBody), `o body estava ${escuro.fundoDoBody}`);
+  ok("e a barra do navegador acompanha", !!escuro.barraDoNavegador && !ehClara(escuro.barraDoNavegador),
+     `dizia ${escuro.barraDoNavegador}`);
+
+  // E NO CLARO TEM DE VOLTAR. Uma correção que deixa o tema claro escuro é
+  // meio conserto: metade do escritório usa cada um.
+  const claro = await comOTema("claro");
+  ok("no tema claro, a página se declara clara", claro.esquema === "light",
+     `dizia "${claro.esquema}"`);
+  ok("e o papel embaixo volta a ser claro", ehClara(claro.fundoDoHtml),
+     `o html estava ${claro.fundoDoHtml}`);
+  ok("com a barra do navegador junto", !!claro.barraDoNavegador && ehClara(claro.barraDoNavegador),
+     `dizia ${claro.barraDoNavegador}`);
+}
+
 console.log("\nAs telas de dentro, uma a uma");
 {
   // Cada painel que abre por cima. No celular todos eles têm de caber em 390
