@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "./supabase.js";
+import { instalarSessao } from "./sessao.js";
 import { Mail, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
 import Marca from "./Marca";
 
@@ -100,16 +101,46 @@ export default function Login() {
         return;
       }
 
-      // O bilhete vira sessão. É de uso único: se esta troca falhar, é preciso
-      // pedir outro — por isso ela não é repetida em silêncio.
-      const { error } = await supabase.auth.verifyOtp({
-        token_hash: corpo.token_hash, type: "email",
-      });
-      if (error) {
+      // ABRIR A SESSÃO — DOIS CAMINHOS, E O SEGUNDO NÃO PRECISA DE NINGUÉM.
+      //
+      // O de sempre: o bilhete de uso único vira sessão. É o preferido porque
+      // a sessão que sai dele se renova sozinha, e a pessoa fica entrada o
+      // quanto quiser.
+      //
+      // O outro: a ponte assina a sessão e ela vem pronta na resposta. É a
+      // rede de segurança para o dia 19/08 — o Auth do Supabase fora do ar
+      // uma manhã inteira, com o banco de pé, e o escritório na porta.
+      //
+      // Os dois vêm juntos quando dá, e não é excesso: `generateLink` (na
+      // ponte) e `verifyOtp` (aqui) são duas chamadas ao MESMO serviço doente,
+      // e elas falham separadas. Ter o segundo no bolso cobre o caso de a
+      // primeira ter passado e a segunda não.
+      let entrou = false;
+
+      if (corpo.token_hash) {
+        const { error } = await supabase.auth.verifyOtp({
+          token_hash: corpo.token_hash, type: "email",
+        });
+        entrou = !error;
+      }
+
+      if (!entrou && corpo.sessao) {
+        if (await instalarSessao(corpo.sessao)) {
+          // RECARREGA, e não é preguiça: é assim que a biblioteca do Supabase
+          // encontra a sessão guardada, pelo caminho normal dela, sem que este
+          // arquivo precise saber como ela avisa o resto da tela. Uma
+          // recarga logo depois de entrar é a hora mais barata que existe.
+          window.location.reload();
+          return;
+        }
+      }
+
+      if (!entrou) {
         setErro("Entrei no Vantoro mas não consegui abrir a sessão. Tente de novo.");
         setEntrando(false);
       }
-      // Se der certo, o App detecta a sessão e troca para o painel sozinho.
+      // Dando certo pelo primeiro caminho, o App detecta a sessão e troca para
+      // o painel sozinho.
     } catch (err) {
       // TRÊS FALHAS DIFERENTES, TRÊS FRASES DIFERENTES. Antes as três caíam na
       // mensagem que o navegador tivesse dado — em inglês, e igual para todas.
