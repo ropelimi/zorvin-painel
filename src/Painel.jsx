@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { supabase } from "./supabase.js";
+import { aplicarAparencia } from "./aparencia.js";
 import {
   Search, Send, Paperclip, Smile, ChevronDown, MoreVertical,
   MessageSquare, Mic, CheckCheck, LogOut, ArrowLeft, Sun, Moon,
@@ -1108,6 +1109,10 @@ export default function Painel({ sessao }) {
   });
   useEffect(() => {
     try { localStorage.setItem("zorvin_modo", modo); } catch (_) { /* ignora */ }
+    // E CONTA AO NAVEGADOR. Sem isto ele desenha as coisas DELE na cor clara
+    // por cima de um app escuro: a faixa branca em cima do teclado do iPhone,
+    // as bordas brancas quando a tela balança, as barras de rolagem.
+    aplicarAparencia(modo === "escuro", TEMAS[modo].headerBar);
   }, [modo]);
   const [advogados, setAdvogados] = useState([]);
   // Os departamentos saem do BANCO, não de uma lista escrita aqui: é isso que
