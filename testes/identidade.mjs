@@ -27,6 +27,25 @@ const page = await ctx.newPage();
 const erros = [];
 page.on("pageerror", (e) => erros.push("pageerror: " + e.message));
 
+// A PONTE DE MENTIRA, para a busca da foto maior. `FOTO_GRANDE` é a resposta
+// quando ela acha; `SEM_ROTA` é o servidor da Uazapi que não tem nenhuma das
+// rotas conhecidas — o caso em que a tela precisa dizer alguma coisa em vez de
+// deixar o botão girando.
+const FOTO_GRANDE = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NDAiIGhlaWdodD0iNjQwIj48cmVjdCB3aWR0aD0iNjQwIiBoZWlnaHQ9IjY0MCIgZmlsbD0iIzBiNmJjYiIvPjwvc3ZnPg==";
+let SEM_ROTA = false;
+await page.route("**/ponte-de-mentira/**", async (rota) => {
+  const url = new URL(rota.request().url());
+  if (url.pathname.endsWith("/contato/foto")) {
+    if (SEM_ROTA) {
+      return rota.fulfill({ status: 502, contentType: "application/json",
+        body: JSON.stringify({ ok: false, erro: "Não consegui buscar a foto agora. Ela aparece maior sozinha na próxima mensagem deste contato." }) });
+    }
+    return rota.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ ok: true, foto_url: FOTO_GRANDE, trocou: true }) });
+  }
+  rota.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+});
+
 await page.goto(PAGINA);
 await page.waitForSelector("[data-conversa-nome]");
 await page.waitForTimeout(1500);
@@ -141,6 +160,45 @@ console.log("\nA foto do contato abre grande");
   await page.waitForTimeout(400);
 }
 
+console.log("\nBuscar a foto maior");
+{
+  // A foto guardada tem 160 pixels — é o tamanho de uma miniatura de perfil, e
+  // é dela que vem o "abre grande, porém embaçada". Ampliar não resolve; o que
+  // resolve é ir buscar a foto cheia.
+  await page.locator("[title='Ver a foto']").click();
+  await page.waitForTimeout(700);
+  ok("com foto pequena, o botão de buscar aparece",
+     await page.locator("[data-buscar-foto]").count() === 1);
+
+  // O SERVIDOR QUE NÃO TEM A ROTA. Primeiro este caso, porque é o que a tela
+  // erraria calada: o botão girando para sempre.
+  SEM_ROTA = true;
+  await page.locator("[data-buscar-foto]").click();
+  await page.waitForTimeout(900);
+  const aviso = await page.locator("[role='alert']").innerText().catch(() => "");
+  ok("quando não dá, ela diz em português", /não consegui/i.test(aviso),
+     `dizia: "${aviso}"`);
+  ok("e o botão volta a poder ser clicado",
+     await page.locator("[data-buscar-foto]").isDisabled() === false);
+
+  SEM_ROTA = false;
+  await page.locator("[data-buscar-foto]").click();
+  await page.waitForTimeout(1200);
+  const depois = await page.evaluate(() => {
+    const img = document.querySelector('img[data-retrato="1"]');
+    if (!img) return null;
+    return { largura: Math.round(img.getBoundingClientRect().width), natural: img.naturalWidth };
+  });
+  ok("achando a foto cheia, ela abre grande de verdade",
+     !!depois && depois.natural >= 600 && depois.largura >= 500,
+     `veio ${JSON.stringify(depois)}`);
+  ok("e o botão some, porque não há mais o que buscar",
+     await page.locator("[data-buscar-foto]").count() === 0);
+
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(400);
+}
+
 console.log("\nA foto da conversa continua como estava");
 {
   // A regra nova vale só para o retrato. Uma foto de conversa chega grande e o
@@ -161,27 +219,6 @@ console.log("\nA foto da conversa continua como estava");
     await page.keyboard.press("Escape");
     await page.waitForTimeout(300);
   }
-}
-
-console.log("\nTrocar o nome agora vale para trás");
-{
-  // O relato inteiro em um gesto: renomeia no cadastro e recarrega. Toda a
-  // conversa tem de passar a dizer o nome novo — inclusive o que foi escrito
-  // antes da troca.
-  // `addInitScript` e não `evaluate`: a bancada é montada de novo a cada
-  // carregamento, então mexer no objeto depois some no F5 — e é o F5 que prova
-  // que a troca valeu para o histórico inteiro, e não só para a tela aberta.
-  await page.addInitScript(() => { globalThis.__NOME_NOVO_U1 = "RODRIGO DE OUTRO JEITO"; });
-  await page.reload();
-  await page.waitForSelector("[data-conversa-nome]");
-  await page.waitForTimeout(1500);
-  await abrirAConversa();
-  const t = await corpo();
-  ok("a conversa inteira passa a dizer o nome novo",
-     /RODRIGO DE OUTRO JEITO/.test(t));
-  ok("e nenhuma bolha ficou com o nome anterior",
-     !/Rodrigo Sousa/.test(t) && !/Rodrigo ADMIN/.test(t),
-     "sobrou nome antigo em alguma bolha");
 }
 
 console.log("\nA mensagem que saiu pelo celular");
@@ -231,15 +268,22 @@ console.log("\nVer quem participou da conversa");
 
   // A MESMA PESSOA UMA VEZ SÓ. A lista tinha o NOME de chave, então quem
   // trocou de nome entrava duas vezes — e a conta apagada, uma terceira.
-  // O nome vem do CADASTRO, e não escrito à mão: a seção anterior renomeia a
-  // pessoa, então cravar "Rodrigo" aqui reprovaria por causa do teste.
+  // O nome vem do CADASTRO, e não escrito à mão: uma seção adiante renomeia a
+  // pessoa, e cravar "Rodrigo" aqui reprovaria por causa do teste.
   const euHoje = await page.evaluate(() =>
     (globalThis.__TABELAS.usuarios.find((u) => u.id === "u1") || {}).nome);
   const vezes = lista.filter((l) => l.nome === euHoje).length;
   ok("a mesma pessoa aparece UMA vez, e não uma por nome que já teve",
      vezes === 1,
      `"${euHoje}" apareceu ${vezes}× em ${JSON.stringify(lista.map((l) => l.nome))}`
-     + " — ela escreveu com o nome velho, com o novo e pela conta apagada");
+     + " — ela escreveu com o nome velho, com o novo, pela conta apagada"
+     + " e com o começo do e-mail");
+  // NENHUM NOME REPETIDO, venha de onde vier. Duas linhas com o mesmo nome na
+  // tela são sempre erro: quem lê não tem como saber que são a mesma pessoa.
+  const nomes = lista.map((l) => (l.nome || "").trim());
+  ok("e nenhum nome aparece duas vezes na lista",
+     new Set(nomes).size === nomes.length,
+     `veio: ${JSON.stringify(nomes)}`);
   ok("e ninguém aparece com o nome antigo",
      !lista.some((l) => /Rodrigo ADMIN/.test(l.nome || "")),
      `veio: ${JSON.stringify(lista.map((l) => l.nome))}`);
@@ -253,6 +297,50 @@ console.log("\nVer quem participou da conversa");
   await page.keyboard.press("Escape");
   await page.waitForTimeout(400);
   ok("Escape fecha", await page.locator("[data-participante]").count() === 0);
+}
+
+console.log("\nTrocar o nome agora vale para trás");
+{
+  // O relato inteiro em um gesto: renomeia no cadastro e recarrega. Toda a
+  // conversa tem de passar a dizer o nome novo — inclusive o que foi escrito
+  // antes da troca.
+  // `addInitScript` e não `evaluate`: a bancada é montada de novo a cada
+  // carregamento, então mexer no objeto depois some no F5 — e é o F5 que prova
+  // que a troca valeu para o histórico inteiro, e não só para a tela aberta.
+  await page.addInitScript(() => { globalThis.__NOME_NOVO_U1 = "RODRIGO DE OUTRO JEITO"; });
+  await page.reload();
+  await page.waitForSelector("[data-conversa-nome]");
+  await page.waitForTimeout(1500);
+  await abrirAConversa();
+  const t = await corpo();
+  ok("a conversa inteira passa a dizer o nome novo",
+     /RODRIGO DE OUTRO JEITO/.test(t));
+
+  // AS BOLHAS QUE TÊM ID, uma a uma — e não o texto da página inteira.
+  // A página inteira inclui uma mensagem assinada só com o começo do e-mail,
+  // que o de-para resolve por TEXTO ("rodrigo" → "Rodrigo Sousa"). Uma linha
+  // dessas não tem como acompanhar um renome: ela aponta para um nome, não
+  // para uma pessoa. O script `de-para-pela-pessoa` preenche o id dessas
+  // linhas justamente para isso — e enquanto ele não roda, ficar no nome que a
+  // linha manda é o certo, não um defeito.
+  const assinaturas = await page.evaluate(() => {
+    const de = (t) => {
+      const b = [...document.querySelectorAll("[data-msg-id]")]
+        .find((e) => (e.innerText || "").includes(t));
+      return b ? b.innerText.split("\n")[0] : null;
+    };
+    return {
+      nomeVelho: de("quando eu tinha outro nome"),
+      contaApagada: de("pela conta de administrador"),
+      depois: de("depois de trocar o nome"),
+    };
+  });
+  ok("as bolhas com id acompanham o renome",
+     Object.values(assinaturas).every((n) => /RODRIGO DE OUTRO JEITO/.test(n || "")),
+     JSON.stringify(assinaturas));
+  ok("e nenhuma delas ficou com o nome anterior",
+     !Object.values(assinaturas).some((n) => /Rodrigo ADMIN|Rodrigo Sousa/.test(n || "")),
+     JSON.stringify(assinaturas));
 }
 
 console.log("\nSem a vista no banco");

@@ -1237,6 +1237,8 @@ export default function Painel({ sessao }) {
   // Quantos pixels a foto TEM de verdade. Ampliar além do dobro disso não
   // mostra mais nada — só borra o que já estava lá.
   const [larguraDoRetrato, setLarguraDoRetrato] = useState(0);
+  const [buscandoFoto, setBuscandoFoto] = useState(false);
+  const [erroDaFoto, setErroDaFoto] = useState("");
   const [aviso, setAviso] = useState(null); // toast discreto (texto)
   // A FILA DE ANEXOS aguardando envio. Era UM anexo por vez: colar três prints
   // mandava o primeiro e descartava os outros dois em silêncio, e quem mandava
@@ -1425,7 +1427,14 @@ export default function Painel({ sessao }) {
           if (!porNome[chave]) porNome[chave] = { id: null, nome: d.nome_novo || d.nome_antigo, foto: null, rotulo: true };
           continue;
         }
+        // `nome_novo` SEM `usuario_id` é o caso das linhas antigas do de-para,
+        // feitas quando só havia texto para comparar ("rodrigo" → "Rodrigo
+        // Sousa"). Ele não pode virar uma pessoa nova: era assim que a MESMA
+        // pessoa aparecia duas vezes em "quem participou" — uma vinda do id,
+        // com foto, e outra vinda daqui, sem. O nome novo é procurado na
+        // equipe primeiro; só se não achar ninguém é que fica sendo só texto.
         const alvo = (d.usuario_id && porId[String(d.usuario_id)])
+                  || (d.nome_novo && porNome[chaveDeNome(d.nome_novo)])
                   || (d.nome_novo ? { id: null, nome: d.nome_novo, foto: null } : null);
         if (!alvo) continue;
         // Não atropela quem existe de verdade com esse nome.
@@ -2116,6 +2125,39 @@ export default function Painel({ sessao }) {
       mostrarAviso("Foto atualizada!");
     } catch (_) {
       mostrarAviso("Não consegui atualizar a foto.");
+    }
+  }
+
+  /** Pede à ponte que busque de novo a foto de perfil deste contato.
+   *
+   *  A foto guardada pode ser a MINIATURA — era o campo que vinha na frente no
+   *  webhook, e foi corrigido lá. As já guardadas, porém, só melhorariam quando
+   *  o contato voltasse a escrever: um cliente calado há um mês ficaria com a
+   *  miniatura para sempre. Aqui se pede na hora.
+   */
+  async function buscarFotoMaior() {
+    if (!conversaId || buscandoFoto) return;
+    setBuscandoFoto(true); setErroDaFoto("");
+    try {
+      const r = await chamarPonte("/contato/foto", {
+        method: "POST", body: JSON.stringify({ conversa_id: conversaId }),
+      });
+      if (!r || !r.foto_url) throw new Error("Não veio foto nenhuma.");
+      if (!r.trocou) {
+        setErroDaFoto("Esta é a maior foto que o WhatsApp tem deste contato.");
+        return;
+      }
+      // A lista e a foto aberta, as duas: sem a primeira, o avatar do topo
+      // continuaria mostrando a miniatura até recarregar a página.
+      setConversas((atual) => atual.map((c) => (
+        c.contato && String(c.id) === String(conversaId)
+          ? { ...c, contato: { ...c.contato, foto_url: r.foto_url } } : c)));
+      setLarguraDoRetrato(0);
+      setImagemAberta(r.foto_url);
+    } catch (e) {
+      setErroDaFoto((e && e.message) || "Não consegui buscar a foto agora.");
+    } finally {
+      setBuscandoFoto(false);
     }
   }
 
@@ -5300,7 +5342,7 @@ export default function Painel({ sessao }) {
       // NEM APARELHO NEM RÓTULO. A pergunta do grupinho é "com quem eu falo
       // sobre este cliente", e nenhum dos dois tem a quem perguntar.
       if (!q.nome || q.aparelho || q.rotulo) continue;
-      const chave = q.id || "nome:" + q.nome.trim().toLowerCase();
+      const chave = q.id || "nome:" + chaveDeNome(q.nome);
       const antes = mapa.get(chave);
       if (!antes) { mapa.set(chave, { ...q, quantas: 1, ultimaEm: m.criado_em }); continue; }
       antes.quantas++;
@@ -5308,9 +5350,34 @@ export default function Painel({ sessao }) {
       // A primeira aparição pode ser de antes da foto existir; a de depois tem.
       if (!antes.foto && q.foto) antes.foto = q.foto;
     }
+
+    // E, POR ÚLTIMO, JUNTA PELO NOME o que sobrou sem id.
+    //
+    // Duas linhas com o MESMO nome na tela são sempre erro: quem lê não tem
+    // como saber que são a mesma pessoa vista por dois caminhos — um pelo id,
+    // com foto, e outro por um de-para que só tinha texto. Aconteceu em
+    // produção, com "Rodrigo Sousa" duas vezes.
+    //
+    // A checagem acima, por chave, não alcança isso: as chaves são diferentes
+    // de propósito (uma é o id, a outra é o nome). Esta passada é a rede de
+    // segurança — ela olha o que vai APARECER, e é isso que precisa estar
+    // certo, venha de onde vier.
+    const porNomeVisivel = new Map();
+    for (const p of mapa.values()) {
+      const chave = chaveDeNome(p.nome);
+      const antes = porNomeVisivel.get(chave);
+      if (!antes) { porNomeVisivel.set(chave, p); continue; }
+      // Fica quem tem id (é a pessoa de verdade); as contagens somam.
+      const [dono, outro] = antes.id ? [antes, p] : [p, antes];
+      dono.quantas += outro.quantas;
+      if (!dono.foto && outro.foto) dono.foto = outro.foto;
+      if (new Date(outro.ultimaEm) > new Date(dono.ultimaEm)) dono.ultimaEm = outro.ultimaEm;
+      porNomeVisivel.set(chave, dono);
+    }
+
     // Quem falou mais na frente: é a ordem que responde "quem está tocando este
     // atendimento", que é a pergunta de quem olha o grupinho.
-    return [...mapa.values()].sort((a, b) => b.quantas - a.quantas);
+    return [...porNomeVisivel.values()].sort((a, b) => b.quantas - a.quantas);
   })();
 
   // Os nomes de quem está marcado no filtro de atendentes, na ordem em que
@@ -7701,6 +7768,38 @@ export default function Painel({ sessao }) {
                  ? { width: `min(86vw, 74vh, ${larguraDoRetrato ? Math.max(300, Math.min(520, larguraDoRetrato * 2)) : 520}px)`,
                      height: "auto", borderRadius: 12, objectFit: "contain" }
                  : { maxWidth: "88%", maxHeight: temGaleria ? "76%" : "92%", borderRadius: 8, objectFit: "contain" }} />
+
+          {/* BUSCAR A FOTO MAIOR.
+              Só aparece quando a foto aberta é pequena DE VERDADE — abaixo dos
+              400 pixels, que é o tamanho em que a ampliação começa a borrar.
+              Um botão que aparecesse sempre viraria enfeite: na foto que já
+              está boa ele não teria o que fazer, e a pessoa clicaria assim
+              mesmo, esperando alguma coisa.
+              A ponte vai perguntar à Uazapi de novo. Se o servidor não tiver
+              nenhuma das rotas conhecidas, ela responde isso em português — o
+              botão não fica girando para sempre. */}
+          {retratoAberto && larguraDoRetrato > 0 && larguraDoRetrato < 400 && (
+            <div onClick={(e) => e.stopPropagation()}
+                 style={{ position: "absolute", bottom: 24, left: 0, right: 0, display: "flex",
+                          flexDirection: "column", alignItems: "center", gap: 8 }}>
+              <div style={{ color: "rgba(255,255,255,.7)", fontSize: 12.5 }}>
+                Esta foto foi guardada em tamanho pequeno ({larguraDoRetrato} pixels).
+              </div>
+              <button data-buscar-foto disabled={buscandoFoto}
+                      onClick={buscarFotoMaior}
+                      style={{ border: "1px solid rgba(255,255,255,.35)", background: "rgba(255,255,255,.12)",
+                               color: "#fff", borderRadius: 20, padding: "8px 16px", fontSize: 13,
+                               fontWeight: 600, cursor: buscandoFoto ? "default" : "pointer",
+                               opacity: buscandoFoto ? .6 : 1 }}>
+                {buscandoFoto ? "Buscando…" : "Buscar a foto maior"}
+              </button>
+              {erroDaFoto && (
+                <div role="alert" style={{ color: "#ffb4a2", fontSize: 12.5, maxWidth: 420, textAlign: "center" }}>
+                  {erroDaFoto}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* A FITA. Rola sozinha até a imagem aberta, senão numa conversa com
               trinta fotos a marcada fica fora da vista e a fita parece travada. */}
