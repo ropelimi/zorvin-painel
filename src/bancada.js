@@ -310,7 +310,10 @@ const APELIDO = {
   // O nome que a EQUIPE daria aqui dentro. Começa nulo: é o estado que a tela
   // precisa saber criar, e semeá-lo faria o teste passar sem nada funcionar.
   nome_zorvin: null,
-  foto_url: null,
+  // COM FOTO, e pequena: é ela que o retrato amplia. Uma foto de perfil de
+  // WhatsApp chega com 100 ou 200 pixels de lado, e era esse tamanho que a
+  // tela desenhava no meio de uma janela de 1400.
+  foto_url: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNjAiIGhlaWdodD0iMTYwIj48cmVjdCB3aWR0aD0iMTYwIiBoZWlnaHQ9IjE2MCIgZmlsbD0iIzBiNmJjYiIvPjwvc3ZnPg==",
 };
 // O nome que está no cadastro do Vantoro, e que o teste espera ver no
 // cabeçalho depois de abrir a ficha.
@@ -433,6 +436,71 @@ for (let i = 1; i <= 200; i++) {
     criado_em: new Date(HA_TRES_MESES + i * 60e3).toISOString(),
   });
 }
+
+// O NOME VELHO E A FALTA DE FOTO, NA MESMA CONVERSA.
+//
+// É o relato inteiro numa montagem só. A MESMA pessoa (`u1`) escreveu três
+// vezes na conversa fixada:
+//
+//   • quando se chamava "Rodrigo ADMIN" e não tinha foto  → mensagem e nota
+//   • depois de trocar o nome e pôr a foto                → mensagem
+//
+// O que estava errado: as duas primeiras continuavam assinadas "Rodrigo ADMIN"
+// e com a bolinha de iniciais, porque a mensagem guarda o nome e a foto do dia
+// do envio. E no grupinho de avatares do topo ela aparecia DUAS vezes — o nome
+// era a chave, então "Rodrigo ADMIN" e "Rodrigo Sousa" eram duas pessoas.
+//
+// O nome de hoje e a foto de hoje estão em `usuarios` (a vista `equipe`), e é
+// de lá que a tela tira o que desenha.
+export const NOME_VELHO = "Rodrigo ADMIN";
+// Uma imagem DE VERDADE, em `data:`, e não um endereço de mentira: o
+// `Avatar` cai para as iniciais quando a foto não carrega, então uma URL
+// que dá 404 desenharia exatamente o defeito que o teste procura — e a
+// prova reprovaria por causa do instrumento.
+// 120 pixels de lado de propósito: é o tamanho de uma foto de perfil de
+// verdade, e é dele que sai a foto "que abre pequena".
+export const FOTO_DE_HOJE = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjAiIGhlaWdodD0iMTIwIj48cmVjdCB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgZmlsbD0iIzAwYTg4NCIvPjwvc3ZnPg==";
+export const FOTO_JENIFER = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjAiIGhlaWdodD0iMTIwIj48cmVjdCB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgZmlsbD0iIzdjNWNmZiIvPjwvc3ZnPg==";
+export const FOTO_CONTATO = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNjAiIGhlaWdodD0iMTYwIj48cmVjdCB3aWR0aD0iMTYwIiBoZWlnaHQ9IjE2MCIgZmlsbD0iIzBiNmJjYiIvPjwvc3ZnPg==";
+MENSAGENS.push({
+  id: "m-nome-velho", conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
+  origem: "advogado", tipo: "texto",
+  texto: "escrevi isto quando eu tinha outro nome e nenhuma foto",
+  enviado_por: NOME_VELHO, enviado_por_id: "u1", enviado_por_foto: null,
+  criado_em: new Date(Date.now() - 5 * 3600e3).toISOString(),
+});
+MENSAGENS.push({
+  id: "m-nome-novo", conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
+  origem: "advogado", tipo: "texto",
+  texto: "e isto depois de trocar o nome e pôr a foto",
+  enviado_por: "Rodrigo Sousa", enviado_por_id: "u1", enviado_por_foto: FOTO_DE_HOJE,
+  criado_em: new Date(Date.now() - 4 * 3600e3).toISOString(),
+});
+// E UMA MENSAGEM SEM ID NENHUM, do histórico anterior à coluna existir, mas
+// assinada com o nome que a pessoa TEM hoje: é o único caso em que dá para
+// devolver a foto a uma mensagem antiga, casando pelo nome.
+MENSAGENS.push({
+  id: "m-so-nome", conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
+  origem: "advogado", tipo: "texto",
+  texto: "histórico antigo, sem id de quem escreveu",
+  enviado_por: "jenifer almeida", enviado_por_id: null, enviado_por_foto: null,
+  // ENTRE as duas do Rodrigo, e não depois: mensagens seguidas da mesma pessoa
+  // são agrupadas e só a última leva avatar. Coladas uma na outra, a antiga não
+  // desenharia avatar nenhum e o teste da foto não teria o que medir.
+  criado_em: new Date(Date.now() - 4.5 * 3600e3).toISOString(),
+});
+
+// UMA IMAGEM NA CONVERSA, para o visor em tela cheia ter o que abrir. A regra
+// de tamanho dele é diferente da do retrato do contato, e sem uma foto de
+// conversa aqui não haveria como provar que uma não estragou a outra.
+MENSAGENS.push({
+  id: "m-imagem", conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
+  origem: "contato", tipo: "imagem", texto: null,
+  midia_url: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjAwIiBoZWlnaHQ9IjgwMCI+PHJlY3Qgd2lkdGg9IjEyMDAiIGhlaWdodD0iODAwIiBmaWxsPSIjYzg2NDFlIi8+PC9zdmc+",
+  midia_mime: "image/svg+xml",
+  enviado_por: null, enviado_por_id: null,
+  criado_em: new Date(Date.now() - 2 * 3600e3).toISOString(),
+});
 
 // A MESMA PALAVRA, MUITAS VEZES, EM OUTROS TELEFONES.
 //
@@ -679,10 +747,19 @@ const TABELAS = {
   // ADMIN OU NÃO — o teste troca por `__SOU_ADMIN`. O Painel agora é de todo
   // mundo, e o que muda entre um caso e outro (o botão de escopo, e o recorte
   // que o banco impõe a quem não administra) só se prova entrando nos dois.
+  // `foto_url` mora AQUI, e não só no `user_metadata` da conta. O metadado só
+  // o próprio dono lê — era por isso que a foto precisava viajar copiada dentro
+  // de cada mensagem, e por isso que trocar de foto não mudava nada no que já
+  // estava escrito.
   usuarios: [
-    { id: "u1", admin: (typeof globalThis !== "undefined" && globalThis.__SOU_ADMIN === false) ? false : true, nome: "Rodrigo Sousa" },
-    { id: "u-jenifer", admin: false, nome: "JENIFER ALMEIDA" },
-    { id: "u-isabela", admin: false, nome: "ISABELA GUEDES" },
+    // `__NOME_NOVO_U1` é como o teste renomeia alguém no cadastro. Tem de ser
+    // lido AQUI, na montagem: mexer no objeto depois não sobrevive ao F5, e é
+    // justamente o F5 que prova que a troca valeu para o histórico inteiro.
+    { id: "u1", admin: (typeof globalThis !== "undefined" && globalThis.__SOU_ADMIN === false) ? false : true,
+      nome: (typeof globalThis !== "undefined" && globalThis.__NOME_NOVO_U1) || "Rodrigo Sousa",
+      foto_url: FOTO_DE_HOJE },
+    { id: "u-jenifer", admin: false, nome: "JENIFER ALMEIDA", foto_url: FOTO_JENIFER },
+    { id: "u-isabela", admin: false, nome: "ISABELA GUEDES", foto_url: null },
   ],
   permissoes: [],            // vazio + admin = alcança tudo
   mensagens: MENSAGENS,
@@ -701,7 +778,23 @@ const TABELAS = {
   // tela, e semear alguma aqui esconderia uma tela que não grava nada.
   alteracoes: [],
   mensagens_rapidas: [], figurinhas_favoritas: [], fila_envio: FILA_COM_ERRO,
+  // A VISTA `equipe`: as três colunas que a tela desenha, e nada mais.
+  //
+  // Um `get`, e não uma cópia: no banco ela é uma vista, então enxerga na hora
+  // o que mudar em `usuarios`. Uma cópia congelada aqui faria o teste de
+  // trocar a foto passar sem que a troca tivesse chegado a lugar nenhum.
+  get equipe() {
+    return this.usuarios.map((u) => ({ id: u.id, nome: u.nome, foto_url: u.foto_url ?? null }));
+  },
 };
+
+// O teste troca o nome de alguém no meio da prova — é o que o relato descreve.
+if (typeof globalThis !== "undefined") {
+  globalThis.__RENOMEAR_USUARIO = (id, nome) => {
+    const u = TABELAS.usuarios.find((x) => String(x.id) === String(id));
+    if (u) u.nome = nome;
+  };
+}
 
 // O teste lê a tabela de contatos daqui para conferir o que foi GRAVADO, e não
 // só o que apareceu na tela. Uma tela que mostra o nome certo sem ter gravado
@@ -753,7 +846,12 @@ function comparar(a, b) {
 
 /** Uma consulta encadeável que devolve sempre `{data, error}` no final. */
 function consulta(tabela) {
-  let linhas = (TABELAS[tabela] || []).slice();
+  // A VISTA QUE AINDA NÃO EXISTE. O código sobe antes do script — sempre sobe.
+  // Nesse intervalo a tela tem de continuar desenhando o nome e a foto que
+  // estão gravados na mensagem, e não uma conversa sem assinatura nenhuma.
+  const faltando = tabela === "equipe"
+    && typeof globalThis !== "undefined" && globalThis.__SEM_EQUIPE;
+  let linhas = faltando ? [] : (TABELAS[tabela] || []).slice();
   // O QUE FOI PEDIDO, e não só o resultado. É por isto que dá para saber se a
   // consulta varreu a tabela inteira ou entrou por um recorte — a diferença
   // entre uma busca que responde e uma que estoura o tempo.
@@ -852,6 +950,13 @@ function consulta(tabela) {
     // intenção e executa no fim, depois de os filtros terem sido aplicados.
     delete() { apagando = true; return eu; },
     async then(resolver) {
+      // A vista que ainda não foi criada responde como o PostgREST responde:
+      // com erro, e não com uma lista vazia. São coisas diferentes — "não
+      // existe" e "existe e está vazia" — e a tela precisa distinguir as duas.
+      if (faltando) {
+        return resolver({ data: null, count: null,
+          error: { code: "42P01", message: `relation "public.${tabela}" does not exist` } });
+      }
       if (tabela === "conversas") await espera(ATRASO_CONVERSAS);
       if (tabela === "mensagens") await espera(ATRASO_MENSAGENS);
       if (patch) linhas.forEach((l) => Object.assign(l, patch));
@@ -1176,6 +1281,20 @@ export const supabase = {
     // dito antes de a coluna existir — e isso é a maior parte do histórico.
     const semAcentoN = (t) => String(t ?? "").normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+    // TROCAR A PR\u00d3PRIA FOTO \u2014 s\u00f3 a pr\u00f3pria, s\u00f3 essa coluna. No banco \u00e9 uma
+    // fun\u00e7\u00e3o `security definer` com `where id = auth.uid()`, e \u00e9 isso que a
+    // bancada imita: `p_url` chega, `auth.uid()` n\u00e3o.
+    if (nome === "salvar_minha_foto") {
+      if (globalThis.__SEM_EQUIPE) {
+        return { data: null, error: { code: "PGRST202", message: "Could not find the function public.salvar_minha_foto" } };
+      }
+      const eu = TABELAS.usuarios[0];
+      if (eu) eu.foto_url = String((args && args.p_url) || "").trim() || null;
+      await espera(80);
+      return { data: null, error: null };
+    }
+
     if (nome === "atendentes_do_telefone" || nome === "conversas_por_atendente") {
       if (globalThis.__SEM_FILTRO_DE_ATENDENTE) {
         return { data: null, error: { code: "PGRST202", message: `Could not find the function public.${nome}` } };
