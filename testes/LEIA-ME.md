@@ -38,7 +38,7 @@ que aconteceu enquanto ela não tinha prova própria.
 |---|---|---|
 | `painel` | `vite` (desenvolvimento) | importa `src/supabase.js` direto para trocar o estado da bancada no meio do teste |
 | `desempenho` | `vite preview` (produção) | o React de desenvolvimento gasta em verificações que não existem em produção; medir ali mediria o instrumento |
-| `busca`, `telas`, `etiquetas` | qualquer um | |
+| `busca`, `telas`, `etiquetas`, `ficha`, `atendentes` | qualquer um | |
 
 O `npm run prova` cuida disso sozinho.
 
@@ -51,6 +51,8 @@ O `npm run prova` cuida disso sozinho.
 | **telas** | abre cada tela e cada modal escutando o console: no React 18 um erro não derruba a tela, mata a árvore onde aconteceu — um botão para de responder e mais nada acontece |
 | **desempenho** | quantas linhas a lista desenha, o tamanho do DOM, a latência de uma tecla num computador 4× mais lento, e se dá para chegar na conversa 1.200 |
 | **etiquetas** | a conversa fixada sobe ao topo mesmo morando na página 6 do banco, e o filtro por etiqueta acha as que estão fora da lista carregada |
+| **ficha** | a ficha do cliente traz o cadastro, aguenta uma ordem de serviço sem pendências, e não descarta em silêncio o que foi digitado |
+| **atendentes** | filtrar por quem participou da conversa, nos dois modos — "qualquer um" e "todos juntos" — inclusive no histórico antigo, que não tem o id de quem escreveu |
 
 ## Se o navegador não abrir
 

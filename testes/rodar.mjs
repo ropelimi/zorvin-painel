@@ -21,6 +21,7 @@ const PROVAS = [
   { nome: "etiquetas",   servidor: "dev" },
   { nome: "painel",      servidor: "dev" },
   { nome: "ficha",       servidor: "dev" },
+  { nome: "atendentes",  servidor: "dev" },
   { nome: "desempenho",  servidor: "producao" },
 ];
 
