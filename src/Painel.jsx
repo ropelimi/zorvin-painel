@@ -1598,9 +1598,20 @@ export default function Painel({ sessao }) {
     return !!ate && new Date(ate).getTime() > Date.now();
   }
 
-  // Quem (além de mim) está atendendo uma conversa agora. Considera "ativo"
-  // apenas nos últimos 3 minutos, para não travar conversa que alguém abriu e saiu.
+  // QUEM (ALÉM DE MIM) ESTÁ NESTA CONVERSA AGORA.
+  //
+  // "Agora" são os últimos 3 minutos: quem está com a conversa aberta reescreve
+  // a marca de minuto em minuto, então três minutos toleram dois pulsos
+  // perdidos sem passar a impressão de que a pessoa continua ali.
+  //
+  // O `void tique` é o que faltava, e é a diferença entre um aviso e um aviso
+  // EM TEMPO REAL. Sem ele, esta conta só era refeita quando alguma outra
+  // coisa mandava a tela redesenhar — e como ninguém escreve nada no banco ao
+  // SAIR de uma conversa, não havia nenhuma outra coisa. O aviso aparecia na
+  // hora em que a pessoa chegava e depois ficava na tela para sempre,
+  // apontando alguém que tinha saído havia meia hora.
   function atendidoPorOutro(convId) {
+    void tique; // re-avalia a cada "tique", igual ao "digitando…"
     const a = atendimentos[convId];
     if (!a || !a.por || a.por === meuNome) return null;
     if (a.em && Date.now() - new Date(a.em).getTime() > 3 * 60 * 1000) return null;
@@ -3281,6 +3292,35 @@ export default function Painel({ sessao }) {
     return () => clearInterval(id);
   }, [conversaId]);
 
+  // AO SAIR DA CONVERSA, A MARCA É APAGADA.
+  //
+  // Faltava esta metade. Entrar escrevia "estou aqui"; sair não escrevia nada.
+  // O melhor que podia acontecer era o aviso vencer sozinho três minutos
+  // depois — e nem isso acontecia, porque nada mandava a tela recontar.
+  //
+  // Apagando na saída, quem está do outro lado vê o aviso sumir na hora, pelo
+  // mesmo aviso de tempo real que o fez aparecer.
+  //
+  // `.eq('atendendo_por', meuNome)` NÃO É DETALHE: entre eu abrir e eu sair,
+  // outra pessoa pode ter entrado e a marca já ser dela. Apagar sem conferir
+  // apagaria a presença de quem está lá agora — e o aviso sumiria da tela de
+  // alguém justamente quando ele passou a ser verdade.
+  //
+  // Fechar a aba no X continua sem apagar nada: o navegador não dá tempo de
+  // uma escrita sair. Esse caso fica com os 3 minutos, que agora funcionam.
+  useEffect(() => {
+    if (!conversaId || !RECURSOS.atendendo) return undefined;
+    const saindoDe = conversaId;
+    const quemSouEu = meuNome;
+    return () => {
+      supabase.from("conversas")
+        .update({ atendendo_por: null, atendendo_em: null })
+        .eq("id", saindoDe)
+        .eq("atendendo_por", quemSouEu)
+        .then(() => {});
+    };
+  }, [conversaId, meuNome]);
+
   // ---- Ajusta a altura da caixa de texto conforme escreve (várias linhas) ----
   //
   // `scrollHeight` JÁ INCLUI o respiro de cima e de baixo. Numa caixa
@@ -3631,16 +3671,25 @@ export default function Painel({ sessao }) {
     }
   }, [conversaId]);
 
-  // "Tique" a cada 2s só quando há alguém "digitando…", para expirar o aviso
-  // (não fica re-renderizando a lista à toa quando ninguém está digitando).
+  // "Tique" a cada 2s ENQUANTO houver um aviso com hora para vencer — alguém
+  // "digitando…" ou alguém junto na conversa aberta. Fora disso ele não roda:
+  // um relógio de 2 segundos ligado o dia todo redesenharia a lista inteira
+  // trinta vezes por minuto sem nada ter mudado.
+  //
+  // O `tique` está nas dependências de propósito: a cada batida o efeito é
+  // reavaliado, e quando o último aviso vence a condição vira falsa e o
+  // relógio se desliga sozinho.
   useEffect(() => {
     // "Há alguém digitando" é ter algum prazo AINDA no futuro. Contar as
     // chaves do mapa não servia: uma entrada vencida conta igual a uma viva.
-    const vivo = Object.values(digitandos).some((a) => new Date(a).getTime() > Date.now());
-    if (!vivo) return;
+    const digitando = Object.values(digitandos).some((a) => new Date(a).getTime() > Date.now());
+    // E "há alguém junto" é a conversa ABERTA ter outra pessoa dentro. Só ali
+    // o aviso aparece, então só ali o relógio precisa correr.
+    const acompanhado = !!(conversaId && atendidoPorOutro(conversaId));
+    if (!digitando && !acompanhado) return undefined;
     const id = setInterval(() => setTique((t) => t + 1), 2000);
     return () => clearInterval(id);
-  }, [digitandos, tique]);
+  }, [digitandos, atendimentos, conversaId, meuNome, tique]);
 
   // Acompanha a largura da janela (para o layout de celular).
   useEffect(() => {
