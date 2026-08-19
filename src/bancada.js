@@ -1489,7 +1489,14 @@ export const supabase = {
     }), error: null };
   },
   auth: {
-    getSession: async () => ({ data: { session: { access_token: "jwt-de-mentira", user: { id: "u1", email: "rodrigo@ropelimi",
+    // `__DESLOGADO` mostra a TELA DE ENTRADA. Sem ele a bancada já entra
+    // logada, e a tela de entrada — que é a primeira que a equipe vê todo dia,
+    // e a única que fala com a ponte antes de haver sessão — nunca era
+    // exercitada por prova nenhuma.
+    getSession: async () => (
+      (typeof globalThis !== "undefined" && globalThis.__DESLOGADO)
+        ? { data: { session: null } }
+        : { data: { session: { access_token: "jwt-de-mentira", user: { id: "u1", email: "rodrigo@ropelimi",
       // O nome VELHO, congelado na criação da conta. Se a tela mostrar este,
       // a correção não funcionou.
       user_metadata: { nome: "rodrigo" } } } } }),

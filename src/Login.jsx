@@ -17,12 +17,27 @@ import Marca from "./Marca";
 // celular) e estilos 100% inline (sem CSS externo), como o resto do app.
 const BRIDGE_URL = (import.meta.env.VITE_BRIDGE_URL || "").replace(/\/$/, "");
 
+// Quanto tempo esperar a ponte responder à entrada.
+//
+// 75 segundos porque o teto tem de ser MAIOR do que o tempo de a Render
+// acordar o servidor (30 a 60 segundos na primeira chamada do dia). Um limite
+// curto transformaria uma espera que ia dar certo num erro.
+//
+// Vem de variável para poder ser encurtado na bancada: provar a desistência
+// esperando 75 segundos de verdade seria uma prova que ninguém roda. E, se um
+// dia a Render ficar mais lenta, muda-se o número sem mexer no código.
+const LIMITE_MS = Number(import.meta.env.VITE_LIMITE_LOGIN_MS) || 75000;
+
 export default function Login() {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [verSenha, setVerSenha] = useState(false);
   const [erro, setErro] = useState("");
   const [entrando, setEntrando] = useState(false);
+  // "A ponte pode estar dormindo". Aparece depois de alguns segundos de espera,
+  // e não na hora: a maioria das entradas responde em menos de um segundo, e um
+  // aviso que pisca em toda tentativa vira ruído.
+  const [demorando, setDemorando] = useState(false);
   const [foco, setFoco] = useState(""); // "email" | "senha" — realce do campo ativo
   const [escuro, setEscuro] = useState(false);
 
@@ -43,6 +58,21 @@ export default function Login() {
     if (entrando) return;
     setErro("");
     setEntrando(true);
+    setDemorando(false);
+
+    // TEMPO LIMITE E AVISO — os dois faltavam, e o resultado era este:
+    // a pessoa apertava Entrar, o botão girava por um minuto e aparecia
+    // "Load failed", que é o Safari dizendo em inglês que a conexão não
+    // completou. Não diz o que houve nem o que fazer.
+    //
+    // O QUE COSTUMA SER: a ponte roda no plano gratuito da Render e hiberna
+    // quando fica um tempo sem receber nada. A primeira chamada do dia acorda
+    // o servidor, e isso leva de trinta segundos a um minuto — mais do que o
+    // navegador do celular espera antes de desistir.
+    //
+    const relogio = new AbortController();
+    const avisar = setTimeout(() => setDemorando(true), 4000);
+    const estourou = setTimeout(() => relogio.abort(), LIMITE_MS);
     try {
       if (!BRIDGE_URL) throw new Error("O endereço da ponte não está configurado (VITE_BRIDGE_URL).");
 
@@ -50,6 +80,7 @@ export default function Login() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ login: email.trim(), senha }),
+        signal: relogio.signal,
       });
       const corpo = await r.json().catch(() => null);
       if (!r.ok || !corpo || !corpo.ok) {
@@ -72,8 +103,27 @@ export default function Login() {
       }
       // Se der certo, o App detecta a sessão e troca para o painel sozinho.
     } catch (err) {
-      setErro((err && err.message) || "Não foi possível falar com o servidor.");
+      // TRÊS FALHAS DIFERENTES, TRÊS FRASES DIFERENTES. Antes as três caíam na
+      // mensagem que o navegador tivesse dado — em inglês, e igual para todas.
+      if (err && err.name === "AbortError") {
+        setErro("O servidor demorou demais para responder. Ele hiberna quando "
+              + "fica um tempo parado; tente de novo, que a segunda vez costuma "
+              + "entrar na hora.");
+      } else if (err instanceof TypeError) {
+        // `TypeError` é o que `fetch` lança quando a conexão nem chegou a
+        // acontecer: sem internet, servidor fora do ar, DNS. O Safari escreve
+        // "Load failed" e o Chrome, "Failed to fetch" — nenhuma das duas diz
+        // nada a quem está tentando entrar.
+        setErro("Não consegui falar com o servidor. Verifique a conexão e tente "
+              + "de novo; se continuar, avise quem administra.");
+      } else {
+        setErro((err && err.message) || "Não foi possível entrar agora.");
+      }
       setEntrando(false);
+    } finally {
+      clearTimeout(avisar);
+      clearTimeout(estourou);
+      setDemorando(false);
     }
   }
 
@@ -200,6 +250,19 @@ export default function Login() {
             {entrando && <Loader2 size={18} style={{ animation: "zv-spin 0.8s linear infinite" }} />}
             {entrando ? "Entrando…" : "Entrar"}
           </button>
+
+          {/* A ESPERA EXPLICADA, ENQUANTO ELA ACONTECE.
+              Um botão girando sem fim é indistinguível de um travamento: a
+              pessoa fecha a página, tenta de novo, e é justamente a segunda
+              tentativa que entraria na hora. Dizer o que está havendo é o que
+              a faz esperar mais dez segundos em vez de desistir. */}
+          {entrando && demorando && (
+            <div role="status" style={{ marginTop: 12, fontSize: 12.5, lineHeight: 1.5,
+                                        color: C.textSecondary, textAlign: "center" }}>
+              O servidor estava dormindo e está acordando. A primeira entrada do
+              dia pode levar até um minuto — depois dela, tudo fica rápido.
+            </div>
+          )}
         </form>
 
         <div style={{ textAlign: "center", fontSize: 12, color: C.textSecondary, marginTop: 22, lineHeight: 1.5 }}>
