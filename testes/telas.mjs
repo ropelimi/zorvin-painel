@@ -139,6 +139,63 @@ await tela("tudo de novo, no tema escuro", async () => {
 //  O QUE AS TELAS FAZEM, e não só se elas abrem
 // ==================================================================
 
+console.log("\nA mensagem que não saiu");
+// ==================================================================
+// A bolha vermelha dizia só "não enviado". Quem atende ficava sem saber se o
+// número está errado, se o cliente não tem WhatsApp ou se é coisa de um minuto
+// — e cada um desses casos pede uma ação diferente.
+//
+// E a mensagem SUMIA ao recarregar a página: ela nunca chega em `mensagens`, e
+// a bolha só existia na memória do navegador. Sumia o texto que a pessoa
+// escreveu, o motivo e o botão de reenviar, os três de uma vez — ficava a
+// impressão de que tinha sido enviada.
+{
+  await fecharTudo();
+  await page.locator("[data-conversa-nome]").first().click();
+  await page.waitForTimeout(1600);
+
+  const motivo = await page.evaluate(() => globalThis.__MOTIVO_CONHECIDO);
+  const cru = await page.evaluate(() => globalThis.__ERRO_CRU);
+  const corpo = () => page.locator("body").innerText();
+
+  ok("a mensagem que falhou aparece na conversa",
+     (await corpo()).includes("segue o documento que combinamos"),
+     "ela nunca chegou em `mensagens`; se a tela não ler a fila, some");
+  ok("e diz POR QUE não saiu", (await corpo()).includes(motivo.slice(0, 40)),
+     "a bolha continua dizendo só “não enviado”");
+
+  // O caso que mais importa: erro que a ponte não reconheceu.
+  ok("erro desconhecido mostra o texto cru, sem inventar explicação",
+     (await corpo()).includes("bule de cha"),
+     `o texto técnico era: ${cru}`);
+
+  // ---- sobrevive ao F5 ----
+  await page.reload();
+  await page.waitForSelector("[data-conversa-nome]");
+  await page.waitForTimeout(1200);
+  await page.locator("[data-conversa-nome]").first().click();
+  await page.waitForTimeout(1600);
+  ok("e continua lá depois de atualizar a página",
+     (await corpo()).includes("segue o documento que combinamos"),
+     "atualizar a página apagava a mensagem e o motivo junto");
+
+  // ---- dispensar ----
+  // Falha que não tem conserto precisa poder sair da tela. Uma tela cheia de
+  // alarme que ninguém pode resolver é uma tela cujo alarme se aprende a ignorar.
+  const dispensar = page.getByRole("button", { name: "Dispensar este aviso" });
+  ok("dá para dispensar o aviso", await dispensar.count() > 0);
+  if (await dispensar.count()) {
+    await dispensar.first().click();
+    await page.waitForTimeout(1200);
+    const gravado = await page.evaluate(() =>
+      (globalThis.__TABELAS.fila_envio || []).find((f) => f.id === 901)?.status);
+    ok("e dispensar grava no banco, em vez de só sumir da tela",
+       gravado === "descartada", `a linha ficou como "${gravado}"`);
+    ok("a mensagem dispensada some da conversa",
+       !(await corpo()).includes("segue o documento que combinamos"));
+  }
+}
+
 console.log("\nEmojis");
 {
   await fecharTudo();

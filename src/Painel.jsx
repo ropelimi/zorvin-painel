@@ -767,6 +767,60 @@ function MetaBolha({ C, m, saida, flutuante, aoReenviar }) {
   );
 }
 
+// POR QUE ESTA NÃO SAIU.
+//
+// Antes a bolha dizia só "não enviado". Quem atende ficava sem saber se o
+// número está errado, se o cliente não tem WhatsApp, se a linha do escritório
+// caiu ou se foi coisa de um minuto — e cada um desses casos pede uma ação
+// diferente. Sem o motivo, a única ação possível era clicar em reenviar e
+// torcer; num número sem WhatsApp, isso é clicar para sempre.
+//
+// Quando a ponte não reconhece o erro, aparece o texto técnico como ele veio.
+// É feio, mas é verdadeiro — e uma frase genérica no lugar de um motivo
+// desconhecido seria pior, porque pareceria resposta.
+//
+// O "dispensar" existe pelo mesmo motivo: falha que não tem conserto precisa
+// poder sair da tela. Uma tela cheia de alarme que ninguém pode resolver é uma
+// tela cujo alarme se aprende a ignorar.
+function MotivoDoErro({ C, m, aoDispensar }) {
+  const motivo = m._motivo || null;
+  const detalhe = m._detalhe || null;
+  if (!motivo && !detalhe) return null;
+  return (
+    // Encostado na bolha que ele explica: mesma margem da direita (a coluna do
+    // avatar), largura parecida, empurrado para a direita. Solto à esquerda ele
+    // parecia um recado de outra pessoa em vez de uma observação sobre aquela
+    // mensagem. O fundo é o vermelho da bolha diluído — o mesmo tom em qualquer
+    // um dos dois temas, porque é transparência e não cor fixa.
+    <div data-motivo-erro style={{
+      maxWidth: "min(420px, 72%)", marginLeft: "auto", marginRight: 34,
+      marginTop: 2, marginBottom: 8, padding: "8px 11px",
+      background: "rgba(229,87,63,.09)", border: "1px solid rgba(229,87,63,.55)",
+      borderRadius: 9,
+      fontSize: 12, lineHeight: 1.45, color: C.textPrimary,
+    }}>
+      {motivo || (
+        <>
+          Não deu para enviar, e o Zorvin não reconheceu o motivo. O que o
+          servidor respondeu foi:
+          <div style={{ marginTop: 4, fontFamily: "ui-monospace, monospace", fontSize: 11,
+                        color: C.textSecondary, wordBreak: "break-word" }}>
+            {String(detalhe).slice(0, 300)}
+          </div>
+        </>
+      )}
+      {aoDispensar && (
+        <button onClick={aoDispensar}
+                style={{ display: "block", marginTop: 6, border: "none", background: "transparent",
+                         padding: 0, color: C.textSecondary, fontSize: 11.5, cursor: "pointer",
+                         textDecoration: "underline" }}>
+          Dispensar este aviso
+        </button>
+      )}
+    </div>
+  );
+}
+
 // EMPURRA DE VOLTA PARA DENTRO qualquer coisa que abra ao lado de uma bolha.
 //
 // A fileira de emojis e o menu nascem grudados na mensagem, e a mensagem pode
@@ -2665,7 +2719,43 @@ export default function Painel({ sessao }) {
         .order("criado_em", { ascending: true });
       if (!nErr) notas = (ns || []).map((n) => ({ ...n, id: "nota-" + n.id, origem: "nota" }));
     } catch (_) { /* tabela ainda não criada: segue sem notas */ }
-    const juntas = [...recentes, ...notas].sort(
+    // ------------------------------------------------------------
+    //  AS QUE NÃO SAÍRAM
+    //
+    //  Mensagem que falhou nunca chega em `mensagens` — ela fica na fila de
+    //  envio, marcada com erro. A bolha vermelha só existia na memória do
+    //  navegador, então recarregar a página fazia a mensagem SUMIR: o texto que
+    //  a pessoa escreveu, o motivo da falha e o botão de reenviar, os três de
+    //  uma vez. Ficava a impressão de que tinha sido enviada.
+    //
+    //  Agora elas são lidas da fila e voltam para a conversa, no horário em que
+    //  foram escritas. Se a tabela ainda não tiver as colunas novas, a leitura
+    //  falha e a conversa abre sem elas — como abria antes.
+    let naoSairam = [];
+    try {
+      const { data: falhas } = await supabase.from("fila_envio")
+        .select("*").eq("conversa_id", convId).eq("status", "erro")
+        .order("criado_em", { ascending: true }).limit(50);
+      naoSairam = (falhas || []).map((f) => ({
+        id: "fila-" + f.id,
+        conversa_id: convId,
+        origem: "advogado",
+        tipo: f.tipo || "texto",
+        texto: f.texto || null,
+        midia_url: f.midia_url || null,
+        midia_mime: f.midia_mime || null,
+        enviado_por: f.enviado_por || null,
+        enviado_por_foto: f.enviado_por_foto || null,
+        criado_em: f.criado_em,
+        _status: "erro",
+        _filaId: f.id,
+        _motivo: f.erro_motivo || null,
+        _detalhe: f.erro_detalhe || null,
+        _midiaUrlFinal: f.midia_url || null,
+      }));
+    } catch (_) { /* fila sem as colunas novas: a conversa abre sem elas */ }
+
+    const juntas = [...recentes, ...notas, ...naoSairam].sort(
       (a, b) => new Date(a.criado_em) - new Date(b.criado_em)
     );
     // Se troquei de conversa enquanto esta busca estava em andamento, descarta o
@@ -2961,7 +3051,12 @@ export default function Painel({ sessao }) {
               ((row.texto && m.texto === row.texto) || (row.midia_url && m._midiaUrlFinal === row.midia_url));
             if (!casa) return m;
             marcado = true;
-            return { ...m, _status: "erro" };
+            // O MOTIVO VEM JUNTO. Sem ele a bolha só sabe dizer "não enviado",
+            // e quem atende não tem como saber se o número está errado, se o
+            // cliente não tem WhatsApp ou se é coisa de um minuto — cada um
+            // desses casos pede uma ação diferente.
+            return { ...m, _status: "erro", _filaId: row.id,
+                     _motivo: row.erro_motivo || null, _detalhe: row.erro_detalhe || null };
           });
         });
       })
@@ -4062,8 +4157,28 @@ export default function Painel({ sessao }) {
   }
 
   // Reenvia uma mensagem que falhou (recoloca na fila, mantendo a citação/anexo).
+  /** Tira da tela um envio que falhou e não vai adiantar repetir.
+   *
+   *  Não apaga a linha: ela vira 'descartada', que é um estado que a ponte não
+   *  processa. O registro de que houve a tentativa continua no banco — quem
+   *  for investigar depois precisa dele. O que sai é o alarme na tela. */
+  async function dispensarFalha(msg) {
+    if (!msg._filaId) return;
+    const { error } = await supabase.from("fila_envio")
+      .update({ status: "descartada" }).eq("id", msg._filaId).select("id");
+    if (error) { mostrarAviso("Não consegui dispensar este aviso agora."); return; }
+    setMensagens((prev) => prev.filter((m) => m.id !== msg.id));
+  }
+
   async function reenviar(msg) {
     setMensagens((prev) => prev.map((m) => (m.id === msg.id ? { ...m, _status: "enviando" } : m)));
+    // O item ANTIGO sai da fila de erros. Reenviar cria uma linha nova; sem
+    // aposentar a velha, a bolha vermelha voltaria a cada recarregamento da
+    // página mesmo depois de a mensagem ter saído — e ninguém entenderia por quê.
+    if (msg._filaId) {
+      supabase.from("fila_envio").update({ status: "descartada" }).eq("id", msg._filaId)
+        .then(() => {}, () => {});
+    }
     let payload;
     if (msg.tipo && msg.tipo !== "texto") {
       // Anexo: reaproveita a URL do Storage (não o blob local, que a ponte não baixa).
@@ -6176,6 +6291,12 @@ export default function Painel({ sessao }) {
                         <div style={{ width: 28, flexShrink: 0 }}>{ultimaDoGrupo ? <Avatar nome={m.enviado_por || meuNome} foto={m.enviado_por_foto || (m.enviado_por === meuNome ? minhaFoto : null)} size={28} /> : null}</div>
                       )}
                     </div>
+                    )}
+                    {/* Fora da bolha, e logo abaixo dela: o motivo é sobre a
+                        mensagem, não parte do que foi escrito ao cliente. */}
+                    {m._status === "erro" && (
+                      <MotivoDoErro C={C} m={m}
+                        aoDispensar={m._filaId ? () => dispensarFalha(m) : null} />
                     )}
                   </React.Fragment>
                 );
