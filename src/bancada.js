@@ -506,6 +506,15 @@ MENSAGENS.push({
   criado_em: new Date(Date.now() - 5.5 * 3600e3).toISOString(),
 });
 
+// E A MESMA PESSOA ASSINANDO COM O COMEÇO DO E-MAIL — o de-para antigo.
+MENSAGENS.push({
+  id: "m-de-para-antigo", conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
+  origem: "advogado", tipo: "texto",
+  texto: "assinei com o começo do e-mail, lá no comeco de tudo",
+  enviado_por: "rodrigo", enviado_por_id: null, enviado_por_foto: null,
+  criado_em: new Date(Date.now() - 5.7 * 3600e3).toISOString(),
+});
+
 // A MENSAGEM QUE SAIU PELO CELULAR, na conversa de prova.
 //
 // Quando alguém responde pelo aplicativo do WhatsApp em vez de responder pelo
@@ -826,6 +835,12 @@ const TABELAS = {
   atendentes_de_para: [
     { nome_antigo: NOME_VELHO, usuario_id: "u1", nome_novo: null, e_pessoa: true },
     { nome_antigo: "Cadastro - C&A", usuario_id: null, nome_novo: null, e_pessoa: false },
+    // A LINHA ANTIGA, sem `usuario_id`. As primeiras linhas do de-para foram
+    // feitas quando só havia texto para comparar: o começo do e-mail
+    // ("rodrigo") apontando para o nome por extenso. Ela era o que fazia a
+    // MESMA pessoa aparecer duas vezes em "quem participou" — uma vinda do id,
+    // com foto, e outra vinda daqui, sem. Aconteceu em produção.
+    { nome_antigo: "rodrigo", usuario_id: null, nome_novo: "Rodrigo Sousa", e_pessoa: true },
   ],
   // A VISTA `equipe`: as três colunas que a tela desenha, e nada mais.
   //
