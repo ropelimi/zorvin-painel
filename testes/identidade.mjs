@@ -184,6 +184,33 @@ console.log("\nTrocar o nome agora vale para trás");
      "sobrou nome antigo em alguma bolha");
 }
 
+console.log("\nA mensagem que saiu pelo celular");
+{
+  // Ela é assinada com o rótulo "WhatsApp", porque o WhatsApp não diz qual
+  // atendente escreveu. Escrito assim, em negrito colorido como os nomes de
+  // verdade, lia-se como uma pessoa chamada WhatsApp.
+  const linha = await page.evaluate(() => {
+    const b = [...document.querySelectorAll("[data-msg-id]")]
+      .find((e) => (e.innerText || "").includes("direto do aplicativo"));
+    return b ? b.innerText.split("\n")[0] : null;
+  });
+  ok("a conversa tem a mensagem que saiu pelo celular", linha !== null,
+     "sem ela o teste não está olhando a conversa certa");
+  ok('ela não é mais assinada "WhatsApp"', !/WhatsApp/.test(linha || ""),
+     `assinada: "${linha}"`);
+  ok("e diz, em português, de onde veio", /celular/i.test(linha || ""),
+     `assinada: "${linha}"`);
+
+  const rotulo = await page.evaluate(() => {
+    const b = [...document.querySelectorAll("[data-msg-id]")]
+      .find((e) => (e.innerText || "").includes("histórico importado"));
+    return b ? b.innerText.split("\n")[0] : null;
+  });
+  ok("o rótulo do importador continua aparecendo na bolha",
+     /Cadastro/.test(rotulo || ""),
+     `a mensagem existiu e alguém a escreveu; sumir com a assinatura seria pior — veio: "${rotulo}"`);
+}
+
 console.log("\nVer quem participou da conversa");
 {
   // O grupinho mostra quatro rostos e um "+N". O "+N" DIZ que há mais gente e
@@ -215,6 +242,11 @@ console.log("\nVer quem participou da conversa");
      + " — ela escreveu com o nome velho, com o novo e pela conta apagada");
   ok("e ninguém aparece com o nome antigo",
      !lista.some((l) => /Rodrigo ADMIN/.test(l.nome || "")),
+     `veio: ${JSON.stringify(lista.map((l) => l.nome))}`);
+  // NEM APARELHO NEM RÓTULO. A pergunta do grupinho é "com quem eu falo sobre
+  // este cliente", e nenhum dos dois tem a quem perguntar.
+  ok("o celular e o rótulo do importador ficam de fora",
+     !lista.some((l) => /celular|WhatsApp|Cadastro/i.test(l.nome || "")),
      `veio: ${JSON.stringify(lista.map((l) => l.nome))}`);
 
   // Fechar tem de funcionar, senão a lista fica por cima da conversa.

@@ -506,6 +506,30 @@ MENSAGENS.push({
   criado_em: new Date(Date.now() - 5.5 * 3600e3).toISOString(),
 });
 
+// A MENSAGEM QUE SAIU PELO CELULAR, na conversa de prova.
+//
+// Quando alguém responde pelo aplicativo do WhatsApp em vez de responder pelo
+// Zorvin, a ponte assina com o rótulo "WhatsApp" — o WhatsApp não diz qual
+// atendente foi. Na base do escritório são 1556 mensagens em quatro semanas,
+// e todas apareciam assinadas "WhatsApp", como se fosse um colega com esse
+// nome. Entravam até no grupinho de rostos do topo.
+MENSAGENS.push({
+  id: "m-pelo-aparelho", conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
+  origem: "advogado", tipo: "texto",
+  texto: "respondi correndo, direto do aplicativo",
+  enviado_por: "WhatsApp", enviado_por_id: null, enviado_por_foto: null,
+  criado_em: new Date(Date.now() - 2.5 * 3600e3).toISOString(),
+});
+// E UM RÓTULO DO IMPORTADOR, que também não é gente — o nome da linha como
+// estava salvo no celular de quem exportou o histórico.
+MENSAGENS.push({
+  id: "m-rotulo-import", conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
+  origem: "advogado", tipo: "texto",
+  texto: "veio do histórico importado",
+  enviado_por: "Cadastro - C&A", enviado_por_id: null, enviado_por_foto: null,
+  criado_em: new Date(Date.now() - 2.4 * 3600e3).toISOString(),
+});
+
 // UMA IMAGEM NA CONVERSA, para o visor em tela cheia ter o que abrir. A regra
 // de tamanho dele é diferente da do retrato do contato, e sem uma foto de
 // conversa aqui não haveria como provar que uma não estragou a outra.

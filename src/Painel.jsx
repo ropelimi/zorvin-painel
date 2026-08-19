@@ -7,7 +7,7 @@ import {
   StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star,
   Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList, ShieldCheck,
   ChevronLeft, ChevronRight, Images, ExternalLink, Pin, Copy, Forward, Sticker,
-  History, BarChart3, Users
+  History, BarChart3, Users, Smartphone
 } from "lucide-react";
 import FichaVantoro from "./FichaVantoro";
 import { chamarPonte } from "./ponte.js";
@@ -1414,11 +1414,20 @@ export default function Painel({ sessao }) {
         .select("nome_antigo, usuario_id, nome_novo, e_pessoa").limit(1000);
       if (!vivo) return;
       for (const d of dePara || []) {
-        if (d.e_pessoa === false) continue;         // rótulo que não é gente
+        const chave = chaveDeNome(d.nome_antigo);
+        // RÓTULO QUE NÃO É GENTE — o nome da linha no celular de quem exportou
+        // o histórico ("Cadastro - C&A"). Ele entra na lista, e não é ignorado:
+        // ignorá-lo deixava o rótulo assinando a bolha como se fosse um colega,
+        // e entrando no grupinho de rostos do topo. Marcado como rótulo, ele
+        // continua aparecendo na bolha (a mensagem existiu e alguém a escreveu)
+        // mas fica de fora de "quem participou".
+        if (d.e_pessoa === false) {
+          if (!porNome[chave]) porNome[chave] = { id: null, nome: d.nome_novo || d.nome_antigo, foto: null, rotulo: true };
+          continue;
+        }
         const alvo = (d.usuario_id && porId[String(d.usuario_id)])
                   || (d.nome_novo ? { id: null, nome: d.nome_novo, foto: null } : null);
         if (!alvo) continue;
-        const chave = chaveDeNome(d.nome_antigo);
         // Não atropela quem existe de verdade com esse nome.
         if (!porNome[chave]) porNome[chave] = alvo;
       }
@@ -1452,7 +1461,23 @@ export default function Painel({ sessao }) {
     const id = (ehNota ? m.autor_id : m.enviado_por_id) || null;
     const nomeGravado = (ehNota ? m.autor : m.enviado_por) || null;
     const fotoGravada = (ehNota ? m.autor_foto : m.enviado_por_foto) || null;
+    // A MENSAGEM QUE SAIU PELO CELULAR.
+    //
+    // Quando alguém responde pelo aplicativo do WhatsApp em vez de responder
+    // por aqui, a ponte assina a mensagem com o rótulo "WhatsApp" — o WhatsApp
+    // não diz qual atendente foi, e inventar um seria pior. Só que "WhatsApp"
+    // escrito no lugar do nome se lê como uma pessoa chamada WhatsApp, e ainda
+    // entrava no grupinho de rostos do topo como se fosse mais um colega.
+    // Medido na base do escritório: 1556 mensagens em quatro semanas.
+    //
+    // Continua sendo o mesmo dado; muda a palavra e muda o lugar dela.
+    if (!id && chaveDeNome(nomeGravado) === "whatsapp") {
+      return { id: null, nome: "Pelo celular", foto: null, aparelho: true };
+    }
     const atual = deHoje(id, nomeGravado);
+    if (atual && atual.rotulo) {
+      return { id: null, nome: atual.nome, foto: null, rotulo: true };
+    }
     // A MINHA foto vem da sessão quando existe: quem acabou de trocar a foto
     // vê a nova na hora, sem esperar a próxima leitura da equipe.
     const souEu = (id && String(id) === String(meuId)) || (!id && nomeGravado === meuNome);
@@ -5272,7 +5297,9 @@ export default function Painel({ sessao }) {
     for (const m of mensagens) {
       if (m.origem !== "advogado" && m.origem !== "nota") continue;
       const q = quemFalou(m);
-      if (!q.nome) continue;
+      // NEM APARELHO NEM RÓTULO. A pergunta do grupinho é "com quem eu falo
+      // sobre este cliente", e nenhum dos dois tem a quem perguntar.
+      if (!q.nome || q.aparelho || q.rotulo) continue;
       const chave = q.id || "nome:" + q.nome.trim().toLowerCase();
       const antes = mapa.get(chave);
       if (!antes) { mapa.set(chave, { ...q, quantas: 1, ultimaEm: m.criado_em }); continue; }
@@ -6614,8 +6641,24 @@ export default function Painel({ sessao }) {
                           aoReagir={(e) => { setRostoAberto(null); reagir(m, e); }} />
                       )}
                       <div style={{ position: "relative", maxWidth: estreito ? "84%" : "65%", background: figurinhaNua ? "transparent" : (saida ? C.bubbleOut : C.bubbleIn), color: C.textPrimary, borderRadius: 8, padding: figurinhaNua ? 0 : (m.tipo === "imagem" ? 4 : "5px 7px 6px 9px"), boxShadow: figurinhaNua ? "none" : "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
+                        {/* O RÓTULO NÃO É UM NOME, e não se veste de nome.
+                            Em negrito e colorido como os outros, "Pelo celular"
+                            se lia como alguém chamado assim. Em cinza, com o
+                            desenho de um telefone, se lê como o que é: a
+                            mensagem saiu daqui, mas não por aqui. */}
                         {mostrarAutor && (
-                          <div style={{ fontSize: 12, fontWeight: 700, color: corNome(quem.nome, modo), marginBottom: 1 }}>{quem.nome}</div>
+                          quem.aparelho || quem.rotulo ? (
+                            <div title={quem.aparelho
+                                  ? "Saiu pelo aplicativo do WhatsApp, fora do Zorvin — o WhatsApp não diz qual atendente escreveu."
+                                  : "Rótulo do histórico importado, e não uma pessoa do escritório."}
+                                 style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5,
+                                          fontWeight: 600, color: C.textSecondary, marginBottom: 1 }}>
+                              {quem.aparelho ? <Smartphone size={12} /> : <History size={12} />}
+                              {quem.nome}
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: 12, fontWeight: 700, color: corNome(quem.nome, modo), marginBottom: 1 }}>{quem.nome}</div>
+                          )
                         )}
                         {m.id_uazapi && !m.apagada && (
                           <button data-menu-msg onClick={(ev) => {
@@ -6793,7 +6836,21 @@ export default function Painel({ sessao }) {
                           aoReagir={(e) => { setRostoAberto(null); reagir(m, e); }} />
                       )}
                       {saida && (
-                        <div style={{ width: 28, flexShrink: 0 }}>{ultimaDoGrupo ? <Avatar nome={quem.nome || meuNome} foto={quem.foto} size={28} /> : null}</div>
+                        <div style={{ width: 28, flexShrink: 0 }}>{!ultimaDoGrupo ? null
+                          : (quem.aparelho || quem.rotulo)
+                            /* Sem bolinha de iniciais: "PC" num círculo colorido
+                               é a cara de uma pessoa, e não há pessoa aqui. */
+                            ? <span title={quem.nome} style={{ width: 28, height: 28, borderRadius: "50%", background: C.bubbleIn,
+                                            border: `1px solid ${C.divider}`, display: "flex", alignItems: "center",
+                                            justifyContent: "center", flexShrink: 0 }}>
+                                {/* Desenhos diferentes porque são coisas
+                                    diferentes: um celular para o que saiu pelo
+                                    aplicativo, o relógio do histórico para o
+                                    rótulo que veio da importação. */}
+                                {quem.aparelho ? <Smartphone size={14} color={C.textSecondary} />
+                                               : <History size={14} color={C.textSecondary} />}
+                              </span>
+                            : <Avatar nome={quem.nome || meuNome} foto={quem.foto} size={28} />}</div>
                       )}
                     </div>
                     )}
