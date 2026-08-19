@@ -312,6 +312,38 @@ console.log("\nA barra de escrever");
      barra ? `tinha ${barra.largura}px` : "");
 }
 
+console.log("\nA prévia de um áudio, no celular, vem por extenso");
+{
+  // No WhatsApp Web a lista mostra só "🎤 0:20", porque a coluna é estreita.
+  // No celular a linha é a largura da tela e cabe escrito — e escrito é melhor
+  // para quem não decora o que um microfone quer dizer.
+  const conversa = await page.evaluate(() => {
+    const el = document.querySelector("[data-conversa-nome]");
+    return el ? el.getAttribute("data-conversa-id") : null;
+  });
+  await page.evaluate((id) => {
+    globalThis.__EMITIR("INSERT", "mensagens", {
+      id: "audio-no-celular", conversa_id: id, tipo: "audio", origem: "contato",
+      texto: null, midia_url: "http://x/a.mp3", midia_segundos: 20,
+      criado_em: new Date().toISOString(),
+    });
+    globalThis.__EMITIR("UPDATE", "conversas", {
+      id, ultima_mensagem: "[anexo]", ultima_atividade: new Date().toISOString(), nao_lidas: 1,
+    });
+  }, conversa);
+  await page.waitForTimeout(700);
+  const texto = await page.evaluate(() => {
+    const linha = document.querySelector("[data-conversa-nome]");
+    const alvo = [...linha.querySelectorAll("span")]
+      .find((s) => getComputedStyle(s).fontSize === "13px");
+    return alvo ? alvo.innerText.trim() : null;
+  });
+  ok("no celular o rótulo vem escrito", /mensagem de voz/i.test(texto || ""),
+     `dizia: "${texto}"`);
+  ok("e com o tempo entre parênteses", /\(0:20\)/.test(texto || ""),
+     `dizia: "${texto}"`);
+}
+
 console.log("\nO navegador sabe que o Zorvin está no escuro");
 {
   // O RELATO, COM FOTO: no iPhone, ao tocar na caixa de escrever, aparece uma

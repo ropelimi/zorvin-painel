@@ -403,11 +403,41 @@ function formatarDuracao(seg) {
 }
 
 // Rótulo da prévia de mídia na lista de conversas (estilo WhatsApp).
-function rotuloMidia(tipo) {
+/** "1:19" a partir de 79 segundos. Sem hora: uma mensagem de voz de mais de
+ *  uma hora não existe, e "0:01:19" seria pior de ler. */
+function tempoCurto(segundos) {
+  const s = Math.max(0, Math.round(Number(segundos) || 0));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+// O RÓTULO DA PRÉVIA — E ELE É DIFERENTE NO COMPUTADOR E NO CELULAR.
+//
+// No WhatsApp Web a lista mostra só o microfone e o tempo: "🎤 0:20". No
+// celular, por extenso: "🎤 Mensagem de voz (0:20)". Não é inconsistência
+// deles — é espaço. Na coluna estreita do computador, ao lado de um nome
+// comprido, "Mensagem de voz (0:20)" empurra o resto para fora; no celular a
+// linha é a largura da tela e cabe escrito.
+//
+// O tempo não é enfeite: é o que separa um "ok" de dez segundos de um relato
+// de três minutos, na hora de decidir o que ouvir primeiro.
+//
+// A duração só existe para as mensagens que chegaram DEPOIS de a ponte passar
+// a guardá-la. Nas antigas o rótulo cai no nome por extenso, em vez de mostrar
+// um tempo inventado — um "(0:00)" ali seria informação errada, e informação
+// errada é pior do que informação que falta.
+function rotuloMidia(tipo, segundos, soOTempo) {
+  const tem = Number(segundos) > 0;
+  const tempo = tem ? tempoCurto(segundos) : "";
   if (tipo === "imagem") return "📷 Foto";
-  if (tipo === "audio") return "🎤 Mensagem de voz";
-  if (tipo === "video") return "🎬 Vídeo";
   if (tipo === "documento") return "📄 Documento";
+  if (tipo === "audio") {
+    if (soOTempo && tem) return `🎤 ${tempo}`;
+    return tem ? `🎤 Mensagem de voz (${tempo})` : "🎤 Mensagem de voz";
+  }
+  if (tipo === "video") {
+    if (soOTempo && tem) return `🎬 ${tempo}`;
+    return tem ? `🎬 Vídeo (${tempo})` : "🎬 Vídeo";
+  }
   return "";
 }
 
@@ -1662,17 +1692,35 @@ export default function Painel({ sessao }) {
   const carregarUltimasMidias = useCallback(async (advId) => {
     if (!advId) return;
     try {
-      const { data, error } = await supabase
+      // AS MAIS RECENTES, E COM TETO. Sem `order` e sem `limit`, a API do
+      // Supabase corta em 1000 linhas e não avisa — e a ordem de quem sobrou é
+      // indefinida. Num telefone com mais de mil conversas, a prévia da
+      // conversa de agora podia simplesmente não vir. A lista mostra as
+      // recentes primeiro, então é delas que a prévia precisa.
+      // COM A DURAÇÃO, SE A BASE JÁ TIVER A COLUNA.
+      //
+      // Pedir uma coluna que não existe faz a consulta INTEIRA falhar — e aí
+      // não haveria prévia nenhuma, nem o rótulo que já funcionava. Então a
+      // segunda tentativa vai sem ela: quem ainda não rodou o script continua
+      // vendo "🎤 Mensagem de voz", só que sem o tempo.
+      const buscar = (comDuracao) => supabase
         .from("conversas")
-        .select("id, mensagens(tipo, criado_em)")
+        .select(`id, mensagens(tipo, criado_em${comDuracao ? ", midia_segundos" : ""})`)
         .eq("advogado_id", advId)
+        .order("ultima_atividade", { ascending: false })
+        .limit(300)
         .order("criado_em", { referencedTable: "mensagens", ascending: false })
         .limit(1, { referencedTable: "mensagens" });
+
+      let { data, error } = await buscar(true);
+      if (error) ({ data, error } = await buscar(false));
       if (error) return;
       const mapa = {};
       (data || []).forEach((c) => {
         const ult = c.mensagens && c.mensagens[0];
-        if (ult && ult.tipo && ult.tipo !== "texto") mapa[c.id] = ult.tipo;
+        if (ult && ult.tipo && ult.tipo !== "texto") {
+          mapa[c.id] = { tipo: ult.tipo, segundos: ult.midia_segundos || null };
+        }
       });
       setUltimasMidias(mapa);
     } catch (_) { /* ignora: mantém a prévia padrão */ }
@@ -3302,6 +3350,28 @@ export default function Painel({ sessao }) {
           // justamente com a conversa aberta que chega a mensagem que a pessoa
           // ainda vai ler e responder depois.
         }
+        // A PRÉVIA DA LISTA APRENDE COM A MENSAGEM QUE ACABOU DE CHEGAR.
+        //
+        // O tipo de cada última mensagem era descoberto UMA VEZ, ao abrir o
+        // telefone. Uma mensagem que chegasse depois trocava o texto da prévia
+        // (pelo handler de UPDATE de conversas) e não trocava o tipo — então a
+        // linha passava a mostrar o texto cru que o banco guarda, "[anexo]".
+        //
+        // Foi o relato: um áudio recebido às 17:37 aparecia como "[anexo]" na
+        // lista, enquanto a conversa logo acima, cujo documento tinha chegado
+        // ANTES de abrir a tela, aparecia certinha como "📄 Documento".
+        //
+        // Aqui o tipo vem de graça: ele está na própria linha que chegou.
+        setUltimasMidias((antes) => {
+          const novo = { ...antes };
+          if (nova.tipo && nova.tipo !== "texto") {
+            novo[nova.conversa_id] = { tipo: nova.tipo, segundos: nova.midia_segundos || null };
+          } else {
+            delete novo[nova.conversa_id];      // texto depois de mídia limpa o rótulo
+          }
+          return novo;
+        });
+
         // Esta mensagem é do advogado atualmente aberto? Se a conversa já está
         // na lista, sim. Se não está (pode ser uma conversa NOVA — lead novo),
         // confirmamos com uma consulta rápida do advogado_id.
@@ -6277,17 +6347,25 @@ export default function Painel({ sessao }) {
             const nome = nomeDoContato(c.contato);
             // Prévia: se a última mensagem é mídia (e sem legenda), mostra
             // "📷 Foto", "🎤 Mensagem de voz" etc. em vez de "[anexo]".
-            const midiaTipo = ultimasMidias[c.id];
+            const midia = ultimasMidias[c.id];
             const bruto = c.ultima_mensagem || "";
-            const previa = midiaTipo && (bruto === "[anexo]" || bruto === "") ? rotuloMidia(midiaTipo) : bruto;
+            const previa = midia && (bruto === "[anexo]" || bruto === "")
+              ? rotuloMidia(midia.tipo, midia.segundos, !estreito) : bruto;
             return (
-              <div key={c.id} data-conversa-nome={nome} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrirConversa(c); } }} onClick={() => abrirConversa(c)} onMouseEnter={() => setConvHover(c.id)} onMouseLeave={() => setConvHover((h) => (h === c.id ? null : h))} style={{ position: "relative", width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: estreito ? 10 : 12, padding: estreito ? "10px 8px" : "10px 14px", background: c.id === conversaId ? C.listActive : (convHover === c.id ? C.divider : C.panel), borderBottom: `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary }}>
+              <div key={c.id} data-conversa-nome={nome} data-conversa-id={c.id} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrirConversa(c); } }} onClick={() => abrirConversa(c)} onMouseEnter={() => setConvHover(c.id)} onMouseLeave={() => setConvHover((h) => (h === c.id ? null : h))} style={{ position: "relative", width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: estreito ? 10 : 12, padding: estreito ? "10px 8px" : "10px 14px", background: c.id === conversaId ? C.listActive : (convHover === c.id ? C.divider : C.panel), borderBottom: `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary }}>
                 <Avatar nome={nome} foto={c.contato?.foto_url} size={48} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
                     <span style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
                       {c.favorita && <Star size={13} color="#f5c518" fill="#f5c518" style={{ flexShrink: 0 }} />}
-                      <span style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nome}</span>
+                      {/* A DICA AO PASSAR O MOUSE. O nome e a prévia cabem
+                          numa linha e são cortados com reticências —
+                          "Procurações e Documentos(…" não diz de qual pasta é,
+                          e "Conseguimos agendar para o dia…" não diz o dia.
+                          No WhatsApp Web, parar o mouse em cima mostra o texto
+                          inteiro; aqui também. É de graça: o próprio navegador
+                          desenha, e não custa render nenhum. */}
+                      <span title={nome} style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nome}</span>
                     </span>
                     <span style={{ fontSize: 11, color: c.nao_lidas ? C.horaNaoLida : C.textSecondary, flexShrink: 0 }}>{horaDe(c.ultima_atividade)}</span>
                   </div>
@@ -6295,7 +6373,7 @@ export default function Painel({ sessao }) {
                     {digitandoAtivo(c.id) ? (
                       <span style={{ fontSize: 13, color: C.verdeTexto, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 250 }}>digitando…</span>
                     ) : (
-                      <span style={{ fontSize: 13, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 250 }}>{previa}</span>
+                      <span title={previa} style={{ fontSize: 13, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 250 }}>{previa}</span>
                     )}
                     {/* O alfinete precisa aparecer: sem ele a conversa fixada
                         fica no alto da lista sem nenhuma explicação visível, e

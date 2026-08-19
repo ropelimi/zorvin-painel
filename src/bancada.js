@@ -127,6 +127,23 @@ const AUTORES = [
 const ROTULOS_NAO_PESSOA = ["Cadastro - C&A", "Atendimento Estratégico"];
 const APARELHO = { id: null, nome: "WhatsApp", aparelho: true };
 
+// Os tratadores de tempo real que o painel registrou. A prova dispara por
+// `globalThis.__EMITIR`, que é o mesmo caminho por onde o Supabase avisaria.
+const OUVINTES = [];
+if (typeof globalThis !== "undefined") {
+  globalThis.__EMITIR = (evento, tabela, novo, velho = null) => {
+    let quantos = 0;
+    for (const o of OUVINTES) {
+      const f = o.filtro || {};
+      if (f.table !== tabela) continue;
+      if (f.event && f.event !== "*" && f.event !== evento) continue;
+      quantos += 1;
+      o.funcao({ eventType: evento, new: novo, old: velho, table: tabela });
+    }
+    return quantos;   // zero quer dizer "ninguém está ouvindo isto"
+  };
+}
+
 // A MESMA JANELA DA FUNÇÃO DE VERDADE. Todo atendimento do roteiro cabe em
 // menos de 3 horas e dois atendimentos nunca caem no mesmo dia da mesma
 // conversa — então cada um é, de fato, um atendimento só.
@@ -1546,10 +1563,25 @@ export const supabase = {
         ? { error: { message: "auth indisponível" } }
         : { error: null }),
   },
+  // O TEMPO REAL DA BANCADA — que até agora engolia tudo.
+  //
+  // O painel inteiro depende destes avisos: mensagem que chega, conversa que
+  // muda, reação, tiquinho de lida. Eram dezenas de tratadores, e NENHUM tinha
+  // prova, porque o canal falso aceitava os `on(...)` e nunca chamava nenhum.
+  // Um defeito ali é invisível na bancada e visível na hora, no expediente —
+  // foi assim que a prévia da lista passou a mostrar "[anexo]" para um áudio
+  // que chegava ao vivo.
+  //
+  // Agora os tratadores ficam guardados, e a prova dispara o evento pelo
+  // mesmo caminho por onde o Supabase dispararia.
   channel: () => {
-    const canal = { on: () => canal, subscribe: () => canal, unsubscribe: () => {} };
+    const canal = {
+      on: (tipo, filtro, funcao) => { OUVINTES.push({ tipo, filtro, funcao }); return canal; },
+      subscribe: () => canal,
+      unsubscribe: () => { OUVINTES.length = 0; },
+    };
     return canal;
   },
-  removeChannel: () => {},
+  removeChannel: () => { OUVINTES.length = 0; },
   storage: { from: () => ({ upload: async () => ({ error: null }), getPublicUrl: () => ({ data: { publicUrl: "" } }) }) },
 };
