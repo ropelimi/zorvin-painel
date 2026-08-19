@@ -16,6 +16,7 @@ const PORTA = 5199;
 const ENDERECO = `http://127.0.0.1:${PORTA}/`;
 
 const PROVAS = [
+  { nome: "entrar",      servidor: "dev" },
   { nome: "telas",       servidor: "dev" },
   { nome: "busca",       servidor: "dev" },
   { nome: "etiquetas",   servidor: "dev" },
@@ -52,7 +53,13 @@ function subirServidor(tipo) {
     // primeira linha ("falta a variável"), e a ficha do cliente nunca chega a
     // ser exercitada: ela passava no teste mostrando a mensagem de erro.
     env: { ...process.env, VITE_BANCADA: "1",
-           VITE_BRIDGE_URL: "http://127.0.0.1:5199/ponte-de-mentira" },
+           VITE_BRIDGE_URL: "http://127.0.0.1:5199/ponte-de-mentira",
+           // A entrada desiste depois disto. Em produção são 75 segundos, que é
+           // mais do que a Render leva para acordar; aqui são 6, senão a prova
+           // da desistência levaria mais de um minuto e ninguém a rodaria.
+           // Nenhuma outra prova chega a chamar a entrada — todas já sobem
+           // logadas —, então encurtar aqui não muda nada nelas.
+           VITE_LIMITE_LOGIN_MS: "6000" },
     stdio: ["ignore", "ignore", "inherit"],
     detached: true,
   });
