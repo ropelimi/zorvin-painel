@@ -548,6 +548,33 @@ export const NOME_FIXADA = "CONVERSA QUE FOI FIXADA";
   alvo.contato = { ...contato };
 }
 
+// DUAS MENSAGENS QUE NÃO SAÍRAM.
+//
+// Elas nunca chegam em `mensagens` — ficam na fila de envio, com erro. A
+// bancada nascia com a fila vazia, então a bolha vermelha e o motivo da falha
+// jamais foram exercitados por teste nenhum.
+//
+// São duas de propósito: uma com motivo reconhecido (a frase em português que
+// a ponte escreveu) e outra sem — porque o caso que mais importa é o do erro
+// que a ponte NÃO conhece, em que a tela precisa mostrar o texto cru em vez de
+// inventar uma explicação.
+export const MOTIVO_CONHECIDO = "Este número não tem conta no WhatsApp, ou está escrito errado.";
+export const ERRO_CRU = 'Uazapi respondeu 418: {"error":"sou um bule de cha"}';
+const FILA_COM_ERRO = [
+  { id: 901, conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`, tipo: "texto",
+    texto: "Doutor, segue o documento que combinamos", status: "erro",
+    enviado_por: "Rodrigo Sousa", enviado_por_id: "u1",
+    erro_motivo: MOTIVO_CONHECIDO,
+    erro_detalhe: 'Uazapi respondeu 400: {"error":"number not exists"}',
+    criado_em: new Date(Date.now() - 30 * 60e3).toISOString() },
+  { id: 902, conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`, tipo: "texto",
+    texto: "Consegue confirmar por aqui?", status: "erro",
+    enviado_por: "Rodrigo Sousa", enviado_por_id: "u1",
+    erro_motivo: null,
+    erro_detalhe: ERRO_CRU,
+    criado_em: new Date(Date.now() - 20 * 60e3).toISOString() },
+];
+
 // UMA NOTA NA CONVERSA DE PROVA, escrita pelo próprio usuário logado — é dele
 // a permissão de editar e apagar. `apagada_em` nula: é o estado que a tela
 // precisa saber mudar.
@@ -592,7 +619,7 @@ const TABELAS = {
   // O histórico de alterações começa VAZIO: as linhas nascem do que se faz na
   // tela, e semear alguma aqui esconderia uma tela que não grava nada.
   alteracoes: [],
-  mensagens_rapidas: [], figurinhas_favoritas: [], fila_envio: [],
+  mensagens_rapidas: [], figurinhas_favoritas: [], fila_envio: FILA_COM_ERRO,
 };
 
 // O teste lê a tabela de contatos daqui para conferir o que foi GRAVADO, e não
@@ -604,6 +631,8 @@ if (typeof globalThis !== "undefined") {
   globalThis.__MSG_ACHADA = MSG_ACHADA;
   globalThis.__OUTRA_PALAVRA = OUTRA_PALAVRA;
   globalThis.__MSG_ACHADA_2 = MSG_ACHADA_2;
+  globalThis.__MOTIVO_CONHECIDO = MOTIVO_CONHECIDO;
+  globalThis.__ERRO_CRU = ERRO_CRU;
 }
 
 /** O `%` do PostgREST vira o `.*` de uma expressão regular, sem diferenciar
