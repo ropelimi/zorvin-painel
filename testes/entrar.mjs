@@ -97,8 +97,13 @@ console.log("\nQuando ela não responde de jeito nenhum");
   ok("depois do tempo limite, desiste", await aviso.count() === 1,
      "sem limite, o botão gira para sempre e o navegador é que decide a mensagem");
   const t = (await aviso.innerText()).replace(/\s+/g, " ");
-  ok("em português", /servidor demorou|hiberna/i.test(t), `dizia: "${t}"`);
+  ok("em português", /servidor demorou/i.test(t), `dizia: "${t}"`);
   ok("dizendo o que fazer", /tente de novo/i.test(t), `dizia: "${t}"`);
+  // O FATO, embaixo da frase: qual endereço e depois de quanto tempo. Sem
+  // isso, todo relato de falha de rede volta como "não entrou", e não há por
+  // onde começar a investigar.
+  ok("e com o endereço que não respondeu e o tempo",
+     /127\.0\.0\.1:5199/.test(t) && /\d+s/.test(t), `dizia: "${t}"`);
   ok("e o botão volta a poder ser apertado", await botao.isDisabled() === false,
      "desistir sem devolver o botão é pior do que não desistir");
   ok("o aviso da espera sai da tela", await espera.count() === 0);
@@ -116,6 +121,8 @@ console.log("\nQuando não há rede — o 'Load failed' do relato");
      `dizia: "${t}"`);
   ok("que manda conferir a conexão e a quem recorrer",
      /conexão/i.test(t) && /administra/i.test(t), `dizia: "${t}"`);
+  ok("e diz onde não chegou, com o tempo",
+     /127\.0\.0\.1:5199/.test(t) && /\d+s/.test(t), `dizia: "${t}"`);
 }
 
 console.log("\nQuando a ponte responde, ela é quem fala");
@@ -127,6 +134,10 @@ console.log("\nQuando a ponte responde, ela é quem fala");
   await page.waitForTimeout(1200);
   const t = (await aviso.innerText()).replace(/\s+/g, " ");
   ok("a mensagem da ponte é a que aparece", /senha incorretos/i.test(t), `dizia: "${t}"`);
+  // E SEM O RASTRO TÉCNICO: aqui a rede funcionou. Endereço e tempo ao lado de
+  // "senha incorreta" mandariam procurar problema onde não há.
+  ok("e sem endereço nem tempo pendurados nela",
+     !/127\.0\.0\.1:5199/.test(t), `dizia: "${t}"`);
 }
 
 console.log(`\nerros de página: ${erros.length}`);

@@ -38,6 +38,12 @@ export default function Login() {
   // e não na hora: a maioria das entradas responde em menos de um segundo, e um
   // aviso que pisca em toda tentativa vira ruído.
   const [demorando, setDemorando] = useState(false);
+  // O FATO TÉCNICO, embaixo da frase em português. Quando a entrada falha na
+  // rede, a frase sozinha não deixa ninguém investigar: "não consegui falar
+  // com o servidor" é igual para servidor fora do ar, telefone sem sinal e
+  // endereço errado. Aqui fica QUAL endereço não respondeu e depois de quanto
+  // tempo — é o que transforma o próximo relato em fato em vez de palpite.
+  const [detalhe, setDetalhe] = useState("");
   const [foco, setFoco] = useState(""); // "email" | "senha" — realce do campo ativo
   const [escuro, setEscuro] = useState(false);
 
@@ -57,8 +63,10 @@ export default function Login() {
     e.preventDefault();
     if (entrando) return;
     setErro("");
+    setDetalhe("");
     setEntrando(true);
     setDemorando(false);
+    const comecou = Date.now();
 
     // TEMPO LIMITE E AVISO — os dois faltavam, e o resultado era este:
     // a pessoa apertava Entrar, o botão girava por um minuto e aparecia
@@ -105,10 +113,14 @@ export default function Login() {
     } catch (err) {
       // TRÊS FALHAS DIFERENTES, TRÊS FRASES DIFERENTES. Antes as três caíam na
       // mensagem que o navegador tivesse dado — em inglês, e igual para todas.
+      const segundos = Math.round((Date.now() - comecou) / 1000);
+      const ondeFalhou = (() => {
+        try { return new URL(BRIDGE_URL).host; } catch (_) { return BRIDGE_URL || "(sem endereço)"; }
+      })();
       if (err && err.name === "AbortError") {
-        setErro("O servidor demorou demais para responder. Ele hiberna quando "
-              + "fica um tempo parado; tente de novo, que a segunda vez costuma "
-              + "entrar na hora.");
+        setErro("O servidor demorou demais para responder. Tente de novo — e, "
+              + "se continuar, avise quem administra.");
+        setDetalhe(`${ondeFalhou} não respondeu em ${segundos}s`);
       } else if (err instanceof TypeError) {
         // `TypeError` é o que `fetch` lança quando a conexão nem chegou a
         // acontecer: sem internet, servidor fora do ar, DNS. O Safari escreve
@@ -116,6 +128,10 @@ export default function Login() {
         // nada a quem está tentando entrar.
         setErro("Não consegui falar com o servidor. Verifique a conexão e tente "
               + "de novo; se continuar, avise quem administra.");
+        // Quantos segundos separa DOIS casos que a frase junta: a conexão que
+        // é recusada na hora (servidor fora do ar, endereço errado) e a que
+        // fica pendurada e cai depois (rede ruim, bloqueio no caminho).
+        setDetalhe(`não cheguei em ${ondeFalhou} · ${segundos}s`);
       } else {
         setErro((err && err.message) || "Não foi possível entrar agora.");
       }
@@ -232,8 +248,16 @@ export default function Login() {
               acontece nada aparente, e não há como saber que a senha estava
               errada — a mensagem existe, mas em silêncio. */}
           {erro && (
-            <div role="alert" style={{ display: "flex", alignItems: "center", gap: 7, color: "#fff", background: "#e5573f", fontSize: 13, fontWeight: 500, marginTop: 16, padding: "9px 12px", borderRadius: 10 }}>
+            <div role="alert" style={{ color: "#fff", background: "#e5573f", fontSize: 13, fontWeight: 500, marginTop: 16, padding: "9px 12px", borderRadius: 10 }}>
               {erro}
+              {/* Miúdo e apagado de propósito: quem só quer entrar não precisa
+                  ler isto, e quem for investigar precisa que esteja escrito. */}
+              {detalhe && (
+                <div style={{ marginTop: 5, fontSize: 11, fontWeight: 400, opacity: .85,
+                              fontVariantNumeric: "tabular-nums", wordBreak: "break-all" }}>
+                  {detalhe}
+                </div>
+              )}
             </div>
           )}
 
