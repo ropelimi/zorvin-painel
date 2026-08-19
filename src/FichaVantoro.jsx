@@ -42,7 +42,7 @@ const SECOES = [
     aberta: true,
     campos: [
       { chave: "telefone2", rotulo: "Outro WhatsApp/telefone",
-        dica: "se o cliente trocou de número" },
+        dica: "se a pessoa trocou de número" },
       { chave: "cpf", rotulo: "CPF" },
       { chave: "nome", rotulo: "Nome completo" },
       { chave: "email", rotulo: "E-mail", minusculo: true },
@@ -205,7 +205,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       setCliente(r.cliente);
       setEdicao({ ...r.cliente });
       await ligarContatoAoCadastro(r.cliente);
-      onAviso && onAviso(r.criado ? "Pré-cadastro criado no Vantoro." : "Cliente já existia no Vantoro.");
+      onAviso && onAviso(r.criado ? "Pré-cadastro criado no Vantoro." : "Já existia no Vantoro.");
     } catch (e) {
       onAviso && onAviso(e.message);
     } finally {
@@ -339,7 +339,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
         background: C.headerBar, padding: "12px 16px", display: "flex",
         alignItems: "center", gap: 10, borderBottom: `1px solid ${C.divider}`,
       }}>
-        <span style={{ flex: 1, fontSize: 15, fontWeight: 600, color: C.textPrimary }}>Ficha do cliente</span>
+        <span style={{ flex: 1, fontSize: 15, fontWeight: 600, color: C.textPrimary }}>Ficha no Vantoro</span>
         {/* Atualizar relê o cadastro e substitui os campos — descarta o que foi
             digitado do mesmo jeito que fechar. Pergunta pelo mesmo motivo. */}
         <button onClick={() => { if (!mudouAlgumaCoisa()
