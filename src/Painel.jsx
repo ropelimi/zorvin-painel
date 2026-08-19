@@ -4620,7 +4620,28 @@ export default function Painel({ sessao }) {
   }
 
   function aoEscolherArquivo(e) {
-    const arquivos = e.target.files;
+    // A CÓPIA VEM ANTES DE LIMPAR, E É DISSO QUE DEPENDIA O CLIPE.
+    //
+    // `e.target.files` não é uma lista de arquivos: é uma JANELA para a lista
+    // que está dentro do campo. Limpar o campo esvazia a lista, e quem estiver
+    // segurando a "janela" fica segurando o vazio — mesmo tendo pegado a
+    // referência antes.
+    //
+    // Era exatamente isto: pegava a janela, limpava o campo, e mandava para a
+    // prévia uma lista de zero arquivos. A prévia via zero, desistia em
+    // silêncio, e quem escolheu o arquivo não via nada acontecer. Sem erro,
+    // sem aviso. "Estou com dificuldade de enviar anexos pelo Zorvin" — e
+    // arrastar funcionava, porque ali os arquivos vêm do `dataTransfer`, que
+    // não pertence a campo nenhum.
+    //
+    // `Array.from` COPIA o que está lá dentro agora. Depois disso, limpar o
+    // campo não tira nada de ninguém.
+    //
+    // E limpar continua sendo necessário: sem isso, escolher o MESMO arquivo
+    // duas vezes seguidas não dispara nada, porque para o navegador o valor
+    // do campo não mudou. As duas coisas precisam conviver, e é essa a ordem
+    // em que elas convivem.
+    const arquivos = Array.from(e.target.files || []);
     e.target.value = ""; // permite escolher o mesmo arquivo de novo depois
     abrirAnexos(arquivos);
   }
@@ -8032,7 +8053,7 @@ export default function Painel({ sessao }) {
         const trocarLegenda = (v) => setAnexosPendentes((antes) =>
           antes.map((a, i) => (i === anexoAtivo ? { ...a, legenda: v } : a)));
         return (
-        <div onClick={fecharAnexoPendente} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,.85)", zIndex: 100, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: 20 }}>
+        <div data-previa-anexo onClick={fecharAnexoPendente} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,.85)", zIndex: 100, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: 20 }}>
           <button onClick={(e) => { e.stopPropagation(); fecharAnexoPendente(); }} title="Cancelar" style={{ position: "absolute", top: 16, right: 20, background: "transparent", border: "none", cursor: "pointer", color: "#fff", display: "flex" }}>
             <X size={28} />
           </button>
