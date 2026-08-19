@@ -630,6 +630,28 @@ FALAS.forEach(([conv, nome, id], i) => {
   });
 });
 
+// UM TELEFONE ANTIGO — o caso em que o filtro não aparecia.
+//
+// Todo o histórico dele é anterior à coluna `enviado_por_id`: as mensagens têm
+// só o NOME de quem escreveu. A lista de atendentes olhava apenas o id, então
+// vinha vazia; e a tela, que só mostrava o botão com mais de um nome na lista,
+// escondia o filtro inteiro. Medido no Postgres de verdade: a função antiga
+// devolvia ZERO linha neste telefone, a nova devolve as duas pessoas.
+//
+// É o "alguns telefones não têm essa opção" do relato, reproduzido.
+// "Acordos 2" e não um telefone qualquer: ele divide o departamento com o
+// PRIMEIRO_TELEFONE, então aparece na barra lateral sem ter de trocar de
+// departamento antes — o teste troca de número em um clique.
+export const TELEFONE_ANTIGO = ADVOGADOS.find((a) => a.nome === "Acordos 2");
+[["Rodrigo Sousa", 0], ["JENIFER ALMEIDA", 1]].forEach(([nome, i]) => {
+  MENSAGENS.push({
+    id: `m-antigo-${i}`, conversa_id: `${TELEFONE_ANTIGO.id}-c${i}`,
+    origem: "advogado", tipo: "texto", texto: `mensagem antiga de ${nome}`,
+    enviado_por: nome.toLowerCase(), enviado_por_id: null,
+    criado_em: new Date(Date.now() - 400 * 86400e3).toISOString(),
+  });
+});
+
 // UMA NOTA NA CONVERSA DE PROVA, escrita pelo próprio usuário logado — é dele
 // a permissão de editar e apagar. `apagada_em` nula: é o estado que a tela
 // precisa saber mudar.
@@ -1187,6 +1209,11 @@ export const supabase = {
       if (nome === "atendentes_do_telefone") {
         const conta = new Map();
         for (const ids of quemFalou.values()) for (const id of ids) conta.set(id, (conta.get(id) || 0) + 1);
+        // QUEM ESTÁ LOGADO ENTRA SEMPRE, ainda que com zero. "De quais conversas
+        // eu participei" é a pergunta que dá origem ao recurso: ela precisa ter
+        // resposta em todo telefone, inclusive quando a resposta é "nenhuma".
+        const eu = (TABELAS.usuarios[0] || {}).id;
+        if (eu && !conta.has(String(eu))) conta.set(String(eu), 0);
         const lista = [...conta.entries()].map(([id, conversas]) => ({
           id,
           nome: ((TABELAS.usuarios || []).find((u) => String(u.id) === id) || {}).nome

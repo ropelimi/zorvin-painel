@@ -1718,6 +1718,7 @@ export default function Painel({ sessao }) {
   //  já carregadas — foi assim que o filtro por etiqueta mostrava três quando
   //  havia trinta.
   const [atendentes, setAtendentes] = useState([]);        // quem já falou por este telefone
+  const [filtroQuemOk, setFiltroQuemOk] = useState(false); // o banco sabe responder?
   const [quemFiltra, setQuemFiltra] = useState([]);        // ids marcados
   const [modoQuem, setModoQuem] = useState("qualquer");    // "qualquer" | "todos"
   const [menuQuem, setMenuQuem] = useState(false);
@@ -1729,14 +1730,28 @@ export default function Painel({ sessao }) {
   // Oferecer o escritório inteiro faria uma lista longa em que a maioria dos
   // nomes devolveria zero conversa — e procurar numa lista assim é pior do que
   // não ter lista.
+  //
+  // O BOTÃO, PORÉM, APARECE EM TODO TELEFONE. Ele dependia de a lista ter mais
+  // de um nome, e o efeito disso na prática foi outro: em número atendido por
+  // uma pessoa só — ou cujo histórico é todo anterior à coluna
+  // `enviado_por_id`, que é o caso dos telefones mais antigos — o filtro
+  // simplesmente não existia, e quem trocava de número achava que a tela tinha
+  // quebrado. Um recurso que some sem dizer nada é pior do que um botão que
+  // responde "nenhuma".
+  //
+  // `filtroQuemOk` e não `atendentes.length`: são perguntas diferentes. Uma é
+  // "o banco sabe responder isto?" — que decide se o botão existe. A outra é
+  // "quantas pessoas há para escolher?" — que é conteúdo do menu.
   useEffect(() => {
     let vivo = true;
-    setAtendentes([]);
+    setAtendentes([]); setFiltroQuemOk(false);
     if (!advogadoId) return;
     (async () => {
       const { data, error } = await supabase.rpc("atendentes_do_telefone", { p_advogado: advogadoId });
-      if (!vivo || error) return;   // sem a função no banco: a pílula não aparece
+      if (!vivo) return;
+      if (error) return;            // sem a função no banco: o botão não aparece
       setAtendentes(data || []);
+      setFiltroQuemOk(true);
     })();
     return () => { vivo = false; };
   }, [advogadoId]);
@@ -5090,6 +5105,12 @@ export default function Painel({ sessao }) {
     return [...mapa.values()];
   })();
 
+  // Os nomes de quem está marcado no filtro de atendentes, na ordem em que
+  // aparecem na lista — para o rastro que fica na fita de filtros.
+  const nomesQuemFiltra = quemFiltra
+    .map((id) => (atendentes.find((a) => String(a.id) === String(id)) || {}).nome)
+    .filter(Boolean);
+
   // Menu de mensagens rápidas: aparece ao digitar "/" no começo da mensagem.
   // O texto após a "/" filtra a lista (por atalho ou conteúdo).
   const slashQuery = (!modoNota && rascunho.startsWith("/")) ? rascunho.slice(1).toLowerCase() : null;
@@ -5370,6 +5391,100 @@ export default function Painel({ sessao }) {
             <button onClick={() => { setBuscaContato(""); setContatoForm(null); setNovaConversaAberta(true); carregarContatos(); }} aria-label="Nova conversa" title="Nova conversa" style={{ ...BOTAO_ICONE, color: C.textSecondary }}>
               <SquarePen size={19} />
             </button>
+            {/* QUEM PARTICIPOU — o filtro por atendente.
+                Ele era uma pílula na fita junto de "Tudo / Não lidas /
+                Favoritas / Etiquetas", e ali estava fora de lugar por duas
+                razões. A fita responde "que conversas mostrar" pelo estado
+                delas; esta pergunta é sobre PESSOAS, e é a única da fita que
+                abre um menu com dois modos e uma lista dentro. E era a quinta
+                pílula de uma linha que já quebrava em duas.
+
+                Aqui em cima ele fica ao lado das outras duas coisas que se faz
+                na coluna — abrir conversa nova e abrir o menu — e a fita volta
+                a ter só filtros de conversa, numa linha só.
+
+                Ícone sem rótulo porque é a vizinhança em que está: os três
+                botões desta linha são ícones. O que ele perde em nome ganha em
+                `title` e no rastro que aparece na fita quando está ligado. */}
+            {advogadoId && filtroQuemOk && (
+            <span ref={quemRef} style={{ position: "relative", display: "flex" }}>
+              <button data-grupo="quem" onClick={() => setMenuQuem((v) => !v)}
+                      aria-label="Filtrar por quem participou" aria-expanded={menuQuem}
+                      title={quemFiltra.length ? "Filtrando por quem participou da conversa" : "Filtrar por quem participou da conversa"}
+                      style={{ ...BOTAO_ICONE, padding: 9,
+                               background: quemFiltra.length ? C.greenDark : "transparent",
+                               color: quemFiltra.length ? "#fff" : C.textSecondary }}>
+                <Users size={19} />
+              </button>
+              {menuQuem && (
+                <div style={{ position: "absolute", top: 38, right: 0, zIndex: 50, width: 272, maxHeight: 380, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
+                  {/* O TÍTULO ficou necessário quando o botão virou só um
+                      desenho: sem rótulo na tela, é aqui que o menu diz o que
+                      ele é. */}
+                  <div style={{ padding: "10px 12px 8px", borderBottom: `1px solid ${C.divider}` }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: C.textPrimary, marginBottom: 8 }}>
+                      Quem participou da conversa
+                    </div>
+                    {/* PRIMEIRO A REGRA, DEPOIS OS NOMES. Marcando duas pessoas
+                        sem saber qual das duas contas está valendo, o resultado
+                        parece aleatório — e a diferença entre "ou" e "e" é
+                        justamente o que este filtro tem de mais útil. */}
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {[["qualquer", "Qualquer um"], ["todos", "Todos juntos"]].map(([k, r]) => (
+                        <button key={k} onClick={() => setModoQuem(k)}
+                                style={{ flex: 1, minHeight: 30, borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 600,
+                                         border: `1px solid ${modoQuem === k ? C.greenDark : C.divider}`,
+                                         background: modoQuem === k ? C.greenDark : "transparent",
+                                         color: modoQuem === k ? "#fff" : C.textSecondary }}>{r}</button>
+                      ))}
+                    </div>
+                    <div style={{ marginTop: 6, fontSize: 11.5, color: C.textSecondary, lineHeight: 1.4 }}>
+                      {modoQuem === "todos"
+                        ? "Conversas em que TODAS as pessoas marcadas falaram, na mesma conversa."
+                        : "Conversas em que pelo menos UMA das pessoas marcadas falou."}
+                    </div>
+                  </div>
+
+                  {/* NINGUÉM ESCREVEU AINDA é resposta, não é erro. Antes o
+                      botão sumia neste caso, e sumir não explica nada. */}
+                  {atendentes.length === 0 && (
+                    <div style={{ padding: "14px 12px", fontSize: 12.5, color: C.textSecondary, lineHeight: 1.5 }}>
+                      Ninguém do escritório escreveu por este número ainda — só há
+                      mensagens recebidas. Quando alguém responder daqui, o nome
+                      aparece nesta lista.
+                    </div>
+                  )}
+
+                  {atendentes.map((a) => {
+                    const marcado = quemFiltra.includes(a.id);
+                    return (
+                      <button key={a.id} data-quem={a.nome}
+                              onClick={() => setQuemFiltra((atual) =>
+                                marcado ? atual.filter((x) => x !== a.id) : [...atual, a.id])}
+                              style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
+                        <span style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                                       border: `1.5px solid ${marcado ? C.green : C.divider}`, background: marcado ? C.green : "transparent" }}>
+                          {marcado && <Check size={12} color="#fff" />}
+                        </span>
+                        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nome}</span>
+                        {/* Quantas conversas cada um tem: responde "quanto vou ver
+                            se marcar este?" antes de marcar. Zero também é
+                            resposta — é o "não participei de nenhuma aqui". */}
+                        <span style={{ flexShrink: 0, fontSize: 11.5, color: C.textSecondary, fontVariantNumeric: "tabular-nums" }}>{a.conversas}</span>
+                      </button>
+                    );
+                  })}
+
+                  {quemFiltra.length > 0 && (
+                    <button onClick={() => { setQuemFiltra([]); setMenuQuem(false); }}
+                            style={{ width: "100%", padding: "10px 12px", border: "none", borderTop: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.verdeTexto, fontSize: 13, fontWeight: 600, textAlign: "left" }}>
+                      Limpar a escolha
+                    </button>
+                  )}
+                </div>
+              )}
+            </span>
+            )}
             {/* Menu ⋮ do topo, estilo WhatsApp Web */}
             <span ref={menuTopoRef} style={{ position: "relative", display: "flex" }}>
               <button onClick={() => setMenuTopoAberto((v) => !v)} aria-label="Menu" title="Menu" style={{ ...BOTAO_ICONE, color: C.textSecondary }}>
@@ -5545,73 +5660,57 @@ export default function Painel({ sessao }) {
               <button key={k} onClick={() => setFiltro(k)} style={{ flexShrink: 0, minHeight: 32, border: `1px solid ${ativo ? C.greenDark : C.divider}`, background: ativo ? C.greenDark : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 20, padding: "5px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
             );
           })}
-          {/* A PÍLULA DOS ATENDENTES.
-              Só aparece quando há mais de uma pessoa que já escreveu por este
-              telefone: num número atendido por uma só, o filtro não separa nada
-              e seria mais um botão para entender à toa. */}
-          {atendentes.length > 1 && (
-          <span ref={quemRef} style={{ position: "relative", display: "flex", minWidth: 0 }}>
-            <button data-grupo="quem" onClick={() => setMenuQuem((v) => !v)}
-                    title={quemFiltra.length ? "Filtrando por quem participou" : "Filtrar por quem participou da conversa"}
-                    style={{ flexShrink: 0, minHeight: 32, border: `1px solid ${quemFiltra.length ? C.greenDark : C.divider}`, background: quemFiltra.length ? C.greenDark : "transparent", color: quemFiltra.length ? "#fff" : C.textSecondary, borderRadius: 20, padding: "5px 11px 5px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
-              <Users size={14} style={{ flexShrink: 0 }} />
-              {quemFiltra.length === 0 ? "Quem participou"
-                : quemFiltra.length === 1
-                  ? (atendentes.find((a) => a.id === quemFiltra[0])?.nome || "1 pessoa")
-                  : `${quemFiltra.length} pessoas`}
-              <ChevronDown size={14} style={{ flexShrink: 0, opacity: .8 }} />
-            </button>
-            {menuQuem && (
-              <div style={{ position: "absolute", top: 38, left: 0, zIndex: 40, width: 268, maxHeight: 360, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
-                {/* PRIMEIRO A REGRA, DEPOIS OS NOMES. Marcando duas pessoas sem
-                    saber qual das duas contas está valendo, o resultado parece
-                    aleatório — e a diferença entre "ou" e "e" é justamente o
-                    que este filtro tem de mais útil. */}
-                <div style={{ padding: "10px 12px 8px", borderBottom: `1px solid ${C.divider}` }}>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    {[["qualquer", "Qualquer um"], ["todos", "Todos juntos"]].map(([k, r]) => (
-                      <button key={k} onClick={() => setModoQuem(k)}
-                              style={{ flex: 1, minHeight: 30, borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 600,
-                                       border: `1px solid ${modoQuem === k ? C.greenDark : C.divider}`,
-                                       background: modoQuem === k ? C.greenDark : "transparent",
-                                       color: modoQuem === k ? "#fff" : C.textSecondary }}>{r}</button>
-                    ))}
-                  </div>
-                  <div style={{ marginTop: 6, fontSize: 11.5, color: C.textSecondary, lineHeight: 1.4 }}>
-                    {modoQuem === "todos"
-                      ? "Conversas em que TODAS as pessoas marcadas falaram, na mesma conversa."
-                      : "Conversas em que pelo menos UMA das pessoas marcadas falou."}
-                  </div>
-                </div>
+          {/* O RASTRO DO FILTRO DE ATENDENTES.
+              O botão em si subiu para o topo da coluna, ao lado de "Nova
+              conversa" e do menu. Mas filtro ligado longe da lista é a receita
+              da lista misteriosamente curta: somem conversas e não há nada na
+              tela dizendo por quê — foi exatamente o que a pílula das etiquetas
+              resolveu mostrando a cor e o nome da etiqueta escolhida.
+              Então, LIGADO, ele deixa esta marca aqui: quem está marcado, qual
+              das duas regras está valendo, e o × que desliga sem precisar
+              procurar o menu de volta. Desligado não ocupa nada.
 
-                {atendentes.map((a) => {
-                  const marcado = quemFiltra.includes(a.id);
-                  return (
-                    <button key={a.id} data-quem={a.nome}
-                            onClick={() => setQuemFiltra((atual) =>
-                              marcado ? atual.filter((x) => x !== a.id) : [...atual, a.id])}
-                            style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
-                      <span style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
-                                     border: `1.5px solid ${marcado ? C.green : C.divider}`, background: marcado ? C.green : "transparent" }}>
-                        {marcado && <Check size={12} color="#fff" />}
-                      </span>
-                      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nome}</span>
-                      {/* Quantas conversas cada um tem: responde "quanto vou ver
-                          se marcar este?" antes de marcar. */}
-                      <span style={{ flexShrink: 0, fontSize: 11.5, color: C.textSecondary, fontVariantNumeric: "tabular-nums" }}>{a.conversas}</span>
-                    </button>
-                  );
-                })}
-
-                {quemFiltra.length > 0 && (
-                  <button onClick={() => { setQuemFiltra([]); setMenuQuem(false); }}
-                          style={{ width: "100%", padding: "10px 12px", border: "none", borderTop: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.verdeTexto, fontSize: 13, fontWeight: 600, textAlign: "left" }}>
-                    Limpar a escolha
-                  </button>
+              O `maxWidth` não é enfeite: sem teto o rastro crescia com o nome,
+              a fita quebrava numa TERCEIRA linha e as etiquetas iam parar lá
+              embaixo. Com o teto, o nome encolhe com reticências e a fita
+              volta a caber em duas linhas. */}
+          {quemFiltra.length > 0 && (
+            <span data-filtro-quem style={{ display: "flex", alignItems: "center", minWidth: 0, maxWidth: 236,
+                                            border: `1px solid ${C.greenDark}`, background: C.greenDark, color: "#fff",
+                                            borderRadius: 20, minHeight: 32, overflow: "hidden" }}>
+              <button onClick={() => setMenuQuem(true)}
+                      title={`Conversas em que ${modoQuem === "todos" ? "TODAS estas pessoas falaram, na mesma conversa" : "pelo menos uma destas pessoas falou"}: ${nomesQuemFiltra.join(", ")}`}
+                      style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, border: "none", background: "transparent",
+                               color: "#fff", padding: "5px 4px 5px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
+                <Users size={13} style={{ flexShrink: 0 }} />
+                {/* O NOME encolhe com reticências; o "+1" e a regra NÃO.
+                    Encolhendo tudo junto, "Rodrigo Sousa +1" virava "Rodrigo
+                    Sou…" e sumia justamente a informação de que havia mais
+                    alguém marcado — o nome cortado ainda se reconhece, o "+1"
+                    cortado vira uma informação a menos. */}
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {nomesQuemFiltra[0] || "1 pessoa"}
+                </span>
+                {nomesQuemFiltra.length > 1 && (
+                  <span style={{ flexShrink: 0 }}>+{nomesQuemFiltra.length - 1}</span>
                 )}
-              </div>
-            )}
-          </span>
+                {/* A REGRA aparece só quando é "todos juntos": é a estreita, a
+                    que faz a lista encolher de um jeito que surpreende. A outra
+                    é o comportamento que se espera de marcar dois nomes, e
+                    escrever "qualquer um" ali roubava metade da pílula para
+                    dizer o óbvio. Nos dois casos a frase inteira está no
+                    `title` e dentro do menu. */}
+                {nomesQuemFiltra.length > 1 && modoQuem === "todos" && (
+                  <span style={{ flexShrink: 0, opacity: .85, fontWeight: 500 }}>· juntos</span>
+                )}
+              </button>
+              <button onClick={() => setQuemFiltra([])} aria-label="Tirar o filtro de quem participou"
+                      title="Tirar este filtro"
+                      style={{ display: "flex", alignItems: "center", border: "none", background: "transparent",
+                               color: "#fff", padding: "5px 10px 5px 4px", cursor: "pointer" }}>
+                <X size={14} />
+              </button>
+            </span>
           )}
 
           {/* A pílula das etiquetas. Quando há uma escolhida, ela mostra a cor e
