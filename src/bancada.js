@@ -1489,20 +1489,62 @@ export const supabase = {
     }), error: null };
   },
   auth: {
+    // O ARMÁRIO E A CHAVE, iguais aos da biblioteca de verdade.
+    //
+    // A entrada tem duas maneiras de abrir a sessão: trocar o bilhete de uso
+    // único com o Auth do Supabase, e — quando o Auth está fora do ar —
+    // guardar aqui uma sessão que a ponte já assinou. A segunda escreve
+    // NESTE armário, com ESTA chave, e depois recarrega a página.
+    //
+    // Sem isto na bancada, esse caminho seria código que ninguém nunca viu
+    // funcionar. E ele existe justamente para o dia em que o outro não
+    // funciona: é o último lugar do sistema onde se pode aceitar "deve
+    // funcionar".
+    storageKey: "sb-bancada-auth-token",
+    storage: (typeof localStorage !== "undefined") ? localStorage : {
+      getItem: () => null, setItem: () => {}, removeItem: () => {},
+    },
+
     // `__DESLOGADO` mostra a TELA DE ENTRADA. Sem ele a bancada já entra
     // logada, e a tela de entrada — que é a primeira que a equipe vê todo dia,
     // e a única que fala com a ponte antes de haver sessão — nunca era
     // exercitada por prova nenhuma.
-    getSession: async () => (
-      (typeof globalThis !== "undefined" && globalThis.__DESLOGADO)
+    //
+    // A SESSÃO GUARDADA VEM PRIMEIRO, como vem na de verdade: uma sessão
+    // escrita no armário, com prazo em dia, é devolvida sem rede nenhuma.
+    // É o que faz a recarga depois da entrada assinada terminar no painel, e
+    // não de volta na tela de entrada.
+    getSession: async () => {
+      try {
+        const guardada = (typeof localStorage !== "undefined")
+          && localStorage.getItem("sb-bancada-auth-token");
+        if (guardada) {
+          const s = JSON.parse(guardada);
+          if (s && s.access_token && (!s.expires_at || s.expires_at * 1000 > Date.now())) {
+            return { data: { session: s } };
+          }
+        }
+      } catch (_e) { /* armário com lixo dentro é o mesmo que armário vazio */ }
+      return (typeof globalThis !== "undefined" && globalThis.__DESLOGADO)
         ? { data: { session: null } }
         : { data: { session: { access_token: "jwt-de-mentira", user: { id: "u1", email: "rodrigo@ropelimi",
       // O nome VELHO, congelado na criação da conta. Se a tela mostrar este,
       // a correção não funcionou.
-      user_metadata: { nome: "rodrigo" } } } } }),
+      user_metadata: { nome: "rodrigo" } } } } };
+    },
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
     signOut: async () => ({ error: null }),
     updateUser: async () => ({ error: null }),
+
+    // A TROCA DO BILHETE POR UMA SESSÃO. Faltava aqui — e por isso a entrada
+    // que DÁ CERTO nunca foi exercitada por prova nenhuma: sem esta função, a
+    // tela estourava num erro e caía na mensagem de "não consegui falar com o
+    // servidor", que a prova lia como se fosse o caso que ela estava testando.
+    // `__OTP_FALHA` faz o Auth recusar, que é a metade que interessa agora.
+    verifyOtp: async () => (
+      (typeof globalThis !== "undefined" && globalThis.__OTP_FALHA)
+        ? { error: { message: "auth indisponível" } }
+        : { error: null }),
   },
   channel: () => {
     const canal = { on: () => canal, subscribe: () => canal, unsubscribe: () => {} };
