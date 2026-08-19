@@ -85,6 +85,37 @@ async function dedosCabem(onde) {
      pequenos.slice(0, 6).join(" · ") + (pequenos.length > 6 ? ` (+${pequenos.length - 6})` : ""));
 }
 
+/** NENHUM CAMPO PODE TER LETRA MENOR QUE 16 PIXELS.
+ *
+ *  Não é gosto: é o corte em que o Safari do iPhone decide dar zoom na página
+ *  inteira ao focar o campo — e não desfaz ao sair dele. Foi o relato de
+ *  19/08: "ao clicar no campo de texto ele está expandindo a tela, ficando
+ *  desproporcional". A caixa de escrever tinha 14,5.
+ *
+ *  Um número, e não uma olhada: o próximo campo criado com 14px reprova aqui
+ *  em vez de reprovar no celular de alguém. */
+async function semZoomAoTocar(onde) {
+  const pequenos = await page.evaluate(() => {
+    const fora = [], vistos = new Set();
+    for (const el of document.querySelectorAll("input, textarea, select")) {
+      if (["file", "checkbox", "radio", "hidden"].includes(el.type)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) continue;
+      const tamanho = parseFloat(getComputedStyle(el).fontSize);
+      if (tamanho >= 16) continue;
+      const nome = (el.getAttribute("aria-label") || el.getAttribute("placeholder")
+        || el.getAttribute("title") || el.tagName).slice(0, 40);
+      const chave = `${nome} ${tamanho}px`;
+      if (vistos.has(chave)) continue;
+      vistos.add(chave);
+      fora.push(chave);
+    }
+    return fora;
+  });
+  ok(`${onde}: tocar num campo não dá zoom na tela`, pequenos.length === 0,
+     pequenos.slice(0, 6).join(" · ") + (pequenos.length > 6 ? ` (+${pequenos.length - 6})` : ""));
+}
+
 /** Mede um elemento: largura, e se o texto dele está cortado. */
 async function medir(seletor) {
   return page.evaluate((s) => {
@@ -104,6 +135,7 @@ console.log("\nA lista de conversas");
 {
   await naoRolaDeLado("lista");
   await dedosCabem("lista");
+  await semZoomAoTocar("lista");
   const nome = await medir("[data-conversa-nome] div");
   ok("a lista abre com conversas", await page.locator("[data-conversa-nome]").count() > 0);
   ok("e a conversa aberta é que manda na tela",
@@ -124,6 +156,7 @@ console.log("\nO cabeçalho da conversa — o do relato");
 
   await naoRolaDeLado("conversa");
   await dedosCabem("conversa");
+  await semZoomAoTocar("conversa");
 
   const nome = await medir("[data-nome-do-contato]");
   ok("o nome do contato aparece", !!nome && nome.largura > 0);
@@ -259,6 +292,14 @@ console.log("\nO menu do cabeçalho guarda o que saiu de vista");
 
 console.log("\nA barra de escrever");
 {
+  // O CAMPO DO RELATO. É onde a equipe passa o dia, e era o mais gritante:
+  // 14,5px, quase dois pontos abaixo do corte.
+  const letraDaCaixa = await page.evaluate(() => {
+    const t = document.querySelector("textarea");
+    return t ? parseFloat(getComputedStyle(t).fontSize) : null;
+  });
+  ok("a caixa de escrever tem letra de 16px",
+     letraDaCaixa !== null && letraDaCaixa >= 16, `tinha ${letraDaCaixa}px`);
   await naoRolaDeLado("conversa com o menu fechado");
   const barra = await page.evaluate(() => {
     const t = document.querySelector("textarea, [contenteditable]");
@@ -293,7 +334,7 @@ console.log("\nAs telas de dentro, uma a uma");
   for (const tela of ["Painel", "Departamentos e acessos", "Configurações"]) {
     const abriu = await abrirPeloMenuDoTopo(tela);
     ok(`${tela}: abre no celular`, abriu);
-    if (abriu) { await naoRolaDeLado(tela); await dedosCabem(tela); }
+    if (abriu) { await naoRolaDeLado(tela); await dedosCabem(tela); await semZoomAoTocar(tela); }
     await page.keyboard.press("Escape");
     await page.waitForTimeout(400);
   }
@@ -306,6 +347,7 @@ console.log("\nAs telas de dentro, uma a uma");
     await page.waitForTimeout(700);
     await naoRolaDeLado("nova conversa");
     await dedosCabem("nova conversa");
+    await semZoomAoTocar("nova conversa");
     await page.keyboard.press("Escape");
   }
 }

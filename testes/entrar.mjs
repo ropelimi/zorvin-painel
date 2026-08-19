@@ -124,6 +124,21 @@ console.log("\nA tela de entrada aparece");
   ok("e o botão está pronto", await botao.isDisabled() === false);
 }
 
+console.log("\nOs campos não dão zoom na tela do celular");
+{
+  // O Safari do iPhone dá zoom na página inteira ao focar um campo com letra
+  // menor que 16px — e não desfaz ao sair dele. Aqui são dois campos, e são os
+  // primeiros que a equipe toca todo dia: a tela ficaria torta antes mesmo de
+  // alguém entrar.
+  const pequenos = await page.evaluate(() =>
+    [...document.querySelectorAll("input")]
+      .filter((el) => el.getBoundingClientRect().width > 0)
+      .map((el) => ({ tipo: el.type, tamanho: parseFloat(getComputedStyle(el).fontSize) }))
+      .filter((c) => c.tamanho < 16));
+  ok("usuário e senha com letra de 16px", pequenos.length === 0,
+     pequenos.map((c) => `${c.tipo} ${c.tamanho}px`).join(", "));
+}
+
 console.log("\nQuando a ponte está acordando");
 {
   // O caso do relato. Enquanto se espera, a tela tem de DIZER o que está
