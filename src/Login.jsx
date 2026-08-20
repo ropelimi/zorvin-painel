@@ -30,7 +30,11 @@ const BRIDGE_URL = (import.meta.env.VITE_BRIDGE_URL || "").replace(/\/$/, "");
 // dia a Render ficar mais lenta, muda-se o número sem mexer no código.
 const LIMITE_MS = Number(import.meta.env.VITE_LIMITE_LOGIN_MS) || 75000;
 
-export default function Login() {
+// `authMudo` chega do `App` quando a conferência da sessão não respondeu a
+// tempo E não havia sessão guardada aqui. Sem isto, a pessoa cai numa tela de
+// login comum sem saber que o serviço lá fora está fora do ar — e conclui que
+// esqueceu a senha.
+export default function Login({ authMudo = false } = {}) {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [verSenha, setVerSenha] = useState(false);
@@ -287,6 +291,19 @@ export default function Login() {
               aparece. Sem isso, quem não enxerga a tela aperta "Entrar", não
               acontece nada aparente, e não há como saber que a senha estava
               errada — a mensagem existe, mas em silêncio. */}
+          {/* O AVISO DE QUE A CULPA NÃO É DE QUEM ESTÁ ENTRANDO.
+              Amarelo e não vermelho: não é um erro do que a pessoa fez, é um
+              recado sobre o mundo lá fora. E ele diz para TENTAR, porque a
+              entrada pela ponte funciona mesmo com o Auth calado — é
+              exatamente para isso que ela existe. */}
+          {authMudo && !erro && (
+            <div role="status" style={{ color: "#5a4a00", background: "#ffe9a8", fontSize: 13, fontWeight: 500, marginTop: 16, padding: "9px 12px", borderRadius: 10 }}>
+              A conferência de quem está entrando demorou demais para responder.
+              <div style={{ marginTop: 4, fontSize: 12, fontWeight: 400 }}>
+                Pode entrar normalmente: o seu login não depende desse serviço.
+              </div>
+            </div>
+          )}
           {erro && (
             <div role="alert" style={{ color: "#fff", background: "#e5573f", fontSize: 13, fontWeight: 500, marginTop: 16, padding: "9px 12px", borderRadius: 10 }}>
               {erro}

@@ -1235,6 +1235,12 @@ export default function Painel({ sessao }) {
   // As permissões desta pessoa, para a tela oferecer só o que ela pode usar.
   const [minhasPermissoes, setMinhasPermissoes] = useState([]);
   const [erroPermissoes, setErroPermissoes] = useState("");
+  // O QUE NÃO DEU PARA LER na hora de montar o acesso, por extenso, para a
+  // tela poder dizer "não consegui perguntar" em vez de "você não pode".
+  // `tentativaDeAcesso` só existe para o botão de tentar de novo poder mandar
+  // a leitura acontecer outra vez sem recarregar a página inteira.
+  const [erroDoAcesso, setErroDoAcesso] = useState("");
+  const [tentativaDeAcesso, setTentativaDeAcesso] = useState(0);
   const [departamentoId, setDepartamentoId] = useState(null);
   const [souAdmin, setSouAdmin] = useState(false);
   // A minha linha em `usuarios` — o espelho do cadastro do Vantoro. É de onde
@@ -1753,13 +1759,47 @@ export default function Painel({ sessao }) {
           .eq("usuario_id", sessao?.user?.id || ""),
       ]);
       if (!vivo) return;
-      const ehAdmin = Boolean(eu.data && eu.data.admin);
-      setMeuCadastro(eu.data || null);
-      setAdvogados(tel.data || []);
-      setDepartamentos(dep.data || []);
-      setSouAdmin(ehAdmin);
-      setMinhasPermissoes(perm.data || []);
+
+      // ------------------------------------------------------------
+      //  UMA LEITURA QUE FALHOU NÃO PODE VIRAR UMA AFIRMAÇÃO
+      //
+      //  As quatro consultas acima respondiam com `|| []`, e o erro de cada
+      //  uma era descartado — o de `usuarios` nem chegava a ser olhado. O
+      //  resultado é o relato de 20/08: a tela mostrando "Você não tem nenhum
+      //  número liberado neste departamento" para quem é ADMINISTRADOR e
+      //  alcança tudo. Bastou uma das quatro tropeçar.
+      //
+      //  Repare no tamanho da mentira: a pessoa não estava sem acesso. A tela
+      //  é que não conseguiu perguntar, e respondeu no lugar de quem sabe. Um
+      //  F5 resolvia — mas só depois de assustar, e nada ali dizia para
+      //  tentar de novo.
+      //
+      //  Duas regras daqui em diante:
+      //
+      //    1. SÓ SE GRAVA O QUE VEIO. Leitura que falhou não sobrescreve o que
+      //       já estava certo na tela — antes, uma piscada de rede esvaziava a
+      //       lista de telefones de quem estava trabalhando.
+      //
+      //    2. O QUE FALHOU FICA ESCRITO. Com nome do que não veio e um botão
+      //       de tentar de novo, em vez de uma conclusão sobre permissão.
+      // ------------------------------------------------------------
+      const falhou = [];
+      if (tel.error) falhou.push("os telefones");
+      if (dep.error) falhou.push("os departamentos");
+      if (eu.error) falhou.push("o seu cadastro");
+      if (perm.error) falhou.push("as suas permissões");
+
+      const ehAdmin = eu.error ? souAdmin : Boolean(eu.data && eu.data.admin);
+      if (!eu.error) { setMeuCadastro(eu.data || null); setSouAdmin(ehAdmin); }
+      if (!tel.error) setAdvogados(tel.data || []);
+      if (!dep.error) setDepartamentos(dep.data || []);
+      if (!perm.error) setMinhasPermissoes(perm.data || []);
       setErroPermissoes(perm.error ? perm.error.message : "");
+      setErroDoAcesso(falhou.length ? falhou.join(", ") : "");
+
+      // Alguma falhou: não se escolhe telefone nenhum agora. Escolher com meia
+      // resposta abriria a lista errada e pareceria que a permissão mudou.
+      if (falhou.length) return;
 
       const lista = filtrarPermitidos(tel.data || [], perm.data || [], ehAdmin, perm.error);
       if (lista.length) {
@@ -1773,7 +1813,7 @@ export default function Painel({ sessao }) {
       }
     })();
     return () => { vivo = false; };
-  }, [sessao?.user?.id]);
+  }, [sessao?.user?.id, tentativaDeAcesso]);
 
   // Salva o advogado selecionado para reabrir nele após atualizar a página.
   useEffect(() => {
@@ -6564,7 +6604,34 @@ export default function Painel({ sessao }) {
               </div>
             </div>
           )}
-          {!advogadoId && advogadosVisiveis.length === 0 && (
+          {/* NÃO CONSEGUI PERGUNTAR ≠ VOCÊ NÃO PODE.
+              Enquanto isto aqui era uma frase só, a tela afirmava a segunda
+              coisa sempre que a primeira acontecia — e foi assim que um
+              administrador, que alcança tudo, leu que não tinha número
+              nenhum. O botão está aqui porque a saída era um F5 que ninguém
+              tinha motivo para tentar. */}
+          {!advogadoId && erroDoAcesso && (
+            <div data-erro-do-acesso style={{ padding: "20px 18px", textAlign: "center", color: C.textSecondary, fontSize: 13 }}>
+              <div style={{ color: C.textPrimary, fontWeight: 600, marginBottom: 6 }}>
+                Não consegui conferir o seu acesso agora.
+              </div>
+              <div style={{ marginBottom: 4 }}>
+                Não veio resposta para: {erroDoAcesso}.
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                Isto não quer dizer que você perdeu acesso — quer dizer que a pergunta
+                não foi respondida.
+              </div>
+              <button
+                data-tentar-acesso
+                onClick={() => { setErroDoAcesso(""); setTentativaDeAcesso((n) => n + 1); }}
+                style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8,
+                         padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                Tentar de novo
+              </button>
+            </div>
+          )}
+          {!advogadoId && !erroDoAcesso && advogadosVisiveis.length === 0 && (
             <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>
               Você não tem nenhum número liberado neste departamento.
             </div>

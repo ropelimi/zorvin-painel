@@ -994,8 +994,25 @@ function consulta(tabela) {
     },
     limit(n) { corte = Math.min(corte, n); return eu; },
     range(de, ate) { inicio = de; corte = ate - de + 1; return eu; },
-    single() { return eu.then((r) => ({ data: r.data[0] || null, error: null })); },
-    maybeSingle() { return eu.then((r) => ({ data: r.data[0] || null, error: null })); },
+    // `single` E `maybeSingle` PRECISAM DEIXAR O ERRO PASSAR.
+    //
+    // Elas devolviam `error: null` FIXO e faziam `r.data[0]` — e `data` é
+    // `null` quando a consulta falha. Duas consequências, as duas ruins:
+    //
+    //   o erro sumia. `.maybeSingle()` é como o painel lê o próprio cadastro
+    //   (`usuarios`), e é dele que sai o "sou administrador". Quem conferisse
+    //   `eu.error` nunca veria nada, aqui — o caminho do erro era invisível
+    //   para a bancada inteira;
+    //
+    //   e `null[0]` ESTOURA, derrubando o `Promise.all` que lê as quatro
+    //   consultas do acesso. A tela não ficava sem uma resposta: ficava sem
+    //   as quatro.
+    //
+    // Foi a prova nova que encontrou isto, e ela encontrou porque falhou —
+    // com o conserto do painel já no lugar. Uma bancada que engole erro faz
+    // conserto de tratamento de erro parecer que não funciona.
+    single() { return eu.then((r) => (r.error ? r : { data: (r.data || [])[0] || null, error: null })); },
+    maybeSingle() { return eu.then((r) => (r.error ? r : { data: (r.data || [])[0] || null, error: null })); },
     // GRAVAR TAMBÉM É ENCADEÁVEL. O painel escreve `upsert(...).select("id")
     // .single()`, e devolver uma Promise aqui quebrava a corrente com
     // "upsert(...).select is not a function" — a bancada acusava um defeito
@@ -1044,6 +1061,19 @@ function consulta(tabela) {
       if (apagando) {
         const tab = TABELAS[tabela] || [];
         for (const l of linhas) { const i = tab.indexOf(l); if (i >= 0) tab.splice(i, 1); }
+      }
+      // A TABELA QUE NÃO RESPONDE HOJE. `__QUEBRAR = ["permissoes"]` faz esta
+      // consulta devolver erro, como o PostgREST devolve num tropeço.
+      //
+      // Existe porque a tela lia as quatro consultas do acesso com `|| []` e
+      // jogava o erro fora — e uma delas falhando virava "Você não tem nenhum
+      // número liberado", dito a um administrador que alcança tudo. Sem poder
+      // quebrar uma consulta sob encomenda, esse caminho não tem como ser
+      // provado, e foi assim que ele chegou em produção.
+      const quebradas = (typeof globalThis !== "undefined" && globalThis.__QUEBRAR) || [];
+      if (quebradas.includes(tabela)) {
+        return resolver({ data: null, count: null,
+          error: { code: "57014", message: `a consulta a ${tabela} não respondeu` } });
       }
       // O "join" com contatos, refeito na hora. No Supabase a lista de
       // conversas traz o contato por junção, então uma gravação em `contatos`
@@ -1532,6 +1562,16 @@ export const supabase = {
     // É o que faz a recarga depois da entrada assinada terminar no painel, e
     // não de volta na tela de entrada.
     getSession: async () => {
+      // O AUTH QUE NÃO RESPONDE. `__SESSAO_PENDURADA` faz esta promessa nunca
+      // voltar — que foi exatamente o que aconteceu em produção: a tela do
+      // escritório inteiro parada em "Carregando…", sem erro e sem saída.
+      //
+      // Uma promessa PENDURADA é o único jeito honesto de provar isto.
+      // Devolver um erro provaria outra coisa: erro tem `catch`, e o defeito
+      // era não haver caminho nenhum — nem de erro, nem de prazo.
+      if (typeof globalThis !== "undefined" && globalThis.__SESSAO_PENDURADA) {
+        await new Promise(() => {});
+      }
       try {
         const guardada = (typeof localStorage !== "undefined")
           && localStorage.getItem("sb-bancada-auth-token");

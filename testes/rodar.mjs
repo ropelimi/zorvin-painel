@@ -77,7 +77,12 @@ function subirServidor(tipo) {
            // da desistência levaria mais de um minuto e ninguém a rodaria.
            // Nenhuma outra prova chega a chamar a entrada — todas já sobem
            // logadas —, então encurtar aqui não muda nada nelas.
-           VITE_LIMITE_LOGIN_MS: "6000" },
+           VITE_LIMITE_LOGIN_MS: "6000",
+           // A espera pela conferência da sessão. Em produção são 6 segundos;
+           // aqui 1,2 — a prova do Auth mudo precisa ESTOURAR esse prazo, e
+           // seis segundos por caso deixariam a suíte lenta por causa de uma
+           // demora que é de propósito.
+           VITE_LIMITE_SESSAO_MS: "1200" },
     stdio: ["ignore", "ignore", "inherit"],
     detached: true,
   });
