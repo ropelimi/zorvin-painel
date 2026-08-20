@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "./supabase.js";
 import { chamarPonte } from "./ponte.js";
+// A ETIQUETA do telefone do escritório — a mesma que a ponte lê para aplicar a
+// permissão. Estava escrita aqui dentro; agora tem nome e um só lugar, com o
+// contrato explicado. NÃO troque por `chaveDoNumero`: são perguntas
+// diferentes, e a explicação está em `numeros.js`.
+import { etiquetaDoTelefone } from "./numeros.js";
 import { X, Plus, Trash2, Loader2, Building2, Phone, ShieldCheck } from "lucide-react";
 
 // ============================================================
@@ -429,13 +434,6 @@ function Atendentes({ cx, C, departamentos, telefones, aoAvisar }) {
   const meusFones = pessoa ? (pessoa.zorvin_telefones || []) : [];
   const limitado = Boolean(pessoa && pessoa.zorvin_so_telefones);
 
-  // O número como o Vantoro guarda: só dígitos, sem o 55. É por esta chave que
-  // os dois lados se acham.
-  function chaveDoNumero(bruto) {
-    let d = String(bruto || "").replace(/\D/g, "");
-    if (d.length > 11 && d.startsWith("55")) d = d.slice(2);
-    return d.length > 11 ? d.slice(-11) : d;
-  }
   const nomeDep = Object.fromEntries(departamentos.map((d) => [d.id, d.nome]));
 
   function alternar(lista, valor) {
@@ -518,7 +516,7 @@ function Atendentes({ cx, C, departamentos, telefones, aoAvisar }) {
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 8 }}>
                 {telefones.map((t) => {
-                  const chave = chaveDoNumero(t.numero);
+                  const chave = etiquetaDoTelefone(t.numero);
                   return (
                     <Cartao key={t.id} cx={cx} C={C} cor="#3d7dd6"
                             titulo={t.nome || t.numero}
