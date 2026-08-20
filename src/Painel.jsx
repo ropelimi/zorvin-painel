@@ -1907,18 +1907,21 @@ export default function Painel({ sessao }) {
   // Agora vem uma página por vez, e a rolagem pede a próxima. Além de acabar
   // com o teto, a primeira tela chega mais rápido: 200 conversas em vez de
   // 1000.
-  const carregarConversas = useCallback(async (advId, pagina = 0) => {
+  const carregarConversas = useCallback(async (advId, pagina = 0, manterAberta = null) => {
     if (!advId) return;
     const de = pagina * PAGINA_BANCO;
     const buscar = () => supabase
       .from("conversas")
-      .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
+      // `mensagens(id)` COM TETO DE UMA: a pergunta é "existe alguma?", e não
+      // "quantas são". Uma linha por conversa responde isso e não traz peso.
+      .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")}), mensagens(id)`)
       .eq("advogado_id", advId)
       // A ORDEM É DAQUI, e não de uma reordenação depois. Ver o comentário em
       // `ordem`: virar a lista já carregada mostraria "a mais antiga das 200
       // que vieram", que não é a mais antiga de nada.
       .order("ultima_atividade", { ascending: ordem === "antigas" })
-      .range(de, de + PAGINA_BANCO - 1);
+      .range(de, de + PAGINA_BANCO - 1)
+      .limit(1, { referencedTable: "mensagens" });
     let { data, error } = await buscar();
     // Base sem o SQL das frentes: tira `vantoro_nome` do pedido e repete. Uma
     // vez só — depois disso a coluna já não é pedida.
@@ -1945,12 +1948,42 @@ export default function Painel({ sessao }) {
     const sinal = ordem === "antigas" ? -1 : 1;
     const porFixada = (a, b) => (b.fixada ? 1 : 0) - (a.fixada ? 1 : 0)
       || sinal * (new Date(b.ultima_atividade) - new Date(a.ultima_atividade));
-    const veio = data || [];
+    const bruto = data || [];
     // Página cheia = provavelmente há mais. Página curta = acabou. Conta só a
     // PÁGINA — as fixadas que vêm à parte, logo abaixo, não dizem nada sobre
-    // quanto ainda falta.
-    setTemMaisConversas(veio.length === PAGINA_BANCO);
+    // quanto ainda falta. E conta o BRUTO, antes do corte abaixo: o que foi
+    // escondido saiu da tela, não da página.
+    setTemMaisConversas(bruto.length === PAGINA_BANCO);
     setPaginaConversas(pagina);
+
+    // ------------------------------------------------------------
+    //  CONVERSA SEM NENHUMA MENSAGEM NÃO É CONVERSA
+    //
+    //  Abrir um contato cria a linha em `conversas` na hora — tem de criar,
+    //  porque toda a tela pendura nela. Mas se ninguém escrever nada, o que
+    //  ficou foi uma linha na lista sem uma palavra dentro, com o horário do
+    //  clique. Ela some da tela e não do banco: é o WhatsApp que manda aqui, e
+    //  lá a conversa só entra na lista quando alguém fala.
+    //
+    //  DUAS EXCEÇÕES, e as duas são para não esconder o que a pessoa quer ver:
+    //
+    //    a FIXADA fica. Fixar é dizer "esta eu quero à vista"; sumir com ela
+    //    seria desobedecer uma escolha explícita.
+    //
+    //    a ABERTA fica. Sem isto, clicar no contato abriria uma conversa que
+    //    não está na lista — a tela mostraria a conversa e a lista diria que
+    //    ela não existe.
+    //
+    //  E O ERRO CAI PARA O LADO DE MOSTRAR. `Array.isArray` é a diferença
+    //  entre "veio a lista e está vazia" e "não veio lista nenhuma". Num banco
+    //  que não devolva a junção, o campo vem indefinido — e aí não se esconde
+    //  nada. Esconder por falta de resposta apagaria conversas de verdade da
+    //  tela, sem erro e sem log, que num escritório de advocacia é o defeito
+    //  que não se pode ter.
+    const aberta = manterAberta != null ? manterAberta : conversaIdRef.current;
+    const semMensagem = (c) => Array.isArray(c.mensagens) && c.mensagens.length === 0
+                               && !c.fixada && String(c.id) !== String(aberta);
+    const veio = bruto.filter((c) => !semMensagem(c));
 
     // ------------------------------------------------------------
     //  AS FIXADAS VÊM À PARTE, E VÊM SEMPRE
@@ -2685,7 +2718,11 @@ export default function Painel({ sessao }) {
     setContatoForm(null);
     setBuscaContato("");
     setVerArquivadas(false);
-    await carregarConversas(advId);
+    // O ID VAI EXPLÍCITO, e não pelo `conversaIdRef`. A ordem aqui é carregar
+    // e só depois abrir, e o ref só é atualizado no próximo desenho — nele
+    // ainda está a conversa ANTERIOR. Sem passar o id, a conversa recém-aberta
+    // seria escondida por não ter mensagem justamente no clique que a abre.
+    await carregarConversas(advId, 0, conv.id);
     setConversaId(conv.id);
   }
 
@@ -2927,7 +2964,8 @@ export default function Painel({ sessao }) {
     setVerArquivadas(false);
     if (adv.departamento_id) setDepartamentoId(adv.departamento_id);
     setAdvogadoId(adv.id);
-    await carregarConversas(adv.id);
+    // Pelo mesmo motivo de `abrirConversaContato`: o ref ainda tem a anterior.
+    await carregarConversas(adv.id, 0, l.conversaId);
     setConversaId(l.conversaId);
   }
 
@@ -3446,6 +3484,39 @@ export default function Painel({ sessao }) {
     };
   }, [conversaId, meuNome]);
 
+  // AO SAIR SEM TER ESCRITO NADA, A CONVERSA SAI DA LISTA.
+  //
+  // A outra metade do conserto. A consulta esconde a conversa sem mensagem,
+  // mas abre exceção para a que está ABERTA — senão clicar num contato abriria
+  // uma conversa que a lista diz não existir. Só que essa exceção não se
+  // desfazia ao sair: a linha vazia ficava na tela até a próxima leitura do
+  // banco, que na prática é até alguém recarregar a página. Era metade do
+  // relato consertado, e a metade que sobra é a que a pessoa vê.
+  //
+  // A CONTAGEM VEM DO BANCO, e não do que está na tela. O que a tela tem é o
+  // array de mensagens, e no instante da saída ele já pode estar sendo trocado
+  // pelo da conversa nova — ler dali é apostar numa ordem de eventos. Uma
+  // contagem com `head: true` não traz linha nenhuma: o banco responde só o
+  // número.
+  //
+  // E ELA SÓ TIRA NO ZERO CRAVADO. Erro de rede, contagem nula, qualquer
+  // dúvida: a linha fica. Esconder uma conversa de verdade por causa de uma
+  // resposta que não veio é o erro que não se pode cometer aqui.
+  useEffect(() => {
+    if (!conversaId) return undefined;
+    const saindoDe = conversaId;
+    return () => {
+      supabase.from("mensagens")
+        .select("id", { count: "exact", head: true })
+        .eq("conversa_id", saindoDe)
+        .then(({ count, error }) => {
+          if (error || count !== 0) return;
+          setConversas((prev) => prev.filter(
+            (c) => String(c.id) !== String(saindoDe) || c.fixada));
+        });
+    };
+  }, [conversaId]);
+
   // ---- Ajusta a altura da caixa de texto conforme escreve (várias linhas) ----
   //
   // `scrollHeight` JÁ INCLUI o respiro de cima e de baixo. Numa caixa
@@ -3542,7 +3613,17 @@ export default function Painel({ sessao }) {
         // confirmamos com uma consulta rápida do advogado_id.
         const jaNaLista = conversasRef.current.some((c) => c.id === nova.conversa_id);
         let doAdvogadoAtual = jaNaLista;
-        if (!doAdvogadoAtual && nova.origem === "contato" && advogadoIdRef.current) {
+        // A CONFIRMAÇÃO VALE PARA OS DOIS SENTIDOS.
+        //
+        // Ela era só para mensagem RECEBIDA. Com isso, a primeira mensagem que
+        // um colega ENVIA numa conversa que não está na minha lista não a
+        // trazia para cá — eu só a via ao recarregar a página.
+        //
+        // Enquanto toda conversa aberta já entrava na lista na hora, o buraco
+        // quase não aparecia. Agora que a conversa sem mensagem fica de fora, é
+        // exatamente por aqui que ela volta quando alguém fala pela primeira
+        // vez — e "alguém" inclui o escritório, não só o cliente.
+        if (!doAdvogadoAtual && advogadoIdRef.current) {
           const { data } = await supabase.from("conversas").select("advogado_id").eq("id", nova.conversa_id).maybeSingle();
           doAdvogadoAtual = !!data && data.advogado_id === advogadoIdRef.current;
         }
@@ -6085,7 +6166,12 @@ export default function Painel({ sessao }) {
                       <>
                         <div style={TITULO}>CONTATOS</div>
                         {lista.length ? lista.map((c) => (
-                          <div key={c.id} role="button" onClick={() => abrirConversaContato(c)} style={LINHA} onMouseEnter={(e) => realce(e, true)} onMouseLeave={(e) => realce(e, false)}>
+                          // `data-contato-agenda` é a alça da prova. A agenda é a
+                          // porta por onde nasce a conversa vazia do relato, e até
+                          // aqui não havia como alcançá-la a não ser procurando
+                          // texto na tela — que casa com a lista de conversas atrás
+                          // do diálogo e clica na linha errada.
+                          <div key={c.id} data-contato-agenda={c.id} role="button" onClick={() => abrirConversaContato(c)} style={LINHA} onMouseEnter={(e) => realce(e, true)} onMouseLeave={(e) => realce(e, false)}>
                             <Avatar nome={c.nome || c.numero} foto={c.foto_url} size={44} />
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nomeDoContato(c)}</div>

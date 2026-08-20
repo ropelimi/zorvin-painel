@@ -869,6 +869,25 @@ const TABELAS = {
   },
 };
 
+// LINHAS QUE O TESTE PLANTA, E QUE SOBREVIVEM AO F5.
+//
+// `__SEMENTE = { conversas: [...], contatos: [...], mensagens: [...] }`, posto
+// ANTES de a página abrir (`page.addInitScript`), entra aqui na montagem.
+//
+// Por que não basta empurrar no array depois: `TABELAS` é reconstruída a cada
+// carregamento da página, e a prova da conversa fantasma precisa recarregar —
+// é recarregando que se vê o que a CONSULTA devolve, em vez do que sobrou na
+// tela. Plantando depois, a linha some no `reload` e a conferência fica verde
+// por a linha não existir, e não por a tela ter escondido: um verde que fala
+// de outro assunto. Foi o que aconteceu na primeira tentativa desta prova.
+//
+// A mesma razão do `__NOME_NOVO_U1` logo acima, que já dizia isto por escrito.
+if (typeof globalThis !== "undefined" && globalThis.__SEMENTE) {
+  for (const [nome, linhas] of Object.entries(globalThis.__SEMENTE)) {
+    if (Array.isArray(TABELAS[nome]) && Array.isArray(linhas)) TABELAS[nome].push(...linhas);
+  }
+}
+
 // O teste troca o nome de alguém no meio da prova — é o que o relato descreve.
 if (typeof globalThis !== "undefined") {
   globalThis.__RENOMEAR_USUARIO = (id, nome) => {
@@ -925,6 +944,35 @@ function comparar(a, b) {
   return sa < sb ? -1 : sa > sb ? 1 : 0;
 }
 
+// POR QUAL COLUNA CADA TABELA EMBUTIDA SE LIGA À DE FORA.
+//
+// Escrito à mão, tabela por tabela, e não deduzido do nome. A dedução
+// ("conversas" sem o s, mais "_id") acerta nestes dois casos e passa a errar
+// calada no primeiro que fugir da regra — e um "errar calado" aqui vira teste
+// verde sobre junção nenhuma, que é pior do que não ter o teste.
+//
+// Quem embutir uma tabela nova acrescenta a linha aqui. Sem a linha, a
+// bancada deixa o campo INDEFINIDO em vez de devolver lista vazia: "não sei"
+// é a verdade, e "está vazio" seria uma afirmação que ela não apurou.
+const CHAVE_DA_JUNCAO = {
+  conversas: { mensagens: "conversa_id", conversa_tags: "conversa_id", notas: "conversa_id" },
+  contatos: { conversas: "contato_id" },
+};
+
+/** As tabelas pedidas por dentro de um `select`, como `"*, mensagens(id)"`.
+ *
+ *  Só o que o painel usa: `nome(colunas)`, com ou sem espaço antes do
+ *  parêntese. O apelido (`contato:contato_id (…)`) fica de fora de propósito —
+ *  aquele já vem pré-colado na linha da amostra, e resolvê-lo aqui trocaria um
+ *  caminho que funciona por um caminho novo, de graça. */
+function tabelasEmbutidas(cols) {
+  const achadas = [];
+  const re = /(?:^|,)\s*([a-z_][a-z0-9_]*)\s*\(/gi;
+  let m;
+  while ((m = re.exec(cols))) achadas.push(m[1]);
+  return achadas;
+}
+
 /** Uma consulta encadeável que devolve sempre `{data, error}` no final. */
 function consulta(tabela) {
   // A VISTA QUE AINDA NÃO EXISTE. O código sobe antes do script — sempre sobe.
@@ -938,13 +986,26 @@ function consulta(tabela) {
   // entre uma busca que responde e uma que estoura o tempo.
   const pedidos = [];
   let inicio = 0, corte = Infinity, patch = null, contando = false, semLinhas = false, apagando = false;
+  // AS TABELAS PEDIDAS POR DENTRO DA CONSULTA — `mensagens(id)` e afins.
+  //
+  // A bancada jogava o texto do `select` no lixo (`_cols`) e a conversa já
+  // trazia o contato pré-colado na linha da amostra. Enquanto o painel só
+  // pedia o contato isso passou; deixou de passar quando ele começou a
+  // perguntar "esta conversa tem alguma mensagem?" — a resposta vinha
+  // indefinida, e um teste montado sobre ela não prova nada.
+  //
+  // Pior: `limit(1, { referencedTable: "mensagens" })` caía no `limit` comum e
+  // cortava a lista de CONVERSAS em uma. Uma consulta que o painel usa desde a
+  // prévia do áudio nunca foi exercitada aqui de verdade.
+  let embutidas = [], limitesEmbutidos = {}, ordensEmbutidas = {};
   const eu = {
     // `select("id", { count: "exact", head: true })` — o jeito de pedir só a
     // CONTAGEM. A bancada precisa saber disso desde que os selos de não lidas
     // pararam de baixar mil conversas para somar uma dúzia de números.
-    select(_cols, opc) {
+    select(cols, opc) {
       if (opc && opc.count) contando = true;
       if (opc && opc.head) semLinhas = true;
+      embutidas = tabelasEmbutidas(String(cols || ""));
       return eu;
     },
     eq(col, val) { pedidos.push(col); linhas = linhas.filter((l) => String(l[col]) === String(val)); return eu; },
@@ -989,10 +1050,21 @@ function consulta(tabela) {
     // milhares de linhas: são eles que a paginação usa para sair do teto.
     order(col, opc) {
       const cres = !(opc && opc.ascending === false);
+      // `referencedTable` ordena a tabela EMBUTIDA, e não esta. Sem distinguir,
+      // um `.order("criado_em", { referencedTable: "mensagens" })` reordenava a
+      // lista de conversas por uma coluna que ela nem tem.
+      if (opc && opc.referencedTable) {
+        ordensEmbutidas[opc.referencedTable] = { col, cres };
+        return eu;
+      }
       linhas = linhas.slice().sort((a, b) => (cres ? 1 : -1) * comparar(a[col], b[col]));
       return eu;
     },
-    limit(n) { corte = Math.min(corte, n); return eu; },
+    limit(n, opc) {
+      if (opc && opc.referencedTable) { limitesEmbutidos[opc.referencedTable] = n; return eu; }
+      corte = Math.min(corte, n);
+      return eu;
+    },
     range(de, ate) { inicio = de; corte = ate - de + 1; return eu; },
     // `single` E `maybeSingle` PRECISAM DEIXAR O ERRO PASSAR.
     //
@@ -1020,16 +1092,45 @@ function consulta(tabela) {
     // o contato criado pelo link não existia na consulta seguinte, e o teste
     // do link nunca chegava ao fim.
     insert(reg) { return eu.gravar(reg); },
-    upsert(reg) { return eu.gravar(reg); },
-    gravar(reg) {
+    upsert(reg, opc) { return eu.gravar(reg, opc && opc.onConflict); },
+    gravar(reg, porOnde = null) {
       const novos = (Array.isArray(reg) ? reg : [reg]).map((r, i) => ({
         id: r.id || `${tabela}-${(TABELAS[tabela] || []).length + i + 1}`, ...r,
       }));
       const tab = TABELAS[tabela] || (TABELAS[tabela] = []);
+      // AS COLUNAS DO `onConflict`, quando o painel as declara.
+      //
+      // A bancada casava só por `numero` ou `id`. `conversas` casa por
+      // `advogado_id,contato_id` — e como nenhuma das duas era olhada, abrir
+      // de novo o mesmo contato criava uma SEGUNDA conversa. Ou seja: a
+      // bancada reproduzia, sem querer, o defeito das conversas duplicadas que
+      // o índice único do banco existe para impedir, e qualquer prova sobre
+      // "abrir a conversa deste contato" media a coisa errada.
+      const chaves = String(porOnde || "").split(",").map((c) => c.trim()).filter(Boolean);
       for (const n of novos) {
-        // "onConflict: numero" é o uso real: mesmo número, mesma linha.
-        const j = tab.findIndex((l) => (n.numero && l.numero === n.numero) || l.id === n.id);
-        if (j >= 0) tab[j] = { ...tab[j], ...n }; else tab.push(n);
+        const j = tab.findIndex((l) =>
+          (chaves.length && chaves.every((c) => String(l[c]) === String(n[c])))
+          || (n.numero && l.numero === n.numero) || l.id === n.id);
+        if (j >= 0) {
+          // A LINHA QUE JÁ EXISTE MANTÉM O SEU ID, e é ele que volta para quem
+          // gravou. É o que o `onConflict` faz no banco: abrir de novo o mesmo
+          // contato devolve a MESMA conversa, e não uma cópia.
+          tab[j] = { ...tab[j], ...n, id: tab[j].id };
+          n.id = tab[j].id;
+        } else {
+          // A CONVERSA NOVA NASCE COM HORÁRIO — o padrão da coluna no banco de
+          // verdade. Dá para ver na captura de tela do relato: a conversa
+          // recém-criada aparece no TOPO da lista, com a hora do clique.
+          //
+          // Só na CRIAÇÃO, nunca na atualização. O padrão de uma coluna só vale
+          // quando a linha nasce; aplicá-lo também no reencontro faria reabrir
+          // um contato empurrar a conversa dele para o topo sem ninguém ter
+          // falado nada — um "movimento" que o banco não faz.
+          if (tabela === "conversas" && n.ultima_atividade == null) {
+            n.ultima_atividade = new Date().toISOString();
+          }
+          tab.push(n);
+        }
       }
       linhas = novos;
       return eu;
@@ -1070,10 +1171,62 @@ function consulta(tabela) {
       // número liberado", dito a um administrador que alcança tudo. Sem poder
       // quebrar uma consulta sob encomenda, esse caminho não tem como ser
       // provado, e foi assim que ele chegou em produção.
+      //
+      // Vem ANTES da junção abaixo de propósito: uma consulta que não respondeu
+      // não tem o que juntar, e resolver as tabelas embutidas para depois jogar
+      // o resultado fora seria trabalho que o PostgREST nunca faria.
       const quebradas = (typeof globalThis !== "undefined" && globalThis.__QUEBRAR) || [];
       if (quebradas.includes(tabela)) {
         return resolver({ data: null, count: null,
           error: { code: "57014", message: `a consulta a ${tabela} não respondeu` } });
+      }
+
+      // DAQUI PARA BAIXO, CÓPIAS. Até aqui `linhas` são as PRÓPRIAS linhas das
+      // tabelas — tem de ser, senão `update` e `delete` mexeriam num retrato e
+      // o banco de mentira ficaria igual ao que estava.
+      //
+      // A junção é o contrário: pendurar `mensagens` na linha da amostra
+      // deixaria a lista colada ali para sempre, com o limite e a ordem da
+      // consulta que passou. A consulta seguinte herdaria o resultado da
+      // anterior — o tipo de bancada que responde bonito e não prova nada.
+      linhas = linhas.map((l) => ({ ...l }));
+
+      // AS TABELAS EMBUTIDAS, resolvidas de verdade.
+      //
+      // Depois dos filtros e da paginação, de propósito: no PostgREST a
+      // junção acontece sobre as linhas que sobraram, e resolver antes faria a
+      // bancada trabalhar sobre linhas que a consulta nem devolve.
+      for (const emb of embutidas) {
+        const chave = CHAVE_DA_JUNCAO[tabela] && CHAVE_DA_JUNCAO[tabela][emb];
+        // Sem regra escrita, NÃO INVENTA. Adivinhar a coluna por corte de
+        // string ("conversas" → "conversa_id") acerta hoje e erra calado no
+        // dia em que alguém embutir outra coisa. Deixando indefinido, quem
+        // consome vê "não sei" — que é a verdade — em vez de uma lista vazia,
+        // que é uma afirmação forte e provavelmente errada.
+        if (!chave) continue;
+        // O BANCO QUE NÃO DEVOLVE A JUNÇÃO. `__SEM_JUNCAO_MENSAGENS` faz o
+        // campo `mensagens` vir INDEFINIDO, que é como um banco sem aquela
+        // junção responderia — e é diferente de vir uma lista vazia.
+        //
+        // A distinção é a espinha do conserto da conversa fantasma: "não tem
+        // mensagem" esconde a conversa, "não sei se tem" não pode esconder
+        // nada. Sem poder simular o segundo caso, a única maneira de descobrir
+        // que a tela some com conversas num banco antigo seria em produção,
+        // com alguém procurando um atendimento que a tela engoliu.
+        if (emb === "mensagens" && typeof globalThis !== "undefined"
+            && globalThis.__SEM_JUNCAO_MENSAGENS) continue;
+        const filhas = TABELAS[emb] || [];
+        const ord = ordensEmbutidas[emb];
+        const teto = limitesEmbutidos[emb];
+        for (const l of linhas) {
+          let minhas = filhas.filter((f) => String(f[chave]) === String(l.id));
+          if (ord) {
+            minhas = minhas.slice().sort((a, b) =>
+              (ord.cres ? 1 : -1) * comparar(a[ord.col], b[ord.col]));
+          }
+          if (teto != null) minhas = minhas.slice(0, teto);
+          l[emb] = minhas;
+        }
       }
       // O "join" com contatos, refeito na hora. No Supabase a lista de
       // conversas traz o contato por junção, então uma gravação em `contatos`
