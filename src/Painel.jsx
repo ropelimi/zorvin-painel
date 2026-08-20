@@ -3476,7 +3476,21 @@ export default function Painel({ sessao }) {
         const atual = payload.new;
         if (!atual || atual.conversa_id !== conversaIdRef.current) return;
         setMensagens((prev) => prev.map((m) => (m.id === atual.id
-          ? { ...m, status: atual.status, reacoes: "reacoes" in atual ? atual.reacoes : m.reacoes }
+          ? { ...m, status: atual.status,
+              reacoes: "reacoes" in atual ? atual.reacoes : m.reacoes,
+              // O ARQUIVO QUE CHEGA DEPOIS DA BOLHA.
+              //
+              // A mídia recebida agora nasce com a miniatura embutida no
+              // webhook — a bolha aparece na hora, em vez de esperar o
+              // download inteiro — e a ponte troca pela imagem de verdade
+              // assim que ela chega. Sem copiar `midia_url` aqui, essa troca
+              // acontecia no banco e não na tela: quem estava com a conversa
+              // aberta ficava olhando a miniatura borrada até recarregar a
+              // página, e o conserto da demora teria criado um defeito novo.
+              midia_url: "midia_url" in atual ? (atual.midia_url ?? m.midia_url) : m.midia_url,
+              midia_mime: "midia_mime" in atual ? (atual.midia_mime ?? m.midia_mime) : m.midia_mime,
+              midia_segundos: "midia_segundos" in atual
+                ? (atual.midia_segundos ?? m.midia_segundos) : m.midia_segundos }
           : m)));
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversas" }, (payload) => {
