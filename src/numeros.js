@@ -84,6 +84,43 @@ export function chaveDoNumero(bruto) {
   return nacional;
 }
 
+// A ETIQUETA DE UM TELEFONE DO ESCRITÓRIO — outra pergunta, outra resposta.
+//
+// Esta NÃO é a chave de comparar duas pessoas. É o texto que identifica uma
+// das nossas linhas dentro do perfil do Vantoro, na lista `zorvin_telefones`.
+//
+// O CONTRATO, e é ele que manda aqui:
+//
+//     o painel  GRAVA a etiqueta   (tela de Departamentos)
+//     a ponte   LÊ a etiqueta      (`aplicarPermissoes`, em index.js)
+//
+// A ponte tem esta mesma função, idêntica, no arquivo dela. Enquanto as duas
+// concordarem, a permissão funciona; no dia em que discordarem, quem tiver
+// telefone marcado deixa de ver as conversas dele — e sem erro nenhum na
+// tela, que é o pior defeito possível num escritório de advocacia.
+//
+// POR ISSO ELA NÃO É `chaveDoNumero`, mesmo parecendo. Não a "conserte" para
+// ficar igual: as etiquetas JÁ GRAVADAS no Vantoro foram escritas com esta
+// regra, e mudá-la de um lado só as deixa órfãs. Se um dia as duas tiverem
+// mesmo de virar uma, é uma mudança nas DUAS pontas, com regravação do que já
+// está lá — e não uma limpeza de código.
+//
+// Nos telefones do escritório (55 + DDD + 9 dígitos, que é como toda linha
+// conectada chega) esta função e `chaveDoNumero` dão o MESMO resultado. É por
+// isso que a diferença nunca apareceu: ela só se manifesta no celular escrito
+// na forma antiga, sem o nono dígito, que ali não existe.
+//
+// UM DEFEITO CONHECIDO, deixado como está de propósito: o `slice(-11)` corta
+// um número estrangeiro pelo fim — "351912345678" vira "51912345678", sem o
+// 3. É inofensivo aqui porque esta função só toca telefone do escritório, e
+// todos são brasileiros. Consertar exige mexer na ponte junto, pelo mesmo
+// motivo de tudo acima; fica escrito para quem for fazer isso um dia.
+export function etiquetaDoTelefone(bruto) {
+  let d = String(bruto || "").replace(/\D/g, "");
+  if (d.length > 11 && d.startsWith("55")) d = d.slice(2);
+  return d.length > 11 ? d.slice(-11) : d;
+}
+
 // DÁ PARA CHAMAR ESTE NÚMERO?
 //
 // Menos de 10 dígitos é DDD faltando, e sem DDD não há para onde ligar. É a

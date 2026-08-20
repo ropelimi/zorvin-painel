@@ -4,8 +4,9 @@
 // caro que este sistema tem — ele não aparece como erro, aparece como um
 // cliente com duas conversas, cada uma com metade do diálogo — e é o mais
 // barato de achar aqui.
-import { numeroCanonico, chaveDoNumero, daParaChamar, telefoneLegivel, outrosNumeros }
-  from "../src/numeros.js";
+import { numeroCanonico, chaveDoNumero, daParaChamar, telefoneLegivel, outrosNumeros,
+         etiquetaDoTelefone } from "../src/numeros.js";
+import { readFileSync } from "node:fs";
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -151,6 +152,97 @@ console.log("\nOS OUTROS NÚMEROS — o miolo do botão da ficha");
                                "5521988887777");
     ok("os dois aparecem quando nenhum é o daqui", fora.length === 2, JSON.stringify(fora));
   }
+}
+
+console.log("\nA ETIQUETA DO TELEFONE DO ESCRITÓRIO — e o acordo com a ponte");
+{
+  // POR QUE ESTA SEÇÃO EXISTE.
+  //
+  // O painel GRAVA a etiqueta no perfil do Vantoro; a ponte LÊ para aplicar a
+  // permissão. São duas pontas de um acordo, e cada lado tem sua cópia da
+  // regra. Enquanto concordarem, a permissão funciona. No dia em que
+  // discordarem, quem tem telefone marcado deixa de ver as conversas dele —
+  // sem erro na tela, sem log, sem nada.
+  //
+  // Nenhum teste vigiava isso. Agora vigia: a regra da ponte é LIDA DO
+  // ARQUIVO DELA e comparada com a daqui, número por número. Se alguém mexer
+  // num lado só, esta prova reprova antes de a permissão sumir de alguém.
+
+  // A REGRA DA PONTE, extraída do código-fonte da ponte de verdade — e não
+  // copiada à mão para cá. Uma cópia à mão envelheceria em silêncio, que é o
+  // defeito exato que esta seção veio impedir.
+  const PONTE = "../../zorvin-bridge/index.js";
+  let regraDaPonte = null;
+  try {
+    const fonte = readFileSync(new URL(PONTE, import.meta.url), "utf8");
+    const m = fonte.match(/function chaveDoNumero\(bruto\)\s*\{[\s\S]*?\n\}/);
+    if (m) regraDaPonte = new Function("bruto", m[0] + "\nreturn chaveDoNumero(bruto);");
+  } catch (_) { /* a ponte não está do lado; tratado abaixo */ }
+
+  if (!regraDaPonte) {
+    // SEM A PONTE POR PERTO, ISTO NÃO PASSA CALADO.
+    //
+    // Um "não deu para conferir" que conta como aprovado é pior do que não ter
+    // a conferência: ele fica verde para sempre e ninguém repara.
+    ok("consegui ler a regra da ponte para comparar", false,
+       `não achei ou não entendi ${PONTE} — sem isso o acordo fica sem vigia`);
+  } else {
+    // Os telefones do escritório, como toda linha conectada chega: 55 + DDD +
+    // 9 dígitos. É neste formato que o acordo precisa valer.
+    const DO_ESCRITORIO = [
+      "5511976378160", "5511993289441", "5511950473857", "5511995941666",
+      "5511969401932", "5511913559990", "5511911112222", "5511933334444",
+      "5511992057503", "5511955556666", "5511977778888", "5511900001111",
+    ];
+    const divergentes = DO_ESCRITORIO
+      .filter((n) => etiquetaDoTelefone(n) !== regraDaPonte(n));
+    ok("painel e ponte etiquetam TODOS os telefones do escritório igual",
+       divergentes.length === 0,
+       divergentes.map((n) => `${n}: painel ${etiquetaDoTelefone(n)} vs ponte ${regraDaPonte(n)}`).join("; "));
+
+    // E TAMBÉM NAS FORMAS TORTAS. O número de um telefone pode ser regravado à
+    // mão um dia, e o acordo tem de continuar valendo.
+    //
+    // ESTA É A CONFERÊNCIA QUE DE FATO VIGIA, e isso foi medido: trocando a
+    // etiqueta por `chaveDoNumero` — o "conserto" que quebraria a permissão —,
+    // a lista do escritório acima continua VERDE, porque nela as duas regras
+    // concordam. Quem fica vermelho é aqui, por causa do "3199456790". Uma
+    // seção montada só com os números de hoje passaria a mão na cabeça do
+    // defeito que ela existe para pegar.
+    const TORTOS = ["11976378160", "(11) 97637-8160", "5511976378160  ",
+                    "+55 11 97637-8160", "1133334444", "3199456790", ""];
+    const tortosRuins = TORTOS.filter((n) => etiquetaDoTelefone(n) !== regraDaPonte(n));
+    ok("e também nas formas tortas de escrever o mesmo número",
+       tortosRuins.length === 0,
+       tortosRuins.map((n) => `"${n}": painel ${etiquetaDoTelefone(n)} vs ponte ${regraDaPonte(n)}`).join("; "));
+  }
+
+  // A ETIQUETA NÃO MUDOU DE COMPORTAMENTO ao ganhar nome. Estes valores são os
+  // que já estão gravados no Vantoro hoje; se algum sair diferente, as
+  // permissões existentes viram órfãs.
+  ok("55 + DDD + 9 dígitos vira DDD + 9 dígitos",
+     etiquetaDoTelefone("5511976378160") === "11976378160",
+     etiquetaDoTelefone("5511976378160"));
+  ok("já sem o 55, fica como está",
+     etiquetaDoTelefone("11976378160") === "11976378160");
+  ok("com máscara, o mesmo",
+     etiquetaDoTelefone("(11) 97637-8160") === "11976378160");
+  ok("e o vazio continua vazio", etiquetaDoTelefone("") === "");
+
+  // ONDE AS DUAS REGRAS DIVERGEM — escrito de propósito, para que a diferença
+  // seja uma decisão registrada e não uma surpresa. Se alguém "unificar" as
+  // duas sem mexer na ponte, é aqui que a prova avisa.
+  ok("no celular da forma antiga elas divergem, e isso é esperado",
+     etiquetaDoTelefone("3199456790") === "3199456790"
+       && chaveDoNumero("3199456790") === "31999456790",
+     `etiqueta ${etiquetaDoTelefone("3199456790")}, chave ${chaveDoNumero("3199456790")}`);
+
+  // O DEFEITO CONHECIDO, registrado como está: o corte pelo fim estraga
+  // número estrangeiro. Inofensivo aqui — esta função só toca telefone do
+  // escritório —, mas quem for consertar precisa saber que a ponte vai junto.
+  ok("o número estrangeiro é cortado — defeito conhecido, e sem efeito aqui",
+     etiquetaDoTelefone("351912345678") === "51912345678",
+     etiquetaDoTelefone("351912345678"));
 }
 
 console.log(`\n${feitas - falhas}/${feitas} conferências passaram`);
