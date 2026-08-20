@@ -12,8 +12,13 @@
 //  aberta — é a que responde "com quem estou falando".
 // ============================================================
 import { useEffect, useState } from "react";
-import { X, Save, UserPlus, RefreshCw, ExternalLink, ChevronDown, ChevronRight } from "lucide-react";
+import { X, Save, UserPlus, RefreshCw, ExternalLink, ChevronDown, ChevronRight,
+         MessageSquare } from "lucide-react";
 import { supabase } from "./supabase";
+// As regras de telefone são as MESMAS do painel, e por isso vêm do mesmo
+// lugar: decidir se o segundo número do cadastro é outra linha ou o mesmo
+// aparelho escrito diferente é a mesma pergunta que a busca já respondia.
+import { outrosNumeros, telefoneLegivel } from "./numeros.js";
 // A chamada à ponte mora em `ponte.js`: duas telas precisam dela (esta e a de
 // atendentes), e duas cópias divergiriam na primeira mudança.
 import { chamarPonte, BRIDGE_URL, FALTA_PONTE } from "./ponte.js";
@@ -98,15 +103,6 @@ function mascaraCep(valor) {
   return d.length <= 5 ? d : `${d.slice(0, 5)}-${d.slice(5)}`;
 }
 
-// 5511997303331 → (11) 99730-3331. Só para leitura; o que vale é o número cru.
-function formatarTelefone(valor) {
-  let d = (valor || "").replace(/\D/g, "");
-  if (d.length > 11 && d.startsWith("55")) d = d.slice(2);
-  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
-  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
-  return valor || "—";
-}
-
 // Busca o endereço pelo CEP. Serviço público e sem cadastro; se estiver fora do
 // ar, o atendente digita à mão e nada trava.
 async function buscarCep(cep) {
@@ -124,7 +120,7 @@ async function buscarCep(cep) {
   };
 }
 
-export default function FichaVantoro({ numero, nomeContato, C, estreito, onFechar, onAviso, aoLigarCadastro }) {
+export default function FichaVantoro({ numero, nomeContato, C, estreito, onFechar, onAviso, aoLigarCadastro, aoConversarPor }) {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [cliente, setCliente] = useState(null);
@@ -323,6 +319,59 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
         {c.cep && buscandoCep && (
           <div style={{ fontSize: 11, color: C.textSecondary, marginTop: 3 }}>Buscando endereço…</div>
         )}
+        {c.chave === "telefone2" && desenharOutrosNumeros()}
+      </div>
+    );
+  }
+
+  // "CONVERSAR POR ESTE NÚMERO".
+  //
+  // Quem tem dois números tem dois WhatsApp, e o atendimento continua no que
+  // responder. Antes disto, falar pelo outro número era sair da conversa, abrir
+  // "Novo contato", copiar o número da ficha e colar — quatro passos para uma
+  // coisa que a ficha já sabia.
+  //
+  // Sai da lista o que já é ESTA conversa. O cadastro guarda o mesmo aparelho
+  // escrito de jeitos diferentes o tempo todo — "(11) 99730-3331" num campo e
+  // "5511997303331" no outro —, e sem comparar por chave o botão apareceria
+  // oferecendo abrir a conversa em que a pessoa já está.
+  //
+  // Vale para os DOIS lados: a ficha abre pelo número da conversa, que tanto
+  // pode ser o principal do cadastro quanto o segundo. Olhar só `telefone2`
+  // deixaria sem botão justamente quem já está falando pelo segundo.
+  //
+  // Lê de `edicao`, e não de `cliente`: é o que está escrito na tela. Quem
+  // acabou de digitar o número do filho não precisa salvar antes de ligar para
+  // ele — e o botão diz qual número vai abrir, então não há dúvida sobre o que
+  // o clique faz.
+  function desenharOutrosNumeros() {
+    if (!aoConversarPor) return null;
+    const fora = outrosNumeros(edicao, numero);
+    if (!fora.length) return null;
+    return (
+      <div data-outros-numeros style={{ marginTop: 6 }}>
+        {fora.map((n) => (
+          <button
+            key={n.chave}
+            data-conversar-por={n.cru}
+            onClick={() => aoConversarPor({
+              numero: n.cru,
+              // O nome do cadastro, e não o do contato do WhatsApp: é o mesmo
+              // cliente, e é assim que a conversa nova já nasce com o nome
+              // certo em vez de um número seco no cabeçalho.
+              nome: (edicao.nome || cliente?.nome || nomeContato || "").trim(),
+              clienteId: cliente?.id || null,
+            })}
+            style={{
+              display: "flex", alignItems: "center", gap: 7, width: "100%",
+              border: `1px solid ${C.divider}`, borderRadius: 8, padding: "8px 10px",
+              background: "transparent", color: C.green, cursor: "pointer",
+              fontSize: 12.5, fontWeight: 600, textAlign: "left",
+            }}>
+            <MessageSquare size={15} />
+            Conversar por {n.legivel}
+          </button>
+        ))}
       </div>
     );
   }
@@ -434,7 +483,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
             <div style={{ marginBottom: 10 }}>
               <label style={rotulo}>WhatsApp desta conversa</label>
               <div style={{ ...campo, background: C.headerBar, color: C.textSecondary }}>
-                {formatarTelefone(numero)}
+                {telefoneLegivel(numero)}
               </div>
             </div>
 
