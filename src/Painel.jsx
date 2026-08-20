@@ -8,8 +8,10 @@ import {
   StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star,
   Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList, ShieldCheck,
   ChevronLeft, ChevronRight, Images, ExternalLink, Pin, Copy, Forward, Sticker,
-  History, BarChart3, Users, Smartphone, ArrowDownUp
+  History, BarChart3, Users, Smartphone, ArrowDownUp,
+  Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote
 } from "lucide-react";
+import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
 import { chamarPonte } from "./ponte.js";
 import Departamentos from "./Departamentos";
@@ -602,21 +604,102 @@ function aplicarEnfase(txt, base) {
   if (resto) out.push(resto);
   return out;
 }
-function formatarTexto(texto, corLink = "#53bdeb") {
-  if (!texto) return null;
+/** Ênfases e links de um trecho SEM quebra de estrutura — uma linha, ou um
+ *  bloco de linhas comuns. É a folha: quem desenha listas e citação chama
+ *  daqui para dentro. */
+function formatarTrecho(texto, corLink, semente) {
   const partes = [];
   let last = 0, i = 0, m;
   RE_URL.lastIndex = 0;
   while ((m = RE_URL.exec(texto))) {
-    if (m.index > last) partes.push(...aplicarEnfase(texto.slice(last, m.index), "t" + i++));
+    if (m.index > last) partes.push(...aplicarEnfase(texto.slice(last, m.index), semente + "t" + i++));
     const url = m[0];
     partes.push(
-      <a key={"u" + i++} href={url} target="_blank" rel="noopener noreferrer" style={{ color: corLink, textDecoration: "underline" }}>{url}</a>
+      <a key={semente + "u" + i++} href={url} target="_blank" rel="noopener noreferrer" style={{ color: corLink, textDecoration: "underline" }}>{url}</a>
     );
     last = m.index + url.length;
   }
-  if (last < texto.length) partes.push(...aplicarEnfase(texto.slice(last), "t" + i++));
+  if (last < texto.length) partes.push(...aplicarEnfase(texto.slice(last), semente + "t" + i++));
   return partes;
+}
+
+// AS MARCAS QUE VALEM PARA A LINHA INTEIRA, e não para um trecho dela.
+//
+// O WhatsApp desenha lista e citação; nós guardávamos o texto igual e
+// mostrávamos os sinais crus. Enquanto ninguém escrevia listas, isso não
+// aparecia. Com a barra de formatação, "Citar" passaria a produzir um "> " à
+// vista na nossa própria tela — a mensagem sairia certa para o cliente e
+// errada para quem a escreveu, que é o pior lugar para um defeito ficar.
+const RE_ITEM_NUM = /^(\d+)\.[ \t]+(.*)$/;
+const RE_ITEM_MARCA = /^-[ \t]+(.*)$/;
+const RE_CITACAO = /^>[ \t]?(.*)$/;
+
+function tipoDaLinha(l) {
+  if (RE_CITACAO.test(l)) return "citacao";
+  if (RE_ITEM_NUM.test(l)) return "numerada";
+  if (RE_ITEM_MARCA.test(l)) return "marcadores";
+  return "texto";
+}
+
+function formatarTexto(texto, corLink = "#53bdeb") {
+  if (!texto) return null;
+
+  // Junta as linhas VIZINHAS do mesmo tipo: três linhas com "- " são UMA lista
+  // de três itens, e não três listas de um item — que é o que sai se cada
+  // linha virar o seu próprio bloco, com o espaçamento entre blocos no meio.
+  const linhas = String(texto).split("\n");
+  const blocos = [];
+  for (const linha of linhas) {
+    const tipo = tipoDaLinha(linha);
+    const ultimo = blocos[blocos.length - 1];
+    if (ultimo && ultimo.tipo === tipo) ultimo.linhas.push(linha);
+    else blocos.push({ tipo, linhas: [linha] });
+  }
+
+  const semLista = { margin: "3px 0", paddingLeft: 20 };
+  return blocos.map((b, i) => {
+    const chave = "b" + i;
+    if (b.tipo === "texto") {
+      // Um bloco comum volta a ser texto corrido, com as quebras que tinha. O
+      // `pre-wrap` do balão é quem as desenha.
+      return <React.Fragment key={chave}>
+        {formatarTrecho(b.linhas.join("\n"), corLink, chave)}
+        {i < blocos.length - 1 ? "\n" : ""}
+      </React.Fragment>;
+    }
+    if (b.tipo === "citacao") {
+      return (
+        <div key={chave} style={{ borderLeft: "3px solid currentColor", opacity: 0.85,
+                                  paddingLeft: 8, margin: "3px 0", whiteSpace: "pre-wrap" }}>
+          {formatarTrecho(b.linhas.map((l) => RE_CITACAO.exec(l)[1]).join("\n"), corLink, chave)}
+        </div>
+      );
+    }
+    if (b.tipo === "numerada") {
+      // `start` no número REAL da primeira linha: uma lista que começa no 3 —
+      // porque é a continuação de outra, ou porque a pessoa escreveu assim —
+      // tem de aparecer começando no 3.
+      const inicio = Number(RE_ITEM_NUM.exec(b.linhas[0])[1]) || 1;
+      return (
+        <ol key={chave} start={inicio} style={semLista}>
+          {b.linhas.map((l, j) => (
+            <li key={chave + "i" + j} style={{ whiteSpace: "pre-wrap" }}>
+              {formatarTrecho(RE_ITEM_NUM.exec(l)[2], corLink, chave + "i" + j)}
+            </li>
+          ))}
+        </ol>
+      );
+    }
+    return (
+      <ul key={chave} style={semLista}>
+        {b.linhas.map((l, j) => (
+          <li key={chave + "i" + j} style={{ whiteSpace: "pre-wrap" }}>
+            {formatarTrecho(RE_ITEM_MARCA.exec(l)[1], corLink, chave + "i" + j)}
+          </li>
+        ))}
+      </ul>
+    );
+  });
 }
 
 // Som curto ao chegar mensagem nova (sem precisar de arquivo de áudio).
@@ -1176,6 +1259,17 @@ export default function Painel({ sessao }) {
   //
   // A rota `/conversas/juntar` continua existindo na ponte, sem porta de
   // entrada no painel: é por ela que a correção manual passa quando precisar.
+  // A BARRA DE FORMATAÇÃO — aparece quando há texto selecionado na caixa.
+  //
+  // Guarda só "aparece ou não". A posição não é guardada de propósito: ela sai
+  // do próprio lugar da caixa, logo acima dela. Calcular o pixel exato da
+  // seleção dentro de um <textarea> exige desenhar uma cópia invisível do
+  // texto e medir — muito código para uma barra que, numa caixa de uma a três
+  // linhas, ficaria a poucos milímetros de onde ela já está.
+  const [formatoAberto, setFormatoAberto] = useState(false);
+  // Qual botão da barra está sob o mouse — é o que mostra a legenda com o
+  // atalho. Sem isto o atalho existiria e ninguém descobriria que existe.
+  const [formatoHover, setFormatoHover] = useState(null);
   const [menuParaCima, setMenuParaCima] = useState(false); // o menu da bolha abre para cima?
   const [encaminhar, setEncaminhar] = useState(null);      // mensagem sendo encaminhada
   const [editando, setEditando] = useState(null);          // mensagem sendo editada
@@ -4002,6 +4096,50 @@ export default function Painel({ sessao }) {
     setRascunho((r) => r + e);
     inputRef.current?.focus();
   }
+
+  // ---- Formatar o texto selecionado (negrito, itálico, listas, citação) ----
+  //
+  // A regra de cada formato mora em `formatacao.js`, que não conhece a tela e
+  // por isso pode ser provado sem navegador. Aqui só se aplica o que ele
+  // calculou.
+  //
+  // `insertText` E NÃO `setRascunho`. É o comando que o navegador registra na
+  // pilha do desfazer: com ele, o Ctrl+Z depois de um Ctrl+B desfaz o negrito e
+  // devolve o texto como estava. Escrevendo direto no estado do React, o
+  // navegador não fica sabendo de nada, e o Ctrl+Z seguinte apaga um pedaço
+  // qualquer do que a pessoa tinha digitado antes — perder o desfazer numa
+  // caixa de texto é um preço alto por uma barra de enfeite. O caminho pelo
+  // estado fica como rede para o navegador que não tiver o comando.
+  function formatarSelecao(id) {
+    const campo = inputRef.current;
+    if (!campo) return;
+    const calculo = calcularFormato(campo.value, campo.selectionStart, campo.selectionEnd, id);
+    if (!calculo) return;
+
+    campo.focus();
+    campo.setSelectionRange(calculo.de, calculo.ate);
+    const feito = typeof document.execCommand === "function"
+      && document.execCommand("insertText", false, calculo.novo);
+    if (!feito) {
+      const t = campo.value;
+      setRascunho(t.slice(0, calculo.de) + calculo.novo + t.slice(calculo.ate));
+    }
+    // Depois da troca, a seleção volta para o TEXTO — sem as marcas. Assim dá
+    // para encadear (negrito e depois itálico) sem selecionar de novo, e o
+    // Ctrl+B duas vezes desfaz, que é o que a pessoa espera.
+    requestAnimationFrame(() => {
+      campo.setSelectionRange(calculo.selecao[0], calculo.selecao[1]);
+      campo.focus();
+      setFormatoAberto(calculo.selecao[0] !== calculo.selecao[1]);
+    });
+  }
+
+  // O ícone de cada formato. Fica aqui, e não em `formatacao.js`, porque aquele
+  // arquivo não importa React de propósito — é o que o deixa provável em Node.
+  const ICONE_DO_FORMATO = {
+    negrito: Bold, italico: Italic, tachado: Strikethrough, codigo: Code,
+    numerada: ListOrdered, marcadores: List, citar: Quote,
+  };
 
   // Insere na fila de envio. Se a coluna "enviado_por" ainda não existir no
   // banco (SQL não rodou), tenta de novo sem ela — o envio nunca trava por isso.
@@ -7519,6 +7657,65 @@ export default function Painel({ sessao }) {
                       <Smile size={24} color={emojiAberto ? C.green : C.textSecondary} />
                     </button>
                   </span>
+                  {/* BARRA DE FORMATAÇÃO — aparece ao selecionar texto na caixa.
+                      Fica ACIMA da caixa, e não em cima do texto selecionado:
+                      numa caixa de uma a três linhas as duas posições quase
+                      coincidem, e esta não exige medir o pixel da seleção
+                      dentro de um <textarea>, que só se faz desenhando uma
+                      cópia invisível do texto e medindo nela. */}
+                  {/* Vale para a NOTA INTERNA também. A primeira versão
+                      escondia a barra ali, por reflexo — mas a nota é desenhada
+                      pelo mesmo `formatarTexto` da mensagem, e negrito numa
+                      nota funciona exatamente igual. Era uma restrição sem
+                      motivo, tirando de quem escreve a nota uma coisa que já
+                      existia. */}
+                  {formatoAberto && (
+                    <div data-barra-formato
+                         style={{ position: "absolute", bottom: 58, left: 12, zIndex: 32,
+                                  display: "flex", alignItems: "center", gap: 2,
+                                  background: C.panel, border: `1px solid ${C.divider}`,
+                                  borderRadius: 10, padding: 4,
+                                  boxShadow: "0 6px 20px rgba(0,0,0,.28)" }}>
+                      {FORMATOS.map((f) => {
+                        const Icone = ICONE_DO_FORMATO[f.id];
+                        return (
+                          <button key={f.id}
+                            data-formato={f.id}
+                            aria-label={`${f.rotulo} (${f.atalho})`}
+                            // SEGURA O FOCO NA CAIXA. Sem isto, apertar o botão
+                            // tira o foco do <textarea>, a seleção se perde, e
+                            // o clique formata o nada — o defeito clássico de
+                            // toda barra flutuante.
+                            onMouseDown={(ev) => ev.preventDefault()}
+                            onClick={() => formatarSelecao(f.id)}
+                            onMouseEnter={() => setFormatoHover(f.id)}
+                            onMouseLeave={() => setFormatoHover((h) => (h === f.id ? null : h))}
+                            style={{ position: "relative", border: "none", background: formatoHover === f.id ? C.listActive : "transparent",
+                                     cursor: "pointer", borderRadius: 7, width: 34, height: 34,
+                                     display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+                            <Icone size={17} color={C.textPrimary} />
+                            {/* A LEGENDA COM O ATALHO, como no WhatsApp Web. Não
+                                é o `title` do navegador de propósito: ali a
+                                legenda demora um segundo a aparecer e sai com a
+                                cara do sistema, clara no tema escuro. E é aqui
+                                que o atalho fica escrito — é assim que alguém
+                                descobre que ele existe. */}
+                            {formatoHover === f.id && (
+                              <span style={{ position: "absolute", bottom: "calc(100% + 7px)", left: "50%",
+                                             transform: "translateX(-50%)", whiteSpace: "nowrap",
+                                             background: C.headerBar, color: C.textPrimary,
+                                             border: `1px solid ${C.divider}`, borderRadius: 7,
+                                             padding: "5px 9px", fontSize: 12, pointerEvents: "none",
+                                             boxShadow: "0 4px 14px rgba(0,0,0,.3)" }}>
+                                {f.rotulo}
+                                <span style={{ color: C.textSecondary, marginLeft: 8 }}>{f.atalho}</span>
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                   {/* Menu de mensagens rápidas — abre ao digitar "/" na caixa */}
                   {slashAberto && (
                     <div style={{ position: "absolute", bottom: 60, left: 12, right: 12, maxWidth: 420, maxHeight: 260, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 30 }}>
@@ -7545,7 +7742,34 @@ export default function Painel({ sessao }) {
                     ref={inputRef}
                     value={rascunho}
                     onChange={(e) => { setRascunho(e.target.value); setSlashIdx(0); }}
+                    onSelect={(e) => {
+                      // Aparece quando há trecho selecionado, some quando não
+                      // há. `onSelect` é o único evento que o navegador dispara
+                      // para TODA mudança de seleção — mouse, teclado, duplo
+                      // clique, Ctrl+A. Escutar só o mouse deixaria a barra
+                      // fora do alcance de quem seleciona com Shift+seta.
+                      const c = e.target;
+                      setFormatoAberto(c.selectionStart !== c.selectionEnd);
+                    }}
+                    onBlur={() => {
+                      // Sai da caixa, some a barra. Os botões dela seguram o
+                      // foco (ver o `onMouseDown` lá embaixo), então clicar num
+                      // deles não passa por aqui.
+                      setFormatoAberto(false);
+                    }}
                     onKeyDown={(e) => {
+                      // OS ATALHOS DE FORMATAÇÃO, antes de tudo.
+                      //
+                      // Vêm primeiro porque nenhum deles usa Enter: não há como
+                      // atropelar o envio nem o menu do "/". E `preventDefault`
+                      // é obrigatório — Ctrl+B é "favoritos" no navegador e
+                      // Ctrl+I é "informações da página".
+                      const formato = formatoDaTecla(e);
+                      if (formato) {
+                        e.preventDefault();
+                        formatarSelecao(formato);
+                        return;
+                      }
                       // ALT+ENTER TAMBÉM PULA LINHA.
                       //
                       // O Shift+Enter o navegador resolve sozinho — a quebra é
