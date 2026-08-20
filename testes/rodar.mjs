@@ -1,36 +1,49 @@
 // SOBE A BANCADA E RODA AS PROVAS.
 //
-// Duas provas precisam de servidores diferentes, e não é capricho: a do
-// `painel` importa `src/supabase.js` direto para trocar o estado da bancada no
-// meio do teste, o que só o servidor de desenvolvimento serve; a de
-// `desempenho` mede latência, e o React de desenvolvimento gasta em
-// verificações que não existem em produção — medir ali seria medir o
-// instrumento. As demais rodam em qualquer um.
+// A lista de provas é a PASTA: cada `testes/nome.mjs` é uma prova, e criar o
+// arquivo basta para ele entrar na rodada.
 //
 // Uso:  node testes/rodar.mjs            (todas)
 //       node testes/rodar.mjs etiquetas  (uma)
 import { spawn } from "node:child_process";
 import { setTimeout as espera } from "node:timers/promises";
+import { readdirSync } from "node:fs";
 
 const PORTA = 5199;
 const ENDERECO = `http://127.0.0.1:${PORTA}/`;
 
-const PROVAS = [
-  { nome: "entrar",      servidor: "dev" },
-  { nome: "telas",       servidor: "dev" },
-  { nome: "busca",       servidor: "dev" },
-  { nome: "etiquetas",   servidor: "dev" },
-  { nome: "painel",      servidor: "dev" },
-  { nome: "ficha",       servidor: "dev" },
-  { nome: "atendentes",  servidor: "dev" },
-  { nome: "identidade",  servidor: "dev" },
-  { nome: "celular",     servidor: "dev" },
-  { nome: "anexos",      servidor: "dev" },
-  { nome: "previa",      servidor: "dev" },
-  { nome: "presenca",    servidor: "dev" },
-  { nome: "ordem",       servidor: "dev" },
-  { nome: "desempenho",  servidor: "producao" },
-];
+// AS PROVAS SÃO OS ARQUIVOS DA PASTA, e não uma lista escrita à mão.
+//
+// A lista existia, e custou três conflitos de junção num dia só: cada prova
+// nova acrescentava uma linha no MESMO lugar, e dois ramos abertos ao mesmo
+// tempo brigavam ali sem falta. Pior do que o incômodo: uma prova esquecida na
+// lista simplesmente não rodava — o arquivo estava no repositório, verde, sem
+// nunca ter sido executado. Um teste que não roda é pior do que um teste que
+// não existe, porque ele dá a impressão de cobertura.
+//
+// Agora basta criar `testes/nome.mjs` para ele entrar. Nada a lembrar.
+const AJUDANTES = new Set(["rodar", "navegador"]);
+
+// A ÚNICA que precisa do build de produção. `desempenho` mede latência, e o
+// React de desenvolvimento gasta em verificações que não existem em produção —
+// medir ali seria medir o instrumento, não o painel.
+const NO_BUILD_DE_PRODUCAO = new Set(["desempenho"]);
+
+// A ORDEM É A DO ALFABETO, e é de propósito: qualquer outra seria uma opinião
+// que envelhece. Cada prova sobe o seu próprio navegador e limpa o que sujou,
+// então nenhuma depende da anterior — se um dia alguma passar a depender, é
+// ela que está errada, e não a ordem.
+const PROVAS = readdirSync(new URL(".", import.meta.url))
+  .filter((f) => f.endsWith(".mjs"))
+  .map((f) => f.replace(/\.mjs$/, ""))
+  .filter((nome) => !AJUDANTES.has(nome))
+  .sort()
+  .map((nome) => ({ nome, servidor: NO_BUILD_DE_PRODUCAO.has(nome) ? "producao" : "dev" }));
+
+if (!PROVAS.length) {
+  console.error("Não achei prova nenhuma em testes/. Isso é um defeito daqui, e não um repositório sem provas.");
+  process.exit(2);
+}
 
 const pedidas = process.argv.slice(2);
 const aRodar = pedidas.length ? PROVAS.filter((p) => pedidas.includes(p.nome)) : PROVAS;
