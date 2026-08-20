@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
+import { numeroCanonico, chaveDoNumero } from "./numeros.js";
 import { chamarPonte } from "./ponte.js";
 import Departamentos from "./Departamentos";
 import PainelNumeros from "./PainelNumeros";
@@ -2457,61 +2458,19 @@ export default function Painel({ sessao }) {
     return () => clearTimeout(t);
   }, [buscaContato, novaConversaAberta, carregarContatos]);
 
-  // O NÚMERO COMO O WHATSAPP O ESCREVE — sempre com o código do país.
+  // AS REGRAS DE TELEFONE MORAM EM `numeros.js`.
   //
-  // Era este o defeito que duplicava conversa. Quem cadastrava um contato aqui
-  // digitava "(11) 95670-6171" e o painel gravava "11956706171", sem o 55.
-  // Nós mandávamos a primeira mensagem e ela ia normalmente. Mas, quando a
-  // pessoa respondia, o WhatsApp devolvia o MESMO telefone escrito do jeito
-  // dele — "5511956706171" — e a ponte, não achando ninguém com esse texto,
-  // criava um segundo contato e uma segunda conversa. A resposta aparecia numa
-  // conversa nova, ao lado da que nós tínhamos começado.
+  // Elas estavam aqui dentro, e a ficha do cliente passou a precisar das
+  // mesmas respostas para decidir se o segundo número do cadastro é mesmo
+  // OUTRA linha. Uma cópia responderia igual no primeiro dia e diferente no
+  // primeiro conserto.
   //
-  // O 55 entra só quando o número tem cara de brasileiro (10 ou 11 dígitos: o
-  // DDD mais o telefone). Número que já vem com código de país, ou estrangeiro,
-  // passa intacto — o WhatsApp do escritório fala com o mundo todo, e prefixar
-  // 55 num número de Portugal criaria justamente o problema que se quer evitar.
-  function numeroCanonico(bruto) {
-    const d = String(bruto || "").replace(/\D/g, "");
-    if (d.length === 10 || d.length === 11) return "55" + d;
-    return d;
-  }
-
-  // A CHAVE PARA COMPARAR DOIS TELEFONES ESCRITOS DE JEITOS DIFERENTES.
+  // Lá elas também se provam sem navegador, que é onde erro de número é
+  // barato de achar: ele nunca aparece como erro, aparece como um cliente com
+  // duas conversas, cada uma com metade do diálogo.
   //
-  // O mesmo telefone aparece de quatro formas no dia a dia, e as quatro
-  // precisam se reconhecer:
-  //
-  //     5511999999999      como o WhatsApp manda
-  //     11999999999        como a pessoa digita
-  //     (11) 999999999     copiado de um e-mail
-  //     (11) 99999-9999    copiado do cadastro
-  //
-  // A chave joga fora a pontuação e o código do país, sobrando "11999999999"
-  // nos quatro casos. É o que permite ACHAR na busca e, ao cadastrar, perceber
-  // que aquele contato já existe em vez de criar um segundo.
-  //
-  // O 55 só sai quando o que sobra tem cara de telefone brasileiro (10 ou 11
-  // dígitos). Assim um número de fora, que por acaso comece com 55, continua
-  // inteiro.
-  function chaveDoNumero(bruto) {
-    const d = String(bruto || "").replace(/\D/g, "");
-    const nacional = (d.startsWith("55") && (d.length === 12 || d.length === 13)) ? d.slice(2) : d;
-    // O NONO DÍGITO ENTRA NA CHAVE.
-    //
-    // Tirar o 55 não basta: o mesmo celular aparece com 8 e com 9 dígitos
-    // locais, porque o Brasil pôs um 9 na frente e o WhatsApp devolve umas
-    // contas na forma antiga. "31 99945-6790" e "31 9945-6790" são a MESMA
-    // linha, e era essa diferença que criava duas conversas para a mesma
-    // pessoa — cada uma com metade do diálogo.
-    //
-    // A chave é sempre a forma COM o 9. Só para celular: fixo tem 8 dígitos
-    // começando em 2..5, e pôr um 9 nele inventaria um número que não existe.
-    if (nacional.length === 10 && "6789".includes(nacional[2])) {
-      return nacional.slice(0, 2) + "9" + nacional.slice(2);
-    }
-    return nacional;
-  }
+  // E ATENÇÃO ANTES DE "UNIFICAR" COM A DE `Departamentos.jsx`: aquela é
+  // parecida e responde a outra pergunta. Está explicado em `numeros.js`.
 
   // Procura no banco um contato que JÁ seja este telefone, escrito de qualquer
   // das formas. Sem isto, cadastrar de novo alguém que já estava lá com o
@@ -7860,6 +7819,23 @@ export default function Painel({ sessao }) {
                                      vantoro_cliente_id: clienteId ?? c.contato.vantoro_cliente_id } }
                 : c
             )));
+          }}
+          // FALAR COM O MESMO CLIENTE PELO OUTRO NÚMERO DELE.
+          //
+          // Reaproveita inteiro o caminho que a busca do Vantoro já usava: o
+          // contato é criado (ou reaproveitado, se o número já for conhecido),
+          // fica ligado à mesma ficha e a conversa abre. Uma segunda
+          // implementação aqui gravaria o telefone de outro jeito, e é
+          // exatamente assim que nascia contato duplicado.
+          //
+          // A ficha se fecha junto no CELULAR, onde ela ocupa a tela inteira:
+          // sem isso, o clique abriria a conversa nova por baixo dela e a
+          // pessoa veria a mesma ficha, sem sinal de que alguma coisa
+          // aconteceu. No computador as duas cabem lado a lado, e fechar seria
+          // tirar da tela o que ela estava lendo.
+          aoConversarPor={async (linha) => {
+            if (estreito) setFichaAberta(false);
+            await conversarComClienteVantoro(linha);
           }}
         />
       )}

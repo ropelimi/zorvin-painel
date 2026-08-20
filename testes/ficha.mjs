@@ -20,8 +20,13 @@ const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 // A senha do SERASA está aqui de propósito: é o tipo de dado que esta tela
 // mostra, e trocar um cliente pelo outro não é um detalhe de layout.
 const CLIENTES = {
+  // A ANDREIA TEM DOIS NÚMEROS. É o caso do botão "conversar por este número",
+  // e os dois estão escritos de jeitos DIFERENTES de propósito: o principal
+  // como o WhatsApp manda, o segundo como uma pessoa digita. Se a comparação
+  // fosse por texto, este cadastro sozinho já quebraria tudo.
   "5567992183107": { id: "v-100", nome: "ANDREIA CRISTINA MARTINS",
                      cpf: "111.111.111-11", senha_serasa: "senha-da-andreia",
+                     telefone: "5567992183107", telefone2: "(67) 99888-7777",
                      documentos: 3, processos: [], ordem_servico: null },
   "5567991110001": { id: "v-200", nome: "MARIA DAS GRACAS PEREIRA",
                      cpf: "222.222.222-22", senha_serasa: "senha-da-maria",
@@ -37,6 +42,10 @@ page.on("pageerror", (e) => erros.push("pageerror: " + e.message));
 // A PONTE DE MENTIRA. A ficha do primeiro cliente demora; a do segundo é
 // instantânea. É essa diferença que revela quem escreve por último.
 let SEM_PENDENCIAS = false;
+// O CADASTRO COM UM NÚMERO SÓ — o da imensa maioria dos clientes. É o estado
+// em que NENHUM botão deve aparecer, e ele merece interruptor próprio porque
+// a diferença entre "não tem outro número" e "tem" é a coisa toda.
+let UM_NUMERO_SO = false;
 const pedidos = [];
 await page.route("**/ponte-de-mentira/**", async (rota) => {
   const url = new URL(rota.request().url());
@@ -47,6 +56,7 @@ await page.route("**/ponte-de-mentira/**", async (rota) => {
     // Uma ordem de serviço SEM a lista de pendências: é uma forma que o Vantoro
     // pode mandar, e a tela precisa aguentar.
     if (achado && SEM_PENDENCIAS) achado = { ...achado, ordem_servico: { status: "EM ANDAMENTO" } };
+    if (achado && UM_NUMERO_SO) achado = { ...achado, telefone2: "" };
     return rota.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify({ clientes: achado ? [achado] : [], opcoes: {} }) });
   }
@@ -150,6 +160,120 @@ console.log("\n4. Sem nada digitado, fechar é fechar");
   ok("sem alteração, fechar não pergunta nada", fechou && !perguntou,
      perguntou ? "perguntou sem haver o que perder — vira um aviso que se aprende a ignorar"
                : "a ficha não fechou");
+}
+
+console.log("\n5. O cliente com dois números pode ser chamado pelo outro");
+// ------------------------------------------------------------------
+// Pedido de quem administra: "quando um contato tem dois números, precisa ter
+// a opção de conversar com o cliente pelo outro telefone".
+//
+// Antes, o caminho era sair da conversa, abrir "Novo contato", copiar o número
+// da ficha e colar. Quatro passos para uma coisa que a ficha já sabia — e cada
+// digitação à mão é uma chance de criar o contato com o número torto, que é
+// como nasce conversa duplicada.
+{
+  await page.reload();
+  await page.waitForSelector("[data-conversa-nome]");
+  await page.waitForTimeout(1500);
+  await abrir("Deus");
+  await abrirFicha();
+
+  const botoes = page.locator("[data-outros-numeros] button");
+  ok("aparece o botão do outro número", await botoes.count() === 1,
+     `apareceram ${await botoes.count()}`);
+
+  const texto = (await botoes.first().innerText()).replace(/\s+/g, " ").trim();
+  // O NÚMERO SAI ESCRITO NO BOTÃO. "Conversar pelo outro número" obrigaria a
+  // pessoa a confiar que o sistema escolheu certo; com o número à vista, ela
+  // confere antes de clicar — e o cadastro que tem dois números errados é
+  // justamente o que mais precisa disso.
+  ok("e ele diz QUAL número", /\(67\) 99888-7777/.test(texto), `dizia: "${texto}"`);
+
+  // A CONFERÊNCIA QUE IMPORTA: o número vai para o clique na forma canônica,
+  // com o 55 — e não como está escrito no cadastro. Gravar "67998887777" faria
+  // a ponte não achar o contato quando a pessoa respondesse, e a resposta
+  // apareceria numa segunda conversa.
+  const cru = await botoes.first().getAttribute("data-conversar-por");
+  ok("na forma que o WhatsApp usa, com o 55", cru === "5567998887777", `ficou "${cru}"`);
+}
+
+console.log("\n6. E clicar abre mesmo a conversa com o outro número");
+{
+  await page.locator("[data-outros-numeros] button").first().click();
+  await page.waitForTimeout(2000);
+
+  // O contato tem de ter sido criado com o número canônico, e ligado à MESMA
+  // ficha do Vantoro — é o mesmo cliente, e sem o vínculo a ficha do outro
+  // número abriria em branco.
+  const criado = await page.evaluate(() => {
+    const t = globalThis.__TABELAS && globalThis.__TABELAS.contatos;
+    return (t || []).find((c) => String(c.numero) === "5567998887777") || null;
+  });
+  ok("o contato do outro número foi criado", !!criado, JSON.stringify(criado));
+  ok("com o nome do cadastro, e não um número seco",
+     /ANDREIA/i.test(String(criado && criado.nome)), String(criado && criado.nome));
+  ok("e ligado à mesma ficha do Vantoro",
+     String(criado && criado.vantoro_cliente_id) === "v-100",
+     String(criado && criado.vantoro_cliente_id));
+
+  const conversa = await page.evaluate(() => {
+    const cont = (globalThis.__TABELAS.contatos || [])
+      .find((c) => String(c.numero) === "5567998887777");
+    if (!cont) return null;
+    return (globalThis.__TABELAS.conversas || [])
+      .find((c) => String(c.contato_id) === String(cont.id)) || null;
+  });
+  ok("e a conversa com ele existe", !!conversa, JSON.stringify(conversa));
+}
+
+console.log("\n7. Quem tem um número só não vê botão nenhum");
+{
+  // A MAIORIA DOS CADASTROS. Um botão que aparece sempre — às vezes oferecendo
+  // o número da própria conversa — vira ruído, e ruído se aprende a ignorar
+  // junto com o que importa.
+  //
+  // O MESMO cadastro da seção 5, com o segundo número apagado: assim a única
+  // diferença entre ver o botão e não ver é o dado, e não a conversa, o
+  // telefone do escritório ou o caminho até a tela.
+  UM_NUMERO_SO = true;
+  await page.reload();
+  await page.waitForSelector("[data-conversa-nome]");
+  await page.waitForTimeout(1500);
+  await abrir("Deus");
+  await abrirFicha();
+  const texto = await page.locator("body").innerText();
+  ok("a ficha abriu do mesmo jeito", /ANDREIA CRISTINA MARTINS/i.test(texto),
+     texto.slice(0, 120));
+  ok("e agora não oferece conversar por outro número",
+     await page.locator("[data-outros-numeros] button").count() === 0);
+  UM_NUMERO_SO = false;
+}
+
+console.log("\n8. E o próprio número da conversa nunca vira 'o outro'");
+{
+  // A ARMADILHA DO CADASTRO REAL: o mesmo aparelho escrito de dois jeitos nos
+  // dois campos. Sem comparar por chave, a ficha ofereceria com toda a cara de
+  // certo abrir a conversa em que a pessoa já está.
+  await page.route("**/ponte-de-mentira/vantoro/cliente*", async (rota) => {
+    rota.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      clientes: [{ id: "v-100", nome: "ANDREIA CRISTINA MARTINS",
+                   // O MESMO aparelho, escrito da forma mais traiçoeira que
+                   // existe: um com o 55 e o nono dígito, o outro sem nenhum
+                   // dos dois — que é como o WhatsApp devolve conta antiga.
+                   // Dígito por dígito, "5567992183107" e "6792183107" não têm
+                   // nada a ver um com o outro.
+                   telefone: "5567992183107", telefone2: "(67) 9218-3107",
+                   processos: [], ordem_servico: null }],
+      opcoes: {} }) });
+  });
+  await page.reload();
+  await page.waitForSelector("[data-conversa-nome]");
+  await page.waitForTimeout(1500);
+  await abrir("Deus");
+  await abrirFicha();
+  ok("os dois campos com o mesmo número não geram botão",
+     await page.locator("[data-outros-numeros] button").count() === 0,
+     "ofereceu abrir a conversa em que a pessoa já está");
 }
 
 console.log(`\nerros de página: ${erros.length}`);
