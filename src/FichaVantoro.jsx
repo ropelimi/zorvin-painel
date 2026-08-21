@@ -23,6 +23,26 @@ import { outrosNumeros, telefoneLegivel } from "./numeros.js";
 // atendentes), e duas cópias divergiriam na primeira mudança.
 import { chamarPonte, BRIDGE_URL, FALTA_PONTE } from "./ponte.js";
 
+// Este erro é de configuração da ponte, ou é outra coisa?
+//
+// Só as mensagens que a ponte emite quando as variáveis realmente faltam ou
+// estão recusadas pedem "confira VANTORO_API_URL e VANTORO_API_TOKEN". Serviço
+// fora do ar, suspenso, endereço errado ou demora não têm nada com isso — e
+// mandar conferir a configuração nesses casos gasta o tempo de quem podia estar
+// olhando o lugar certo.
+//
+// A lista é curta e conservadora de propósito: na dúvida, NÃO dá a dica. Uma
+// dica que falta é uma tela um pouco mais seca; uma dica errada manda a pessoa
+// para o lugar errado com confiança.
+export function ehProblemaDeConfiguracao(mensagem) {
+  const t = String(mensagem || "").toLowerCase();
+  return t.includes("não configurada")
+      || t.includes("nao configurada")
+      || t.includes("vantoro_api_token errado")
+      || t.includes("token errado")
+      || t.includes("vencido");
+}
+
 // Lista usada só enquanto o Vantoro não responder com a dele (por exemplo, se
 // o painel for publicado antes do Vantoro). A lista boa vem da API, para não
 // existirem duas que precisam ser mantidas iguais.
@@ -407,9 +427,14 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
         {!carregando && erro && (
           <div style={{ color: "#e5695a", fontSize: 13, lineHeight: 1.5 }}>
             {erro}
-            {/* A dica só faz sentido quando o painel já sabe o endereço da
-                ponte; se nem isso ele tem, a mensagem acima já explica tudo. */}
-            {BRIDGE_URL && (
+            {/* A DICA SÓ APARECE QUANDO ELA É MESMO A EXPLICAÇÃO.
+                Antes vinha grudada em QUALQUER erro, e mandava conferir
+                VANTORO_API_URL e VANTORO_API_TOKEN mesmo quando o problema era
+                o Vantoro fora do ar. Em 21/08 foi o que aconteceu: a
+                configuração estava intacta, e a tela mandou conferir a
+                configuração. Uma dica errada é pior do que dica nenhuma — ela
+                manda a pessoa para o lugar errado com confiança. */}
+            {BRIDGE_URL && ehProblemaDeConfiguracao(erro) && (
               <div style={{ color: C.textSecondary, marginTop: 8, fontSize: 12 }}>
                 Verifique se a ponte está configurada com VANTORO_API_URL e VANTORO_API_TOKEN.
               </div>
