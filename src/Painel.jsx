@@ -4652,8 +4652,18 @@ export default function Painel({ sessao }) {
     setMenuConversa(null);
     const novo = naoLida ? (conv.nao_lidas > 0 ? conv.nao_lidas : 1) : 0;
     setConversas((prev) => prev.map((x) => (x.id === conv.id ? { ...x, nao_lidas: novo } : x)));
-    // Para o "não lida" valer visualmente, sai da conversa se ela estiver aberta.
-    if (naoLida && conv.id === conversaId) setConversaId(null);
+    // FICA NA CONVERSA. Esta função saía dela ao marcar como não lida, e o
+    // efeito era o de ter apertado ESC: a pessoa clicava no botão do cabeçalho
+    // e era jogada para fora, sem ter pedido isso.
+    //
+    // A linha existia para o selo "valer visualmente" — mas isso era só a
+    // aparência: a linha selecionada na lista já está destacada, e o número
+    // ficava por baixo do destaque. Trocar a tela inteira por causa disso é
+    // caro demais, e "Marcar como lida" nunca fez nada parecido.
+    //
+    // E NÃO HÁ RISCO DE ELA SER REMARCADA POR FICAR ALI: as três marcações
+    // automáticas acontecem ao ENVIAR alguma coisa (mensagem, anexo,
+    // figurinha), nunca por estar dentro da conversa. Conferido antes de tirar.
     mostrarAviso(naoLida ? "Marcada como não lida" : "Marcada como lida");
     const { error } = await supabase.from("conversas").update({ nao_lidas: novo }).eq("id", conv.id);
     // Sem conferir, a tela dizia "Marcada como lida" e o banco continuava com o
