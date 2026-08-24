@@ -94,7 +94,12 @@ let TEM_NOME_DO_CADASTRO = true;
 // `conversas.arquivada` também é de um SQL que pode não ter sido rodado.
 let TEM_ARQUIVADA = true;
 const colunasDoContato = (base) =>
-  TEM_NOME_DO_CADASTRO ? base + ", vantoro_nome, nome_zorvin" : base;
+  // `vantoro_cliente_id` vem do MESMO SQL das frentes que trouxe `vantoro_nome`,
+  // então herda a mesma tolerância: onde um existe, o outro existe. É por ele
+  // que a nota interna sabe para qual cliente do Vantoro ela vai subir — sem
+  // cliente, a nota fica só na conversa, que é o certo para quem ainda não tem
+  // cadastro.
+  TEM_NOME_DO_CADASTRO ? base + ", vantoro_nome, nome_zorvin, vantoro_cliente_id" : base;
 
 // RECURSOS QUE DEPENDEM DE COLUNA QUE PODE NÃO EXISTIR.
 //
@@ -1484,6 +1489,14 @@ export default function Painel({ sessao }) {
   const [convHover, setConvHover] = useState(null); // id da conversa sob o mouse (realce)
   const [menuConversa, setMenuConversa] = useState(null); // id da conversa com o menuzinho aberto
   const [modoNota, setModoNota] = useState(false); // caixa de texto no modo "nota interna"
+  // O PROCESSO QUE A NOTA APONTA — opcional, e o padrão é nenhum.
+  //
+  // O vínculo da nota é SEMPRE com o cliente; o processo existe só para
+  // facilitar achar a informação depois. Por isso o padrão é "nota geral": quem
+  // não escolher nada não fica devendo nada.
+  const [processosDoCliente, setProcessosDoCliente] = useState([]);
+  const [processoDaNota, setProcessoDaNota] = useState("");
+  const [buscandoProcessos, setBuscandoProcessos] = useState(false);
   const [rapidas, setRapidas] = useState([]); // mensagens rápidas (respostas prontas) da equipe
   const [slashIdx, setSlashIdx] = useState(0); // item destacado no menu do "/"
   const [configAberta, setConfigAberta] = useState(false); // tela de Configurações aberta
@@ -3806,6 +3819,32 @@ export default function Painel({ sessao }) {
   // uma conversa para a outra.
   useEffect(() => { rascunhoRef.current = rascunho; }, [rascunho]);
   useEffect(() => { modoNotaRef.current = modoNota; }, [modoNota]);
+
+  // OS PROCESSOS DO CLIENTE, buscados só quando alguém abre o modo nota.
+  //
+  // Não na abertura da conversa: a maioria das conversas nunca recebe nota, e
+  // perguntar ao Vantoro em todas seria uma ida à rede por conversa aberta —
+  // num serviço que hiberna no plano gratuito e demora a acordar.
+  //
+  // FALHAR AQUI NÃO IMPEDE A NOTA. Sem a lista, o seletor não aparece e a nota
+  // é geral; o que não pode acontecer é a pessoa não conseguir anotar porque o
+  // Vantoro está fora do ar.
+  const clienteDaConversa = conversa?.contato?.vantoro_cliente_id || null;
+  useEffect(() => {
+    if (!modoNota || !clienteDaConversa) { setProcessosDoCliente([]); return; }
+    let valeu = true;
+    setBuscandoProcessos(true);
+    chamarPonte(`/vantoro/cliente/${clienteDaConversa}`)
+      .then((r) => { if (valeu) setProcessosDoCliente((r && r.cliente && r.cliente.processos) || []); })
+      .catch(() => { if (valeu) setProcessosDoCliente([]); })
+      .finally(() => { if (valeu) setBuscandoProcessos(false); });
+    return () => { valeu = false; };
+  }, [modoNota, clienteDaConversa]);
+
+  // Trocar de conversa zera a escolha: o processo de um cliente não vale para
+  // outro, e uma escolha que sobrevive à troca é a receita para a nota entrar
+  // no processo errado.
+  useEffect(() => { setProcessoDaNota(""); }, [conversaId]);
   useEffect(() => {
     const antes = conversaAnteriorRef.current;
     if (antes && antes !== conversaId) {
@@ -4906,13 +4945,41 @@ export default function Painel({ sessao }) {
     setRascunho("");
     setEmojiAberto(false);
     setPertoDoFim(true);
+    // O processo escolhido, se houver. `escolhido` é o objeto inteiro porque o
+    // NÚMERO fica guardado junto do id: sem ele, desenhar a nota exigiria
+    // perguntar ao Vantoro qual processo é cada uma — uma ida à rede por nota,
+    // numa lista que rola.
+    const escolhido = processoDaNota
+      ? processosDoCliente.find((p) => String(p.id) === String(processoDaNota))
+      : null;
+    const comProcesso = escolhido
+      ? { processo_id: escolhido.id, processo_numero: escolhido.numero || "" }
+      : {};
+
     const tempId = "nota-temp-" + Date.now();
     const provisoria = {
       id: tempId, conversa_id: conversaId, origem: "nota",
       texto: t, autor: meuNome, autor_foto: minhaFoto, criado_em: new Date().toISOString(), _status: "enviando",
+      // A BOLHA PROVISÓRIA JÁ NASCE COM O PROCESSO. Sem isto, quem acabou de
+      // escolher veria a nota aparecer SEM o processo e só depois ele surgir,
+      // quando a versão do banco chegasse pelo tempo real — parecendo que a
+      // escolha não pegou. E se o tempo real não chegar, ela nunca apareceria.
+      ...comProcesso,
     };
     setMensagens((prev) => [...prev, provisoria].sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em)));
-    let { error } = await supabase.from("notas").insert({ conversa_id: conversaId, texto: t, autor: meuNome, autor_foto: minhaFoto, autor_id: meuId });
+    let { error, data: gravada } = await supabase.from("notas")
+      .insert({ conversa_id: conversaId, texto: t, autor: meuNome,
+                autor_foto: minhaFoto, autor_id: meuId, ...comProcesso })
+      .select("id").single();
+    // Base sem as colunas do processo: grava sem elas, e a nota continua
+    // valendo — só não sobe vinculada a processo nenhum. Mesma tolerância que
+    // o resto desta função já tem.
+    if (error && /processo_id|processo_numero/i.test(error.message || "")) {
+      ({ error, data: gravada } = await supabase.from("notas")
+        .insert({ conversa_id: conversaId, texto: t, autor: meuNome,
+                  autor_foto: minhaFoto, autor_id: meuId })
+        .select("id").single());
+    }
     // Base sem a coluna nova: grava sem ela. Quem pode mexer na nota cai para
     // a comparação por nome, que é o que havia antes.
     if (error && /autor_id/i.test(error.message || "")) {
@@ -4929,6 +4996,37 @@ export default function Painel({ sessao }) {
       setRascunho((r) => (r ? r : t));
       setModoNota(true);
       mostrarAviso("Não consegui salvar a nota. O texto voltou para a caixa.");
+    }
+    else {
+      // AGORA SOBE PARA O VANTORO — e o vínculo é sempre com o CLIENTE.
+      //
+      // Depois de gravar, e não antes: a nota da equipe não pode se perder
+      // porque o Vantoro estava dormindo. Aqui ela já está salva; a subida é o
+      // extra que a leva para onde alguém vai procurá-la meses depois.
+      //
+      // SEM CADASTRO, NÃO SOBE. Contato que ainda não é cliente não tem ficha
+      // para receber nada — a nota fica na conversa, que é o certo, e sobe
+      // quando o cadastro for criado.
+      //
+      // FALHAR AQUI NÃO DESFAZ A NOTA. Ela continua na conversa e o aviso diz o
+      // que não aconteceu; desfazer seria apagar o que a pessoa escreveu por
+      // causa de um serviço de terceiro fora do ar.
+      if (clienteDaConversa && gravada?.id) {
+        chamarPonte(`/vantoro/cliente/${clienteDaConversa}/nota`, {
+          method: "POST",
+          body: JSON.stringify({
+            id: gravada.id,
+            texto: t,
+            processo_id: escolhido ? escolhido.id : null,
+          }),
+        }).catch(() => mostrarAviso(
+          "A nota foi salva aqui, mas não subiu para a ficha do Vantoro agora. "
+          + "Tente editá-la daqui a pouco."));
+      }
+      // Escolha usada, escolha zerada: a próxima nota começa como geral. Uma
+      // escolha que gruda faria a nota seguinte entrar no processo anterior
+      // sem ninguém ter pedido.
+      setProcessoDaNota("");
     }
     // Se deu certo, o Realtime traz a versão definitiva e remove a provisória.
   }
@@ -7369,6 +7467,25 @@ export default function Painel({ sessao }) {
                           <div style={{ position: "relative", background: "#a35e0c", color: "#fff", borderRadius: 8, padding: "7px 11px 6px", boxShadow: "0 1px 0.5px rgba(0,0,0,.2)", minWidth: 120 }}>
                             <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 1 }}>{quem.nome || "equipe"}:</div>
                             <div style={{ fontSize: 14, lineHeight: 1.35, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{formatarTexto(m.texto, "#fff3d6")}</div>
+                            {/* O PROCESSO A QUE A NOTA SE REFERE, quando tem um.
+                                Sem isto, a escolha existiria e ninguém a veria:
+                                a informação estaria no banco e no Vantoro, e a
+                                conversa — que é onde a equipe lê — não diria de
+                                qual ação se está falando.
+                                Nota geral não mostra nada. Escrever "sem
+                                processo" em todas encheria a conversa de uma
+                                linha que não informa, já que é o caso comum. */}
+                            {m.processo_numero && (
+                              <div data-nota-processo
+                                   style={{ marginTop: 5, fontSize: 11.5, fontWeight: 600,
+                                            color: "rgba(255,255,255,.92)",
+                                            background: "rgba(0,0,0,.18)", borderRadius: 5,
+                                            padding: "3px 7px", display: "inline-flex",
+                                            alignItems: "center", gap: 5, overflowWrap: "anywhere" }}>
+                                <ClipboardList size={12} />
+                                {m.processo_numero}
+                              </div>
+                            )}
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, fontSize: 10.5, color: "rgba(255,255,255,.85)", marginTop: 3 }}>
                               {/* "editada" fica junto do horário, como nas
                                   mensagens: quem lê precisa saber que o que
@@ -7715,6 +7832,45 @@ export default function Painel({ sessao }) {
                 deixava de parecer um balão. No WhatsApp Web só existe o balão,
                 flutuando sobre a própria conversa — o fundo dela, com padrão e
                 tudo, continua atrás do balão. */}
+            {/* A QUAL PROCESSO ESTA NOTA SE REFERE — opcional, e só no modo nota.
+                O vínculo da nota é SEMPRE com o cliente; o processo existe para
+                facilitar achar a informação depois. Por isso o padrão é "nota
+                geral": quem não escolher nada não fica devendo nada, e essa é a
+                escolha mais comum.
+                SÓ APARECE PARA QUEM TEM CADASTRO no Vantoro. Para um contato
+                que ainda não é cliente não há processo nenhum a escolher, e um
+                seletor vazio ali seria uma pergunta sem resposta possível — a
+                nota dele fica na conversa, que é o certo. */}
+            {modoNota && !selecao && clienteDaConversa && (processosDoCliente.length > 0 || buscandoProcessos) && (
+              <div data-processo-da-nota
+                   style={{ background: C.barraFundo, padding: estreito ? "6px 10px 0" : "8px 16px 0",
+                            display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 12, color: C.textSecondary, whiteSpace: "nowrap" }}>
+                  Processo (opcional):
+                </span>
+                {buscandoProcessos ? (
+                  <span style={{ fontSize: 12, color: C.textSecondary }}>procurando…</span>
+                ) : (
+                  <select value={processoDaNota}
+                          onChange={(e) => setProcessoDaNota(e.target.value)}
+                          style={{ flex: "1 1 220px", minWidth: 0, maxWidth: 420,
+                                   background: C.inputBg, color: C.textPrimary,
+                                   border: `1px solid ${C.divider}`, borderRadius: 7,
+                                   padding: "5px 8px", fontSize: 12.5 }}>
+                    {/* A NOTA GERAL VEM PRIMEIRO e escrita por extenso. "—" ou
+                        vazio deixaria a pessoa sem saber se escolher nada é
+                        permitido; escrito, ela sabe que é uma opção legítima. */}
+                    <option value="">Nota geral do cliente (sem processo)</option>
+                    {processosDoCliente.map((p) => (
+                      <option key={p.id} value={String(p.id)}>
+                        {p.numero}{p.tipo_acao ? ` · ${p.tipo_acao}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+
             <div style={{ background: C.barraFundo, padding: estreito ? "7px 8px" : "9px 16px", display: "flex", alignItems: "flex-end", gap: estreito ? 6 : 10, position: "relative" }}>
               {selecao ? (
                 /* A BARRA DA SELEÇÃO substitui a de digitar, como no WhatsApp.
