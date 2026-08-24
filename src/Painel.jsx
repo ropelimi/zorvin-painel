@@ -7017,24 +7017,42 @@ export default function Painel({ sessao }) {
                   aprender. */}
               {!estreito && (
                 <>
-                {/* MARCAR COMO LIDA — só aparece quando há o que marcar.
-                    Responder o contato já marca sozinho; este botão é para o
-                    outro caso, o de "olhei, não precisa de resposta, resolvido".
-                    Sem ele, uma conversa que não pede resposta ficaria com o selo
-                    vermelho para sempre.
+                {/* LIDA ↔ NÃO LIDA — o mesmo botão, nos dois sentidos.
+                    Responder o contato já marca como lida sozinho; este botão é
+                    para os outros dois casos: "olhei, não precisa de resposta"
+                    e "deixa marcada, volto nisto depois".
+                    ANTES ELE SÓ APARECIA COM A CONVERSA POR LER, e desmarcar só
+                    dava pelo menu do botão direito na lista — que quase ninguém
+                    acha. Marcar de volta é justamente o que se quer quando se
+                    abre uma conversa sem tempo de resolver agora.
                     Vem com a palavra escrita: um tique sozinho não diz o que
-                    faz, e este botão apaga um aviso que a equipe inteira está
-                    vendo. No celular ele é a primeira linha do menu ⋮, também
-                    escrita — e o pingo verde no ⋮ é o que avisa que ela está
-                    lá. */}
-                {(conversa.nao_lidas || 0) > 0 && (
+                    faz, e este botão mexe num aviso que a equipe inteira vê.
+                    E OS DOIS ESTADOS TÊM DE SER DIFERENTES DE LONGE, senão o
+                    botão vira uma roleta: verde e tique duplo para APAGAR o
+                    aviso, apagado e balão para DEVOLVER o aviso. Cor e desenho
+                    juntos, porque só a cor não serve para quem não a distingue.
+                    No celular ele é a primeira linha do menu ⋮, também escrita —
+                    e o pingo verde no ⋮ é o que avisa que ela está lá. */}
+                {(conversa.nao_lidas || 0) > 0 ? (
                   <button onClick={() => marcarLida(conversa.id)}
+                          data-marcar="lida"
                           title="Marcar esta conversa como lida"
                           style={{ ...BOTAO_ICONE, padding: "7px 11px", gap: 6,
                                    background: C.searchBg, color: C.verdeTexto,
                                    fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>
                     <CheckCheck size={17} />
                     Marcar como lida
+                  </button>
+                ) : (
+                  <button onClick={() => marcarNaoLida(conversa, true)}
+                          data-marcar="nao-lida"
+                          title="Marcar esta conversa como NÃO lida"
+                          style={{ ...BOTAO_ICONE, padding: "7px 11px", gap: 6,
+                                   background: "transparent", color: C.textSecondary,
+                                   border: `1px solid ${C.divider}`,
+                                   fontSize: 12.5, fontWeight: 500, whiteSpace: "nowrap" }}>
+                    <MessageSquare size={17} />
+                    Marcar como não lida
                   </button>
                 )}
                 {/* Ficha do cliente no Vantoro (cadastro, esteira, processos) */}
@@ -7130,10 +7148,21 @@ export default function Painel({ sessao }) {
                          style={{ position: "absolute", top: 44, right: 0, zIndex: 60, width: 252,
                                   background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10,
                                   boxShadow: "0 6px 20px rgba(0,0,0,.3)", overflow: "hidden" }}>
-                      {(conversa.nao_lidas || 0) > 0 && (
+                      {/* Os dois sentidos aqui também: no celular este menu é
+                          o único caminho, e sem o "não lida" a função
+                          simplesmente não existia para quem atende pelo
+                          telefone. */}
+                      {(conversa.nao_lidas || 0) > 0 ? (
                         <button onClick={() => { setMenuDaConversa(false); marcarLida(conversa.id); }}
+                                data-menu-marcar="lida"
                                 style={{ ...ITEM_DO_MENU, color: C.verdeTexto, fontWeight: 600 }}>
                           <CheckCheck size={17} color={C.green} /> Marcar como lida
+                        </button>
+                      ) : (
+                        <button onClick={() => { setMenuDaConversa(false); marcarNaoLida(conversa, true); }}
+                                data-menu-marcar="nao-lida"
+                                style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
+                          <MessageSquare size={17} color={C.textSecondary} /> Marcar como não lida
                         </button>
                       )}
                       <button onClick={() => { setMenuDaConversa(false); setFichaAberta(true); }}
