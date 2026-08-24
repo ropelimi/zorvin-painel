@@ -135,6 +135,43 @@ console.log("\nMarcar como não lida devolve o aviso de verdade");
      /\d/.test(selo), `a linha dizia: "${selo}"`);
 }
 
+console.log("\nMarcar como NÃO lida NÃO tira a pessoa da conversa");
+{
+  // O RELATO: apertar o botão dentro da conversa jogava para fora, como se
+  // tivesse apertado ESC. A pessoa não pediu isso — pediu para deixar o aviso
+  // marcado, e continuar lendo o que estava lendo.
+  //
+  // "Marcar como lida" nunca fez nada parecido; os dois lados do MESMO botão
+  // têm de se comportar igual nisso.
+  await porLer(1);
+  await abrirAConversa();
+  await botaoLida().click();
+  await page.waitForTimeout(700);
+
+  ok("antes de clicar, a conversa está aberta",
+     await page.locator("[data-topo-conversa]").count() === 1);
+
+  await botaoNaoLida().click();
+  await page.waitForTimeout(900);
+
+  ok("depois de marcar como não lida, CONTINUA aberta",
+     await page.locator("[data-topo-conversa]").count() === 1,
+     "a conversa fechou — é o defeito relatado, o botão agindo como ESC");
+
+  // E o botão volta a oferecer o outro sentido, ali mesmo, sem sair.
+  ok("e o botão já oferece marcar como lida de novo", await aparece(botaoLida()));
+}
+
+console.log("\nE ficar na conversa NÃO desfaz a marcação");
+{
+  // Se algo remarcasse como lida por a pessoa estar ali dentro, a correção
+  // acima seria pior do que o defeito: o selo sumiria sozinho e ninguém
+  // entenderia por quê.
+  await page.waitForTimeout(2500);
+  ok("passados uns segundos, ainda está como não lida", await aparece(botaoLida()),
+     "o botão voltou para 'não lida' sozinho — algo remarcou a conversa");
+}
+
 console.log("\nE nada disso estourou no caminho");
 ok("sem erro de JavaScript", erros.length === 0, erros.join(" | "));
 
