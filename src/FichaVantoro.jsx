@@ -176,6 +176,16 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     if (!numero || !nome) return;
     const campos = { vantoro_nome: nome };
     if (dadosCliente.id) campos.vantoro_cliente_id = dadosCliente.id;
+
+    // COMO ESTAVA ANTES, para saber se isto é uma ESTREIA ou uma revisita.
+    //
+    // Sem esta leitura não há como distinguir "acabou de virar cliente" de
+    // "abriu a ficha de alguém que já era". A ficha se liga ao cadastro toda
+    // vez que é aberta — mandar as notas subirem em todas seria uma ida à rede
+    // por abertura, à toa, para uma resposta que quase sempre é "nenhuma".
+    const { data: antes } = await supabase
+      .from("contatos").select("id, vantoro_cliente_id").eq("numero", numero).maybeSingle();
+
     // Instalação sem as colunas de vínculo: perder o vínculo é aceitável, a
     // ficha ter falhado por causa dele não é. É a mesma tolerância que a ponte
     // já tem do outro lado ao gravar.
@@ -183,6 +193,50 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     if (error && /vantoro_/i.test(error.message || "")) return;
     if (error) return;
     aoLigarCadastro && aoLigarCadastro({ numero, nome, clienteId: dadosCliente.id || null });
+
+    // O CONTATO ACABOU DE GANHAR FICHA: o que ele já tinha anotado sobe.
+    //
+    // Enquanto ele não era cliente, as notas internas ficavam só na conversa —
+    // não havia ficha para recebê-las. Agora há, e o que foi anotado antes é
+    // justamente o que alguém vai procurar: como o caso chegou, o que foi
+    // combinado no primeiro contato.
+    //
+    // SÓ NA ESTREIA. Se já havia vínculo, não há nada de novo para subir: as
+    // notas antigas já subiram quando ele virou cliente, e as novas sobem uma a
+    // uma, na hora em que são escritas.
+    if (antes?.id && !antes.vantoro_cliente_id && dadosCliente.id) {
+      subirNotasAntigas(antes.id);
+    }
+  }
+
+  // SEM `await`, E DE PROPÓSITO.
+  //
+  // A pessoa acabou de criar o cadastro; o que ela espera ver é a ficha pronta.
+  // Segurar a tela esperando o histórico subir transformaria uma consequência
+  // num obstáculo — e a ponte hiberna no plano free, então essa espera pode ser
+  // de quase um minuto.
+  //
+  // E FALHAR AQUI NÃO DESFAZ NADA. O vínculo é o que a pessoa fez; a subida é
+  // consequência dele. Se a ponte estiver fora, o vínculo fica de pé e o
+  // retroativo do administrador pega estas notas depois — ele é idempotente, o
+  // que já subiu é reconhecido e não duplica.
+  async function subirNotasAntigas(contatoId) {
+    try {
+      const r = await chamarPonte(`/vantoro/contato/${encodeURIComponent(contatoId)}/subir-notas`,
+                                  { method: "POST" });
+      // SÓ AVISA SE HOUVE O QUE SUBIR. "0 notas subiram" é ruído para quem só
+      // queria cadastrar o cliente, e este aviso divide espaço com o de
+      // cadastro criado, que é o que ela está esperando ler.
+      if (r?.subiram > 0 && onAviso) {
+        onAviso(r.subiram === 1
+          ? "1 nota interna foi para o histórico do cliente."
+          : `${r.subiram} notas internas foram para o histórico do cliente.`);
+      }
+    } catch (_e) {
+      // Calado por escolha: o cadastro deu certo, e é isso que a pessoa precisa
+      // saber agora. Um erro sobre notas antigas, logo depois do aviso de
+      // cadastro criado, pareceria que o cadastro falhou.
+    }
   }
 
   async function buscar() {
