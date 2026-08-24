@@ -373,6 +373,31 @@ function comNumero(adv) {
   return n ? `${adv.nome} · ${n}` : adv.nome;
 }
 
+// COMO O PROCESSO SE APRESENTA na lista de escolha da nota interna.
+//
+// "0001234-56.2026.8.26.0100 · BANCO TAL S.A." — o número e CONTRA QUEM é a
+// ação.
+//
+// Antes vinha o tipo da ação, e não servia: um cliente com oito ações lia oito
+// linhas dizendo "NEGATIVAÇÃO INCLUSÃO INDEVIDA EM CADASTRO DE INADIMPLENTES",
+// que é justamente o que todas têm em comum. O que distingue uma da outra, para
+// quem atende, é o réu — é assim que a equipe fala delas ("a do banco", "a da
+// operadora").
+//
+// AS TRÊS FALTAS, cada uma com seu jeito de não mentir:
+//   • sem réu  → fica só o número, e não um " · " pendurado no vazio;
+//   • sem número (ação ainda não distribuída) → fica só o réu, em vez de a
+//     linha começar com um ponto solto, como aparecia na tela;
+//   • sem os dois → o id, dito por extenso. Uma opção em branco no meio da
+//     lista parece defeito da tela, e não dá para escolher com segurança.
+function rotuloDoProcesso(p) {
+  if (!p) return "";
+  const numero = String(p.numero || "").trim();
+  const reu = String(p.reu || "").trim();
+  if (numero && reu) return `${numero} · ${reu}`;
+  return numero || reu || `Processo #${p.id}`;
+}
+
 // O NOME DA ABA, num lugar só. Ele aparece em três pontos (o HTML inicial, o
 // contador de não lidas e a limpeza ao sair); espalhado, um deles ficaria para
 // trás na próxima vez que o nome mudar.
@@ -4952,8 +4977,14 @@ export default function Painel({ sessao }) {
     const escolhido = processoDaNota
       ? processosDoCliente.find((p) => String(p.id) === String(processoDaNota))
       : null;
+    // O RÉU VAI JUNTO, pelo mesmo motivo do número: é ele que identifica a ação
+    // para quem lê ("a do banco", "a da operadora"), e sem a cópia a bolha teria
+    // de perguntar ao Vantoro qual processo é cada nota, uma ida à rede por
+    // nota. E há ação sem número — não distribuída ainda —, em que o número
+    // sozinho não desenharia vínculo nenhum.
     const comProcesso = escolhido
-      ? { processo_id: escolhido.id, processo_numero: escolhido.numero || "" }
+      ? { processo_id: escolhido.id, processo_numero: escolhido.numero || "",
+          processo_reu: escolhido.reu || "" }
       : {};
 
     const tempId = "nota-temp-" + Date.now();
@@ -4971,6 +5002,17 @@ export default function Painel({ sessao }) {
       .insert({ conversa_id: conversaId, texto: t, autor: meuNome,
                 autor_foto: minhaFoto, autor_id: meuId, ...comProcesso })
       .select("id").single();
+    // Base sem a coluna do RÉU só: perde o rótulo, NÃO o vínculo. Cair direto
+    // para "sem processo nenhum" aqui jogaria fora a escolha que a pessoa
+    // acabou de fazer por causa de uma coluna que existe só para a tela ter o
+    // que escrever — o `processo_id` é a verdade, e ele cabe sem ela.
+    if (error && /processo_reu/i.test(error.message || "")) {
+      const { processo_reu: _fora, ...semReu } = comProcesso;
+      ({ error, data: gravada } = await supabase.from("notas")
+        .insert({ conversa_id: conversaId, texto: t, autor: meuNome,
+                  autor_foto: minhaFoto, autor_id: meuId, ...semReu })
+        .select("id").single());
+    }
     // Base sem as colunas do processo: grava sem elas, e a nota continua
     // valendo — só não sobe vinculada a processo nenhum. Mesma tolerância que
     // o resto desta função já tem.
@@ -7474,8 +7516,15 @@ export default function Painel({ sessao }) {
                                 qual ação se está falando.
                                 Nota geral não mostra nada. Escrever "sem
                                 processo" em todas encheria a conversa de uma
-                                linha que não informa, já que é o caso comum. */}
-                            {m.processo_numero && (
+                                linha que não informa, já que é o caso comum.
+
+                                A CONDIÇÃO É O `processo_id`, e não o número.
+                                Ação ainda não distribuída não tem número: pelo
+                                número, essas notas ficavam ligadas ao processo
+                                no banco e MUDAS na tela — o vínculo existia sem
+                                aparecer, que é o mesmo que não existir para quem
+                                lê. Pelo id, toda nota vinculada se anuncia. */}
+                            {m.processo_id && (
                               <div data-nota-processo
                                    style={{ marginTop: 5, fontSize: 11.5, fontWeight: 600,
                                             color: "rgba(255,255,255,.92)",
@@ -7483,7 +7532,8 @@ export default function Painel({ sessao }) {
                                             padding: "3px 7px", display: "inline-flex",
                                             alignItems: "center", gap: 5, overflowWrap: "anywhere" }}>
                                 <ClipboardList size={12} />
-                                {m.processo_numero}
+                                {rotuloDoProcesso({ id: m.processo_id, numero: m.processo_numero,
+                                                    reu: m.processo_reu })}
                               </div>
                             )}
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, fontSize: 10.5, color: "rgba(255,255,255,.85)", marginTop: 3 }}>
@@ -7841,35 +7891,78 @@ export default function Painel({ sessao }) {
                 que ainda não é cliente não há processo nenhum a escolher, e um
                 seletor vazio ali seria uma pergunta sem resposta possível — a
                 nota dele fica na conversa, que é o certo. */}
-            {modoNota && !selecao && clienteDaConversa && (processosDoCliente.length > 0 || buscandoProcessos) && (
+            {/* O SELETOR DE PROCESSO, VESTIDO DE NOTA.
+                Ele nasceu com a roupa da barra comum — fundo igual ao do painel,
+                letra cinza — e sumia bem no momento em que precisava ser visto:
+                a pessoa liga a nota interna, a barra de escrever fica âmbar, e
+                logo acima dela ficava uma faixa apagada que o olho pula.
+                Vinculado ao processo errado ninguém fica; ESQUECIDO, sim — e uma
+                nota que devia estar no histórico da ação fica só no do cliente.
+
+                Por isso ele agora usa as MESMAS cores da nota (o mesmo âmbar do
+                botão, da borda e do fundo da caixa de texto): as duas coisas
+                aparecem juntas e se leem como uma peça só.
+
+                E ELE MOSTRA EM QUAL DOS DOIS ESTADOS ESTÁ, sem precisar ler:
+                escolhido, fica preenchido de âmbar forte com um "✓"; em nota
+                geral, fica claro e diz por extenso que é opcional. */}
+            {modoNota && !selecao && clienteDaConversa && (processosDoCliente.length > 0 || buscandoProcessos) && (() => {
+              const escuro = modo === "escuro";
+              const AMBAR = "#d4a017";
+              const temProcesso = Boolean(processoDaNota);
+              return (
               <div data-processo-da-nota
-                   style={{ background: C.barraFundo, padding: estreito ? "6px 10px 0" : "8px 16px 0",
-                            display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 12, color: C.textSecondary, whiteSpace: "nowrap" }}>
-                  Processo (opcional):
+                   style={{ background: escuro ? "#3a3320" : "#fff8d6",
+                            borderTop: `1px solid ${escuro ? "#5c4f28" : "#e6cf6a"}`,
+                            padding: estreito ? "8px 10px" : "10px 16px",
+                            display: "flex", alignItems: "center",
+                            gap: estreito ? 7 : 10, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: AMBAR,
+                               display: "inline-flex", alignItems: "center", gap: 6,
+                               whiteSpace: "nowrap" }}>
+                  <ClipboardList size={15} />
+                  {estreito ? "Processo:" : "Vincular a um processo:"}
                 </span>
                 {buscandoProcessos ? (
-                  <span style={{ fontSize: 12, color: C.textSecondary }}>procurando…</span>
-                ) : (
+                  <span style={{ fontSize: 12.5, color: escuro ? "#c9bd93" : "#8a7434" }}>
+                    procurando os processos deste cliente…
+                  </span>
+                ) : (<>
                   <select value={processoDaNota}
                           onChange={(e) => setProcessoDaNota(e.target.value)}
-                          style={{ flex: "1 1 220px", minWidth: 0, maxWidth: 420,
-                                   background: C.inputBg, color: C.textPrimary,
-                                   border: `1px solid ${C.divider}`, borderRadius: 7,
-                                   padding: "5px 8px", fontSize: 12.5 }}>
+                          style={{ flex: "1 1 240px", minWidth: 0, maxWidth: 460,
+                                   // ESCOLHIDO x NOTA GERAL, à distância: cheio de
+                                   // âmbar num caso, claro no outro. Só a letra
+                                   // dentro do seletor obrigaria a ler para saber.
+                                   background: temProcesso ? AMBAR : (escuro ? "#2a2517" : "#fffdf2"),
+                                   color: temProcesso ? "#fff" : (escuro ? "#f0e6c8" : "#3b3118"),
+                                   fontWeight: temProcesso ? 700 : 500,
+                                   border: `2px solid ${temProcesso ? AMBAR : (escuro ? "#7a6832" : "#e6cf6a")}`,
+                                   borderRadius: 8, padding: "6px 9px", fontSize: 12.5,
+                                   cursor: "pointer" }}>
                     {/* A NOTA GERAL VEM PRIMEIRO e escrita por extenso. "—" ou
                         vazio deixaria a pessoa sem saber se escolher nada é
                         permitido; escrito, ela sabe que é uma opção legítima. */}
                     <option value="">Nota geral do cliente (sem processo)</option>
                     {processosDoCliente.map((p) => (
                       <option key={p.id} value={String(p.id)}>
-                        {p.numero}{p.tipo_acao ? ` · ${p.tipo_acao}` : ""}
+                        {rotuloDoProcesso(p)}
                       </option>
                     ))}
                   </select>
-                )}
+                  {/* O RECADO CURTO AO LADO. Diz o que vai acontecer com ESTA
+                      nota — não é enfeite, é a única frase que confirma a
+                      escolha sem obrigar a reabrir a lista. */}
+                  <span data-aviso-do-processo
+                        style={{ fontSize: 11.5, fontWeight: temProcesso ? 700 : 500,
+                                 color: temProcesso ? AMBAR : (escuro ? "#a99a6d" : "#8a7434"),
+                                 whiteSpace: "nowrap" }}>
+                    {temProcesso ? "✓ entra no histórico deste processo" : "opcional"}
+                  </span>
+                </>)}
               </div>
-            )}
+              );
+            })()}
 
             <div style={{ background: C.barraFundo, padding: estreito ? "7px 8px" : "9px 16px", display: "flex", alignItems: "flex-end", gap: estreito ? 6 : 10, position: "relative" }}>
               {selecao ? (

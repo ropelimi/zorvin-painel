@@ -50,9 +50,21 @@ await page.route("**/ponte-de-mentira/**", async (rota) => {
   if (/\/vantoro\/cliente\/[^/]+$/.test(url.pathname)) {
     return rota.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify({ ok: true, cliente: { id: "v-900", nome: "ZZ Cliente",
+        // O MESMO TIPO DE AÇÃO NAS DUAS, e réus diferentes. É o caso real: o
+        // cliente que tem oito ações costuma ter oito da MESMA espécie, e por
+        // isso o tipo não distingue nenhuma delas. O réu, sim.
         processos: [
-          { id: 11, numero: "0001111-11.2026.8.26.0100", tipo_acao: "Trabalhista" },
-          { id: 22, numero: "0002222-22.2026.8.26.0100", tipo_acao: "Cível" },
+          { id: 11, numero: "0001111-11.2026.8.26.0100", reu: "BANCO ZZ S.A.",
+            tipo_acao: "NEGATIVAÇÃO INCLUSÃO INDEVIDA" },
+          { id: 22, numero: "0002222-22.2026.8.26.0100", reu: "OPERADORA ZZ LTDA",
+            tipo_acao: "NEGATIVAÇÃO INCLUSÃO INDEVIDA" },
+          // SEM NÚMERO — ação ainda não distribuída. Na tela isso aparecia como
+          // uma linha começando com um ponto solto, sem dizer que ação era.
+          { id: 33, numero: "", reu: "SEGURADORA ZZ",
+            tipo_acao: "NEGATIVAÇÃO INCLUSÃO INDEVIDA" },
+          // SEM NÚMERO E SEM RÉU: a opção ficaria EM BRANCO no meio da lista,
+          // e uma linha vazia não dá para escolher com segurança.
+          { id: 44, numero: "", reu: "", tipo_acao: "" },
         ] } }) });
   }
   rota.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
@@ -164,6 +176,25 @@ console.log("\nQuem TEM cadastro no Vantoro escolhe o processo");
   ok("os processos do cliente estão na lista",
      opcoes.join(" ").includes("0001111-11") && opcoes.join(" ").includes("0002222-22"),
      JSON.stringify(opcoes));
+
+  // O RÉU, E NÃO O TIPO DA AÇÃO.
+  //
+  // O tipo se repete: um cliente com oito ações lia oito linhas com o mesmo
+  // texto, que é exatamente a informação que não distingue nenhuma delas. Quem
+  // atende fala "a do banco", "a da operadora" — o réu é o que identifica.
+  ok("cada processo é identificado pelo RÉU",
+     /BANCO ZZ/.test(opcoes[1] || "") && /OPERADORA ZZ/.test(opcoes[2] || ""),
+     JSON.stringify(opcoes));
+  ok("e o tipo da ação saiu do rótulo",
+     !opcoes.join(" ").includes("NEGATIVAÇÃO"),
+     "com oito ações iguais, o tipo repetido não ajuda a escolher");
+
+  // AS FALTAS, sem deixar buraco na tela.
+  ok("processo sem número mostra só o réu, sem ponto solto na frente",
+     (opcoes[3] || "").trim() === "SEGURADORA ZZ", JSON.stringify(opcoes[3]));
+  ok("e sem número nem réu ele ainda se anuncia, em vez de ficar em branco",
+     (opcoes[4] || "").trim().length > 0 && /44/.test(opcoes[4] || ""),
+     `a opção ficou "${opcoes[4]}" — linha vazia não dá para escolher`);
 }
 
 console.log("\nA nota geral sobe sem processo");
@@ -200,6 +231,33 @@ console.log("\nCom processo escolhido, ele vai junto — e aparece na conversa")
      await marca.last().innerText().catch(() => "sem a marca"));
 }
 
+console.log("\nAção sem número também se anuncia na conversa");
+{
+  // O VÍNCULO MUDO. A bolha só desenhava o processo quando havia NÚMERO, e ação
+  // ainda não distribuída não tem. Nessas, a nota ficava ligada ao processo no
+  // banco e calada na tela — o vínculo existia sem aparecer, que para quem lê é
+  // o mesmo que não existir.
+  const marca = page.locator("[data-nota-processo]");
+  // QUANTAS HAVIA ANTES. Olhar só a última marca da tela não serve: se a nova
+  // nota não desenhar marca nenhuma, `last()` devolve a marca da nota ANTERIOR,
+  // e a conferência passa falando de outra nota. Foi o que aconteceu quando
+  // sabotei a condição da bolha para ver se ela mordia — e ela não mordeu.
+  const antes = await marca.count();
+
+  await entrarNoModoNota();
+  await seletor().selectOption("33");
+  await escrever("Sobre a acao ainda nao distribuida");
+
+  ok("a bolha mostra o vínculo mesmo sem número", (await marca.count()) === antes + 1,
+     "a nota ficou ligada ao processo no banco e muda na tela");
+  const texto = (await marca.last().innerText().catch(() => "")) || "";
+  ok("e o que ela mostra é o RÉU", /SEGURADORA ZZ/.test(texto), texto);
+
+  const ultima = subiram[subiram.length - 1];
+  ok("e o processo chega ao Vantoro do mesmo jeito",
+     String(ultima?.corpo?.processo_id) === "33", JSON.stringify(ultima?.corpo));
+}
+
 console.log("\nA escolha NÃO gruda na próxima nota");
 {
   // Uma escolha que sobrevive faria a nota seguinte entrar no processo
@@ -207,6 +265,55 @@ console.log("\nA escolha NÃO gruda na próxima nota");
   await entrarNoModoNota();
   ok("o seletor volta para a nota geral", (await seletor().inputValue()) === "",
      `ficou em "${await seletor().inputValue()}"`);
+}
+
+console.log("\nO seletor se faz notar, e diz em qual estado está");
+{
+  // ELE SUMIA NA HORA EM QUE PRECISAVA SER VISTO: a pessoa liga a nota interna,
+  // a barra de escrever fica âmbar, e logo acima ficava uma faixa cinza que o
+  // olho pula. Vinculado ao processo errado ninguém fica — ESQUECIDO, sim, e a
+  // nota que devia estar no histórico da ação fica só no do cliente.
+  const cor = (loc, prop) => loc.evaluate((el, p) => getComputedStyle(el)[p], prop);
+
+  // TRANSPARENTE É O DEFEITO, e não "cor diferente da de cima". A faixa nasceu
+  // com `background: transparent` — ela não tinha fundo NENHUM, e por isso
+  // deixava passar o que estivesse atrás. Comparar com a cor da barra do topo
+  // não pega isso: transparente já é diferente de qualquer cor, e a conferência
+  // passaria sem medir nada.
+  const transparente = (c) => /rgba\([^)]*,\s*0\)$/.test(c) || c === "transparent";
+
+  await entrarNoModoNota();
+  const faixa = page.locator("[data-processo-da-nota]");
+  const fundoDaFaixa = await cor(faixa, "backgroundColor");
+  ok("a faixa do seletor tem fundo próprio, e não é transparente",
+     !transparente(fundoDaFaixa),
+     `ficou ${fundoDaFaixa} — sem fundo, ela some no meio da tela`);
+  ok("ela tem borda que a separa do que está em volta",
+     (await cor(faixa, "borderTopWidth")) !== "0px",
+     "sem borda a faixa se dissolve na barra de baixo");
+
+  // O ESTADO, SEM PRECISAR LER. Escolhido e não escolhido têm de ser
+  // diferentes de longe; só a letra dentro da caixa obrigaria a ler para saber.
+  const s = seletor();
+  const geralFundo = await cor(s, "backgroundColor");
+  const geralAviso = (await page.locator("[data-aviso-do-processo]").innerText()).trim();
+
+  await s.selectOption("22");
+  await page.waitForTimeout(300);
+  const comFundo = await cor(s, "backgroundColor");
+  const comAviso = (await page.locator("[data-aviso-do-processo]").innerText()).trim();
+
+  ok("com processo escolhido o seletor muda de cor",
+     comFundo !== geralFundo, `ficou ${comFundo} nos dois casos`);
+  ok("e o recado ao lado muda junto", comAviso !== geralAviso,
+     `"${geralAviso}" e "${comAviso}"`);
+  ok("em nota geral ele diz que é opcional", /opcional/i.test(geralAviso), geralAviso);
+  ok("e escolhido ele diz o que vai acontecer",
+     /histórico deste processo/i.test(comAviso), comAviso);
+
+  // Devolve ao padrão, para o bloco seguinte falar do que ele quer falar.
+  await s.selectOption("");
+  await page.waitForTimeout(200);
 }
 
 console.log("\nQuem NÃO tem cadastro não vê seletor nenhum");
