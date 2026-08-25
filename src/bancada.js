@@ -1555,6 +1555,10 @@ export const ESPERADO = {
   departamentos: DEPARTAMENTOS.map((x) => ({ id: x.id, nome: x.nome })),
 };
 if (typeof globalThis !== "undefined") globalThis.__ESPERADO = ESPERADO;
+// AS TABELAS À MÃO DA BANCADA. Só para as provas poderem montar um estado que
+// nasce do banco, e não da tela — "este contato JÁ tem vínculo gravado" é um
+// estado que existe em produção e que nenhuma sequência de cliques cria.
+if (typeof globalThis !== "undefined") globalThis.__TABELAS = TABELAS;
 
 export const supabase = {
   from: (t) => consulta(t),
