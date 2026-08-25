@@ -15,6 +15,7 @@ import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
 import { numeroCanonico, chaveDoNumero } from "./numeros.js";
 import { chamarPonte } from "./ponte.js";
+import { comoPrever, nomeDoTipo, tamanhoLegivel } from "./arquivos.js";
 import Departamentos from "./Departamentos";
 import PainelNumeros from "./PainelNumeros";
 import Marca from "./Marca";
@@ -1221,6 +1222,56 @@ function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoRespond
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// A PRIMEIRA PÁGINA DE UM ARQUIVO, quando o navegador sabe desenhá-la.
+//
+// SEM BIBLIOTECA NENHUMA, e isso é a decisão principal deste componente. Um
+// leitor de PDF em JavaScript pesa mais do que o painel inteiro, e seria
+// baixado por toda pessoa que abre a tela — para um recurso que aparece em
+// algumas bolhas. O `<iframe>` usa o leitor que o próprio navegador já tem.
+//
+// SEM CLIQUE E SEM ROLAGEM DENTRO DELA: `pointerEvents: none`. A prévia mora
+// dentro de um link que baixa o arquivo; um iframe que aceita o clique
+// engoliria o clique do link, e um que rola faria a roda do mouse parar a
+// conversa para rolar um PDF sem querer.
+//
+// QUANDO NÃO DÁ, NÃO NASCE NADA. Word, Excel e PowerPoint não têm leitor
+// nativo, e mandá-los a um conversor de terceiros seria despachar documento de
+// cliente para fora do escritório. Nesses, `comoPrever` devolve nulo e a bolha
+// fica com o cartão de sempre — que agora ao menos diz o tipo por extenso.
+function PreviaDeArquivo({ C, url, mime, nome, altura = 150 }) {
+  const como = comoPrever(mime, nome);
+  if (!url || !como) return null;
+
+  const moldura = {
+    height: altura, width: "100%", background: C.searchBg,
+    borderBottom: `1px solid ${C.divider}`, overflow: "hidden",
+    display: "grid", placeItems: "center",
+  };
+
+  if (como === "imagem") {
+    return (
+      <div style={moldura} data-previa-arquivo="imagem">
+        <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+      </div>
+    );
+  }
+
+  // `#toolbar=0…` esconde os controles do leitor: numa miniatura de 150px eles
+  // ocupariam metade da altura e não servem para nada — o arquivo abre inteiro
+  // com um clique. São ignorados por quem não os entende, sem quebrar nada.
+  const endereco = como === "pdf"
+    ? `${url}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`
+    : url;
+
+  return (
+    <div style={{ ...moldura, position: "relative" }} data-previa-arquivo={como}>
+      <iframe src={endereco} title={nome || "prévia"} tabIndex={-1} loading="lazy"
+              style={{ width: "100%", height: "100%", border: "none",
+                       pointerEvents: "none", background: "#fff" }} />
     </div>
   );
 }
@@ -5174,9 +5225,12 @@ export default function Painel({ sessao }) {
       const t = file.type || "";
       const tipo = t.startsWith("image/") ? "imagem" : t.startsWith("video/") ? "video"
                  : t.startsWith("audio/") ? "audio" : "documento";
-      return { file, tipo, nome: file.name,
-               url: tipo === "documento" ? null : URL.createObjectURL(file),
-               legenda: "" };
+      // O DOCUMENTO TAMBÉM GANHA ENDEREÇO. Sem ele, a prévia de um PDF era um
+      // ícone e um nome de arquivo — quem manda dez procurações por dia não
+      // tem como conferir, ANTES de enviar, se pegou a certa. Ver
+      // `src/arquivos.js`: o navegador desenha PDF e texto sozinho.
+      return { file, tipo, nome: file.name, mime: t, tamanho: file.size,
+               url: URL.createObjectURL(file), legenda: "" };
     });
   }
 
@@ -5358,7 +5412,13 @@ export default function Painel({ sessao }) {
     const tipo = tipoForcado || (ehImagem ? "imagem" : ehVideo ? "video" : ehAudio ? "audio" : "documento");
     const tempId = "temp-" + Date.now() + "-" + Math.round(Math.random() * 1e6);
     // Prévia local (o remetente vê o anexo na hora, sem depender do Storage).
-    const previa = tipo === "documento" ? null : URL.createObjectURL(file);
+    //
+    // O DOCUMENTO TAMBÉM GANHA ENDEREÇO, e antes não ganhava: `previa` era nula
+    // para tudo o que não fosse imagem, vídeo ou áudio. A bolha de um PDF
+    // enviado nascia SEM MÍDIA, com "indisponível" escrito nela, até o Storage
+    // responder — quem acabou de mandar a procuração via um aviso de que ela
+    // não estava lá.
+    const previa = URL.createObjectURL(file);
     setMensagens((prev) => [...prev, {
       id: tempId, conversa_id: convId, origem: "advogado", tipo, enviado_por: meuNome, enviado_por_id: meuId, enviado_por_foto: minhaFoto,
       texto: legenda || null, midia_url: previa, midia_mime: file.type, midia_nome: file.name,
@@ -7787,10 +7847,30 @@ export default function Painel({ sessao }) {
                         )}
                         {m.tipo === "documento" && (
                           m.midia_url ? (
-                            <a href={m.midia_url} target="_blank" rel="noopener noreferrer" download style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none", color: C.textPrimary, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 6, padding: "8px 10px", minWidth: 180 }}>
-                              <FileText size={22} color={C.textSecondary} />
-                              <span style={{ flex: 1, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>{m.midia_nome || "Documento"}</span>
-                              <Download size={16} color={C.textSecondary} />
+                            <a href={m.midia_url} target="_blank" rel="noopener noreferrer" download style={{ display: "block", textDecoration: "none", color: C.textPrimary, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 6, overflow: "hidden", minWidth: 180 }}>
+                              {/* A PRIMEIRA PÁGINA, quando o navegador sabe
+                                  desenhar o arquivo. Numa banca o que chega o dia
+                                  inteiro é PDF — procuração, contrato, extrato,
+                                  intimação — e "Documento" não distingue a
+                                  procuração que se esperava do panfleto que
+                                  alguém encaminhou. Ver `src/arquivos.js` para o
+                                  que dá e o que não dá para prever, e por quê. */}
+                              <PreviaDeArquivo C={C} url={m.midia_url}
+                                               mime={m.midia_mime} nome={m.midia_nome} />
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px" }}>
+                                <FileText size={22} color={C.textSecondary} />
+                                <span style={{ flex: 1, minWidth: 0 }}>
+                                  <span style={{ display: "block", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>{m.midia_nome || "Documento"}</span>
+                                  {/* O TIPO POR EXTENSO, embaixo do nome. "Planilha
+                                      do Excel" responde sozinho a pergunta que faz
+                                      alguém abrir o arquivo só para descobrir. */}
+                                  <span style={{ display: "block", fontSize: 11, color: C.textSecondary }}
+                                        data-doc-tipo={nomeDoTipo(m.midia_mime, m.midia_nome)}>
+                                    {nomeDoTipo(m.midia_mime, m.midia_nome)}
+                                  </span>
+                                </span>
+                                <Download size={16} color={C.textSecondary} />
+                              </div>
                             </a>
                           ) : (
                             <div style={{ display: "flex", alignItems: "center", gap: 8, color: C.textPrimary, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 6, padding: "8px 10px", minWidth: 180 }}>
@@ -9003,9 +9083,38 @@ export default function Painel({ sessao }) {
             {atual.tipo === "video" && <video src={atual.url} controls style={{ maxWidth: "100%", maxHeight: "50vh", borderRadius: 8 }} />}
             {atual.tipo === "audio" && <audio src={atual.url} controls style={{ width: "100%" }} />}
             {atual.tipo === "documento" && (
-              <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#fff", background: "rgba(255,255,255,.1)", borderRadius: 8, padding: "16px 20px" }}>
-                <FileText size={32} /> <span style={{ fontSize: 15 }}>{atual.nome}</span>
-              </div>
+              comoPrever(atual.mime, atual.nome) ? (
+                // DÁ PARA VER ANTES DE MANDAR. É o ponto todo desta tela: quem
+                // manda dez procurações por dia precisa conferir se pegou a
+                // certa, e o nome do arquivo quase nunca responde isso.
+                <div data-previa-documento style={{ width: "100%", background: "#fff", borderRadius: 8, overflow: "hidden" }}>
+                  <iframe src={atual.url + (comoPrever(atual.mime, atual.nome) === "pdf" ? "#view=FitH" : "")}
+                          title={atual.nome} style={{ width: "100%", height: "46vh", border: "none" }} />
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", color: "#222" }}>
+                    <FileText size={18} />
+                    <span style={{ flex: 1, fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{atual.nome}</span>
+                    <span style={{ fontSize: 12, opacity: .7 }}>
+                      {nomeDoTipo(atual.mime, atual.nome)}
+                      {tamanhoLegivel(atual.tamanho) ? ` · ${tamanhoLegivel(atual.tamanho)}` : ""}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                // SEM PRÉVIA POSSÍVEL, o cartão diz o que dá para saber. Word,
+                // Excel e PowerPoint não têm leitor no navegador, e mandá-los a
+                // um conversor de fora seria despachar documento de cliente
+                // para fora do escritório.
+                <div data-cartao-documento style={{ display: "flex", alignItems: "center", gap: 10, color: "#fff", background: "rgba(255,255,255,.1)", borderRadius: 8, padding: "16px 20px" }}>
+                  <FileText size={32} />
+                  <span>
+                    <span style={{ display: "block", fontSize: 15 }}>{atual.nome}</span>
+                    <span style={{ display: "block", fontSize: 12.5, opacity: .75 }}>
+                      {nomeDoTipo(atual.mime, atual.nome)}
+                      {tamanhoLegivel(atual.tamanho) ? ` · ${tamanhoLegivel(atual.tamanho)}` : ""}
+                    </span>
+                  </span>
+                </div>
+              )
             )}
             {/* A TIRA DOS OUTROS ARQUIVOS. Só aparece havendo mais de um: com
                 um arquivo só ela seria uma fileira de um item, que não ajuda
