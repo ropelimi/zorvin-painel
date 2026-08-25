@@ -1481,6 +1481,10 @@ export default function Painel({ sessao }) {
   const inputRef = useRef(null);
   const conversaIdRef = useRef(null);
   useEffect(() => { conversaIdRef.current = conversaId; }, [conversaId]);
+  // A ÚLTIMA que `carregarMensagens` começou a carregar. Serve para saber se
+  // esta chamada é uma TROCA de conversa ou uma recarga da mesma — a troca
+  // esvazia a tela na hora, a recarga não pode piscar.
+  const ultimaCarregadaRef = useRef(null);
   // Mesmo papel do `conversaIdRef`, para o telefone: quem responde atrasado
   // confere aqui se ainda é o telefone aberto antes de mexer na tela.
   const advogadoIdRef = useRef(null);
@@ -3376,10 +3380,60 @@ export default function Painel({ sessao }) {
   const carregarMensagens = useCallback(async (convId) => {
     if (!convId) { setMensagens([]); setTemMaisAntigas(false); return; }
 
+    // A CONVERSA NOVA NUNCA MOSTRA AS MENSAGENS DA ANTERIOR.
+    //
+    // Relato do escritório: "trocando de conversa, demora a carregar a nova —
+    // isso pode fazer o atendente mandar a mensagem para a conversa errada".
+    //
+    // Era isto: a lista só era trocada DEPOIS das consultas voltarem. Nesse
+    // intervalo o cabeçalho já era o do contato novo, o destino do envio já era
+    // o novo, e o que estava desenhado embaixo ainda era a conversa ANTERIOR.
+    // Quem olha a tela para saber com quem está falando lia a resposta errada —
+    // e é exatamente para saber isso que se olha a tela.
+    //
+    // Esvaziar é melhor do que mostrar outra coisa. Vazio ninguém confunde com
+    // o histórico de alguém; a conversa de outro cliente, sim.
+    //
+    // SÓ QUANDO A CONVERSA MUDOU. Recarregar a mesma (é o que a busca por
+    // mensagem faz, para saltar até a linha achada) não pode piscar a tela.
+    if (ultimaCarregadaRef.current !== convId) {
+      ultimaCarregadaRef.current = convId;
+      setMensagens((prev) => {
+        prev.forEach((m) => { if (m.midia_url && String(m.midia_url).startsWith("blob:")) URL.revokeObjectURL(m.midia_url); });
+        return [];
+      });
+      setIdDivisorNaoLidas(null);
+      setTemMaisAntigas(false);
+    }
+
     // A conversa aberta a partir de um resultado de busca não começa no fim:
     // começa na mensagem que casou. Aqui o alvo é só LIDO — quem o apaga é o
     // efeito que faz o salto, depois de ele acontecer.
     const alvo = alvoDe(convId);
+
+    // AS TRÊS LEITURAS SAEM JUNTAS, e antes saíam em fila indiana.
+    //
+    // Mensagens, depois notas, depois a fila de erro: três idas ao banco uma
+    // atrás da outra, cada uma esperando a anterior VOLTAR para começar. Nenhuma
+    // depende do resultado das outras — a espera era só a ordem em que estavam
+    // escritas. Num 4G do fórum, três voltas de rede em série são o que a pessoa
+    // sente como "demora a abrir".
+    //
+    // Saindo juntas, o custo passa a ser o da mais lenta em vez da soma das
+    // três. As notas e a fila são disparadas AQUI e esperadas lá embaixo.
+    //
+    // O `.then((r) => r)` NÃO É ENFEITE, e quase passou batido: no supabase-js
+    // a consulta é PREGUIÇOSA. `supabase.from(...).select(...)` devolve um
+    // construtor, e o `fetch` só sai lá dentro do `then` — guardar o construtor
+    // numa variável não dispara nada, e aguardá-lo mais abaixo faria a ida à
+    // rede começar exatamente onde começava antes. A "paralelização" seria
+    // enfeite, com a fila indiana intacta.
+    const pedidoDasNotas = supabase
+      .from("notas").select("*").eq("conversa_id", convId)
+      .order("criado_em", { ascending: true }).then((r) => r);
+    const pedidoDaFila = supabase.from("fila_envio")
+      .select("*").eq("conversa_id", convId).eq("status", "erro")
+      .order("criado_em", { ascending: true }).limit(50).then((r) => r);
 
     let recentes = [], erro = null, maisAntigas = false;
     if (alvo && alvo.em) {
@@ -3415,6 +3469,10 @@ export default function Painel({ sessao }) {
     // zeramento é o "eu li": ele só pode acontecer depois de uma leitura que
     // deu certo.
     if (erro) {
+      // A LISTA JÁ FOI ESVAZIADA lá em cima, e é o que salva este caminho: antes
+      // o `return` deixava na tela as mensagens da conversa ANTERIOR, embaixo do
+      // nome da nova, até alguém tocar de novo. O aviso pedia para tentar outra
+      // vez enquanto a tela mostrava o histórico de outro cliente.
       mostrarAviso("Não consegui carregar as mensagens. Toque na conversa de novo.");
       return;
     }
@@ -3423,11 +3481,7 @@ export default function Painel({ sessao }) {
     // e nunca são enviadas para o WhatsApp.
     let notas = [];
     try {
-      const { data: ns, error: nErr } = await supabase
-        .from("notas")
-        .select("*")
-        .eq("conversa_id", convId)
-        .order("criado_em", { ascending: true });
+      const { data: ns, error: nErr } = await pedidoDasNotas;
       if (!nErr) notas = (ns || []).map((n) => ({ ...n, id: "nota-" + n.id, origem: "nota" }));
     } catch (_) { /* tabela ainda não criada: segue sem notas */ }
     // ------------------------------------------------------------
@@ -3444,9 +3498,7 @@ export default function Painel({ sessao }) {
     //  falha e a conversa abre sem elas — como abria antes.
     let naoSairam = [];
     try {
-      const { data: falhas } = await supabase.from("fila_envio")
-        .select("*").eq("conversa_id", convId).eq("status", "erro")
-        .order("criado_em", { ascending: true }).limit(50);
+      const { data: falhas } = await pedidoDaFila;
       naoSairam = (falhas || []).map((f) => ({
         id: "fila-" + f.id,
         conversa_id: convId,
