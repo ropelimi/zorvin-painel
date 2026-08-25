@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "./supabase.js";
 import { chamarPonte } from "./ponte.js";
 // A ETIQUETA do telefone do escritório — a mesma que a ponte lê para aplicar a
@@ -49,7 +49,7 @@ export default function Departamentos({ C, aoFechar }) {
   const [erro, setErro] = useState("");
   const [departamentos, setDepartamentos] = useState([]);
   const [telefones, setTelefones] = useState([]);
-  const [aba, setAba] = useState("estrutura"); // 'estrutura' | 'pessoas'
+  const [aba, setAba] = useState("estrutura"); // 'estrutura' | 'pessoas' | 'notas'
   const [salvando, setSalvando] = useState("");
   // O que o BANCO acha: `null` = não deu para perguntar (base antiga, sem a
   // função), `true`/`false` = a resposta dele.
@@ -178,6 +178,13 @@ export default function Departamentos({ C, aoFechar }) {
         <div style={{ display: "flex", gap: 8, padding: "12px 18px 0" }}>
           <button style={cx.aba(aba === "estrutura")} onClick={() => setAba("estrutura")}>Departamentos e telefones</button>
           <button style={cx.aba(aba === "pessoas")} onClick={() => setAba("pessoas")}>Atendentes</button>
+          {/* A ABA DAS NOTAS mora aqui porque aqui é a tela de quem administra,
+              e o retroativo é coisa de administrador — ele mexe no histórico de
+              todos os clientes de uma vez. Antes ele só existia como um POST
+              com token de servidor: não havia como chamá-lo de um navegador, e
+              as notas antigas ficaram paradas por isso. */}
+          <button style={cx.aba(aba === "notas")} onClick={() => setAba("notas")}
+                  data-aba-notas>Notas no Vantoro</button>
         </div>
 
         <div style={cx.corpo}>
@@ -233,6 +240,8 @@ export default function Departamentos({ C, aoFechar }) {
             <Atendentes cx={cx} C={C} departamentos={departamentos} telefones={telefones}
                         aoAvisar={setErro} />
           )}
+
+          {aba === "notas" && <NotasNoVantoro cx={cx} C={C} />}
         </div>
       </div>
     </div>
@@ -562,6 +571,227 @@ function Atendentes({ cx, C, departamentos, telefones, aoAvisar }) {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// ---------- as notas do Zorvin no histórico do Vantoro ----------
+//
+//  POR QUE ESTA ABA EXISTE.
+//
+//  A nota interna escrita numa conversa sobe para o histórico do cliente no
+//  Vantoro. Isso passou a valer para as notas NOVAS — mas as que já estavam
+//  gravadas antes ficaram onde estavam, e não havia como trazê-las: o
+//  retroativo é um POST que exige o token de servidor do Vantoro, e esse token
+//  nunca pode passar pelo navegador. Quer dizer, existia um comando que
+//  ninguém do escritório tinha como executar. A Render, no plano gratuito, não
+//  dá terminal — então "rode este comando" não é caminho possível aqui.
+//
+//  Ela roda EM FATIAS, e não de uma vez. Subir uma nota é uma ida ao Vantoro,
+//  que é outra hospedagem e que hiberna: centenas de clientes numa requisição
+//  só passam do tempo que a Render dá, e a chamada morre no meio sem dizer
+//  onde parou. A ponte recorta a lista; esta tela pede a fatia seguinte e vai
+//  mostrando quanto já andou.
+function NotasNoVantoro({ cx, C }) {
+  const [medindo, setMedindo] = useState(true);
+  const [conta, setConta] = useState(null);
+  const [erro, setErro] = useState("");
+  const [simulacao, setSimulacao] = useState(null);
+  const [rodando, setRodando] = useState(false);
+  const [andado, setAndado] = useState(null);
+  const [pronto, setPronto] = useState(null);
+  // Pedido de parada. Em `ref` e não em `state` de propósito: o laço lê este
+  // valor a cada volta, e um `state` ficaria congelado no valor que existia
+  // quando o laço começou — o botão de parar não pararia nada.
+  const parar = useRef(false);
+
+  // Meio minuto é o que as outras telas pedem, e não serve aqui: uma fatia
+  // percorre dezenas de clientes mandando nota a nota para o Vantoro. Desistir
+  // no meio de um trabalho que estava andando faria a tela dizer "demorou
+  // demais" para algo que teria terminado.
+  const ESPERA = 120000;
+
+  const medir = useCallback(async () => {
+    setMedindo(true); setErro("");
+    try {
+      setConta(await chamarPonte("/vantoro/diagnostico-notas"));
+    } catch (e) {
+      setConta(null);
+      setErro(e.message);
+    }
+    setMedindo(false);
+  }, []);
+
+  useEffect(() => { medir(); }, [medir]);
+
+  async function simular() {
+    setErro(""); setSimulacao(null); setPronto(null);
+    setRodando(true);
+    try {
+      // `quantos=tudo` na SIMULAÇÃO: ela não manda nada ao Vantoro, só lê e
+      // conta — e um número parcial aqui seria pior que número nenhum, porque
+      // é ele que a pessoa vai usar para decidir se aperta.
+      const r = await chamarPonte("/vantoro/notas/subir-tudo?simular=1&quantos=tudo",
+                                  { method: "POST", espera: ESPERA });
+      setSimulacao(r);
+    } catch (e) { setErro(e.message); }
+    setRodando(false);
+  }
+
+  async function subir() {
+    setErro(""); setPronto(null); setAndado(null);
+    parar.current = false;
+    setRodando(true);
+    let de = 0, subiram = 0, jaEstavam = 0, falharam = 0;
+    const comProblema = [];
+    // A FALHA FICA GUARDADA AQUI, e só é escrita na tela DEPOIS da remedição.
+    //
+    // Escrevê-la antes não funcionava, e a prova pegou: `medir()` começa
+    // limpando o erro — precisa, para não deixar recado velho na tela — e
+    // apagava a mensagem que esta função tinha acabado de pôr. A tela ficava
+    // muda justamente quando havia o que dizer. É o mesmo tropeço que a
+    // gravação desta tela já tinha cometido uma vez, algumas centenas de
+    // linhas acima.
+    let falha = "";
+    try {
+      for (;;) {
+        const r = await chamarPonte(`/vantoro/notas/subir-tudo?de=${de}`,
+                                    { method: "POST", espera: ESPERA });
+        subiram += r.subiram || 0;
+        jaEstavam += r.jaEstavam || 0;
+        falharam += r.falharam || 0;
+        for (const p of (r.com_problema || [])) if (!comProblema.includes(p)) comProblema.push(p);
+        // O PROGRESSO É DESENHADO A CADA FATIA. Uma tela parada por minutos é
+        // indistinguível de uma tela travada, e quem está olhando fecha.
+        setAndado({ ate: r.ate, total: r.total_clientes, subiram, jaEstavam, falharam });
+        // QUEM DIZ QUE ACABOU É A PONTE, e não esta tela: a conta depende de
+        // quantos clientes existem e de quantos couberam na fatia, e refeita
+        // aqui erraria na primeira vez que uma das duas mudasse.
+        if (r.fim) break;
+        if (parar.current) break;
+        // A fatia seguinte começa onde esta parou. Sem isto o laço repetiria a
+        // primeira para sempre.
+        de = r.ate;
+      }
+      setPronto({ subiram, jaEstavam, falharam, comProblema,
+                  interrompido: parar.current });
+    } catch (e) {
+      // O QUE JÁ SUBIU NÃO SE PERDE, e a tela precisa dizer isso: quem lê só
+      // "deu erro" acha que tem de recomeçar do zero, e recomeçar do zero é
+      // justamente o que dá medo de apertar de novo.
+      falha = e.message + " O que já subiu está lá — apertar de novo continua "
+              + "de onde parou, sem repetir nada.";
+    }
+    setRodando(false);
+    // A REMEDIÇÃO PRIMEIRO, a mensagem depois — nesta ordem, e é a ordem que
+    // importa. Ao contrário, `medir()` apaga o que acabou de ser escrito.
+    await medir();
+    if (falha) setErro(falha);
+  }
+
+  const numero = (v) => (v === null || v === undefined ? "—" : v);
+
+  return (
+    <div data-vantoro-notas>
+      <div style={cx.secao}>
+        <div style={cx.titulo}>Notas internas no histórico do cliente</div>
+        <div style={cx.dica}>
+          A nota escrita numa conversa vira uma linha no <b>Histórico do cliente</b> do
+          Vantoro — mas só quem tem ficha lá tem para onde a nota subir. As notas
+          escritas <b>antes</b> de isso existir ficaram paradas; é o que este botão traz.
+        </div>
+
+        {erro && (
+          <div role="alert" data-vantoro-erro
+               style={{ background: C.panel, border: "1px solid #e5573f", color: C.textPrimary, borderLeft: "4px solid #e5573f", borderRadius: 10, padding: "10px 13px", fontSize: 13, marginBottom: 12, lineHeight: 1.5 }}>
+            {erro}
+          </div>
+        )}
+
+        {medindo && <div style={{ color: C.textSecondary, fontSize: 13.5 }}>Conferindo…</div>}
+
+        {!medindo && conta && (
+          <>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+              {[["Contatos", conta.contatos],
+                ["Com ficha no Vantoro", conta.contatos_com_cadastro_no_vantoro],
+                ["Notas escritas", conta.notas],
+                ["Já no histórico", conta.notas_que_ja_subiram]].map(([r, v]) => (
+                <div key={r} style={{ border: `1px solid ${C.divider}`, borderRadius: 10, padding: "9px 13px", minWidth: 120 }}>
+                  <div style={{ fontSize: 21, fontWeight: 800, lineHeight: 1.1 }}>{numero(v)}</div>
+                  <div style={{ fontSize: 11.5, color: C.textSecondary, marginTop: 2 }}>{r}</div>
+                </div>
+              ))}
+            </div>
+            {/* A FRASE VEM DA PONTE, e não é remontada aqui. Ela é quem sabe
+                separar "ninguém tem ficha ainda" de "a subida está sendo
+                recusada" — e ela admite quando não sabe, em vez de chutar. */}
+            <div style={{ ...cx.dica, marginBottom: 0 }} data-vantoro-diagnostico>
+              {conta.diagnostico}
+            </div>
+          </>
+        )}
+      </div>
+
+      {!medindo && conta && (
+        <div style={cx.secao}>
+          <div style={cx.titulo}>Subir as notas antigas</div>
+          {/* SIMULAR PRIMEIRO. Ver o número antes é o que separa uma decisão de
+              um acidente — e a simulação não manda nada, nem grava nada. */}
+          <div style={cx.dica}>
+            A simulação não envia nada: ela só conta quantas subiriam. Subir de
+            verdade pode ser feito quantas vezes quiser — a nota que já está lá é
+            reconhecida e não entra duas vezes.
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <button style={cx.botaoFraco} onClick={simular} disabled={rodando} data-vantoro-simular>
+              Simular
+            </button>
+            <button style={{ ...cx.botao, opacity: rodando ? 0.6 : 1 }} onClick={subir}
+                    disabled={rodando} data-vantoro-subir>
+              Subir agora
+            </button>
+            {rodando && (
+              <>
+                <Loader2 size={15} className="zv-girando" color={C.textSecondary} />
+                <button style={cx.botaoFraco} onClick={() => { parar.current = true; }}
+                        data-vantoro-parar>Parar</button>
+              </>
+            )}
+          </div>
+
+          {simulacao && (
+            <div style={{ ...cx.dica, marginTop: 10, marginBottom: 0 }} data-vantoro-simulacao>
+              <b>{simulacao.subiram}</b> nota(s) subiriam agora, de{" "}
+              <b>{simulacao.total_clientes}</b> cliente(s). Nada foi enviado.
+            </div>
+          )}
+
+          {andado && !pronto && (
+            <div style={{ ...cx.dica, marginTop: 10, marginBottom: 0 }} data-vantoro-progresso={andado.ate}>
+              Cliente <b>{andado.ate}</b> de <b>{andado.total}</b> ·{" "}
+              <b>{andado.subiram}</b> nota(s) subiram.
+            </div>
+          )}
+
+          {pronto && (
+            <div style={{ marginTop: 10, fontSize: 13, lineHeight: 1.55 }} data-vantoro-fim>
+              <b>{pronto.subiram}</b> nota(s) subiram, <b>{pronto.jaEstavam}</b> já
+              estavam lá{pronto.falharam ? `, ${pronto.falharam} falharam` : ""}.
+              {pronto.interrompido && " Parado a pedido — apertar de novo continua de onde parou."}
+              {/* OS QUE FALHARAM, NOMEADOS. "3 falharam" é um dado que ninguém
+                  consegue usar: sem saber quais, não há o que refazer. */}
+              {pronto.comProblema.length > 0 && (
+                <div style={{ ...cx.dica, marginTop: 6, marginBottom: 0 }} data-vantoro-problemas>
+                  Ficaram para trás: {pronto.comProblema.slice(0, 20).join(", ")}
+                  {pronto.comProblema.length > 20 ? " …" : ""}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

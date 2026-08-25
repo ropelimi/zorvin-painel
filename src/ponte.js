@@ -21,6 +21,11 @@ export const FALTA_PONTE =
 // Zorvin), e é a ponte, no servidor, que troca isso pelo token do Vantoro. Com o
 // token no navegador, qualquer pessoa com o painel aberto teria acesso à base
 // inteira do escritório.
+// Quanto se espera a ponte antes de desistir. Meio minuto cobre o sono da
+// Render com folga para o que as telas pedem: uma consulta, uma nota, um
+// cadastro.
+export const ESPERA_PADRAO = 30000;
+
 export async function chamarPonte(caminho, opcoes = {}) {
   if (!BRIDGE_URL) throw new Error(FALTA_PONTE);
   const { data } = await supabase.auth.getSession();
@@ -33,12 +38,19 @@ export async function chamarPonte(caminho, opcoes = {}) {
   // para sempre. A ficha do cliente ficava em "Consultando…" sem fim, sem erro
   // e sem botão de desistir, e o atendente não tinha como saber se era lento
   // ou se tinha travado.
+  //
+  // `espera` existe porque nem toda chamada custa o mesmo. O retroativo das
+  // notas percorre dezenas de clientes numa ida só, mandando cada nota para o
+  // Vantoro — que é OUTRA hospedagem, e que também hiberna. Meio minuto ali
+  // desistiria de um trabalho que estava andando, e o painel diria "demorou
+  // demais" para algo que teria terminado.
+  const { espera = ESPERA_PADRAO, ...restante } = opcoes;
   const relogio = new AbortController();
-  const estourou = setTimeout(() => relogio.abort(), 30000);
+  const estourou = setTimeout(() => relogio.abort(), espera);
   let r;
   try {
     r = await fetch(BRIDGE_URL + caminho, {
-      ...opcoes,
+      ...restante,
       signal: relogio.signal,
       headers: {
         "Content-Type": "application/json",
