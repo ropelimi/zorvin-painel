@@ -1183,6 +1183,12 @@ function consulta(tabela) {
       }
       if (tabela === "conversas") await espera(ATRASO_CONVERSAS);
       if (tabela === "mensagens") await espera(ATRASO_MENSAGENS);
+      // ATRASO SOB ENCOMENDA, POR TABELA. Serve para medir se duas leituras
+      // saem JUNTAS ou uma atrás da outra: em fila indiana o custo é a soma
+      // dos atrasos; juntas, é o maior deles. Sem isto não há como distinguir
+      // as duas coisas numa bancada que responde na hora.
+      const extra = (globalThis.__ATRASO_POR_TABELA || {})[tabela];
+      if (extra) await espera(extra);
       if (patch) linhas.forEach((l) => Object.assign(l, patch));
       if (apagando) {
         const tab = TABELAS[tabela] || [];
