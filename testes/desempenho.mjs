@@ -34,7 +34,24 @@ await page.waitForTimeout(1500);
 const dados = await page.evaluate(() => globalThis.__ESPERADO.fundo);
 
 // A MESMA MEDIDA NUM TELEFONE COMUM, para servir de régua.
-const medirTecla = () => page.evaluate(async () => {
+//
+// UMA RODADA SÓ NÃO BASTA, e isto foi medido antes de mudar. Sob a CPU freada
+// em 4×, a mesma tela mediu de 52 a 73 ms em execuções seguidas do MESMO
+// código — e o teto (o dobro da régua) cai bem no meio dessa faixa. Quer dizer:
+// esta conferência reprovava por sorte, e passava por sorte.
+//
+// Um teste que reprova por acaso é pior do que um teste que não existe: ele
+// ensina a ignorar a cor vermelha, e no dia em que a lentidão for de verdade
+// ninguém vai olhar. Foi conferido intercalando dois ramos — 64/59/63/67 contra
+// 59/65 —, e as duas faixas se sobrepunham inteiras: o que variava era o
+// instrumento, não a tela.
+//
+// O CONSERTO É MAIS AMOSTRA, E NÃO UM TETO MAIOR. Afrouxar o limite deixaria
+// passar a lentidão que esta prova existe para pegar; medir mais vezes ataca a
+// causa, que é o barulho da medida.
+const RODADAS = 5;
+
+const umaRodada = () => page.evaluate(async () => {
   const el = document.querySelector('input[placeholder*="Buscar por nome"]');
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
   const t = [];
@@ -49,8 +66,28 @@ const medirTecla = () => page.evaluate(async () => {
   el.dispatchEvent(new Event("input", { bubbles: true }));
   return t.slice().sort((a, b) => a - b)[Math.floor(t.length / 2)];
 });
-const base = await medirTecla();
-console.log(`     régua: ${base.toFixed(0)} ms num telefone comum`);
+
+const mediana = (v) => v.slice().sort((a, b) => a - b)[Math.floor(v.length / 2)];
+
+/** A mediana de várias rodadas — o mesmo instrumento dos dois lados da conta. */
+async function medirTecla() {
+  const rodadas = [];
+  for (let i = 0; i < RODADAS; i += 1) {
+    rodadas.push(await umaRodada());
+    // UMA PAUSA LONGA ENTRE RODADAS, e ela é metade do conserto. Cada rodada
+    // digita cinco letras e apaga: numa lista de 1200 conversas isso dispara
+    // busca, filtro e redesenho, e a tela ainda está terminando esse trabalho
+    // quando a rodada seguinte começa. Com pausa curta, as rodadas mediram
+    // 72/69/86/128/100 — subindo —, que é a fila crescendo, não a tecla ficando
+    // mais lenta. Esperando a tela assentar, elas ficam planas.
+    await page.waitForTimeout(700);
+  }
+  return { valor: mediana(rodadas), rodadas };
+}
+
+const { valor: base, rodadas: rodadasBase } = await medirTecla();
+console.log(`     régua: ${base.toFixed(0)} ms num telefone comum `
+            + `(${rodadasBase.map((v) => v.toFixed(0)).join("/")})`);
 await page.waitForTimeout(1200);
 
 console.log("\n1. A lista de conversas");
@@ -88,26 +125,39 @@ ok("rolar até o fim traz mais conversas", depois.linhas > n.linhas,
    `${n.linhas} → ${depois.linhas}`);
 
 // A latência de digitar, que é o que a pessoa sente.
-const latencia = await page.evaluate(async () => {
-  const el = document.querySelector('input[placeholder*="Buscar por nome"]');
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-  const t = [];
-  for (const ch of ["a", "n", "d", "r", "e"]) {
-    const t0 = performance.now();
-    setter.call(el, el.value + ch);
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    t.push(performance.now() - t0);
-  }
-  return t.slice().sort((a, b) => a - b)[Math.floor(t.length / 2)];
-});
-console.log(`     tecla → tela: ${latencia.toFixed(0)} ms (num computador 4× mais lento)`);
+//
+// O MESMO INSTRUMENTO DA RÉGUA, e é isso que torna a comparação honesta: as
+// duas pontas da conta medem do mesmo jeito, com o mesmo número de rodadas, na
+// mesma execução. Duas medidas de exatidões diferentes comparadas entre si
+// diriam mais sobre a diferença entre elas do que sobre a tela.
+const { valor: latencia, rodadas: rodadasLista } = await medirTecla();
+console.log(`     tecla → tela: ${latencia.toFixed(0)} ms (num computador 4× mais lento) `
+            + `(${rodadasLista.map((v) => v.toFixed(0)).join("/")})`);
 // O teto é o do BUILD DE PRODUÇÃO, que é o que a equipe usa: rodando contra o
 // servidor de desenvolvimento, o próprio React gasta mais que isso em
 // verificações que não existem em produção.
 // O TETO É RELATIVO, medido na mesma execução: um número absoluto reprovaria
 // numa máquina mais lenta e passaria numa mais rápida sem dizer nada sobre a
 // tela. Antes da correção, a conta era 4× a de um telefone comum.
+//
+// O ALCANCE DESTA CONFERÊNCIA, MEDIDO E ESCRITO — porque saber o que ela NÃO
+// pega vale tanto quanto saber o que ela pega.
+//
+// Tirando a janela da lista (fazendo-a desenhar tudo de novo, que é o defeito
+// original), as três conferências acima reprovam na hora — 201 linhas, 2829
+// elementos — e ESTA AQUI CONTINUA PASSANDO, com 59 e 49 ms. A razão é que a
+// lista chega em páginas de 200: desenhar "tudo" são 201 linhas, e 201 linhas
+// não chegam a doer nesta máquina.
+//
+// Quer dizer: quem pega a volta do defeito são as contas de DOM. Este número é
+// confirmação, não sentinela. Mantê-lo tem valor — ele fecharia a conta se a
+// lentidão viesse de outro lugar que não o tamanho do DOM —, mas quem mexer
+// aqui precisa saber em qual das quatro confiar.
+//
+// (Medir a latência DEPOIS de carregar as 1200 foi tentado, para ela morder de
+// verdade. Não serve: a primeira tecla sobre a lista inteira custa ~235 ms e as
+// seguintes ~55, então a mediana volta a cair em cima do teto e a prova reprova
+// por sorte de novo — trocando um problema conhecido por ele mesmo.)
 ok(`digitar num telefone de 1200 conversas custa quase o mesmo que num comum`,
    latencia < base * 2, `${latencia.toFixed(0)} ms contra ${base.toFixed(0)} ms`);
 
