@@ -1396,6 +1396,15 @@ export default function Painel({ sessao }) {
   const [ultimasMidias, setUltimasMidias] = useState({}); // { conversaId: tipo } da última mensagem, se mídia
   const [digitandos, setDigitandos] = useState({}); // { conversaId: digitando_ate (ISO) }
   const [naoLidasPorAdv, setNaoLidasPorAdv] = useState({}); // { advogadoId: total de não lidas }
+  // NÃO LIDAS QUE ESTÃO DENTRO DAS ARQUIVADAS, contadas no banco.
+  //
+  // Elas ficam de fora do selo — conversa arquivada não entra na fila de
+  // atendimento —, mas "não conta lá" não pode virar "não existe": são
+  // mensagens de cliente que ninguém leu. Este número é o que impede que elas
+  // sumam para sempre atrás de uma pasta que ninguém tem motivo para abrir, e
+  // por isso ele mesmo não pode ser menor do que a verdade.
+  // { total, naoLidas } das arquivadas do telefone aberto, contadas no BANCO.
+  const [arquivadasNoBanco, setArquivadasNoBanco] = useState({});
   const [tique, setTique] = useState(0); // força re-render p/ esconder "digitando…" ao expirar
 
   // QUANTAS CONVERSAS A LISTA DESENHA DE UMA VEZ.
@@ -2139,7 +2148,32 @@ export default function Painel({ sessao }) {
     // uma afirmação ("não há ninguém esperando") que a consulta não fez.
     pares.forEach(([id, n]) => { if (n != null) mapa[id] = n; });
     setNaoLidasPorAdv(mapa);
-  }, [advogados]);
+
+    // AS NÃO LIDAS DENTRO DAS ARQUIVADAS, do telefone aberto.
+    //
+    // Aqui e não numa função à parte: é a mesma pergunta com um filtro a mais, e
+    // separá-las daria dois momentos de atualização diferentes para números que
+    // a tela mostra juntos — um piscando enquanto o outro já mudou.
+    if (!TEM_ARQUIVADA || !advogadoId) { setArquivadasNoBanco({}); return; }
+    const contarArq = (ajustar = (q) => q) => ajustar(supabase.from("conversas")
+      .select("id", { count: "exact", head: true })
+      .eq("advogado_id", advogadoId)
+      .eq("arquivada", true));
+    const [tudo, porLer] = await Promise.all([
+      contarArq(),
+      contarArq((q) => q.gt("nao_lidas", 0)),
+    ]);
+    // Mesma regra do mapa: falhou, fica sem número em vez de virar zero.
+    setArquivadasNoBanco({
+      total: tudo.error ? undefined : (tudo.count || 0),
+      naoLidas: porLer.error ? undefined : (porLer.count || 0),
+    });
+    // `advogadoId` NA LISTA DE DEPENDÊNCIAS, e não só `advogados`.
+    //
+    // A contagem das arquivadas é do telefone ABERTO. Sem isto ela ficaria
+    // parada no número do telefone anterior até a próxima mensagem chegar — e
+    // número velho na tela é indistinguível de número certo.
+  }, [advogados, advogadoId]);
 
   useEffect(() => { carregarNaoLidasPorAdv(); }, [carregarNaoLidasPorAdv]);
 
@@ -5475,11 +5509,33 @@ export default function Painel({ sessao }) {
     return tags.filter((t) => ids.includes(t.id));
   }
 
-  // Quantas conversas não lidas há (para o número na aba "Não lidas"). Só conta
-  // as que estão à vista (não arquivadas).
-  const totalNaoLidasLista = conversasNaTela.filter((c) => !c.arquivada && (c.nao_lidas || 0) > 0).length;
+  // Quantas conversas não lidas há (para o número na aba "Não lidas").
+  //
+  // VEM DO BANCO, e é a MESMA contagem do selo da barra lateral. Ela contava a
+  // lista carregada, e a lista vem em páginas de 200: num telefone com mais do
+  // que isso, o selo dizia 71 e o chip ao lado dizia 37. Dois números para a
+  // mesma pergunta, na mesma tela, a três centímetros um do outro.
+  //
+  // E o chip errava PARA MENOS, que é a pior direção: some o aviso de que há
+  // gente esperando. Quem olhasse o 37 concluiria que a fila é menor do que é.
+  //
+  // SEM NÚMERO QUANDO A CONTAGEM FALHOU. `naoLidasPorAdv` deixa de FORA o
+  // telefone cuja consulta não respondeu, de propósito — zero é uma afirmação
+  // que a consulta não fez. Cair para a contagem da lista aqui seria trocar
+  // "não sei" por um número sabidamente menor.
+  const totalNaoLidasLista = naoLidasPorAdv[advogadoId];
   // Quantas estão arquivadas (para o contador da linha "Arquivadas").
-  const totalArquivadas = conversasNaTela.filter((c) => c.arquivada).length;
+  //
+  // DO BANCO, e não da lista — e aqui o estrago era maior do que um número
+  // errado. É este valor que decide se a linha "Arquivadas" APARECE:
+  //
+  //     {!verArquivadas && totalArquivadas > 0 && !busca && (…)}
+  //
+  // Contando a lista carregada, num telefone com muitas conversas as arquivadas
+  // caem além da primeira página — e a linha inteira sumia. Não era só o
+  // contador: era a PORTA para as conversas arquivadas que desaparecia, e com
+  // ela o único aviso de que há mensagem por ler lá dentro.
+  const totalArquivadas = arquivadasNoBanco.total;
   // NÃO LIDAS QUE ESTÃO DENTRO DAS ARQUIVADAS.
   //
   // Elas saíram do selo do advogado, e com razão: conversa arquivada não entra
@@ -5487,7 +5543,11 @@ export default function Painel({ sessao }) {
   // são mensagens de cliente que ninguém leu, e sem este número elas ficariam
   // invisíveis para sempre, atrás de uma pasta que ninguém tem motivo para
   // abrir.
-  const naoLidasArquivadas = conversas.filter((c) => c.arquivada && (c.nao_lidas || 0) > 0).length;
+  // MESMO DEFEITO, mesma correção: contava a página carregada. Sem isto, o
+  // número que existe justamente para que estas conversas não fiquem
+  // invisíveis atrás da pasta de arquivadas ficava, ele próprio, menor do que a
+  // verdade.
+  const naoLidasArquivadas = arquivadasNoBanco.naoLidas;
 
   // A etiqueta escolhida no filtro, quando há uma. É ela que dá cor e nome à
   // pílula de etiquetas — sem isso, com o filtro ligado a lista fica curta e
@@ -5908,7 +5968,6 @@ export default function Painel({ sessao }) {
   // lista mostra seis linhas — o 7 não correspondia a nada que a pessoa
   // pudesse contar na tela. O que se atende é conversa; é isso que o selo tem
   // de dizer.
-  const naoLidasAtual = conversasNaTela.filter((c) => !c.arquivada && (c.nao_lidas || 0) > 0).length;
   // O SELO VEM SEMPRE DA CONTAGEM DO BANCO, inclusive o do telefone aberto.
   //
   // Ele vinha da lista carregada quando o telefone era o atual. Isso resolvia um
@@ -6204,7 +6263,11 @@ export default function Painel({ sessao }) {
               >
                 <Avatar nome={a.nome} foto={a.foto_url} size={42} />
                 {n > 0 && (
-                  <span style={{ position: "absolute", top: -4, right: -4, minWidth: 19, height: 19, padding: "0 5px", borderRadius: 10, background: "#d92b20", color: "#fff", fontSize: 11, fontWeight: 700, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${C.rail}`, boxSizing: "border-box" }}>
+                  /* A MARCA LEVA O NÚMERO REAL, e não o que está escrito: acima
+                     de 99 a bolinha mostra "99+", que é certo para o olho e
+                     inútil para conferir. Sem isto, uma prova sobre contagem
+                     mediria o texto truncado. */
+                  <span data-selo-nao-lidas={n} style={{ position: "absolute", top: -4, right: -4, minWidth: 19, height: 19, padding: "0 5px", borderRadius: 10, background: "#d92b20", color: "#fff", fontSize: 11, fontWeight: 700, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${C.rail}`, boxSizing: "border-box" }}>
                     {n > 99 ? "99+" : n}
                   </span>
                 )}
@@ -6638,7 +6701,7 @@ export default function Painel({ sessao }) {
           {[["tudo", "Tudo"], ["naolidas", `Não lidas${totalNaoLidasLista ? " " + totalNaoLidasLista : ""}`], ["favoritas", "Favoritas"]].map(([k, label]) => {
             const ativo = filtro === k;
             return (
-              <button key={k} onClick={() => setFiltro(k)} style={{ flexShrink: 0, minHeight: 32, border: `1px solid ${ativo ? C.greenDark : C.divider}`, background: ativo ? C.greenDark : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 20, padding: "5px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
+              <button key={k} data-aba={k} onClick={() => setFiltro(k)} style={{ flexShrink: 0, minHeight: 32, border: `1px solid ${ativo ? C.greenDark : C.divider}`, background: ativo ? C.greenDark : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 20, padding: "5px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
             );
           })}
           {/* A ORDEM DA LISTA.
@@ -6891,7 +6954,8 @@ export default function Painel({ sessao }) {
                   outra é só quantidade. Mesmo desenho do selo da lista, para
                   não ensinar dois vocabulários para a mesma ideia. */}
               {naoLidasArquivadas > 0 && (
-                <span title={`${naoLidasArquivadas} conversa(s) arquivada(s) com mensagem não lida`}
+                <span data-nao-lidas-arquivadas={naoLidasArquivadas}
+                  title={`${naoLidasArquivadas} conversa(s) arquivada(s) com mensagem não lida`}
                   style={{ background: C.unread, color: "#fff", fontSize: 11.5, fontWeight: 700, minWidth: 20, height: 20, borderRadius: 10, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "0 6px" }}>
                   {naoLidasArquivadas}
                 </span>
