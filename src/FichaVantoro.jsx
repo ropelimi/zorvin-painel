@@ -144,6 +144,13 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [cliente, setCliente] = useState(null);
+  // OS OUTROS CADASTROS QUE TAMBÉM ATENDEM POR ESTE NÚMERO.
+  //
+  // Mãe e filho, marido e mulher, o escritório inteiro num telefone de empresa:
+  // um número serve mais de um cliente, e isso é normal. A ficha ficava com o
+  // PRIMEIRO da lista e jogava fora o resto, sem dizer nada — e a API sempre
+  // devolveu até cinco, exatamente porque isso acontece.
+  const [candidatos, setCandidatos] = useState([]);
   const [edicao, setEdicao] = useState({});
   const [salvando, setSalvando] = useState(false);
   const [buscandoCep, setBuscandoCep] = useState(false);
@@ -239,13 +246,51 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     }
   }
 
+  /** Quem já foi escolhido para ESTA conversa, ou null. */
+  async function clienteJaLigado() {
+    if (!numero) return null;
+    // Um erro aqui não pode derrubar a ficha: numa base sem a coluna de
+    // vínculo, a ficha continua funcionando — só sem a memória da escolha.
+    const { data } = await supabase
+      .from("contatos").select("vantoro_cliente_id").eq("numero", numero).maybeSingle();
+    return data?.vantoro_cliente_id ?? null;
+  }
+
+  /** A pessoa escolheu qual dos cadastros é o desta conversa. */
+  async function escolher(c) {
+    setCliente(c);
+    setEdicao({ ...c });
+    // A ESCOLHA FICA GRAVADA, e é o que faz a pergunta não voltar amanhã. É o
+    // mesmo campo que já guardava o vínculo; a diferença é que agora ele é uma
+    // resposta de alguém, e não um sorteio.
+    await ligarContatoAoCadastro(c);
+  }
+
   async function buscar() {
     setCarregando(true);
     setErro("");
     try {
       const r = await chamarPonte(`/vantoro/cliente?telefone=${encodeURIComponent(numero || "")}`);
-      const achado = (r.clientes && r.clientes[0]) || null;
+      const todos = r.clientes || [];
       if (r.opcoes?.estado_civil?.length) setOpcoes(r.opcoes);
+      setCandidatos(todos);
+
+      // QUAL DELES É O DESTA CONVERSA.
+      //
+      // Antes era `clientes[0]` — o primeiro da lista, que a API ordena pelo
+      // cadastro mais recente. Com mãe e filho no mesmo número, isso quer dizer
+      // "quem foi cadastrado por último", que não é uma resposta: é um sorteio.
+      // E o sorteio decidia para QUEM iam as notas internas daquela conversa.
+      //
+      // A regra agora tem três degraus, do mais confiável ao menos:
+      //   1. quem já foi ESCOLHIDO nesta conversa (fica gravado no contato);
+      //   2. havendo um só candidato, é ele — nada a decidir;
+      //   3. havendo vários e nenhum escolhido, NÃO SE ESCOLHE. A ficha
+      //      pergunta.
+      const jaEscolhido = await clienteJaLigado();
+      const casa = todos.find((c) => String(c.id) === String(jaEscolhido));
+      const achado = casa || (todos.length === 1 ? todos[0] : null);
+
       setCliente(achado);
       setEdicao(achado ? { ...achado } : {});
       // Só ABRIR a ficha já conserta o nome da conversa. Sem isto, os contatos
@@ -496,7 +541,38 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
           </div>
         )}
 
-        {!carregando && !erro && !cliente && (
+        {/* MAIS DE UM CADASTRO NESTE NÚMERO: quem escolhe é a pessoa.
+            Mãe e filho, marido e mulher, o telefone de uma empresa — um número
+            serve mais de um cliente, e isso é normal. Escolher sozinho é
+            escolher para quem vão as notas internas daquela conversa, e errar
+            aqui põe o caso de um cliente na ficha de outro. */}
+        {!carregando && !erro && !cliente && candidatos.length > 1 && (
+          <div data-escolher-cadastro>
+            <div style={{ color: C.textPrimary, fontSize: 13.5, lineHeight: 1.55, marginBottom: 4 }}>
+              <b>{candidatos.length} cadastros</b> atendem por este número.
+            </div>
+            <div style={{ color: C.textSecondary, fontSize: 12.5, lineHeight: 1.5, marginBottom: 12 }}>
+              Escolha de quem é esta conversa. As anotações internas daqui vão para
+              a ficha de quem for escolhido — e a escolha fica guardada.
+            </div>
+            {candidatos.map((c) => (
+              <button key={c.id} onClick={() => escolher(c)} data-candidato={c.id}
+                      style={{ width: "100%", textAlign: "left", cursor: "pointer",
+                               border: `1px solid ${C.divider}`, background: "transparent",
+                               color: C.textPrimary, borderRadius: 9, padding: "10px 12px",
+                               marginBottom: 8, fontSize: 13.5 }}>
+                <b>{c.nome}</b>
+                <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 3 }}>
+                  {[c.cpf, c.cidade && (c.estado ? `${c.cidade}/${c.estado}` : c.cidade),
+                    (c.processos || []).length ? `${(c.processos || []).length} ação(ões)` : null]
+                    .filter(Boolean).join(" · ") || "sem outros dados"}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {!carregando && !erro && !cliente && candidatos.length <= 1 && (
           <div>
             <div style={{ color: C.textSecondary, fontSize: 13.5, lineHeight: 1.55, marginBottom: 14 }}>
               Este número ainda <b>não tem cadastro</b> no Vantoro.
@@ -510,6 +586,27 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
                    onChange={(e) => setEdicao({ ...edicao, cpf: e.target.value })} />
             <button style={{ ...botao, width: "100%", opacity: salvando ? 0.6 : 1 }} onClick={criar} disabled={salvando}>
               <UserPlus size={15} /> {salvando ? "Criando…" : "Criar pré-cadastro"}
+            </button>
+          </div>
+        )}
+
+        {/* JÁ ESCOLHIDO, MAS NÃO É O ÚNICO. O aviso fica, e não some depois da
+            escolha: quem abre a conversa amanhã precisa saber que este número
+            serve outra pessoa também — senão anota na ficha errada achando que
+            só existe uma. */}
+        {!carregando && !erro && cliente && candidatos.length > 1 && (
+          <div data-outro-cadastro
+               style={{ background: C.searchBg, border: `1px solid ${C.divider}`,
+                        borderRadius: 9, padding: "9px 11px", marginBottom: 12,
+                        fontSize: 12.5, lineHeight: 1.5, color: C.textSecondary }}>
+            Este número atende <b>{candidatos.length} cadastros</b>. Esta conversa está
+            ligada a <b>{cliente.nome}</b>.{" "}
+            <button onClick={() => { setCliente(null); setEdicao({}); }}
+                    data-trocar-cadastro
+                    style={{ border: "none", background: "transparent", padding: 0,
+                             cursor: "pointer", color: C.green, fontWeight: 600,
+                             font: "inherit" }}>
+              trocar
             </button>
           </div>
         )}
