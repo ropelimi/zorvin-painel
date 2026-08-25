@@ -568,6 +568,31 @@ MENSAGENS.push({
   criado_em: new Date(Date.now() - 2 * 3600e3).toISOString(),
 });
 
+// DOIS DOCUMENTOS NA CONVERSA — um que o navegador desenha e outro que não.
+//
+// São os dois lados da mesma regra, e sem os DOIS a prova não separa nada: com
+// só o PDF, um código que desenhasse prévia para tudo passaria; com só a
+// planilha, um que não desenhasse nada passaria também.
+MENSAGENS.push({
+  id: "m-pdf", conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
+  origem: "contato", tipo: "documento", texto: null,
+  // Um PDF de uma página, mínimo e válido. Em `data:` para a bancada não
+  // depender de rede nenhuma.
+  midia_url: "data:application/pdf;base64,JVBERi0xLjEKMSAwIG9iajw8L1R5cGUvQ2F0YWxvZy9QYWdlcyAyIDAgUj4+ZW5kb2JqCjIgMCBvYmo8PC9UeXBlL1BhZ2VzL0tpZHNbMyAwIFJdL0NvdW50IDE+PmVuZG9iagozIDAgb2JqPDwvVHlwZS9QYWdlL1BhcmVudCAyIDAgUi9NZWRpYUJveFswIDAgMjAwIDIwMF0+PmVuZG9iagp0cmFpbGVyPDwvUm9vdCAxIDAgUj4+",
+  midia_mime: "application/pdf", midia_nome: "procuracao.pdf",
+  enviado_por: null, enviado_por_id: null,
+  criado_em: new Date(Date.now() - 105 * 60e3).toISOString(),
+});
+MENSAGENS.push({
+  id: "m-planilha", conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
+  origem: "contato", tipo: "documento", texto: null,
+  midia_url: "data:application/octet-stream;base64,UEsDBAo=",
+  midia_mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  midia_nome: "orcamento.xlsx",
+  enviado_por: null, enviado_por_id: null,
+  criado_em: new Date(Date.now() - 104 * 60e3).toISOString(),
+});
+
 // A MESMA PALAVRA, MUITAS VEZES, EM OUTROS TELEFONES.
 //
 // A busca por mensagem pedia as 1000 mensagens mais recentes que casassem —
