@@ -6296,34 +6296,88 @@ export default function Painel({ sessao }) {
   const [temBuscaNoBanco, setTemBuscaNoBanco] = useState(null);
 
   /** O que o cadastro do Vantoro sabe sobre estes números (CPF, processo).
+   *
+   *  Devolve `{ porCad, novas }`: o motivo por conversa, e as conversas que só
+   *  o cadastro tinha como achar.
+   *
    *  Fica em função porque os dois caminhos da busca — a função do banco e o
    *  caminho antigo — precisam dela igual, e duas cópias divergiriam na
    *  primeira mudança. O Vantoro fora do ar não pode atrapalhar a busca local:
    *  o que falhar aqui vira "sem achado no cadastro", e nada mais. */
-  async function procurarNoVantoro(termo, encontradas) {
+  async function procurarNoVantoro(termo, encontradas, advId) {
     const porCad = {};
+    const novas = [];
     try {
-      if (!BRIDGE_URL) return porCad;
+      if (!BRIDGE_URL) return { porCad, novas };
       const { data: sessao } = await supabase.auth.getSession();
       const jwt = sessao?.session?.access_token;
-      if (!jwt) return porCad;
+      if (!jwt) return { porCad, novas };
       const r = await fetch(`${BRIDGE_URL}/vantoro/buscar?q=${encodeURIComponent(termo)}`,
         { headers: { Authorization: "Bearer " + jwt } });
       const corpo = await r.json().catch(() => ({}));
-      const candidatas = [...conversasRef.current, ...encontradas];
+
+      // Os últimos 8 dígitos são o miolo do número: não mudam com DDD, com o
+      // 9 extra nem com o código do país. É por eles que casamos.
+      const porChave = new Map();   // miolo do telefone → nome do cliente
       (corpo.clientes || []).forEach((cl) => {
-        // Os últimos 8 dígitos são o miolo do número: não mudam com DDD, com o
-        // 9 extra nem com o código do país. É por eles que casamos.
         [cl.telefone, cl.telefone2].forEach((tel) => {
           const k = String(tel || "").replace(/\D/g, "").slice(-8);
-          if (k.length < 8) return;
-          candidatas.forEach((c) => {
-            if (String(c.contato?.numero || "").endsWith(k)) porCad[c.id] = cl.nome;
-          });
+          if (k.length === 8 && !porChave.has(k)) porChave.set(k, cl.nome);
         });
       });
+      if (!porChave.size) return { porCad, novas };
+
+      const candidatas = [...conversasRef.current, ...encontradas];
+      const jaCasou = new Set();
+      candidatas.forEach((c) => {
+        const num = String(c.contato?.numero || "");
+        porChave.forEach((nome, k) => {
+          if (num.endsWith(k)) { porCad[c.id] = nome; jaCasou.add(k); }
+        });
+      });
+
+      // ---------------------------------------------------------------
+      //  E AGORA AS CONVERSAS QUE SÓ O CADASTRO TINHA COMO ACHAR
+      //
+      //  Relato do escritório: "digito e não busca no Vantoro". O Vantoro ERA
+      //  consultado — e respondia certo. O que ele devolvia, porém, só servia
+      //  para ANOTAR o nome do cadastro em conversas que a busca local já
+      //  tinha encontrado. A conversa de quem o Vantoro achou nunca era
+      //  buscada.
+      //
+      //  Na prática: procurar por CPF só funcionava se a pessoa já estivesse
+      //  na página carregada da lista. Fora dela — e a lista carrega umas
+      //  poucas dezenas de um telefone que tem milhares — o CPF certo, do
+      //  cliente certo, devolvia lista vazia. E lista vazia é uma RESPOSTA:
+      //  quem lê "não achei" para de procurar.
+      //
+      //  É o mesmo defeito que a busca por nome já tinha resolvido indo ao
+      //  banco em vez de filtrar a lista da tela. Aqui faltava dar o último
+      //  passo: com o telefone do cadastro em mãos, perguntar ao banco de quem
+      //  é aquele número.
+      //
+      //  Só pelas chaves que NÃO casaram acima: quem já estava na lista não
+      //  precisa de ida ao banco nenhuma.
+      const faltam = [...porChave.keys()].filter((k) => !jaCasou.has(k));
+      if (!faltam.length || !advId) return { porCad, novas };
+      const { data: cts } = await supabase.from("contatos")
+        .select(colunasDoContato("id, nome, numero, foto_url"))
+        .or(faltam.map((k) => `numero.ilike.%${k}%`).join(","))
+        .limit(200);
+      const idsCt = (cts || []).map((c) => c.id);
+      for (let i = 0; i < idsCt.length; i += 150) {
+        const { data } = await supabase.from("conversas")
+          .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
+          .eq("advogado_id", advId)
+          .in("contato_id", idsCt.slice(i, i + 150));
+        (data || []).forEach((c) => {
+          const num = String(c.contato?.numero || "");
+          porChave.forEach((nome, k) => { if (num.endsWith(k)) porCad[c.id] = nome; });
+          novas.push(c);
+        });
+      }
     } catch (_e) { /* Vantoro fora do ar não pode atrapalhar a busca local */ }
-    return porCad;
+    return { porCad, novas };
   }
 
   useEffect(() => {
@@ -6392,8 +6446,12 @@ export default function Painel({ sessao }) {
           setAchadosMsg(porMsg);
           setAchadosNome(porNome);
           setAlvoDaBusca(alvos);
-          setAchadosCad(await procurarNoVantoro(termo, encontradas));
+          const doCadastro = await procurarNoVantoro(termo, encontradas, advId);
           if (cancelado || advogadoIdRef.current !== advId) return;
+          setAchadosCad(doCadastro.porCad);
+          // As que só o cadastro achou entram na mesma peneira das outras, logo
+          // abaixo — inclusive a de não repetir o que a lista já tem.
+          encontradas.push(...doCadastro.novas);
           const jaNaLista = new Set(conversas.map((c) => String(c.id)));
           const vistos = new Set();
           setExtras(encontradas.filter((c) => {
@@ -6508,7 +6566,9 @@ export default function Painel({ sessao }) {
       }
 
       // ---- 4) no cadastro do Vantoro (CPF, processo) → casa pelo telefone ----
-      const porCad = await procurarNoVantoro(termo, encontradas);
+      const doCadastro = await procurarNoVantoro(termo, encontradas, advId);
+      const porCad = doCadastro.porCad;
+      encontradas.push(...doCadastro.novas);
 
       // Troquei de telefone (ou de termo) enquanto isto vinha? A resposta é de
       // outra pergunta: descarta.
@@ -6569,6 +6629,34 @@ export default function Painel({ sessao }) {
     naoLidasRef.current = c.nao_lidas || 0;
     const achado = alvoDaBusca[c.id];
     alvoParaAbrirRef.current = achado ? { conversa: c.id, ...achado } : null;
+
+    // A CONVERSA QUE A BUSCA TROUXE ENTRA NA LISTA ANTES DE ABRIR.
+    //
+    // Relato do escritório: "quando aparece e eu clico no contato, a conversa
+    // não abre". Era isto, e era exatamente isto.
+    //
+    // A lista da esquerda desenha duas fontes emendadas: as conversas
+    // CARREGADAS (uma página de cada vez) e as que a busca, a etiqueta ou o
+    // filtro de atendente foram buscar no banco por não estarem na página. Mas
+    // a conversa ABERTA saía de um lugar só — `conversas.find(...)` —, que não
+    // enxerga essas últimas. Clicar numa delas mudava o `conversaId` para um id
+    // que aquela lista não tem, `conversa` virava nulo, e a tela da direita
+    // continuava dizendo "Selecione uma conversa".
+    //
+    // O clique tinha funcionado. Só não havia como ver.
+    //
+    // E o defeito só aparece onde ninguém tropeça por acaso: com a conversa
+    // dentro da primeira página, tudo funciona. É preciso procurar alguém com
+    // quem não se fala há tempo — que é justamente para o que a busca serve.
+    //
+    // Emendar aqui, e não fazer `conversa` olhar as três listas: assim a
+    // conversa continua na tela quando a busca é apagada (apagar a busca
+    // esvazia os extras, e ela sumiria debaixo de quem está atendendo), e vale
+    // para os três caminhos de uma vez.
+    setConversas((antes) => (antes.some((x) => String(x.id) === String(c.id))
+      ? antes
+      : [...antes, c].sort((a, b) => ((b.fixada ? 1 : 0) - (a.fixada ? 1 : 0))
+          || String(b.ultima_atividade || "").localeCompare(String(a.ultima_atividade || "")))));
 
     // A CONVERSA JÁ ABERTA NÃO RECARREGA SOZINHA.
     //
