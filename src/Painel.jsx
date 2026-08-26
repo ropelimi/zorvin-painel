@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from "react";
 import { supabase } from "./supabase.js";
 import { aplicarAparencia } from "./aparencia.js";
 import {
@@ -1315,6 +1315,468 @@ function BolhaAudio({ C, saida, url }) {
 // Padrão sutil de "papel de parede" do chat (pontinhos discretos), como o WhatsApp.
 const PADRAO_CHAT_CLARO = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56'%3E%3Cg fill='%23000000' fill-opacity='0.022'%3E%3Ccircle cx='8' cy='8' r='2.5'/%3E%3Ccircle cx='36' cy='22' r='2.5'/%3E%3Ccircle cx='18' cy='44' r='2.5'/%3E%3Ccircle cx='48' cy='50' r='2.5'/%3E%3C/g%3E%3C/svg%3E\")";
 const PADRAO_CHAT_ESCURO = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56'%3E%3Cg fill='%23ffffff' fill-opacity='0.025'%3E%3Ccircle cx='8' cy='8' r='2.5'/%3E%3Ccircle cx='36' cy='22' r='2.5'/%3E%3Ccircle cx='18' cy='44' r='2.5'/%3E%3Ccircle cx='48' cy='50' r='2.5'/%3E%3C/g%3E%3C/svg%3E\")";
+
+// A LISTA DE BOLHAS, FORA DO CAMINHO DA TECLA.
+//
+// Segunda frente da lentidão que o escritório relatou. O texto que está sendo
+// digitado é estado do painel inteiro, então cada tecla mandava o React
+// redesenhar tudo — inclusive as centenas de bolhas do histórico, que não
+// mudaram nada. Medido num computador quatro vezes mais lento (o que há no
+// escritório): 42 ms por tecla com 123 bolhas e 75 ms com 275, crescendo
+// 0,22 ms por bolha. Numa conversa de cliente antigo, com o histórico do
+// WhatsApp importado, são milhares de bolhas — e a digitação anda atrás do dedo.
+//
+// A lista mora aqui fora, embrulhada em `React.memo`: quando só o rascunho
+// mudou, nenhuma propriedade daqui mudou, e o React pula o desenho inteiro.
+//
+// POR QUE UM COMPONENTE À PARTE, E NÃO UM `useMemo` LÁ DENTRO. As duas coisas
+// dariam o mesmo ganho, e o `useMemo` não precisaria mover uma linha — mas ele
+// pede uma lista de dependências escrita à mão, e são dezenas. Esquecer uma não
+// dá erro nenhum: dá uma bolha VELHA na tela, o tique de lida que não muda, a
+// reação que não aparece. Aqui fora, qualquer coisa que eu esqueça de passar
+// não existe, e a tela quebra na primeira vez que roda, dizendo o nome. Prefiro
+// o erro que grita ao erro que mente.
+//
+// A lista de propriedades é longa de propósito: ela é o contrato do que uma
+// bolha precisa saber. Encurtá-la passando o painel inteiro num objeto faria o
+// `memo` nunca bater — objeto novo a cada desenho é propriedade nova.
+const ListaDeBolhas = React.memo(function ListaDeBolhas({
+  mensagens, C, modo, estreito, conversa, meuNome, equipe,
+  selecao, msgHover, setMsgHover, alternarSelecao, podeSerApagada,
+  buscaAberta, buscaConversa, msgDestacada, idDivisorNaoLidas,
+  quemFalou, nomeDeHoje, podeMexerNaNota, dentroDoPrazoDeEdicao,
+  reagindo, setReagindo, reagindoTudo, setReagindoTudo, reagir,
+  rostoAberto, setRostoAberto, menuParaCima,
+  iniciarEdicao, iniciarResposta, copiarMensagem, marcarMensagem,
+  reenviar, dispensarFalha,
+  figurinhaEhFavorita, alternarFigurinhaFavorita, figurinhas,
+  // Os `set...` e os `ref` são estáveis por natureza — o React garante que não
+  // mudam de identidade —, então passá-los não estraga o `memo`. `pertoDoFim`
+  // é estado, e muda quando a pessoa rola para longe do fim: a lista redesenha
+  // aí, o que é raro e é o comportamento de antes.
+  fimRef, inputRef, pertoDoFim, setMenuParaCima,
+  setSelecao, setRascunho, setEditando, setRespondendo, setModoNota,
+  setEncaminhar, setBuscaEncaminhar, setImagemAberta, setRetratoAberto,
+  setNotaParaApagar,
+}) {
+
+  return mensagens.map((m, i) => {
+    const saida = m.origem === "advogado";
+    const anterior = mensagens[i - 1];
+    const novoDia =
+      !anterior || new Date(anterior.criado_em).toDateString() !== new Date(m.criado_em).toDateString();
+    const mesmoRemetente = anterior && !novoDia && anterior.origem === m.origem;
+    const q = buscaAberta ? buscaConversa.trim().toLowerCase() : "";
+    const casa = q && (m.texto || "").toLowerCase().includes(q);
+    // Mostra o nome de quem enviou: sempre nas ENVIADAS (qual
+    // atendente respondeu) e também nas RECEBIDAS quando é um GRUPO
+    // (para saber qual participante escreveu, como no WhatsApp).
+    const ehGrupoConversa = String(conversa?.contato?.numero || "").startsWith("grupo:");
+    const mostrarAutor = (saida || ehGrupoConversa) && !!m.enviado_por;
+    // Quem escreveu, com o nome e a foto DE HOJE.
+    const quem = quemFalou(m);
+    // Última mensagem de uma sequência do mesmo remetente: recebe o
+    // avatarzinho à direita (como o WhatsApp mostra a foto do grupo).
+    //
+    // A comparação é pelo NOME DE HOJE, e não pelo gravado: quem
+    // trocou de nome no meio de uma sequência tinha a sequência
+    // partida em duas, com um avatar sobrando no meio — a tela
+    // desenhava duas pessoas onde há uma.
+    const proxima = mensagens[i + 1];
+    const ultimaDoGrupo = !proxima || proxima.origem !== m.origem ||
+      quemFalou(proxima).nome !== quem.nome ||
+      new Date(proxima.criado_em).toDateString() !== new Date(m.criado_em).toDateString();
+    // Figurinha COM o desenho flutua sem bolha, como no WhatsApp.
+    // Sem o desenho, ela precisa da bolha de volta: o aviso de
+    // "figurinha indisponível" sobre o fundo da conversa, sem
+    // moldura, não se lê como mensagem.
+    const figurinhaNua = m.tipo === "figurinha" && Boolean(m.midia_url);
+    return (
+      <React.Fragment key={m.id}>
+        {novoDia && (
+          <div style={{ alignSelf: "center", background: C.bubbleIn, color: C.textSecondary, fontSize: 12, fontWeight: 500, padding: "5px 12px", borderRadius: 8, boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", margin: "10px 0 6px" }}>
+            {rotuloData(m.criado_em)}
+          </div>
+        )}
+        {idDivisorNaoLidas === m.id && (
+          <div style={{ alignSelf: "center", background: C.bubbleIn, color: C.verdeTexto, fontSize: 12, fontWeight: 600, padding: "4px 14px", borderRadius: 8, boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", margin: "8px 0" }}>
+            MENSAGENS NÃO LIDAS
+          </div>
+        )}
+        {m.origem === "nota" ? (
+          // NOTA INTERNA — comentário da equipe (não vai ao WhatsApp).
+          // Alinhada à direita, com cabeçalho (autor • hora) + avatar,
+          // bolha laranja e rodapé "Mensagem interna".
+          <div data-msg-id={m.id} style={{ display: "flex", justifyContent: "flex-end", alignItems: "flex-end", gap: 6, marginTop: 4 }}>
+            <div style={{ maxWidth: estreito ? "88%" : "70%", display: "flex", flexDirection: "column", alignItems: "flex-end", opacity: m._status === "enviando" ? 0.7 : 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2, marginRight: 2 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: corNome(quem.nome, modo) }}>{quem.nome || "equipe"}</span>
+                <span style={{ fontSize: 11, color: C.textSecondary }}>• {horaCurta(m.criado_em)}</span>
+              </div>
+              {/* A NOTA APAGADA VIRA LÁPIDE, e não some da conversa.
+                  Nota interna é onde fica registrado o que se
+                  combinou com o cliente; uma que desaparece sem
+                  rastro vira "eu jurava que tinha anotado". O texto
+                  sai da tela — mas quem apagou, e quando, ficam.
+                  A bolha perde a cor: o laranja é para o que se lê,
+                  e ali não há mais nada para ler. */}
+              {m.apagada_em ? (
+                <div style={{ background: C.bubbleIn, color: C.textSecondary, borderRadius: 8,
+                              padding: "7px 11px 6px", border: `1px dashed ${C.divider}`,
+                              minWidth: 120, fontSize: 13, fontStyle: "italic",
+                              display: "flex", alignItems: "center", gap: 6 }}>
+                  <Trash2 size={13} />
+                  Nota interna apagada por {nomeDeHoje(m.apagada_por_id, m.apagada_por) || "alguém"} · {horaCurta(m.apagada_em)}
+                </div>
+              ) : (
+              <div style={{ position: "relative", background: "#a35e0c", color: "#fff", borderRadius: 8, padding: "7px 11px 6px", boxShadow: "0 1px 0.5px rgba(0,0,0,.2)", minWidth: 120 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 1 }}>{quem.nome || "equipe"}:</div>
+                <div style={{ fontSize: 14, lineHeight: 1.35, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{formatarTexto(m.texto, "#fff3d6")}</div>
+                {/* O PROCESSO A QUE A NOTA SE REFERE, quando tem um.
+                    Sem isto, a escolha existiria e ninguém a veria:
+                    a informação estaria no banco e no Vantoro, e a
+                    conversa — que é onde a equipe lê — não diria de
+                    qual ação se está falando.
+                    Nota geral não mostra nada. Escrever "sem
+                    processo" em todas encheria a conversa de uma
+                    linha que não informa, já que é o caso comum.
+
+                    A CONDIÇÃO É O `processo_id`, e não o número.
+                    Ação ainda não distribuída não tem número: pelo
+                    número, essas notas ficavam ligadas ao processo
+                    no banco e MUDAS na tela — o vínculo existia sem
+                    aparecer, que é o mesmo que não existir para quem
+                    lê. Pelo id, toda nota vinculada se anuncia. */}
+                {m.processo_id && (
+                  <div data-nota-processo
+                       style={{ marginTop: 5, fontSize: 11.5, fontWeight: 600,
+                                color: "rgba(255,255,255,.92)",
+                                background: "rgba(0,0,0,.18)", borderRadius: 5,
+                                padding: "3px 7px", display: "inline-flex",
+                                alignItems: "center", gap: 5, overflowWrap: "anywhere" }}>
+                    <ClipboardList size={12} />
+                    {rotuloDoProcesso({ id: m.processo_id, numero: m.processo_numero,
+                                        reu: m.processo_reu })}
+                  </div>
+                )}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, fontSize: 10.5, color: "rgba(255,255,255,.85)", marginTop: 3 }}>
+                  {/* "editada" fica junto do horário, como nas
+                      mensagens: quem lê precisa saber que o que
+                      está ali não é o que foi escrito primeiro. */}
+                  {m.editada_em && <span title={`Editada por ${nomeDeHoje(m.editada_por_id, m.editada_por) || "alguém"}`}>editada ·</span>}
+                  <StickyNote size={11} /> Mensagem interna{m._status === "enviando" ? " · salvando…" : ""}
+                </div>
+                {/* O menu aparece ao passar o rato, como o das
+                    mensagens. Só para quem pode mexer — oferecer e
+                    depois recusar é pior do que não oferecer. */}
+                {podeMexerNaNota(m) && !m._status && (
+                  <span style={{ position: "absolute", top: 2, right: 4, display: "flex", gap: 2 }}>
+                    <button onClick={() => { setRespondendo(null); setModoNota(false); setEditando(m); setRascunho(m.texto || ""); setTimeout(() => inputRef.current?.focus(), 0); }}
+                            title="Editar nota"
+                            style={{ border: "none", background: "transparent", cursor: "pointer", color: "rgba(255,255,255,.75)", padding: 3, display: "flex", minHeight: estreito ? 40 : 24, minWidth: estreito ? 40 : 24, alignItems: "center", justifyContent: "center" }}>
+                      <Pencil size={13} />
+                    </button>
+                    <button onClick={() => setNotaParaApagar(m)}
+                            title="Apagar nota"
+                            style={{ border: "none", background: "transparent", cursor: "pointer", color: "rgba(255,255,255,.75)", padding: 3, display: "flex", minHeight: estreito ? 40 : 24, minWidth: estreito ? 40 : 24, alignItems: "center", justifyContent: "center" }}>
+                      <Trash2 size={13} />
+                    </button>
+                  </span>
+                )}
+              </div>
+              )}
+            </div>
+            <div style={{ width: 28, flexShrink: 0 }}><Avatar nome={quem.nome || "equipe"} foto={quem.foto} size={28} /></div>
+          </div>
+        ) : (
+        <div data-msg-id={m.id} onClick={() => { if (selecao && podeSerApagada(m)) alternarSelecao(m.id); }} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ position: "relative", display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6,
+          /* A bolha que respondeu à busca. Rolar até ela sem marcá-la
+             deixaria a pessoa no meio da conversa sem saber qual é. */
+          ...(String(m.id) === msgDestacada
+              ? { background: C.listActive, borderRadius: 10, padding: "4px 6px",
+                  margin: "2px -6px", transition: "background .4s" }
+              : null),
+          marginTop: mesmoRemetente ? -4 : 0, marginBottom: (Array.isArray(m.reacoes) && m.reacoes.length) ? 15 : 0, paddingLeft: selecao ? 34 : 0, transition: "padding-left .12s" }}>
+          {/* A CAIXINHA DE SELEÇÃO. Aparece em TODA linha para o
+              alinhamento não dançar, mas só é clicável no que dá
+              para apagar — o que o escritório enviou. Nas demais
+              fica um espaço vazio, e a conversa não se desmonta ao
+              entrar no modo. */}
+          {/* NUMA COLUNA FIXA À ESQUERDA, e não colada em cada balão.
+              Como filha do flex, a caixinha era empurrada junto com
+              a bolha — que é alinhada à direita quando a mensagem é
+              nossa — e cada linha punha a dela num lugar diferente.
+              Presa em `left: 8`, todas caem no mesmo eixo, e a linha
+              ganha um recuo do mesmo tamanho para nada ficar por
+              baixo. É assim que o WhatsApp desenha. */}
+          {selecao && (
+            <span onClick={(e) => { e.stopPropagation(); if (podeSerApagada(m)) alternarSelecao(m.id); }}
+              style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)",
+                       // Do tamanho da do WhatsApp: a caixinha é uma
+                       // marca ao lado da conversa, não um botão a
+                       // disputar atenção com a mensagem. A área de
+                       // clique continua maior que o desenho, pelo
+                       // recuo que a linha inteira ganha.
+                       width: 18, height: 18, borderRadius: 4, boxSizing: "border-box",
+                       display: "flex", alignItems: "center", justifyContent: "center",
+                       cursor: podeSerApagada(m) ? "pointer" : "default",
+                       border: podeSerApagada(m) ? `1.5px solid ${selecao.includes(m.id) ? C.green : C.textSecondary}` : "1.5px solid transparent",
+                       background: selecao.includes(m.id) ? C.green : "transparent" }}>
+              {selecao.includes(m.id) && <Check size={12} strokeWidth={3} color="#fff" />}
+            </span>
+          )}
+          {m.id_uazapi && !m.apagada && saida && (
+            <RostoReagir C={C} saida={saida} tudo={reagindoTudo}
+              visivel={estreito || msgHover === m.id || rostoAberto === m.id}
+              aberto={rostoAberto === m.id}
+              aoAbrir={() => { setReagindo(null); setReagindoTudo(false); setRostoAberto((r) => (r === m.id ? null : m.id)); }}
+              aoVerTudo={() => setReagindoTudo(true)}
+              aoReagir={(e) => { setRostoAberto(null); reagir(m, e); }} />
+          )}
+          <div style={{ position: "relative", maxWidth: estreito ? "84%" : "65%", background: figurinhaNua ? "transparent" : (saida ? C.bubbleOut : C.bubbleIn), color: C.textPrimary, borderRadius: 8, padding: figurinhaNua ? 0 : (m.tipo === "imagem" ? 4 : "5px 7px 6px 9px"), boxShadow: figurinhaNua ? "none" : "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
+            {/* O RÓTULO NÃO É UM NOME, e não se veste de nome.
+                Em negrito e colorido como os outros, "Pelo celular"
+                se lia como alguém chamado assim. Em cinza, com o
+                desenho de um telefone, se lê como o que é: a
+                mensagem saiu daqui, mas não por aqui. */}
+            {mostrarAutor && (
+              quem.aparelho || quem.rotulo ? (
+                <div title={quem.aparelho
+                      ? "Saiu pelo aplicativo do WhatsApp, fora do Zorvin — o WhatsApp não diz qual atendente escreveu."
+                      : "Rótulo do histórico importado, e não uma pessoa do escritório."}
+                     style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5,
+                              fontWeight: 600, color: C.textSecondary, marginBottom: 1 }}>
+                  {quem.aparelho ? <Smartphone size={12} /> : <History size={12} />}
+                  {quem.nome}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, fontWeight: 700, color: corNome(quem.nome, modo), marginBottom: 1 }}>{quem.nome}</div>
+              )
+            )}
+            {m.id_uazapi && !m.apagada && (
+              <button data-menu-msg onClick={(ev) => {
+                // PARA CIMA OU PARA BAIXO, conforme onde a bolha está.
+                // Aberto sempre para baixo, o menu da última mensagem
+                // saía pela borda inferior e ficava inalcançável.
+                const r = ev.currentTarget.getBoundingClientRect();
+                setMenuParaCima(r.bottom > window.innerHeight * 0.55);
+                setReagindoTudo(false);
+                setRostoAberto(null);
+                setReagindo((x) => (x === m.id ? null : m.id));
+              }} title="Mais opções" aria-label="Opções da mensagem" style={{
+                // A SETA FICA POR CIMA DO TEXTO, com um esmaecido
+                // atrás. Antes o texto era empurrado 42px para a
+                // esquerda o tempo todo só para abrir espaço para
+                // uma seta que aparece no passar do mouse — e era
+                // esse recuo que engordava toda bolha curta. O
+                // WhatsApp resolve assim: a seta sobrepõe, e o
+                // degradê na cor da bolha mantém a leitura.
+                position: "absolute", top: 0, right: 0, border: "none", cursor: "pointer",
+                opacity: (estreito || msgHover === m.id || reagindo === m.id) ? 0.9 : 0,
+                transition: "opacity .12s", display: "flex", alignItems: "flex-start", justifyContent: "flex-end",
+                padding: "3px 3px 6px 30px", borderRadius: "0 8px 0 0",
+                background: `linear-gradient(to left, ${saida ? C.bubbleOut : C.bubbleIn} 45%, transparent)`,
+              }}>
+                <ChevronDown size={17} color={C.textSecondary} />
+              </button>
+            )}
+            {reagindo === m.id && (
+              <MenuMensagem C={C} saida={saida} tudo={reagindoTudo}
+                paraCima={menuParaCima}
+                temTexto={Boolean(m.texto)}
+                aoEncaminhar={() => { setReagindo(null); setReagindoTudo(false); setBuscaEncaminhar(""); setEncaminhar(m); }}
+                podeEditar={Boolean(saida && m.texto && m.id_uazapi && dentroDoPrazoDeEdicao(m))}
+                aoEditar={() => { setReagindo(null); setReagindoTudo(false); iniciarEdicao(m); }}
+                fixada={Boolean(m.fixada)} favorita={Boolean(m.favorita)}
+                aoFixar={() => { setReagindo(null); setReagindoTudo(false); marcarMensagem(m, "fixada", !m.fixada); }}
+                aoFavoritar={() => { setReagindo(null); setReagindoTudo(false); marcarMensagem(m, "favorita", !m.favorita); }}
+                ehFigurinha={m.tipo === "figurinha" && Boolean(m.midia_url)}
+                figurinhaGuardada={figurinhaEhFavorita(m.midia_url)}
+                aoGuardarFigurinha={() => { setReagindo(null); setReagindoTudo(false); alternarFigurinhaFavorita(m); }}
+                aoApagar={() => { setReagindo(null); setReagindoTudo(false); setSelecao([m.id]); }}
+                aoVerTudo={() => setReagindoTudo(true)}
+                aoReagir={(e) => reagir(m, e)}
+                aoResponder={() => { setReagindo(null); setReagindoTudo(false); iniciarResposta(m); }}
+                aoCopiar={() => { setReagindo(null); setReagindoTudo(false); copiarMensagem(m); }} />
+            )}
+            {m.resposta_previa && (
+              <div style={{ borderLeft: `3px solid ${C.green}`, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 4, padding: "3px 8px", marginBottom: 4 }}>
+                <div style={{ color: C.verdeTexto, fontWeight: 600, fontSize: 12 }}>{m.resposta_autor === "advogado" ? "Você" : (conversa.contato?.nome || "Contato")}</div>
+                <div style={{ color: C.textSecondary, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 260 }}>{m.resposta_previa}</div>
+              </div>
+            )}
+            {m.tipo === "imagem" && m.midia_url && (
+              // Um `button` de verdade em volta da imagem. Como
+              // `<img onClick>` solto, ela abria no clique e não
+              // abria de jeito nenhum pelo teclado — e o leitor de
+              // tela anunciava "imagem", não "abrir imagem".
+              <button onClick={() => { setRetratoAberto(false); setImagemAberta(m.midia_url); }} aria-label="Abrir a imagem em tela cheia"
+                      style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", display: "block", borderRadius: 6 }}>
+                <img src={m.midia_url} alt="Imagem recebida na conversa" loading="lazy" decoding="async" onLoad={() => { if (pertoDoFim) fimRef.current?.scrollIntoView(); }} style={{ maxWidth: "min(260px, 62vw)", maxHeight: 320, width: "auto", height: "auto", borderRadius: 6, display: "block" }} />
+              </button>
+            )}
+            {/* FIGURINHA. Eu ensinei a ponte a reconhecê-la e esqueci
+                de ensinar a TELA a desenhá-la: o tipo novo não caía
+                em nenhum dos ramos, e a bolha aparecia vazia — tanto
+                a recebida quanto a que o próprio Zorvin mandou.
+                Vai sem moldura e maior que uma imagem comum, como no
+                WhatsApp: figurinha não tem fundo, ela flutua. */}
+            {m.tipo === "figurinha" && (
+              m.midia_url ? (
+                <img src={m.midia_url} alt="Figurinha" loading="lazy" decoding="async"
+                  onLoad={() => { if (pertoDoFim) fimRef.current?.scrollIntoView(); }}
+                  style={{ width: 140, height: 140, objectFit: "contain", display: "block" }} />
+              ) : (
+                // SEM O ARQUIVO, mas com o registro. A bolha da
+                // figurinha não tem fundo nem texto: sem arquivo
+                // ela virava um espaço vazio na conversa, e a
+                // equipe não tinha como saber que algo tinha
+                // chegado ali. O aviso é o mesmo caminho do áudio
+                // e do documento indisponíveis.
+                <div style={{ display: "flex", alignItems: "center", gap: 8, color: C.textSecondary,
+                              background: saida ? "rgba(0,0,0,.06)" : C.searchBg,
+                              borderRadius: 6, padding: "8px 10px", fontSize: 13, fontStyle: "italic" }}>
+                  <Sticker size={18} color={C.textSecondary} /> Figurinha indisponível
+                </div>
+              )
+            )}
+            {m.tipo === "audio" && <BolhaAudio C={C} saida={saida} url={m.midia_url} />}
+            {m.tipo === "video" && m.midia_url && (
+              <video controls preload="none" src={m.midia_url} style={{ maxWidth: "min(260px, 62vw)", borderRadius: 6, display: "block" }} />
+            )}
+            {m.tipo === "documento" && (
+              m.midia_url ? (
+                <a href={m.midia_url} target="_blank" rel="noopener noreferrer" download style={{ display: "block", textDecoration: "none", color: C.textPrimary, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 6, overflow: "hidden", minWidth: 180 }}>
+                  {/* A PRIMEIRA PÁGINA, quando o navegador sabe
+                      desenhar o arquivo. Numa banca o que chega o dia
+                      inteiro é PDF — procuração, contrato, extrato,
+                      intimação — e "Documento" não distingue a
+                      procuração que se esperava do panfleto que
+                      alguém encaminhou. Ver `src/arquivos.js` para o
+                      que dá e o que não dá para prever, e por quê. */}
+                  <PreviaDeArquivo C={C} url={m.midia_url}
+                                   mime={m.midia_mime} nome={m.midia_nome} />
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px" }}>
+                    <FileText size={22} color={C.textSecondary} />
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: "block", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>{m.midia_nome || "Documento"}</span>
+                      {/* O TIPO POR EXTENSO, embaixo do nome. "Planilha
+                          do Excel" responde sozinho a pergunta que faz
+                          alguém abrir o arquivo só para descobrir. */}
+                      <span style={{ display: "block", fontSize: 11, color: C.textSecondary }}
+                            data-doc-tipo={nomeDoTipo(m.midia_mime, m.midia_nome)}>
+                        {nomeDoTipo(m.midia_mime, m.midia_nome)}
+                      </span>
+                    </span>
+                    <Download size={16} color={C.textSecondary} />
+                  </div>
+                </a>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, color: C.textPrimary, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 6, padding: "8px 10px", minWidth: 180 }}>
+                  <FileText size={22} color={C.textSecondary} />
+                  <span style={{ flex: 1, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>{m.midia_nome || "Documento"}</span>
+                  <span style={{ fontSize: 11, color: C.textSecondary, fontStyle: "italic", flexShrink: 0 }}>indisponível</span>
+                </div>
+              )
+            )}
+            {/* O CONTATO APAGOU no WhatsApp — e a mensagem FICA aqui,
+                com texto e anexo intactos. O que o cliente escreveu
+                é registro do atendimento; um registro que a outra
+                parte pode apagar depois não serve nem para conferir
+                um combinado nem para se defender de uma reclamação.
+                O aviso existe só para a equipe saber que houve a
+                tentativa. */}
+            {m.apagada_pelo_contato && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5,
+                            fontStyle: "italic", color: "#e0a800", marginBottom: 3 }}>
+                <Trash2 size={12} color="#e0a800" /> O contato apagou esta mensagem no WhatsApp
+              </div>
+            )}
+            {/* O TEXTO E O RODAPÉ NO MESMO BLOCO.
+                `flow-root` existe para que a bolha cresça junto
+                com a hora flutuante: sem ele o float escapa da
+                caixa e a última linha fica por baixo do balão. */}
+            {(m.texto || m.apagada) && (
+              <div style={{ fontSize: 14.2, lineHeight: 1.35, marginTop: m.tipo !== "texto" ? 4 : 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere", display: "flow-root" }}>
+                {m.apagada ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontStyle: "italic", color: C.textSecondary }}>
+                    <Trash2 size={14} color={C.textSecondary} /> Esta mensagem foi apagada
+                  </span>
+                ) : formatarTexto(m.texto, C.link)}
+                <MetaBolha C={C} m={m} saida={saida} flutuante aoReenviar={() => reenviar(m)} />
+              </div>
+            )}
+            {/* AS REAÇÕES, COMO NO WHATSAPP WEB.
+                Uma pastilha só, pendurada na quina de baixo da
+                bolha e transbordando para fora dela. A borda é da
+                COR DO FUNDO da conversa, e não uma linha cinza: é
+                isso que dá o efeito de recorte: a pastilha parece
+                colada por cima, não desenhada dentro.
+                A primeira versão empilhava as pastilhas DENTRO da
+                bolha, embaixo do texto — o emoji virava parte da
+                mensagem, e duas reações ocupavam duas linhas de
+                conversa. Aqui elas cabem todas numa pastilha só,
+                que é como o WhatsApp agrupa.
+                O lado acompanha o da bolha: quem recebe tem a
+                pastilha à esquerda, quem envia à direita. Assim ela
+                nasce sempre da quina de dentro. */}
+            {Array.isArray(m.reacoes) && m.reacoes.length > 0 && (
+              <div title={m.reacoes.map((r) => `${r.emoji} ${r.de === "advogado" ? "de quem atende" : "do contato"}`).join("  ·  ")}
+                style={{ position: "absolute", bottom: -15, zIndex: 2,
+                         ...(saida ? { right: 10 } : { left: 10 }),
+                         display: "flex", alignItems: "center", justifyContent: "center", gap: 3,
+                         minWidth: 22, height: 22, padding: "0 5px", borderRadius: 999,
+                         background: saida ? C.bubbleOut : C.bubbleIn,
+                         border: `2px solid ${C.chatBg}`,
+                         boxShadow: "0 1px 3px rgba(0,0,0,.3)",
+                         fontSize: 14, lineHeight: 1, whiteSpace: "nowrap" }}>
+                {m.reacoes.map((r, i) => <span key={i}>{r.emoji}</span>)}
+              </div>
+            )}
+            {/* Sem texto — áudio, vídeo, figurinha, documento — não
+                há última linha em que caber, e o rodapé volta a ser
+                uma linha embaixo do anexo. */}
+            {!m.texto && !m.apagada && (
+              <MetaBolha C={C} m={m} saida={saida} aoReenviar={() => reenviar(m)} />
+            )}
+          </div>
+          {m.id_uazapi && !m.apagada && !saida && (
+            <RostoReagir C={C} saida={saida} tudo={reagindoTudo}
+              visivel={estreito || msgHover === m.id || rostoAberto === m.id}
+              aberto={rostoAberto === m.id}
+              aoAbrir={() => { setReagindo(null); setReagindoTudo(false); setRostoAberto((r) => (r === m.id ? null : m.id)); }}
+              aoVerTudo={() => setReagindoTudo(true)}
+              aoReagir={(e) => { setRostoAberto(null); reagir(m, e); }} />
+          )}
+          {saida && (
+            <div style={{ width: 28, flexShrink: 0 }}>{!ultimaDoGrupo ? null
+              : (quem.aparelho || quem.rotulo)
+                /* Sem bolinha de iniciais: "PC" num círculo colorido
+                   é a cara de uma pessoa, e não há pessoa aqui. */
+                ? <span title={quem.nome} style={{ width: 28, height: 28, borderRadius: "50%", background: C.bubbleIn,
+                                border: `1px solid ${C.divider}`, display: "flex", alignItems: "center",
+                                justifyContent: "center", flexShrink: 0 }}>
+                    {/* Desenhos diferentes porque são coisas
+                        diferentes: um celular para o que saiu pelo
+                        aplicativo, o relógio do histórico para o
+                        rótulo que veio da importação. */}
+                    {quem.aparelho ? <Smartphone size={14} color={C.textSecondary} />
+                                   : <History size={14} color={C.textSecondary} />}
+                  </span>
+                : <Avatar nome={quem.nome || meuNome} foto={quem.foto} size={28} />}</div>
+          )}
+        </div>
+        )}
+        {/* Fora da bolha, e logo abaixo dela: o motivo é sobre a
+            mensagem, não parte do que foi escrito ao cliente. */}
+        {m._status === "erro" && (
+          <MotivoDoErro C={C} m={m}
+            aoDispensar={m._filaId ? () => dispensarFalha(m) : null} />
+        )}
+      </React.Fragment>
+    );
+  });
+});
 
 export default function Painel({ sessao }) {
   // Tema começa pelo que foi salvo da última vez (claro/escuro).
@@ -6360,6 +6822,43 @@ export default function Painel({ sessao }) {
     </div>
   );
 
+  // ------------------------------------------------------------------
+  //  AS AÇÕES DA BOLHA, COM IDENTIDADE FIXA
+  //
+  //  `ListaDeBolhas` está embrulhada em `React.memo` para que digitar não
+  //  redesenhe o histórico inteiro. O `memo` compara as propriedades uma a uma
+  //  — e quinze delas são funções declaradas aqui no corpo do painel, que
+  //  nascem NOVAS a cada desenho. Com elas indo direto, o `memo` nunca batia:
+  //  medido, a digitação continuava custando 1,64× numa conversa longa.
+  //
+  //  A saída óbvia seria `useCallback` nas quinze. Cada uma pediria uma lista
+  //  de dependências escrita à mão, e uma lista errada não dá erro: dá o botão
+  //  que faz o que fazia três telas atrás — o defeito de fechamento velho, que
+  //  não aparece em nenhum teste e aparece no uso.
+  //
+  //  Aqui, em vez disso, a lista recebe embrulhos criados UMA vez, que sempre
+  //  chamam a versão mais recente guardada no `ref`. Identidade fixa para o
+  //  `memo`, comportamento sempre atual para quem clica. Não há lista de
+  //  dependências para errar.
+  //
+  //  O `ref` é escrito DURANTE o desenho, e de propósito: `ListaDeBolhas` é
+  //  filha, então desenha depois desta linha e já enxerga as versões novas. Num
+  //  efeito, o primeiro desenho encontraria o `ref` vazio — e `quemFalou` é
+  //  usada para DESENHAR, e não só no clique: a tela quebraria na abertura.
+  const acoesDaBolhaRef = useRef({});
+  acoesDaBolhaRef.current = {
+    alternarSelecao, podeSerApagada, quemFalou, nomeDeHoje, podeMexerNaNota,
+    dentroDoPrazoDeEdicao, reagir, iniciarEdicao, iniciarResposta, copiarMensagem,
+    marcarMensagem, reenviar, dispensarFalha, figurinhaEhFavorita,
+    alternarFigurinhaFavorita,
+  };
+  //  Lista de dependências vazia: os embrulhos são criados na primeira vez e
+  //  nunca mais. É essa permanência que faz o `memo` funcionar.
+  const acoesDaBolha = useMemo(() => {
+    const embrulhar = (nome) => (...args) => acoesDaBolhaRef.current[nome](...args);
+    return Object.fromEntries(Object.keys(acoesDaBolhaRef.current).map((n) => [n, embrulhar(n)]));
+  }, []);
+
   // `100dvh` e não `100vh`. No Safari do iPhone o `vh` é a altura da tela COM a
   // barra do navegador recolhida — uma altura que, na prática, quase nunca é a
   // que se tem. Resultado: os últimos ~90px do painel ficavam embaixo da barra
@@ -7725,422 +8224,25 @@ export default function Painel({ sessao }) {
                   {buscandoAntigas ? "Buscando…" : "↑ Carregar mensagens anteriores"}
                 </button>
               )}
-              {mensagens.map((m, i) => {
-                const saida = m.origem === "advogado";
-                const anterior = mensagens[i - 1];
-                const novoDia =
-                  !anterior || new Date(anterior.criado_em).toDateString() !== new Date(m.criado_em).toDateString();
-                const mesmoRemetente = anterior && !novoDia && anterior.origem === m.origem;
-                const q = buscaAberta ? buscaConversa.trim().toLowerCase() : "";
-                const casa = q && (m.texto || "").toLowerCase().includes(q);
-                // Mostra o nome de quem enviou: sempre nas ENVIADAS (qual
-                // atendente respondeu) e também nas RECEBIDAS quando é um GRUPO
-                // (para saber qual participante escreveu, como no WhatsApp).
-                const ehGrupoConversa = String(conversa?.contato?.numero || "").startsWith("grupo:");
-                const mostrarAutor = (saida || ehGrupoConversa) && !!m.enviado_por;
-                // Quem escreveu, com o nome e a foto DE HOJE.
-                const quem = quemFalou(m);
-                // Última mensagem de uma sequência do mesmo remetente: recebe o
-                // avatarzinho à direita (como o WhatsApp mostra a foto do grupo).
-                //
-                // A comparação é pelo NOME DE HOJE, e não pelo gravado: quem
-                // trocou de nome no meio de uma sequência tinha a sequência
-                // partida em duas, com um avatar sobrando no meio — a tela
-                // desenhava duas pessoas onde há uma.
-                const proxima = mensagens[i + 1];
-                const ultimaDoGrupo = !proxima || proxima.origem !== m.origem ||
-                  quemFalou(proxima).nome !== quem.nome ||
-                  new Date(proxima.criado_em).toDateString() !== new Date(m.criado_em).toDateString();
-                // Figurinha COM o desenho flutua sem bolha, como no WhatsApp.
-                // Sem o desenho, ela precisa da bolha de volta: o aviso de
-                // "figurinha indisponível" sobre o fundo da conversa, sem
-                // moldura, não se lê como mensagem.
-                const figurinhaNua = m.tipo === "figurinha" && Boolean(m.midia_url);
-                return (
-                  <React.Fragment key={m.id}>
-                    {novoDia && (
-                      <div style={{ alignSelf: "center", background: C.bubbleIn, color: C.textSecondary, fontSize: 12, fontWeight: 500, padding: "5px 12px", borderRadius: 8, boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", margin: "10px 0 6px" }}>
-                        {rotuloData(m.criado_em)}
-                      </div>
-                    )}
-                    {idDivisorNaoLidas === m.id && (
-                      <div style={{ alignSelf: "center", background: C.bubbleIn, color: C.verdeTexto, fontSize: 12, fontWeight: 600, padding: "4px 14px", borderRadius: 8, boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", margin: "8px 0" }}>
-                        MENSAGENS NÃO LIDAS
-                      </div>
-                    )}
-                    {m.origem === "nota" ? (
-                      // NOTA INTERNA — comentário da equipe (não vai ao WhatsApp).
-                      // Alinhada à direita, com cabeçalho (autor • hora) + avatar,
-                      // bolha laranja e rodapé "Mensagem interna".
-                      <div data-msg-id={m.id} style={{ display: "flex", justifyContent: "flex-end", alignItems: "flex-end", gap: 6, marginTop: 4 }}>
-                        <div style={{ maxWidth: estreito ? "88%" : "70%", display: "flex", flexDirection: "column", alignItems: "flex-end", opacity: m._status === "enviando" ? 0.7 : 1 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2, marginRight: 2 }}>
-                            <span style={{ fontSize: 12.5, fontWeight: 700, color: corNome(quem.nome, modo) }}>{quem.nome || "equipe"}</span>
-                            <span style={{ fontSize: 11, color: C.textSecondary }}>• {horaCurta(m.criado_em)}</span>
-                          </div>
-                          {/* A NOTA APAGADA VIRA LÁPIDE, e não some da conversa.
-                              Nota interna é onde fica registrado o que se
-                              combinou com o cliente; uma que desaparece sem
-                              rastro vira "eu jurava que tinha anotado". O texto
-                              sai da tela — mas quem apagou, e quando, ficam.
-                              A bolha perde a cor: o laranja é para o que se lê,
-                              e ali não há mais nada para ler. */}
-                          {m.apagada_em ? (
-                            <div style={{ background: C.bubbleIn, color: C.textSecondary, borderRadius: 8,
-                                          padding: "7px 11px 6px", border: `1px dashed ${C.divider}`,
-                                          minWidth: 120, fontSize: 13, fontStyle: "italic",
-                                          display: "flex", alignItems: "center", gap: 6 }}>
-                              <Trash2 size={13} />
-                              Nota interna apagada por {nomeDeHoje(m.apagada_por_id, m.apagada_por) || "alguém"} · {horaCurta(m.apagada_em)}
-                            </div>
-                          ) : (
-                          <div style={{ position: "relative", background: "#a35e0c", color: "#fff", borderRadius: 8, padding: "7px 11px 6px", boxShadow: "0 1px 0.5px rgba(0,0,0,.2)", minWidth: 120 }}>
-                            <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 1 }}>{quem.nome || "equipe"}:</div>
-                            <div style={{ fontSize: 14, lineHeight: 1.35, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{formatarTexto(m.texto, "#fff3d6")}</div>
-                            {/* O PROCESSO A QUE A NOTA SE REFERE, quando tem um.
-                                Sem isto, a escolha existiria e ninguém a veria:
-                                a informação estaria no banco e no Vantoro, e a
-                                conversa — que é onde a equipe lê — não diria de
-                                qual ação se está falando.
-                                Nota geral não mostra nada. Escrever "sem
-                                processo" em todas encheria a conversa de uma
-                                linha que não informa, já que é o caso comum.
-
-                                A CONDIÇÃO É O `processo_id`, e não o número.
-                                Ação ainda não distribuída não tem número: pelo
-                                número, essas notas ficavam ligadas ao processo
-                                no banco e MUDAS na tela — o vínculo existia sem
-                                aparecer, que é o mesmo que não existir para quem
-                                lê. Pelo id, toda nota vinculada se anuncia. */}
-                            {m.processo_id && (
-                              <div data-nota-processo
-                                   style={{ marginTop: 5, fontSize: 11.5, fontWeight: 600,
-                                            color: "rgba(255,255,255,.92)",
-                                            background: "rgba(0,0,0,.18)", borderRadius: 5,
-                                            padding: "3px 7px", display: "inline-flex",
-                                            alignItems: "center", gap: 5, overflowWrap: "anywhere" }}>
-                                <ClipboardList size={12} />
-                                {rotuloDoProcesso({ id: m.processo_id, numero: m.processo_numero,
-                                                    reu: m.processo_reu })}
-                              </div>
-                            )}
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, fontSize: 10.5, color: "rgba(255,255,255,.85)", marginTop: 3 }}>
-                              {/* "editada" fica junto do horário, como nas
-                                  mensagens: quem lê precisa saber que o que
-                                  está ali não é o que foi escrito primeiro. */}
-                              {m.editada_em && <span title={`Editada por ${nomeDeHoje(m.editada_por_id, m.editada_por) || "alguém"}`}>editada ·</span>}
-                              <StickyNote size={11} /> Mensagem interna{m._status === "enviando" ? " · salvando…" : ""}
-                            </div>
-                            {/* O menu aparece ao passar o rato, como o das
-                                mensagens. Só para quem pode mexer — oferecer e
-                                depois recusar é pior do que não oferecer. */}
-                            {podeMexerNaNota(m) && !m._status && (
-                              <span style={{ position: "absolute", top: 2, right: 4, display: "flex", gap: 2 }}>
-                                <button onClick={() => { setRespondendo(null); setModoNota(false); setEditando(m); setRascunho(m.texto || ""); setTimeout(() => inputRef.current?.focus(), 0); }}
-                                        title="Editar nota"
-                                        style={{ border: "none", background: "transparent", cursor: "pointer", color: "rgba(255,255,255,.75)", padding: 3, display: "flex", minHeight: estreito ? 40 : 24, minWidth: estreito ? 40 : 24, alignItems: "center", justifyContent: "center" }}>
-                                  <Pencil size={13} />
-                                </button>
-                                <button onClick={() => setNotaParaApagar(m)}
-                                        title="Apagar nota"
-                                        style={{ border: "none", background: "transparent", cursor: "pointer", color: "rgba(255,255,255,.75)", padding: 3, display: "flex", minHeight: estreito ? 40 : 24, minWidth: estreito ? 40 : 24, alignItems: "center", justifyContent: "center" }}>
-                                  <Trash2 size={13} />
-                                </button>
-                              </span>
-                            )}
-                          </div>
-                          )}
-                        </div>
-                        <div style={{ width: 28, flexShrink: 0 }}><Avatar nome={quem.nome || "equipe"} foto={quem.foto} size={28} /></div>
-                      </div>
-                    ) : (
-                    <div data-msg-id={m.id} onClick={() => { if (selecao && podeSerApagada(m)) alternarSelecao(m.id); }} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ position: "relative", display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6,
-                      /* A bolha que respondeu à busca. Rolar até ela sem marcá-la
-                         deixaria a pessoa no meio da conversa sem saber qual é. */
-                      ...(String(m.id) === msgDestacada
-                          ? { background: C.listActive, borderRadius: 10, padding: "4px 6px",
-                              margin: "2px -6px", transition: "background .4s" }
-                          : null),
-                      marginTop: mesmoRemetente ? -4 : 0, marginBottom: (Array.isArray(m.reacoes) && m.reacoes.length) ? 15 : 0, paddingLeft: selecao ? 34 : 0, transition: "padding-left .12s" }}>
-                      {/* A CAIXINHA DE SELEÇÃO. Aparece em TODA linha para o
-                          alinhamento não dançar, mas só é clicável no que dá
-                          para apagar — o que o escritório enviou. Nas demais
-                          fica um espaço vazio, e a conversa não se desmonta ao
-                          entrar no modo. */}
-                      {/* NUMA COLUNA FIXA À ESQUERDA, e não colada em cada balão.
-                          Como filha do flex, a caixinha era empurrada junto com
-                          a bolha — que é alinhada à direita quando a mensagem é
-                          nossa — e cada linha punha a dela num lugar diferente.
-                          Presa em `left: 8`, todas caem no mesmo eixo, e a linha
-                          ganha um recuo do mesmo tamanho para nada ficar por
-                          baixo. É assim que o WhatsApp desenha. */}
-                      {selecao && (
-                        <span onClick={(e) => { e.stopPropagation(); if (podeSerApagada(m)) alternarSelecao(m.id); }}
-                          style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)",
-                                   // Do tamanho da do WhatsApp: a caixinha é uma
-                                   // marca ao lado da conversa, não um botão a
-                                   // disputar atenção com a mensagem. A área de
-                                   // clique continua maior que o desenho, pelo
-                                   // recuo que a linha inteira ganha.
-                                   width: 18, height: 18, borderRadius: 4, boxSizing: "border-box",
-                                   display: "flex", alignItems: "center", justifyContent: "center",
-                                   cursor: podeSerApagada(m) ? "pointer" : "default",
-                                   border: podeSerApagada(m) ? `1.5px solid ${selecao.includes(m.id) ? C.green : C.textSecondary}` : "1.5px solid transparent",
-                                   background: selecao.includes(m.id) ? C.green : "transparent" }}>
-                          {selecao.includes(m.id) && <Check size={12} strokeWidth={3} color="#fff" />}
-                        </span>
-                      )}
-                      {m.id_uazapi && !m.apagada && saida && (
-                        <RostoReagir C={C} saida={saida} tudo={reagindoTudo}
-                          visivel={estreito || msgHover === m.id || rostoAberto === m.id}
-                          aberto={rostoAberto === m.id}
-                          aoAbrir={() => { setReagindo(null); setReagindoTudo(false); setRostoAberto((r) => (r === m.id ? null : m.id)); }}
-                          aoVerTudo={() => setReagindoTudo(true)}
-                          aoReagir={(e) => { setRostoAberto(null); reagir(m, e); }} />
-                      )}
-                      <div style={{ position: "relative", maxWidth: estreito ? "84%" : "65%", background: figurinhaNua ? "transparent" : (saida ? C.bubbleOut : C.bubbleIn), color: C.textPrimary, borderRadius: 8, padding: figurinhaNua ? 0 : (m.tipo === "imagem" ? 4 : "5px 7px 6px 9px"), boxShadow: figurinhaNua ? "none" : "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
-                        {/* O RÓTULO NÃO É UM NOME, e não se veste de nome.
-                            Em negrito e colorido como os outros, "Pelo celular"
-                            se lia como alguém chamado assim. Em cinza, com o
-                            desenho de um telefone, se lê como o que é: a
-                            mensagem saiu daqui, mas não por aqui. */}
-                        {mostrarAutor && (
-                          quem.aparelho || quem.rotulo ? (
-                            <div title={quem.aparelho
-                                  ? "Saiu pelo aplicativo do WhatsApp, fora do Zorvin — o WhatsApp não diz qual atendente escreveu."
-                                  : "Rótulo do histórico importado, e não uma pessoa do escritório."}
-                                 style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5,
-                                          fontWeight: 600, color: C.textSecondary, marginBottom: 1 }}>
-                              {quem.aparelho ? <Smartphone size={12} /> : <History size={12} />}
-                              {quem.nome}
-                            </div>
-                          ) : (
-                            <div style={{ fontSize: 12, fontWeight: 700, color: corNome(quem.nome, modo), marginBottom: 1 }}>{quem.nome}</div>
-                          )
-                        )}
-                        {m.id_uazapi && !m.apagada && (
-                          <button data-menu-msg onClick={(ev) => {
-                            // PARA CIMA OU PARA BAIXO, conforme onde a bolha está.
-                            // Aberto sempre para baixo, o menu da última mensagem
-                            // saía pela borda inferior e ficava inalcançável.
-                            const r = ev.currentTarget.getBoundingClientRect();
-                            setMenuParaCima(r.bottom > window.innerHeight * 0.55);
-                            setReagindoTudo(false);
-                            setRostoAberto(null);
-                            setReagindo((x) => (x === m.id ? null : m.id));
-                          }} title="Mais opções" aria-label="Opções da mensagem" style={{
-                            // A SETA FICA POR CIMA DO TEXTO, com um esmaecido
-                            // atrás. Antes o texto era empurrado 42px para a
-                            // esquerda o tempo todo só para abrir espaço para
-                            // uma seta que aparece no passar do mouse — e era
-                            // esse recuo que engordava toda bolha curta. O
-                            // WhatsApp resolve assim: a seta sobrepõe, e o
-                            // degradê na cor da bolha mantém a leitura.
-                            position: "absolute", top: 0, right: 0, border: "none", cursor: "pointer",
-                            opacity: (estreito || msgHover === m.id || reagindo === m.id) ? 0.9 : 0,
-                            transition: "opacity .12s", display: "flex", alignItems: "flex-start", justifyContent: "flex-end",
-                            padding: "3px 3px 6px 30px", borderRadius: "0 8px 0 0",
-                            background: `linear-gradient(to left, ${saida ? C.bubbleOut : C.bubbleIn} 45%, transparent)`,
-                          }}>
-                            <ChevronDown size={17} color={C.textSecondary} />
-                          </button>
-                        )}
-                        {reagindo === m.id && (
-                          <MenuMensagem C={C} saida={saida} tudo={reagindoTudo}
-                            paraCima={menuParaCima}
-                            temTexto={Boolean(m.texto)}
-                            aoEncaminhar={() => { setReagindo(null); setReagindoTudo(false); setBuscaEncaminhar(""); setEncaminhar(m); }}
-                            podeEditar={Boolean(saida && m.texto && m.id_uazapi && dentroDoPrazoDeEdicao(m))}
-                            aoEditar={() => { setReagindo(null); setReagindoTudo(false); iniciarEdicao(m); }}
-                            fixada={Boolean(m.fixada)} favorita={Boolean(m.favorita)}
-                            aoFixar={() => { setReagindo(null); setReagindoTudo(false); marcarMensagem(m, "fixada", !m.fixada); }}
-                            aoFavoritar={() => { setReagindo(null); setReagindoTudo(false); marcarMensagem(m, "favorita", !m.favorita); }}
-                            ehFigurinha={m.tipo === "figurinha" && Boolean(m.midia_url)}
-                            figurinhaGuardada={figurinhaEhFavorita(m.midia_url)}
-                            aoGuardarFigurinha={() => { setReagindo(null); setReagindoTudo(false); alternarFigurinhaFavorita(m); }}
-                            aoApagar={() => { setReagindo(null); setReagindoTudo(false); setSelecao([m.id]); }}
-                            aoVerTudo={() => setReagindoTudo(true)}
-                            aoReagir={(e) => reagir(m, e)}
-                            aoResponder={() => { setReagindo(null); setReagindoTudo(false); iniciarResposta(m); }}
-                            aoCopiar={() => { setReagindo(null); setReagindoTudo(false); copiarMensagem(m); }} />
-                        )}
-                        {m.resposta_previa && (
-                          <div style={{ borderLeft: `3px solid ${C.green}`, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 4, padding: "3px 8px", marginBottom: 4 }}>
-                            <div style={{ color: C.verdeTexto, fontWeight: 600, fontSize: 12 }}>{m.resposta_autor === "advogado" ? "Você" : (conversa.contato?.nome || "Contato")}</div>
-                            <div style={{ color: C.textSecondary, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 260 }}>{m.resposta_previa}</div>
-                          </div>
-                        )}
-                        {m.tipo === "imagem" && m.midia_url && (
-                          // Um `button` de verdade em volta da imagem. Como
-                          // `<img onClick>` solto, ela abria no clique e não
-                          // abria de jeito nenhum pelo teclado — e o leitor de
-                          // tela anunciava "imagem", não "abrir imagem".
-                          <button onClick={() => { setRetratoAberto(false); setImagemAberta(m.midia_url); }} aria-label="Abrir a imagem em tela cheia"
-                                  style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", display: "block", borderRadius: 6 }}>
-                            <img src={m.midia_url} alt="Imagem recebida na conversa" loading="lazy" decoding="async" onLoad={() => { if (pertoDoFim) fimRef.current?.scrollIntoView(); }} style={{ maxWidth: "min(260px, 62vw)", maxHeight: 320, width: "auto", height: "auto", borderRadius: 6, display: "block" }} />
-                          </button>
-                        )}
-                        {/* FIGURINHA. Eu ensinei a ponte a reconhecê-la e esqueci
-                            de ensinar a TELA a desenhá-la: o tipo novo não caía
-                            em nenhum dos ramos, e a bolha aparecia vazia — tanto
-                            a recebida quanto a que o próprio Zorvin mandou.
-                            Vai sem moldura e maior que uma imagem comum, como no
-                            WhatsApp: figurinha não tem fundo, ela flutua. */}
-                        {m.tipo === "figurinha" && (
-                          m.midia_url ? (
-                            <img src={m.midia_url} alt="Figurinha" loading="lazy" decoding="async"
-                              onLoad={() => { if (pertoDoFim) fimRef.current?.scrollIntoView(); }}
-                              style={{ width: 140, height: 140, objectFit: "contain", display: "block" }} />
-                          ) : (
-                            // SEM O ARQUIVO, mas com o registro. A bolha da
-                            // figurinha não tem fundo nem texto: sem arquivo
-                            // ela virava um espaço vazio na conversa, e a
-                            // equipe não tinha como saber que algo tinha
-                            // chegado ali. O aviso é o mesmo caminho do áudio
-                            // e do documento indisponíveis.
-                            <div style={{ display: "flex", alignItems: "center", gap: 8, color: C.textSecondary,
-                                          background: saida ? "rgba(0,0,0,.06)" : C.searchBg,
-                                          borderRadius: 6, padding: "8px 10px", fontSize: 13, fontStyle: "italic" }}>
-                              <Sticker size={18} color={C.textSecondary} /> Figurinha indisponível
-                            </div>
-                          )
-                        )}
-                        {m.tipo === "audio" && <BolhaAudio C={C} saida={saida} url={m.midia_url} />}
-                        {m.tipo === "video" && m.midia_url && (
-                          <video controls preload="none" src={m.midia_url} style={{ maxWidth: "min(260px, 62vw)", borderRadius: 6, display: "block" }} />
-                        )}
-                        {m.tipo === "documento" && (
-                          m.midia_url ? (
-                            <a href={m.midia_url} target="_blank" rel="noopener noreferrer" download style={{ display: "block", textDecoration: "none", color: C.textPrimary, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 6, overflow: "hidden", minWidth: 180 }}>
-                              {/* A PRIMEIRA PÁGINA, quando o navegador sabe
-                                  desenhar o arquivo. Numa banca o que chega o dia
-                                  inteiro é PDF — procuração, contrato, extrato,
-                                  intimação — e "Documento" não distingue a
-                                  procuração que se esperava do panfleto que
-                                  alguém encaminhou. Ver `src/arquivos.js` para o
-                                  que dá e o que não dá para prever, e por quê. */}
-                              <PreviaDeArquivo C={C} url={m.midia_url}
-                                               mime={m.midia_mime} nome={m.midia_nome} />
-                              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px" }}>
-                                <FileText size={22} color={C.textSecondary} />
-                                <span style={{ flex: 1, minWidth: 0 }}>
-                                  <span style={{ display: "block", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>{m.midia_nome || "Documento"}</span>
-                                  {/* O TIPO POR EXTENSO, embaixo do nome. "Planilha
-                                      do Excel" responde sozinho a pergunta que faz
-                                      alguém abrir o arquivo só para descobrir. */}
-                                  <span style={{ display: "block", fontSize: 11, color: C.textSecondary }}
-                                        data-doc-tipo={nomeDoTipo(m.midia_mime, m.midia_nome)}>
-                                    {nomeDoTipo(m.midia_mime, m.midia_nome)}
-                                  </span>
-                                </span>
-                                <Download size={16} color={C.textSecondary} />
-                              </div>
-                            </a>
-                          ) : (
-                            <div style={{ display: "flex", alignItems: "center", gap: 8, color: C.textPrimary, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 6, padding: "8px 10px", minWidth: 180 }}>
-                              <FileText size={22} color={C.textSecondary} />
-                              <span style={{ flex: 1, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>{m.midia_nome || "Documento"}</span>
-                              <span style={{ fontSize: 11, color: C.textSecondary, fontStyle: "italic", flexShrink: 0 }}>indisponível</span>
-                            </div>
-                          )
-                        )}
-                        {/* O CONTATO APAGOU no WhatsApp — e a mensagem FICA aqui,
-                            com texto e anexo intactos. O que o cliente escreveu
-                            é registro do atendimento; um registro que a outra
-                            parte pode apagar depois não serve nem para conferir
-                            um combinado nem para se defender de uma reclamação.
-                            O aviso existe só para a equipe saber que houve a
-                            tentativa. */}
-                        {m.apagada_pelo_contato && (
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5,
-                                        fontStyle: "italic", color: "#e0a800", marginBottom: 3 }}>
-                            <Trash2 size={12} color="#e0a800" /> O contato apagou esta mensagem no WhatsApp
-                          </div>
-                        )}
-                        {/* O TEXTO E O RODAPÉ NO MESMO BLOCO.
-                            `flow-root` existe para que a bolha cresça junto
-                            com a hora flutuante: sem ele o float escapa da
-                            caixa e a última linha fica por baixo do balão. */}
-                        {(m.texto || m.apagada) && (
-                          <div style={{ fontSize: 14.2, lineHeight: 1.35, marginTop: m.tipo !== "texto" ? 4 : 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere", display: "flow-root" }}>
-                            {m.apagada ? (
-                              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontStyle: "italic", color: C.textSecondary }}>
-                                <Trash2 size={14} color={C.textSecondary} /> Esta mensagem foi apagada
-                              </span>
-                            ) : formatarTexto(m.texto, C.link)}
-                            <MetaBolha C={C} m={m} saida={saida} flutuante aoReenviar={() => reenviar(m)} />
-                          </div>
-                        )}
-                        {/* AS REAÇÕES, COMO NO WHATSAPP WEB.
-                            Uma pastilha só, pendurada na quina de baixo da
-                            bolha e transbordando para fora dela. A borda é da
-                            COR DO FUNDO da conversa, e não uma linha cinza: é
-                            isso que dá o efeito de recorte: a pastilha parece
-                            colada por cima, não desenhada dentro.
-                            A primeira versão empilhava as pastilhas DENTRO da
-                            bolha, embaixo do texto — o emoji virava parte da
-                            mensagem, e duas reações ocupavam duas linhas de
-                            conversa. Aqui elas cabem todas numa pastilha só,
-                            que é como o WhatsApp agrupa.
-                            O lado acompanha o da bolha: quem recebe tem a
-                            pastilha à esquerda, quem envia à direita. Assim ela
-                            nasce sempre da quina de dentro. */}
-                        {Array.isArray(m.reacoes) && m.reacoes.length > 0 && (
-                          <div title={m.reacoes.map((r) => `${r.emoji} ${r.de === "advogado" ? "de quem atende" : "do contato"}`).join("  ·  ")}
-                            style={{ position: "absolute", bottom: -15, zIndex: 2,
-                                     ...(saida ? { right: 10 } : { left: 10 }),
-                                     display: "flex", alignItems: "center", justifyContent: "center", gap: 3,
-                                     minWidth: 22, height: 22, padding: "0 5px", borderRadius: 999,
-                                     background: saida ? C.bubbleOut : C.bubbleIn,
-                                     border: `2px solid ${C.chatBg}`,
-                                     boxShadow: "0 1px 3px rgba(0,0,0,.3)",
-                                     fontSize: 14, lineHeight: 1, whiteSpace: "nowrap" }}>
-                            {m.reacoes.map((r, i) => <span key={i}>{r.emoji}</span>)}
-                          </div>
-                        )}
-                        {/* Sem texto — áudio, vídeo, figurinha, documento — não
-                            há última linha em que caber, e o rodapé volta a ser
-                            uma linha embaixo do anexo. */}
-                        {!m.texto && !m.apagada && (
-                          <MetaBolha C={C} m={m} saida={saida} aoReenviar={() => reenviar(m)} />
-                        )}
-                      </div>
-                      {m.id_uazapi && !m.apagada && !saida && (
-                        <RostoReagir C={C} saida={saida} tudo={reagindoTudo}
-                          visivel={estreito || msgHover === m.id || rostoAberto === m.id}
-                          aberto={rostoAberto === m.id}
-                          aoAbrir={() => { setReagindo(null); setReagindoTudo(false); setRostoAberto((r) => (r === m.id ? null : m.id)); }}
-                          aoVerTudo={() => setReagindoTudo(true)}
-                          aoReagir={(e) => { setRostoAberto(null); reagir(m, e); }} />
-                      )}
-                      {saida && (
-                        <div style={{ width: 28, flexShrink: 0 }}>{!ultimaDoGrupo ? null
-                          : (quem.aparelho || quem.rotulo)
-                            /* Sem bolinha de iniciais: "PC" num círculo colorido
-                               é a cara de uma pessoa, e não há pessoa aqui. */
-                            ? <span title={quem.nome} style={{ width: 28, height: 28, borderRadius: "50%", background: C.bubbleIn,
-                                            border: `1px solid ${C.divider}`, display: "flex", alignItems: "center",
-                                            justifyContent: "center", flexShrink: 0 }}>
-                                {/* Desenhos diferentes porque são coisas
-                                    diferentes: um celular para o que saiu pelo
-                                    aplicativo, o relógio do histórico para o
-                                    rótulo que veio da importação. */}
-                                {quem.aparelho ? <Smartphone size={14} color={C.textSecondary} />
-                                               : <History size={14} color={C.textSecondary} />}
-                              </span>
-                            : <Avatar nome={quem.nome || meuNome} foto={quem.foto} size={28} />}</div>
-                      )}
-                    </div>
-                    )}
-                    {/* Fora da bolha, e logo abaixo dela: o motivo é sobre a
-                        mensagem, não parte do que foi escrito ao cliente. */}
-                    {m._status === "erro" && (
-                      <MotivoDoErro C={C} m={m}
-                        aoDispensar={m._filaId ? () => dispensarFalha(m) : null} />
-                    )}
-                  </React.Fragment>
-                );
-              })}
+              <ListaDeBolhas
+                {...acoesDaBolha}
+                mensagens={mensagens} C={C} modo={modo} estreito={estreito}
+                conversa={conversa} meuNome={meuNome} equipe={equipe}
+                figurinhas={figurinhas}
+                selecao={selecao} msgHover={msgHover} setMsgHover={setMsgHover}
+                buscaAberta={buscaAberta} buscaConversa={buscaConversa}
+                msgDestacada={msgDestacada} idDivisorNaoLidas={idDivisorNaoLidas}
+                reagindo={reagindo} setReagindo={setReagindo}
+                reagindoTudo={reagindoTudo} setReagindoTudo={setReagindoTudo}
+                rostoAberto={rostoAberto} setRostoAberto={setRostoAberto}
+                menuParaCima={menuParaCima} setMenuParaCima={setMenuParaCima}
+                fimRef={fimRef} inputRef={inputRef} pertoDoFim={pertoDoFim}
+                setSelecao={setSelecao} setRascunho={setRascunho}
+                setEditando={setEditando} setRespondendo={setRespondendo}
+                setModoNota={setModoNota} setEncaminhar={setEncaminhar}
+                setBuscaEncaminhar={setBuscaEncaminhar}
+                setImagemAberta={setImagemAberta} setRetratoAberto={setRetratoAberto}
+                setNotaParaApagar={setNotaParaApagar} />
               <div ref={fimRef} />
             </div>
 
