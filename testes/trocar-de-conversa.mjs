@@ -52,30 +52,50 @@ async function abrir(i) {
 const quantasBolhas = () => page.evaluate(() =>
   document.querySelectorAll("[data-msg-id]").length);
 
-console.log("\nAs três leituras da conversa saem JUNTAS");
-{
-  // Em fila indiana o custo é a soma dos atrasos (3 × 300 = 900ms+); juntas, é
-  // o maior deles (300ms+). A régua fica no meio, com folga dos dois lados.
-  await page.evaluate((ms) => {
-    globalThis.__ATRASO_POR_TABELA = { mensagens: ms, notas: ms, fila_envio: ms };
-  }, ATRASO);
-
+/** Troca da conversa 0 para a 1 e devolve quantos ms levou até as bolhas
+ *  aparecerem. Com `atrasos` valendo `{}`, mede só o custo fixo da troca. */
+async function medirTroca(atrasos) {
+  await page.evaluate((a) => { globalThis.__ATRASO_POR_TABELA = a; }, atrasos);
   await abrir(0);
   await page.waitForTimeout(1600);          // assenta a primeira
-
   const t0 = await page.evaluate(() => performance.now());
   await abrir(1);
   // Espera as bolhas da nova aparecerem.
   await page.waitForFunction(() => document.querySelectorAll("[data-msg-id]").length > 0,
                              null, { timeout: 8000 }).catch(() => {});
   const gasto = await page.evaluate((t) => performance.now() - t, t0);
-
-  console.log(`     abriu em ${gasto.toFixed(0)} ms (atraso de ${ATRASO} ms por tabela)`);
-  ok("abre no tempo de UMA leitura, e não de três",
-     gasto < ATRASO * 2.2,
-     `${gasto.toFixed(0)} ms — três em série dariam mais de ${ATRASO * 3} ms`);
-
   await page.evaluate(() => { globalThis.__ATRASO_POR_TABELA = {}; });
+  return gasto;
+}
+
+console.log("\nAs três leituras da conversa saem JUNTAS");
+{
+  // A RÉGUA É MEDIDA, E NÃO ESCOLHIDA A DEDO.
+  //
+  // Ela era um número fixo — 2,2 vezes o atraso, 660 ms — e isso estava errado
+  // por um motivo que só aparece medindo: TROCAR DE CONVERSA JÁ CUSTA UNS
+  // 350 ms sem atraso nenhum (o clique, o desenho das bolhas, o navegador). O
+  // que a prova compara não é 300 contra 900, é 650 contra 1250 — e a régua
+  // caía a dez milissegundos do valor bom. Reprovava sozinha em uma execução
+  // de cada três, com o código CERTO, nas duas versões. Uma prova assim não
+  // diz nada: quando reprovar de verdade, ninguém vai acreditar nela.
+  //
+  // Agora o custo fixo é medido nesta mesma máquina, aqui e agora, e a régua
+  // fica no MEIO dos dois mundos possíveis. Numa máquina lenta os dois lados
+  // sobem juntos e a separação continua valendo.
+  const fixo = await medirTroca({});
+  const juntas = fixo + ATRASO;             // o maior dos três atrasos
+  const emFila = fixo + ATRASO * 3;         // a soma deles
+  const regua = (juntas + emFila) / 2;
+
+  const gasto = await medirTroca({ mensagens: ATRASO, notas: ATRASO, fila_envio: ATRASO });
+
+  console.log(`     custo fixo da troca: ${fixo.toFixed(0)} ms`);
+  console.log(`     abriu em ${gasto.toFixed(0)} ms (atraso de ${ATRASO} ms por tabela)`);
+  console.log(`     juntas dariam ~${juntas.toFixed(0)} ms, em fila ~${emFila.toFixed(0)} ms, régua ${regua.toFixed(0)} ms`);
+  ok("abre no tempo de UMA leitura, e não de três",
+     gasto < regua,
+     `${gasto.toFixed(0)} ms — três em série dariam uns ${emFila.toFixed(0)} ms`);
 }
 
 console.log("\nEnquanto a nova carrega, a ANTERIOR não fica na tela");

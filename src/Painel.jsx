@@ -94,6 +94,16 @@ function nomeDoContato(contato) {
 let TEM_NOME_DO_CADASTRO = true;
 // `conversas.arquivada` também é de um SQL que pode não ter sido rodado.
 let TEM_ARQUIVADA = true;
+// A contagem dos selos numa ida só (`nao_lidas_por_telefone`) é outro SQL. Onde
+// ele não foi rodado, o painel conta telefone a telefone como sempre contou.
+let TEM_CONTAGEM_NO_BANCO = true;
+// Quanto tempo os pedidos de recontagem dos selos esperam para virar UM só, e
+// o teto para a rajada que não acaba. Ver o comentário longo em
+// `carregarNaoLidasPorAdv`. Aqui fora porque são fixos: dentro do componente
+// seriam recriados a cada desenho, e o embrulho que os usa tem de ter
+// identidade fixa para não derrubar o canal de tempo real.
+const ESPERA_DOS_SELOS = 400;    // junta o que chegar dentro deste tempo
+const TETO_DOS_SELOS = 2000;     // e conta assim mesmo depois deste
 const colunasDoContato = (base) =>
   // `vantoro_cliente_id` vem do MESMO SQL das frentes que trouxe `vantoro_nome`,
   // então herda a mesma tolerância: onde um existe, o outro existe. É por ele
@@ -127,6 +137,15 @@ function faltaColuna(erro) {
   if (!erro) return false;
   if (SEM_ESSA_COLUNA.includes(String(erro.code))) return true;
   return /does not exist|could not find|schema cache/i.test(String(erro.message || ""));
+}
+
+// FALTA DE FUNÇÃO É OUTRA COISA DE FALTA DE COLUNA, e a diferença importa:
+// PGRST202 quer dizer "o SQL não foi rodado" e é permanente até alguém rodá-lo;
+// qualquer outro erro é passageiro e não pode desligar nada.
+function faltaAFuncao(erro) {
+  if (!erro) return false;
+  return /PGRST202/.test(String(erro.code || ""))
+    || /could not find the function/i.test(String(erro.message || ""));
 }
 
 const RECURSOS = { atendendo: true, digitando: true };
@@ -2177,8 +2196,54 @@ export default function Painel({ sessao }) {
   // Agora é uma contagem por telefone, com `head: true`: o banco responde só o
   // número, sem linha nenhuma. São poucas requisições minúsculas em vez de uma
   // enorme, e o resultado é exato em qualquer tamanho de base.
-  const carregarNaoLidasPorAdv = useCallback(async () => {
+  //
+  // E AGORA UMA IDA SÓ, em vez de uma por telefone.
+  //
+  // "Poucas requisições minúsculas" eram QUINZE: treze telefones mais duas das
+  // arquivadas. Cada uma é uma viagem inteira à internet — DNS, TLS, fila do
+  // PostgREST — e a viagem custa muito mais que a contagem. Somar por telefone
+  // é exatamente o que um `group by` faz numa passada só, então a soma passou
+  // para o banco e o painel recebe o mapa pronto.
+  //
+  // A função pode não existir (é um SQL que alguém precisa rodar). Nesse caso o
+  // caminho antigo continua aqui, inteiro, e assume — uma vez por sessão, sem
+  // ficar perguntando.
+  const contarNaoLidasAgora = useCallback(async () => {
     if (!advogados.length) return;
+
+    if (TEM_CONTAGEM_NO_BANCO) {
+      // A LISTA DE TELEFONES VAI JUNTO, e não por economia: `advogados` já é o
+      // que ESTA pessoa tem permissão de ver. Sem mandá-la, a resposta traria a
+      // contagem de telefones que ela não abre — e a resposta chega no
+      // navegador, onde qualquer um lê.
+      const { data, error } = await supabase.rpc("nao_lidas_por_telefone", {
+        p_advogado: advogadoId ? String(advogadoId) : null,
+        p_telefones: advogados.map((a) => String(a.id)),
+      });
+      if (!error && data) {
+        const vindo = data.por_telefone || {};
+        const mapa = {};
+        // ZERO EXPLÍCITO PARA QUEM NÃO APARECEU. O `group by` não devolve linha
+        // para telefone sem nenhuma conversa não lida — e telefone ausente do
+        // mapa é, na tela, "não sei", que é outra coisa de "não há ninguém
+        // esperando". Aqui sabemos: a consulta olhou todos.
+        for (const a of advogados) mapa[a.id] = Number(vindo[String(a.id)] || 0);
+        setNaoLidasPorAdv(mapa);
+        const arq = data.arquivadas;
+        setArquivadasNoBanco(arq
+          ? { total: Number(arq.total || 0), naoLidas: Number(arq.nao_lidas || 0) }
+          : {});
+        return;
+      }
+      // Só desce para o caminho antigo quando a função NÃO EXISTE. Erro de rede
+      // é passageiro: apagar os selos por causa dele mostraria "nenhum recado
+      // esperando" num momento em que ninguém sabe se há.
+      if (!faltaAFuncao(error)) return;
+      TEM_CONTAGEM_NO_BANCO = false;
+      console.info('Zorvin: a função "nao_lidas_por_telefone" não existe neste banco — '
+        + "contando telefone a telefone. Rode o SQL e recarregue para ficar mais rápido.");
+    }
+
     const contar = (a) => {
       let q = supabase.from("conversas")
         .select("id", { count: "exact", head: true })
@@ -2230,7 +2295,54 @@ export default function Painel({ sessao }) {
     // número velho na tela é indistinguível de número certo.
   }, [advogados, advogadoId]);
 
-  useEffect(() => { carregarNaoLidasPorAdv(); }, [carregarNaoLidasPorAdv]);
+  // UMA CONTAGEM POR RAJADA, E NÃO UMA POR MENSAGEM.
+  //
+  // Esta era a maior conta do painel, e ela não aparecia em lugar nenhum: os
+  // selos eram recontados a cada mensagem que chega — pelo tratador de INSERT
+  // em `mensagens` E pelo de UPDATE em `conversas`, que o Supabase manda
+  // juntos, então DUAS vezes por mensagem.
+  //
+  // Medido na bancada, com treze telefones: 31 idas ao banco por mensagem
+  // recebida, e a conta é linear — vinte mensagens numa rajada custavam 620
+  // consultas, em cada aba aberta do escritório. Num horário de movimento é
+  // isso que engasga a tela: não há consulta lenta, há uma multidão delas.
+  //
+  // O remédio é juntar. Um pedido de recontagem não conta nada na hora: ele
+  // arma um relógio curto, e qualquer pedido que chegue antes de o relógio
+  // tocar apenas o rearma. A rajada inteira vira UMA contagem, com o número
+  // final — que é o único que interessa, porque os intermediários seriam
+  // substituídos antes de alguém conseguir lê-los.
+  //
+  // O TETO existe para a rajada que não acaba: sem ele, mensagens chegando de
+  // 300 em 300 ms rearmariam o relógio para sempre e o selo nunca mudaria.
+  const relogioDosSelos = useRef(null);
+  const rajadaComecouEm = useRef(0);
+  // A função de contar muda de identidade quando muda o telefone aberto ou a
+  // lista de telefones. Guardada num `ref`, o relógio sempre dispara a ATUAL —
+  // e o embrulho abaixo pode ter identidade fixa, o que evita que o canal de
+  // tempo real seja desmontado e remontado a cada mudança de telefone.
+  const contarRef = useRef(contarNaoLidasAgora);
+  useEffect(() => { contarRef.current = contarNaoLidasAgora; }, [contarNaoLidasAgora]);
+
+  const carregarNaoLidasPorAdv = useCallback(() => {
+    const agora = Date.now();
+    if (!relogioDosSelos.current) rajadaComecouEm.current = agora;
+    else clearTimeout(relogioDosSelos.current);
+    const falta = TETO_DOS_SELOS - (agora - rajadaComecouEm.current);
+    relogioDosSelos.current = setTimeout(() => {
+      relogioDosSelos.current = null;
+      contarRef.current?.();
+    }, Math.max(0, Math.min(ESPERA_DOS_SELOS, falta)));
+  }, []);
+
+  // O relógio pendente morre com a tela: sem isto ele acorda depois de o
+  // componente sair e chama `setState` num lugar que não existe mais.
+  useEffect(() => () => { if (relogioDosSelos.current) clearTimeout(relogioDosSelos.current); }, []);
+
+  // A PRIMEIRA contagem é direta, sem esperar o relógio: aqui não há rajada
+  // nenhuma para juntar, e 400 ms de selo vazio na abertura seriam 400 ms em
+  // que a tela afirma que não há ninguém esperando.
+  useEffect(() => { contarNaoLidasAgora(); }, [contarNaoLidasAgora]);
 
   // ---- Mensagens rápidas (respostas prontas, compartilhadas pela equipe) ----
   const carregarRapidas = useCallback(async () => {

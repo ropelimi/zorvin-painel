@@ -26,6 +26,26 @@ const LIMITE_LINHAS = 1000;
 
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** Quanto esta tabela demora para responder, respeitando o atraso uniforme que
+ *  a perfilagem liga. Numa função só porque a chamada de FUNÇÃO no banco
+ *  (`rpc`) tem de custar o mesmo que a leitura da tabela que ela substitui —
+ *  senão a medição diria que trocar quinze consultas por uma é de graça. */
+function atrasoDe(tabela) {
+  const uniforme = globalThis.__ATRASO_UNIFORME;
+  if (typeof uniforme === "number") return uniforme;
+  if (tabela === "conversas") return ATRASO_CONVERSAS;
+  if (tabela === "mensagens") return ATRASO_MENSAGENS;
+  return 0;
+}
+
+/** Registra uma ida ao banco no diário da perfilagem, e devolve como fechá-la. */
+function anotarNoDiario(tabela) {
+  if (!globalThis.__DIARIO) return null;
+  const marca = { tabela, inicio: performance.now() };
+  globalThis.__DIARIO.push(marca);
+  return marca;
+}
+
 const DEPARTAMENTOS = [
   { id: 1, nome: "Interno", slug: "interno", cor: "#a06cd5", ordem: 1, ativo: true },
   { id: 2, nome: "Comercial", slug: "comercial", cor: "#8a8f98", ordem: 2, ativo: true },
@@ -1174,6 +1194,19 @@ function consulta(tabela) {
     // intenção e executa no fim, depois de os filtros terem sido aplicados.
     delete() { apagando = true; return eu; },
     async then(resolver) {
+      // O DIÁRIO DAS IDAS AO BANCO — só para medir, e só quando alguém liga.
+      //
+      // Sem ele não há como responder "por que está lento": as suspeitas são
+      // sempre plausíveis (consulta pesada, muitas linhas, rede) e as três
+      // pedem consertos diferentes. Aqui fica registrado o que foi pedido,
+      // QUANDO começou e quando voltou — e é a sobreposição desses intervalos
+      // que separa "três idas em fila indiana" de "três idas juntas".
+      const marca = anotarNoDiario(tabela);
+      // O ORIGINAL FICA GUARDADO ANTES DE TROCAR. Reatribuir `resolver` a uma
+      // função que chama `resolver` é a função chamando a si mesma — pilha
+      // estourada na primeira consulta.
+      const original = resolver;
+      resolver = (r) => { if (marca) marca.fim = performance.now(); return original(r); };
       // A vista que ainda não foi criada responde como o PostgREST responde:
       // com erro, e não com uma lista vazia. São coisas diferentes — "não
       // existe" e "existe e está vazia" — e a tela precisa distinguir as duas.
@@ -1181,8 +1214,16 @@ function consulta(tabela) {
         return resolver({ data: null, count: null,
           error: { code: "42P01", message: `relation "public.${tabela}" does not exist` } });
       }
-      if (tabela === "conversas") await espera(ATRASO_CONVERSAS);
-      if (tabela === "mensagens") await espera(ATRASO_MENSAGENS);
+      // O ATRASO PADRÃO PODE SER TROCADO POR UM ÚNICO, IGUAL PARA TODAS.
+      //
+      // Os dois abaixo existem para a prova de desempenho ter o que medir, e
+      // são bem diferentes entre si (700 ms contra 250 ms). Isso é ótimo para
+      // aquela prova e péssimo para PERFILAR: com uma tabela custando três
+      // vezes a outra, o que aparece no perfil é o atraso escolhido aqui, e não
+      // a forma do caminho. Com um atraso igual para todas, o que sobressai é
+      // a estrutura — quantas idas, e quantas esperam a anterior.
+      const atraso = atrasoDe(tabela);
+      if (atraso) await espera(atraso);
       // ATRASO SOB ENCOMENDA, POR TABELA. Serve para medir se duas leituras
       // saem JUNTAS ou uma atrás da outra: em fila indiana o custo é a soma
       // dos atrasos; juntas, é o maior deles. Sem isto não há como distinguir
@@ -1594,6 +1635,46 @@ export const supabase = {
       return { data: null, error: null };
     }
 
+    // OS SELOS DE TODOS OS TELEFONES NUMA IDA SÓ.
+    //
+    // A de verdade é um `group by advogado_id` com as arquivadas de fora, mais
+    // as duas contas das arquivadas do telefone aberto. Aqui a mesma coisa em
+    // cima das linhas da bancada — devolvendo as chaves como TEXTO, que é o que
+    // o `json_object_agg` faz com um id de qualquer tipo.
+    if (nome === "nao_lidas_por_telefone") {
+      if (globalThis.__SEM_CONTAGEM_NO_BANCO) {
+        return { data: null, error: { code: "PGRST202", message: "Could not find the function public.nao_lidas_por_telefone" } };
+      }
+      const marca = anotarNoDiario("conversas");
+      await espera(atrasoDe("conversas"));
+      // O RECORTE POR PERMISSÃO TAMBÉM É IMITADO AQUI. Uma bancada que
+      // devolvesse todos os telefones deixaria passar o dia em que o painel
+      // parasse de mandar a lista — e ninguém veria, porque a tela só desenha
+      // os telefones que ela mesma já conhece.
+      const podeVer = Array.isArray(args && args.p_telefones)
+        ? new Set(args.p_telefones.map(String)) : null;
+      const por = {};
+      for (const c of TABELAS.conversas) {
+        if (!(Number(c.nao_lidas) > 0) || c.arquivada === true) continue;
+        if (c.advogado_id == null) continue;
+        const k = String(c.advogado_id);
+        if (podeVer && !podeVer.has(k)) continue;
+        por[k] = (por[k] || 0) + 1;
+      }
+      const alvo = args && args.p_advogado;
+      let arquivadas = null;
+      if (alvo != null) {
+        const dele = TABELAS.conversas.filter(
+          (c) => String(c.advogado_id) === String(alvo) && c.arquivada === true);
+        arquivadas = {
+          total: dele.length,
+          nao_lidas: dele.filter((c) => Number(c.nao_lidas) > 0).length,
+        };
+      }
+      if (marca) marca.fim = performance.now();
+      return { data: { por_telefone: por, arquivadas }, error: null };
+    }
+
     if (nome === "atendentes_do_telefone" || nome === "conversas_por_atendente") {
       if (globalThis.__SEM_FILTRO_DE_ATENDENTE) {
         return { data: null, error: { code: "PGRST202", message: `Could not find the function public.${nome}` } };
@@ -1803,6 +1884,12 @@ export const supabase = {
   // Agora os tratadores ficam guardados, e a prova dispara o evento pelo
   // mesmo caminho por onde o Supabase dispararia.
   channel: () => {
+    // QUANTAS VEZES O PAINEL SE INSCREVEU. Um canal de tempo real desmontado e
+    // remontado não é de graça: no Supabase de verdade a nova inscrição leva
+    // uma ida e volta para valer, e o `postgres_changes` não repete o que
+    // passou — o que chegar nessa fresta não chega nunca. Sem este número não
+    // há como provar que trocar de telefone parou de derrubar o canal.
+    globalThis.__CANAIS = (globalThis.__CANAIS || 0) + 1;
     const canal = {
       on: (tipo, filtro, funcao) => { OUVINTES.push({ tipo, filtro, funcao }); return canal; },
       subscribe: () => canal,

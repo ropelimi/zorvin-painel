@@ -24,10 +24,17 @@ const ENDERECO = `http://127.0.0.1:${PORTA}/`;
 // Agora basta criar `testes/nome.mjs` para ele entrar. Nada a lembrar.
 const AJUDANTES = new Set(["rodar", "navegador"]);
 
-// A ÚNICA que precisa do build de produção. `desempenho` mede latência, e o
-// React de desenvolvimento gasta em verificações que não existem em produção —
-// medir ali seria medir o instrumento, não o painel.
-const NO_BUILD_DE_PRODUCAO = new Set(["desempenho"]);
+// AS QUE PRECISAM DO BUILD DE PRODUÇÃO. `desempenho` mede latência, e o React
+// de desenvolvimento gasta em verificações que não existem em produção — medir
+// ali seria medir o instrumento, não o painel.
+//
+// `selos-em-rajada` CONTA IDAS AO BANCO, e ali a diferença é ainda mais
+// traiçoeira: em desenvolvimento o React chama todo efeito DUAS vezes, de
+// propósito, para caçar efeito que não sabe ser repetido. Quem conta consultas
+// vê o dobro delas e conclui que há uma duplicação onde há uma ferramenta de
+// desenvolvimento. Foi exatamente essa armadilha que quase virou o conserto de
+// um defeito que não existia.
+const NO_BUILD_DE_PRODUCAO = new Set(["desempenho", "selos-em-rajada"]);
 
 // A ORDEM É A DO ALFABETO, e é de propósito: qualquer outra seria uma opinião
 // que envelhece. Cada prova sobe o seu próprio navegador e limpa o que sujou,
