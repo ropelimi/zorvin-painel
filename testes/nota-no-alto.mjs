@@ -49,20 +49,14 @@ const onde = (sel) => page.evaluate((s) => {
 
 console.log("\nCom a nota fechada, a tela é a de sempre");
 {
-  ok("o botão da nota está no cabeçalho", await page.locator("[data-nota-interna]").count() > 0);
+  ok("o botão da nota está na barra de escrever", await page.locator("[data-nota-interna]").count() > 0);
   ok("e a caixa de baixo é a de MENSAGEM", await page.locator(CAMPO_MSG).count() > 0);
   ok("não há caixa de nota nenhuma aberta", await page.locator(CAMPO_NOTA).count() === 0);
-  // O BOTÃO SAIU DE BAIXO. Deixá-lo nos dois lugares seria pior do que não ter
-  // mexido: dois caminhos para o mesmo estado, um deles no meio dos botões de
-  // mandar — que é exatamente a companhia que confundia.
-  const naBarraDeBaixo = await page.evaluate((s) => {
-    const campo = document.querySelector(s);
-    if (!campo) return -1;
-    const barra = campo.closest("div[style*='display: flex']")?.parentElement;
-    return barra ? barra.querySelectorAll("[data-nota-interna]").length : -1;
-  }, CAMPO_MSG);
-  ok("e o botão da nota NÃO está mais na barra de baixo", naBarraDeBaixo === 0,
-     `achei ${naBarraDeBaixo} ali`);
+  // UM BOTÃO SÓ, e não dois. Dois caminhos para o mesmo estado é o começo de
+  // duas telas divergirem: um deles deixa de ser mexido e vira um botão que
+  // faz outra coisa.
+  ok("e há UM botão só, não dois", await page.locator("[data-nota-interna]").count() === 1,
+     `achei ${await page.locator("[data-nota-interna]").count()}`);
 }
 
 console.log("\nClicar no ícone abre a caixa da nota EM CIMA da conversa");
@@ -122,33 +116,42 @@ console.log("\nA nota escrita ali é gravada como nota, e não como mensagem");
 
 console.log("\nDá para voltar para a mensagem, pelos dois caminhos");
 {
+  // O BOTÃO VIAJA JUNTO COM A CAIXA. Ele faz parte dela, e a caixa inteira
+  // sobe — então com a nota aberta ele está lá em cima, aceso, dentro do painel
+  // âmbar. É o certo: quem apertou o botão o encontra ao lado do que escreveu,
+  // e não precisa procurar a saída do outro lado da tela.
+  const dentroDoPainel = await page.locator("[data-nota-no-alto] [data-nota-interna]").count();
+  ok("com a nota aberta, o botão está DENTRO do painel, junto da caixa",
+     dentroDoPainel === 1, `achei ${dentroDoPainel}`);
+  ok("e ele se anuncia como ligado, em vez de deixar isso para a cor",
+     (await page.locator("[data-nota-interna]").first().getAttribute("aria-pressed")) === "true");
+
   await page.locator("[data-fechar-nota]").first().click();
   await page.waitForTimeout(1000);
   ok("o X do painel fecha a nota", await page.locator("[data-nota-no-alto]").count() === 0);
   ok("e a caixa de mensagem volta ao seu lugar", await page.locator(CAMPO_MSG).count() > 0);
+  ok("e o botão da nota volta com ela", await page.locator("[data-nota-interna]").count() > 0);
 
   await page.locator("[data-nota-interna]").first().click();
   await page.waitForTimeout(900);
   ok("o mesmo ícone reabre", await page.locator(CAMPO_NOTA).count() > 0);
-  await page.locator("[data-nota-interna]").first().click();
+  await page.getByText("Voltar para a mensagem").first().click();
   await page.waitForTimeout(900);
-  ok("e clicar nele de novo também fecha", await page.locator(CAMPO_MSG).count() > 0);
+  ok("e o botão da tarja de baixo também fecha", await page.locator(CAMPO_MSG).count() > 0);
 }
 
-console.log("\nNo celular, onde o cabeçalho não cabe os botões");
+console.log("\nNo celular");
 {
-  // O botão subiu para um cabeçalho que no celular NÃO É DESENHADO — tudo mora
-  // no menu ⋮. Sem uma linha lá, mover o botão teria TIRADO a nota interna do
-  // celular, e ninguém veria isso acontecer.
+  // O botão fica na barra de escrever, que no celular é desenhada igual — então
+  // ele continua ao alcance sem precisar de nada no menu ⋮. O que precisa ser
+  // conferido aqui é o PAINEL: ele é novo, e é largo.
   await page.setViewportSize({ width: 390, height: 780 });
   await page.waitForTimeout(1200);
-  await page.locator('[aria-label="Mais opções desta conversa"]').first().click();
-  await page.waitForTimeout(600);
-  const noMenu = await page.locator("[data-menu-conversa] [data-nota-interna]").count();
-  ok("a nota interna está no menu ⋮ do celular", noMenu > 0);
+  const noCelular = await page.locator("[data-nota-interna]").count();
+  ok("o botão da nota continua à mão no celular", noCelular > 0);
 
-  if (noMenu > 0) {
-    await page.locator("[data-menu-conversa] [data-nota-interna]").first().click();
+  if (noCelular > 0) {
+    await page.locator("[data-nota-interna]").first().click();
     await page.waitForTimeout(1200);
     ok("e abre a mesma caixa, no alto", await page.locator("[data-nota-no-alto]").count() > 0);
     const largura = await page.evaluate(() => {

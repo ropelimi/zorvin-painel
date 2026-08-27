@@ -338,6 +338,59 @@ console.log("\nBusca por nome");
   await page.evaluate(() => { globalThis.__SEM_BUSCA_NO_BANCO = false; });
 }
 
+// ==================================================================
+//  14. A FUNÇÃO DO BANCO TROPEÇA — E A BUSCA NÃO DESISTE
+// ==================================================================
+//
+// Relato do escritório, com a tela na mão: procurar "rodrigo alves sousa"
+// devolvia SÓ "Não consegui completar a busca agora. Tente de novo em alguns
+// segundos." Nenhum resultado. Nem os que o caminho antigo teria achado sem
+// dificuldade nenhuma — o nome está em `contatos`, é uma consulta simples.
+//
+// A busca só descia para o caminho antigo quando a função NÃO EXISTIA
+// (PGRST202). Qualquer outro tropeço — consulta que estourou o tempo, banco
+// ocupado, rede caindo — mostrava o aviso e parava ali.
+//
+// E numa base grande o tropeço tem nome: a função olha o texto de TODAS as
+// mensagens, e é justamente ela que estoura o tempo primeiro. Uma busca por
+// nome em `contatos`, ao lado, passa folgada. Ou seja: a tela dizia "não
+// consegui" tendo a resposta a uma consulta de distância.
+//
+// Aqui só a FUNÇÃO cai. As tabelas continuam de pé, como em produção.
+{
+  console.log("\nA função do banco tropeça, e a busca não desiste");
+  // RECARREGA A PÁGINA ANTES, e isto não é zelo: é o que faz esta prova provar
+  // alguma coisa.
+  //
+  // A seção anterior liga `__SEM_BUSCA_NO_BANCO`, e o painel responde a isso
+  // desligando o caminho rápido PARA O RESTO DA SESSÃO — de propósito, porque
+  // "a função não existe" é permanente até alguém rodar o SQL. Só que a seção
+  // seguinte herdava esse desligamento: a função nunca era chamada, o tropeço
+  // nunca acontecia, e a conferência passava sem tocar no código que ela existe
+  // para vigiar. Medido: com o defeito recolocado de propósito, ela continuava
+  // verde.
+  await page.addInitScript(() => { globalThis.__QUEBRAR_SO_A_FUNCAO_DA_BUSCA = true; });
+  await page.reload();
+  await page.waitForSelector("[data-conversa-nome]");
+  await page.waitForTimeout(2000);
+  await trocarTelefone("Acordos 1");
+
+  const achados = await procurar("JOSEFA");
+  ok("com a função fora do ar, a busca ainda acha pelo nome",
+     achados.some((n) => /JOSEFA/i.test(n || "")),
+     `veio: ${JSON.stringify(achados.slice(0, 5))} — antes vinha vazio, com um aviso no lugar`);
+
+  // E O AVISO NÃO PODE MENTIR. Com resultados na tela, dizer "não consegui
+  // completar a busca" faz quem lê fechar a busca e ir procurar de outro jeito
+  // — tendo a resposta na frente.
+  const texto = await page.evaluate(() => document.body.innerText);
+  ok("e não diz que não conseguiu, tendo achado",
+     !/Não consegui completar a busca/i.test(texto),
+     "o aviso de fracasso apareceu junto com os resultados");
+
+  await procurar("");
+}
+
 await ctx.close();
 await nav.close();
 console.log(`\n${feitas - falhas}/${feitas} conferências passaram`);

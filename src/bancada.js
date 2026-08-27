@@ -1772,7 +1772,16 @@ export const supabase = {
       if (globalThis.__SEM_BUSCA_NO_BANCO) {
         return { data: null, error: { code: "PGRST202", message: `Could not find the function public.${nome}` } };
       }
-      if (globalThis.__QUEBRAR_BUSCA) {
+      // SÓ A FUNÇÃO CAI, e as consultas comuns continuam de pé.
+      //
+      // `__QUEBRAR_BUSCA` derruba tudo — a função E as tabelas — e isso é um
+      // caso real, mas não é O caso: numa base grande a FUNÇÃO estoura o tempo
+      // (ela olha as mensagens todas) enquanto uma busca por nome em `contatos`
+      // passa folgada. Foi assim que o escritório viu a tela dizer "não
+      // consegui" tendo a resposta a uma consulta de distância.
+      //
+      // Sem poder derrubar só a função, esse caminho não tem como ser provado.
+      if (globalThis.__QUEBRAR_BUSCA || globalThis.__QUEBRAR_SO_A_FUNCAO_DA_BUSCA) {
         return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } };
       }
       const semAcento = (t) => String(t ?? "").normalize("NFD")
