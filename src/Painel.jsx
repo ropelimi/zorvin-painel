@@ -4996,9 +4996,44 @@ export default function Painel({ sessao }) {
     numerada: ListOrdered, marcadores: List, citar: Quote,
   };
 
+  // A ORDEM DE ENVIO É A ORDEM EM QUE A PESSOA APERTOU ENTER.
+  //
+  // Relato do escritório: "enviei 3 mensagens, que chegaram a ser enviadas mas
+  // fora de ordem". Era isto.
+  //
+  // Cada Enter chamava `enviar()`, e `enviar()` grava a linha na fila com uma
+  // ida ao banco. Três Enters seguidos eram TRÊS IDAS AO MESMO TEMPO, cada uma
+  // correndo pela internet por conta própria. Quem chegasse primeiro ganhava o
+  // `criado_em` mais antigo — e é por `criado_em` que a ponte despacha. Ou seja:
+  // a ordem das mensagens no celular do cliente era a ordem em que os pedidos
+  // ganharam a corrida da rede, e não a ordem em que a pessoa escreveu.
+  //
+  // Num 4G do fórum, com uma ida demorando 300 ms e a seguinte 80 ms, isso
+  // acontece o tempo todo. E lido do outro lado, "pode vir amanhã às 14h" antes
+  // de "consegui remarcar sua audiência" é uma conversa diferente.
+  //
+  // Agora as gravações saem uma de cada vez, em fila. A BOLHA CONTINUA
+  // APARECENDO NA HORA — quem espera é só a linha do banco, e a espera é a de
+  // uma ida à rede. Serializar aqui, e não em `enviar()`, é de propósito: todo
+  // caminho de envio passa por esta função (texto, áudio, arquivo, resposta
+  // pronta, encaminhar), e uma fila que só valesse para o texto deixaria a
+  // ordem torta na primeira mistura.
+  const filaDoNavegador = useRef(Promise.resolve());
+  function emFila(tarefa) {
+    // O `catch` é o que mantém a fila viva: sem ele, um envio que falha deixa a
+    // corrente rejeitada e TODOS os seguintes são descartados sem sair.
+    const proxima = filaDoNavegador.current.then(tarefa, tarefa);
+    filaDoNavegador.current = proxima.then(() => {}, () => {});
+    return proxima;
+  }
+
   // Insere na fila de envio. Se a coluna "enviado_por" ainda não existir no
   // banco (SQL não rodou), tenta de novo sem ela — o envio nunca trava por isso.
-  async function inserirNaFila(payload) {
+  function inserirNaFila(payload) {
+    return emFila(() => gravarNaFila(payload));
+  }
+
+  async function gravarNaFila(payload) {
     let { error } = await supabase.from("fila_envio").insert(payload);
     // Base sem o SQL de agosto/2026: tira só o id e tenta de novo — o nome
     // ainda pode existir, e desistir dos dois de uma vez perderia informação

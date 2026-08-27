@@ -1043,6 +1043,7 @@ function consulta(tabela) {
   // cortava a lista de CONVERSAS em uma. Uma consulta que o painel usa desde a
   // prévia do áudio nunca foi exercitada aqui de verdade.
   let embutidas = [], limitesEmbutidos = {}, ordensEmbutidas = {};
+  let gravacao = null;   // insert/upsert pendente, aplicado depois do atraso
   const eu = {
     // `select("id", { count: "exact", head: true })` — o jeito de pedir só a
     // CONTAGEM. A bancada precisa saber disso desde que os selos de não lidas
@@ -1136,8 +1137,21 @@ function consulta(tabela) {
     // que o painel não tem. Além de encadear, estas guardam a linha: sem isso
     // o contato criado pelo link não existia na consulta seguinte, e o teste
     // do link nunca chegava ao fim.
-    insert(reg) { return eu.gravar(reg); },
-    upsert(reg, opc) { return eu.gravar(reg, opc && opc.onConflict); },
+    // GRAVA SÓ NO FIM, como o `update` e o `delete` logo abaixo — e pelo mesmo
+    // motivo, que aqui é ainda mais grave.
+    //
+    // `insert` mexia na tabela NO INSTANTE DA CHAMADA, antes do atraso. Com
+    // isso a bancada gravava sempre na ordem em que o painel PEDIU, fizesse a
+    // rede o que fizesse — e é justamente essa a diferença que se quer medir.
+    // Um banco de verdade grava quando o pedido CHEGA: três envios disparados
+    // juntos entram na ordem em que ganham a corrida da rede, não na ordem em
+    // que a pessoa apertou Enter.
+    //
+    // Foi assim que a bancada deixou passar o defeito relatado pelo escritório
+    // ("enviei 3 mensagens, chegaram fora de ordem"): ela não tinha como
+    // reproduzi-lo. Uma bancada que não consegue errar não consegue provar nada.
+    insert(reg) { gravacao = { reg, porOnde: null }; return eu; },
+    upsert(reg, opc) { gravacao = { reg, porOnde: (opc && opc.onConflict) || null }; return eu; },
     gravar(reg, porOnde = null) {
       const novos = (Array.isArray(reg) ? reg : [reg]).map((r, i) => ({
         id: r.id || `${tabela}-${(TABELAS[tabela] || []).length + i + 1}`, ...r,
@@ -1228,8 +1242,19 @@ function consulta(tabela) {
       // saem JUNTAS ou uma atrás da outra: em fila indiana o custo é a soma
       // dos atrasos; juntas, é o maior deles. Sem isto não há como distinguir
       // as duas coisas numa bancada que responde na hora.
-      const extra = (globalThis.__ATRASO_POR_TABELA || {})[tabela];
+      //
+      // E PODE SER UMA LISTA, consumida uma por ida: `{ fila_envio: [300, 20, 20] }`
+      // faz a primeira gravação demorar 300 ms e as duas seguintes 20 ms. É a
+      // instabilidade da rede de verdade — num 4G do fórum uma ida demora 300 ms
+      // e a seguinte 80 —, e é ela que decide quem chega primeiro quando três
+      // pedidos saem juntos. Um atraso IGUAL para todas nunca inverte nada, e
+      // uma bancada que nunca inverte não prova que a ordem foi mantida.
+      const encomendado = (globalThis.__ATRASO_POR_TABELA || {})[tabela];
+      const extra = Array.isArray(encomendado)
+        ? (encomendado.length > 1 ? encomendado.shift() : encomendado[0])
+        : encomendado;
       if (extra) await espera(extra);
+      if (gravacao) eu.gravar(gravacao.reg, gravacao.porOnde);
       if (patch) linhas.forEach((l) => Object.assign(l, patch));
       if (apagando) {
         const tab = TABELAS[tabela] || [];
