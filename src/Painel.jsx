@@ -6499,15 +6499,38 @@ export default function Painel({ sessao }) {
           return;
         }
 
-        // Função ainda não existe neste banco: segue pelo caminho antigo, uma
-        // vez só — não adianta perguntar de novo a cada tecla.
-        if (/PGRST202/.test(error.code || "") || /Could not find the function/i.test(error.message || "")) {
-          setTemBuscaNoBanco(false);
-        } else {
-          setErroBusca("Não consegui completar a busca agora. Tente de novo em alguns segundos.");
-          setBuscando(false);
-          return;
-        }
+        // A FUNÇÃO DO BANCO FALHOU. E daqui em diante NÃO SE DESISTE.
+        //
+        // Relato do escritório: procurar "rodrigo alves sousa" devolvia só
+        // "Não consegui completar a busca agora" — nenhum resultado, nem os que
+        // o caminho antigo teria achado sem dificuldade nenhuma.
+        //
+        // Eram dois problemas na mesma linha:
+        //
+        //  1. A BUSCA MORRIA EM VEZ DE DESCER. Só a FALTA da função (PGRST202)
+        //     levava ao caminho antigo; qualquer outro tropeço — uma consulta
+        //     que estourou o tempo, uma queda de rede, o banco ocupado —
+        //     mostrava o aviso e parava ali. Mas o caminho antigo é OUTRA
+        //     consulta, mais simples, e na maioria desses tropeços ela passa.
+        //     Desistir sem tentar é jogar fora a resposta que estava à mão.
+        //
+        //  2. O MOTIVO SUMIA. "Tente de novo em alguns segundos" é a mesma
+        //     frase para "o SQL não foi rodado", "a consulta demorou demais" e
+        //     "a internet caiu" — três coisas com consertos diferentes. Sem o
+        //     código do erro em lugar nenhum, descobrir qual delas era exigia
+        //     adivinhar. Agora ele vai para o console, com nome e sobrenome.
+        //
+        // `temBuscaNoBanco` só é DESLIGADO quando a função não existe: isso é
+        // permanente até alguém rodar o SQL. Um tropeço passageiro não pode
+        // aposentar o caminho rápido para o resto da sessão.
+        const naoExiste = /PGRST202/.test(error.code || "")
+          || /Could not find the function/i.test(error.message || "");
+        console.info(`Zorvin: a busca no banco falhou (${error.code || "sem código"}: `
+          + `${error.message || "sem mensagem"}). `
+          + (naoExiste ? "Rode o SQL da busca para ela ficar mais rápida e mais completa."
+                       : "Tentando pelo caminho antigo."));
+        if (naoExiste) setTemBuscaNoBanco(false);
+        // Nos dois casos, segue para o caminho antigo, logo abaixo.
       }
 
       // A vírgula e os parênteses separam condições dentro de um `or` do
@@ -6518,7 +6541,15 @@ export default function Painel({ sessao }) {
       // O erro do banco não pode mais ser engolido. Era ele que transformava
       // uma consulta que estourou o tempo numa lista vazia — e lista vazia é
       // uma resposta, não um aviso.
-      let falhou = false;
+      // O QUE FALHOU, e não só QUE falhou. As duas metades da busca — os nomes
+      // e o que foi DITO nas conversas — têm consertos diferentes e pesos
+      // diferentes: sem os nomes não se acha ninguém; sem as mensagens ainda se
+      // acha por nome, e o certo é mostrar o que veio e dizer o que faltou.
+      let falhouNome = false, falhouMensagem = false;
+      const contarFalha = (onde, erro) => {
+        console.info(`Zorvin: a busca por ${onde} falhou `
+          + `(${(erro && erro.code) || "sem código"}: ${(erro && erro.message) || erro || "sem mensagem"}).`);
+      };
 
       // ---- 1) os CONTATOS, pelos três nomes e pelo número ----
       const condicoes = () => {
@@ -6546,9 +6577,10 @@ export default function Painel({ sessao }) {
             TEM_NOME_DO_CADASTRO = false;
             ({ data, error } = await pedir());
           }
-          if (error) falhou = true; else contatos = data || [];
+          if (error) { falhouNome = true; contarFalha("nome", error); }
+          else contatos = data || [];
         }
-      } catch (_e) { falhou = true; }
+      } catch (e) { falhouNome = true; contarFalha("nome", e); }
 
       // ---- 2) as conversas DESTE telefone com esses contatos ----
       const porNome = {};
@@ -6582,11 +6614,11 @@ export default function Painel({ sessao }) {
           .ilike("texto", `%${termo}%`)
           .order("criado_em", { ascending: false })
           .limit(1000);
-        if (error) falhou = true;
+        if (error) { falhouMensagem = true; contarFalha("texto das mensagens", error); }
         (data || []).forEach((m) => {
           if (!porMsg[m.conversa_id]) porMsg[m.conversa_id] = m.texto || "";
         });
-      } catch (_e) { falhou = true; }
+      } catch (e) { falhouMensagem = true; contarFalha("texto das mensagens", e); }
 
       // As conversas com mensagem casada que ainda não temos em mãos.
       const faltando = Object.keys(porMsg)
@@ -6611,7 +6643,19 @@ export default function Painel({ sessao }) {
       setAchadosMsg(porMsg);
       setAchadosCad(porCad);
       setAchadosNome(porNome);
-      if (falhou) setErroBusca("Não consegui completar a busca agora. Tente de novo em alguns segundos.");
+      // A FRASE MUDA CONFORME O QUE FALTOU, porque a decisão de quem lê muda.
+      //
+      // "Não consegui completar a busca" era a mesma coisa dita para os dois
+      // casos, e num deles é mentira por omissão: os nomes vieram, a lista tem
+      // gente, e o aviso dizia que nada valia. Quem lê isso fecha a busca e vai
+      // procurar de outro jeito — tendo a resposta na tela.
+      if (falhouNome && falhouMensagem) {
+        setErroBusca("Não consegui completar a busca agora. Tente de novo em alguns segundos.");
+      } else if (falhouNome) {
+        setErroBusca("Não consegui procurar pelos nomes agora — o que está aqui veio do texto das conversas.");
+      } else if (falhouMensagem) {
+        setErroBusca("Achei pelos nomes. A procura DENTRO das mensagens não respondeu — pode faltar alguma conversa aqui.");
+      }
       // Só o que a lista NÃO tem. O resto já está lá, com o estado em dia.
       const jaNaLista = new Set(conversas.map((c) => String(c.id)));
       const vistos = new Set();
@@ -7125,10 +7169,21 @@ export default function Painel({ sessao }) {
         ))}
       </div>
     )}
-    {/* O BOTÃO DA NOTA SAIU DAQUI e subiu para o cabeçalho, ao lado da Ficha e
-        do Histórico. Estar no meio dos botões de MANDAR — emoji, anexo,
-        microfone — dizia que ele era mais um jeito de falar com o cliente, e
-        ele é o contrário disso: é o único ali que NÃO sai do escritório. */}
+    {/* ALTERNAR PARA NOTA INTERNA (o recado que não vai ao WhatsApp).
+        O botão fica aqui, junto do emoji e do anexo, que é onde a mão do
+        escritório já sabe procurá-lo. O que mudou não foi ELE: foi para onde a
+        caixa vai quando ele é apertado — ela abre no ALTO da conversa, longe
+        da caixa de mensagem, e é essa distância que desfaz a confusão entre
+        "escrevi para o cliente" e "anotei para a equipe".
+        `aria-pressed` porque o botão tem DOIS estados e eles não podem ser
+        adivinhados pelo texto do título: foi assim que um ajudante de prova
+        passou a desligar o modo achando que ligava. */}
+    <button data-nota-interna onClick={() => setModoNota((v) => !v)}
+            aria-pressed={modoNota}
+            title={modoNota ? "Voltar para a mensagem" : "Escrever nota interna (só a equipe vê)"}
+            style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
+      <StickyNote size={22} color={modoNota ? "#d4a017" : C.textSecondary} />
+    </button>
     <button onClick={() => fileRef.current?.click()} title="Anexar arquivo" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
       <Paperclip size={22} color={C.textSecondary} />
     </button>
@@ -8443,22 +8498,6 @@ export default function Painel({ sessao }) {
                         style={{ ...BOTAO_ICONE, padding: 10, background: historico ? C.listActive : "transparent" }}>
                   <History size={19} color={historico ? C.green : C.textSecondary} />
                 </button>
-                {/* NOTA INTERNA — o recado que fica entre nós.
-                    Estava lá embaixo, no meio dos botões de MANDAR: emoji,
-                    anexo, microfone. Companhia errada. Aqueles três são jeitos
-                    de falar com o cliente; este é o único que NÃO sai do
-                    escritório.
-                    Aqui em cima ele fica com a Ficha e o Histórico, que é onde
-                    mora tudo o que é sobre a pessoa e não é dito a ela. E de
-                    onde se clica fica logo acima de onde a caixa abre — o olho
-                    não atravessa a tela para achar o que acabou de pedir. */}
-                <button data-nota-interna onClick={() => setModoNota((v) => !v)}
-                        aria-pressed={modoNota}
-                        title={modoNota ? "Voltar para a mensagem" : "Escrever nota interna (só a equipe vê)"}
-                        style={{ ...BOTAO_ICONE, padding: 10,
-                                 background: modoNota ? (modo === "escuro" ? "#3a3320" : "#fff8d6") : "transparent" }}>
-                  <StickyNote size={19} color={modoNota ? "#d4a017" : C.textSecondary} />
-                </button>
                 {/* QUEM PARTICIPOU DESTA CONVERSA.
                     O grupinho mostra quatro rostos e um "+3" — e o "+3" era um
                     beco: ele DIZ que há mais gente e não dá jeito nenhum de ver
@@ -8552,15 +8591,6 @@ export default function Painel({ sessao }) {
                               }}
                               style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
                         <History size={17} color={C.textSecondary} /> Histórico de atendimento
-                      </button>
-                      {/* A NOTA TAMBÉM AQUI. No celular o cabeçalho não cabe os
-                          botões e tudo mora neste menu — sem esta linha, mover o
-                          botão para lá em cima teria TIRADO a nota interna do
-                          celular, e ninguém veria isso acontecer. */}
-                      <button data-nota-interna onClick={() => { setMenuDaConversa(false); setModoNota((v) => !v); }}
-                              style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
-                        <StickyNote size={17} color={modoNota ? "#d4a017" : C.textSecondary} />
-                        {modoNota ? "Voltar para a mensagem" : "Escrever nota interna"}
                       </button>
                       <button onClick={() => { setMenuDaConversa(false); setTagMenuAberto(true); }}
                               style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
