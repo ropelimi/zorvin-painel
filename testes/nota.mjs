@@ -139,13 +139,22 @@ const seletor = () => page.locator("[data-processo-da-nota] select");
 
 // GARANTE o modo nota, em vez de alternar às cegas.
 //
-// Depois de enviar uma nota o modo CONTINUA ligado — e o botão troca de título
-// ("Voltar para mensagem normal"). Um clique cego ali desligaria o modo em vez
-// de ligar, e a conferência seguinte falaria de outro assunto.
+// Depois de enviar uma nota o modo CONTINUA ligado. Um clique cego no botão
+// desligaria o modo em vez de ligar, e a conferência seguinte falaria de outro
+// assunto.
+//
+// A PERGUNTA É O ESTADO, E NÃO O TÍTULO. Este ajudante procurava o botão por
+// `title*="nota interna"`, contando com o título de LIGADO não conter essas
+// palavras. Era um acordo que ninguém tinha escrito em lugar nenhum: no dia em
+// que o botão mudou de texto, o ajudante passou a DESLIGAR o modo, e a prova
+// estourou trinta segundos depois procurando um seletor que nunca ia aparecer.
+// O botão agora diz o que é (`aria-pressed`), e é isso que se lê.
 async function entrarNoModoNota() {
-  const ligar = page.locator('button[title*="nota interna"]');
-  if (await ligar.count()) {
-    await ligar.first().click();
+  const botao = page.locator("[data-nota-interna]");
+  if (!(await botao.count())) return;
+  const ligado = await botao.first().getAttribute("aria-pressed");
+  if (ligado !== "true") {
+    await botao.first().click();
     await page.waitForTimeout(900);
   }
   await page.waitForTimeout(300);

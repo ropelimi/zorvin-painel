@@ -6988,6 +6988,305 @@ export default function Painel({ sessao }) {
   // de endereço, e o que mora ali é exatamente a caixa de digitar mensagem. O
   // `dvh` acompanha a barra abrindo e fechando; o `100vh` fica de reserva para
   // navegador que ainda não conheça `dvh`.
+  // A CAIXA DE ESCREVER, guardada numa variável porque ela mora em DOIS
+  // lugares — e nunca nos dois ao mesmo tempo.
+  //
+  // Pedido do escritório: "o campo de escrever a nota deve aparecer na parte de
+  // cima, ao invés de embaixo, para não confundir o usuário".
+  //
+  // A confusão era real e séria: a MESMA caixa, no MESMO lugar, ora mandava uma
+  // mensagem para o cliente no WhatsApp, ora guardava um recado interno que só a
+  // equipe lê. A única diferença era a cor. Quem estivesse com pressa — que é o
+  // estado normal de quem atende — escrevia no lugar certo achando que era o
+  // outro, e isso erra nas duas direções: recado da equipe indo para o cliente,
+  // ou combinado com o cliente ficando só entre nós.
+  //
+  // Agora a nota tem lugar próprio, no ALTO, colada no cabeçalho e em âmbar; a
+  // mensagem continua embaixo, onde sempre esteve. Lugares diferentes para
+  // coisas diferentes — e é o lugar, não a cor, que a mão aprende.
+  //
+  // UMA VARIÁVEL, E NÃO DUAS CÓPIAS DO JSX: são duzentas linhas com o menu do
+  // "/", os emojis, a formatação, o anexo e a gravação de áudio. Duas cópias
+  // divergiriam na primeira correção, e o defeito apareceria só num dos dois
+  // lugares — o tipo de coisa que leva meses para alguém notar.
+  const caixaDeEscrever = (
+  <>
+    {/* A PÍLULA — tudo dentro de um retângulo arredondado só.
+        Antes os botões ficavam SOLTOS, cada um com o seu respiro,
+        ao lado de uma caixa de texto que era outra caixa: quatro
+        elementos com quatro alturas e quatro cantos diferentes,
+        alinhados por marginBottom escolhido no olho. Daí o
+        desalinhamento.
+        Agora existe um recipiente só. Os botões e o texto são
+        irmãos dentro dele, centralizados pelo próprio flex, e o
+        arredondamento é da pílula — não de cada peça. É assim que
+        o WhatsApp Web faz, e é o que faz a barra parecer uma
+        coisa só em vez de quatro. */}
+    <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "flex-end",
+                  gap: 2, borderRadius: 24, padding: "4px 6px",
+                  background: modoNota ? (modo === "escuro" ? "#3a3320" : "#fff8d6") : C.balaoFundo,
+                  border: modoNota ? "1px solid #e6cf6a" : "1px solid transparent",
+                  boxSizing: "border-box" }}>
+    {/* UM BOTÃO SÓ para emoji e figurinha, como no WhatsApp.
+        Eram dois, em pontas opostas da barra, e nada dizia que
+        abriam coisas parecidas. O WhatsApp resolve com uma
+        carinha só e duas abas no pé do painel — quem procurava
+        figurinha e achou emoji está a um toque de distância, em
+        vez de ter de fechar e caçar outro ícone. */}
+    <span ref={emojiRef} data-figurinhas style={{ display: "flex" }}>
+      {emojiAberto && (
+        <div style={{ position: "absolute", bottom: 60, left: 12, zIndex: 30 }}>
+          {abaEmoji === "figurinha" ? (
+            <PainelFigurinhas C={C} figurinhas={figurinhas} figHover={figHover}
+              aoPassarMouse={setFigHover}
+              aoEnviar={enviarFigurinhaUrl}
+              aoRemover={(u) => alternarFigurinhaFavorita({ midia_url: u })}
+              aoNova={() => figurinhaRef.current?.click()}
+              rodape={<AbasDoPainel C={C} aba={abaEmoji} aoTrocar={setAbaEmoji} />} />
+          ) : (
+            <PainelEmoji C={C} aoEscolher={inserirEmoji}
+              rodape={<AbasDoPainel C={C} aba={abaEmoji} aoTrocar={setAbaEmoji} />} />
+          )}
+        </div>
+      )}
+      <button onClick={() => { const abrir = !emojiAberto; setEmojiAberto(abrir); if (abrir) carregarFigurinhas(); }}
+        title="Emojis e figurinhas" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
+        <Smile size={24} color={emojiAberto ? C.green : C.textSecondary} />
+      </button>
+    </span>
+    {/* BARRA DE FORMATAÇÃO — aparece ao selecionar texto na caixa.
+        Fica ACIMA da caixa, e não em cima do texto selecionado:
+        numa caixa de uma a três linhas as duas posições quase
+        coincidem, e esta não exige medir o pixel da seleção
+        dentro de um <textarea>, que só se faz desenhando uma
+        cópia invisível do texto e medindo nela. */}
+    {/* Vale para a NOTA INTERNA também. A primeira versão
+        escondia a barra ali, por reflexo — mas a nota é desenhada
+        pelo mesmo `formatarTexto` da mensagem, e negrito numa
+        nota funciona exatamente igual. Era uma restrição sem
+        motivo, tirando de quem escreve a nota uma coisa que já
+        existia. */}
+    {formatoAberto && (
+      <div data-barra-formato
+           style={{ position: "absolute", bottom: 58, left: 12, zIndex: 32,
+                    display: "flex", alignItems: "center", gap: 2,
+                    background: C.panel, border: `1px solid ${C.divider}`,
+                    borderRadius: 10, padding: 4,
+                    boxShadow: "0 6px 20px rgba(0,0,0,.28)" }}>
+        {FORMATOS.map((f) => {
+          const Icone = ICONE_DO_FORMATO[f.id];
+          return (
+            <button key={f.id}
+              data-formato={f.id}
+              aria-label={`${f.rotulo} (${f.atalho})`}
+              // SEGURA O FOCO NA CAIXA. Sem isto, apertar o botão
+              // tira o foco do <textarea>, a seleção se perde, e
+              // o clique formata o nada — o defeito clássico de
+              // toda barra flutuante.
+              onMouseDown={(ev) => ev.preventDefault()}
+              onClick={() => formatarSelecao(f.id)}
+              onMouseEnter={() => setFormatoHover(f.id)}
+              onMouseLeave={() => setFormatoHover((h) => (h === f.id ? null : h))}
+              style={{ position: "relative", border: "none", background: formatoHover === f.id ? C.listActive : "transparent",
+                       cursor: "pointer", borderRadius: 7, width: 34, height: 34,
+                       display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+              <Icone size={17} color={C.textPrimary} />
+              {/* A LEGENDA COM O ATALHO, como no WhatsApp Web. Não
+                  é o `title` do navegador de propósito: ali a
+                  legenda demora um segundo a aparecer e sai com a
+                  cara do sistema, clara no tema escuro. E é aqui
+                  que o atalho fica escrito — é assim que alguém
+                  descobre que ele existe. */}
+              {formatoHover === f.id && (
+                <span style={{ position: "absolute", bottom: "calc(100% + 7px)", left: "50%",
+                               transform: "translateX(-50%)", whiteSpace: "nowrap",
+                               background: C.headerBar, color: C.textPrimary,
+                               border: `1px solid ${C.divider}`, borderRadius: 7,
+                               padding: "5px 9px", fontSize: 12, pointerEvents: "none",
+                               boxShadow: "0 4px 14px rgba(0,0,0,.3)" }}>
+                  {f.rotulo}
+                  <span style={{ color: C.textSecondary, marginLeft: 8 }}>{f.atalho}</span>
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    )}
+    {/* Menu de mensagens rápidas — abre ao digitar "/" na caixa */}
+    {slashAberto && (
+      <div style={{ position: "absolute", bottom: 60, left: 12, right: 12, maxWidth: 420, maxHeight: 260, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 30 }}>
+        <div style={{ padding: "8px 12px", borderBottom: `1px solid ${C.divider}`, fontSize: 11.5, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3, position: "sticky", top: 0, background: C.panel }}>MENSAGENS RÁPIDAS · use ↑ ↓ e Enter</div>
+        {slashLista.map((r, idx) => (
+          <button key={r.id} onMouseEnter={() => setSlashIdx(idx)} onClick={() => escolherSlash(r)} style={{ width: "100%", textAlign: "left", display: "block", border: "none", background: idx === Math.min(slashIdx, slashLista.length - 1) ? C.listActive : "transparent", cursor: "pointer", color: C.textPrimary, padding: "8px 12px", borderBottom: `1px solid ${C.divider}` }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{r.titulo}</div>
+            <div style={{ fontSize: 12, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.texto}</div>
+          </button>
+        ))}
+      </div>
+    )}
+    {/* O BOTÃO DA NOTA SAIU DAQUI e subiu para o cabeçalho, ao lado da Ficha e
+        do Histórico. Estar no meio dos botões de MANDAR — emoji, anexo,
+        microfone — dizia que ele era mais um jeito de falar com o cliente, e
+        ele é o contrário disso: é o único ali que NÃO sai do escritório. */}
+    <button onClick={() => fileRef.current?.click()} title="Anexar arquivo" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
+      <Paperclip size={22} color={C.textSecondary} />
+    </button>
+    <input ref={fileRef} type="file" multiple onChange={aoEscolherArquivo} style={{ display: "none" }} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" />
+    <input ref={figurinhaRef} type="file" accept="image/webp,image/png,image/jpeg" style={{ display: "none" }}
+      onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) { setEmojiAberto(false); enviarArquivo(f, "", conversaId, "figurinha"); } }} />
+    <textarea
+      ref={inputRef}
+      value={rascunho}
+      onChange={(e) => { setRascunho(e.target.value); setSlashIdx(0); }}
+      onSelect={(e) => {
+        // Aparece quando há trecho selecionado, some quando não
+        // há. `onSelect` é o único evento que o navegador dispara
+        // para TODA mudança de seleção — mouse, teclado, duplo
+        // clique, Ctrl+A. Escutar só o mouse deixaria a barra
+        // fora do alcance de quem seleciona com Shift+seta.
+        const c = e.target;
+        setFormatoAberto(c.selectionStart !== c.selectionEnd);
+      }}
+      onBlur={() => {
+        // Sai da caixa, some a barra. Os botões dela seguram o
+        // foco (ver o `onMouseDown` lá embaixo), então clicar num
+        // deles não passa por aqui.
+        setFormatoAberto(false);
+      }}
+      onKeyDown={(e) => {
+        // OS ATALHOS DE FORMATAÇÃO, antes de tudo.
+        //
+        // Vêm primeiro porque nenhum deles usa Enter: não há como
+        // atropelar o envio nem o menu do "/". E `preventDefault`
+        // é obrigatório — Ctrl+B é "favoritos" no navegador e
+        // Ctrl+I é "informações da página".
+        const formato = formatoDaTecla(e);
+        if (formato) {
+          e.preventDefault();
+          formatarSelecao(formato);
+          return;
+        }
+        // ALT+ENTER TAMBÉM PULA LINHA.
+        //
+        // O Shift+Enter o navegador resolve sozinho — a quebra é
+        // o comportamento padrão dele numa caixa de texto. O
+        // Alt+Enter não faz nada por padrão, então a quebra tem
+        // de ser inserida na mão. Quem vem do Outlook e do Excel
+        // tem o Alt+Enter no dedo, e ali ele significa
+        // exatamente isto.
+        //
+        // Vem ANTES do menu do "/" de propósito: com o menu
+        // aberto, o Shift+Enter já quebra a linha em vez de
+        // escolher um item, e as duas teclas precisam significar
+        // a mesma coisa em toda situação.
+        if (e.key === "Enter" && e.altKey) {
+          e.preventDefault();
+          const campo = e.target;
+          // insertText preserva o "desfazer" do navegador e deixa
+          // o cursor depois da quebra. O caminho manual existe
+          // para o navegador que não tiver o comando: sem ele o
+          // cursor saltaria para o fim do texto a cada quebra.
+          const ok = typeof document.execCommand === "function"
+            && document.execCommand("insertText", false, "\n");
+          if (!ok) {
+            const ini = campo.selectionStart;
+            const fim = campo.selectionEnd;
+            setRascunho(campo.value.slice(0, ini) + "\n" + campo.value.slice(fim));
+            requestAnimationFrame(() => {
+              campo.selectionStart = ini + 1;
+              campo.selectionEnd = ini + 1;
+            });
+          }
+          return;
+        }
+        // Menu do "/": navega com as setas e escolhe com Enter.
+        if (slashAberto) {
+          if (e.key === "ArrowDown") { e.preventDefault(); setSlashIdx((i) => Math.min(slashLista.length - 1, i + 1)); return; }
+          if (e.key === "ArrowUp") { e.preventDefault(); setSlashIdx((i) => Math.max(0, i - 1)); return; }
+          if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); escolherSlash(slashLista[Math.min(slashIdx, slashLista.length - 1)]); return; }
+          if (e.key === "Escape") { e.preventDefault(); setRascunho(""); return; }
+        }
+        // Enter envia; Shift+Enter e Alt+Enter pulam linha.
+        if (e.key === "Enter" && !e.shiftKey && !e.altKey) { e.preventDefault(); enviar(); }
+      }}
+      rows={1}
+      placeholder={editando ? "Corrija a mensagem e aperte Enter" : (modoNota ? "Escreva uma nota interna (só a equipe vê)" : "Digite uma mensagem")}
+      style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", color: C.textPrimary, boxSizing: "border-box", padding: "10px 6px", fontSize: 14.5, resize: "none", lineHeight: "20px", maxHeight: 120, overflowY: "auto", fontFamily: "inherit", alignSelf: "flex-end" }}
+    />
+    {(rascunho.trim() || modoNota) ? (
+      <button onClick={enviar} title={modoNota ? "Salvar nota" : "Enviar"} style={{ border: "none", background: modoNota ? "#d4a017" : C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, alignSelf: "flex-end" }}>{modoNota ? <StickyNote size={19} color="#fff" /> : <Send size={20} color="#fff" />}</button>
+    ) : (
+      <button onClick={iniciarGravacao} title="Gravar áudio" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
+        <Mic size={24} color={C.textSecondary} />
+      </button>
+    )}
+    </div>
+  </>
+  );
+
+  // A BARRA DE VINCULAR A NOTA A UM PROCESSO. Sobe junto com a caixa: ela
+  // pertence à nota, e deixá-la embaixo separaria a escolha do texto que ela
+  // governa.
+  const barraDoProcessoDaNota = modoNota && !selecao && clienteDaConversa
+    && (processosDoCliente.length > 0 || buscandoProcessos) && (() => {
+  const escuro = modo === "escuro";
+  const AMBAR = "#d4a017";
+  const temProcesso = Boolean(processoDaNota);
+  return (
+  <div data-processo-da-nota
+       style={{ background: escuro ? "#3a3320" : "#fff8d6",
+                borderTop: `1px solid ${escuro ? "#5c4f28" : "#e6cf6a"}`,
+                padding: estreito ? "8px 10px" : "10px 16px",
+                display: "flex", alignItems: "center",
+                gap: estreito ? 7 : 10, flexWrap: "wrap" }}>
+    <span style={{ fontSize: 12.5, fontWeight: 700, color: AMBAR,
+                   display: "inline-flex", alignItems: "center", gap: 6,
+                   whiteSpace: "nowrap" }}>
+      <ClipboardList size={15} />
+      {estreito ? "Processo:" : "Vincular a um processo:"}
+    </span>
+    {buscandoProcessos ? (
+      <span style={{ fontSize: 12.5, color: escuro ? "#c9bd93" : "#8a7434" }}>
+        procurando os processos deste cliente…
+      </span>
+    ) : (<>
+      <select value={processoDaNota}
+              onChange={(e) => setProcessoDaNota(e.target.value)}
+              style={{ flex: "1 1 240px", minWidth: 0, maxWidth: 460,
+                       // ESCOLHIDO x NOTA GERAL, à distância: cheio de
+                       // âmbar num caso, claro no outro. Só a letra
+                       // dentro do seletor obrigaria a ler para saber.
+                       background: temProcesso ? AMBAR : (escuro ? "#2a2517" : "#fffdf2"),
+                       color: temProcesso ? "#fff" : (escuro ? "#f0e6c8" : "#3b3118"),
+                       fontWeight: temProcesso ? 700 : 500,
+                       border: `2px solid ${temProcesso ? AMBAR : (escuro ? "#7a6832" : "#e6cf6a")}`,
+                       borderRadius: 8, padding: "6px 9px", fontSize: 12.5,
+                       cursor: "pointer" }}>
+        {/* A NOTA GERAL VEM PRIMEIRO e escrita por extenso. "—" ou
+            vazio deixaria a pessoa sem saber se escolher nada é
+            permitido; escrito, ela sabe que é uma opção legítima. */}
+        <option value="">Nota geral do cliente (sem processo)</option>
+        {processosDoCliente.map((p) => (
+          <option key={p.id} value={String(p.id)}>
+            {rotuloDoProcesso(p)}
+          </option>
+        ))}
+      </select>
+      {/* O RECADO CURTO AO LADO. Diz o que vai acontecer com ESTA
+          nota — não é enfeite, é a única frase que confirma a
+          escolha sem obrigar a reabrir a lista. */}
+      <span data-aviso-do-processo
+            style={{ fontSize: 11.5, fontWeight: temProcesso ? 700 : 500,
+                     color: temProcesso ? AMBAR : (escuro ? "#a99a6d" : "#8a7434"),
+                     whiteSpace: "nowrap" }}>
+        {temProcesso ? "✓ entra no histórico deste processo" : "opcional"}
+      </span>
+    </>)}
+  </div>
+  );
+  })();
+
   return (
     <div style={{ display: "flex", height: "100vh", maxHeight: "100dvh", fontFamily: "'Segoe UI', Helvetica, Arial, sans-serif", background: C.headerBar, color: C.textPrimary }}>
       {/* Contorno de foco só para quem navega por teclado (acessibilidade),
@@ -8144,6 +8443,22 @@ export default function Painel({ sessao }) {
                         style={{ ...BOTAO_ICONE, padding: 10, background: historico ? C.listActive : "transparent" }}>
                   <History size={19} color={historico ? C.green : C.textSecondary} />
                 </button>
+                {/* NOTA INTERNA — o recado que fica entre nós.
+                    Estava lá embaixo, no meio dos botões de MANDAR: emoji,
+                    anexo, microfone. Companhia errada. Aqueles três são jeitos
+                    de falar com o cliente; este é o único que NÃO sai do
+                    escritório.
+                    Aqui em cima ele fica com a Ficha e o Histórico, que é onde
+                    mora tudo o que é sobre a pessoa e não é dito a ela. E de
+                    onde se clica fica logo acima de onde a caixa abre — o olho
+                    não atravessa a tela para achar o que acabou de pedir. */}
+                <button data-nota-interna onClick={() => setModoNota((v) => !v)}
+                        aria-pressed={modoNota}
+                        title={modoNota ? "Voltar para a mensagem" : "Escrever nota interna (só a equipe vê)"}
+                        style={{ ...BOTAO_ICONE, padding: 10,
+                                 background: modoNota ? (modo === "escuro" ? "#3a3320" : "#fff8d6") : "transparent" }}>
+                  <StickyNote size={19} color={modoNota ? "#d4a017" : C.textSecondary} />
+                </button>
                 {/* QUEM PARTICIPOU DESTA CONVERSA.
                     O grupinho mostra quatro rostos e um "+3" — e o "+3" era um
                     beco: ele DIZ que há mais gente e não dá jeito nenhum de ver
@@ -8237,6 +8552,15 @@ export default function Painel({ sessao }) {
                               }}
                               style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
                         <History size={17} color={C.textSecondary} /> Histórico de atendimento
+                      </button>
+                      {/* A NOTA TAMBÉM AQUI. No celular o cabeçalho não cabe os
+                          botões e tudo mora neste menu — sem esta linha, mover o
+                          botão para lá em cima teria TIRADO a nota interna do
+                          celular, e ninguém veria isso acontecer. */}
+                      <button data-nota-interna onClick={() => { setMenuDaConversa(false); setModoNota((v) => !v); }}
+                              style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
+                        <StickyNote size={17} color={modoNota ? "#d4a017" : C.textSecondary} />
+                        {modoNota ? "Voltar para a mensagem" : "Escrever nota interna"}
                       </button>
                       <button onClick={() => { setMenuDaConversa(false); setTagMenuAberto(true); }}
                               style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
@@ -8335,7 +8659,58 @@ export default function Painel({ sessao }) {
                 </div>
               );
             })()}
-            <div ref={listaRef} onScroll={aoRolar} style={{ flex: 1, overflowY: "auto", padding: estreito ? "16px 10px" : "20px 8%", display: "flex", flexDirection: "column", gap: 6 }}>
+
+            {/* ------------------------------------------------------------
+                A NOTA INTERNA, NO ALTO E COM LUGAR PRÓPRIO
+
+                Pedido do escritório: "ao clicar no ícone da nota, o campo de
+                escrever deve aparecer na parte de cima, ao invés de embaixo,
+                para não confundir o usuário".
+
+                Antes, nota e mensagem dividiam a MESMA caixa, no MESMO lugar, e
+                a única diferença era a cor. Escrever para o cliente e escrever
+                para a equipe são coisas de consequência oposta — uma sai do
+                escritório, a outra não — e não podem morar no mesmo canto da
+                tela.
+
+                Aqui em cima, colado no cabeçalho de onde o botão foi clicado, e
+                em âmbar da moldura ao botão. O caminho do olho fica curto:
+                clicou ali, escreve logo abaixo.
+                ------------------------------------------------------------ */}
+            {modoNota && !selecao && (
+              <div data-nota-no-alto
+                   style={{ background: modo === "escuro" ? "#2f2a19" : "#fffaea",
+                            borderBottom: "2px solid #d4a017",
+                            display: "flex", flexDirection: "column" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8,
+                              padding: estreito ? "7px 10px 0" : "9px 16px 0" }}>
+                  <StickyNote size={16} color="#d4a017" />
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700,
+                                 color: "#d4a017" }}>
+                    Nota interna — só a equipe vê, não vai para o WhatsApp
+                  </span>
+                  {/* FECHAR É UM BOTÃO DE VERDADE, e não "clicar no ícone de
+                      novo". Quem abriu aqui em cima procura a saída aqui em
+                      cima; mandar a pessoa de volta ao cabeçalho para desfazer
+                      o que ela acabou de fazer é um passo a mais em cada nota. */}
+                  <button data-fechar-nota onClick={() => setModoNota(false)}
+                          title="Voltar para a mensagem"
+                          style={{ border: "none", background: "transparent", cursor: "pointer",
+                                   display: "flex", alignItems: "center", justifyContent: "center",
+                                   width: 32, height: 32, borderRadius: "50%", flexShrink: 0 }}>
+                    <X size={18} color="#d4a017" />
+                  </button>
+                </div>
+                {barraDoProcessoDaNota}
+                <div style={{ padding: estreito ? "0 8px 7px" : "0 16px 9px",
+                              display: "flex", alignItems: "flex-end",
+                              gap: estreito ? 6 : 10, position: "relative" }}>
+                  {caixaDeEscrever}
+                </div>
+              </div>
+            )}
+
+            <div ref={listaRef} data-lista-mensagens onScroll={aoRolar} style={{ flex: 1, overflowY: "auto", padding: estreito ? "16px 10px" : "20px 8%", display: "flex", flexDirection: "column", gap: 6 }}>
               {/* O degrau para subir no histórico. A conversa abre com as
                   últimas mensagens; o resto vem daqui, um lote por vez. Um
                   botão e não rolagem automática: rolar para cima é também o
@@ -8439,63 +8814,6 @@ export default function Painel({ sessao }) {
                 E ELE MOSTRA EM QUAL DOS DOIS ESTADOS ESTÁ, sem precisar ler:
                 escolhido, fica preenchido de âmbar forte com um "✓"; em nota
                 geral, fica claro e diz por extenso que é opcional. */}
-            {modoNota && !selecao && clienteDaConversa && (processosDoCliente.length > 0 || buscandoProcessos) && (() => {
-              const escuro = modo === "escuro";
-              const AMBAR = "#d4a017";
-              const temProcesso = Boolean(processoDaNota);
-              return (
-              <div data-processo-da-nota
-                   style={{ background: escuro ? "#3a3320" : "#fff8d6",
-                            borderTop: `1px solid ${escuro ? "#5c4f28" : "#e6cf6a"}`,
-                            padding: estreito ? "8px 10px" : "10px 16px",
-                            display: "flex", alignItems: "center",
-                            gap: estreito ? 7 : 10, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 12.5, fontWeight: 700, color: AMBAR,
-                               display: "inline-flex", alignItems: "center", gap: 6,
-                               whiteSpace: "nowrap" }}>
-                  <ClipboardList size={15} />
-                  {estreito ? "Processo:" : "Vincular a um processo:"}
-                </span>
-                {buscandoProcessos ? (
-                  <span style={{ fontSize: 12.5, color: escuro ? "#c9bd93" : "#8a7434" }}>
-                    procurando os processos deste cliente…
-                  </span>
-                ) : (<>
-                  <select value={processoDaNota}
-                          onChange={(e) => setProcessoDaNota(e.target.value)}
-                          style={{ flex: "1 1 240px", minWidth: 0, maxWidth: 460,
-                                   // ESCOLHIDO x NOTA GERAL, à distância: cheio de
-                                   // âmbar num caso, claro no outro. Só a letra
-                                   // dentro do seletor obrigaria a ler para saber.
-                                   background: temProcesso ? AMBAR : (escuro ? "#2a2517" : "#fffdf2"),
-                                   color: temProcesso ? "#fff" : (escuro ? "#f0e6c8" : "#3b3118"),
-                                   fontWeight: temProcesso ? 700 : 500,
-                                   border: `2px solid ${temProcesso ? AMBAR : (escuro ? "#7a6832" : "#e6cf6a")}`,
-                                   borderRadius: 8, padding: "6px 9px", fontSize: 12.5,
-                                   cursor: "pointer" }}>
-                    {/* A NOTA GERAL VEM PRIMEIRO e escrita por extenso. "—" ou
-                        vazio deixaria a pessoa sem saber se escolher nada é
-                        permitido; escrito, ela sabe que é uma opção legítima. */}
-                    <option value="">Nota geral do cliente (sem processo)</option>
-                    {processosDoCliente.map((p) => (
-                      <option key={p.id} value={String(p.id)}>
-                        {rotuloDoProcesso(p)}
-                      </option>
-                    ))}
-                  </select>
-                  {/* O RECADO CURTO AO LADO. Diz o que vai acontecer com ESTA
-                      nota — não é enfeite, é a única frase que confirma a
-                      escolha sem obrigar a reabrir a lista. */}
-                  <span data-aviso-do-processo
-                        style={{ fontSize: 11.5, fontWeight: temProcesso ? 700 : 500,
-                                 color: temProcesso ? AMBAR : (escuro ? "#a99a6d" : "#8a7434"),
-                                 whiteSpace: "nowrap" }}>
-                    {temProcesso ? "✓ entra no histórico deste processo" : "opcional"}
-                  </span>
-                </>)}
-              </div>
-              );
-            })()}
 
             <div style={{ background: C.barraFundo, padding: estreito ? "7px 8px" : "9px 16px", display: "flex", alignItems: "flex-end", gap: estreito ? 6 : 10, position: "relative" }}>
               {selecao ? (
@@ -8545,220 +8863,32 @@ export default function Painel({ sessao }) {
                     <Check size={22} color="#fff" />
                   </button>
                 </div>
-              ) : (
-                <>
-                  {/* A PÍLULA — tudo dentro de um retângulo arredondado só.
-                      Antes os botões ficavam SOLTOS, cada um com o seu respiro,
-                      ao lado de uma caixa de texto que era outra caixa: quatro
-                      elementos com quatro alturas e quatro cantos diferentes,
-                      alinhados por marginBottom escolhido no olho. Daí o
-                      desalinhamento.
-                      Agora existe um recipiente só. Os botões e o texto são
-                      irmãos dentro dele, centralizados pelo próprio flex, e o
-                      arredondamento é da pílula — não de cada peça. É assim que
-                      o WhatsApp Web faz, e é o que faz a barra parecer uma
-                      coisa só em vez de quatro. */}
-                  <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "flex-end",
-                                gap: 2, borderRadius: 24, padding: "4px 6px",
-                                background: modoNota ? (modo === "escuro" ? "#3a3320" : "#fff8d6") : C.balaoFundo,
-                                border: modoNota ? "1px solid #e6cf6a" : "1px solid transparent",
-                                boxSizing: "border-box" }}>
-                  {/* UM BOTÃO SÓ para emoji e figurinha, como no WhatsApp.
-                      Eram dois, em pontas opostas da barra, e nada dizia que
-                      abriam coisas parecidas. O WhatsApp resolve com uma
-                      carinha só e duas abas no pé do painel — quem procurava
-                      figurinha e achou emoji está a um toque de distância, em
-                      vez de ter de fechar e caçar outro ícone. */}
-                  <span ref={emojiRef} data-figurinhas style={{ display: "flex" }}>
-                    {emojiAberto && (
-                      <div style={{ position: "absolute", bottom: 60, left: 12, zIndex: 30 }}>
-                        {abaEmoji === "figurinha" ? (
-                          <PainelFigurinhas C={C} figurinhas={figurinhas} figHover={figHover}
-                            aoPassarMouse={setFigHover}
-                            aoEnviar={enviarFigurinhaUrl}
-                            aoRemover={(u) => alternarFigurinhaFavorita({ midia_url: u })}
-                            aoNova={() => figurinhaRef.current?.click()}
-                            rodape={<AbasDoPainel C={C} aba={abaEmoji} aoTrocar={setAbaEmoji} />} />
-                        ) : (
-                          <PainelEmoji C={C} aoEscolher={inserirEmoji}
-                            rodape={<AbasDoPainel C={C} aba={abaEmoji} aoTrocar={setAbaEmoji} />} />
-                        )}
-                      </div>
-                    )}
-                    <button onClick={() => { const abrir = !emojiAberto; setEmojiAberto(abrir); if (abrir) carregarFigurinhas(); }}
-                      title="Emojis e figurinhas" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
-                      <Smile size={24} color={emojiAberto ? C.green : C.textSecondary} />
-                    </button>
+              ) : modoNota ? (
+                /* COM A NOTA ABERTA LÁ EM CIMA, AQUI EMBAIXO FICA A EXPLICAÇÃO.
+                   Não some: a barra tem altura, e tirá-la faria a conversa dar
+                   um pulo a cada vez que a nota abre e fecha. E, sobretudo, ela
+                   responde à pergunta de quem procura onde escrever — "a caixa
+                   sumiu" é um susto, "a caixa subiu, olhe lá" é uma instrução.
+                   O caminho de volta está aqui e lá em cima: quem se perdeu
+                   acha a saída onde estiver olhando. */
+                <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10,
+                              padding: estreito ? "10px 6px" : "12px 8px" }}>
+                  <StickyNote size={18} color="#d4a017" />
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: C.textSecondary }}>
+                    Você está escrevendo uma <b style={{ color: "#d4a017" }}>nota interna</b>,
+                    {" "}na caixa lá em cima.
                   </span>
-                  {/* BARRA DE FORMATAÇÃO — aparece ao selecionar texto na caixa.
-                      Fica ACIMA da caixa, e não em cima do texto selecionado:
-                      numa caixa de uma a três linhas as duas posições quase
-                      coincidem, e esta não exige medir o pixel da seleção
-                      dentro de um <textarea>, que só se faz desenhando uma
-                      cópia invisível do texto e medindo nela. */}
-                  {/* Vale para a NOTA INTERNA também. A primeira versão
-                      escondia a barra ali, por reflexo — mas a nota é desenhada
-                      pelo mesmo `formatarTexto` da mensagem, e negrito numa
-                      nota funciona exatamente igual. Era uma restrição sem
-                      motivo, tirando de quem escreve a nota uma coisa que já
-                      existia. */}
-                  {formatoAberto && (
-                    <div data-barra-formato
-                         style={{ position: "absolute", bottom: 58, left: 12, zIndex: 32,
-                                  display: "flex", alignItems: "center", gap: 2,
-                                  background: C.panel, border: `1px solid ${C.divider}`,
-                                  borderRadius: 10, padding: 4,
-                                  boxShadow: "0 6px 20px rgba(0,0,0,.28)" }}>
-                      {FORMATOS.map((f) => {
-                        const Icone = ICONE_DO_FORMATO[f.id];
-                        return (
-                          <button key={f.id}
-                            data-formato={f.id}
-                            aria-label={`${f.rotulo} (${f.atalho})`}
-                            // SEGURA O FOCO NA CAIXA. Sem isto, apertar o botão
-                            // tira o foco do <textarea>, a seleção se perde, e
-                            // o clique formata o nada — o defeito clássico de
-                            // toda barra flutuante.
-                            onMouseDown={(ev) => ev.preventDefault()}
-                            onClick={() => formatarSelecao(f.id)}
-                            onMouseEnter={() => setFormatoHover(f.id)}
-                            onMouseLeave={() => setFormatoHover((h) => (h === f.id ? null : h))}
-                            style={{ position: "relative", border: "none", background: formatoHover === f.id ? C.listActive : "transparent",
-                                     cursor: "pointer", borderRadius: 7, width: 34, height: 34,
-                                     display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
-                            <Icone size={17} color={C.textPrimary} />
-                            {/* A LEGENDA COM O ATALHO, como no WhatsApp Web. Não
-                                é o `title` do navegador de propósito: ali a
-                                legenda demora um segundo a aparecer e sai com a
-                                cara do sistema, clara no tema escuro. E é aqui
-                                que o atalho fica escrito — é assim que alguém
-                                descobre que ele existe. */}
-                            {formatoHover === f.id && (
-                              <span style={{ position: "absolute", bottom: "calc(100% + 7px)", left: "50%",
-                                             transform: "translateX(-50%)", whiteSpace: "nowrap",
-                                             background: C.headerBar, color: C.textPrimary,
-                                             border: `1px solid ${C.divider}`, borderRadius: 7,
-                                             padding: "5px 9px", fontSize: 12, pointerEvents: "none",
-                                             boxShadow: "0 4px 14px rgba(0,0,0,.3)" }}>
-                                {f.rotulo}
-                                <span style={{ color: C.textSecondary, marginLeft: 8 }}>{f.atalho}</span>
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {/* Menu de mensagens rápidas — abre ao digitar "/" na caixa */}
-                  {slashAberto && (
-                    <div style={{ position: "absolute", bottom: 60, left: 12, right: 12, maxWidth: 420, maxHeight: 260, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 30 }}>
-                      <div style={{ padding: "8px 12px", borderBottom: `1px solid ${C.divider}`, fontSize: 11.5, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3, position: "sticky", top: 0, background: C.panel }}>MENSAGENS RÁPIDAS · use ↑ ↓ e Enter</div>
-                      {slashLista.map((r, idx) => (
-                        <button key={r.id} onMouseEnter={() => setSlashIdx(idx)} onClick={() => escolherSlash(r)} style={{ width: "100%", textAlign: "left", display: "block", border: "none", background: idx === Math.min(slashIdx, slashLista.length - 1) ? C.listActive : "transparent", cursor: "pointer", color: C.textPrimary, padding: "8px 12px", borderBottom: `1px solid ${C.divider}` }}>
-                          <div style={{ fontSize: 13, fontWeight: 600 }}>{r.titulo}</div>
-                          <div style={{ fontSize: 12, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.texto}</div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {/* Alternar para NOTA INTERNA (comentário que não vai ao WhatsApp) */}
-                  <button onClick={() => setModoNota((v) => !v)} title={modoNota ? "Voltar para mensagem normal" : "Escrever nota interna (só a equipe vê)"} style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
-                    <StickyNote size={22} color={modoNota ? "#d4a017" : C.textSecondary} />
+                  <button onClick={() => setModoNota(false)}
+                          title="Voltar para a mensagem"
+                          style={{ border: `1px solid ${C.divider}`, background: "transparent",
+                                   color: C.textSecondary, cursor: "pointer", borderRadius: 20,
+                                   padding: "7px 14px", fontSize: 12.5, fontWeight: 600,
+                                   whiteSpace: "nowrap", flexShrink: 0 }}>
+                    Voltar para a mensagem
                   </button>
-                  <button onClick={() => fileRef.current?.click()} title="Anexar arquivo" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
-                    <Paperclip size={22} color={C.textSecondary} />
-                  </button>
-                  <input ref={fileRef} type="file" multiple onChange={aoEscolherArquivo} style={{ display: "none" }} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" />
-                  <input ref={figurinhaRef} type="file" accept="image/webp,image/png,image/jpeg" style={{ display: "none" }}
-                    onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) { setEmojiAberto(false); enviarArquivo(f, "", conversaId, "figurinha"); } }} />
-                  <textarea
-                    ref={inputRef}
-                    value={rascunho}
-                    onChange={(e) => { setRascunho(e.target.value); setSlashIdx(0); }}
-                    onSelect={(e) => {
-                      // Aparece quando há trecho selecionado, some quando não
-                      // há. `onSelect` é o único evento que o navegador dispara
-                      // para TODA mudança de seleção — mouse, teclado, duplo
-                      // clique, Ctrl+A. Escutar só o mouse deixaria a barra
-                      // fora do alcance de quem seleciona com Shift+seta.
-                      const c = e.target;
-                      setFormatoAberto(c.selectionStart !== c.selectionEnd);
-                    }}
-                    onBlur={() => {
-                      // Sai da caixa, some a barra. Os botões dela seguram o
-                      // foco (ver o `onMouseDown` lá embaixo), então clicar num
-                      // deles não passa por aqui.
-                      setFormatoAberto(false);
-                    }}
-                    onKeyDown={(e) => {
-                      // OS ATALHOS DE FORMATAÇÃO, antes de tudo.
-                      //
-                      // Vêm primeiro porque nenhum deles usa Enter: não há como
-                      // atropelar o envio nem o menu do "/". E `preventDefault`
-                      // é obrigatório — Ctrl+B é "favoritos" no navegador e
-                      // Ctrl+I é "informações da página".
-                      const formato = formatoDaTecla(e);
-                      if (formato) {
-                        e.preventDefault();
-                        formatarSelecao(formato);
-                        return;
-                      }
-                      // ALT+ENTER TAMBÉM PULA LINHA.
-                      //
-                      // O Shift+Enter o navegador resolve sozinho — a quebra é
-                      // o comportamento padrão dele numa caixa de texto. O
-                      // Alt+Enter não faz nada por padrão, então a quebra tem
-                      // de ser inserida na mão. Quem vem do Outlook e do Excel
-                      // tem o Alt+Enter no dedo, e ali ele significa
-                      // exatamente isto.
-                      //
-                      // Vem ANTES do menu do "/" de propósito: com o menu
-                      // aberto, o Shift+Enter já quebra a linha em vez de
-                      // escolher um item, e as duas teclas precisam significar
-                      // a mesma coisa em toda situação.
-                      if (e.key === "Enter" && e.altKey) {
-                        e.preventDefault();
-                        const campo = e.target;
-                        // insertText preserva o "desfazer" do navegador e deixa
-                        // o cursor depois da quebra. O caminho manual existe
-                        // para o navegador que não tiver o comando: sem ele o
-                        // cursor saltaria para o fim do texto a cada quebra.
-                        const ok = typeof document.execCommand === "function"
-                          && document.execCommand("insertText", false, "\n");
-                        if (!ok) {
-                          const ini = campo.selectionStart;
-                          const fim = campo.selectionEnd;
-                          setRascunho(campo.value.slice(0, ini) + "\n" + campo.value.slice(fim));
-                          requestAnimationFrame(() => {
-                            campo.selectionStart = ini + 1;
-                            campo.selectionEnd = ini + 1;
-                          });
-                        }
-                        return;
-                      }
-                      // Menu do "/": navega com as setas e escolhe com Enter.
-                      if (slashAberto) {
-                        if (e.key === "ArrowDown") { e.preventDefault(); setSlashIdx((i) => Math.min(slashLista.length - 1, i + 1)); return; }
-                        if (e.key === "ArrowUp") { e.preventDefault(); setSlashIdx((i) => Math.max(0, i - 1)); return; }
-                        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); escolherSlash(slashLista[Math.min(slashIdx, slashLista.length - 1)]); return; }
-                        if (e.key === "Escape") { e.preventDefault(); setRascunho(""); return; }
-                      }
-                      // Enter envia; Shift+Enter e Alt+Enter pulam linha.
-                      if (e.key === "Enter" && !e.shiftKey && !e.altKey) { e.preventDefault(); enviar(); }
-                    }}
-                    rows={1}
-                    placeholder={editando ? "Corrija a mensagem e aperte Enter" : (modoNota ? "Escreva uma nota interna (só a equipe vê)" : "Digite uma mensagem")}
-                    style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", color: C.textPrimary, boxSizing: "border-box", padding: "10px 6px", fontSize: 14.5, resize: "none", lineHeight: "20px", maxHeight: 120, overflowY: "auto", fontFamily: "inherit", alignSelf: "flex-end" }}
-                  />
-                  {(rascunho.trim() || modoNota) ? (
-                    <button onClick={enviar} title={modoNota ? "Salvar nota" : "Enviar"} style={{ border: "none", background: modoNota ? "#d4a017" : C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, alignSelf: "flex-end" }}>{modoNota ? <StickyNote size={19} color="#fff" /> : <Send size={20} color="#fff" />}</button>
-                  ) : (
-                    <button onClick={iniciarGravacao} title="Gravar áudio" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
-                      <Mic size={24} color={C.textSecondary} />
-                    </button>
-                  )}
-                  </div>
-                </>
+                </div>
+              ) : (
+                caixaDeEscrever
               )}
             </div>
           </>
