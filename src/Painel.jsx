@@ -929,6 +929,24 @@ function PainelFigurinhas({ C, figurinhas, figHover, aoPassarMouse, aoEnviar, ao
 //
 // `flutuante = false` é o caso de quem não tem texto nenhum (áudio, vídeo,
 // figurinha): aí ele volta a ser a linha de sempre, embaixo do anexo.
+// `folgaDaSeta` — o espaço que a hora deixa livre para a seta do menu.
+//
+// Relato do escritório, com a tela do celular: "está cortando parte do horário
+// do envio". Medido: a seta cobria 43px de uma hora que tem 46. Nove décimos
+// dela, invisíveis.
+//
+// A seta do menu da mensagem é desenhada por cima do texto, no canto de cima à
+// direita, com um degradê na cor da bolha atrás — e isso é bom: reservar espaço
+// para ela o tempo todo engordava toda bolha curta por causa de um botão que só
+// aparece ao passar o mouse.
+//
+// SÓ QUE NO CELULAR NÃO HÁ MOUSE, e por isso ela fica SEMPRE visível. Aí deixa
+// de ser um botão que aparece: é um pedaço permanente da bolha. E numa bolha de
+// duas linhas — nome de quem escreveu em cima, texto curto embaixo — o corpo
+// dela alcança a linha de baixo e apaga a hora com o próprio degradê.
+//
+// O que é permanente ocupa espaço. No celular a hora se afasta o tanto que a
+// seta ocupa; no computador a folga é zero e nada muda.
 function MetaBolha({ C, m, saida, flutuante, aoReenviar }) {
   return (
     <span style={{
@@ -1533,7 +1551,7 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
               aoVerTudo={() => setReagindoTudo(true)}
               aoReagir={(e) => { setRostoAberto(null); reagir(m, e); }} />
           )}
-          <div style={{ position: "relative", maxWidth: estreito ? "84%" : "65%", background: figurinhaNua ? "transparent" : (saida ? C.bubbleOut : C.bubbleIn), color: C.textPrimary, borderRadius: 8, padding: figurinhaNua ? 0 : (m.tipo === "imagem" ? 4 : "5px 7px 6px 9px"), boxShadow: figurinhaNua ? "none" : "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
+          <div style={{ position: "relative", maxWidth: estreito ? "84%" : "65%", background: figurinhaNua ? "transparent" : (saida ? C.bubbleOut : C.bubbleIn), color: C.textPrimary, borderRadius: 8, padding: figurinhaNua ? 0 : (m.tipo === "imagem" ? 4 : (estreito ? "5px 40px 6px 9px" : "5px 7px 6px 9px")), boxShadow: figurinhaNua ? "none" : "0 1px 0.5px rgba(0,0,0,.15)", outline: casa ? "2px solid #f4c430" : "none" }}>
             {/* O RÓTULO NÃO É UM NOME, e não se veste de nome.
                 Em negrito e colorido como os outros, "Pelo celular"
                 se lia como alguém chamado assim. Em cinza, com o
@@ -1574,8 +1592,22 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
                 position: "absolute", top: 0, right: 0, border: "none", cursor: "pointer",
                 opacity: (estreito || msgHover === m.id || reagindo === m.id) ? 0.9 : 0,
                 transition: "opacity .12s", display: "flex", alignItems: "flex-start", justifyContent: "flex-end",
-                padding: "3px 3px 6px 30px", borderRadius: "0 8px 0 0",
-                background: `linear-gradient(to left, ${saida ? C.bubbleOut : C.bubbleIn} 45%, transparent)`,
+                // NO CELULAR A SETA TEM COLUNA PRÓPRIA, e por isso perde o degradê.
+                //
+                // Ela não some nunca ali (não há mouse para tirá-la), então
+                // deixa de ser um botão que aparece e vira parte da bolha. O
+                // que é permanente ocupa espaco: a bolha abre uma coluna a
+                // direita (ver o `padding` dela), e com nada por baixo o
+                // degrade viraria so uma mancha na quina.
+                //
+                // No computador continua como estava: a seta sobrepoe o texto
+                // e o degrade mantem a leitura. Reservar a coluna la tambem
+                // engordaria toda bolha curta por causa de um botao que so
+                // aparece ao passar o mouse.
+                padding: estreito ? "3px 5px 6px 8px" : "3px 3px 6px 30px",
+                borderRadius: "0 8px 0 0",
+                background: estreito ? "transparent"
+                  : `linear-gradient(to left, ${saida ? C.bubbleOut : C.bubbleIn} 45%, transparent)`,
               }}>
                 <ChevronDown size={17} color={C.textSecondary} />
               </button>
@@ -1703,7 +1735,8 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
                     <Trash2 size={14} color={C.textSecondary} /> Esta mensagem foi apagada
                   </span>
                 ) : formatarTexto(m.texto, C.link)}
-                <MetaBolha C={C} m={m} saida={saida} flutuante aoReenviar={() => reenviar(m)} />
+                <MetaBolha C={C} m={m} saida={saida} flutuante aoReenviar={() => reenviar(m)}
+ />
               </div>
             )}
             {/* AS REAÇÕES, COMO NO WHATSAPP WEB.
@@ -4283,7 +4316,19 @@ export default function Painel({ sessao }) {
     if (!el) return;
     el.style.height = "auto";
     el.style.height = Math.min(el.scrollHeight, 120) + "px";
-  }, [rascunho, conversaId]);
+    // `modoNota` E `estreito` NAS DEPENDÊNCIAS, e não só o texto.
+    //
+    // A caixa MUDA DE LUGAR quando a nota abre — ela sai da barra de baixo e vai
+    // para o painel de cima. Mudar de lugar é ser desmontada e montada de novo,
+    // e a caixa nova nasce com a altura de uma linha, sem a que este efeito
+    // tinha calculado. Como as dependências eram só o texto e a conversa, ele
+    // não rodava: no celular o aviso "Escreva uma nota interna (só a equipe vê)"
+    // ocupa duas linhas e ficava CORTADO AO MEIO — medido, a caixa precisava de
+    // 80px e tinha 40.
+    //
+    // `estreito` pelo mesmo motivo, um passo adiante: virar o telefone muda a
+    // largura, e o que cabia em uma linha passa a caber em duas.
+  }, [rascunho, conversaId, modoNota, estreito]);
 
   // ---- Realtime: novas mensagens e conversas atualizadas ----
   //
@@ -7190,8 +7235,18 @@ export default function Painel({ sessao }) {
     <input ref={fileRef} type="file" multiple onChange={aoEscolherArquivo} style={{ display: "none" }} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" />
     <input ref={figurinhaRef} type="file" accept="image/webp,image/png,image/jpeg" style={{ display: "none" }}
       onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) { setEmojiAberto(false); enviarArquivo(f, "", conversaId, "figurinha"); } }} />
+      {/*
+          O QUE ESTA CAIXA É, DITO POR ATRIBUTO E NÃO POR TEXTO.
+
+          Quem precisa achá-la — as provas, e um dia um leitor de tela —
+          procurava pelo AVISO dentro dela ("nota interna"). No celular o aviso
+          ficou curto, e o acordo se desfez em silêncio: a caixa continuava lá e
+          ninguém mais a achava. É a segunda vez hoje que um seletor amarrado à
+          redação de uma frase quebra ao melhorarem a frase.
+      */}
     <textarea
       ref={inputRef}
+      data-campo={modoNota ? "nota" : "mensagem"}
       value={rascunho}
       onChange={(e) => { setRascunho(e.target.value); setSlashIdx(0); }}
       onSelect={(e) => {
@@ -7266,7 +7321,14 @@ export default function Painel({ sessao }) {
         if (e.key === "Enter" && !e.shiftKey && !e.altKey) { e.preventDefault(); enviar(); }
       }}
       rows={1}
-      placeholder={editando ? "Corrija a mensagem e aperte Enter" : (modoNota ? "Escreva uma nota interna (só a equipe vê)" : "Digite uma mensagem")}
+      placeholder={editando ? "Corrija a mensagem e aperte Enter"
+                      // NO CELULAR O AVISO É CURTO, e nao por preguica: a frase
+                      // inteira quebra em tres linhas numa tela de 320px e empurra
+                      // a conversa para fora da vista. A moldura ambar e o icone
+                      // aceso ja dizem que aquilo e uma nota; o campo so precisa
+                      // nomear o que se escreve nele.
+                      : (modoNota ? (estreito ? "Nota interna" : "Escreva uma nota interna (só a equipe vê)")
+                                  : "Digite uma mensagem")}
       style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", color: C.textPrimary, boxSizing: "border-box", padding: "10px 6px", fontSize: 14.5, resize: "none", lineHeight: "20px", maxHeight: 120, overflowY: "auto", fontFamily: "inherit", alignSelf: "flex-end" }}
     />
     {(rascunho.trim() || modoNota) ? (
@@ -8919,9 +8981,15 @@ export default function Painel({ sessao }) {
                 <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10,
                               padding: estreito ? "10px 6px" : "12px 8px" }}>
                   <StickyNote size={18} color="#d4a017" />
-                  <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: C.textSecondary }}>
-                    Você está escrevendo uma <b style={{ color: "#d4a017" }}>nota interna</b>,
-                    {" "}na caixa lá em cima.
+                  {/* CURTA NO CELULAR. A frase inteira quebra em tres linhas numa
+                      tela estreita, e uma tarja de tres linhas rouba da conversa
+                      mais do que explica. O essencial e a seta para cima: a caixa
+                      nao sumiu, ela subiu. */}
+                  <span style={{ flex: 1, minWidth: 0, fontSize: estreito ? 12.5 : 13.5,
+                                 color: C.textSecondary }}>
+                    {estreito ? (<>A <b style={{ color: "#d4a017" }}>nota</b> está aberta ↑</>)
+                              : (<>Você está escrevendo uma <b style={{ color: "#d4a017" }}>nota interna</b>,
+                                 {" "}na caixa lá em cima.</>)}
                   </span>
                   <button onClick={() => setModoNota(false)}
                           title="Voltar para a mensagem"
@@ -8929,7 +8997,7 @@ export default function Painel({ sessao }) {
                                    color: C.textSecondary, cursor: "pointer", borderRadius: 20,
                                    padding: "7px 14px", fontSize: 12.5, fontWeight: 600,
                                    whiteSpace: "nowrap", flexShrink: 0 }}>
-                    Voltar para a mensagem
+                    {estreito ? "Voltar" : "Voltar para a mensagem"}
                   </button>
                 </div>
               ) : (

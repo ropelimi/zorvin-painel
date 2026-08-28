@@ -470,6 +470,68 @@ console.log("\n\"Juntar duas conversas\" não existe mais");
   }
 }
 
+// ==================================================================
+//  A HORA DA MENSAGEM NÃO PODE FICAR DEBAIXO DA SETA DO MENU
+// ==================================================================
+//
+// Relato do escritório, com a tela do celular: "está cortando parte do horário
+// do envio". Medido: a seta cobria 43px de uma hora que tem 46. Nove décimos
+// dela, invisíveis.
+//
+// A seta do menu da mensagem é desenhada POR CIMA do texto, no canto de cima à
+// direita, com um degradê na cor da bolha atrás. No computador isso é bom:
+// reservar espaço para ela o tempo todo engordava toda bolha curta por causa de
+// um botão que só aparece ao passar o mouse.
+//
+// SÓ QUE NO CELULAR NÃO HÁ MOUSE, e por isso ela fica SEMPRE visível. Deixa de
+// ser um botão que aparece e vira um pedaço permanente da bolha — e numa bolha
+// de duas linhas (nome de quem escreveu em cima, texto curto embaixo) o corpo
+// dela alcança a linha de baixo e apaga a hora com o próprio degradê.
+//
+// O que é permanente ocupa espaço: no celular a bolha abre uma coluna à direita
+// do tamanho da seta.
+{
+  console.log("\nA hora não fica debaixo da seta do menu");
+  // ABRE UMA CONVERSA ANTES. Esta seção mora no fim do arquivo, e a essa altura
+  // as anteriores já voltaram para a lista — sem bolha na tela não há o que
+  // medir, e a conferência de "há o que medir" foi justamente quem avisou.
+  if (!(await page.locator("[data-msg-id]").count())) {
+    await page.locator("[data-conversa-nome]").first().click();
+    await page.waitForTimeout(2500);
+  }
+  const r = await page.evaluate(() => {
+    const cruza = (a, b) => !(a.right <= b.left || a.left >= b.right
+                           || a.bottom <= b.top || a.top >= b.bottom);
+    let comSeta = 0, tapadas = 0, pior = 0;
+    for (const bolha of document.querySelectorAll("[data-msg-id]")) {
+      const seta = bolha.querySelector('button[aria-label="Opções da mensagem"]');
+      if (!seta || getComputedStyle(seta).opacity === "0") continue;
+      for (const meta of bolha.querySelectorAll("span")) {
+        if (getComputedStyle(meta).float !== "right") continue;
+        comSeta += 1;
+        const rm = meta.getBoundingClientRect();
+        const rs = seta.getBoundingClientRect();
+        if (cruza(rm, rs)) {
+          tapadas += 1;
+          pior = Math.max(pior, Math.round(Math.min(rm.right, rs.right) - Math.max(rm.left, rs.left)));
+        }
+      }
+    }
+    return { comSeta, tapadas, pior };
+  });
+  console.log(`     ${r.comSeta} horas em bolhas com a seta visível; ${r.tapadas} tapadas`);
+
+  // A PRIMEIRA CONFERÊNCIA É QUE HÁ O QUE MEDIR. Sem uma bolha com seta na
+  // tela, a segunda passaria sozinha e não provaria nada — que foi exatamente o
+  // que aconteceu na primeira tentativa de reproduzir isto: as mensagens da
+  // bancada não tinham `id_uazapi`, a seta nem era desenhada, e a medição dizia
+  // "zero tapadas" com o defeito inteiro de pé.
+  ok("há bolhas com a seta do menu visível, para haver o que medir", r.comSeta > 0,
+     "sem seta na tela esta prova não mede nada");
+  ok("e nenhuma hora fica debaixo dela", r.tapadas === 0,
+     `${r.tapadas} de ${r.comSeta}, a pior com ${r.pior}px cobertos`);
+}
+
 console.log(`\nerros de página: ${erros.length}`);
 erros.slice(0, 5).forEach((e) => console.log("   • " + e.slice(0, 180)));
 ok("nenhum erro de JavaScript no caminho todo", erros.length === 0);

@@ -873,7 +873,22 @@ const TABELAS = {
     { id: "u-isabela", admin: false, nome: "ISABELA GUEDES", foto_url: null },
   ],
   permissoes: [],            // vazio + admin = alcança tudo
-  mensagens: MENSAGENS,
+  // TODA MENSAGEM TEM `id_uazapi`, como no banco de verdade.
+  //
+  // A bancada nunca punha esse campo, e ele é a condição para a SETA DO MENU DA
+  // MENSAGEM existir (responder, encaminhar, editar, apagar, fixar, reagir).
+  // Resultado: em nenhuma prova, nunca, essa seta foi desenhada — um recurso
+  // inteiro fora do alcance de qualquer conferência.
+  //
+  // Foi assim que o defeito relatado pelo escritório atravessou tudo: no
+  // celular a seta é permanente e o degradê dela era pintado por cima da hora
+  // da mensagem. A primeira tentativa de medir isso aqui devolveu "zero horas
+  // tapadas" — não porque estivesse certo, mas porque não havia seta na tela.
+  //
+  // Só o que veio do WhatsApp tem id: a nota interna e a mensagem que ainda
+  // está na fila não têm, e é isso que a bancada imita.
+  mensagens: MENSAGENS.map((m) => (m.id_uazapi || m.origem === "nota"
+    ? m : { ...m, id_uazapi: `uz-${m.id}` })),
   // TODOS OS CONTATOS, e não só o de prova. A tabela de verdade tem uma linha
   // por pessoa, e a busca nova consulta ELA em vez de filtrar a lista que está
   // na tela — que é o que a fazia parar no teto de 1000 linhas.
