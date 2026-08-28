@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
-import { numeroCanonico, chaveDoNumero } from "./numeros.js";
+import { numeroCanonico, chaveDoNumero, porQueNaoRecebeWhatsApp } from "./numeros.js";
 import { chamarPonte } from "./ponte.js";
 import { comoPrever, nomeDoTipo, tamanhoLegivel } from "./arquivos.js";
 import Departamentos from "./Departamentos";
@@ -8983,6 +8983,49 @@ export default function Painel({ sessao }) {
                 </div>
               </div>
             )}
+
+            {/* ------------------------------------------------------------
+                ESTE NÚMERO NÃO TEM COMO RECEBER — DITO ANTES DE ESCREVER.
+
+                Veio de uma varredura dos 238 envios que falharam no banco do
+                escritório. Tirando o erro passageiro, o que sobrou foram 16
+                celulares gravados sem o nono dígito e 8 telefones fixos — as
+                duas coisas visíveis no próprio número, sem perguntar nada a
+                ninguém.
+
+                E o preço disso: 26 tentativas para o mesmo número em nove
+                dias, 16 para outro, 16 para um terceiro. Ninguém lia a bolha
+                vermelha lá embaixo, no fim de uma conversa longa. Cada envio
+                parecia o primeiro porque nada na tela dizia o contrário.
+
+                AQUI EM CIMA, E NÃO NA BOLHA. A bolha vermelha chega DEPOIS de
+                a pessoa escrever e mandar — ela conta o que já aconteceu. Esta
+                tarja fica onde o olho passa antes de digitar, e diz o que
+                fazer em vez de o que houve.
+
+                O NÚMERO CORRIGIDO É MOSTRADO, E NÃO USADO. A ponte poderia
+                tentar sozinha com o 9 inserido e resolver os 16 casos sem
+                ninguém mexer — mas isso é mandar mensagem de cliente para um
+                número que ninguém digitou, e o 9 nem sempre acerta a mesma
+                pessoa. Quem confere na ficha é gente.
+                ------------------------------------------------------------ */}
+            {(() => {
+              const oQueHa = porQueNaoRecebeWhatsApp(conversa.contato?.numero);
+              if (!oQueHa) return null;
+              return (
+                <div data-numero-nao-recebe data-tipo={oQueHa.tipo}
+                     style={{ background: modo === "escuro" ? "#3a2a1a" : "#fff4e5",
+                              borderBottom: "1px solid #e0a458",
+                              padding: estreito ? "8px 12px" : "10px 16px",
+                              display: "flex", alignItems: "flex-start", gap: 10 }}>
+                  <AlertCircle size={17} color="#d97706" style={{ flexShrink: 0, marginTop: 1 }} />
+                  <div style={{ fontSize: estreito ? 12.5 : 13, lineHeight: 1.45, color: C.textPrimary }}>
+                    <b>{oQueHa.titulo}</b>{" "}
+                    <span style={{ color: C.textSecondary }}>{oQueHa.detalhe}</span>
+                  </div>
+                </div>
+              );
+            })()}
 
             <div ref={listaRef} data-lista-mensagens onScroll={aoRolar} style={{ flex: 1, overflowY: "auto", padding: estreito ? "16px 10px" : "20px 8%", display: "flex", flexDirection: "column", gap: 6 }}>
               {/* O degrau para subir no histórico. A conversa abre com as

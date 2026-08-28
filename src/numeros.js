@@ -170,3 +170,98 @@ export function outrosNumeros(cadastro, numeroDaConversa) {
   }
   return fora;
 }
+
+// ============================================================
+//  ESTE NÚMERO TEM COMO RECEBER WHATSAPP?
+//
+//  Veio de uma varredura dos 238 envios que falharam no banco do escritório.
+//  Tirando os que são erro passageiro, o que sobrou foram DUAS coisas, as duas
+//  visíveis no próprio número, sem perguntar nada a ninguém:
+//
+//    16 celulares gravados na forma antiga, sem o nono dígito. "553189271231"
+//       é o 31 8927-1231 do Alcides. O WhatsApp só conhece "5531989271231".
+//       Cada um desses é um cliente que nunca recebeu nada.
+//
+//     8 telefones FIXOS — PG ADVOGADOS, BSPZ ADVOGADOS, Queiroz Cavalcanti.
+//       Fixo não tem WhatsApp. Não é defeito do sistema, e insistir não ajuda.
+//
+//  E o que isso custava: 26 tentativas para o mesmo número em nove dias, 16
+//  para outro, 16 para um terceiro. Ninguém lia a bolha vermelha — cada envio
+//  parecia o primeiro, porque nada na tela dizia o contrário.
+//
+//  POR QUE AQUI, E NÃO NA PONTE. A ponte poderia tentar sozinha com o 9
+//  inserido, e resolveria os 16 casos sem ninguém mexer. Mas isso é mandar uma
+//  mensagem de cliente para um número que ninguém digitou — e o 9 nem sempre
+//  acerta a mesma pessoa. Mostrar o número corrigido para alguém CONFERIR na
+//  ficha tem quase todo o benefício e nenhum desses riscos.
+//
+//  NÃO responde "tem WhatsApp?": isso só o WhatsApp sabe. Responde o que dá
+//  para saber olhando: se o número está escrito de um jeito que não pode dar
+//  certo. Um celular de 11 dígitos com DDD bom volta `null` — não temos o que
+//  dizer sobre ele, e inventar aviso seria pior do que calar.
+
+// Os DDDs que existem. Sem esta lista, "550497234535" (do cadastro de um
+// escritório parceiro) vira "04 9723-4535" e a tela sugere ligar para um DDD
+// que não existe — foi o que aconteceu quando eu montei essa conta na mão.
+const DDDS = new Set([
+  11, 12, 13, 14, 15, 16, 17, 18, 19,
+  21, 22, 24, 27, 28,
+  31, 32, 33, 34, 35, 37, 38,
+  41, 42, 43, 44, 45, 46, 47, 48, 49,
+  51, 53, 54, 55,
+  61, 62, 63, 64, 65, 66, 67, 68, 69,
+  71, 73, 74, 75, 77, 79,
+  81, 82, 83, 84, 85, 86, 87, 88, 89,
+  91, 92, 93, 94, 95, 96, 97, 98, 99,
+].map(String));
+
+/** O que está errado com este número, ou `null` se não há nada a dizer.
+ *
+ *  Devolve `{ tipo, titulo, detalhe, sugestao? }`. `sugestao` é o número no
+ *  formato cru, pronto para gravar, quando existe um palpite bom. */
+export function porQueNaoRecebeWhatsApp(bruto) {
+  const guardado = String(bruto || "").replace(/\D/g, "");
+  if (!guardado) return null;
+  // Grupo do WhatsApp não é telefone: a chave dele começa com "grupo:".
+  if (String(bruto).startsWith("grupo:")) return null;
+
+  const chave = chaveDoNumero(bruto);
+
+  if (chave.length < 10) {
+    return { tipo: "curto",
+             titulo: "Este número está incompleto.",
+             detalhe: "Faltam dígitos — provavelmente o DDD. Confira na ficha do cliente." };
+  }
+  // Mais de 11 dígitos na chave é número de fora do Brasil. As regras daqui
+  // não valem lá, e um aviso errado é pior do que nenhum.
+  if (chave.length > 11) return null;
+
+  const ddd = chave.slice(0, 2);
+  if (!DDDS.has(ddd)) {
+    return { tipo: "ddd", titulo: `O DDD ${ddd} não existe.`,
+             detalhe: "Alguém digitou um dígito a mais, ou um zero na frente. "
+                    + "Confira o número na ficha do cliente." };
+  }
+
+  // Dez dígitos aqui só pode ser FIXO: `chaveDoNumero` já promoveu para onze
+  // tudo que começa com 6, 7, 8 ou 9, que é a faixa de celular.
+  if (chave.length === 10) {
+    return { tipo: "fixo",
+             titulo: `${telefoneLegivel(chave)} é um telefone fixo.`,
+             detalhe: "Telefone fixo não recebe WhatsApp. Se o cliente tiver celular, "
+                    + "use o celular." };
+  }
+
+  // Onze dígitos e DDD bom: o número está bem escrito. Só falta saber se ele
+  // veio ASSIM do cadastro, ou se foi a chave que consertou na hora.
+  const certo = numeroCanonico(chave);
+  const comoEsta = guardado.length === 10 || guardado.length === 11
+    ? numeroCanonico(guardado) : guardado;
+  if (comoEsta !== certo) {
+    return { tipo: "sem-nono", sugestao: certo,
+             titulo: "Falta o nono dígito neste celular.",
+             detalhe: `Está gravado como ${telefoneLegivel(comoEsta)} e o WhatsApp `
+                    + `só conhece ${telefoneLegivel(certo)}. Confira na ficha do cliente.` };
+  }
+  return null;
+}
