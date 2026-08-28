@@ -34,7 +34,7 @@ const AJUDANTES = new Set(["rodar", "navegador"]);
 // vê o dobro delas e conclui que há uma duplicação onde há uma ferramenta de
 // desenvolvimento. Foi exatamente essa armadilha que quase virou o conserto de
 // um defeito que não existia.
-const NO_BUILD_DE_PRODUCAO = new Set(["desempenho", "digitar", "selos-em-rajada"]);
+const NO_BUILD_DE_PRODUCAO = new Set(["desempenho", "digitar", "selos-em-rajada", "partida"]);
 
 // A ORDEM É A DO ALFABETO, e é de propósito: qualquer outra seria uma opinião
 // que envelhece. Cada prova sobe o seu próprio navegador e limpa o que sujou,
