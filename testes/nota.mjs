@@ -292,14 +292,29 @@ console.log("\nO seletor se faz notar, e diz em qual estado está");
   const transparente = (c) => /rgba\([^)]*,\s*0\)$/.test(c) || c === "transparent";
 
   await entrarNoModoNota();
-  const faixa = page.locator("[data-processo-da-nota]");
-  const fundoDaFaixa = await cor(faixa, "backgroundColor");
-  ok("a faixa do seletor tem fundo próprio, e não é transparente",
-     !transparente(fundoDaFaixa),
-     `ficou ${fundoDaFaixa} — sem fundo, ela some no meio da tela`);
-  ok("ela tem borda que a separa do que está em volta",
-     (await cor(faixa, "borderTopWidth")) !== "0px",
-     "sem borda a faixa se dissolve na barra de baixo");
+  // A PERGUNTA É "ISTO SE FAZ NOTAR?", E O QUE RESPONDE É O PAINEL.
+  //
+  // Estas duas conferências olhavam o fundo e a borda da PRÓPRIA faixa do
+  // seletor, porque ela era um bloco solto acima da barra de baixo. A nota
+  // mudou de lugar: agora a faixa é a metade esquerda da linha de cima de um
+  // painel âmbar, que é quem tem o fundo e a borda. Continuar medindo a faixa
+  // seria medir uma decisão de montagem que já não vale — e reprovar um
+  // desenho que resolve melhor a mesma coisa.
+  //
+  // O QUE NÃO PODE MUDAR é o motivo delas: ligada a nota, o que está na tela
+  // tem de se distinguir do resto. Vinculado ao processo errado ninguém fica;
+  // ESQUECIDO, sim, e a nota que devia estar no histórico da ação fica só no
+  // do cliente.
+  const painel = page.locator("[data-nota-no-alto]");
+  const fundoDoPainel = await cor(painel, "backgroundColor");
+  ok("o painel da nota tem fundo próprio, e não é transparente",
+     !transparente(fundoDoPainel),
+     `ficou ${fundoDoPainel} — sem fundo, ele some no meio da tela`);
+  ok("e uma borda que o separa da conversa",
+     (await cor(painel, "borderBottomWidth")) !== "0px",
+     "sem borda o painel se dissolve nas mensagens");
+  ok("e o seletor do processo está dentro dele",
+     await page.locator("[data-nota-no-alto] [data-processo-da-nota]").count() === 1);
 
   // O ESTADO, SEM PRECISAR LER. Escolhido e não escolhido têm de ser
   // diferentes de longe; só a letra dentro da caixa obrigaria a ler para saber.
