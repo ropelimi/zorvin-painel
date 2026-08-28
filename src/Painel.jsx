@@ -7280,9 +7280,14 @@ export default function Painel({ sessao }) {
   </>
   );
 
-  // A BARRA DE VINCULAR A NOTA A UM PROCESSO. Sobe junto com a caixa: ela
-  // pertence à nota, e deixá-la embaixo separaria a escolha do texto que ela
-  // governa.
+  // VINCULAR A NOTA A UM PROCESSO. Sobe junto com a caixa: pertence à nota, e
+  // deixá-la embaixo separaria a escolha do texto que ela governa.
+  //
+  // SEM MOLDURA PRÓPRIA: isto é o conteúdo da ESQUERDA da linha de cima do
+  // painel, e o X de fechar mora na direita da mesma linha. A linha é montada
+  // pelo painel, e não aqui, porque ela existe MESMO QUANDO NÃO HÁ PROCESSO —
+  // a maior parte dos contatos é lead sem cadastro no Vantoro, e se a linha só
+  // nascesse junto com o seletor o X sumiria justamente para eles.
   const barraDoProcessoDaNota = modoNota && !selecao && clienteDaConversa
     && (processosDoCliente.length > 0 || buscandoProcessos) && (() => {
   const escuro = modo === "escuro";
@@ -7290,9 +7295,7 @@ export default function Painel({ sessao }) {
   const temProcesso = Boolean(processoDaNota);
   return (
   <div data-processo-da-nota
-       style={{ background: escuro ? "#3a3320" : "#fff8d6",
-                borderTop: `1px solid ${escuro ? "#5c4f28" : "#e6cf6a"}`,
-                padding: estreito ? "8px 10px" : "10px 16px",
+       style={{ flex: 1, minWidth: 0,
                 display: "flex", alignItems: "center",
                 gap: estreito ? 7 : 10, flexWrap: "wrap" }}>
     <span style={{ fontSize: 12.5, fontWeight: 700, color: AMBAR,
@@ -8712,26 +8715,38 @@ export default function Painel({ sessao }) {
                    style={{ background: modo === "escuro" ? "#2f2a19" : "#fffaea",
                             borderBottom: "2px solid #d4a017",
                             display: "flex", flexDirection: "column" }}>
+                {/* A LINHA DE CIMA: o processo à esquerda, a saída à direita.
+                    A FAIXA COM "Nota interna — só a equipe vê" SAIU. Ela dizia,
+                    em amarelo e em negrito, exatamente o que o campo de digitar
+                    logo abaixo já diz na sua própria letra cinza ("Escreva uma
+                    nota interna (só a equipe vê)"). Aviso repetido não avisa em
+                    dobro: ele ocupa a altura que a conversa perdeu e ensina o
+                    olho a pular a faixa — e o dia em que houver ali um recado
+                    que importa, ele será pulado também.
+                    O que sobrou diz a mesma coisa sem repetir ninguém: a moldura
+                    âmbar, o ícone aceso, e o próprio texto do campo.
+                    A LINHA EXISTE MESMO SEM PROCESSO. A maior parte dos contatos
+                    é lead sem cadastro no Vantoro; se ela só nascesse junto com
+                    o seletor, o X sumiria justamente para eles — e a única saída
+                    à vista seria a tarja lá embaixo. */}
                 <div style={{ display: "flex", alignItems: "center", gap: 8,
-                              padding: estreito ? "7px 10px 0" : "9px 16px 0" }}>
-                  <StickyNote size={16} color="#d4a017" />
-                  <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700,
-                                 color: "#d4a017" }}>
-                    Nota interna — só a equipe vê, não vai para o WhatsApp
-                  </span>
+                              padding: estreito ? "6px 10px 0" : "8px 16px 0" }}>
+                  {barraDoProcessoDaNota || <span style={{ flex: 1 }} />}
                   {/* FECHAR É UM BOTÃO DE VERDADE, e não "clicar no ícone de
                       novo". Quem abriu aqui em cima procura a saída aqui em
-                      cima; mandar a pessoa de volta ao cabeçalho para desfazer
-                      o que ela acabou de fazer é um passo a mais em cada nota. */}
+                      cima; mandar a pessoa de volta à barra de baixo para
+                      desfazer o que acabou de fazer é um passo a mais em cada
+                      nota. */}
                   <button data-fechar-nota onClick={() => setModoNota(false)}
-                          title="Voltar para a mensagem"
+                          title="Fechar a nota interna"
+                          aria-label="Fechar a nota interna"
                           style={{ border: "none", background: "transparent", cursor: "pointer",
                                    display: "flex", alignItems: "center", justifyContent: "center",
-                                   width: 32, height: 32, borderRadius: "50%", flexShrink: 0 }}>
+                                   width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+                                   alignSelf: "flex-start" }}>
                     <X size={18} color="#d4a017" />
                   </button>
                 </div>
-                {barraDoProcessoDaNota}
                 <div style={{ padding: estreito ? "0 8px 7px" : "0 16px 9px",
                               display: "flex", alignItems: "flex-end",
                               gap: estreito ? 6 : 10, position: "relative" }}>
