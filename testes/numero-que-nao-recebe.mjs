@@ -61,7 +61,12 @@ console.log("\nO celular gravado sem o nono dígito");
 {
   const t = await abrir("Alcides");
   ok("a tarja aparece", !!t, "nenhuma tarja na conversa");
-  ok("e diz que falta o nono dígito", t?.tipo === "sem-nono", `veio ${t?.tipo}`);
+  ok("e diz que o número está na forma antiga", t?.tipo === "sem-nono", `veio ${t?.tipo}`);
+  // SEM AFIRMAR O QUE NÃO SE SABE. A primeira redação dizia "o WhatsApp só
+  // conhece (31) 98927-1231" — uma afirmação forte, e falsa: contas antigas
+  // continuam atendendo na forma antiga. A tarja diz o que é verificável.
+  ok("sem afirmar que o WhatsApp não conhece o número",
+     !/só conhece/i.test(t?.texto || ""), t?.texto);
   // O NÚMERO CERTO NA TELA. Sem ele a tarja só reclama: quem atende teria de
   // saber de cor a regra do nono dígito para fazer alguma coisa com o aviso.
   ok("mostrando o número certo, pronto para conferir na ficha",
@@ -77,8 +82,11 @@ console.log("\nO telefone fixo");
   const t = await abrir("PG Advogados");
   ok("a tarja aparece", !!t, "nenhuma tarja na conversa");
   ok("e diz que é fixo", t?.tipo === "fixo", `veio ${t?.tipo}`);
-  ok("explicando que fixo não recebe WhatsApp",
-     /não recebe WhatsApp/i.test(t?.texto || ""), t?.texto);
+  // "FIXO NÃO RECEBE WHATSAPP" TAMBÉM ERA FALSO — o WhatsApp Business roda em
+  // fixo, e os dois casos do banco são escritórios parceiros, que é justamente
+  // quem usa isso.
+  ok("explicando que fixo só recebe pelo WhatsApp Business",
+     /WhatsApp Business/i.test(t?.texto || ""), t?.texto);
   // A TRAVA QUE IMPORTA AQUI: pôr um 9 num fixo inventa um número que não
   // existe, e mandaria alguém ligar para o nada.
   ok("e NÃO sugere pôr um 9 nele", !/3038-3888/.test((t?.texto || "").replace(/\(11\) 3038-3888/, "")),
@@ -104,6 +112,25 @@ console.log("\nE o silêncio, que é metade do valor");
   const t = await abrir("Francisco");
   ok("número bem escrito não ganha tarja nenhuma", t === null,
      `apareceu: ${JSON.stringify(t)}`);
+
+  // O CASO QUE VEIO DO ESCRITÓRIO, e é o mais importante desta prova.
+  //
+  // "Dias Costa Advogados", (31) 8418-0018: doze dígitos, forma antiga — e a
+  // conversa FUNCIONA, com mensagens indo e voltando desde julho. A primeira
+  // versão da tarja anunciava em âmbar "falta o nono dígito, o WhatsApp só
+  // conhece (31) 98418-0018", com a prova do contrário logo abaixo, na mesma
+  // tela: quatro mensagens do cliente e duas nossas com dois tiques.
+  //
+  // A premissa estava errada. Doze dígitos não é prova de que o número não
+  // recebe: contas antigas continuam atendendo na forma de oito dígitos. O
+  // formato é PISTA, e a prova está na conversa.
+  //
+  // Um aviso que contradiz o que a pessoa está VENDO é pior do que aviso
+  // nenhum: ele ensina que a tarja mente, e a partir daí ela não serve nem
+  // quando estiver certa.
+  const dias = await abrir("Dias Costa");
+  ok("número na forma antiga QUE FUNCIONA não ganha tarja", dias === null,
+     `apareceu: ${JSON.stringify(dias)}`);
 
   await page.fill('input[placeholder*="Buscar por nome"]', "");
   await page.waitForTimeout(1200);

@@ -395,42 +395,79 @@ const NUMEROS_RUINS = [
   { id: "ct-sem-nono", numero: "553189271231", nome: "Alcides (sem o 9)" },
   { id: "ct-fixo",     numero: "551130383888", nome: "PG Advogados (fixo)" },
   { id: "ct-ddd-mau",  numero: "550497234535", nome: "Fontana (DDD 04)" },
-  // A TRAVA CONTRA A TARJA QUE APARECE À TOA. Este número está perfeito; se a
-  // tarja nascer aqui, ela nasce em toda conversa e vira ruído que se aprende
-  // a pular — e aí não serve para os três de cima.
+  // A TRAVA CONTRA A TARJA QUE APARECE À TOA. Este número está perfeito — ele
+  // é que não tem WhatsApp, e isso o número não conta. Se a tarja nascer aqui,
+  // ela nasce em toda conversa e vira ruído que se aprende a pular.
   { id: "ct-numero-bom", numero: "5511991777483", nome: "Francisco (número bom)" },
+  // A SEGUNDA TRAVA, E ELA VEIO DE UM RELATO. "Dias Costa Advogados",
+  // (31) 8418-0018: doze dígitos, forma antiga — e a conversa FUNCIONA, com
+  // mensagens indo e voltando. A primeira versão da tarja anunciava em âmbar
+  // que faltava o nono dígito, com a prova do contrário logo abaixo, na mesma
+  // tela. Contas antigas continuam atendendo na forma de oito dígitos.
+  { id: "ct-antigo-que-funciona", numero: "553184180018", nome: "Dias Costa (antigo, funciona)" },
 ];
+
+// A FILA DE ERRO DESTES NÚMEROS. As tentativas que falharam moram em
+// `fila_envio`, e não em `mensagens` — é assim no banco de verdade: a ponte só
+// grava no histórico depois de a Uazapi confirmar. Daí a montagem abaixo:
+//
+//   quem NUNCA recebeu  ->  linhas em `fila_envio`, nada em `mensagens`
+//   quem recebeu        ->  mensagem em `mensagens`, nos dois sentidos
+//
+// E é exatamente essa diferença que a tarja tem de ler. Dar uma mensagem
+// enviada com sucesso ao Alcides seria dizer que o número dele funciona — e
+// aí a tarja calaria, com razão, e a prova não provaria nada.
+const FILA_DOS_NUMEROS_RUINS = [];
+
 for (const c of NUMEROS_RUINS) {
   const contato = { id: c.id, numero: c.numero, nome: c.nome, foto_url: null,
                     nome_zorvin: null, vantoro_nome: null };
+  const funciona = c.id === "ct-antigo-que-funciona";
   CONVERSAS.push({
     id: `conv-${c.id}`,
     advogado_id: PRIMEIRO_TELEFONE.id,
     contato_id: c.id,
     nao_lidas: 0,
     arquivada: false, fixada: false, favorita: false,
-    // ANTIGAS DE PROPÓSITO: a lista é ordenada por atividade, e quatro
-    // conversas novas empurrariam para baixo as que outras provas abrem pelo
-    // topo.
+    // ANTIGAS DE PROPÓSITO: a lista é ordenada por atividade, e conversas novas
+    // empurrariam para baixo as que outras provas abrem pelo topo.
     ultima_atividade: new Date(Date.now() - 400 * 24 * 3600e3).toISOString(),
     ultima_mensagem: "Boa tarde! Somos do escritório Canaverde & Aguiar.",
     frente: null, vantoro_nome: null, digitando_ate: null,
     contato,
   });
-  // UMA MENSAGEM CADA, e ela não é enfeite: o painel esconde da lista toda
-  // conversa sem uma palavra dentro ("conversa sem mensagem não é conversa"),
-  // e com razão — abrir um contato cria a linha na hora, e sem esta regra a
-  // lista encheria de conversas vazias com o horário do clique.
-  //
-  // Sem a mensagem, estas quatro existiam na tabela e não na tela. A prova da
-  // ordenação comparava a primeira da tela com a mais antiga da TABELA e
-  // reprovava — apontando um defeito que era da montagem, não do painel.
-  MENSAGENS.push({
-    id: `m-${c.id}`, conversa_id: `conv-${c.id}`, origem: "advogado", tipo: "texto",
-    texto: "Boa tarde! Somos do escritório Canaverde & Aguiar.",
-    criado_em: new Date(Date.now() - 400 * 24 * 3600e3).toISOString(),
-    status: "enviada", enviado_por: "Rodrigo Sousa", enviado_por_id: "u1",
-  });
+
+  if (funciona) {
+    // MENSAGENS NOS DOIS SENTIDOS. A resposta do cliente é a prova mais forte
+    // que existe: ninguém responde de um número que não recebe.
+    MENSAGENS.push({
+      id: `m-${c.id}`, conversa_id: `conv-${c.id}`, origem: "advogado", tipo: "texto",
+      texto: "Boa tarde! Somos do escritório Canaverde & Aguiar.",
+      criado_em: new Date(Date.now() - 400 * 24 * 3600e3).toISOString(),
+      status: "lida", enviado_por: "Rodrigo Sousa", enviado_por_id: "u1",
+    });
+    MENSAGENS.push({
+      id: `m-${c.id}-resposta`, conversa_id: `conv-${c.id}`, origem: "contato", tipo: "texto",
+      texto: "boa tarde, tudo bem? poderia verificar",
+      criado_em: new Date(Date.now() - 399 * 24 * 3600e3).toISOString(),
+    });
+  } else {
+    // NUNCA CHEGOU: duas tentativas, as duas na fila com erro. É o que o banco
+    // do escritório tinha para o Alcides — oito tentativas, nenhuma mensagem.
+    for (let i = 0; i < 2; i += 1) {
+      FILA_DOS_NUMEROS_RUINS.push({
+        id: `fila-${c.id}-${i}`, conversa_id: `conv-${c.id}`, tipo: "texto",
+        texto: "Boa tarde! Somos do escritório Canaverde & Aguiar.", status: "erro",
+        enviado_por: "Rodrigo Sousa", enviado_por_id: "u1",
+        // A FRASE À MÃO, e não a constante `MOTIVO_CONHECIDO`: ela só nasce
+        // quatrocentas linhas abaixo, e um `const` usado antes de existir
+        // derruba o módulo inteiro na primeira leitura.
+        erro_motivo: "Este número não tem conta no WhatsApp, ou está escrito errado.",
+        erro_detalhe: null,
+        criado_em: new Date(Date.now() - (400 - i) * 24 * 3600e3).toISOString(),
+      });
+    }
+  }
 }
 
 // ------------------------------------------------------------------
@@ -959,7 +996,11 @@ const TABELAS = {
   // O histórico de alterações começa VAZIO: as linhas nascem do que se faz na
   // tela, e semear alguma aqui esconderia uma tela que não grava nada.
   alteracoes: [],
-  mensagens_rapidas: [], figurinhas_favoritas: [], fila_envio: FILA_COM_ERRO,
+  mensagens_rapidas: [], figurinhas_favoritas: [],
+  // AS DUAS FILAS JUNTAS: a da conversa de sempre (que a prova de dispensar
+  // usa) e a dos números que nunca receberam. São conversas diferentes, e o
+  // painel lê a fila por conversa — uma não enxerga a outra.
+  fila_envio: [...FILA_COM_ERRO, ...FILA_DOS_NUMEROS_RUINS],
   // O DE-PARA, que já existia para o Painel não contar "rodrigo" e "Rodrigo
   // Sousa" como duas pessoas. A conversa passou a consultá-lo pelo mesmo
   // motivo: é a única pista que sobra quando o id foi apagado e o nome gravado

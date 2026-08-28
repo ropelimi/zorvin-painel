@@ -183,7 +183,8 @@ export function outrosNumeros(cadastro, numeroDaConversa) {
 //       Cada um desses é um cliente que nunca recebeu nada.
 //
 //     8 telefones FIXOS — PG ADVOGADOS, BSPZ ADVOGADOS, Queiroz Cavalcanti.
-//       Fixo não tem WhatsApp. Não é defeito do sistema, e insistir não ajuda.
+//       Fixo raramente tem WhatsApp (só com o WhatsApp Business), e vale
+//       conferir se há um celular na ficha.
 //
 //  E o que isso custava: 26 tentativas para o mesmo número em nove dias, 16
 //  para outro, 16 para um terceiro. Ninguém lia a bolha vermelha — cada envio
@@ -195,10 +196,20 @@ export function outrosNumeros(cadastro, numeroDaConversa) {
 //  acerta a mesma pessoa. Mostrar o número corrigido para alguém CONFERIR na
 //  ficha tem quase todo o benefício e nenhum desses riscos.
 //
-//  NÃO responde "tem WhatsApp?": isso só o WhatsApp sabe. Responde o que dá
-//  para saber olhando: se o número está escrito de um jeito que não pode dar
-//  certo. Um celular de 11 dígitos com DDD bom volta `null` — não temos o que
-//  dizer sobre ele, e inventar aviso seria pior do que calar.
+//  NÃO responde "tem WhatsApp?": isso só o WhatsApp sabe, e a primeira versão
+//  desta função fingiu que sabia. Ela dizia "o WhatsApp só conhece (31)
+//  98418-0018" numa conversa em que as mensagens iam e voltavam com dois
+//  tiques pelo número de oito dígitos. Contas antigas continuam atendendo na
+//  forma antiga, e fixo recebe quando o dono usa o WhatsApp Business.
+//
+//  O que ela responde é o que dá para VERIFICAR olhando: em que forma o número
+//  está escrito, e qual seria a outra forma. Quem decide é quem olha a ficha.
+//  Um celular de 11 dígitos com DDD bom volta `null` — não temos o que dizer
+//  sobre ele, e inventar aviso seria pior do que calar.
+//
+//  E QUEM CHAMA TEM DE CALAR ANTES: se a conversa já tem mensagem que foi ou
+//  veio, aquele número FUNCIONA, e nada aqui deveria ser mostrado. A tela faz
+//  esse corte; esta função só olha o número, e o número não sabe disso.
 
 // Os DDDs que existem. Sem esta lista, "550497234535" (do cadastro de um
 // escritório parceiro) vira "04 9723-4535" e a tela sugere ligar para um DDD
@@ -217,8 +228,14 @@ const DDDS = new Set([
 
 /** O que está errado com este número, ou `null` se não há nada a dizer.
  *
- *  Devolve `{ tipo, titulo, detalhe, sugestao? }`. `sugestao` é o número no
- *  formato cru, pronto para gravar, quando existe um palpite bom. */
+ *  Devolve `{ tipo, titulo, curto, detalhe, sugestao? }`.
+ *
+ *  `detalhe` é a frase inteira; `curto` é a versão de celular. Não é enfeite:
+ *  numa tela de 360px a frase inteira ocupa 126px de altura, e cada pixel de
+ *  aviso é um pixel a menos de conversa. A prova mede isso e reprova se passar.
+ *
+ *  `sugestao` é o número no formato cru, pronto para gravar, quando existe um
+ *  palpite bom. */
 export function porQueNaoRecebeWhatsApp(bruto) {
   const guardado = String(bruto || "").replace(/\D/g, "");
   if (!guardado) return null;
@@ -230,6 +247,7 @@ export function porQueNaoRecebeWhatsApp(bruto) {
   if (chave.length < 10) {
     return { tipo: "curto",
              titulo: "Este número está incompleto.",
+             curto: "Faltam dígitos — provavelmente o DDD.",
              detalhe: "Faltam dígitos — provavelmente o DDD. Confira na ficha do cliente." };
   }
   // Mais de 11 dígitos na chave é número de fora do Brasil. As regras daqui
@@ -239,6 +257,7 @@ export function porQueNaoRecebeWhatsApp(bruto) {
   const ddd = chave.slice(0, 2);
   if (!DDDS.has(ddd)) {
     return { tipo: "ddd", titulo: `O DDD ${ddd} não existe.`,
+             curto: "Confira o número na ficha do cliente.",
              detalhe: "Alguém digitou um dígito a mais, ou um zero na frente. "
                     + "Confira o número na ficha do cliente." };
   }
@@ -246,10 +265,15 @@ export function porQueNaoRecebeWhatsApp(bruto) {
   // Dez dígitos aqui só pode ser FIXO: `chaveDoNumero` já promoveu para onze
   // tudo que começa com 6, 7, 8 ou 9, que é a faixa de celular.
   if (chave.length === 10) {
+    // "FIXO NÃO RECEBE WHATSAPP" ERA FALSO, e foi dito com todas as letras
+    // numa conversa de escritório parceiro que usa exatamente isso. O WhatsApp
+    // Business roda em telefone fixo. O que dá para dizer é que é INCOMUM, e
+    // que vale conferir se há um celular na ficha — não que é impossível.
     return { tipo: "fixo",
              titulo: `${telefoneLegivel(chave)} é um telefone fixo.`,
-             detalhe: "Telefone fixo não recebe WhatsApp. Se o cliente tiver celular, "
-                    + "use o celular." };
+             curto: "Só recebe por WhatsApp Business.",
+             detalhe: "Fixo só recebe WhatsApp se o cliente usar o WhatsApp Business nele. "
+                    + "Se as mensagens não estiverem chegando, veja se há um celular na ficha." };
   }
 
   // Onze dígitos e DDD bom: o número está bem escrito. Só falta saber se ele
@@ -258,10 +282,21 @@ export function porQueNaoRecebeWhatsApp(bruto) {
   const comoEsta = guardado.length === 10 || guardado.length === 11
     ? numeroCanonico(guardado) : guardado;
   if (comoEsta !== certo) {
+    // "O WHATSAPP SÓ CONHECE X" ERA UMA AFIRMAÇÃO FORTE E ERRADA.
+    //
+    // Contas antigas continuam atendendo na forma de oito dígitos — o relato
+    // que corrigiu isto foi uma conversa com mensagens indo e voltando, com
+    // dois tiques, embaixo de uma tarja dizendo que o número não recebia.
+    //
+    // O que se pode dizer é o que é VERIFICÁVEL: o número está na forma
+    // antiga, e existe uma forma nova. Quem decide se é a mesma linha é quem
+    // olha a ficha.
     return { tipo: "sem-nono", sugestao: certo,
-             titulo: "Falta o nono dígito neste celular.",
-             detalhe: `Está gravado como ${telefoneLegivel(comoEsta)} e o WhatsApp `
-                    + `só conhece ${telefoneLegivel(certo)}. Confira na ficha do cliente.` };
+             titulo: "Este celular está na forma antiga, sem o nono dígito.",
+             curto: `Com o nono dígito seria ${telefoneLegivel(certo)}.`,
+             detalhe: `Está gravado como ${telefoneLegivel(comoEsta)}; com o nono dígito seria `
+                    + `${telefoneLegivel(certo)}. Números antigos ainda funcionam — mas se as `
+                    + `mensagens não estiverem chegando, confira o número na ficha do cliente.` };
   }
   return null;
 }
