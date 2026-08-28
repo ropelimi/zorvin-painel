@@ -130,6 +130,13 @@ console.log("\nA simulação conta, e não manda nada");
      JSON.stringify(chamadas));
   // `quantos=tudo`: um número parcial aqui seria pior que número nenhum, porque
   // é ele que a pessoa usa para decidir se aperta.
+  // `.every()` NUMA LISTA VAZIA É VERDADE. Sem a linha abaixo, um botão que
+  // não chamasse a ponte nenhuma vez deixaria esta conferência VERDE — e a de
+  // cima também, porque "nenhuma subida de verdade aconteceu" é igualmente
+  // verdadeira quando nada aconteceu. As duas juntas passariam com o recurso
+  // inteiramente quebrado.
+  ok("a simulação chegou a perguntar alguma coisa à ponte", SIMULACOES.length > 0,
+     "nenhuma chamada de simulação — as conferências abaixo não valeriam nada");
   ok("a simulação pergunta pelo total, e não por uma fatia",
      SIMULACOES.every((q) => /quantos=tudo/.test(q)), JSON.stringify(SIMULACOES));
 }

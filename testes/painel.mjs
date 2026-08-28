@@ -238,6 +238,11 @@ const navegador = await abrirNavegador();
     (ns) => ns.map((n) => n.getAttribute("data-telefone-linha")));
   const doDep = await page.evaluate((id) => globalThis.__ESPERADO.telefones
     .filter((t) => String(t.departamento_id) === String(id)).map((t) => t.nome), dep.id);
+  // DUAS LISTAS VAZIAS SÃO IGUAIS, e `.every()` numa vazia é verdade: sem esta
+  // linha, uma tabela que não desenhasse nada passaria por "mostra só os do
+  // departamento".
+  ok("o departamento escolhido tem telefones para conferir", doDep.length > 0,
+     "sem telefone nenhum a conferência abaixo não prova nada");
   ok("a tabela por telefone mostra só os telefones do departamento",
      nomesTel.length === doDep.length && nomesTel.every((n) => doDep.includes(n)),
      `veio ${JSON.stringify(nomesTel)} × esperado ${JSON.stringify(doDep)}`);
