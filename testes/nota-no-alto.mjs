@@ -36,8 +36,15 @@ await page.waitForTimeout(2000);
 await page.locator("[data-conversa-nome]").first().click();
 await page.waitForTimeout(3000);
 
-const CAMPO_NOTA = 'textarea[placeholder*="nota interna"]';
-const CAMPO_MSG = 'textarea[placeholder*="Digite uma mensagem"]';
+// PELO ATRIBUTO, E NÃO PELO AVISO DENTRO DA CAIXA.
+//
+// Eram `placeholder*="nota interna"` e `placeholder*="Digite uma mensagem"`. No
+// celular o aviso ficou curto ("Nota interna"), e o seletor deixou de casar —
+// por causa de uma letra maiúscula. A caixa continuava lá, funcionando, e a
+// prova não a achava mais. Um seletor amarrado à redação de uma frase quebra
+// toda vez que alguém melhora a frase.
+const CAMPO_NOTA = 'textarea[data-campo="nota"]';
+const CAMPO_MSG = 'textarea[data-campo="mensagem"]';
 
 /** Onde uma coisa está na tela, em pixels a partir do topo. */
 const onde = (sel) => page.evaluate((s) => {
@@ -163,6 +170,39 @@ console.log("\nNo celular");
     // é a tela inteira andando debaixo do dedo.
     ok("sem estourar a largura da tela", largura !== null && largura <= 390,
        `o painel termina em ${largura}px de 390px`);
+
+    // O AVISO DENTRO DA CAIXA NÃO PODE FICAR CORTADO.
+    //
+    // Relato do escritório: "no mobile a nota interna não está visualmente boa".
+    // Era isto, e tinha número: a caixa precisava de 80px de altura e tinha 40 —
+    // "Escreva uma nota interna (só a equipe vê)" ficava partido ao meio.
+    //
+    // A caixa se ajusta ao conteúdo por um efeito que dependia só do TEXTO e da
+    // CONVERSA. Só que ela muda de LUGAR quando a nota abre: sai da barra de
+    // baixo e vai para o painel de cima. Mudar de lugar é ser desmontada e
+    // montada de novo, e a caixa nova nasce com uma linha de altura — o efeito
+    // não rodava para corrigir.
+    const caixa = await page.evaluate(() => {
+      const t = document.querySelector('textarea[data-campo="nota"]');
+      if (!t) return null;
+      const r = t.getBoundingClientRect();
+      return { tem: Math.round(r.height), precisa: t.scrollHeight };
+    });
+    console.log(`     caixa da nota: ${caixa?.tem}px de altura, precisa de ${caixa?.precisa}px`);
+    ok("o aviso dentro da caixa cabe, em vez de sair cortado",
+       caixa && caixa.precisa <= caixa.tem + 1,
+       `a caixa tem ${caixa?.tem}px e precisa de ${caixa?.precisa}px`);
+
+    // E O PAINEL TEM DE CABER NA TELA SEM COMER A CONVERSA. Num celular de
+    // 780px de altura, um painel de 165px é um quinto da tela gasto para
+    // escrever uma linha. Com os avisos curtos ele fica em 105.
+    const alturaPainel = await page.evaluate(() => {
+      const el = document.querySelector("[data-nota-no-alto]");
+      return el ? Math.round(el.getBoundingClientRect().height) : null;
+    });
+    console.log(`     altura do painel: ${alturaPainel}px de 780px de tela`);
+    ok("e o painel não come um quinto da tela", alturaPainel !== null && alturaPainel < 130,
+       `o painel tem ${alturaPainel}px`);
   }
 }
 
