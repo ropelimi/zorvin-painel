@@ -121,6 +121,8 @@ console.log("\nOs atalhos são lidos pela POSIÇÃO da tecla, e não pela letra"
   // A legenda tem de prometer a tecla que funciona. Um atalho escrito na tela
   // e ausente no código é pior do que atalho nenhum.
   const prometidos = FORMATOS.map((f) => f.atalho);
+  ok("a barra tem formatos para conferir", prometidos.length > 0,
+     "lista vazia deixaria a conferência abaixo verde sem provar nada");
   ok("todo formato da barra anuncia um atalho", prometidos.every(Boolean),
      JSON.stringify(prometidos));
   ok("e não há dois formatos com o mesmo atalho",
