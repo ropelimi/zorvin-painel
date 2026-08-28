@@ -1143,6 +1143,7 @@ function consulta(tabela) {
   // entre uma busca que responde e uma que estoura o tempo.
   const pedidos = [];
   let inicio = 0, corte = Infinity, patch = null, contando = false, semLinhas = false, apagando = false;
+  let colunas = "";
   // AS TABELAS PEDIDAS POR DENTRO DA CONSULTA — `mensagens(id)` e afins.
   //
   // A bancada jogava o texto do `select` no lixo (`_cols`) e a conversa já
@@ -1163,7 +1164,12 @@ function consulta(tabela) {
     select(cols, opc) {
       if (opc && opc.count) contando = true;
       if (opc && opc.head) semLinhas = true;
-      embutidas = tabelasEmbutidas(String(cols || ""));
+      // O `select` FICA GUARDADO para o diário. Três consultas à mesma tabela
+      // aparecem iguais no registro, e "conversas, conversas, conversas" não
+      // diz qual delas está segurando a partida. As colunas pedidas são a
+      // única assinatura que separa uma da outra sem instrumentar o painel.
+      colunas = String(cols || "");
+      embutidas = tabelasEmbutidas(colunas);
       return eu;
     },
     eq(col, val) { pedidos.push(col); linhas = linhas.filter((l) => String(l[col]) === String(val)); return eu; },
@@ -1328,6 +1334,7 @@ function consulta(tabela) {
       // QUANDO começou e quando voltou — e é a sobreposição desses intervalos
       // que separa "três idas em fila indiana" de "três idas juntas".
       const marca = anotarNoDiario(tabela);
+      if (marca) marca.colunas = colunas.replace(/\s+/g, " ").slice(0, 90);
       // O ORIGINAL FICA GUARDADO ANTES DE TROCAR. Reatribuir `resolver` a uma
       // função que chama `resolver` é a função chamando a si mesma — pilha
       // estourada na primeira consulta.

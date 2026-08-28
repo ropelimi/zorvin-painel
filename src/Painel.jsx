@@ -13,7 +13,8 @@ import {
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
-import { numeroCanonico, chaveDoNumero, porQueNaoRecebeWhatsApp } from "./numeros.js";
+import { numeroCanonico, chaveDoNumero, porQueNaoRecebeWhatsApp, daParaChamar,
+         telefoneLegivel } from "./numeros.js";
 import { chamarPonte } from "./ponte.js";
 import { comoPrever, nomeDoTipo, tamanhoLegivel } from "./arquivos.js";
 import Departamentos from "./Departamentos";
@@ -1930,6 +1931,12 @@ export default function Painel({ sessao }) {
   const [figHover, setFigHover] = useState(null);          // qual delas está sob o mouse
   const [buscaEncaminhar, setBuscaEncaminhar] = useState("");
   const [advogadoId, setAdvogadoId] = useState(null);
+  // Quem o Vantoro achou e o Zorvin ainda não conhece por este telefone. Ver o
+  // comentário longo em `procurarNoVantoro`.
+  const [semConversa, setSemConversa] = useState([]);
+  // Se a pergunta "quais números eu alcanço?" já foi respondida. Ver o
+  // comentário longo no efeito que carrega telefones e departamentos.
+  const [acessoConferido, setAcessoConferido] = useState(false);
   const [conversas, setConversas] = useState([]);
   // DE QUEM É a lista que está em `conversas` neste instante.
   //
@@ -2400,6 +2407,17 @@ export default function Painel({ sessao }) {
   // ---- Carrega telefones e departamentos (uma vez) ----
   useEffect(() => {
     let vivo = true;
+    // AINDA NÃO PERGUNTEI ≠ PERGUNTEI E A RESPOSTA FOI NENHUM.
+    //
+    // Sem esta distinção a tela dizia, em letras claras, "Você não tem nenhum
+    // número liberado neste departamento" enquanto os números ainda estavam
+    // vindo. É uma frase definitiva sobre uma pergunta que nem tinha sido
+    // respondida — e quem lê conclui que perdeu o acesso. Foi relatado com
+    // print: a mesma sessão, segundos depois, com oito números na barra.
+    //
+    // Volta a `false` a cada tentativa: quem apertou "Tentar de novo" tem de
+    // ver que estamos perguntando de novo, e não a resposta velha.
+    setAcessoConferido(false);
     (async () => {
       const [tel, dep, eu, perm] = await Promise.all([
         supabase.from("advogados").select("id, nome, numero, foto_url, departamento_id")
@@ -2451,6 +2469,9 @@ export default function Painel({ sessao }) {
       if (!perm.error) setMinhasPermissoes(perm.data || []);
       setErroPermissoes(perm.error ? perm.error.message : "");
       setErroDoAcesso(falhou.length ? falhou.join(", ") : "");
+      // A PERGUNTA FOI RESPONDIDA — bem ou mal. Daqui para a frente a tela pode
+      // afirmar alguma coisa sobre o acesso; antes disto, não podia.
+      setAcessoConferido(true);
 
       // Alguma falhou: não se escolhe telefone nenhum agora. Escolher com meia
       // resposta abriria a lista errada e pareceria que a permissão mudou.
@@ -2565,7 +2586,17 @@ export default function Painel({ sessao }) {
   const carregarConversas = useCallback(async (advId, pagina = 0, manterAberta = null) => {
     if (!advId) return;
     const de = pagina * PAGINA_BANCO;
-    const buscar = () => supabase
+    /** As fixadas: mesma consulta, filtro próprio. Separada em função porque a
+     *  base sem o SQL das frentes precisa repeti-la sem as colunas novas. */
+    const buscarFixadas = () => supabase
+      .from("conversas")
+      .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
+      .eq("advogado_id", advId)
+      .eq("fixada", true)
+      .order("ultima_atividade", { ascending: ordem === "antigas" })
+      .limit(200)
+      .then((r) => r);
+    const pedidoDaPagina = supabase
       .from("conversas")
       // `mensagens(id)` COM TETO DE UMA: a pergunta é "existe alguma?", e não
       // "quantas são". Uma linha por conversa responde isso e não traz peso.
@@ -2576,13 +2607,67 @@ export default function Painel({ sessao }) {
       // que vieram", que não é a mais antiga de nada.
       .order("ultima_atividade", { ascending: ordem === "antigas" })
       .range(de, de + PAGINA_BANCO - 1)
-      .limit(1, { referencedTable: "mensagens" });
-    let { data, error } = await buscar();
+      .limit(1, { referencedTable: "mensagens" })
+      // `.then((r) => r)` DISPARA. O construtor do supabase-js é PREGUIÇOSO: a
+      // linha acima só monta o pedido, e a rede não sai do lugar até alguém
+      // chamar `then`. Sem isto, "sair na frente" não sairia de lugar nenhum.
+      .then((r) => r);
+
+    // ------------------------------------------------------------
+    //  AS QUATRO IDAS SAEM JUNTAS, e não uma depois da outra.
+    //
+    //  MEDIDO, e não suposto. O diário da bancada mostrou a partida assim:
+    //
+    //      173 →  874  conversas   (as fixadas)
+    //      174 →  880  conversas   (a página)
+    //      880 → 1580  conversas   (as fixadas — só depois de a página voltar)
+    //     1581 → 2286  conversas   (atendendo, prévias, digitando)
+    //
+    //  Três rodadas em fila indiana, ~700 ms cada, para buscar coisas que não
+    //  dependem umas das outras: as fixadas, as prévias, quem está atendendo e
+    //  quem está digitando precisam só do `advId`. Nenhuma precisa da página.
+    //
+    //  O comentário das fixadas, logo abaixo, já dizia a intenção — "buscadas
+    //  por conta própria, JUNTO da primeira página". A intenção era paralela; o
+    //  código era serial, porque cada `await` no meio empurra o resto para
+    //  depois da rede.
+    //
+    //  Do lado de quem atende isso era a demora da partida: no escritório,
+    //  "demora para carregar tudo", com a lista dizendo "Carregando as
+    //  conversas..." por segundos.
+    //
+    //  AS TRÊS DE BAIXO NÃO SÃO ESPERADAS de propósito: cada uma acende o seu
+    //  pedaço quando chegar. Esperá-las seria trocar três rodadas por uma
+    //  rodada mais longa, e a lista não precisa delas para aparecer.
+    // ------------------------------------------------------------
+    const pedidoDasFixadas = pagina === 0 ? buscarFixadas() : null;
+    carregarAtendimentos(advId);
+    carregarUltimasMidias(advId);
+    carregarDigitando(advId);
+
+    let { data, error } = await pedidoDaPagina;
     // Base sem o SQL das frentes: tira `vantoro_nome` do pedido e repete. Uma
     // vez só — depois disso a coluna já não é pedida.
+    let fixadasRefeitas = null;
     if (error && TEM_NOME_DO_CADASTRO && faltaColuna(error)) {
       TEM_NOME_DO_CADASTRO = false;
-      ({ data, error } = await buscar());
+      // AS FIXADAS TAMBÉM SÃO REFEITAS. Elas saíram na frente com a lista LONGA
+      // de colunas — a mesma que acabou de falhar. Sem repetir, a base sem o
+      // SQL das frentes perderia as fixadas em silêncio, e o botão de fixar
+      // pareceria não fazer nada. Antes isso não acontecia porque elas eram
+      // montadas depois, já com a bandeira baixada; sair na frente tem este
+      // preço, e ele é pago aqui.
+      const refeitos = await Promise.all([
+        supabase.from("conversas")
+          .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")}), mensagens(id)`)
+          .eq("advogado_id", advId)
+          .order("ultima_atividade", { ascending: ordem === "antigas" })
+          .range(de, de + PAGINA_BANCO - 1)
+          .limit(1, { referencedTable: "mensagens" }),
+        pagina === 0 ? buscarFixadas() : Promise.resolve({ data: [], error: null }),
+      ]);
+      ({ data, error } = refeitos[0]);
+      fixadasRefeitas = refeitos[1];
     }
     // Queda de rede não pode esvaziar a lista: sem resposta, fica o que já
     // estava na tela em vez de "Nenhuma conversa ainda".
@@ -2658,14 +2743,10 @@ export default function Painel({ sessao }) {
     //  falha e sobra a lista sem fixadas — como era antes do recurso existir.
     //  Nada some por causa disso.
     let fixadas = [];
-    if (pagina === 0) {
-      const { data: fix, error: erroFix } = await supabase
-        .from("conversas")
-        .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
-        .eq("advogado_id", advId)
-        .eq("fixada", true)
-        .order("ultima_atividade", { ascending: ordem === "antigas" })
-        .limit(200);
+    if (pedidoDasFixadas) {
+      // ESPERA o que já foi pedido lá em cima, em vez de pedir agora. É esta
+      // linha, e não a de cima, que era a segunda rodada de rede.
+      const { data: fix, error: erroFix } = fixadasRefeitas || await pedidoDasFixadas;
       if (!erroFix) fixadas = fix || [];
       if (advogadoIdRef.current !== advId) return;
     }
@@ -2688,9 +2769,9 @@ export default function Painel({ sessao }) {
     // A lista e o dono dela mudam JUNTOS — é o que garante que ninguém leia
     // esta lista como sendo de outro telefone.
     setConversasDe(advId);
-    carregarAtendimentos(advId);
-    carregarUltimasMidias(advId);
-    carregarDigitando(advId);
+    // As três que ficavam aqui saíram na frente, lá em cima: elas precisam só
+    // do `advId`, e esperar a lista para pedi-las era o que fazia a terceira
+    // rodada de rede.
   }, [ordem, carregarAtendimentos, carregarUltimasMidias, carregarDigitando]);
 
   useEffect(() => { carregarConversas(advogadoId); }, [advogadoId, carregarConversas]);
@@ -6541,13 +6622,20 @@ export default function Painel({ sessao }) {
       // Os últimos 8 dígitos são o miolo do número: não mudam com DDD, com o
       // 9 extra nem com o código do país. É por eles que casamos.
       const porChave = new Map();   // miolo do telefone → nome do cliente
+      // E O TELEFONE INTEIRO JUNTO. O miolo serve para CASAR dois números
+      // escritos de jeitos diferentes; ele não serve para DISCAR. Para oferecer
+      // "começar a conversa" é preciso o número como o cadastro o tem.
+      const telePorChave = new Map();
       (corpo.clientes || []).forEach((cl) => {
         [cl.telefone, cl.telefone2].forEach((tel) => {
           const k = String(tel || "").replace(/\D/g, "").slice(-8);
-          if (k.length === 8 && !porChave.has(k)) porChave.set(k, cl.nome);
+          if (k.length === 8 && !porChave.has(k)) {
+            porChave.set(k, cl.nome);
+            telePorChave.set(k, String(tel));
+          }
         });
       });
-      if (!porChave.size) return { porCad, novas };
+      if (!porChave.size) return { porCad, novas, semConversa: [] };
 
       const candidatas = [...conversasRef.current, ...encontradas];
       const jaCasou = new Set();
@@ -6581,7 +6669,7 @@ export default function Painel({ sessao }) {
       //  Só pelas chaves que NÃO casaram acima: quem já estava na lista não
       //  precisa de ida ao banco nenhuma.
       const faltam = [...porChave.keys()].filter((k) => !jaCasou.has(k));
-      if (!faltam.length || !advId) return { porCad, novas };
+      if (!faltam.length || !advId) return { porCad, novas, semConversa: [] };
       const { data: cts } = await supabase.from("contatos")
         .select(colunasDoContato("id, nome, numero, foto_url"))
         .or(faltam.map((k) => `numero.ilike.%${k}%`).join(","))
@@ -6594,12 +6682,45 @@ export default function Painel({ sessao }) {
           .in("contato_id", idsCt.slice(i, i + 150));
         (data || []).forEach((c) => {
           const num = String(c.contato?.numero || "");
-          porChave.forEach((nome, k) => { if (num.endsWith(k)) porCad[c.id] = nome; });
+          porChave.forEach((nome, k) => {
+            if (num.endsWith(k)) { porCad[c.id] = nome; jaCasou.add(k); }
+          });
           novas.push(c);
         });
       }
+
+      // ---------------------------------------------------------------
+      //  E QUEM O VANTORO ACHOU E O ZORVIN NUNCA VIU
+      //
+      //  Relato do escritório, com print: procurar "ELIANA ALVES DA SILVA"
+      //  devolvia "Nada encontrado para essa busca" — e a ELIANA está no
+      //  Vantoro, com telefone, três processos e vinte e um documentos.
+      //
+      //  O QUE ACONTECIA. O Vantoro era consultado e respondia certo. Com o
+      //  telefone dele em mãos, o painel procurava a CONVERSA daquele número:
+      //
+      //      .eq("advogado_id", advId)
+      //
+      //  Se a pessoa nunca escreveu para AQUELE número do escritório, não há
+      //  conversa nenhuma — e a busca terminava sem nada a mostrar.
+      //
+      //  "Nada encontrado" era falso, e é o pior tipo de falso: uma RESPOSTA.
+      //  Nós encontramos a pessoa; o que não temos é conversa com ela. Quem lê
+      //  "não achei" conclui que o cliente não existe no sistema e para de
+      //  procurar — quando o que faltava era um clique para começar a falar.
+      //
+      //  O TELEFONE VEM DO CADASTRO, e é isso que dá valor ao gesto: ninguém
+      //  decora o número do cliente. Sem isto, a saída era abrir o Vantoro,
+      //  copiar o telefone, voltar, e usar "Nova conversa".
+      const semConversa = [...porChave.keys()]
+        .filter((k) => !jaCasou.has(k))
+        .map((k) => ({ nome: porChave.get(k), telefone: telePorChave.get(k) || "" }))
+        // SEM NÚMERO NÃO HÁ O QUE OFERECER. Um cadastro sem telefone apareceria
+        // como um botão que não leva a lugar nenhum.
+        .filter((p) => daParaChamar(p.telefone));
+      return { porCad, novas, semConversa };
     } catch (_e) { /* Vantoro fora do ar não pode atrapalhar a busca local */ }
-    return { porCad, novas };
+    return { porCad, novas, semConversa: [] };
   }
 
   useEffect(() => {
@@ -6608,6 +6729,10 @@ export default function Painel({ sessao }) {
     // sobrevivem até a nova responder — e por um instante a lista mostra
     // conversas que não têm nada a ver com o que está escrito na caixa.
     setAchadosMsg({}); setAchadosCad({}); setAchadosNome({}); setExtras([]);
+    // A OFERTA DO VANTORO TAMBÉM SAI. Deixá-la de pé faria a pessoa que apagou
+    // a busca continuar vendo "começar conversa com Fulano" no alto da lista
+    // de sempre — uma sugestão sobre uma pergunta que ela já desfez.
+    setSemConversa([]);
     setErroBusca(""); setAlvoDaBusca({});
     if (termo.length < 3) { setBuscando(false); return; }
 
@@ -6671,6 +6796,7 @@ export default function Painel({ sessao }) {
           const doCadastro = await procurarNoVantoro(termo, encontradas, advId);
           if (cancelado || advogadoIdRef.current !== advId) return;
           setAchadosCad(doCadastro.porCad);
+          setSemConversa(doCadastro.semConversa || []);
           // As que só o cadastro achou entram na mesma peneira das outras, logo
           // abaixo — inclusive a de não repetir o que a lista já tem.
           encontradas.push(...doCadastro.novas);
@@ -6829,6 +6955,7 @@ export default function Painel({ sessao }) {
       if (cancelado || advogadoIdRef.current !== advId) return;
       setAchadosMsg(porMsg);
       setAchadosCad(porCad);
+      setSemConversa(doCadastro.semConversa || []);
       setAchadosNome(porNome);
       // A FRASE MUDA CONFORME O QUE FALTOU, porque a decisão de quem lê muda.
       //
@@ -8362,8 +8489,18 @@ export default function Painel({ sessao }) {
               </button>
             </div>
           )}
-          {!advogadoId && !erroDoAcesso && advogadosVisiveis.length === 0 && (
-            <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>
+          {/* ENQUANTO A PERGUNTA NÃO FOI RESPONDIDA, A TELA NÃO AFIRMA NADA.
+              A frase de baixo é definitiva — "você não tem nenhum número" —, e
+              ela aparecia durante o carregamento, quando a resposta ainda nem
+              tinha chegado. Relatado com print: a mesma sessão, segundos
+              depois, com oito números na barra lateral. */}
+          {!advogadoId && !erroDoAcesso && !acessoConferido && (
+            <div data-conferindo-acesso style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>
+              Carregando os seus números…
+            </div>
+          )}
+          {!advogadoId && !erroDoAcesso && acessoConferido && advogadosVisiveis.length === 0 && (
+            <div data-sem-numeros style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>
               Você não tem nenhum número liberado neste departamento.
             </div>
           )}
@@ -8410,7 +8547,61 @@ export default function Painel({ sessao }) {
               {erroBusca}
             </div>
           )}
-          {conversasFiltradas.length === 0 && !erroBusca && (
+          {/* ------------------------------------------------------------
+              QUEM O VANTORO ACHOU E O ZORVIN NUNCA VIU
+
+              Relato do escritório, com print: procurar "ELIANA ALVES DA SILVA"
+              devolvia "Nada encontrado para essa busca" — e a ELIANA está no
+              Vantoro, com telefone, três processos e vinte e um documentos.
+
+              O Vantoro respondia certo. Com o telefone dele em mãos, o painel
+              procurava a CONVERSA daquele número neste telefone do escritório
+              — e se a pessoa nunca escreveu para ele, não há conversa nenhuma.
+              A busca terminava sem nada a mostrar.
+
+              "Nada encontrado" era falso, e é o pior tipo de falso: uma
+              RESPOSTA. Nós encontramos a pessoa; o que não temos é conversa
+              com ela. Quem lê "não achei" conclui que o cliente não existe no
+              sistema e para de procurar — quando o que faltava era um clique.
+
+              O TELEFONE VEM DO CADASTRO, e é isso que dá valor ao gesto:
+              ninguém decora o número do cliente. Sem isto, a saída era abrir o
+              Vantoro, copiar o telefone, voltar e usar "Nova conversa".
+              ------------------------------------------------------------ */}
+          {busca.trim() && !buscando && semConversa.length > 0 && (
+            <div data-do-vantoro-sem-conversa>
+              <div style={{ padding: "10px 14px 6px", fontSize: 11.5, fontWeight: 700,
+                            letterSpacing: .4, textTransform: "uppercase",
+                            color: C.textSecondary }}>
+                No cadastro do Vantoro, ainda sem conversa por este número
+              </div>
+              {semConversa.map((p) => (
+                <div key={p.telefone} data-comecar-conversa={p.telefone}
+                     role="button" tabIndex={0}
+                     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); conversarComNumero(p.telefone); } }}
+                     onClick={() => conversarComNumero(p.telefone)}
+                     style={{ display: "flex", alignItems: "center", gap: estreito ? 10 : 12,
+                              padding: estreito ? "10px 8px" : "10px 14px",
+                              borderBottom: `1px solid ${C.divider}`, cursor: "pointer" }}>
+                  <Avatar nome={p.nome} size={48} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, overflow: "hidden",
+                                  textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                  color: C.textPrimary }}>{p.nome}</div>
+                    <div style={{ fontSize: 13, color: C.textSecondary }}>
+                      {telefoneLegivel(p.telefone)}
+                    </div>
+                  </div>
+                  {/* O QUE O CLIQUE FAZ, ESCRITO. As outras linhas desta lista
+                      abrem uma conversa que existe; esta CRIA uma. Sem dizer,
+                      as duas parecem a mesma coisa. */}
+                  <span style={{ fontSize: 12, fontWeight: 600, color: C.green,
+                                 whiteSpace: "nowrap" }}>Começar conversa</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {conversasFiltradas.length === 0 && !erroBusca && semConversa.length === 0 && (
             <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>
               {trocandoDeTelefone ? "Carregando as conversas…"
                 : buscando ? "Procurando…"
