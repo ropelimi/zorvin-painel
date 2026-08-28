@@ -5,7 +5,7 @@
 // cliente com duas conversas, cada uma com metade do diálogo — e é o mais
 // barato de achar aqui.
 import { numeroCanonico, chaveDoNumero, daParaChamar, telefoneLegivel, outrosNumeros,
-         etiquetaDoTelefone } from "../src/numeros.js";
+         etiquetaDoTelefone, porQueNaoRecebeWhatsApp } from "../src/numeros.js";
 import { readFileSync } from "node:fs";
 
 let falhas = 0, feitas = 0;
@@ -243,6 +243,85 @@ console.log("\nA ETIQUETA DO TELEFONE DO ESCRITÓRIO — e o acordo com a ponte"
   ok("o número estrangeiro é cortado — defeito conhecido, e sem efeito aqui",
      etiquetaDoTelefone("351912345678") === "51912345678",
      etiquetaDoTelefone("351912345678"));
+}
+
+
+
+// ==================================================================
+//  POR QUE ESTE NÚMERO NÃO RECEBE WHATSAPP
+// ==================================================================
+//
+// OS CASOS SÃO REAIS. Saíram de uma varredura dos 238 envios que falharam no
+// banco do escritório — nome, número e quantidade de tentativas. Não inventei
+// nenhum: um teste de regra de telefone escrito com números de mentira acerta
+// os de mentira.
+//
+// O que a varredura mostrou, tirando o erro passageiro: 16 celulares gravados
+// sem o nono dígito e 8 telefones fixos. E o preço disso: 26 tentativas para o
+// mesmo número em nove dias, 16 para outro, 16 para um terceiro — porque nada
+// na tela dizia que o problema era o número.
+console.log("\nO que dá para saber olhando o número, antes de tentar mandar");
+{
+  const diz = (n) => porQueNaoRecebeWhatsApp(n);
+
+  // ---- os 16 sem o nono dígito ----
+  {
+    // ALCIDES PINTO COLARES DOS SANTOS, 8 tentativas entre 10 e 27 de agosto.
+    const r = diz("553189271231");
+    ok("celular sem o nono dígito é reconhecido", r?.tipo === "sem-nono", JSON.stringify(r));
+    ok("e a tela recebe o número certo para conferir", r?.sugestao === "5531989271231",
+       `sugeriu ${r?.sugestao}`);
+    ok("dizendo os dois, o que está e o que devia estar",
+       /\(31\) 8927-1231/.test(r?.detalhe || "") && /98927-1231/.test(r?.detalhe || ""),
+       r?.detalhe);
+    // JUCIMARA DA SILVA PEREIRA (71) e ANDRE EUGENIO (31), da mesma varredura.
+    ok("vale para qualquer DDD", diz("557182197259")?.sugestao === "5571982197259");
+    ok("e para o celular antigo que começa com 7",
+       diz("553172371748")?.sugestao === "5531972371748");
+  }
+
+  // ---- os 8 fixos ----
+  {
+    // PG ADVOGADOS, 8 tentativas. BSPZ ADVOGADOS, 2.
+    const r = diz("551130383888");
+    ok("telefone fixo é reconhecido como fixo", r?.tipo === "fixo", JSON.stringify(r));
+    ok("e diz o número por extenso, para quem confere na ficha",
+       /\(11\) 3038-3888/.test(r?.titulo || ""), r?.titulo);
+    ok("NÃO sugere pôr um 9 num fixo", !r?.sugestao,
+       `inventou ${r?.sugestao} — seria um número que não existe`);
+    ok("outro fixo, outro estado", diz("555133214500")?.tipo === "fixo");
+  }
+
+  // ---- o DDD que não existe ----
+  //
+  // FONTANA & ADVOGADOS ASSOCIADOS, gravado como "550497234535". Sem a lista
+  // de DDDs, a regra do nono dígito transforma isso em "04 99723-4535" e a
+  // tela sugere, com toda a confiança, um DDD que não existe no Brasil. Foi o
+  // que aconteceu quando montei essa conta na mão, antes de escrever isto.
+  {
+    const r = diz("550497234535");
+    ok("DDD inexistente é apontado, e não 'consertado'", r?.tipo === "ddd", JSON.stringify(r));
+    ok("dizendo qual é o DDD errado", /04/.test(r?.titulo || ""), r?.titulo);
+    ok("e sem sugerir número nenhum", !r?.sugestao, `inventou ${r?.sugestao}`);
+  }
+
+  // ---- e o silêncio, que é metade do valor ----
+  //
+  // Um aviso que aparece em número bom é um aviso que se aprende a ignorar — e
+  // aí ele não serve para os 24 casos em que era para servir.
+  {
+    // FRANCISCO VIEIRA DA SILVA, 26 tentativas: o número está PERFEITO, ele é
+    // que não tem WhatsApp. Isso o número não conta, e a tela não deve fingir
+    // que conta.
+    ok("celular bem escrito não gera aviso nenhum", diz("5511991777483") === null);
+    ok("nem o que já tem o nono dígito", diz("5531989271231") === null);
+    ok("número estrangeiro não é medido pelas regras daqui",
+       diz("351912345678") === null, JSON.stringify(diz("351912345678")));
+    ok("grupo do WhatsApp não é telefone", diz("grupo:120363@g.us") === null);
+    ok("e o vazio não vira aviso", diz("") === null && diz(null) === null);
+    // Número pela metade, que é o que se vê enquanto alguém digita.
+    ok("número incompleto é dito incompleto", diz("119")?.tipo === "curto");
+  }
 }
 
 console.log(`\n${feitas - falhas}/${feitas} conferências passaram`);

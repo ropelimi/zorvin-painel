@@ -382,6 +382,58 @@ CONVERSAS.push({
 });
 
 // ------------------------------------------------------------------
+//  OS NÚMEROS QUE NÃO TÊM COMO RECEBER — os três casos do banco real
+// ------------------------------------------------------------------
+// Saíram de uma varredura dos 238 envios que falharam no escritório: 16
+// celulares gravados sem o nono dígito e 8 telefones fixos, mais um cadastro
+// com DDD inexistente. São os números de verdade, com nome trocado.
+//
+// A conversa de cada um é PRÓPRIA, e não a de sempre: a tarja aparece pelo
+// número do contato da conversa aberta, e pendurar isto no APELIDO faria
+// metade das outras provas encontrarem uma tarja âmbar que não esperavam.
+const NUMEROS_RUINS = [
+  { id: "ct-sem-nono", numero: "553189271231", nome: "Alcides (sem o 9)" },
+  { id: "ct-fixo",     numero: "551130383888", nome: "PG Advogados (fixo)" },
+  { id: "ct-ddd-mau",  numero: "550497234535", nome: "Fontana (DDD 04)" },
+  // A TRAVA CONTRA A TARJA QUE APARECE À TOA. Este número está perfeito; se a
+  // tarja nascer aqui, ela nasce em toda conversa e vira ruído que se aprende
+  // a pular — e aí não serve para os três de cima.
+  { id: "ct-numero-bom", numero: "5511991777483", nome: "Francisco (número bom)" },
+];
+for (const c of NUMEROS_RUINS) {
+  const contato = { id: c.id, numero: c.numero, nome: c.nome, foto_url: null,
+                    nome_zorvin: null, vantoro_nome: null };
+  CONVERSAS.push({
+    id: `conv-${c.id}`,
+    advogado_id: PRIMEIRO_TELEFONE.id,
+    contato_id: c.id,
+    nao_lidas: 0,
+    arquivada: false, fixada: false, favorita: false,
+    // ANTIGAS DE PROPÓSITO: a lista é ordenada por atividade, e quatro
+    // conversas novas empurrariam para baixo as que outras provas abrem pelo
+    // topo.
+    ultima_atividade: new Date(Date.now() - 400 * 24 * 3600e3).toISOString(),
+    ultima_mensagem: "Boa tarde! Somos do escritório Canaverde & Aguiar.",
+    frente: null, vantoro_nome: null, digitando_ate: null,
+    contato,
+  });
+  // UMA MENSAGEM CADA, e ela não é enfeite: o painel esconde da lista toda
+  // conversa sem uma palavra dentro ("conversa sem mensagem não é conversa"),
+  // e com razão — abrir um contato cria a linha na hora, e sem esta regra a
+  // lista encheria de conversas vazias com o horário do clique.
+  //
+  // Sem a mensagem, estas quatro existiam na tabela e não na tela. A prova da
+  // ordenação comparava a primeira da tela com a mais antiga da TABELA e
+  // reprovava — apontando um defeito que era da montagem, não do painel.
+  MENSAGENS.push({
+    id: `m-${c.id}`, conversa_id: `conv-${c.id}`, origem: "advogado", tipo: "texto",
+    texto: "Boa tarde! Somos do escritório Canaverde & Aguiar.",
+    criado_em: new Date(Date.now() - 400 * 24 * 3600e3).toISOString(),
+    status: "enviada", enviado_por: "Rodrigo Sousa", enviado_por_id: "u1",
+  });
+}
+
+// ------------------------------------------------------------------
 //  O NOME QUE SE VÊ NÃO É SEMPRE O `nome` DO CONTATO
 // ------------------------------------------------------------------
 // Três contatos, três origens de nome — e é exatamente aqui que a busca
@@ -895,6 +947,10 @@ const TABELAS = {
   contatos: [
     { ...APELIDO },
     ...RENOMEADOS.map((c) => ({ ...c })),
+    // Os quatro do teste da tarja. Entram aqui à mão porque a linha logo
+    // abaixo pula de propósito todo `contato_id` que começa com "ct-".
+    ...NUMEROS_RUINS.map((c) => ({ ...c, foto_url: null,
+                                   nome_zorvin: null, vantoro_nome: null })),
     ...FUNDO.map((c) => ({ ...c })),
     ...CONVERSAS.filter((c) => c.contato && c.contato.numero && !c.contato_id.startsWith("ct-"))
       .map((c) => ({ id: c.contato_id, ...c.contato, vantoro_nome: null, nome_zorvin: null })),

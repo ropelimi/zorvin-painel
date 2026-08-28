@@ -112,7 +112,21 @@ console.log("\nE a escolha veio do BANCO, não de uma virada na tela");
     if (!t || !primeira) return null;
     const naTela = t.find((c) => String(c.id) === primeira.getAttribute("data-conversa-id"));
     // Do mesmo telefone que a tela está mostrando, e sem as fixadas.
-    const doMesmo = t.filter((c) => c.advogado_id === naTela.advogado_id && !c.fixada);
+    //
+    // E SEM AS QUE A TELA ESCONDE DE PROPÓSITO. O painel tem uma regra:
+    // "conversa sem nenhuma mensagem não é conversa" — abrir um contato cria a
+    // linha na hora, e sem essa regra a lista encheria de conversas vazias com
+    // o horário do clique.
+    //
+    // Comparar a tela contra a tabela CRUA ignorava essa regra, e a prova
+    // reprovava assim que alguém pusesse na bancada uma conversa sem mensagem:
+    // ela apontaria para a ordenação, que está certa, em vez de para a
+    // montagem. Aconteceu. Uma prova que acusa o lugar errado custa mais caro
+    // do que uma que não existe.
+    const comMensagem = new Set(
+      (globalThis.__TABELAS.mensagens || []).map((m) => String(m.conversa_id)));
+    const doMesmo = t.filter((c) => c.advogado_id === naTela.advogado_id && !c.fixada
+                                    && comMensagem.has(String(c.id)));
     const maisAntiga = doMesmo.reduce((a, c) =>
       new Date(c.ultima_atividade) < new Date(a.ultima_atividade) ? c : a, doMesmo[0]);
     return { naTela: naTela.ultima_atividade, maisAntiga: maisAntiga.ultima_atividade,
