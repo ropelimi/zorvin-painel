@@ -9010,7 +9010,30 @@ export default function Painel({ sessao }) {
                 pessoa. Quem confere na ficha é gente.
                 ------------------------------------------------------------ */}
             {(() => {
-              const oQueHa = porQueNaoRecebeWhatsApp(conversa.contato?.numero);
+              // A CONVERSA QUE JÁ FUNCIONOU CALA A TARJA — e era isto que
+              // faltava na primeira versão.
+              //
+              // O relato que consertou isto: "Dias Costa Advogados",
+              // (31) 8418-0018, doze dígitos. A tarja anunciava em âmbar que
+              // faltava o nono dígito — e logo abaixo dela estavam as mensagens
+              // indo e voltando, com dois tiques. O número funciona sem o 9.
+              //
+              // A PREMISSA ESTAVA ERRADA: eu tratei "doze dígitos" como prova
+              // de que o número não recebe. Não é prova de nada. Contas antigas
+              // do WhatsApp continuam atendendo na forma de oito dígitos, e
+              // fixo recebe sim quando o escritório usa o WhatsApp Business.
+              //
+              // O formato é PISTA, não veredicto. A prova está na conversa: se
+              // existe uma mensagem ali — recebida do cliente ou enviada com
+              // sucesso —, aquele número funciona e não há o que avisar. As
+              // falhas não contam: a bolha vermelha vive na fila de envio, e a
+              // provisória ainda não saiu.
+              //
+              // Custa zero: `mensagens` já está carregada na tela.
+              const jaFuncionou = mensagens.some((m) =>
+                m.origem !== "nota" && m._status !== "erro" && m._status !== "enviando"
+                && !String(m.id).startsWith("temp-") && !String(m.id).startsWith("fila-"));
+              const oQueHa = jaFuncionou ? null : porQueNaoRecebeWhatsApp(conversa.contato?.numero);
               if (!oQueHa) return null;
               return (
                 <div data-numero-nao-recebe data-tipo={oQueHa.tipo}
@@ -9020,8 +9043,13 @@ export default function Painel({ sessao }) {
                               display: "flex", alignItems: "flex-start", gap: 10 }}>
                   <AlertCircle size={17} color="#d97706" style={{ flexShrink: 0, marginTop: 1 }} />
                   <div style={{ fontSize: estreito ? 12.5 : 13, lineHeight: 1.45, color: C.textPrimary }}>
+                    {/* NO CELULAR, A FRASE CURTA. A inteira ocupa 126px de
+                        altura numa tela de 360 — um sexto do que a pessoa tem
+                        para ver a conversa, gasto num aviso de uma linha. */}
                     <b>{oQueHa.titulo}</b>{" "}
-                    <span style={{ color: C.textSecondary }}>{oQueHa.detalhe}</span>
+                    <span style={{ color: C.textSecondary }}>
+                      {estreito ? (oQueHa.curto || oQueHa.detalhe) : oQueHa.detalhe}
+                    </span>
                   </div>
                 </div>
               );
