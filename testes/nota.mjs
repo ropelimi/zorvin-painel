@@ -373,6 +373,61 @@ console.log("\nSe o Vantoro estiver fora do ar, a nota NÃO se perde");
 }
 
 console.log("\nE nada disso estourou no caminho");
+// ==================================================================
+//  NO CELULAR, A ESCOLHA DO PROCESSO CABE EM UMA LINHA
+// ==================================================================
+//
+// Pedido do escritório: "tenta deixar a parte onde escolhe o processo em uma
+// única linha, se for possível".
+//
+// Ela quebrava em duas, e a culpa não era do rótulo: era o `flex-basis` do
+// seletor. Ele PEDIA 240px numa faixa que tinha 221 de sobra, e o navegador,
+// não podendo atender, mandava o seletor para a linha de baixo. Com ele
+// aceitando o que houver, a linha se resolve — e o rótulo "Processo:" saiu de
+// vez porque a primeira opção do próprio seletor já diz "Nota geral do cliente
+// (sem processo)".
+//
+// UMA LINHA A MAIS AQUI CUSTA CARO: o painel da nota fica colado no cabeçalho e
+// come a conversa por baixo. Numa tela de 780px, cada linha do painel é uma a
+// menos de mensagens à vista.
+{
+  console.log("\nNo celular, a escolha do processo cabe em uma linha");
+  await page.setViewportSize({ width: 360, height: 780 });
+  await page.waitForTimeout(1200);
+  // NO CELULAR A LISTA E A CONVERSA SÃO DUAS TELAS. Depois de encolher a
+  // janela, a conversa aberta ocupa tudo e o nome dela não está mais clicável —
+  // é preciso voltar para a lista antes de escolher outra.
+  if (!(await page.locator("[data-conversa-nome]").first().isVisible().catch(() => false))) {
+    await page.locator('[aria-label="Voltar"], [title="Voltar"]').first().click().catch(() => {});
+    await page.waitForTimeout(900);
+  }
+  await abrir("ZZ Com Cadastro");
+  await entrarNoModoNota();
+  await page.waitForTimeout(1500);
+
+  const r = await page.evaluate(() => {
+    const barra = document.querySelector("[data-processo-da-nota]");
+    const sel = barra && barra.querySelector("select");
+    const painel = document.querySelector("[data-nota-no-alto]");
+    if (!barra || !sel) return null;
+    return { barra: Math.round(barra.getBoundingClientRect().height),
+             seletor: Math.round(sel.getBoundingClientRect().height),
+             painel: painel ? Math.round(painel.getBoundingClientRect().height) : null };
+  });
+  console.log(`     faixa do processo: ${r?.barra}px | seletor: ${r?.seletor}px | painel: ${r?.painel}px`);
+
+  ok("achei a faixa do processo no celular", !!r,
+     "sem ela não há o que medir — o cliente da prova precisa ter processos");
+  // UMA LINHA = a faixa tem mais ou menos a altura do seletor. Em duas linhas
+  // ela passa do dobro, porque leva o rótulo em cima.
+  ok("a escolha do processo cabe em uma linha", r && r.barra < r.seletor * 1.6,
+     `a faixa tem ${r?.barra}px e o seletor ${r?.seletor}px`);
+  ok("e o painel inteiro não passa de um sexto da tela", r && r.painel < 130,
+     `o painel tem ${r?.painel}px de 780px`);
+  await page.setViewportSize({ width: 1500, height: 900 });
+  await page.waitForTimeout(800);
+}
+
 ok("sem erro de JavaScript", erros.length === 0, erros.join(" | "));
 
 await ctx.close();

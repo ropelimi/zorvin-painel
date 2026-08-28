@@ -97,6 +97,45 @@ let TEM_ARQUIVADA = true;
 // A contagem dos selos numa ida só (`nao_lidas_por_telefone`) é outro SQL. Onde
 // ele não foi rodado, o painel conta telefone a telefone como sempre contou.
 let TEM_CONTAGEM_NO_BANCO = true;
+
+// AVISOS DE FALHA JÁ DISPENSADOS, GUARDADOS AQUI NO APARELHO.
+//
+// Relato do escritório: "cliquei em 'Dispensar este aviso' e nada aconteceu,
+// além da mensagem 'Não consigo dispensar este aviso agora'". O aviso vermelho
+// vem das linhas de `fila_envio` com `status = 'erro'`, e dispensar era só
+// gravar `status = 'descartada'` — se o banco recusasse essa gravação, o botão
+// não tinha PLANO NENHUM: avisava e deixava o alarme na tela para sempre. Uma
+// falha de meses atrás, já resolvida, ficava piscando em vermelho no meio de
+// uma conversa, e não havia gesto capaz de tirá-la dali.
+//
+// Agora são duas camadas. A de baixo é este registro no aparelho, que funciona
+// sempre, sem depender de o banco aceitar nada: clicou, sumiu, e continua
+// sumido depois de recarregar a página. A de cima é a gravação no banco, que é
+// o que faz o aviso sumir TAMBÉM para os colegas — essa pode falhar, e quando
+// falha o painel diz exatamente isso, em vez de fingir que não fez nada.
+//
+// Guardamos o id da linha, e não a mensagem: a linha continua no banco, com o
+// motivo do erro, para quem for investigar depois. O que sai é o alarme.
+const CHAVE_DISPENSADOS = "zorvin_avisos_dispensados";
+function lerDispensados() {
+  try {
+    const cru = JSON.parse(localStorage.getItem(CHAVE_DISPENSADOS) || "[]");
+    return new Set(Array.isArray(cru) ? cru.map(String) : []);
+  } catch (_) { return new Set(); }
+}
+function guardarDispensado(id) {
+  try {
+    const todos = lerDispensados();
+    todos.add(String(id));
+    // TETO DE 500. Sem ele a lista cresce para sempre num navegador que nunca
+    // se limpa, e um dia o `localStorage` estoura — derrubando junto o que
+    // mais mora nele. Os mais antigos saem primeiro; um aviso de dois anos
+    // atrás não está mais na tela de ninguém.
+    const lista = [...todos].slice(-500);
+    localStorage.setItem(CHAVE_DISPENSADOS, JSON.stringify(lista));
+    return new Set(lista);
+  } catch (_) { return lerDispensados(); }
+}
 // Quanto tempo os pedidos de recontagem dos selos esperam para virar UM só, e
 // o teto para a rajada que não acaba. Ver o comentário longo em
 // `carregarNaoLidasPorAdv`. Aqui fora porque são fixos: dentro do componente
@@ -967,7 +1006,7 @@ function MetaBolha({ C, m, saida, flutuante, aoReenviar }) {
         m._status === "enviando" ? (
           <Clock size={13} color={C.textSecondary} />
         ) : m._status === "erro" ? (
-          <span onClick={aoReenviar} title="Toque para reenviar" style={{ color: "#e53935", cursor: "pointer", display: "flex", alignItems: "center", gap: 3, fontWeight: 600 }}>
+          <span onClick={aoReenviar} data-reenviar title="Toque para reenviar" style={{ color: "#e53935", cursor: "pointer", display: "flex", alignItems: "center", gap: 3, fontWeight: 600 }}>
             <AlertCircle size={13} /> não enviado · reenviar
           </span>
         ) : (
@@ -1022,7 +1061,7 @@ function MotivoDoErro({ C, m, aoDispensar }) {
         </>
       )}
       {aoDispensar && (
-        <button onClick={aoDispensar}
+        <button onClick={aoDispensar} data-dispensar-aviso
                 style={{ display: "block", marginTop: 6, border: "none", background: "transparent",
                          padding: 0, color: C.textSecondary, fontSize: 11.5, cursor: "pointer",
                          textDecoration: "underline" }}>
@@ -4106,7 +4145,12 @@ export default function Painel({ sessao }) {
     let naoSairam = [];
     try {
       const { data: falhas } = await pedidoDaFila;
-      naoSairam = (falhas || []).map((f) => ({
+      // O QUE JÁ FOI DISPENSADO NÃO VOLTA. Se a gravação do 'descartada' no
+      // banco não passou, a linha continua com `status = 'erro'` e viria de
+      // novo a cada abertura da conversa — que é exatamente o "nada aconteceu"
+      // que o escritório viu.
+      const dispensados = lerDispensados();
+      naoSairam = (falhas || []).filter((f) => !dispensados.has(String(f.id))).map((f) => ({
         id: "fila-" + f.id,
         conversa_id: convId,
         origem: "advogado",
@@ -4749,10 +4793,17 @@ export default function Painel({ sessao }) {
   }, []);
 
   // Toast discreto (some sozinho em 4s).
-  function mostrarAviso(msg) {
+  // O TEMPO PODE SER MAIOR QUANDO O RECADO PEDE UMA AÇÃO.
+  //
+  // Quatro segundos servem para "copiado" e "não consegui, tente de novo". Não
+  // servem para um recado que manda rodar um SQL: numa tela de celular isso são
+  // três linhas, e quatro segundos não dão para ler três linhas e ainda guardar
+  // o nome do arquivo. Quem chama sem o segundo argumento continua com os
+  // quatro de sempre.
+  function mostrarAviso(msg, milissegundos = 4000) {
     setAviso(msg);
     if (avisoTimerRef.current) clearTimeout(avisoTimerRef.current);
-    avisoTimerRef.current = setTimeout(() => setAviso(null), 4000);
+    avisoTimerRef.current = setTimeout(() => setAviso(null), milissegundos);
   }
 
   // Ao desmontar (logout/fechar), para uma gravação em curso e o cronômetro,
@@ -5213,7 +5264,7 @@ export default function Painel({ sessao }) {
     // que derrubou o Apagar.
     const { error } = await inserirNaFila({
       conversa_id: conversaId, tipo: "figurinha", texto: "", midia_url: url,
-      enviado_por: meuNome, enviado_por_id: meuId, enviado_por_foto: minhaFoto,
+      status: "pendente", enviado_por: meuNome, enviado_por_id: meuId, enviado_por_foto: minhaFoto,
     });
     if (error) setMensagens((prev) => prev.map((x) => (x.id === tempId ? { ...x, _status: "erro" } : x)));
     else marcarLida(conversaId);
@@ -5630,7 +5681,13 @@ export default function Painel({ sessao }) {
     };
     setMensagens((prev) => [...prev, provisoria]);
     // Coloca na fila de envio; a ponte processa e manda pela Uazapi.
-    const payload = { conversa_id: conversaId, texto: t, enviado_por: meuNome, enviado_por_id: meuId, enviado_por_foto: minhaFoto };
+    // `status` ESCRITO, e não deixado por conta do padrão da coluna. Ele
+    // faltava em quatro dos sete lugares que gravam na fila, e a ponte despacha
+    // `status = 'pendente'` e mais nada: a linha só saía porque a coluna tem um
+    // padrão no banco. Funciona hoje; some numa migração, e o que some é o
+    // envio de mensagem. Uma palavra tira a dependência.
+    const payload = { conversa_id: conversaId, texto: t, status: "pendente",
+                      enviado_por: meuNome, enviado_por_id: meuId, enviado_por_foto: minhaFoto };
     if (alvo) {
       payload.responder_id_uazapi = alvo.id_uazapi;
       payload.resposta_previa = alvo.previa;
@@ -5869,13 +5926,45 @@ export default function Painel({ sessao }) {
    *
    *  Não apaga a linha: ela vira 'descartada', que é um estado que a ponte não
    *  processa. O registro de que houve a tentativa continua no banco — quem
-   *  for investigar depois precisa dele. O que sai é o alarme na tela. */
+   *  for investigar depois precisa dele. O que sai é o alarme na tela.
+   *
+   *  O GESTO TEM EFEITO ANTES DE O BANCO OPINAR. Era ao contrário: o painel
+   *  pedia a gravação, e só tirava o aviso da tela se ela passasse. Quando ela
+   *  não passava — e não passava — o botão virava um botão que não faz nada,
+   *  com um recado dizendo isso. Agora o aviso sai na hora e fica guardado
+   *  neste aparelho; a gravação no banco é o que estende o gesto aos colegas, e
+   *  quando ela falha o painel diz o que o banco respondeu, com todas as
+   *  letras, em vez de "não consigo agora". */
   async function dispensarFalha(msg) {
     if (!msg._filaId) return;
-    const { error } = await supabase.from("fila_envio")
-      .update({ status: "descartada" }).eq("id", msg._filaId).select("id");
-    if (error) { mostrarAviso("Não consegui dispensar este aviso agora."); return; }
+    guardarDispensado(msg._filaId);
     setMensagens((prev) => prev.filter((m) => m.id !== msg.id));
+    const { data, error } = await supabase.from("fila_envio")
+      .update({ status: "descartada" }).eq("id", msg._filaId).select("id");
+    // O RECADO É CURTO E DIZ O QUE FAZER; O DETALHE CRU VAI PARA O CONSOLE.
+    //
+    // Despejar `new row for relation "fila_envio" violates check constraint` na
+    // tela de quem atende não ajuda ninguém a decidir nada — assusta e some em
+    // quatro segundos. Mas o detalhe precisa existir em algum lugar, senão
+    // quem for consertar recomeça adivinhando, que foi como este defeito durou
+    // tanto. Na tela: o que aconteceu, o código, e o arquivo a rodar. No
+    // console: o erro inteiro.
+    const rodeOSQL = " Para valer para todo mundo, rode sql/dispensar_aviso_de_falha.sql"
+                   + " no Supabase do Zorvin.";
+    if (error) {
+      console.error("fila_envio: o banco recusou marcar como 'descartada'.", error);
+      mostrarAviso("Tirei o aviso deste computador. Nos outros ele ainda vai aparecer — o banco não "
+                 + "deixou salvar (erro " + (error.code || "sem código") + ")." + rodeOSQL, 9000);
+      return;
+    }
+    // SEM ERRO E SEM LINHA ALTERADA é o outro jeito de falhar em silêncio: com
+    // uma regra de acesso que esconde a linha, o banco não reclama — ele
+    // atualiza zero linhas e responde "tudo certo".
+    if (!data || !data.length) {
+      console.error("fila_envio: a gravação passou sem erro e não alterou nenhuma linha (regra de acesso).");
+      mostrarAviso("Tirei o aviso deste computador. Nos outros ele ainda vai aparecer — o banco não "
+                 + "alterou nenhuma linha." + rodeOSQL, 9000);
+    }
   }
 
   async function reenviar(msg) {
@@ -5884,6 +5973,11 @@ export default function Painel({ sessao }) {
     // aposentar a velha, a bolha vermelha voltaria a cada recarregamento da
     // página mesmo depois de a mensagem ter saído — e ninguém entenderia por quê.
     if (msg._filaId) {
+      // NO APARELHO TAMBÉM, e não só no banco. Esta gravação vinha com os erros
+      // engolidos (`.then(()=>{}, ()=>{})`) — se ela não passasse, a bolha
+      // vermelha da tentativa velha voltava a cada abertura da conversa, mesmo
+      // com a mensagem já entregue. Ninguém relacionaria uma coisa à outra.
+      guardarDispensado(msg._filaId);
       supabase.from("fila_envio").update({ status: "descartada" }).eq("id", msg._filaId)
         .then(() => {}, () => {});
     }
@@ -5904,11 +5998,29 @@ export default function Painel({ sessao }) {
       }
       payload = {
         conversa_id: msg.conversa_id, texto: msg.texto || "", tipo: msg.tipo,
+        // `enviado_por_id` FALTAVA AQUI, E SÓ AQUI.
+        //
+        // Todas as outras entradas na fila — enviar, responder, figurinha,
+        // anexo, apagar — escrevem `enviado_por_id: meuId`. Esta não escrevia, e
+        // é ele que assina a mensagem: sem ele, a reenviada era a única da
+        // conversa a continuar assinada com o nome de antes. É o mesmo motivo
+        // pelo qual ele foi acrescentado na LEITURA da fila, e a escrita ficou
+        // para trás.
+        //
+        // O `status` é outra história, e vale registrar para não virar lenda: ele
+        // faltava em QUATRO lugares, incluindo o envio normal de texto. Como
+        // enviar funciona, a coluna tem um padrão `'pendente'` no banco — não era
+        // um defeito, era uma dependência de um padrão que ninguém escreveu de
+        // propósito. Agora os sete lugares escrevem a mesma coisa.
+        status: "pendente",
         midia_url: url, midia_mime: msg.midia_mime || null, midia_nome: msg.midia_nome || null,
-        enviado_por: msg.enviado_por || meuNome, enviado_por_foto: msg.enviado_por_foto || minhaFoto,
+        enviado_por: msg.enviado_por || meuNome, enviado_por_id: msg.enviado_por_id || meuId,
+        enviado_por_foto: msg.enviado_por_foto || minhaFoto,
       };
     } else {
-      payload = { conversa_id: msg.conversa_id, texto: msg.texto || "", enviado_por: msg.enviado_por || meuNome, enviado_por_foto: msg.enviado_por_foto || minhaFoto };
+      payload = { conversa_id: msg.conversa_id, texto: msg.texto || "", status: "pendente",
+                  enviado_por: msg.enviado_por || meuNome, enviado_por_id: msg.enviado_por_id || meuId,
+                  enviado_por_foto: msg.enviado_por_foto || minhaFoto };
       if (msg._responderId) {
         payload.responder_id_uazapi = msg._responderId;
         payload.resposta_previa = msg.resposta_previa;
@@ -5943,6 +6055,36 @@ export default function Painel({ sessao }) {
   /** Põe arquivos na prévia. Somando à fila: quem já colou dois e arrasta um
       terceiro quer os três, não o terceiro sozinho. */
   function abrirAnexos(arquivos) {
+    // COM A NOTA ABERTA, NENHUM ARQUIVO ENTRA POR AQUI.
+    //
+    // Isto não é enfeite, e não basta esconder o clipe: `enviarArquivo` nunca
+    // olhou o modo da caixa. Anexar durante uma nota interna mandava o arquivo
+    // PARA O CLIENTE no WhatsApp — enquanto a tela inteira, em âmbar, dizia
+    // "nota interna, só a equipe vê".
+    //
+    // E o clipe não é a única porta: arrastar um arquivo para a conversa e colar
+    // um print com Ctrl+V passam por aqui do mesmo jeito. Fechar só o botão
+    // deixaria as outras duas abertas — e a colada é a mais provável de todas,
+    // porque é o gesto de quem está anotando o que acabou de ver na tela.
+    //
+    // Nota interna é texto: é assim que ela sobe para o Vantoro, e é assim que
+    // ela é lida. Um anexo ali não teria onde ficar.
+    //
+    // PELA REFERÊNCIA, E NÃO PELA VARIÁVEL DO RENDER — e disto dependia metade
+    // da trava. Quem chama daqui não é só o clipe: `arrastar` e `Ctrl+V` são
+    // ouvintes pendurados no `document` dentro de efeitos que NÃO têm `modoNota`
+    // nas dependências. Eles seguram a versão de `abrirAnexos` do render em que
+    // o efeito rodou pela última vez — e nela `modoNota` vale `false` para
+    // sempre. Ou seja: com a nota aberta, o clipe recusava (a variável estava
+    // certa ali) e arrastar/colar mandavam o arquivo AO CLIENTE assim mesmo.
+    //
+    // Acrescentar `modoNota` às dependências dos dois efeitos consertaria hoje e
+    // voltaria a quebrar na terceira porta que alguém abrir. A referência está
+    // sempre em dia, venha a chamada de onde vier.
+    if (modoNotaRef.current) {
+      mostrarAviso("A nota interna é só texto. Feche a nota para enviar o arquivo ao cliente.");
+      return;
+    }
     const novos = paraAnexos(arquivos);
     if (!novos.length) return;
     setAnexosPendentes((antes) => {
@@ -6143,7 +6285,7 @@ export default function Painel({ sessao }) {
       // com a versão real que a ponte vai gravar (evita duplicar).
       setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _midiaUrlFinal: url } : m)));
       const { error: filaErr } = await inserirNaFila({
-        conversa_id: convId, texto: legenda || "", tipo,
+        conversa_id: convId, texto: legenda || "", tipo, status: "pendente",
         midia_url: url, midia_mime: file.type, midia_nome: nome, enviado_por: meuNome, enviado_por_id: meuId, enviado_por_foto: minhaFoto,
       });
       if (filaErr) throw new Error("Falha ao colocar na fila (banco): " + (filaErr.message || filaErr));
@@ -7122,6 +7264,12 @@ export default function Painel({ sessao }) {
         carinha só e duas abas no pé do painel — quem procurava
         figurinha e achou emoji está a um toque de distância, em
         vez de ter de fechar e caçar outro ícone. */}
+    {/* O EMOJI SOME NA NOTA. Pedido do escritório: nota interna não usa emoji
+        nem anexo. E há um ganho junto: com dois botões a menos, o aviso do
+        campo cabe numa linha no celular, e o painel encolhe.
+        A figurinha, que mora no mesmo botão, sairia do WhatsApp — não teria
+        como entrar numa nota de qualquer forma. */}
+    {!modoNota && (
     <span ref={emojiRef} data-figurinhas style={{ display: "flex" }}>
       {emojiAberto && (
         <div style={{ position: "absolute", bottom: 60, left: 12, zIndex: 30 }}>
@@ -7143,6 +7291,7 @@ export default function Painel({ sessao }) {
         <Smile size={24} color={emojiAberto ? C.green : C.textSecondary} />
       </button>
     </span>
+    )}
     {/* BARRA DE FORMATAÇÃO — aparece ao selecionar texto na caixa.
         Fica ACIMA da caixa, e não em cima do texto selecionado:
         numa caixa de uma a três linhas as duas posições quase
@@ -7229,9 +7378,15 @@ export default function Painel({ sessao }) {
             style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
       <StickyNote size={22} color={modoNota ? "#d4a017" : C.textSecondary} />
     </button>
+    {/* O CLIPE SOME NA NOTA. Ver `abrirAnexos`: a nota é só texto, e o
+        arquivo anexado ali ia para o CLIENTE. O botão fora da vista é
+        metade do conserto; a outra metade está lá, fechando também o
+        arrastar e o colar. */}
+    {!modoNota && (
     <button onClick={() => fileRef.current?.click()} title="Anexar arquivo" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
       <Paperclip size={22} color={C.textSecondary} />
     </button>
+    )}
     <input ref={fileRef} type="file" multiple onChange={aoEscolherArquivo} style={{ display: "none" }} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" />
     <input ref={figurinhaRef} type="file" accept="image/webp,image/png,image/jpeg" style={{ display: "none" }}
       onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) { setEmojiAberto(false); enviarArquivo(f, "", conversaId, "figurinha"); } }} />
@@ -7364,7 +7519,12 @@ export default function Painel({ sessao }) {
                    display: "inline-flex", alignItems: "center", gap: 6,
                    whiteSpace: "nowrap" }}>
       <ClipboardList size={15} />
-      {estreito ? "Processo:" : "Vincular a um processo:"}
+      {/* NO CELULAR, SÓ O ÍCONE. A palavra "Processo:" custa uns 70px numa
+          tela de 360, e é justamente ela que empurrava o seletor para a
+          linha de baixo. Ela também não acrescenta nada: a primeira opção
+          do próprio seletor diz "Nota geral do cliente (sem processo)", e
+          a prancheta ao lado já é o desenho de um processo. */}
+      {!estreito && "Vincular a um processo:"}
     </span>
     {buscandoProcessos ? (
       <span style={{ fontSize: 12.5, color: escuro ? "#c9bd93" : "#8a7434" }}>
@@ -7373,7 +7533,10 @@ export default function Painel({ sessao }) {
     ) : (<>
       <select value={processoDaNota}
               onChange={(e) => setProcessoDaNota(e.target.value)}
-              style={{ flex: "1 1 240px", minWidth: 0, maxWidth: 460,
+              style={{ // `flex-basis` de 240px era o que quebrava a linha: o seletor PEDIA
+                                   // 240 onde só havia 221 de sobra, e o navegador o mandava
+                                   // para baixo. No celular ele passa a aceitar o que houver.
+                                   flex: estreito ? "1 1 0" : "1 1 240px", minWidth: 0, maxWidth: 460,
                        // ESCOLHIDO x NOTA GERAL, à distância: cheio de
                        // âmbar num caso, claro no outro. Só a letra
                        // dentro do seletor obrigaria a ler para saber.
@@ -7400,7 +7563,11 @@ export default function Painel({ sessao }) {
             style={{ fontSize: 11.5, fontWeight: temProcesso ? 700 : 500,
                      color: temProcesso ? AMBAR : (escuro ? "#a99a6d" : "#8a7434"),
                      whiteSpace: "nowrap" }}>
-        {temProcesso ? "✓ entra no histórico deste processo" : "opcional"}
+        {/* CURTO NO CELULAR pelo mesmo motivo do rótulo. O que a frase longa
+            informa — que a nota vai para o histórico daquela ação — já está
+            dito pelo nome do processo escolhido dentro do seletor. */}
+        {temProcesso ? (estreito ? "✓ no processo" : "✓ entra no histórico deste processo")
+                     : "opcional"}
       </span>
     </>)}
   </div>

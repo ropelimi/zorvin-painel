@@ -1270,6 +1270,31 @@ function consulta(tabela) {
         : encomendado;
       if (extra) await espera(extra);
       if (gravacao) eu.gravar(gravacao.reg, gravacao.porOnde);
+      // A COLUNA COM LISTA FECHADA DE VALORES (`CHECK`).
+      //
+      // `__RECUSAR_STATUS = ["descartada"]` faz a bancada responder como um
+      // Postgres com uma restrição de verificação em `status`: a gravação é
+      // RECUSADA, com erro, e a linha não muda. Sem isto não havia como provar
+      // o caminho em que "Dispensar este aviso" não conseguia gravar — e era
+      // justamente esse o caminho que o escritório estava vivendo.
+      //
+      // Note que a recusa vem ANTES de aplicar o `patch`: um banco que recusa
+      // não grava metade.
+      const recusados = (typeof globalThis !== "undefined" && globalThis.__RECUSAR_STATUS) || [];
+      if (patch && recusados.length && recusados.includes(patch.status)) {
+        return resolver({ data: null, count: null, error: { code: "23514",
+          message: `new row for relation "${tabela}" violates check constraint "${tabela}_status_check"` } });
+      }
+      // A ESCRITA QUE NÃO ACHA LINHA NENHUMA, e não reclama.
+      //
+      // `__ESCRITA_SEM_EFEITO = ["fila_envio"]` é a regra de acesso que ESCONDE
+      // a linha do painel: o banco não devolve erro, ele atualiza zero linhas e
+      // responde "tudo certo". É a falha mais traiçoeira das duas, porque a
+      // tela não tem nada que a denuncie.
+      const semEfeito = (typeof globalThis !== "undefined" && globalThis.__ESCRITA_SEM_EFEITO) || [];
+      if (patch && semEfeito.includes(tabela)) {
+        return resolver({ data: [], count: 0, error: null });
+      }
       if (patch) linhas.forEach((l) => Object.assign(l, patch));
       if (apagando) {
         const tab = TABELAS[tabela] || [];
