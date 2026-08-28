@@ -206,6 +206,109 @@ console.log("\nNo celular");
   }
 }
 
+console.log("\nNa nota não há emoji nem anexo — e o anexo era um perigo");
+{
+  await page.setViewportSize({ width: 1300, height: 900 });
+  await page.waitForTimeout(900);
+  if (!(await page.locator(CAMPO_MSG).count())) {
+    await page.locator("[data-fechar-nota]").first().click();
+    await page.waitForTimeout(800);
+  }
+  const conta = () => page.evaluate(() => ({
+    emoji: document.querySelectorAll('[title="Emojis e figurinhas"]').length,
+    clipe: document.querySelectorAll('[title="Anexar arquivo"]').length,
+  }));
+  const naMensagem = await conta();
+  ok("na caixa de MENSAGEM os dois estão lá", naMensagem.emoji === 1 && naMensagem.clipe === 1,
+     JSON.stringify(naMensagem));
+
+  await page.locator("[data-nota-interna]").first().click();
+  await page.waitForTimeout(1200);
+  const naNota = await conta();
+  ok("e na NOTA nenhum dos dois aparece", naNota.emoji === 0 && naNota.clipe === 0,
+     JSON.stringify(naNota));
+
+  // O QUE O CLIPE ESCONDIA, e é o motivo de isto não ser cosmético.
+  //
+  // `abrirAnexos` nunca olhou o modo da caixa. Anexar durante uma nota interna
+  // mandava o arquivo PARA O CLIENTE no WhatsApp — enquanto a tela inteira, em
+  // âmbar, dizia "nota interna, só a equipe vê".
+  //
+  // E o clipe não era a única porta: ARRASTAR e COLAR (Ctrl+V) chegam ao mesmo
+  // `abrirAnexos` sem passar por botão nenhum. Esconder o clipe fecharia uma
+  // das três — e a colada é a mais provável, porque é o gesto de quem está
+  // anotando o que acabou de ver na tela. Por isso a conferência força as duas
+  // portas de dentro, e não o clique no clipe.
+  const soltarArquivo = () => page.evaluate(async () => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(["conteudo"], "print.png", { type: "image/png" }));
+    document.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+    await new Promise((r) => setTimeout(r, 900));
+    return document.body.innerText;
+  });
+  const colarArquivo = () => page.evaluate(async () => {
+    // O construtor de `ClipboardEvent` do Chromium ignora `clipboardData` do
+    // dicionário — o evento chega com ele nulo, e o teste não tocaria em nada
+    // do que quer provar. Pendurar o `DataTransfer` no evento faz o handler
+    // ler exatamente o que leria numa colada de verdade; o que não se exercita
+    // é a plumbing do navegador, que não é nossa.
+    const ev = new Event("paste", { bubbles: true, cancelable: true });
+    const dt = new DataTransfer();
+    dt.items.add(new File(["conteudo"], "print.png", { type: "image/png" }));
+    Object.defineProperty(ev, "clipboardData", { value: dt });
+    document.dispatchEvent(ev);
+    await new Promise((r) => setTimeout(r, 900));
+    return document.body.innerText;
+  });
+  const contarAnexos = () => page.evaluate(() =>
+    document.querySelectorAll("[data-previa-anexo]").length);
+  // A PRÉVIA COBRE A TELA INTEIRA, e enquanto ela estiver aberta nenhum clique
+  // chega ao botão da nota — ele chegaria no pano preto por cima. Fechar de
+  // verdade, e conferir que fechou, antes de seguir.
+  const fecharPrevia = async () => {
+    if (!(await contarAnexos())) return;
+    await page.locator('[data-previa-anexo] [title="Cancelar"]').first().click();
+    await page.waitForFunction(() => !document.querySelector("[data-previa-anexo]"), null, { timeout: 5000 });
+  };
+
+  // PRIMEIRO, A PROVA DE QUE A PORTA EXISTE. Sem isto a conferência abaixo
+  // passaria mesmo que arrastar e colar não fizessem nada em lugar nenhum —
+  // um teste que não consegue errar não prova nada.
+  await page.locator("[data-fechar-nota]").first().click();
+  await page.waitForTimeout(800);
+  await soltarArquivo();
+  ok("com a MENSAGEM aberta, arrastar um arquivo abre a prévia",
+     (await contarAnexos()) > 0, "a prévia não abriu — a porta do arrasto não está sendo exercida");
+  await fecharPrevia();
+  await colarArquivo();
+  ok("e colar um print também abre a prévia",
+     (await contarAnexos()) > 0, "a prévia não abriu — a porta da colada não está sendo exercida");
+  await fecharPrevia();
+
+  // AGORA, COM A NOTA ABERTA: as duas portas têm de recusar, e dizer por quê.
+  await page.locator("[data-nota-interna]").first().click();
+  await page.waitForTimeout(1000);
+  ok("(a nota realmente abriu antes de conferir a recusa)",
+     await page.locator(CAMPO_NOTA).count() > 0, "a nota não abriu — as conferências abaixo não valeriam nada");
+
+  const antesFila = await page.evaluate(() => (globalThis.__TABELAS.fila_envio || []).length);
+  const aoSoltar = await soltarArquivo();
+  ok("arrastar um arquivo com a nota aberta NÃO abre a prévia",
+     (await contarAnexos()) === 0, "a prévia abriu com a nota aberta");
+  ok("e a tela diz por quê, em vez de engolir o gesto",
+     /nota interna é só texto|Feche a nota/i.test(aoSoltar), "nada explicando na tela");
+
+  const aoColar = await colarArquivo();
+  ok("colar um print com a nota aberta NÃO abre a prévia",
+     (await contarAnexos()) === 0, "a prévia abriu com a nota aberta");
+  ok("e a colada também é explicada",
+     /nota interna é só texto|Feche a nota/i.test(aoColar), "nada explicando na tela");
+
+  const depoisFila = await page.evaluate(() => (globalThis.__TABELAS.fila_envio || []).length);
+  ok("e nada foi mandado ao cliente por nenhuma das duas portas",
+     depoisFila === antesFila, `a fila de envio foi de ${antesFila} para ${depoisFila}`);
+}
+
 ok("sem erro de JavaScript no caminho", erros.length === 0, erros.join(" | "));
 
 await ctx.close();
