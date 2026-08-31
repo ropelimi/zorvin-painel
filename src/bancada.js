@@ -1347,6 +1347,19 @@ function consulta(tabela) {
         return resolver({ data: null, count: null,
           error: { code: "42P01", message: `relation "public.${tabela}" does not exist` } });
       }
+      // A LEITURA QUE FALHA — a rede que oscilou, o banco que recusou.
+      //
+      // `__RECUSAR_LEITURA = ["mensagens"]` faz esta tabela responder com erro
+      // em vez de linhas, como o PostgREST responde quando a chamada não
+      // completa. Precisou existir por causa do relato de 31/08 ("não consigo
+      // abrir as mensagens", com o miolo da conversa preto): sem poder REPROVAR
+      // a leitura, não havia como provar o que a tela mostra quando ela falha —
+      // e o que ela mostrava era nada, igualzinho a "carregando" e a "vazia".
+      const recusarLeitura = (typeof globalThis !== "undefined" && globalThis.__RECUSAR_LEITURA) || [];
+      if (recusarLeitura.includes(tabela)) {
+        return resolver({ data: null, count: null,
+          error: { code: "PGRST301", message: "JWT expired" } });
+      }
       // O ATRASO PADRÃO PODE SER TROCADO POR UM ÚNICO, IGUAL PARA TODAS.
       //
       // Os dois abaixo existem para a prova de desempenho ter o que medir, e
