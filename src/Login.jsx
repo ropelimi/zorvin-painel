@@ -73,6 +73,30 @@ export default function Login({ authMudo = false } = {}) {
     aplicarAparencia(escuro, escuro ? "#0b141a" : "#eef2f1");
   }, [escuro]);
 
+  // ACORDA A PONTE ENQUANTO A PESSOA DIGITA A SENHA.
+  //
+  // A ponte hiberna no plano gratuito da Render, e a primeira chamada do dia
+  // leva de trinta a sessenta segundos só para acordá-la. Essa chamada era o
+  // próprio "Entrar": a pessoa abria o Zorvin, digitava, apertava — e ficava
+  // olhando o botão girar enquanto o servidor levantava. É a primeira coisa
+  // que o escritório sente de manhã, e a que fica na memória como "o Zorvin
+  // está lento".
+  //
+  // Aqui o despertador toca ANTES, no instante em que a tela aparece. Os vinte
+  // ou trinta segundos que a pessoa leva digitando usuário e senha viram tempo
+  // de acordar em vez de tempo de espera; quando ela aperta "Entrar", a ponte
+  // muitas vezes já está de pé.
+  //
+  // `/ping` é o endereço mais barato da ponte: responde 200 vazio, sem banco.
+  // `no-cors` e sem `await` porque não lemos a resposta e não esperamos nada —
+  // falhar aqui não pode atrapalhar a entrada. É só bater na porta.
+  useEffect(() => {
+    if (!BRIDGE_URL) return;
+    try {
+      fetch(BRIDGE_URL + "/ping", { mode: "no-cors", cache: "no-store" }).catch(() => {});
+    } catch (_) { /* bater na porta é best-effort, e só */ }
+  }, []);
+
   async function entrar(e) {
     e.preventDefault();
     if (entrando) return;
