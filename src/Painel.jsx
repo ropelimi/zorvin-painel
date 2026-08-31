@@ -2041,6 +2041,13 @@ export default function Painel({ sessao }) {
   const inputRef = useRef(null);
   const conversaIdRef = useRef(null);
   useEffect(() => { conversaIdRef.current = conversaId; }, [conversaId]);
+  // EM QUE PÉ ESTÁ O MIOLO DA CONVERSA: "carregando", "pronto", ou o objeto
+  // {erro, codigo} da falha.
+  //
+  // Sem isto, as três situações desenhavam a MESMA coisa — uma área preta e
+  // muda. O histórico ao lado diz "Levantando…", a galeria de mídias diz
+  // "Carregando…", e a conversa, que é o principal da tela, não dizia nada.
+  const [estadoMensagens, setEstadoMensagens] = useState("pronto");
   // A ÚLTIMA que `carregarMensagens` começou a carregar. Serve para saber se
   // esta chamada é uma TROCA de conversa ou uma recarga da mesma — a troca
   // esvazia a tela na hora, a recarga não pode piscar.
@@ -4105,7 +4112,8 @@ export default function Painel({ sessao }) {
   const ANTES_DO_ALVO = 40;
 
   const carregarMensagens = useCallback(async (convId) => {
-    if (!convId) { setMensagens([]); setTemMaisAntigas(false); return; }
+    if (!convId) { setMensagens([]); setTemMaisAntigas(false); setEstadoMensagens("pronto"); return; }
+    setEstadoMensagens("carregando");
 
     // A CONVERSA NOVA NUNCA MOSTRA AS MENSAGENS DA ANTERIOR.
     //
@@ -4200,6 +4208,18 @@ export default function Painel({ sessao }) {
       // o `return` deixava na tela as mensagens da conversa ANTERIOR, embaixo do
       // nome da nova, até alguém tocar de novo. O aviso pedia para tentar outra
       // vez enquanto a tela mostrava o histórico de outro cliente.
+      //
+      // O AVISO SOZINHO NÃO BASTAVA, e foi o relato de 31/08: "não consigo abrir
+      // as mensagens", com a foto de uma conversa aberta e o miolo preto. O
+      // aviso some em quatro segundos; quem chega meio minuto depois — ou quem
+      // olha a foto — vê uma tela que não diz nada. Erro, vazia e carregando
+      // eram, as três, exatamente a mesma coisa: nada.
+      //
+      // Agora a falha FICA na tela, com o que houve e um jeito de tentar de
+      // novo sem sair da conversa. E vai para o console com o detalhe cru, que
+      // é o que permite descobrir a causa de um relato que não se reproduz.
+      console.error("[zorvin] falha ao carregar mensagens", convId, erro);
+      setEstadoMensagens({ erro: erro.message || String(erro), codigo: erro.code || "" });
       mostrarAviso("Não consegui carregar as mensagens. Toque na conversa de novo.");
       return;
     }
@@ -4260,6 +4280,7 @@ export default function Painel({ sessao }) {
     // Se troquei de conversa enquanto esta busca estava em andamento, descarta o
     // resultado — senão as mensagens da conversa antiga sobrescreveriam a atual.
     if (conversaIdRef.current !== convId) return;
+    setEstadoMensagens("pronto");
     // Antes de trocar a lista, libera prévias locais (blob:) da lista anterior
     // que não foram revogadas (ex.: troquei de conversa antes do eco chegar),
     // para não vazar memória.
@@ -9257,6 +9278,46 @@ export default function Painel({ sessao }) {
                         style={{ alignSelf: "center", marginBottom: 6, border: `1px solid ${C.divider}`, background: C.panel, color: C.textSecondary, borderRadius: 20, padding: "7px 16px", fontSize: 12.5, fontWeight: 600, cursor: buscandoAntigas ? "default" : "pointer" }}>
                   {buscandoAntigas ? "Buscando…" : "↑ Carregar mensagens anteriores"}
                 </button>
+              )}
+              {/* O QUE ESTÁ ACONTECENDO AQUI DENTRO.
+                  Relato de 31/08, de quem usa: "zorvin está lento, não consigo
+                  abrir as mensagens", com a foto de uma conversa aberta e o
+                  miolo preto. A conversa tinha mensagem no banco; a tela não
+                  dizia nem que estava buscando, nem que tinha falhado, nem que
+                  estava vazia. As três eram a mesma tela: nenhuma.
+                  Uma tela muda faz a pessoa esperar por algo que talvez nunca
+                  venha — e faz "falhou" ser confundido com "lento". */}
+              {estadoMensagens === "carregando" && !mensagens.length && (
+                <div data-mensagens-carregando style={{ margin: "auto", color: C.textSecondary, fontSize: 13.5 }}>
+                  Carregando as mensagens…
+                </div>
+              )}
+              {typeof estadoMensagens === "object" && estadoMensagens && (
+                <div data-mensagens-erro style={{ margin: "auto", maxWidth: 380, textAlign: "center",
+                            background: C.panel, border: `1px solid ${C.divider}`,
+                            borderRadius: 12, padding: "16px 18px" }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>
+                    Não consegui carregar as mensagens desta conversa.
+                  </div>
+                  <div style={{ fontSize: 12.5, color: C.textSecondary, lineHeight: 1.5, marginBottom: 12 }}>
+                    A conversa existe e nada foi perdido — o que falhou foi a
+                    leitura. {estadoMensagens.codigo ? `Código do banco: ${estadoMensagens.codigo}.` : ""}
+                  </div>
+                  <button data-tentar-mensagens onClick={() => carregarMensagens(conversaId)}
+                          style={{ border: "none", background: C.green, color: "#fff", borderRadius: 9,
+                                   padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                    Tentar de novo
+                  </button>
+                </div>
+              )}
+              {estadoMensagens === "pronto" && !mensagens.length && (
+                // VAZIA É UMA RESPOSTA, e diferente de "não carregou". A
+                // conversa recém-criada (o lead que ainda não escreveu, ou o
+                // contato aberto pelo botão do outro número) cai aqui.
+                <div data-conversa-sem-mensagem style={{ margin: "auto", color: C.textSecondary, fontSize: 13.5, textAlign: "center" }}>
+                  Nenhuma mensagem nesta conversa ainda.<br />
+                  <span style={{ fontSize: 12.5 }}>Escreva abaixo para começar.</span>
+                </div>
               )}
               <ListaDeBolhas
                 {...acoesDaBolha}
