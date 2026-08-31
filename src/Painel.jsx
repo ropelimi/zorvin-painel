@@ -15,7 +15,7 @@ import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
 import { numeroCanonico, chaveDoNumero, porQueNaoRecebeWhatsApp, daParaChamar,
          telefoneLegivel } from "./numeros.js";
-import { chamarPonte } from "./ponte.js";
+import { chamarPonte, ESPERA_PADRAO } from "./ponte.js";
 import { comoPrever, nomeDoTipo, tamanhoLegivel } from "./arquivos.js";
 import Departamentos from "./Departamentos";
 import PainelNumeros from "./PainelNumeros";
@@ -6636,8 +6636,25 @@ export default function Painel({ sessao }) {
       const { data: sessao } = await supabase.auth.getSession();
       const jwt = sessao?.session?.access_token;
       if (!jwt) return { porCad, novas };
-      const r = await fetch(`${BRIDGE_URL}/vantoro/buscar?q=${encodeURIComponent(termo)}`,
-        { headers: { Authorization: "Bearer " + jwt } });
+      // TEMPO LIMITE, como em `chamarPonte`.
+      //
+      // Esta chamada era o único `fetch` do painel feito por fora do
+      // `ponte.js` — e por isso o único sem prazo. O comentário de lá descreve
+      // o estrago com todas as letras: "a ponte roda no plano free da Render e
+      // hiberna; se ela nunca responder, o `fetch` fica pendurado para sempre".
+      //
+      // Relato de 31/08, com foto: procurar um cliente ficava em "Procurando…"
+      // e nunca saía dali. Era isto — e o Vantoro, que fica atrás da ponte,
+      // hiberna também.
+      const relogio = new AbortController();
+      const estourou = setTimeout(() => relogio.abort(), ESPERA_PADRAO);
+      let r;
+      try {
+        r = await fetch(`${BRIDGE_URL}/vantoro/buscar?q=${encodeURIComponent(termo)}`,
+          { headers: { Authorization: "Bearer " + jwt }, signal: relogio.signal });
+      } finally {
+        clearTimeout(estourou);
+      }
       const corpo = await r.json().catch(() => ({}));
 
       // Os últimos 8 dígitos são o miolo do número: não mudam com DDD, com o
@@ -6814,22 +6831,41 @@ export default function Painel({ sessao }) {
           setAchadosMsg(porMsg);
           setAchadosNome(porNome);
           setAlvoDaBusca(alvos);
+          // A PENEIRA: tira o que a lista já mostra e o que veio repetido.
+          const jaNaLista = new Set(conversas.map((c) => String(c.id)));
+          const peneirar = (lista) => {
+            const vistos = new Set();
+            return lista.filter((c) => {
+              const id = String(c.id);
+              if (jaNaLista.has(id) || vistos.has(id)) return false;
+              vistos.add(id);
+              return true;
+            });
+          };
+
+          // O QUE O BANCO ACHOU VAI PARA A TELA AGORA — e não depois.
+          //
+          // Relato de 31/08, com foto: "está lento para pesquisar clientes,
+          // nunca aparece", com a busca parada em "Procurando…".
+          //
+          // O banco já tinha respondido. Quem segurava a tela era a consulta ao
+          // Vantoro logo abaixo: ela vinha ANTES do `setExtras`, então as
+          // conversas achadas aqui ficavam reféns de uma ida a OUTRA
+          // hospedagem — que fica atrás da ponte, e que hiberna na Render.
+          // Esperar meio minuto por um cadastro que só ACRESCENTA o nome é
+          // meio minuto sem ver a conversa que o banco achou de primeira.
+          //
+          // Agora são dois tempos: o que é daqui aparece de imediato, e o que
+          // vem do cadastro chega depois — se chegar.
+          setExtras(peneirar(encontradas));
+          setBuscando(false);
+
           const doCadastro = await procurarNoVantoro(termo, encontradas, advId);
           if (cancelado || advogadoIdRef.current !== advId) return;
           setAchadosCad(doCadastro.porCad);
           setSemConversa(doCadastro.semConversa || []);
-          // As que só o cadastro achou entram na mesma peneira das outras, logo
-          // abaixo — inclusive a de não repetir o que a lista já tem.
-          encontradas.push(...doCadastro.novas);
-          const jaNaLista = new Set(conversas.map((c) => String(c.id)));
-          const vistos = new Set();
-          setExtras(encontradas.filter((c) => {
-            const id = String(c.id);
-            if (jaNaLista.has(id) || vistos.has(id)) return false;
-            vistos.add(id);
-            return true;
-          }));
-          setBuscando(false);
+          // As que só o cadastro achou entram na MESMA peneira das outras.
+          setExtras(peneirar([...encontradas, ...doCadastro.novas]));
           return;
         }
 
@@ -6966,17 +7002,10 @@ export default function Painel({ sessao }) {
         (data || []).forEach((c) => encontradas.push(c));
       }
 
-      // ---- 4) no cadastro do Vantoro (CPF, processo) → casa pelo telefone ----
-      const doCadastro = await procurarNoVantoro(termo, encontradas, advId);
-      const porCad = doCadastro.porCad;
-      encontradas.push(...doCadastro.novas);
-
       // Troquei de telefone (ou de termo) enquanto isto vinha? A resposta é de
       // outra pergunta: descarta.
       if (cancelado || advogadoIdRef.current !== advId) return;
       setAchadosMsg(porMsg);
-      setAchadosCad(porCad);
-      setSemConversa(doCadastro.semConversa || []);
       setAchadosNome(porNome);
       // A FRASE MUDA CONFORME O QUE FALTOU, porque a decisão de quem lê muda.
       //
@@ -6993,14 +7022,28 @@ export default function Painel({ sessao }) {
       }
       // Só o que a lista NÃO tem. O resto já está lá, com o estado em dia.
       const jaNaLista = new Set(conversas.map((c) => String(c.id)));
-      const vistos = new Set();
-      setExtras(encontradas.filter((c) => {
-        const id = String(c.id);
-        if (jaNaLista.has(id) || vistos.has(id)) return false;
-        vistos.add(id);
-        return true;
-      }));
+      const peneirar = (lista) => {
+        const vistos = new Set();
+        return lista.filter((c) => {
+          const id = String(c.id);
+          if (jaNaLista.has(id) || vistos.has(id)) return false;
+          vistos.add(id);
+          return true;
+        });
+      };
+      // O QUE É DAQUI PRIMEIRO — o mesmo conserto do caminho de cima. Este é o
+      // caminho de reserva (quando a função do banco ainda não foi criada), e
+      // ele tinha o defeito idêntico: a ida ao Vantoro vinha antes de desenhar,
+      // e o "Procurando…" ficava de pé até ela voltar.
+      setExtras(peneirar(encontradas));
       setBuscando(false);
+
+      // ---- e só então o cadastro do Vantoro (CPF, processo) ----
+      const doCadastro = await procurarNoVantoro(termo, encontradas, advId);
+      if (cancelado || advogadoIdRef.current !== advId) return;
+      setAchadosCad(doCadastro.porCad);
+      setSemConversa(doCadastro.semConversa || []);
+      setExtras(peneirar([...encontradas, ...doCadastro.novas]));
     }, 350);
 
     return () => { cancelado = true; clearTimeout(tarefa); };
