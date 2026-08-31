@@ -301,6 +301,48 @@ console.log("\nQuando a sessão que chega já veio vencida");
 console.log(`\nerros de página: ${erros.length}`);
 erros.slice(0, 4).forEach((e) => console.log("   • " + e.slice(0, 160)));
 
+console.log("\nA ponte é acordada enquanto a pessoa digita");
+{
+  // POR QUE ISTO EXISTE. A ponte hiberna no plano gratuito da Render, e a
+  // primeira chamada do dia leva de 30 a 60 segundos só para acordá-la. Essa
+  // chamada era o próprio "Entrar" — a pessoa digitava, apertava, e olhava o
+  // botão girar. É a primeira coisa que o escritório sente de manhã.
+  //
+  // Batendo na porta assim que a tela aparece, o tempo de digitar vira tempo
+  // de acordar. A conferência é que a batida ACONTECE, e que ela acontece
+  // ANTES de qualquer tentativa de entrar.
+  const batidas = [];
+  const ctx2 = await nav.newContext({ viewport: { width: 1100, height: 800 } });
+  const p2 = await ctx2.newPage();
+  // A BANCADA SOBE JÁ ENTRADA, de propósito — quase toda prova quer o painel,
+  // não a porta. `__DESLOGADO` é o que faz a tela de entrada aparecer.
+  await p2.addInitScript(() => { globalThis.__DESLOGADO = true; });
+  await p2.route("**/ponte-de-mentira/ping", async (rota) => {
+    batidas.push(Date.now());
+    rota.fulfill({ status: 200, body: "" });
+  });
+  await p2.goto(ENDERECO);
+  await p2.waitForSelector('input[type="password"]');
+  await p2.waitForTimeout(1200);
+
+  ok("a tela de entrada bate na porta da ponte sozinha", batidas.length >= 1,
+     "ninguém acordou a ponte — o tempo de acordar vira espera no botão Entrar");
+  // E NÃO BATE DE NOVO A CADA TECLA. Um pedido por tecla digitada trocaria
+  // uma espera por uma enxurrada num servidor que já está com dificuldade.
+  //
+  // A CONFERÊNCIA É A DIFERENÇA, e não o total. Em desenvolvimento o React
+  // chama todo efeito DUAS vezes, de propósito, para caçar efeito que não sabe
+  // ser repetido — prender o total em 1 seria medir a ferramenta, e reprovaria
+  // com o painel certo. O que importa é que digitar não acrescente nenhuma.
+  const antesDeDigitar = batidas.length;
+  await p2.locator('input[type="password"]').fill("uma senha qualquer");
+  await p2.locator('input[type="password"]').type("mais teclas");
+  await p2.waitForTimeout(800);
+  ok("e digitar não gera batida nova", batidas.length === antesDeDigitar,
+     `passou de ${antesDeDigitar} para ${batidas.length} ao digitar`);
+  await ctx2.close();
+}
+
 await ctx.close();
 await nav.close();
 console.log(`\n${feitas - falhas}/${feitas} conferências passaram`);
