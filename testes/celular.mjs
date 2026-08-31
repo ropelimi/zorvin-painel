@@ -141,7 +141,14 @@ console.log("\nA lista de conversas");
   ok("e a conversa aberta é que manda na tela",
      await page.locator("textarea, [contenteditable]").count() === 0,
      "no celular a lista e a conversa não dividem a tela — é uma OU outra");
-  if (nome) ok("o nome na lista tem espaço", nome.largura >= 150, `tinha ${nome.largura}px`);
+  // O `if` CALADO ERA O DEFEITO. Se `medir` não achasse o nome — que é o
+  // próprio jeito de a lista estar quebrada no celular —, a conferência da
+  // largura não rodava e a prova terminava verde. O sumiço do elemento tem de
+  // REPROVAR, e não ser motivo para não conferir.
+  ok("achei o nome da conversa para medir", !!nome,
+     "sem o nome na lista não há o que medir — e é assim que a lista quebra");
+  ok("o nome na lista tem espaço", !!nome && nome.largura >= 150,
+     `tinha ${nome ? nome.largura : "—"}px`);
 }
 
 console.log("\nO cabeçalho da conversa — o do relato");
@@ -460,6 +467,12 @@ console.log("\n\"Juntar duas conversas\" não existe mais");
   await page.keyboard.press("Escape");
   await page.waitForTimeout(300);
   const m = page.getByRole("button", { name: "Menu" });
+  // SEM ESTA LINHA a conferência de baixo era pulada calada quando o menu não
+  // aparecia — e um menu que sumiu do celular é defeito, não motivo para não
+  // conferir. Pior: "não oferece juntar conversas" fica trivialmente verdade
+  // numa tela onde o menu nem abriu.
+  ok("o menu do topo existe no celular", await m.count() > 0,
+     "não achei o botão Menu — a conferência abaixo não valeria nada");
   if (await m.count()) {
     await m.first().click();
     await page.waitForTimeout(400);

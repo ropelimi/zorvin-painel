@@ -184,8 +184,11 @@ console.log("\nA dica ao passar o mouse mostra o texto inteiro");
   });
   ok("o nome e a prévia têm dica", dicas && dicas.length >= 2,
      JSON.stringify(dicas));
+  // O `dicas &&` NÃO PROTEGE NADA: uma lista VAZIA é objeto, passa no `&&`, e
+  // `[].every(...)` é verdade. As dicas sumirem da linha deixaria isto verde.
+  // O tamanho tem de entrar na própria condição.
   ok("e a dica é o mesmo texto que está na linha",
-     dicas && dicas.every((d) => d.dica && d.dica === d.visto),
+     !!dicas && dicas.length >= 2 && dicas.every((d) => d.dica && d.dica === d.visto),
      JSON.stringify(dicas));
 }
 

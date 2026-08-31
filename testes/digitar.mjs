@@ -108,6 +108,16 @@ ok("a conversa longa tem mesmo mais bolhas que a curta",
    longa.bolhas > curta.bolhas * 1.5,
    `${curta.bolhas} -> ${longa.bolhas}: o histórico não cresceu, a medição não vale`);
 
+// A MEDIÇÃO PRECISA TER ACONTECIDO.
+//
+// Esta é a ÚNICA conferência de desempenho do arquivo, e ela morava dentro de
+// um `if` calado: `porTecla` devolvendo `null` — campo não encontrado, digitação
+// que não chegou, qualquer coisa que impedisse medir — pulava a conferência e
+// deixava a prova verde. Uma régua que some quando não consegue medir não é
+// régua nenhuma; ela some justamente quando a tela está pior.
+ok("as duas medições aconteceram", curta.ms != null && longa.ms != null,
+   `curta=${curta.ms}, longa=${longa.ms} — sem medir, não há o que comparar`);
+
 if (curta.ms != null && longa.ms != null) {
   const cresceu = longa.ms / curta.ms;
   const porBolha = (longa.ms - curta.ms) / Math.max(1, longa.bolhas - curta.bolhas);

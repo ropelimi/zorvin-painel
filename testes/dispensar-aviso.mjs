@@ -120,6 +120,11 @@ console.log("\nCom o banco RECUSANDO a gravação (uma lista fechada de valores 
 
   const naFila = await page.evaluate(() =>
     (globalThis.__TABELAS.fila_envio || []).map((l) => l.status));
+  // `[].every(...)` É VERDADE — verdade vazia. Sem a linha de baixo, a fila
+  // APAGADA passaria por "a linha continua no banco, intacta", que é o oposto
+  // exato do que esta conferência promete: quem fosse investigar não acharia
+  // mais nada.
+  ok("há linha na fila para conferir", naFila.length > 0, "a fila ficou vazia");
   ok("e a linha continua no banco, intacta, para quem for investigar",
      naFila.every((s) => s === "erro"), JSON.stringify(naFila));
 }
@@ -189,15 +194,30 @@ console.log("\nO botão VIZINHO — 'reenviar' — tinha o mesmo buraco e não t
   ok("reenviar cria uma linha NOVA, pendente, na fila",
      naFila.length === naFilaAntes + 1 && naFila.some((l) => l.s === "pendente"),
      JSON.stringify(naFila));
+  // O TEXTO É CONFERIDO PELO TEXTO, e não por "tem alguma coisa escrita".
+  //
+  // `every((l) => !!l.t)` respondia à pergunta errada: reenviar com o texto de
+  // OUTRA mensagem — mandar ao cliente uma frase que ele nunca deveria receber
+  // agora — passava por "com o mesmo texto da mensagem que falhou". E numa
+  // lista vazia passava do mesmo jeito, porque `[].every(...)` é verdade.
+  const pendentes = naFila.filter((l) => l.s === "pendente");
+  ok("nasceu exatamente uma linha pendente", pendentes.length === 1,
+     JSON.stringify(naFila));
+  // Os textos que a bancada põe na fila com erro nesta conversa. O reenvio tem
+  // de repetir UM DELES, letra por letra.
+  const DA_CONVERSA = ["Doutor, segue o documento que combinamos",
+                       "Consegue confirmar por aqui?"];
   ok("com o mesmo texto da mensagem que falhou",
-     naFila.filter((l) => l.s === "pendente").every((l) => !!l.t),
+     pendentes.length === 1 && DA_CONVERSA.includes(pendentes[0].t),
      JSON.stringify(naFila));
   // E COM QUEM ESCREVEU. Faltava aqui e só aqui: a reenviada era a única da
   // conversa a continuar assinada com o nome de antes.
-  const assinada = await page.evaluate(() =>
+  const autores = await page.evaluate(() =>
     (globalThis.__TABELAS.fila_envio || []).filter((l) => l.status === "pendente")
-      .every((l) => !!l.enviado_por));
-  ok("e assinada por quem escreveu", assinada, "a linha nova saiu sem autor");
+      .map((l) => l.enviado_por));
+  ok("e assinada por quem escreveu",
+     autores.length === 1 && !!autores[0],
+     `autores das pendentes: ${JSON.stringify(autores)}`);
 
   // A CONFERÊNCIA QUE PEGA O DEFEITO. Com o banco recusando o 'descartada', a
   // linha velha continua com `status = 'erro'` — e sem o registro no aparelho a
