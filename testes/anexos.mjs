@@ -177,8 +177,11 @@ console.log("\nAs três portas terminam no mesmo lugar");
   nomes.push((await previa.innerText().catch(() => "")).includes("pelo-arrasto.txt"));
   await limpar();
 
+  // OS DOIS CAMINHOS, e o número deles na própria condição: `[].every(...)` é
+  // verdade, então sem o tamanho um `push` que deixasse de acontecer passaria
+  // por "os dois caminhos funcionam".
   ok("clipe e arrasto abrem a MESMA prévia, com o mesmo desfecho",
-     nomes.every(Boolean), JSON.stringify(nomes));
+     nomes.length === 2 && nomes.every(Boolean), JSON.stringify(nomes));
 }
 
 console.log(`\nerros de página: ${erros.length}`);

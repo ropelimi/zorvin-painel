@@ -335,8 +335,11 @@ console.log("\nTrocar o nome agora vale para trás");
       depois: de("depois de trocar o nome"),
     };
   });
+  // AS TRÊS BOLHAS, e o número delas na condição: `[].every(...)` é verdade, e
+  // um `de(...)` que deixasse de achar as bolhas deixaria isto verde.
   ok("as bolhas com id acompanham o renome",
-     Object.values(assinaturas).every((n) => /RODRIGO DE OUTRO JEITO/.test(n || "")),
+     Object.values(assinaturas).length === 3
+     && Object.values(assinaturas).every((n) => /RODRIGO DE OUTRO JEITO/.test(n || "")),
      JSON.stringify(assinaturas));
   ok("e nenhuma delas ficou com o nome anterior",
      !Object.values(assinaturas).some((n) => /Rodrigo ADMIN|Rodrigo Sousa/.test(n || "")),

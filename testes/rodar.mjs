@@ -8,6 +8,7 @@
 import { spawn } from "node:child_process";
 import { setTimeout as espera } from "node:timers/promises";
 import { readdirSync } from "node:fs";
+import { NAO_SAO_PROVAS } from "./olho-nas-provas.mjs";
 
 const PORTA = 5199;
 const ENDERECO = `http://127.0.0.1:${PORTA}/`;
@@ -22,7 +23,12 @@ const ENDERECO = `http://127.0.0.1:${PORTA}/`;
 // não existe, porque ele dá a impressão de cobertura.
 //
 // Agora basta criar `testes/nome.mjs` para ele entrar. Nada a lembrar.
-const AJUDANTES = new Set(["rodar", "navegador"]);
+//
+// A LISTA DE QUEM NÃO É PROVA VEM DE UM LUGAR SÓ, importada do olho: ele
+// precisa da mesma resposta para saber o que analisar, e duas listas iguais
+// divergem na primeira mudança — com a prova esquecida numa delas deixando,
+// caladamente, de rodar. É o mesmo defeito que o comentário acima descreve.
+const AJUDANTES = new Set([...NAO_SAO_PROVAS].map((f) => f.replace(/\.mjs$/, "")));
 
 // AS QUE PRECISAM DO BUILD DE PRODUÇÃO. `desempenho` mede latência, e o React
 // de desenvolvimento gasta em verificações que não existem em produção — medir
