@@ -153,6 +153,10 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   const [candidatos, setCandidatos] = useState([]);
   const [edicao, setEdicao] = useState({});
   const [salvando, setSalvando] = useState(false);
+  // Cliente ou parte contrária. Nasce em "cliente" porque é o caso de quase
+  // todo lead — e porque um pré-cadastro sem escolha nenhuma faria o Vantoro
+  // voltar a deduzir pelo documento, que é o defeito que isto conserta.
+  const [papel, setPapel] = useState("cliente");
   const [buscandoCep, setBuscandoCep] = useState(false);
   const [opcoes, setOpcoes] = useState({ estado_civil: ESTADO_CIVIL_RESERVA });
   const [abertas, setAbertas] = useState(
@@ -304,7 +308,18 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     }
   }
 
-  useEffect(() => { if (numero) buscar(); /* eslint-disable-next-line */ }, [numero]);
+  // TROCOU DE NÚMERO, A ESCOLHA DE PAPEL VOLTA AO PADRÃO.
+  //
+  // HOJE ISTO NUNCA DISPARA, e está aqui de propósito. Quem garante a escolha
+  // limpa é o painel, que fecha a ficha a cada troca de conversa e portanto a
+  // desmonta inteira — um detalhe de OUTRO arquivo, a 6.000 linhas daqui.
+  //
+  // O que não pode acontecer é a marca "parte contrária" sobrar para o próximo
+  // atendimento: o lead seguinte nasceria como réu, sem ordem de serviço, sem
+  // tarefa no pool e sem aviso nenhum — quem atendeu juraria ter criado um
+  // cliente. Uma garantia desse tamanho não fica pendurada num detalhe alheio
+  // que ninguém lembra de conferir ao mexer.
+  useEffect(() => { setPapel("cliente"); if (numero) buscar(); /* eslint-disable-next-line */ }, [numero]);
 
   async function criar() {
     setSalvando(true);
@@ -315,6 +330,18 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
           nome: (edicao.nome || nomeContato || "").trim() || "Sem nome",
           telefone: numero,
           cpf: edicao.cpf || "",
+          // O PAPEL DECIDE SE NASCE UMA ORDEM DE SERVIÇO.
+          //
+          // Pedido do escritório: "ao fazer o pré-cadastro do Lead pelo Zorvin,
+          // precisa ter a opção de cliente ou réu". Antes o Vantoro deduzia
+          // pelo documento — CPF virava cliente, CNPJ virava parte contrária —,
+          // e errava nos dois sentidos: a empresa cliente ficava sem ordem de
+          // serviço, e a pessoa que é réu ganhava uma, com tarefa no pool para
+          // alguém trabalhar o adversário como se fosse cliente.
+          //
+          // Quem está falando com o lead é o único, em todo o sistema, que sabe
+          // a resposta. É aqui que ela é dada.
+          papel,
         }),
       });
       setCliente(r.cliente);
@@ -584,6 +611,31 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
             <label style={rotulo}>CPF (opcional agora)</label>
             <input style={{ ...campo, marginBottom: 14 }} value={edicao.cpf || ""}
                    onChange={(e) => setEdicao({ ...edicao, cpf: e.target.value })} />
+            {/* CLIENTE OU RÉU — a escolha que decide a ordem de serviço.
+                Dois botões, e não uma lista: são duas opções, e uma lista
+                fechada esconderia a segunda atrás de um clique. Quem atende
+                precisa VER que existe a escolha, senão ela não é feita.
+                "Cliente" já vem marcado porque é o caso de quase todo lead;
+                o réu é a exceção, e a exceção precisa estar à vista. */}
+            <label style={rotulo}>Quem é esta pessoa para o escritório?</label>
+            <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+              {[["cliente", "Cliente"], ["contraria", "Parte contrária (réu)"]].map(([v, r]) => (
+                <button key={v} data-papel={v} aria-pressed={papel === v}
+                        onClick={() => setPapel(v)}
+                        style={{ flex: 1, padding: "9px 8px", borderRadius: 9, cursor: "pointer",
+                                 fontSize: 13, fontWeight: 600,
+                                 border: `1px solid ${papel === v ? C.green : C.divider}`,
+                                 background: papel === v ? C.green : "transparent",
+                                 color: papel === v ? "#fff" : C.textSecondary }}>
+                  {r}
+                </button>
+              ))}
+            </div>
+            <div style={{ color: C.textSecondary, fontSize: 12, lineHeight: 1.45, marginBottom: 14 }}>
+              {papel === "contraria"
+                ? "A parte contrária entra no cadastro, mas NÃO abre ordem de serviço."
+                : "O cliente abre a ordem de serviço e entra na esteira."}
+            </div>
             <button style={{ ...botao, width: "100%", opacity: salvando ? 0.6 : 1 }} onClick={criar} disabled={salvando}>
               <UserPlus size={15} /> {salvando ? "Criando…" : "Criar pré-cadastro"}
             </button>
