@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMe
 import { supabase } from "./supabase.js";
 import { aplicarAparencia } from "./aparencia.js";
 import {
+  ZoomIn, ZoomOut,
   Search, Send, Paperclip, Smile, ChevronDown, MoreVertical,
   MessageSquare, Mic, CheckCheck, LogOut, ArrowLeft, Sun, Moon,
   Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp,
@@ -19,6 +20,8 @@ import { chamarPonte, ESPERA_PADRAO } from "./ponte.js";
 import { PRAZO_DA_BUSCA, foiAbortada, funcaoNaoExiste,
          condicoesDeNome, recadoDaBusca } from "./busca.js";
 import { comoPrever, nomeDoTipo, tamanhoLegivel } from "./arquivos.js";
+import { ZOOM_MIN, ZOOM_MAX, ZOOM_PARADO, ZOOM_DO_TOQUE_DUPLO, degrauSeguinte,
+         porcentagem, limitarPosicao, zoomAncorado, distancia } from "./zoom.js";
 import Departamentos from "./Departamentos";
 import PainelNumeros from "./PainelNumeros";
 import Marca from "./Marca";
@@ -2090,6 +2093,28 @@ export default function Painel({ sessao }) {
   // Quantos pixels a foto TEM de verdade. Ampliar além do dobro disso não
   // mostra mais nada — só borra o que já estava lá.
   const [larguraDoRetrato, setLarguraDoRetrato] = useState(0);
+  // ---- O ZOOM DA IMAGEM ABERTA ----
+  //
+  // Pedido do escritório: "ao clicar para abrir uma imagem que eu recebi ou
+  // enviei, preciso que tenha a opção de dar zoom para melhorar a leitura".
+  // O que chega o dia inteiro é documento fotografado: procuração de lado, RG
+  // amassado, print de conversa com letra de seis pixels. A tela mostrava a
+  // imagem inteira, e era por CABER que não dava para ler.
+  //
+  // `suave` decide se a mudança é animada. Botão e toque duplo saltam de um
+  // tamanho a outro e ficam melhores com meio segundo de transição; a pinça e o
+  // arrasto acompanham o dedo, e animar CADA quadro deles faria a imagem
+  // chegar sempre atrasada em relação à mão.
+  const [zoom, setZoom] = useState(ZOOM_PARADO);
+  const [suave, setSuave] = useState(false);
+  const [arrastandoImagem, setArrastandoImagem] = useState(false);
+  const visorRef = useRef(null);
+  const imagemRef = useRef(null);
+  // O zoom de agora, para os ouvintes nativos lerem sem depender do fechamento
+  // em que foram criados. Sem isto, o `touchmove` registrado uma vez enxergaria
+  // para sempre a escala do instante em que a imagem abriu.
+  const zoomRef = useRef(ZOOM_PARADO);
+  const gestos = useRef({ pinca: null, arrasto: null, mexeu: false, ultimoToque: 0 });
   const [buscandoFoto, setBuscandoFoto] = useState(false);
   const [erroDaFoto, setErroDaFoto] = useState("");
   const [aviso, setAviso] = useState(null); // toast discreto (texto)
@@ -4957,6 +4982,206 @@ export default function Painel({ sessao }) {
     if (destino < 0 || destino >= imagensDaConversa.length) return;
     setImagemAberta(imagensDaConversa[destino]);
   }
+
+  // ---- OS GESTOS DO ZOOM ----
+  //
+  // Quatro maneiras de ampliar, e são quatro porque quem usa isto vai de uma
+  // criança a uma pessoa de oitenta anos, no computador e no celular:
+  //
+  //   os BOTÕES  — grandes, visíveis, com a porcentagem escrita ao lado. É o
+  //                único caminho que se DESCOBRE olhando: os outros três
+  //                precisam ser conhecidos de antemão;
+  //   a PINÇA    — dois dedos, o gesto do celular. Metade do escritório atende
+  //                pelo telefone, e ali não há rodinha nem teclado;
+  //   o TOQUE ou CLIQUE DUPLO — aproxima e devolve, como no WhatsApp;
+  //   a RODINHA e as teclas + − 0 — para quem já está com a mão no mouse.
+  //
+  // Todas passam pelas MESMAS contas, em `zoom.js`. Quatro entradas e um
+  // caminho só: se fossem quatro caminhos, o botão e a pinça acabariam
+  // discordando sobre onde a imagem está.
+  const zoomAtivo = zoom.escala > ZOOM_MIN;
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+
+  // TROCOU DE IMAGEM, VOLTA AO TAMANHO NORMAL. A ampliação é sobre um pedaço
+  // DAQUELA foto; carregá-la para a próxima mostraria a seguinte já cortada num
+  // canto qualquer, e quem passa as fotos com a seta acharia que a imagem veio
+  // errada do celular de quem mandou.
+  useEffect(() => {
+    setZoom(ZOOM_PARADO);
+    setSuave(false);
+    gestos.current = { pinca: null, arrasto: null, mexeu: false, ultimoToque: 0 };
+  }, [imagemAberta]);
+
+  /** O tamanho desenhado da imagem e o do buraco por onde se olha.
+   *
+   *  `offsetWidth` é o tamanho de LAYOUT, que a transformação não altera —
+   *  usar `getBoundingClientRect` aqui daria o tamanho já ampliado, e o limite
+   *  do arrasto cresceria junto com o zoom, sem parar nunca. */
+  function tamanhosDoVisor() {
+    const v = visorRef.current, i = imagemRef.current;
+    return {
+      imagem: { largura: (i && i.offsetWidth) || 0, altura: (i && i.offsetHeight) || 0 },
+      visor: { largura: (v && v.clientWidth) || 0, altura: (v && v.clientHeight) || 0 },
+    };
+  }
+
+  /** Um ponto da tela em pixels a partir do CENTRO do visor — a mesma origem
+   *  do `translate`, que é o que evita o erro de sinal. */
+  function pontoNoVisor(cx, cy) {
+    const v = visorRef.current;
+    if (!v) return { x: 0, y: 0 };
+    const r = v.getBoundingClientRect();
+    return { x: cx - (r.left + r.width / 2), y: cy - (r.top + r.height / 2) };
+  }
+
+  function ampliarPara(novaEscala, ponto, comAnimacao = true) {
+    const t = tamanhosDoVisor();
+    setSuave(comAnimacao);
+    setZoom((z) => zoomAncorado(z, novaEscala, ponto || { x: 0, y: 0 }, t.imagem, t.visor));
+  }
+
+  /** AMPLIAR POR UM FATOR — a pinça e a rodinha, que empurram de onde estiverem.
+   *
+   *  A conta é feita DENTRO do `setZoom`, a partir do `z` que o React entrega,
+   *  e não a partir do `zoomRef`. A diferença parece de estilo e não é: os
+   *  quadros de uma pinça chegam mais depressa do que o React redesenha, e o
+   *  `zoomRef` só é atualizado DEPOIS de um redesenho. Sete quadros dentro do
+   *  mesmo quadro de tela liam todos a mesma escala velha, e a pinça inteira
+   *  valia o último passo — abrir os dedos até quatro vezes o tamanho ampliava
+   *  1,14. Num celular rápido, é o que acontece de verdade; foi a prova que
+   *  contou, medindo 1,14 onde esperava 4. */
+  function ampliarPorFator(fator, ponto) {
+    const t = tamanhosDoVisor();
+    setSuave(false);
+    setZoom((z) => zoomAncorado(z, z.escala * fator, ponto || { x: 0, y: 0 },
+                                t.imagem, t.visor));
+  }
+
+  /** Aproxima e devolve — o toque duplo e o clique duplo. */
+  function alternarZoom(ponto) {
+    if (zoomRef.current.escala > ZOOM_MIN) { setSuave(true); setZoom(ZOOM_PARADO); }
+    else ampliarPara(ZOOM_DO_TOQUE_DUPLO, ponto);
+  }
+
+  function empurrar(dx, dy) {
+    const t = tamanhosDoVisor();
+    setSuave(false);
+    setZoom((z) => (z.escala <= ZOOM_MIN ? z : {
+      escala: z.escala,
+      ...limitarPosicao({ x: z.x + dx, y: z.y + dy }, t.imagem, t.visor, z.escala),
+    }));
+  }
+
+  // OS OUVINTES NATIVOS, e não os do React.
+  //
+  // O React registra `wheel` e `touchmove` como PASSIVOS, e num ouvinte passivo
+  // o `preventDefault()` é ignorado — em silêncio, com um aviso no console que
+  // ninguém lê. Sem ele, a rodinha rola a página por baixo enquanto amplia, e a
+  // pinça faz o NAVEGADOR dar zoom na página inteira em vez de na foto. É o
+  // tipo de coisa que funciona no computador do programador (que usa o teclado)
+  // e falha no celular de quem atende.
+  useEffect(() => {
+    const el = visorRef.current;
+    if (!imagemAberta || !el) return;
+
+    function aoRodinha(e) {
+      e.preventDefault();
+      const fator = e.deltaY < 0 ? 1.18 : 1 / 1.18;
+      ampliarPorFator(fator, pontoNoVisor(e.clientX, e.clientY));
+    }
+
+    function aoComecarToque(e) {
+      const g = gestos.current;
+      if (e.touches.length === 2) {
+        g.pinca = { dist: distancia(e.touches[0], e.touches[1]) };
+        g.arrasto = null;
+        g.mexeu = true;
+      } else if (e.touches.length === 1) {
+        g.pinca = null;
+        g.arrasto = { px: e.touches[0].clientX, py: e.touches[0].clientY };
+        g.mexeu = false;
+      }
+    }
+
+    function aoMoverToque(e) {
+      const g = gestos.current;
+      if (e.touches.length === 2 && g.pinca) {
+        e.preventDefault();
+        const d = distancia(e.touches[0], e.touches[1]);
+        const meio = pontoNoVisor((e.touches[0].clientX + e.touches[1].clientX) / 2,
+                                  (e.touches[0].clientY + e.touches[1].clientY) / 2);
+        // A distância de referência é ATUALIZADA a cada quadro, e não guardada
+        // desde o começo: assim a pinça mede o quanto os dedos mudaram AGORA.
+        // Comparando sempre com o início, soltar e repinçar daria um salto.
+        const fator = g.pinca.dist > 0 ? d / g.pinca.dist : 1;
+        g.pinca.dist = d;
+        g.mexeu = true;
+        ampliarPorFator(fator, meio);
+      } else if (e.touches.length === 1 && g.arrasto) {
+        const dx = e.touches[0].clientX - g.arrasto.px;
+        const dy = e.touches[0].clientY - g.arrasto.py;
+        g.arrasto.px = e.touches[0].clientX;
+        g.arrasto.py = e.touches[0].clientY;
+        if (Math.abs(dx) + Math.abs(dy) > 2) g.mexeu = true;
+        // SÓ SEGURA O DEDO QUANDO HÁ PARA ONDE ARRASTAR. Com a imagem no
+        // tamanho normal não há o que mover, e engolir o gesto tiraria da
+        // pessoa o deslizar que ela espera que role a tela.
+        if (zoomRef.current.escala > ZOOM_MIN) { e.preventDefault(); empurrar(dx, dy); }
+      }
+    }
+
+    function aoTerminarToque(e) {
+      const g = gestos.current;
+      if (e.touches.length === 0) {
+        // TOQUE DUPLO: dois toques curtos e parados, com menos de 300ms entre
+        // eles. "Parados" (`!g.mexeu`) é o que separa o toque duplo de um
+        // arrasto rápido — sem isso, arrastar a foto duas vezes seguidas
+        // ampliaria sozinho.
+        const agora = Date.now();
+        if (!g.mexeu && agora - g.ultimoToque < 300) {
+          const t = e.changedTouches && e.changedTouches[0];
+          alternarZoom(t ? pontoNoVisor(t.clientX, t.clientY) : { x: 0, y: 0 });
+          g.ultimoToque = 0;
+        } else if (!g.mexeu) {
+          g.ultimoToque = agora;
+        }
+        g.pinca = null;
+        g.arrasto = null;
+      }
+    }
+
+    el.addEventListener("wheel", aoRodinha, { passive: false });
+    el.addEventListener("touchstart", aoComecarToque, { passive: false });
+    el.addEventListener("touchmove", aoMoverToque, { passive: false });
+    el.addEventListener("touchend", aoTerminarToque, { passive: false });
+    return () => {
+      el.removeEventListener("wheel", aoRodinha);
+      el.removeEventListener("touchstart", aoComecarToque);
+      el.removeEventListener("touchmove", aoMoverToque);
+      el.removeEventListener("touchend", aoTerminarToque);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imagemAberta]);
+
+  // AS TECLAS + − 0, para quem está com as mãos no teclado. São as mesmas do
+  // navegador, do leitor de PDF e de tudo o mais que amplia — não há o que
+  // aprender.
+  useEffect(() => {
+    if (!imagemAberta) return;
+    function aoTeclar(e) {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === "+" || e.key === "=") {
+        e.preventDefault(); ampliarPara(degrauSeguinte(zoomRef.current.escala, 1));
+      } else if (e.key === "-" || e.key === "_") {
+        e.preventDefault(); ampliarPara(degrauSeguinte(zoomRef.current.escala, -1));
+      } else if (e.key === "0") {
+        e.preventDefault(); setSuave(true); setZoom(ZOOM_PARADO);
+      }
+    }
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imagemAberta]);
 
   // Setas do teclado andam na galeria — é o gesto de quem está comparando duas
   // imagens e não quer tirar a mão do teclado.
@@ -10245,7 +10470,7 @@ export default function Painel({ sessao }) {
           não há próxima nem anterior. */}
       {imagemAberta && (
         <div onClick={() => { setImagemAberta(null); setRetratoAberto(false); }} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,.9)", zIndex: 100, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ position: "absolute", top: 16, right: 20, display: "flex", gap: 18, alignItems: "center" }}>
+          <div style={{ position: "absolute", top: 16, right: 20, zIndex: 2, display: "flex", gap: 18, alignItems: "center" }}>
             {temGaleria && (
               <span style={{ color: "rgba(255,255,255,.75)", fontSize: 13, fontVariantNumeric: "tabular-nums" }}>
                 {posNaGaleria + 1} de {imagensDaConversa.length}
@@ -10259,19 +10484,80 @@ export default function Painel({ sessao }) {
             </button>
           </div>
 
+          {/* TODO O RESTO DESTA TELA GANHOU `zIndex: 2` — estes botões, a
+              barra de cima, as setas da galeria e a fita de miniaturas.
+              Não é preferência: uma imagem com `transform` cria uma CAMADA
+              PRÓPRIA de desenho e, por vir depois no documento, passa a ser
+              desenhada POR CIMA dos irmãos posicionados. Ampliada, ela cobria
+              os botões — e não só de vista: ela ENGOLIA os cliques. A pessoa
+              apertava "+", chegava a 150%, e dali em diante o botão parava de
+              responder, ali, visível, com toda a cara de funcionar.
+              Quem achou isto foi a prova, tentando apertar o "+" pela segunda
+              vez.
+
+              OS BOTÕES DO ZOOM.
+              À ESQUERDA, sozinhos, e não junto do baixar e do fechar: são os
+              únicos daqui que a pessoa vai apertar VÁRIAS vezes seguidas, e um
+              deles vizinho ao "fechar" acabaria fechando a foto no meio da
+              leitura. À esquerda também sobra espaço no celular de 390 pixels,
+              onde o canto direito já tem três coisas.
+
+              QUARENTA E DOIS PIXELS de lado, que é o alvo que um dedo acerta
+              sem mirar, e a PORCENTAGEM ESCRITA no meio — ela é o único jeito
+              de saber onde se está, e é ela que responde "por que a foto está
+              assim?" para quem pegou a tela ampliada de outra pessoa.
+
+              O DO MEIO VOLTA AO NORMAL, e é a saída de quem se perdeu. Sem
+              ele, quem ampliou seis vezes e se achou num canto branco da foto
+              teria de apertar "−" cinco vezes para reencontrar o documento. */}
+          <div data-zoom-controles onClick={(e) => e.stopPropagation()}
+               style={{ position: "absolute", top: 14, left: 14, zIndex: 2, display: "flex",
+                        alignItems: "center", gap: 2, background: "rgba(255,255,255,.14)",
+                        borderRadius: 24, padding: 3 }}>
+            <button data-zoom-menos aria-label="Diminuir" title="Diminuir (tecla −)"
+                    disabled={zoom.escala <= ZOOM_MIN}
+                    onClick={() => ampliarPara(degrauSeguinte(zoom.escala, -1))}
+                    style={{ width: 42, height: 42, borderRadius: "50%", border: "none",
+                             background: "transparent", color: "#fff", display: "flex",
+                             alignItems: "center", justifyContent: "center",
+                             cursor: zoom.escala <= ZOOM_MIN ? "default" : "pointer",
+                             opacity: zoom.escala <= ZOOM_MIN ? 0.35 : 1 }}>
+              <ZoomOut size={22} />
+            </button>
+            <button data-zoom-nivel aria-label="Voltar ao tamanho normal"
+                    title="Voltar ao tamanho normal (tecla 0)"
+                    onClick={() => { setSuave(true); setZoom(ZOOM_PARADO); }}
+                    style={{ minWidth: 58, height: 42, borderRadius: 21, border: "none",
+                             background: "transparent", color: "#fff", fontSize: 13,
+                             fontWeight: 700, fontVariantNumeric: "tabular-nums",
+                             cursor: "pointer" }}>
+              {porcentagem(zoom.escala)}%
+            </button>
+            <button data-zoom-mais aria-label="Aumentar" title="Aumentar (tecla +)"
+                    disabled={zoom.escala >= ZOOM_MAX}
+                    onClick={() => ampliarPara(degrauSeguinte(zoom.escala, 1))}
+                    style={{ width: 42, height: 42, borderRadius: "50%", border: "none",
+                             background: "transparent", color: "#fff", display: "flex",
+                             alignItems: "center", justifyContent: "center",
+                             cursor: zoom.escala >= ZOOM_MAX ? "default" : "pointer",
+                             opacity: zoom.escala >= ZOOM_MAX ? 0.35 : 1 }}>
+              <ZoomIn size={22} />
+            </button>
+          </div>
+
           {/* As setas ficam nas BORDAS da tela, e não coladas na imagem: a
               imagem muda de tamanho a cada foto, e um botão que dança de lugar
               obriga a mirar de novo a cada clique. Some quando não há para onde
               ir — seta apagada que não faz nada é pior do que seta nenhuma. */}
           {temGaleria && posNaGaleria > 0 && (
             <button onClick={(e) => { e.stopPropagation(); andarNaGaleria(-1); }} title="Anterior (←)" aria-label="Imagem anterior"
-                    style={{ position: "absolute", left: 18, top: "50%", transform: "translateY(-50%)", width: 42, height: 42, borderRadius: "50%", border: "none", background: "rgba(255,255,255,.14)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    style={{ position: "absolute", left: 18, top: "50%", zIndex: 2, transform: "translateY(-50%)", width: 42, height: 42, borderRadius: "50%", border: "none", background: "rgba(255,255,255,.14)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <ChevronLeft size={26} />
             </button>
           )}
           {temGaleria && posNaGaleria < imagensDaConversa.length - 1 && (
             <button onClick={(e) => { e.stopPropagation(); andarNaGaleria(1); }} title="Próxima (→)" aria-label="Próxima imagem"
-                    style={{ position: "absolute", right: 18, top: "50%", transform: "translateY(-50%)", width: 42, height: 42, borderRadius: "50%", border: "none", background: "rgba(255,255,255,.14)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    style={{ position: "absolute", right: 18, top: "50%", zIndex: 2, transform: "translateY(-50%)", width: 42, height: 42, borderRadius: "50%", border: "none", background: "rgba(255,255,255,.14)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <ChevronRight size={26} />
             </button>
           )}
@@ -10298,13 +10584,68 @@ export default function Painel({ sessao }) {
               vinha sendo guardada, e não a foto cheia. Corrigido lá; as fotos
               já guardadas melhoram sozinhas quando o contato mandar a próxima
               mensagem. Este teto é o que faz o meio-tempo ficar apresentável. */}
-          <img src={imagemAberta} alt={retratoAberto ? "Foto do contato" : "imagem"} onClick={(e) => e.stopPropagation()}
+          {/* O VISOR — o buraco por onde se olha a imagem.
+              Ele existe para o zoom ter uma moldura: `overflow: hidden` é o que
+              impede a foto ampliada de cobrir os botões e a fita de baixo, e o
+              `touchAction: none` é o que faz a PINÇA ampliar a foto em vez de o
+              navegador ampliar a página inteira.
+              O clique no preto continua fechando, como sempre fechou — menos
+              quando a foto está ampliada ou acabou de ser arrastada: aí o
+              clique é o fim de um gesto, e fechar seria desfazer o trabalho de
+              quem estava lendo. */}
+          <div ref={visorRef} data-visor-zoom data-escala={zoom.escala.toFixed(2)}
+               onClick={(e) => { if (zoomAtivo || gestos.current.mexeu) e.stopPropagation(); }}
+               onDoubleClick={(e) => { e.stopPropagation(); alternarZoom(pontoNoVisor(e.clientX, e.clientY)); }}
+               onMouseDown={(e) => {
+                 if (!zoomAtivo) return;
+                 e.preventDefault();
+                 gestos.current.arrasto = { px: e.clientX, py: e.clientY };
+                 gestos.current.mexeu = false;
+                 setArrastandoImagem(true);
+               }}
+               onMouseMove={(e) => {
+                 const g = gestos.current;
+                 if (!g.arrasto) return;
+                 const dx = e.clientX - g.arrasto.px, dy = e.clientY - g.arrasto.py;
+                 g.arrasto.px = e.clientX; g.arrasto.py = e.clientY;
+                 if (Math.abs(dx) + Math.abs(dy) > 2) g.mexeu = true;
+                 empurrar(dx, dy);
+               }}
+               onMouseUp={() => { gestos.current.arrasto = null; setArrastandoImagem(false); }}
+               onMouseLeave={() => { gestos.current.arrasto = null; setArrastandoImagem(false); }}
+               style={{ flex: "1 1 auto", width: "100%", minHeight: 0, display: "flex",
+                        alignItems: "center", justifyContent: "center", overflow: "hidden",
+                        touchAction: "none",
+                        cursor: zoomAtivo ? (arrastandoImagem ? "grabbing" : "grab") : "zoom-in" }}>
+          {/* A FOTO DE PERFIL PRECISA SER AMPLIADA; a da conversa, não.
+              (o comentário longo acima vale para o `style` de base; o
+              `transform` do zoom vem depois dele e não o substitui) */}
+          {/* O CLIQUE NA IMAGEM NUNCA FECHA — só o clique no preto em volta.
+              Isso já era assim, e por um instante deixou de ser: eu havia
+              tornado o `stopPropagation` condicional ao zoom, e com a foto no
+              tamanho normal um clique nela fechava a tela. Pior ainda para o
+              clique DUPLO, que é justamente o gesto de ampliar: o primeiro dos
+              dois cliques fechava a imagem antes de o segundo chegar. */}
+          <img ref={imagemRef} src={imagemAberta} alt={retratoAberto ? "Foto do contato" : "imagem"}
+               onClick={(e) => e.stopPropagation()}
                data-retrato={retratoAberto ? "1" : undefined}
+               draggable={false}
                onLoad={(e) => { if (retratoAberto) setLarguraDoRetrato(e.target.naturalWidth || 0); }}
-               style={retratoAberto
-                 ? { width: `min(86vw, 74vh, ${larguraDoRetrato ? Math.max(300, Math.min(520, larguraDoRetrato * 2)) : 520}px)`,
-                     height: "auto", borderRadius: 12, objectFit: "contain" }
-                 : { maxWidth: "88%", maxHeight: temGaleria ? "76%" : "92%", borderRadius: 8, objectFit: "contain" }} />
+               style={{
+                 ...(retratoAberto
+                   ? { width: `min(86vw, 74vh, ${larguraDoRetrato ? Math.max(300, Math.min(520, larguraDoRetrato * 2)) : 520}px)`,
+                       height: "auto", borderRadius: 12, objectFit: "contain" }
+                   : { maxWidth: "88%", maxHeight: temGaleria ? "76%" : "92%", borderRadius: 8, objectFit: "contain" }),
+                 transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.escala})`,
+                 transformOrigin: "center center",
+                 willChange: "transform",
+                 // ANIMA O BOTÃO, NÃO O DEDO. Uma transição em cada quadro da
+                 // pinça faz a imagem chegar sempre atrasada em relação à mão —
+                 // e a sensação é de sistema travando, não de suavidade.
+                 transition: suave ? "transform .16s ease-out" : "none",
+                 userSelect: "none", WebkitUserSelect: "none",
+               }} />
+          </div>
 
           {/* BUSCAR A FOTO MAIOR.
               Só aparece quando a foto aberta é pequena DE VERDADE — abaixo dos
@@ -10317,7 +10658,7 @@ export default function Painel({ sessao }) {
               botão não fica girando para sempre. */}
           {retratoAberto && larguraDoRetrato > 0 && larguraDoRetrato < 400 && (
             <div onClick={(e) => e.stopPropagation()}
-                 style={{ position: "absolute", bottom: 24, left: 0, right: 0, display: "flex",
+                 style={{ position: "absolute", bottom: 24, left: 0, right: 0, zIndex: 2, display: "flex",
                           flexDirection: "column", alignItems: "center", gap: 8 }}>
               <div style={{ color: "rgba(255,255,255,.7)", fontSize: 12.5 }}>
                 Esta foto foi guardada em tamanho pequeno ({larguraDoRetrato} pixels).
@@ -10342,7 +10683,7 @@ export default function Painel({ sessao }) {
               trinta fotos a marcada fica fora da vista e a fita parece travada. */}
           {temGaleria && (
             <div className="sem-scrollbar" onClick={(e) => e.stopPropagation()}
-                 style={{ position: "absolute", bottom: 16, left: 0, right: 0, display: "flex", gap: 8, justifyContent: "safe center", overflowX: "auto", padding: "0 18px" }}>
+                 style={{ position: "absolute", bottom: 16, left: 0, right: 0, zIndex: 2, display: "flex", gap: 8, justifyContent: "safe center", overflowX: "auto", padding: "0 18px" }}>
               {imagensDaConversa.map((url, i) => (
                 <button key={url + i} onClick={() => { setRetratoAberto(false); setImagemAberta(url); }}
                         ref={i === posNaGaleria ? (el) => el && el.scrollIntoView({ block: "nearest", inline: "center" }) : undefined}

@@ -745,6 +745,32 @@ MENSAGENS.push({
   criado_em: new Date(Date.now() - 2 * 3600e3).toISOString(),
 });
 
+// E UMA SEGUNDA IMAGEM, ENVIADA POR NÓS.
+//
+// Duas, e não uma, por três motivos que só aparecem com a segunda:
+//
+//   * a GALERIA (as setas e a fita de baixo) só existe a partir de duas — com
+//     uma imagem só, todo esse caminho da tela ficava sem prova nenhuma;
+//   * o ZOOM PRECISA ZERAR ao trocar de foto, e "trocar de foto" exige haver
+//     para onde trocar. Sem isso, uma ampliação que sobrevivesse à troca
+//     mostraria a próxima já cortada num canto qualquer — e quem passa as
+//     fotos com a seta acharia que ela veio errada do celular de quem mandou;
+//   * o pedido do escritório fala em "uma imagem que eu recebi OU ENVIEI", e
+//     até aqui a bancada só tinha recebida. Enviada e recebida desenham de
+//     lados diferentes da conversa, e um zoom que só funcionasse num deles
+//     passaria despercebido.
+//
+// Retrato (800 × 1200) de propósito: a de cima é deitada. Uma foto ALTA é a
+// que denuncia um limite de arrasto calculado só na horizontal.
+MENSAGENS.push({
+  id: "m-imagem-2", conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
+  origem: "advogado", tipo: "imagem", texto: null,
+  midia_url: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MDAiIGhlaWdodD0iMTIwMCI+PHJlY3Qgd2lkdGg9IjgwMCIgaGVpZ2h0PSIxMjAwIiBmaWxsPSIjMWU2NGM4Ii8+PC9zdmc+",
+  midia_mime: "image/svg+xml",
+  enviado_por: "Rodrigo Sousa", enviado_por_id: "u1",
+  criado_em: new Date(Date.now() - 119 * 60e3).toISOString(),
+});
+
 // DOIS DOCUMENTOS NA CONVERSA — um que o navegador desenha e outro que não.
 //
 // São os dois lados da mesma regra, e sem os DOIS a prova não separa nada: com
