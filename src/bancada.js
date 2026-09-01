@@ -26,6 +26,74 @@ const LIMITE_LINHAS = 1000;
 
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// ============================================================
+//  A CONSULTA QUE É INTERROMPIDA, E A QUE NUNCA RESPONDE
+//
+//  Faltavam as duas, e essa falta escondeu o relato de 01/09: a busca parada
+//  em "Procurando…" para sempre, com a lista vazia.
+//
+//  A bancada respondia TUDO, sempre, em algumas dezenas de milissegundos. Numa
+//  bancada assim, uma busca sem prazo nenhum parece perfeita — o defeito que se
+//  procura só existe quando alguma consulta demora mais do que a paciência de
+//  quem espera, e isso aqui não tinha como acontecer.
+//
+//  `__PENDURAR = ["mensagens"]` é a consulta que aceita o pedido e não responde
+//  nunca. É o pior caso da rede de verdade, e o único que distingue "lento" de
+//  "pendurado": uma tela que trate os dois igual fica de pé para sempre
+//  esperando o segundo.
+// ============================================================
+
+/** A resposta que o `postgrest-js` devolve quando a consulta é ABORTADA.
+ *
+ *  Copiada da forma dele, e não inventada: sem CÓDIGO nenhum (`code: ""`) e com
+ *  a palavra "abort" na dica. Quem for reconhecer um aborto no painel tem de
+ *  reconhecê-lo por onde ele aparece de verdade — se aqui houvesse um código
+ *  bonitinho, a prova aprovaria um reconhecimento que a produção não faz. */
+function respostaAbortada() {
+  // QUANTAS FORAM CORTADAS — o número que prova a tesoura.
+  //
+  // "A busca velha é abortada, e não só ignorada" é uma afirmação sobre o que
+  // acontece FORA da tela: nada nela muda quando um pedido morre. Sem este
+  // contador a prova teria de acreditar no código em vez de medir, e uma
+  // tesoura que não corta nada passaria igual.
+  if (typeof globalThis !== "undefined") {
+    globalThis.__ABORTADAS = (globalThis.__ABORTADAS || 0) + 1;
+  }
+  return { data: null, count: null, error: {
+    code: "", message: "AbortError: The operation was aborted.",
+    details: "", hint: "Request was aborted (timeout or manual cancellation)" } };
+}
+
+/** Espera `ms` — ou até abortarem, o que vier primeiro. Devolve se abortou. */
+function esperaOuAborto(ms, sinal) {
+  if (sinal && sinal.aborted) return Promise.resolve(true);
+  if (!sinal) return espera(ms).then(() => false);
+  return new Promise((pronto) => {
+    const aoAbortar = () => { clearTimeout(t); pronto(true); };
+    const t = setTimeout(() => {
+      sinal.removeEventListener("abort", aoAbortar);
+      pronto(false);
+    }, ms);
+    sinal.addEventListener("abort", aoAbortar, { once: true });
+  });
+}
+
+/** Nunca responde. Só o aborto a tira do lugar — como um pedido que ficou
+ *  pendurado numa conexão que o servidor aceitou e esqueceu. */
+function pendurarAte(sinal) {
+  return new Promise((pronto) => {
+    if (!sinal) return;                    // sem sinal, é para sempre mesmo
+    if (sinal.aborted) return pronto();
+    sinal.addEventListener("abort", () => pronto(), { once: true });
+  });
+}
+
+/** Esta tabela (ou função) está na lista das que não respondem? */
+function estaPendurada(oQue) {
+  const lista = (typeof globalThis !== "undefined" && globalThis.__PENDURAR) || [];
+  return lista.includes(oQue);
+}
+
 /** Quanto esta tabela demora para responder, respeitando o atraso uniforme que
  *  a perfilagem liga. Numa função só porque a chamada de FUNÇÃO no banco
  *  (`rpc`) tem de custar o mesmo que a leitura da tabela que ela substitui —
@@ -1144,6 +1212,11 @@ function consulta(tabela) {
   const pedidos = [];
   let inicio = 0, corte = Infinity, patch = null, contando = false, semLinhas = false, apagando = false;
   let colunas = "";
+  // O SINAL DE ABORTO — o mesmo `.abortSignal()` da biblioteca de verdade.
+  // Sem ele aqui, o painel que passou a cortar consulta velha quebraria na
+  // bancada com "abortSignal is not a function", e o conserto não teria como
+  // ser provado no lugar onde ele importa.
+  let sinal = null;
   // AS TABELAS PEDIDAS POR DENTRO DA CONSULTA — `mensagens(id)` e afins.
   //
   // A bancada jogava o texto do `select` no lixo (`_cols`) e a conversa já
@@ -1230,6 +1303,7 @@ function consulta(tabela) {
       return eu;
     },
     range(de, ate) { inicio = de; corte = ate - de + 1; return eu; },
+    abortSignal(s) { sinal = s || null; return eu; },
     // `single` E `maybeSingle` PRECISAM DEIXAR O ERRO PASSAR.
     //
     // Elas devolviam `error: null` FIXO e faziam `r.data[0]` — e `data` é
@@ -1368,8 +1442,14 @@ function consulta(tabela) {
       // vezes a outra, o que aparece no perfil é o atraso escolhido aqui, e não
       // a forma do caminho. Com um atraso igual para todas, o que sobressai é
       // a estrutura — quantas idas, e quantas esperam a anterior.
+      // A CONSULTA QUE NÃO RESPONDE NUNCA — só o aborto a tira daqui.
+      if (estaPendurada(tabela)) {
+        await pendurarAte(sinal);
+        return resolver(respostaAbortada());
+      }
       const atraso = atrasoDe(tabela);
-      if (atraso) await espera(atraso);
+      if (atraso && await esperaOuAborto(atraso, sinal)) return resolver(respostaAbortada());
+      if (sinal && sinal.aborted) return resolver(respostaAbortada());
       // ATRASO SOB ENCOMENDA, POR TABELA. Serve para medir se duas leituras
       // saem JUNTAS ou uma atrás da outra: em fila indiana o custo é a soma
       // dos atrasos; juntas, é o maior deles. Sem isto não há como distinguir
@@ -1385,7 +1465,7 @@ function consulta(tabela) {
       const extra = Array.isArray(encomendado)
         ? (encomendado.length > 1 ? encomendado.shift() : encomendado[0])
         : encomendado;
-      if (extra) await espera(extra);
+      if (extra && await esperaOuAborto(extra, sinal)) return resolver(respostaAbortada());
       if (gravacao) eu.gravar(gravacao.reg, gravacao.porOnde);
       // A COLUNA COM LISTA FECHADA DE VALORES (`CHECK`).
       //
@@ -1794,7 +1874,15 @@ export const supabase = {
   // Quem chamar uma função que não existe recebe o mesmo erro que o Supabase
   // devolve (PGRST202), para o caminho de "falta rodar o SQL" também ser
   // testável em vez de imaginado.
-  rpc: async (nome, args) => {
+  // A CHAMADA DE FUNÇÃO TAMBÉM É ENCADEÁVEL, e pelo mesmo motivo das outras:
+  // o painel escreve `rpc(...).abortSignal(sinal)`, e uma função `async` pura
+  // aqui quebraria com "abortSignal is not a function" — a bancada acusando um
+  // defeito que o painel não tem. Ela só COMEÇA quando alguém espera por ela,
+  // para o `.abortSignal()` chegar antes de o primeiro atraso começar a correr.
+  rpc: (nome, args) => {
+    let sinal = null, correndo = null;
+    const correr = () => (correndo || (correndo = executar()));
+    const executar = async () => {
     // QUEM JÁ ESCREVEU POR ESTE TELEFONE, e as conversas de quem se escolher.
     //
     // A de verdade casa por id E, no histórico antigo que não tem id, pelo
@@ -1941,6 +2029,16 @@ export const supabase = {
       if (globalThis.__QUEBRAR_BUSCA || globalThis.__QUEBRAR_SO_A_FUNCAO_DA_BUSCA) {
         return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } };
       }
+      // A FUNÇÃO QUE ACEITA O PEDIDO E NÃO RESPONDE NUNCA.
+      //
+      // É o caso do relato de 01/09, e é diferente de todos os outros knobs
+      // daqui: os outros devolvem ERRO, e um erro a tela sabe tratar. Este não
+      // devolve nada — e é exatamente por isso que ele deixava o "Procurando…"
+      // de pé para sempre. Só o aborto o tira do lugar.
+      if (estaPendurada("buscar_conversas")) {
+        await pendurarAte(sinal);
+        return respostaAbortada();
+      }
       const semAcento = (t) => String(t ?? "").normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "").toLowerCase();
       const termo = semAcento(args && args.p_termo);
@@ -1978,7 +2076,7 @@ export const supabase = {
       const lista = [...saida.values()]
         .sort((a, b) => String(b.ultima_atividade || "").localeCompare(String(a.ultima_atividade || "")))
         .slice(0, (args && args.p_limite) || 80);
-      await espera(120);
+      if (await esperaOuAborto(120, sinal)) return respostaAbortada();
       return { data: lista, error: null };
     }
 
@@ -1994,6 +2092,13 @@ export const supabase = {
       telefone: (args && args.p_telefone) || null,
       departamento: (args && args.p_departamento) || null,
     }), error: null };
+    };
+    return {
+      abortSignal(s) { sinal = s || null; return this; },
+      then(ok, erro) { return correr().then(ok, erro); },
+      catch(f) { return correr().catch(f); },
+      finally(f) { return correr().finally(f); },
+    };
   },
   auth: {
     // O ARMÁRIO E A CHAVE, iguais aos da biblioteca de verdade.

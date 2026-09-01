@@ -16,6 +16,8 @@ import FichaVantoro from "./FichaVantoro";
 import { numeroCanonico, chaveDoNumero, porQueNaoRecebeWhatsApp, daParaChamar,
          telefoneLegivel } from "./numeros.js";
 import { chamarPonte, ESPERA_PADRAO } from "./ponte.js";
+import { PRAZO_DA_BUSCA, foiAbortada, funcaoNaoExiste,
+         condicoesDeNome, recadoDaBusca } from "./busca.js";
 import { comoPrever, nomeDoTipo, tamanhoLegivel } from "./arquivos.js";
 import Departamentos from "./Departamentos";
 import PainelNumeros from "./PainelNumeros";
@@ -6619,6 +6621,73 @@ export default function Painel({ sessao }) {
   // A função de busca do banco existe? `null` enquanto não se sabe.
   const [temBuscaNoBanco, setTemBuscaNoBanco] = useState(null);
 
+  /** SÓ OS NOMES — a metade barata da busca, para desenhar antes das outras.
+   *
+   *  QUAL DEFEITO ISTO CONSERTA. A busca fazia as três perguntas de uma vez:
+   *  quem se chama assim, qual é este número, e onde isso foi DITO dentro das
+   *  conversas. A terceira é a cara — ela lê a tabela de mensagens, que é a
+   *  maior do sistema — e as três vinham na mesma consulta. Quem procurava um
+   *  cliente PELO NOME, que é o que se faz o dia inteiro, ficava esperando uma
+   *  varredura de mensagens que não tinha pedido; se ela estourasse o tempo, as
+   *  três se perdiam juntas, e a tela dizia "Nada encontrado".
+   *
+   *  Agora esta pergunta sai na frente, sozinha, e o que ela achar aparece na
+   *  hora. A completa continua vindo atrás e ACRESCENTA — nunca tira.
+   *
+   *  `contatos` é uma tabela de dezenas de milhares de linhas, e não de
+   *  centenas de milhares: uma leitura inteira dela custa milissegundos, com ou
+   *  sem índice. É por isso que esta metade dá para prometer rápido e a outra
+   *  não.
+   *
+   *  Devolve `{ encontradas, porNome, falhou }`. */
+  async function procurarSoPelosNomes(termo, advId, sinal) {
+    const chave = chaveDoNumero(termo);
+    const condicoes = () => condicoesDeNome(termo, chave, TEM_NOME_DO_CADASTRO);
+    if (!condicoes().length || !advId) return { encontradas: [], porNome: {}, falhou: false };
+
+    let contatos = [];
+    try {
+      const pedir = () => supabase.from("contatos")
+        .select(colunasDoContato("id, nome, numero, foto_url"))
+        .or(condicoes().join(","))
+        .abortSignal(sinal)
+        .limit(400);
+      let { data, error } = await pedir();
+      // Base sem o SQL dos nomes: tira as duas colunas do pedido e repete.
+      if (error && TEM_NOME_DO_CADASTRO && faltaColuna(error)) {
+        TEM_NOME_DO_CADASTRO = false;
+        ({ data, error } = await pedir());
+      }
+      if (error) return { encontradas: [], porNome: {}, falhou: !foiAbortada(error) };
+      contatos = data || [];
+    } catch (e) {
+      return { encontradas: [], porNome: {}, falhou: !foiAbortada(e) };
+    }
+    if (!contatos.length) return { encontradas: [], porNome: {}, falhou: false };
+
+    const porNome = {};
+    const encontradas = [];
+    const idsCt = contatos.map((c) => c.id);
+    const nomePorCt = new Map(contatos.map((c) => [String(c.id), nomeDoContato(c)]));
+    try {
+      for (let i = 0; i < idsCt.length; i += 150) {
+        const { data, error } = await supabase.from("conversas")
+          .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
+          .eq("advogado_id", advId)
+          .abortSignal(sinal)
+          .in("contato_id", idsCt.slice(i, i + 150));
+        if (error) return { encontradas, porNome, falhou: !foiAbortada(error) };
+        (data || []).forEach((c) => {
+          porNome[c.id] = nomePorCt.get(String(c.contato_id)) || "";
+          encontradas.push(c);
+        });
+      }
+    } catch (e) {
+      return { encontradas, porNome, falhou: !foiAbortada(e) };
+    }
+    return { encontradas, porNome, falhou: false };
+  }
+
   /** O que o cadastro do Vantoro sabe sobre estes números (CPF, processo).
    *
    *  Devolve `{ porCad, novas }`: o motivo por conversa, e as conversas que só
@@ -6628,7 +6697,7 @@ export default function Painel({ sessao }) {
    *  caminho antigo — precisam dela igual, e duas cópias divergiriam na
    *  primeira mudança. O Vantoro fora do ar não pode atrapalhar a busca local:
    *  o que falhar aqui vira "sem achado no cadastro", e nada mais. */
-  async function procurarNoVantoro(termo, encontradas, advId) {
+  async function procurarNoVantoro(termo, encontradas, advId, sinal) {
     const porCad = {};
     const novas = [];
     try {
@@ -6648,6 +6717,14 @@ export default function Painel({ sessao }) {
       // hiberna também.
       const relogio = new AbortController();
       const estourou = setTimeout(() => relogio.abort(), ESPERA_PADRAO);
+      // E TAMBÉM ACABA QUANDO A PERGUNTA MUDA. Quem digitou outra letra não
+      // quer mais a resposta desta; deixá-la correndo é segurar uma conexão da
+      // ponte — que roda no plano free e tem poucas — para jogar fora o que ela
+      // trouxer.
+      if (sinal) {
+        if (sinal.aborted) relogio.abort();
+        else sinal.addEventListener("abort", () => relogio.abort(), { once: true });
+      }
       let r;
       try {
         r = await fetch(`${BRIDGE_URL}/vantoro/buscar?q=${encodeURIComponent(termo)}`,
@@ -6711,12 +6788,14 @@ export default function Painel({ sessao }) {
       const { data: cts } = await supabase.from("contatos")
         .select(colunasDoContato("id, nome, numero, foto_url"))
         .or(faltam.map((k) => `numero.ilike.%${k}%`).join(","))
+        .abortSignal(sinal)
         .limit(200);
       const idsCt = (cts || []).map((c) => c.id);
       for (let i = 0; i < idsCt.length; i += 150) {
         const { data } = await supabase.from("conversas")
           .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
           .eq("advogado_id", advId)
+          .abortSignal(sinal)
           .in("contato_id", idsCt.slice(i, i + 150));
         (data || []).forEach((c) => {
           const num = String(c.contato?.numero || "");
@@ -6777,7 +6856,82 @@ export default function Painel({ sessao }) {
     let cancelado = false;
     setBuscando(true);
     const advId = advogadoId;
+
+    // ------------------------------------------------------------
+    //  O RELÓGIO E A TESOURA
+    //
+    //  Relato de 01/09, com foto: a caixa com RODRIGO ALVES SOUSA escrito, a
+    //  lista vazia e "Procurando…" de pé, sem fim.
+    //
+    //  "Procurando…" para sempre não é lentidão — é uma espera sem fim
+    //  previsto. Ela só acontece quando um `await` nunca volta, e havia nove
+    //  deles aqui, nenhum com prazo. Agora todos compartilham este `sinal`:
+    //
+    //   • QUANDO O TEMPO ACABA (9s), tudo o que estiver no ar é cortado de uma
+    //     vez, a tela diz o que aconteceu, e o "Procurando…" sai. A API do
+    //     Supabase corta a consulta em 8; esperar além disso é esperar por uma
+    //     resposta que o servidor já desistiu de dar.
+    //
+    //   • QUANDO A PESSOA DIGITA OUTRA LETRA, a busca velha é ABORTADA — e não
+    //     só ignorada, como era. Este é o pedaço que ninguém vê e que explica a
+    //     lentidão: cada pausa de 350ms dispara uma busca, e escrever um nome
+    //     inteiro dispara três ou quatro. A variável `cancelado` fazia a
+    //     RESPOSTA ser descartada, mas a consulta continuava rodando no banco
+    //     até o fim. Quatro varreduras da tabela de mensagens vivas ao mesmo
+    //     tempo, disputando as poucas conexões do plano — e a última, a única
+    //     que interessa, esperando atrás de todas. Quanto mais devagar a pessoa
+    //     digitasse, pior ficava.
+    const corte = new AbortController();
+    const sinal = corte.signal;
+    const relogio = setTimeout(() => corte.abort(), PRAZO_DA_BUSCA);
+
     const tarefa = setTimeout(async () => {
+      const meu = () => !cancelado && advogadoIdRef.current === advId;
+      // A peneira: tira o que a lista já mostra e o que veio repetido. Está
+      // aqui em cima porque os DOIS caminhos e a resposta rápida usam a mesma —
+      // três cópias divergiriam na primeira mudança.
+      const jaNaLista = new Set(conversas.map((c) => String(c.id)));
+      const peneirar = (lista) => {
+        const vistos = new Set();
+        return lista.filter((c) => {
+          const id = String(c.id);
+          if (jaNaLista.has(id) || vistos.has(id)) return false;
+          vistos.add(id);
+          return true;
+        });
+      };
+
+      // ------------------------------------------------------------
+      //  A METADE BARATA SAI NA FRENTE E DESENHA SOZINHA
+      //
+      //  Procurar um cliente PELO NOME é o que se faz o dia inteiro, e é a
+      //  pergunta mais barata das três. Ela ia junto com a varredura das
+      //  mensagens, na mesma consulta — então esperava por ela, e se ela
+      //  estourasse o tempo as duas se perdiam juntas.
+      //
+      //  Agora esta sai disparada e não é esperada: o que ela achar aparece na
+      //  hora, e a completa vem atrás e ACRESCENTA. Nunca tira.
+      //
+      //  SÓ APAGA O "Procurando…" SE ACHOU ALGUMA COISA. Apagá-lo de mãos
+      //  vazias mostraria "Nada encontrado para essa busca" por um segundo,
+      //  antes de a completa responder — e "nada encontrado" é uma RESPOSTA:
+      //  quem lê isso para de procurar.
+      let jaVeioACompleta = false;
+      // O que ela achou fica guardado aqui para o caminho completo somar ao
+      // dele. Se ele for cortado pelo relógio no meio, é isto que impede a tela
+      // de PERDER o que já estava desenhado — mostrar e tirar é pior do que
+      // nunca ter mostrado.
+      let dosNomes = { encontradas: [], porNome: {}, falhou: false };
+      const nomes = procurarSoPelosNomes(termo, advId, sinal);
+      nomes.then((r) => {
+        dosNomes = r;
+        if (!meu() || jaVeioACompleta || !r.encontradas.length) return;
+        setAchadosNome(r.porNome);
+        setExtras(peneirar(r.encontradas));
+        setBuscando(false);
+      }).catch(() => {});
+
+      try {
       // ------------------------------------------------------------
       //  PRIMEIRO, A FUNÇÃO DO BANCO
       //
@@ -6802,10 +6956,11 @@ export default function Painel({ sessao }) {
       if (temBuscaNoBanco !== false) {
         const { data: achados, error } = await supabase.rpc("buscar_conversas", {
           p_advogado: advId, p_termo: termo, p_limite: 80,
-        });
-        if (cancelado || advogadoIdRef.current !== advId) return;
+        }).abortSignal(sinal);
+        if (!meu()) return;
 
         if (!error) {
+          jaVeioACompleta = true;
           if (temBuscaNoBanco !== true) setTemBuscaNoBanco(true);
           const porMsg = {}, porNome = {}, alvos = {};
           const ids = [];
@@ -6824,24 +6979,22 @@ export default function Painel({ sessao }) {
             const { data } = await supabase.from("conversas")
               .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
               .eq("advogado_id", advId)
+              .abortSignal(sinal)
               .in("id", ids.slice(i, i + 150));
             encontradas.push(...(data || []));
           }
-          if (cancelado || advogadoIdRef.current !== advId) return;
+          if (!meu()) return;
+          // O QUE A CONSULTA BARATA ACHOU ENTRA JUNTO, e não é substituído por
+          // isto. Dois motivos: ela pode ter achado alguém que não coube nas
+          // oitenta linhas desta, e — o que importa mais — se o relógio tivesse
+          // cortado o laço acima, `encontradas` viria vazia e a tela APAGARIA o
+          // que já estava desenhado. Mostrar e tirar é pior do que nunca ter
+          // mostrado: quem viu o nome aparecer e sumir conclui que o sistema
+          // perdeu o cliente.
+          const tudo = [...dosNomes.encontradas, ...encontradas];
           setAchadosMsg(porMsg);
-          setAchadosNome(porNome);
+          setAchadosNome({ ...dosNomes.porNome, ...porNome });
           setAlvoDaBusca(alvos);
-          // A PENEIRA: tira o que a lista já mostra e o que veio repetido.
-          const jaNaLista = new Set(conversas.map((c) => String(c.id)));
-          const peneirar = (lista) => {
-            const vistos = new Set();
-            return lista.filter((c) => {
-              const id = String(c.id);
-              if (jaNaLista.has(id) || vistos.has(id)) return false;
-              vistos.add(id);
-              return true;
-            });
-          };
 
           // O QUE O BANCO ACHOU VAI PARA A TELA AGORA — e não depois.
           //
@@ -6857,15 +7010,20 @@ export default function Painel({ sessao }) {
           //
           // Agora são dois tempos: o que é daqui aparece de imediato, e o que
           // vem do cadastro chega depois — se chegar.
-          setExtras(peneirar(encontradas));
+          setExtras(peneirar(tudo));
           setBuscando(false);
+          // O RELÓGIO PARA AQUI. O que falta — o cadastro do Vantoro — só
+          // ACRESCENTA, e tem prazo próprio; cortá-lo aos 9 segundos junto com
+          // o resto tiraria da tela um cliente que estava a caminho, sem
+          // ganhar nada em troca, porque ninguém está mais esperando.
+          clearTimeout(relogio);
 
-          const doCadastro = await procurarNoVantoro(termo, encontradas, advId);
-          if (cancelado || advogadoIdRef.current !== advId) return;
+          const doCadastro = await procurarNoVantoro(termo, tudo, advId, sinal);
+          if (!meu()) return;
           setAchadosCad(doCadastro.porCad);
           setSemConversa(doCadastro.semConversa || []);
           // As que só o cadastro achou entram na MESMA peneira das outras.
-          setExtras(peneirar([...encontradas, ...doCadastro.novas]));
+          setExtras(peneirar([...tudo, ...doCadastro.novas]));
           return;
         }
 
@@ -6893,8 +7051,7 @@ export default function Painel({ sessao }) {
         // `temBuscaNoBanco` só é DESLIGADO quando a função não existe: isso é
         // permanente até alguém rodar o SQL. Um tropeço passageiro não pode
         // aposentar o caminho rápido para o resto da sessão.
-        const naoExiste = /PGRST202/.test(error.code || "")
-          || /Could not find the function/i.test(error.message || "");
+        const naoExiste = funcaoNaoExiste(error);
         console.info(`Zorvin: a busca no banco falhou (${error.code || "sem código"}: `
           + `${error.message || "sem mensagem"}). `
           + (naoExiste ? "Rode o SQL da busca para ela ficar mais rápida e mais completa."
@@ -6903,11 +7060,6 @@ export default function Painel({ sessao }) {
         // Nos dois casos, segue para o caminho antigo, logo abaixo.
       }
 
-      // A vírgula e os parênteses separam condições dentro de um `or` do
-      // PostgREST: deixá-los passar não devolve "nenhum resultado", devolve
-      // ERRO — e a busca inteira morria em silêncio ao procurar "(67) 9…".
-      const seguro = termo.replace(/[,()*]/g, " ").trim();
-      const chave = chaveDoNumero(termo);
       // O erro do banco não pode mais ser engolido. Era ele que transformava
       // uma consulta que estourou o tempo numa lista vazia — e lista vazia é
       // uma resposta, não um aviso.
@@ -6915,60 +7067,20 @@ export default function Painel({ sessao }) {
       // e o que foi DITO nas conversas — têm consertos diferentes e pesos
       // diferentes: sem os nomes não se acha ninguém; sem as mensagens ainda se
       // acha por nome, e o certo é mostrar o que veio e dizer o que faltou.
-      let falhouNome = false, falhouMensagem = false;
+      let falhouMensagem = false;
       const contarFalha = (onde, erro) => {
         console.info(`Zorvin: a busca por ${onde} falhou `
           + `(${(erro && erro.code) || "sem código"}: ${(erro && erro.message) || erro || "sem mensagem"}).`);
       };
 
-      // ---- 1) os CONTATOS, pelos três nomes e pelo número ----
-      const condicoes = () => {
-        const p = [];
-        if (seguro.length >= 3) {
-          p.push(`nome.ilike.%${seguro}%`);
-          if (TEM_NOME_DO_CADASTRO) {
-            p.push(`vantoro_nome.ilike.%${seguro}%`);
-            p.push(`nome_zorvin.ilike.%${seguro}%`);
-          }
-        }
-        if (chave.length >= 4) p.push(`numero.ilike.%${chave}%`);
-        return p;
-      };
-      let contatos = [];
-      try {
-        const pedir = () => supabase.from("contatos")
-          .select(colunasDoContato("id, nome, numero, foto_url"))
-          .or(condicoes().join(","))
-          .limit(400);
-        if (condicoes().length) {
-          let { data, error } = await pedir();
-          // Base sem o SQL dos nomes: tira as duas colunas do pedido e repete.
-          if (error && TEM_NOME_DO_CADASTRO && faltaColuna(error)) {
-            TEM_NOME_DO_CADASTRO = false;
-            ({ data, error } = await pedir());
-          }
-          if (error) { falhouNome = true; contarFalha("nome", error); }
-          else contatos = data || [];
-        }
-      } catch (e) { falhouNome = true; contarFalha("nome", e); }
-
-      // ---- 2) as conversas DESTE telefone com esses contatos ----
-      const porNome = {};
-      const encontradas = [];
-      if (contatos.length) {
-        const idsCt = contatos.map((c) => c.id);
-        const nomePorCt = new Map(contatos.map((c) => [String(c.id), nomeDoContato(c)]));
-        for (let i = 0; i < idsCt.length; i += 150) {
-          const { data } = await supabase.from("conversas")
-            .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
-            .eq("advogado_id", advId)
-            .in("contato_id", idsCt.slice(i, i + 150));
-          (data || []).forEach((c) => {
-            porNome[c.id] = nomePorCt.get(String(c.contato_id)) || "";
-            encontradas.push(c);
-          });
-        }
-      }
+      // ---- 1 e 2) os CONTATOS e as conversas deles ----
+      //
+      // NÃO SE PERGUNTA DE NOVO: é a mesma consulta que já saiu lá em cima, e
+      // aqui só se espera por ela. Antes eram duas idas ao banco pedindo
+      // exatamente a mesma coisa — a rápida, que desenha, e esta — e a segunda
+      // não acrescentava um nome sequer.
+      const { encontradas, porNome, falhou: falhouNome } = await nomes;
+      if (!meu()) return;
 
       // ---- 3) dentro das MENSAGENS ----
       //
@@ -6981,10 +7093,18 @@ export default function Painel({ sessao }) {
       try {
         const { data, error } = await supabase.from("mensagens")
           .select("conversa_id, texto")
+          // O TERMO VAI INTEIRO, com vírgula e parênteses. A limpeza do
+          // `termoSeguro` existe para o `or`, onde esses caracteres SEPARAM
+          // condições; aqui é um filtro de uma coluna só, e eles são conteúdo:
+          // quem procura "(67)" dentro de uma mensagem está procurando isso.
           .ilike("texto", `%${termo}%`)
           .order("criado_em", { ascending: false })
+          .abortSignal(sinal)
           .limit(1000);
-        if (error) { falhouMensagem = true; contarFalha("texto das mensagens", error); }
+        // Abortada NÃO É FALHA: ou a pessoa digitou outra letra, ou o relógio
+        // desistiu — e nos dois casos quem avisa é outro. Marcar isto como
+        // falha encheria a tela de erro a cada tecla.
+        if (error && !foiAbortada(error)) { falhouMensagem = true; contarFalha("texto das mensagens", error); }
         (data || []).forEach((m) => {
           if (!porMsg[m.conversa_id]) porMsg[m.conversa_id] = m.texto || "";
         });
@@ -6998,55 +7118,70 @@ export default function Painel({ sessao }) {
         const { data } = await supabase.from("conversas")
           .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
           .eq("advogado_id", advId)
+          .abortSignal(sinal)
           .in("id", faltando.slice(i, i + 150));
         (data || []).forEach((c) => encontradas.push(c));
       }
 
       // Troquei de telefone (ou de termo) enquanto isto vinha? A resposta é de
       // outra pergunta: descarta.
-      if (cancelado || advogadoIdRef.current !== advId) return;
+      if (!meu()) return;
       setAchadosMsg(porMsg);
       setAchadosNome(porNome);
-      // A FRASE MUDA CONFORME O QUE FALTOU, porque a decisão de quem lê muda.
-      //
-      // "Não consegui completar a busca" era a mesma coisa dita para os dois
-      // casos, e num deles é mentira por omissão: os nomes vieram, a lista tem
-      // gente, e o aviso dizia que nada valia. Quem lê isso fecha a busca e vai
-      // procurar de outro jeito — tendo a resposta na tela.
-      if (falhouNome && falhouMensagem) {
-        setErroBusca("Não consegui completar a busca agora. Tente de novo em alguns segundos.");
-      } else if (falhouNome) {
-        setErroBusca("Não consegui procurar pelos nomes agora — o que está aqui veio do texto das conversas.");
-      } else if (falhouMensagem) {
-        setErroBusca("Achei pelos nomes. A procura DENTRO das mensagens não respondeu — pode faltar alguma conversa aqui.");
-      }
-      // Só o que a lista NÃO tem. O resto já está lá, com o estado em dia.
-      const jaNaLista = new Set(conversas.map((c) => String(c.id)));
-      const peneirar = (lista) => {
-        const vistos = new Set();
-        return lista.filter((c) => {
-          const id = String(c.id);
-          if (jaNaLista.has(id) || vistos.has(id)) return false;
-          vistos.add(id);
-          return true;
-        });
-      };
+      // A FRASE MUDA CONFORME O QUE FALTOU, porque a decisão de quem lê muda —
+      // e a escolha dela mora em `busca.js`, com uma prova para cada caso.
+      setErroBusca(recadoDaBusca({
+        falhouNome, falhouMensagem,
+        tempoEsgotado: sinal.aborted && !cancelado,
+        achouAlgo: encontradas.length > 0,
+      }));
       // O QUE É DAQUI PRIMEIRO — o mesmo conserto do caminho de cima. Este é o
       // caminho de reserva (quando a função do banco ainda não foi criada), e
       // ele tinha o defeito idêntico: a ida ao Vantoro vinha antes de desenhar,
       // e o "Procurando…" ficava de pé até ela voltar.
       setExtras(peneirar(encontradas));
       setBuscando(false);
+      clearTimeout(relogio);   // o que falta só acrescenta; ver acima
 
       // ---- e só então o cadastro do Vantoro (CPF, processo) ----
-      const doCadastro = await procurarNoVantoro(termo, encontradas, advId);
-      if (cancelado || advogadoIdRef.current !== advId) return;
+      const doCadastro = await procurarNoVantoro(termo, encontradas, advId, sinal);
+      if (!meu()) return;
       setAchadosCad(doCadastro.porCad);
       setSemConversa(doCadastro.semConversa || []);
       setExtras(peneirar([...encontradas, ...doCadastro.novas]));
+      } catch (e) {
+        // NENHUMA EXCEÇÃO PODE ESCAPAR DAQUI. Uma só, em qualquer das nove
+        // consultas, pulava o `setBuscando(false)` — e o "Procurando…" ficava
+        // de pé pelo resto da sessão, sem nada na tela dizendo por quê.
+        if (meu() && !foiAbortada(e)) {
+          console.info(`Zorvin: a busca parou por um erro (${e && e.message ? e.message : e}).`);
+          setErroBusca(recadoDaBusca({ falhouNome: true, falhouMensagem: true }));
+        }
+      } finally {
+        // A REDE DE SEGURANÇA. Os caminhos de cima já apagam o "Procurando…" no
+        // momento certo, cada um no seu; este aqui é o que garante que ele SAI,
+        // aconteça o que acontecer — inclusive quando o relógio cortou tudo e
+        // não sobrou caminho nenhum para chegar até lá.
+        clearTimeout(relogio);
+        if (meu()) {
+          setBuscando(false);
+          if (sinal.aborted) {
+            setErroBusca((antes) => antes || recadoDaBusca({
+              tempoEsgotado: true, achouAlgo: false,
+            }));
+          }
+        }
+      }
     }, 350);
 
-    return () => { cancelado = true; clearTimeout(tarefa); };
+    return () => {
+      cancelado = true;
+      clearTimeout(tarefa);
+      clearTimeout(relogio);
+      // A TESOURA. Sem isto, a busca velha continuava rodando no banco depois
+      // de a pessoa já ter digitado outra letra: só a RESPOSTA era descartada.
+      corte.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [busca, conversas.length, advogadoId]);
 
@@ -8666,7 +8801,12 @@ export default function Painel({ sessao }) {
             </div>
           )}
           {conversasFiltradas.length === 0 && !erroBusca && semConversa.length === 0 && (
-            <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>
+            // A MARCA, para as provas não terem de caçar a palavra no texto da
+            // página inteira: um aviso que por acaso contivesse "Procurando" —
+            // e um já conteve — faria a tela parecer estar procurando depois de
+            // ter desistido, e a prova aprovaria o defeito que ela caça.
+            <div data-recado-da-lista={buscando ? "procurando" : undefined}
+                 style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>
               {trocandoDeTelefone ? "Carregando as conversas…"
                 : buscando ? "Procurando…"
                 : busca.trim() ? "Nada encontrado para essa busca."
