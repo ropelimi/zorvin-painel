@@ -20,6 +20,11 @@ import { chamarPonte, ESPERA_PADRAO } from "./ponte.js";
 import { PRAZO_DA_BUSCA, foiAbortada, funcaoNaoExiste,
          condicoesDeNome, recadoDaBusca } from "./busca.js";
 import { comoPrever, nomeDoTipo, tamanhoLegivel } from "./arquivos.js";
+import { gravarSemAsQueFaltam } from "./gravar.js";
+
+// O que este banco já disse que não tem, para não perguntar de novo a cada nota.
+// Vale só nesta sessão: rodar o SQL que falta e apertar F5 devolve a coluna.
+const COLUNAS_QUE_FALTAM_EM_NOTAS = new Set();
 import { ZOOM_MIN, ZOOM_MAX, ZOOM_PARADO, ZOOM_DO_TOQUE_DUPLO, degrauSeguinte,
          porcentagem, limitarPosicao, zoomAncorado, distancia } from "./zoom.js";
 import Departamentos from "./Departamentos";
@@ -6175,39 +6180,27 @@ export default function Painel({ sessao }) {
       ...comProcesso,
     };
     setMensagens((prev) => [...prev, provisoria].sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em)));
-    let { error, data: gravada } = await supabase.from("notas")
-      .insert({ conversa_id: conversaId, texto: t, autor: meuNome,
-                autor_foto: minhaFoto, autor_id: meuId, ...comProcesso })
-      .select("id").single();
-    // Base sem a coluna do RÉU só: perde o rótulo, NÃO o vínculo. Cair direto
-    // para "sem processo nenhum" aqui jogaria fora a escolha que a pessoa
-    // acabou de fazer por causa de uma coluna que existe só para a tela ter o
-    // que escrever — o `processo_id` é a verdade, e ele cabe sem ela.
-    if (error && /processo_reu/i.test(error.message || "")) {
-      const { processo_reu: _fora, ...semReu } = comProcesso;
-      ({ error, data: gravada } = await supabase.from("notas")
-        .insert({ conversa_id: conversaId, texto: t, autor: meuNome,
-                  autor_foto: minhaFoto, autor_id: meuId, ...semReu })
-        .select("id").single());
-    }
-    // Base sem as colunas do processo: grava sem elas, e a nota continua
-    // valendo — só não sobe vinculada a processo nenhum. Mesma tolerância que
-    // o resto desta função já tem.
-    if (error && /processo_id|processo_numero/i.test(error.message || "")) {
-      ({ error, data: gravada } = await supabase.from("notas")
-        .insert({ conversa_id: conversaId, texto: t, autor: meuNome,
-                  autor_foto: minhaFoto, autor_id: meuId })
-        .select("id").single());
-    }
-    // Base sem a coluna nova: grava sem ela. Quem pode mexer na nota cai para
-    // a comparação por nome, que é o que havia antes.
-    if (error && /autor_id/i.test(error.message || "")) {
-      ({ error } = await supabase.from("notas").insert({ conversa_id: conversaId, texto: t, autor: meuNome, autor_foto: minhaFoto }));
-    }
-    if (error && /autor_foto/i.test(error.message || "")) {
-      // Coluna de foto ainda não existe: salva a nota sem ela.
-      ({ error } = await supabase.from("notas").insert({ conversa_id: conversaId, texto: t, autor: meuNome }));
-    }
+    // UMA COLUNA QUE FALTA CUSTA UMA COLUNA, e não o resto da nota.
+    //
+    // Aqui havia quatro quedas encadeadas, cada uma remontando a linha do zero.
+    // A última foi escrita para a falta de UMA coluna e jogava fora QUATRO — o
+    // `autor_foto` que falta, o `autor_id` que existe, e as três do processo.
+    //
+    // MEDIDO NO BANCO DO ESCRITÓRIO em 01/09: `notas.autor_foto` nunca existiu
+    // ali. Logo, TODA nota caía naquela última queda. De 289 notas, ZERO tinham
+    // processo vinculado. A equipe escolhia o processo, via o seletor ficar
+    // âmbar, e a escolha era descartada sem uma palavra — por semanas.
+    //
+    // A lista de opcionais é fechada de propósito: `conversa_id`, `texto` e
+    // `autor` NÃO estão nela. Se o banco disser que falta uma dessas, isto não
+    // grava uma nota sem texto — devolve o erro, e a tela avisa.
+    const { error, data: gravada, perdidas } = await gravarSemAsQueFaltam(
+      (linha) => supabase.from("notas").insert(linha).select("id").single(),
+      { conversa_id: conversaId, texto: t, autor: meuNome,
+        autor_foto: minhaFoto, autor_id: meuId, ...comProcesso },
+      ["autor_foto", "autor_id", "processo_id", "processo_numero", "processo_reu"],
+      COLUNAS_QUE_FALTAM_EM_NOTAS,
+    );
     if (error) {
       setMensagens((prev) => prev.filter((m) => m.id !== tempId));
       // Devolve o texto à caixa: a nota some da conversa, e sem isto o que a
@@ -6217,6 +6210,31 @@ export default function Painel({ sessao }) {
       mostrarAviso("Não consegui salvar a nota. O texto voltou para a caixa.");
     }
     else {
+      // O QUE NÃO COUBE NO BANCO PRECISA SER DITO.
+      //
+      // Este é o conserto de fundo do defeito de 01/09: a escolha do processo
+      // era descartada em silêncio, e por isso ninguém nunca soube. Uma escolha
+      // que a pessoa fez e que o sistema não conseguiu guardar não pode sumir
+      // sem uma palavra — quem escreveu vai embora achando que a nota está
+      // ligada à ação, e meses depois alguém procura por ali e não acha nada.
+      //
+      // Só quando ela ESCOLHEU: numa nota geral, o processo não coube porque
+      // não havia processo nenhum, e avisar seria falar de algo que não
+      // aconteceu.
+      const processoPerdido = perdidas.some((c) => String(c).startsWith("processo"));
+      if (escolhido && processoPerdido) {
+        mostrarAviso("A nota foi salva, mas SEM o vínculo com o processo — este banco "
+          + "ainda não tem essa coluna. Peça para rodar o SQL das notas com processo.");
+      }
+      // A BOLHA TAMBÉM TEM DE DIZER A VERDADE. Ela nasceu com o processo
+      // desenhado (para a escolha não parecer que não pegou); se o vínculo não
+      // foi gravado, deixá-lo ali seria a tela afirmando o que o banco não tem.
+      if (processoPerdido) {
+        setMensagens((prev) => prev.map((m) => (m.id === tempId
+          ? { ...m, processo_id: undefined, processo_numero: undefined, processo_reu: undefined }
+          : m)));
+      }
+
       // AGORA SOBE PARA O VANTORO — e o vínculo é sempre com o CLIENTE.
       //
       // Depois de gravar, e não antes: a nota da equipe não pode se perder

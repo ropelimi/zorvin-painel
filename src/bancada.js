@@ -1492,6 +1492,38 @@ function consulta(tabela) {
         ? (encomendado.length > 1 ? encomendado.shift() : encomendado[0])
         : encomendado;
       if (extra && await esperaOuAborto(extra, sinal)) return resolver(respostaAbortada());
+      // A COLUNA QUE NÃO EXISTE NESTA BASE.
+      //
+      // `__SEM_COLUNAS = { notas: ["autor_foto"] }` faz a gravação ser RECUSADA
+      // com o erro exato do PostgREST quando o pedido menciona essa coluna.
+      //
+      // Faltava, e a falta custou caro. O painel é escrito para tolerar coluna
+      // ausente — "grava sem ela e segue" —, e numa bancada onde toda coluna
+      // existe esse caminho INTEIRO nunca roda. Foi por ali que o vínculo da
+      // nota com o processo passou semanas sendo descartado em silêncio no
+      // banco do escritório, com 289 notas e ZERO processos, enquanto aqui
+      // tudo passava.
+      //
+      // O ERRO É COPIADO DO POSTGREST, e não inventado: é a mensagem que o
+      // painel tem de saber ler para descobrir QUAL coluna tirar. Um erro
+      // genérico aqui aprovaria um código que desiste de todas.
+      const semColunas = ((typeof globalThis !== "undefined" && globalThis.__SEM_COLUNAS) || {})[tabela] || [];
+      if (semColunas.length && gravacao) {
+        const pedidas = (Array.isArray(gravacao.reg) ? gravacao.reg : [gravacao.reg])
+          .flatMap((r) => Object.keys(r || {}));
+        const faltando = semColunas.find((c) => pedidas.includes(c));
+        if (faltando) {
+          return resolver({ data: null, count: null, error: { code: "PGRST204",
+            message: `Could not find the '${faltando}' column of '${tabela}' in the schema cache` } });
+        }
+      }
+      if (semColunas.length && patch) {
+        const faltando = semColunas.find((c) => c in patch);
+        if (faltando) {
+          return resolver({ data: null, count: null, error: { code: "PGRST204",
+            message: `Could not find the '${faltando}' column of '${tabela}' in the schema cache` } });
+        }
+      }
       if (gravacao) eu.gravar(gravacao.reg, gravacao.porOnde);
       // A COLUNA COM LISTA FECHADA DE VALORES (`CHECK`).
       //
