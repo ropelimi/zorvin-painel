@@ -4101,7 +4101,13 @@ export default function Painel({ sessao }) {
           };
         });
         for (let i = 0; i < linhas.length; i += 400) {
-          const { error } = await supabase.from("mensagens").upsert(linhas.slice(i, i + 400), { onConflict: "id_uazapi", ignoreDuplicates: true });
+          // A CHAVE É (conversa, id_uazapi), como na ponte. Ela mudou por causa do
+          // grupo com dois telefones nossos dentro: a mesma mensagem do WhatsApp
+          // existe legitimamente em duas conversas, e o `id_uazapi` sozinho a
+          // descartava na segunda. Aqui a importação de histórico usa a mesma
+          // chave — duas chaves diferentes para a mesma tabela voltariam a
+          // descartar em silêncio, só que por outro caminho.
+          const { error } = await supabase.from("mensagens").upsert(linhas.slice(i, i + 400), { onConflict: "conversa_id,id_uazapi", ignoreDuplicates: true });
           if (error) throw error;
         }
         const ult = it.msgs[it.msgs.length - 1];
