@@ -93,11 +93,25 @@ jobs:
       #  `GITHUB_TOKEN` que a rodada ganha de graça só alcança ESTE aqui.
       #  `PONTE_LEITURA` é um token de leitura, restrito ao zorvin-bridge.
       # ------------------------------------------------------------
+      # O SEGREDO CHEGA POR `env`, E NÃO POR UM `if`.
+      #
+      # A primeira versão disto era `if: ${{ secrets.PONTE_LEITURA == '' }}`, e
+      # o GitHub RECUSOU O ARQUIVO INTEIRO: o contexto `secrets` não é aceito na
+      # condição de um passo. O sintoma foi pior do que um erro comum — a rodada
+      # constou como falhada sem NENHUM job, sem log e sem marca na PR, porque
+      # ela nem chegou a começar. Um passo que confere o segredo não pode ser o
+      # passo que derruba o arquivo.
+      #
+      # Em `env` o valor é aceito, e o teste vira uma linha de shell.
       - name: Conferir que o segredo da ponte existe
-        if: ${{ secrets.PONTE_LEITURA == '' }}
+        env:
+          PONTE_LEITURA: ${{ secrets.PONTE_LEITURA }}
         run: |
-          echo "::error::Falta o segredo PONTE_LEITURA neste repositório. Sem ele a rodada não consegue ler o zorvin-bridge (os dois são privados), e a prova 'numeros' reprova porque não tem com o que comparar a regra de telefone. Crie o segredo em Settings → Secrets and variables → Actions, com um token de leitura restrito ao zorvin-bridge."
-          exit 1
+          if [ -z "$PONTE_LEITURA" ]; then
+            echo "::error::Falta o segredo PONTE_LEITURA neste repositório. Sem ele a rodada não consegue ler o zorvin-bridge (os dois são privados), e a prova 'numeros' reprova porque não tem com o que comparar a regra de telefone. Crie o segredo em Settings → Secrets and variables → Actions, com um token de leitura restrito ao zorvin-bridge."
+            exit 1
+          fi
+          echo "Segredo encontrado."
 
       - name: Baixar a ponte
         uses: actions/checkout@v4
