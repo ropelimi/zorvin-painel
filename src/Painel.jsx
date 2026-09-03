@@ -1424,6 +1424,11 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
   // aí, o que é raro e é o comportamento de antes.
   fimRef, inputRef, pertoDoFim, setMenuParaCima,
   setSelecao, setRascunho, setEditando, setRespondendo, setModoNota,
+  // O PROCESSO DA NOTA ENTRA AQUI porque editar uma nota agora abre a barra do
+  // processo já apontando para o que ela tem. Faltando o `set`, o botão de
+  // editar estourava com "setProcessoDaNota is not defined" — este componente
+  // é uma função à parte, e nada do `Painel` chega nele sem ser passado.
+  setProcessoDaNota,
   setEncaminhar, setBuscaEncaminhar, setImagemAberta, setRetratoAberto,
   setNotaParaApagar,
 }) {
@@ -1539,7 +1544,16 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
                     depois recusar é pior do que não oferecer. */}
                 {podeMexerNaNota(m) && !m._status && (
                   <span style={{ position: "absolute", top: 2, right: 4, display: "flex", gap: 2 }}>
-                    <button onClick={() => { setRespondendo(null); setModoNota(false); setEditando(m); setRascunho(m.texto || ""); setTimeout(() => inputRef.current?.focus(), 0); }}
+                    {/* EDITAR A NOTA É ESCREVER A NOTA.
+                        Aqui estava `setModoNota(false)`: a caixa voltava ao
+                        modo mensagem — verde, "Corrija a mensagem e aperte
+                        Enter" — para corrigir uma NOTA. E como a barra do
+                        processo só existe no modo nota, não havia como trocar
+                        o processo vinculado: a única saída era apagar a nota e
+                        escrever outra, perdendo quem a escreveu e quando.
+                        Agora é o mesmo campo âmbar, com a mesma barra de
+                        processo, já apontando para o processo que a nota tem. */}
+                    <button onClick={() => { setRespondendo(null); setModoNota(true); setEditando(m); setRascunho(m.texto || ""); setProcessoDaNota(m.processo_id ? String(m.processo_id) : ""); setTimeout(() => inputRef.current?.focus(), 0); }}
                             title="Editar nota"
                             style={{ border: "none", background: "transparent", cursor: "pointer", color: "rgba(255,255,255,.75)", padding: 3, display: "flex", minHeight: estreito ? 40 : 24, minWidth: estreito ? 40 : 24, alignItems: "center", justifyContent: "center" }}>
                       <Pencil size={13} />
@@ -3238,6 +3252,32 @@ export default function Painel({ sessao }) {
   }
 
   // Marca/desmarca uma tag na conversa aberta (otimista + banco).
+  // ------------------------------------------------------------
+  //  A ETIQUETA É DO CLIENTE, E NÃO DA CAIXA EM QUE ELE FALOU
+  //
+  //  Relato de quem usa: "a etiqueta que é incluída no contato deve aparecer
+  //  nas conversas com o contato em todos os telefones".
+  //
+  //  `conversa_tags` guarda uma linha por (conversa, etiqueta), e cada telefone
+  //  nosso tem a SUA conversa com o mesmo cliente: etiquetar "Urgente" no
+  //  telefone do Dr. Max não mudava nada no do Estratégico. Etiqueta serve para
+  //  achar e para priorizar — uma que só metade do escritório enxerga faz o
+  //  filtro devolver metade sem dizer que devolveu metade.
+  //
+  //  A GRAVAÇÃO VAI PELA PONTE, e não daqui. As conversas dos OUTROS telefones
+  //  são invisíveis para este navegador (é a regra de acesso, e ela está
+  //  certa): espalhar a etiqueta daqui cobriria só as conversas que a pessoa já
+  //  vê — deixando a etiqueta pela metade, que é o defeito de origem com outra
+  //  roupa. A ponte usa a chave de serviço e alcança todas.
+  //
+  //  A LEITURA CONTINUA COMO ERA: cada conversa ganha a SUA linha em
+  //  `conversa_tags`, então o painel lê exatamente o que já lia. Nada de
+  //  exceção na regra de acesso.
+  //
+  //  E SE A PONTE ESTIVER DORMINDO? Ela hiberna no plano free. Em vez de
+  //  perder a etiqueta, o caminho antigo entra como reserva: grava ao menos
+  //  NESTA conversa e diz, em letras, que não valeu para os outros telefones.
+  //  Meia etiqueta com aviso é melhor do que nenhuma em silêncio.
   async function alternarTagConversa(tagId) {
     if (!conversaId) return;
     const atuais = tagsPorConversa[conversaId] || [];
@@ -3247,11 +3287,28 @@ export default function Painel({ sessao }) {
       if (tem) lista.delete(tagId); else lista.add(tagId);
       return { ...prev, [conversaId]: [...lista] };
     });
+    const contatoId = conversa?.contato_id || conversa?.contato?.id || null;
+    if (contatoId) {
+      try {
+        await chamarPonte("/etiqueta/contato", {
+          method: "POST",
+          body: JSON.stringify({ contato_id: contatoId, tag_id: tagId, aplicar: !tem }),
+        });
+        return;
+      } catch (_e) { /* a ponte dorme; cai para o caminho de sempre */ }
+    }
     if (tem) {
-      await supabase.from("conversa_tags").delete().eq("conversa_id", conversaId).eq("tag_id", tagId);
+      const { error } = await supabase.from("conversa_tags")
+        .delete().eq("conversa_id", conversaId).eq("tag_id", tagId);
+      if (error) { mostrarAviso("Não consegui tirar a etiqueta."); carregarTagsConversas(); return; }
     } else {
       const { error } = await supabase.from("conversa_tags").insert({ conversa_id: conversaId, tag_id: tagId });
-      if (error) { mostrarAviso("Não consegui aplicar a etiqueta."); carregarTagsConversas(); }
+      if (error) { mostrarAviso("Não consegui aplicar a etiqueta."); carregarTagsConversas(); return; }
+    }
+    // SÓ AVISA QUANDO HÁ OUTRO TELEFONE EM JOGO. Num cliente que só falou com
+    // um telefone nosso, "não valeu para os outros" seria um susto sobre nada.
+    if (outrasConversasDoContato > 0) {
+      mostrarAviso("Etiqueta salva só neste telefone — a ponte não respondeu.");
     }
   }
 
@@ -4785,6 +4842,42 @@ export default function Painel({ sessao }) {
   useEffect(() => { rascunhoRef.current = rascunho; }, [rascunho]);
   useEffect(() => { modoNotaRef.current = modoNota; }, [modoNota]);
 
+  // ------------------------------------------------------------
+  //  QUANTAS CONVERSAS ESTE CLIENTE TEM NOS OUTROS TELEFONES
+  //
+  //  Relato de quem usa: "na conversa, no ícone de histórico, quero que indique
+  //  de alguma forma quantas conversas existem com aquele contato em outros
+  //  telefones".
+  //
+  //  O ícone era mudo. A informação existia — o painel de histórico a mostra —
+  //  mas só depois de clicar, e ninguém clica num ícone para descobrir que não
+  //  há nada lá. O resultado é duas pessoas do escritório atendendo o mesmo
+  //  cliente sem saber uma da outra.
+  //
+  //  PELA PONTE porque daqui não dá: a regra de acesso recorta as conversas
+  //  pelos telefones que a pessoa alcança, e a resposta seria sempre "só esta"
+  //  — que é justamente a resposta errada. Só o número atravessa.
+  //
+  //  FALHAR AQUI NÃO MOSTRA NÚMERO NENHUM, e é de propósito: um "1" pendurado
+  //  em toda conversa quando a ponte dorme seria pior que o silêncio de antes
+  //  — um número errado é lido como certo.
+  const [outrasConversasDoContato, setOutrasConversasDoContato] = useState(0);
+  const contatoDaConversa = conversa?.contato_id || conversa?.contato?.id || null;
+  useEffect(() => {
+    setOutrasConversasDoContato(0);
+    if (!contatoDaConversa) return;
+    let valeu = true;
+    chamarPonte(`/historico/contato/${encodeURIComponent(contatoDaConversa)}/quantas`)
+      .then((r) => {
+        if (!valeu) return;
+        // MENOS ESTA. O que interessa é "além da que estou vendo": dizer "2"
+        // numa tela que já mostra uma delas faz quem lê procurar duas outras.
+        setOutrasConversasDoContato(Math.max(0, Number(r?.conversas || 0) - 1));
+      })
+      .catch(() => { if (valeu) setOutrasConversasDoContato(0); });
+    return () => { valeu = false; };
+  }, [contatoDaConversa]);
+
   // OS PROCESSOS DO CLIENTE, buscados só quando alguém abre o modo nota.
   //
   // Não na abertura da conversa: a maioria das conversas nunca recebe nota, e
@@ -5744,8 +5837,15 @@ export default function Painel({ sessao }) {
   }
 
   function cancelarEdicao() {
+    // O MODO NOTA SAI JUNTO. Editar uma nota o acende; se ele ficasse aceso
+    // depois do cancelamento, a caixa continuaria âmbar e a próxima coisa
+    // digitada viraria uma NOTA INTERNA em vez de uma mensagem para o cliente
+    // — o erro mais caro que esta tela pode cometer, porque é silencioso dos
+    // dois lados: o cliente não recebe e ninguém percebe que não recebeu.
     setEditando(null);
     setRascunho("");
+    setModoNota(false);
+    setProcessoDaNota("");
   }
 
   async function salvarEdicao() {
@@ -6002,8 +6102,16 @@ export default function Painel({ sessao }) {
   }, [carregarConversas, carregarNaoLidasPorAdv]);
 
   async function enviar() {
-    if (modoNota) { enviarNota(); return; }
+    // CORRIGIR VEM ANTES DE CRIAR, e a ordem aqui é o conserto.
+    //
+    // Editar uma nota passou a acender `modoNota` (é o que faz a caixa ficar
+    // âmbar e a barra do processo aparecer). Com `modoNota` sendo perguntado
+    // primeiro, apertar Enter numa nota em edição chamaria `enviarNota()` e
+    // criaria uma nota NOVA — a velha ficaria intacta, e a tela mostraria as
+    // duas. Quem corrigiu um erro de digitação acabaria com o erro e a
+    // correção lado a lado.
     if (editando) { salvarEdicao(); return; }
+    if (modoNota) { enviarNota(); return; }
     const t = rascunho.trim();
     if (!t || !conversaId) return;
     setRascunho("");
@@ -6111,22 +6219,72 @@ export default function Painel({ sessao }) {
 
   async function salvarEdicaoDeNota(m, novoTexto) {
     const antes = m.texto || "";
-    if (novoTexto === antes) { cancelarEdicao(); return; }
-    setEditando(null);
-    setRascunho("");
+    // O PROCESSO TAMBÉM SE CORRIGE. Vincular ao processo errado é tão fácil
+    // quanto escrever a palavra errada, e até aqui a única saída era apagar a
+    // nota e escrever outra — perdendo quem a escreveu e quando, que é
+    // justamente para o que a nota serve.
+    const escolhido = processoDaNota
+      ? processosDoCliente.find((p) => String(p.id) === String(processoDaNota))
+      : null;
+    const antesProcesso = m.processo_id ? String(m.processo_id) : "";
+    const comoEra = { processo_id: m.processo_id ?? null,
+                      processo_numero: m.processo_numero ?? null,
+                      processo_reu: m.processo_reu ?? null };
+
+    // A CORRIDA QUE APAGARIA O VÍNCULO.
+    //
+    // A lista de processos do cliente é buscada no Vantoro DEPOIS de o modo
+    // nota acender — vai pela rede, e leva o tempo que levar. Entre o clique em
+    // "editar" e a resposta dela, `processosDoCliente` está VAZIA: procurar o
+    // processo da nota ali não acha nada, e `escolhido` sai nulo.
+    //
+    // Sem esta guarda, corrigir uma vírgula e apertar Enter depressa GRAVARIA
+    // `processo_id: null` — o vínculo sumiria por causa da velocidade de quem
+    // digita. Silenciosamente, e no mesmo campo que já perdeu 289 notas.
+    //
+    // A regra: só desvincula quem ESCOLHEU desvincular (o seletor em branco).
+    // Um id que a lista ainda não conhece mantém o que estava.
+    const aindaNaoSei = Boolean(processoDaNota) && !escolhido;
+    const doProcesso = escolhido
+      ? { processo_id: escolhido.id, processo_numero: escolhido.numero || "",
+          processo_reu: escolhido.reu || "" }
+      : (aindaNaoSei
+          ? comoEra
+          // NULO, E NÃO AUSENTE: um objeto sem a chave deixaria a coluna como
+          // está, e "desvincular" não desvincularia nada.
+          : { processo_id: null, processo_numero: null, processo_reu: null });
+    const agoraProcesso = doProcesso.processo_id ? String(doProcesso.processo_id) : "";
+    const mudouProcesso = antesProcesso !== agoraProcesso;
+    if (novoTexto === antes && !mudouProcesso) { cancelarEdicao(); return; }
+    cancelarEdicao();
     setMensagens((prev) => prev.map((x) => (
-      x.id === m.id ? { ...x, texto: novoTexto, editada_em: new Date().toISOString(),
+      x.id === m.id ? { ...x, ...doProcesso, texto: novoTexto,
+                        editada_em: new Date().toISOString(),
                         editada_por: meuNome } : x)));
     // O id na tabela não tem o prefixo "nota-" que a tela põe para as duas
     // linhas do tempo não colidirem.
     const idReal = String(m.id).replace(/^nota-/, "");
-    const { error } = await supabase.from("notas")
-      .update({ texto: novoTexto, editada_em: new Date().toISOString(), editada_por: meuNome })
-      .eq("id", idReal);
+    // AS COLUNAS DO PROCESSO PODEM NÃO EXISTIR — é o mesmo banco incompleto que
+    // fez 289 notas nascerem sem processo. `gravarSemAsQueFaltam` tenta com
+    // tudo e, se o banco recusar uma coluna, repete sem ELA — em vez de perder
+    // a correção do texto junto.
+    const { error, perdidas } = await gravarSemAsQueFaltam(
+      (linha) => supabase.from("notas").update(linha).eq("id", idReal),
+      { texto: novoTexto, editada_em: new Date().toISOString(), editada_por: meuNome,
+        ...doProcesso },
+      ["processo_id", "processo_numero", "processo_reu", "editada_em", "editada_por"],
+      COLUNAS_QUE_FALTAM_EM_NOTAS);
     if (error) {
-      setMensagens((prev) => prev.map((x) => (x.id === m.id ? { ...x, texto: antes } : x)));
+      setMensagens((prev) => prev.map((x) => (
+        x.id === m.id ? { ...x, ...comoEra, texto: antes } : x)));
       mostrarAviso("Não consegui editar a nota. Tente de novo.");
       return;
+    }
+    // O AVISO SÓ APARECE QUANDO A PESSOA PERDEU O QUE ESCOLHEU. Perder o
+    // `editada_em` numa base velha não muda nada do que ela quis dizer; perder
+    // o processo, sim — e calar sobre isso é o defeito que já custou 289 notas.
+    if (mudouProcesso && (perdidas || []).some((c) => c.startsWith("processo"))) {
+      mostrarAviso("Salvei o texto, mas este banco ainda não guarda o processo da nota.");
     }
     registrarAlteracao({ tipo: "nota_editada", alvo: idReal, antes, depois: novoTexto });
   }
@@ -7534,9 +7692,39 @@ export default function Painel({ sessao }) {
     });
   };
 
+  // ------------------------------------------------------------
+  //  PROCURAR É PROCURAR EM TUDO — inclusive no que foi arquivado
+  //
+  //  Relato de quem usa: "a busca não está encontrando as conversas
+  //  arquivadas".
+  //
+  //  A regra `!!c.arquivada === verArquivadas` existe para a LISTA: fora da
+  //  pasta de arquivadas, arquivada não aparece — e isso está certo, é o que
+  //  arquivar quer dizer. Só que ela valia também DURANTE A BUSCA, e aí virava
+  //  outra coisa: quem procurava um cliente arquivado meses atrás recebia
+  //  "Nada encontrado para essa busca".
+  //
+  //  E "nada encontrado" é uma RESPOSTA. Quem lê isso conclui que o cliente
+  //  não está no Zorvin — e vai procurar noutro lugar, ou cadastra de novo.
+  //
+  //  NÃO ERA O BANCO QUE ESCONDIA: a função `buscar_conversas` devolve as
+  //  arquivadas, e o SQL dela não tem filtro nenhum de `arquivada`. Era esta
+  //  linha que as jogava fora depois de o banco já as ter encontrado.
+  //
+  //  UMA REGRA SÓ, NOS DOIS SENTIDOS: com busca escrita, a pasta não recorta.
+  //  Procurar de dentro da pasta de arquivadas também acha as normais. Duas
+  //  regras — "na lista aparece, na pasta não" — dariam uma busca que responde
+  //  diferente conforme onde a pessoa estava quando começou a digitar, e isso
+  //  ninguém guarda.
+  //
+  //  E A LINHA DIZ QUE ESTÁ ARQUIVADA. Sem o selo, a conversa aparece na
+  //  busca, some quando a busca é apagada, e parece defeito.
+  const buscandoTexto = busca.trim().length > 0;
+  const naPasta = (c) => buscandoTexto || (!!c.arquivada === verArquivadas);
+
   const conversasFiltradas = (() => {
     const daLista = conversasNaTela.filter((c) =>
-      (!!c.arquivada === verArquivadas) && // arquivadas só aparecem na visão de arquivadas
+      naPasta(c) &&
       casaNaBusca(c) &&
       passaNoFiltro(c)
     );
@@ -7550,7 +7738,7 @@ export default function Painel({ sessao }) {
     const jaTem = new Set(daLista.map((c) => String(c.id)));
     const doBanco = busca.trim()
       ? extras.filter((c) => !jaTem.has(String(c.id))
-          && (!!c.arquivada === verArquivadas) && passaNoFiltro(c))
+          && naPasta(c) && passaNoFiltro(c))
       // As da etiqueta não passam por `passaNoFiltro`: elas vieram do banco
       // JUSTAMENTE por carregarem a etiqueta escolhida, e `tagsPorConversa` só
       // conhece as conversas da lista — perguntar a ele por uma conversa que a
@@ -7559,7 +7747,7 @@ export default function Painel({ sessao }) {
       // (sem `casaNaBusca`: este ramo só existe quando a caixa de busca está
       // vazia — o de cima é que trata a busca.)
       : [...extrasEtiqueta, ...extrasQuem].filter((c) => !jaTem.has(String(c.id))
-          && (!!c.arquivada === verArquivadas) && passaNoFiltro(c));
+          && naPasta(c) && passaNoFiltro(c));
     if (!doBanco.length) return daLista;
     return [...daLista, ...doBanco].sort((a, b) =>
       ((b.fixada ? 1 : 0) - (a.fixada ? 1 : 0))
@@ -7740,7 +7928,7 @@ export default function Painel({ sessao }) {
       {tags.map((t) => {
         const marcada = (tagsPorConversa[conversa.id] || []).includes(t.id);
         return (
-          <button key={t.id} onClick={() => alternarTagConversa(t.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, textAlign: "left" }}>
+          <button key={t.id} data-tag-opcao={t.id} onClick={() => alternarTagConversa(t.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, textAlign: "left" }}>
             <span style={{ width: 12, height: 12, borderRadius: 3, background: t.cor, flexShrink: 0 }} />
             <span style={{ flex: 1, fontSize: 13.5 }}>{t.nome}</span>
             {marcada && <Check size={16} color={C.green} />}
@@ -8051,7 +8239,9 @@ export default function Painel({ sessao }) {
         if (e.key === "Enter" && !e.shiftKey && !e.altKey) { e.preventDefault(); enviar(); }
       }}
       rows={1}
-      placeholder={editando ? "Corrija a mensagem e aperte Enter"
+      placeholder={editando ? (editando.origem === "nota"
+                                ? (estreito ? "Corrija a nota" : "Corrija a nota interna e aperte Enter")
+                                : "Corrija a mensagem e aperte Enter")
                       // NO CELULAR O AVISO É CURTO, e nao por preguica: a frase
                       // inteira quebra em tres linhas numa tela de 320px e empurra
                       // a conversa para fora da vista. A moldura ambar e o icone
@@ -9085,6 +9275,20 @@ export default function Painel({ sessao }) {
                           inteiro; aqui também. É de graça: o próprio navegador
                           desenha, e não custa render nenhum. */}
                       <span title={nome} style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nome}</span>
+                      {/* ESTÁ ARQUIVADA, E A LINHA DIZ.
+                          Só durante a busca, e só fora da pasta: lá dentro
+                          todas são, e repetir o selo em cada linha não informa
+                          nada. Sem ele, a conversa aparece ao procurar, some
+                          quando a busca é apagada, e parece defeito. */}
+                      {buscandoTexto && c.arquivada && !verArquivadas && (
+                        <span data-selo-arquivada
+                              title="Esta conversa está arquivada"
+                              style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 600,
+                                       color: C.textSecondary, border: `1px solid ${C.divider}`,
+                                       borderRadius: 5, padding: "1px 5px", lineHeight: 1.5 }}>
+                          arquivada
+                        </span>
+                      )}
                     </span>
                     <span style={{ fontSize: 11, color: c.nao_lidas ? C.horaNaoLida : C.textSecondary, flexShrink: 0 }}>{horaDe(c.ultima_atividade)}</span>
                   </div>
@@ -9370,9 +9574,31 @@ export default function Painel({ sessao }) {
                           // se o problema é dela.
                           else mostrarAviso("Não consegui identificar o contato desta conversa.");
                         }}
-                        title="Histórico de atendimento"
-                        style={{ ...BOTAO_ICONE, padding: 10, background: historico ? C.listActive : "transparent" }}>
+                        title={outrasConversasDoContato > 0
+                          ? `Histórico de atendimento — este cliente também é atendido por ${outrasConversasDoContato} outro(s) telefone(s) nosso(s)`
+                          : "Histórico de atendimento"}
+                        style={{ ...BOTAO_ICONE, padding: 10, position: "relative",
+                                 background: historico ? C.listActive : "transparent" }}>
                   <History size={19} color={historico ? C.green : C.textSecondary} />
+                  {/* O NÚMERO DOS OUTROS TELEFONES.
+                      Sem ele o ícone é mudo, e a informação — que existe, e que
+                      o painel de histórico mostra — só aparece para quem
+                      resolve clicar. Ninguém clica num ícone para descobrir que
+                      não há nada lá, e o preço disso é duas pessoas atendendo o
+                      mesmo cliente sem saber uma da outra.
+                      SÓ APARECE QUANDO HÁ OUTRO. Um "1" em toda conversa seria
+                      ruído em cima da tela inteira, e ruído constante deixa de
+                      ser lido — inclusive no dia em que virar "3". */}
+                  {outrasConversasDoContato > 0 && (
+                    <span data-outros-telefones={outrasConversasDoContato}
+                          style={{ position: "absolute", top: 2, right: 2,
+                                   minWidth: 15, height: 15, padding: "0 3px",
+                                   borderRadius: 8, background: C.green, color: "#fff",
+                                   fontSize: 9.5, fontWeight: 700, lineHeight: "15px",
+                                   textAlign: "center", pointerEvents: "none" }}>
+                      {outrasConversasDoContato}
+                    </span>
+                  )}
                 </button>
                 {/* QUEM PARTICIPOU DESTA CONVERSA.
                     O grupinho mostra quatro rostos e um "+3" — e o "+3" era um
@@ -9766,7 +9992,8 @@ export default function Painel({ sessao }) {
                 fimRef={fimRef} inputRef={inputRef} pertoDoFim={pertoDoFim}
                 setSelecao={setSelecao} setRascunho={setRascunho}
                 setEditando={setEditando} setRespondendo={setRespondendo}
-                setModoNota={setModoNota} setEncaminhar={setEncaminhar}
+                setModoNota={setModoNota} setProcessoDaNota={setProcessoDaNota}
+                setEncaminhar={setEncaminhar}
                 setBuscaEncaminhar={setBuscaEncaminhar}
                 setImagemAberta={setImagemAberta} setRetratoAberto={setRetratoAberto}
                 setNotaParaApagar={setNotaParaApagar} />
