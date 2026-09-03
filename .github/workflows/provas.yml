@@ -74,5 +74,48 @@ jobs:
       - name: Instalar o navegador
         run: npx playwright install --with-deps chromium
 
+      # ------------------------------------------------------------
+      #  A PONTE PRECISA ESTAR AO LADO — E ISTO NÃO É CAPRICHO
+      #
+      #  A prova `numeros` tem uma seção que LÊ o `index.js` da ponte e compara,
+      #  número por número, a regra que etiqueta telefone dos dois lados. O
+      #  painel GRAVA essa etiqueta no perfil do Vantoro e a ponte LÊ para
+      #  aplicar a permissão: no dia em que as duas divergirem, quem tem
+      #  telefone marcado deixa de ver as conversas dele — sem erro na tela,
+      #  sem log, sem nada.
+      #
+      #  Essa seção foi escrita para REPROVAR quando não acha a ponte, e está
+      #  certa: um "não deu para conferir" que conta como aprovado fica verde
+      #  para sempre e ninguém repara. Então, em vez de afrouxar a prova, a
+      #  rodada traz a ponte.
+      #
+      #  O SEGREDO É NECESSÁRIO porque os dois repositórios são privados, e o
+      #  `GITHUB_TOKEN` que a rodada ganha de graça só alcança ESTE aqui.
+      #  `PONTE_LEITURA` é um token de leitura, restrito ao zorvin-bridge.
+      # ------------------------------------------------------------
+      - name: Conferir que o segredo da ponte existe
+        if: ${{ secrets.PONTE_LEITURA == '' }}
+        run: |
+          echo "::error::Falta o segredo PONTE_LEITURA neste repositório. Sem ele a rodada não consegue ler o zorvin-bridge (os dois são privados), e a prova 'numeros' reprova porque não tem com o que comparar a regra de telefone. Crie o segredo em Settings → Secrets and variables → Actions, com um token de leitura restrito ao zorvin-bridge."
+          exit 1
+
+      - name: Baixar a ponte
+        uses: actions/checkout@v4
+        with:
+          repository: ropelimi/zorvin-bridge
+          ref: main
+          token: ${{ secrets.PONTE_LEITURA }}
+          # Vai para dentro do espaço de trabalho porque o `checkout` recusa
+          # escrever fora dele. O passo seguinte a leva para o lugar certo.
+          path: _ponte
+
+      # A prova procura a ponte como IRMÃ do painel (`../../zorvin-bridge`, a
+      # partir de `testes/`), que é como as duas ficam numa máquina de
+      # desenvolvimento. Aqui elas nascem uma dentro da outra, então a ponte é
+      # movida para fora — e a árvore do painel fica limpa, sem uma pasta a
+      # mais que as provas não esperam.
+      - name: Pôr a ponte ao lado do painel
+        run: mv _ponte "$GITHUB_WORKSPACE/../zorvin-bridge"
+
       - name: Rodar as provas
         run: npm run prova
