@@ -1,0 +1,135 @@
+# ============================================================
+#  AS PROVAS RODAM SOZINHAS, EM TODA PR
+#
+#  As provas do painel abrem o painel de verdade num navegador e conferem o
+#  que aparece na tela, contra a bancada. São 43 arquivos, e todas dependiam
+#  de alguém lembrar de rodar `npm run prova` antes de mandar a PR.
+#
+#  O que isto muda na prática: a PR que apagar a lista de conversas, quebrar a
+#  busca, a ficha do cliente ou a ordem de envio aparece VERMELHA no GitHub
+#  antes do merge — e não como um relato de atendimento no dia seguinte.
+#
+#  NÃO TOCA EM NADA QUE RODA EM PRODUÇÃO. Este arquivo não é lido pela Render
+#  nem entra no `build`; ele só manda o GitHub rodar `npm run prova`, que já
+#  existe no `package.json`.
+# ============================================================
+name: Provas
+
+on:
+  # Toda PR, antes do merge: é aqui que o defeito é barato.
+  pull_request:
+  # E também no que já entrou na `main`: duas PRs verdes separadas podem se
+  # somar numa `main` vermelha, e sem isto ninguém ficaria sabendo.
+  push:
+    branches: [main]
+
+# Empurrou de novo antes de a rodada anterior terminar? A velha é cancelada.
+# Sem isto, três correções seguidas numa PR viram três rodadas na fila, e a
+# resposta que interessa (a do último commit) é a que chega por último.
+concurrency:
+  group: provas-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  painel:
+    name: Provas do painel
+    runs-on: ubuntu-latest
+    # 43 provas, cada uma abrindo o seu próprio navegador, mais o build de
+    # produção que quatro delas exigem. Trinta minutos é folga com sobra; o
+    # teto existe para uma prova pendurada não ficar de pé até o fim do dia.
+    timeout-minutes: 30
+
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Preparar o Node
+        uses: actions/setup-node@v4
+        with:
+          # A MESMA VERSÃO EM QUE AS PROVAS FORAM RODADAS À MÃO antes desta
+          # entrega, e a mesma que a ponte exige (lá o `@supabase/supabase-js`
+          # não sobe abaixo da 22). Duas versões diferentes nos dois
+          # repositórios seria uma diferença para descobrir no pior dia.
+          node-version: '22'
+          # Guarda as dependências entre rodadas. Só funciona porque este
+          # repositório TEM `package-lock.json` — é ele a chave do cache.
+          cache: 'npm'
+
+      # `npm ci` e não `npm install`: instala exatamente as versões do
+      # `package-lock.json`. Numa prova de tela isso não é preciosismo — uma
+      # versão diferente do React ou do Vite muda o que aparece, e a rodada
+      # ficaria vermelha por causa de uma dependência, não do código da PR.
+      - name: Instalar as dependências
+        run: npm ci --no-audit --no-fund
+
+      # O navegador é baixado aqui, e não vem com a máquina. `--with-deps`
+      # instala junto as bibliotecas de sistema que o Chromium exige; sem elas
+      # ele até baixa, mas não abre — e o erro fala de biblioteca faltando, que
+      # não parece com "o navegador não instalou".
+      #
+      # A versão baixada é a que casa com o Playwright do `package-lock.json`.
+      # É por isso que este passo vem DEPOIS do `npm ci`, e não antes: baixar
+      # primeiro traria a build de outra versão, e o Playwright recusaria com
+      # "Executable doesn't exist".
+      - name: Instalar o navegador
+        run: npx playwright install --with-deps chromium
+
+      # ------------------------------------------------------------
+      #  A PONTE PRECISA ESTAR AO LADO — E ISTO NÃO É CAPRICHO
+      #
+      #  A prova `numeros` tem uma seção que LÊ o `index.js` da ponte e compara,
+      #  número por número, a regra que etiqueta telefone dos dois lados. O
+      #  painel GRAVA essa etiqueta no perfil do Vantoro e a ponte LÊ para
+      #  aplicar a permissão: no dia em que as duas divergirem, quem tem
+      #  telefone marcado deixa de ver as conversas dele — sem erro na tela,
+      #  sem log, sem nada.
+      #
+      #  Essa seção foi escrita para REPROVAR quando não acha a ponte, e está
+      #  certa: um "não deu para conferir" que conta como aprovado fica verde
+      #  para sempre e ninguém repara. Então, em vez de afrouxar a prova, a
+      #  rodada traz a ponte.
+      #
+      #  O SEGREDO É NECESSÁRIO porque os dois repositórios são privados, e o
+      #  `GITHUB_TOKEN` que a rodada ganha de graça só alcança ESTE aqui.
+      #  `PONTE_LEITURA` é um token de leitura, restrito ao zorvin-bridge.
+      # ------------------------------------------------------------
+      # O SEGREDO CHEGA POR `env`, E NÃO POR UM `if`.
+      #
+      # A primeira versão disto era `if: ${{ secrets.PONTE_LEITURA == '' }}`, e
+      # o GitHub RECUSOU O ARQUIVO INTEIRO: o contexto `secrets` não é aceito na
+      # condição de um passo. O sintoma foi pior do que um erro comum — a rodada
+      # constou como falhada sem NENHUM job, sem log e sem marca na PR, porque
+      # ela nem chegou a começar. Um passo que confere o segredo não pode ser o
+      # passo que derruba o arquivo.
+      #
+      # Em `env` o valor é aceito, e o teste vira uma linha de shell.
+      - name: Conferir que o segredo da ponte existe
+        env:
+          PONTE_LEITURA: ${{ secrets.PONTE_LEITURA }}
+        run: |
+          if [ -z "$PONTE_LEITURA" ]; then
+            echo "::error::Falta o segredo PONTE_LEITURA neste repositório. Sem ele a rodada não consegue ler o zorvin-bridge (os dois são privados), e a prova 'numeros' reprova porque não tem com o que comparar a regra de telefone. Crie o segredo em Settings → Secrets and variables → Actions, com um token de leitura restrito ao zorvin-bridge."
+            exit 1
+          fi
+          echo "Segredo encontrado."
+
+      - name: Baixar a ponte
+        uses: actions/checkout@v4
+        with:
+          repository: ropelimi/zorvin-bridge
+          ref: main
+          token: ${{ secrets.PONTE_LEITURA }}
+          # Vai para dentro do espaço de trabalho porque o `checkout` recusa
+          # escrever fora dele. O passo seguinte a leva para o lugar certo.
+          path: _ponte
+
+      # A prova procura a ponte como IRMÃ do painel (`../../zorvin-bridge`, a
+      # partir de `testes/`), que é como as duas ficam numa máquina de
+      # desenvolvimento. Aqui elas nascem uma dentro da outra, então a ponte é
+      # movida para fora — e a árvore do painel fica limpa, sem uma pasta a
+      # mais que as provas não esperam.
+      - name: Pôr a ponte ao lado do painel
+        run: mv _ponte "$GITHUB_WORKSPACE/../zorvin-bridge"
+
+      - name: Rodar as provas
+        run: npm run prova
