@@ -872,6 +872,39 @@ MENSAGENS.push({
   criado_em: new Date(Date.now() - 1180 * 3600e3).toISOString(),
 });
 
+// UMA CONVERSA ARQUIVADA, com nome e texto próprios.
+//
+// A bancada NÃO TINHA NENHUMA: todas nasciam com `arquivada: false`. Quer
+// dizer que a pasta de arquivadas, o selo e — o que motivou isto — a busca
+// dentro delas nunca foram exercitados uma vez sequer. Uma bancada onde o
+// estado não existe é uma bancada que aprova o defeito.
+//
+// Relato de quem usa: "a busca não está encontrando as conversas arquivadas".
+export const NOME_ARQUIVADA = "OTAVIO ARQUIVADO NEVES";
+export const TEXTO_NA_ARQUIVADA = "combinamos o distrato em janeiro";
+const CONTATO_ARQUIVADA = {
+  id: "ct-arquivada", numero: "5567988887777", nome: NOME_ARQUIVADA,
+  vantoro_nome: null, nome_zorvin: null, vantoro_cliente_id: null, foto_url: null,
+};
+// Ela entra à mão na tabela `contatos` mais abaixo: a linha que deriva os
+// contatos das conversas PULA de propósito todo `contato_id` que começa com
+// "ct-", e este começa.
+export const CONTATOS_EXTRAS = [CONTATO_ARQUIVADA];
+CONVERSAS.push({
+  id: "a13-arquivada", advogado_id: "a13", contato_id: "ct-arquivada",
+  nao_lidas: 0, arquivada: true, fixada: false, favorita: false,
+  ultima_atividade: new Date(Date.now() - 200 * 24 * 3600e3).toISOString(),
+  ultima_mensagem: TEXTO_NA_ARQUIVADA,
+  frente: null, vantoro_nome: null, digitando_ate: null,
+  contato: { ...CONTATO_ARQUIVADA },
+});
+MENSAGENS.push({
+  id: "m-arquivada", conversa_id: "a13-arquivada", origem: "contato", tipo: "texto",
+  texto: `Doutor, ${TEXTO_NA_ARQUIVADA}`,
+  enviado_por: null, enviado_por_id: null,
+  criado_em: new Date(Date.now() - 200 * 24 * 3600e3).toISOString(),
+});
+
 // ETIQUETAS, E ONDE ELAS ESTÃO PENDURADAS.
 //
 // A bancada nascia com `tags: []` e `conversa_tags: []` — quer dizer que a
@@ -1083,6 +1116,7 @@ const TABELAS = {
     ...NUMEROS_RUINS.map((c) => ({ ...c, foto_url: null,
                                    nome_zorvin: null, vantoro_nome: null })),
     ...FUNDO.map((c) => ({ ...c })),
+    ...CONTATOS_EXTRAS.map((c) => ({ ...c })),
     ...CONVERSAS.filter((c) => c.contato && c.contato.numero && !c.contato_id.startsWith("ct-"))
       .map((c) => ({ id: c.contato_id, ...c.contato, vantoro_nome: null, nome_zorvin: null })),
   ],
