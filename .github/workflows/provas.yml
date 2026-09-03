@@ -1,0 +1,78 @@
+# ============================================================
+#  AS PROVAS RODAM SOZINHAS, EM TODA PR
+#
+#  As provas do painel abrem o painel de verdade num navegador e conferem o
+#  que aparece na tela, contra a bancada. São 43 arquivos, e todas dependiam
+#  de alguém lembrar de rodar `npm run prova` antes de mandar a PR.
+#
+#  O que isto muda na prática: a PR que apagar a lista de conversas, quebrar a
+#  busca, a ficha do cliente ou a ordem de envio aparece VERMELHA no GitHub
+#  antes do merge — e não como um relato de atendimento no dia seguinte.
+#
+#  NÃO TOCA EM NADA QUE RODA EM PRODUÇÃO. Este arquivo não é lido pela Render
+#  nem entra no `build`; ele só manda o GitHub rodar `npm run prova`, que já
+#  existe no `package.json`.
+# ============================================================
+name: Provas
+
+on:
+  # Toda PR, antes do merge: é aqui que o defeito é barato.
+  pull_request:
+  # E também no que já entrou na `main`: duas PRs verdes separadas podem se
+  # somar numa `main` vermelha, e sem isto ninguém ficaria sabendo.
+  push:
+    branches: [main]
+
+# Empurrou de novo antes de a rodada anterior terminar? A velha é cancelada.
+# Sem isto, três correções seguidas numa PR viram três rodadas na fila, e a
+# resposta que interessa (a do último commit) é a que chega por último.
+concurrency:
+  group: provas-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  painel:
+    name: Provas do painel
+    runs-on: ubuntu-latest
+    # 43 provas, cada uma abrindo o seu próprio navegador, mais o build de
+    # produção que quatro delas exigem. Trinta minutos é folga com sobra; o
+    # teto existe para uma prova pendurada não ficar de pé até o fim do dia.
+    timeout-minutes: 30
+
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Preparar o Node
+        uses: actions/setup-node@v4
+        with:
+          # A MESMA VERSÃO EM QUE AS PROVAS FORAM RODADAS À MÃO antes desta
+          # entrega, e a mesma que a ponte exige (lá o `@supabase/supabase-js`
+          # não sobe abaixo da 22). Duas versões diferentes nos dois
+          # repositórios seria uma diferença para descobrir no pior dia.
+          node-version: '22'
+          # Guarda as dependências entre rodadas. Só funciona porque este
+          # repositório TEM `package-lock.json` — é ele a chave do cache.
+          cache: 'npm'
+
+      # `npm ci` e não `npm install`: instala exatamente as versões do
+      # `package-lock.json`. Numa prova de tela isso não é preciosismo — uma
+      # versão diferente do React ou do Vite muda o que aparece, e a rodada
+      # ficaria vermelha por causa de uma dependência, não do código da PR.
+      - name: Instalar as dependências
+        run: npm ci --no-audit --no-fund
+
+      # O navegador é baixado aqui, e não vem com a máquina. `--with-deps`
+      # instala junto as bibliotecas de sistema que o Chromium exige; sem elas
+      # ele até baixa, mas não abre — e o erro fala de biblioteca faltando, que
+      # não parece com "o navegador não instalou".
+      #
+      # A versão baixada é a que casa com o Playwright do `package-lock.json`.
+      # É por isso que este passo vem DEPOIS do `npm ci`, e não antes: baixar
+      # primeiro traria a build de outra versão, e o Playwright recusaria com
+      # "Executable doesn't exist".
+      - name: Instalar o navegador
+        run: npx playwright install --with-deps chromium
+
+      - name: Rodar as provas
+        run: npm run prova
