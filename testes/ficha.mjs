@@ -178,16 +178,40 @@ console.log("\n5. O cliente com dois números pode ser chamado pelo outro");
   await abrir("Deus");
   await abrirFicha();
 
-  const botoes = page.locator("[data-outros-numeros] button");
+  // O BOTÃO MUDOU DE LUGAR, e o que ele protege é o mesmo.
+  //
+  // Ele ficava num bloco à parte (`[data-outros-numeros]`), desenhado dentro do
+  // campo "Outro WhatsApp". Esse campo virou a LISTA de telefones — com dono,
+  // principal e o aviso de "está em N cadastros" —, e o botão passou a viver
+  // dentro de cada linha dela.
+  //
+  // A troca de lugar não é enfeite: o bloco antigo lia só `telefone` e
+  // `telefone2`, então o TERCEIRO número em diante nunca teria botão. Agora
+  // todo número da lista tem o seu.
+  //
+  // Foi esta conferência que pegou o sumiço quando eu substituí o campo pela
+  // lista e esqueci de trazer o botão junto.
+  const botoes = page.locator("[data-conversar-por]");
   ok("aparece o botão do outro número", await botoes.count() === 1,
      `apareceram ${await botoes.count()}`);
 
-  const texto = (await botoes.first().innerText()).replace(/\s+/g, " ").trim();
-  // O NÚMERO SAI ESCRITO NO BOTÃO. "Conversar pelo outro número" obrigaria a
-  // pessoa a confiar que o sistema escolheu certo; com o número à vista, ela
-  // confere antes de clicar — e o cadastro que tem dois números errados é
-  // justamente o que mais precisa disso.
-  ok("e ele diz QUAL número", /\(67\) 99888-7777/.test(texto), `dizia: "${texto}"`);
+  // O NÚMERO FICA À VISTA DE QUEM VAI CLICAR, e é isto que a conferência
+  // protege — não o texto do botão.
+  //
+  // Antes o número era escrito DENTRO do botão ("Conversar por (67)
+  // 99888-7777"), porque ele vivia num bloco solto, longe de qualquer número.
+  // Agora o botão mora na LINHA daquele número, com ele em negrito logo acima:
+  // repetir o número dentro do botão diria a mesma coisa duas vezes na mesma
+  // linha.
+  //
+  // O que não pode mudar é a garantia: "conversar pelo outro número" sem
+  // mostrar QUAL obrigaria a pessoa a confiar que o sistema escolheu certo — e
+  // o cadastro com dois números errados é justamente o que mais precisa de
+  // conferir antes de clicar. Por isso a leitura passa a ser da linha inteira.
+  const linha = page.locator('[data-telefone-do-cliente]').filter({ has: botoes.first() });
+  const texto = (await linha.first().innerText()).replace(/\s+/g, " ").trim();
+  ok("e o número está à vista, na mesma linha do botão",
+     /\(67\) 99888-7777/.test(texto), `a linha dizia: "${texto}"`);
 
   // A CONFERÊNCIA QUE IMPORTA: o número vai para o clique na forma canônica,
   // com o 55 — e não como está escrito no cadastro. Gravar "67998887777" faria
@@ -199,7 +223,7 @@ console.log("\n5. O cliente com dois números pode ser chamado pelo outro");
 
 console.log("\n6. E clicar abre mesmo a conversa com o outro número");
 {
-  await page.locator("[data-outros-numeros] button").first().click();
+  await page.locator("[data-conversar-por]").first().click();
   await page.waitForTimeout(2000);
 
   // O contato tem de ter sido criado com o número canônico, e ligado à MESMA
@@ -245,7 +269,7 @@ console.log("\n7. Quem tem um número só não vê botão nenhum");
   ok("a ficha abriu do mesmo jeito", /ANDREIA CRISTINA MARTINS/i.test(texto),
      texto.slice(0, 120));
   ok("e agora não oferece conversar por outro número",
-     await page.locator("[data-outros-numeros] button").count() === 0);
+     await page.locator("[data-conversar-por]").count() === 0);
   UM_NUMERO_SO = false;
 }
 
@@ -272,7 +296,7 @@ console.log("\n8. E o próprio número da conversa nunca vira 'o outro'");
   await abrir("Deus");
   await abrirFicha();
   ok("os dois campos com o mesmo número não geram botão",
-     await page.locator("[data-outros-numeros] button").count() === 0,
+     await page.locator("[data-conversar-por]").count() === 0,
      "ofereceu abrir a conversa em que a pessoa já está");
 }
 
