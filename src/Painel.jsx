@@ -2206,6 +2206,57 @@ export default function Painel({ sessao }) {
   const [rapidaForm, setRapidaForm] = useState(null); // { id?, titulo, texto } sendo criada/editada
   const [tags, setTags] = useState([]); // definições das tags (id, nome, cor)
   const [tagsPorConversa, setTagsPorConversa] = useState({}); // { conversaId: [tagId,...] }
+
+  // ------------------------------------------------------------
+  //  O QUE NÃO CARREGOU PRECISA DIZER QUE NÃO CARREGOU
+  //
+  //  Em 04/09 as etiquetas sumiram de todas as conversas do escritório. E, com
+  //  elas, as notas internas — que ninguém notou, porque a tela também não
+  //  disse nada. A causa era uma permissão no banco, e a leitura de
+  //  `conversa_tags` voltava com erro.
+  //
+  //  O código fazia isto:
+  //
+  //      if (error) return;                     // etiquetas
+  //      if (!nErr) notas = ...;                // notas
+  //
+  //  Ou seja: o erro era LIDO e jogado fora. A tela ficava exatamente igual a
+  //  uma conversa sem etiqueta nenhuma — e "não consegui ler" e "não existe"
+  //  viravam a mesma imagem. O diagnóstico custou três rodadas de conversa e
+  //  uma varredura no banco para descobrir o que a própria tela sabia desde o
+  //  primeiro segundo.
+  //
+  //  A REGRA QUE FICA: ausência por falha nunca pode ser desenhada igual a
+  //  ausência de verdade. É a mesma decisão que o miolo da conversa já tomou
+  //  (carregando, falhou e vazia são três telas diferentes, e não uma só);
+  //  aqui ela vale para o que carrega POR FORA da conversa.
+  //
+  //  Uma faixa só, no alto, somando o que falhou. Não é um alerta por leitura:
+  //  três avisos empilhados numa tela de atendimento viram ruído, e ruído se
+  //  aprende a ignorar. Ela fica até a leitura dar certo — e some sozinha
+  //  quando der.
+  // ------------------------------------------------------------
+  const [falhasDeLeitura, setFalhasDeLeitura] = useState({}); // { chave: {oQue, codigo} }
+
+  const anotarFalhaDeLeitura = useCallback((chave, oQue, erro) => {
+    // O detalhe cru vai para o console SEMPRE. Quem atende não abre o console,
+    // mas quem for consertar precisa dele — e sem isto a única pista era a
+    // ausência na tela, que não aponta para lugar nenhum.
+    console.error(`[zorvin] falha ao carregar ${oQue}`, erro);
+    setFalhasDeLeitura((antes) => ({
+      ...antes,
+      [chave]: { oQue, codigo: (erro && erro.code) || "" },
+    }));
+  }, []);
+
+  const limparFalhaDeLeitura = useCallback((chave) => {
+    setFalhasDeLeitura((antes) => {
+      if (!(chave in antes)) return antes;   // nada mudou: não redesenha
+      const novo = { ...antes };
+      delete novo[chave];
+      return novo;
+    });
+  }, []);
   const [filtro, setFiltro] = useState("tudo"); // aba/filtro da lista: 'tudo' | 'naolidas' | 'favoritas' | 'tag:<id>' | 'frente:<FRENTE>'
   const [tagForm, setTagForm] = useState(null); // { id?, nome, cor } sendo criada/editada
   const [tagMenuAberto, setTagMenuAberto] = useState(false); // menu de aplicar tags na conversa aberta
@@ -3019,9 +3070,10 @@ export default function Painel({ sessao }) {
         .from("mensagens_rapidas")
         .select("*")
         .order("titulo", { ascending: true });
-      if (!error) setRapidas(data || []);
-    } catch (_) { /* tabela ainda não criada: fica sem rápidas */ }
-  }, []);
+      if (error) anotarFalhaDeLeitura("rapidas", "as respostas rápidas", error);
+      else { setRapidas(data || []); limparFalhaDeLeitura("rapidas"); }
+    } catch (e) { anotarFalhaDeLeitura("rapidas", "as respostas rápidas", e); }
+  }, [anotarFalhaDeLeitura, limparFalhaDeLeitura]);
 
   useEffect(() => { carregarRapidas(); }, [carregarRapidas]);
 
@@ -3029,9 +3081,10 @@ export default function Painel({ sessao }) {
   const carregarTags = useCallback(async () => {
     try {
       const { data, error } = await supabase.from("tags").select("*").order("nome", { ascending: true });
-      if (!error) setTags(data || []);
-    } catch (_) { /* tabela ainda não criada */ }
-  }, []);
+      if (error) anotarFalhaDeLeitura("etiquetas", "as etiquetas", error);
+      else { setTags(data || []); limparFalhaDeLeitura("etiquetas"); }
+    } catch (e) { anotarFalhaDeLeitura("etiquetas", "as etiquetas", e); }
+  }, [anotarFalhaDeLeitura, limparFalhaDeLeitura]);
 
   // AS ETIQUETAS DAS CONVERSAS QUE ESTÃO NA LISTA — e não a tabela inteira.
   //
@@ -3050,12 +3103,22 @@ export default function Painel({ sessao }) {
         const { data, error } = await supabase.from("conversa_tags")
           .select("conversa_id, tag_id")
           .in("conversa_id", ids.slice(i, i + 150));
-        if (error) return;
+        // ESTE ERA O `if (error) return;` QUE CUSTOU O DIA 04/09.
+        //
+        // Sair calado aqui apaga a etiqueta de TODA conversa da lista: `mapa`
+        // fica pela metade (ou vazio) e é ele que a tela desenha. A pessoa vê
+        // conversas sem etiqueta nenhuma e conclui que ninguém etiquetou.
+        //
+        // Agora a leitura para, mas ANUNCIA. E `tagsPorConversa` não é
+        // sobrescrito com o mapa incompleto: é melhor manter o que já estava
+        // desenhado do que trocá-lo por uma verdade pela metade.
+        if (error) { anotarFalhaDeLeitura("etiquetas-conversas", "as etiquetas das conversas", error); return; }
         (data || []).forEach((r) => { (mapa[r.conversa_id] = mapa[r.conversa_id] || []).push(r.tag_id); });
       }
       setTagsPorConversa(mapa);
-    } catch (_) { /* tabela ainda não criada */ }
-  }, []);
+      limparFalhaDeLeitura("etiquetas-conversas");
+    } catch (e) { anotarFalhaDeLeitura("etiquetas-conversas", "as etiquetas das conversas", e); }
+  }, [anotarFalhaDeLeitura, limparFalhaDeLeitura]);
 
   // ------------------------------------------------------------
   //  FILTRAR POR ETIQUETA É PERGUNTAR AO BANCO
@@ -4324,8 +4387,21 @@ export default function Painel({ sessao }) {
     let notas = [];
     try {
       const { data: ns, error: nErr } = await pedidoDasNotas;
-      if (!nErr) notas = (ns || []).map((n) => ({ ...n, id: "nota-" + n.id, origem: "nota" }));
-    } catch (_) { /* tabela ainda não criada: segue sem notas */ }
+      // A NOTA QUE NÃO CARREGA NÃO PODE PARECER NOTA QUE NÃO EXISTE.
+      //
+      // A nota interna é o combinado da equipe sobre aquele cliente — "não
+      // prometer prazo antes de conferir", "o irmão dele também é nosso". Uma
+      // conversa que perde as notas em silêncio é pior do que uma que avisa:
+      // quem atende segue confiante, sem o que foi combinado.
+      //
+      // Em 04/09 foi exatamente isso, e ninguém percebeu: as notas sumiram
+      // junto com as etiquetas e o relato só mencionou as etiquetas.
+      if (nErr) anotarFalhaDeLeitura("notas", "as notas internas", nErr);
+      else {
+        notas = (ns || []).map((n) => ({ ...n, id: "nota-" + n.id, origem: "nota" }));
+        limparFalhaDeLeitura("notas");
+      }
+    } catch (e) { anotarFalhaDeLeitura("notas", "as notas internas", e); }
     // ------------------------------------------------------------
     //  AS QUE NÃO SAÍRAM
     //
@@ -4340,7 +4416,13 @@ export default function Painel({ sessao }) {
     //  falha e a conversa abre sem elas — como abria antes.
     let naoSairam = [];
     try {
-      const { data: falhas } = await pedidoDaFila;
+      const { data: falhas, error: erroFila } = await pedidoDaFila;
+      // O ERRO DESTA LEITURA ERA DESCARTADO NA DESESTRUTURAÇÃO — ele nem
+      // chegava a ser lido. O que ela traz são as mensagens que NÃO SAÍRAM:
+      // some-las em silêncio faz a pessoa acreditar que tudo foi entregue, que
+      // é o oposto do que a bolha vermelha existe para dizer.
+      if (erroFila) anotarFalhaDeLeitura("fila", "as mensagens que não saíram", erroFila);
+      else limparFalhaDeLeitura("fila");
       // O QUE JÁ FOI DISPENSADO NÃO VOLTA. Se a gravação do 'descartada' no
       // banco não passou, a linha continua com `status = 'erro'` e viria de
       // novo a cada abertura da conversa — que é exatamente o "nada aconteceu"
@@ -11056,6 +11138,50 @@ export default function Painel({ sessao }) {
       {aviso && (
         <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "#333", color: "#fff", padding: "10px 18px", borderRadius: 8, fontSize: 14, boxShadow: "0 4px 12px rgba(0,0,0,.3)", zIndex: 120, maxWidth: "90%", textAlign: "center" }}>
           {aviso}
+        </div>
+      )}
+
+      {/* A FAIXA DO QUE NÃO CARREGOU.
+          Fica no ALTO e NÃO SOME sozinha, ao contrário do aviso acima — que
+          dura quatro segundos e serve para confirmar um gesto ("Tag salva!").
+          Aqui é outra coisa: a tela está mostrando MENOS do que existe, e isso
+          continua valendo enquanto durar. Um aviso que pisca e some deixaria a
+          pessoa trabalhando em cima de uma tela incompleta sem saber.
+          Uma faixa só, somando tudo o que falhou: três avisos empilhados numa
+          tela de atendimento viram ruído, e ruído se aprende a ignorar. */}
+      {Object.keys(falhasDeLeitura).length > 0 && (
+        <div data-falha-de-leitura
+             style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 130,
+                      background: "#8a5a00", color: "#fff", padding: "9px 14px",
+                      fontSize: 13.5, display: "flex", alignItems: "center",
+                      justifyContent: "center", gap: 12, flexWrap: "wrap",
+                      boxShadow: "0 2px 8px rgba(0,0,0,.25)" }}>
+          <span>
+            Não consegui carregar {Object.values(falhasDeLeitura).map((f) => f.oQue).join(", ")}.
+            {" "}O que está na tela pode estar incompleto.
+            {(() => {
+              // O CÓDIGO DO BANCO, quando há um. Ele é o que transforma "não
+              // carregou" em algo que se procura — foi por um `42501` que o
+              // caso de 04/09 se resolveu.
+              const codigos = [...new Set(Object.values(falhasDeLeitura)
+                .map((f) => f.codigo).filter(Boolean))];
+              return codigos.length ? ` Código do banco: ${codigos.join(", ")}.` : "";
+            })()}
+          </span>
+          <button data-tentar-leituras
+                  onClick={() => {
+                    carregarTags();
+                    carregarTagsConversas();
+                    carregarRapidas();
+                    // As notas e a fila são lidas ao abrir a conversa: reabrir
+                    // a que está aberta é o que as traz de volta.
+                    if (conversaId) carregarMensagens(conversaId);
+                  }}
+                  style={{ border: "1px solid rgba(255,255,255,.6)", background: "transparent",
+                           color: "#fff", borderRadius: 8, padding: "5px 14px",
+                           fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
+            Tentar de novo
+          </button>
         </div>
       )}
 
