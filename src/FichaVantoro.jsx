@@ -18,7 +18,7 @@ import { supabase } from "./supabase";
 // As regras de telefone são as MESMAS do painel, e por isso vêm do mesmo
 // lugar: decidir se o segundo número do cadastro é outra linha ou o mesmo
 // aparelho escrito diferente é a mesma pergunta que a busca já respondia.
-import { outrosNumeros, telefoneLegivel } from "./numeros.js";
+import { chaveDoNumero, outrosNumeros, telefoneLegivel } from "./numeros.js";
 // A chamada à ponte mora em `ponte.js`: duas telas precisam dela (esta e a de
 // atendentes), e duas cópias divergiriam na primeira mudança.
 import { chamarPonte, BRIDGE_URL, FALTA_PONTE } from "./ponte.js";
@@ -66,6 +66,10 @@ const SECOES = [
     titulo: "Identificação",
     aberta: true,
     campos: [
+      // OS TELEFONES. Num cadastro que já existe, isto vira a LISTA — com
+      // principal, dono do aparelho e o aviso de "está em N cadastros". Num
+      // pré-cadastro (que ainda não tem id) continua sendo o campo de sempre:
+      // não há onde pendurar uma lista de um cliente que não nasceu.
       { chave: "telefone2", rotulo: "Outro WhatsApp/telefone",
         dica: "se a pessoa trocou de número" },
       { chave: "cpf", rotulo: "CPF" },
@@ -153,6 +157,16 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   const [candidatos, setCandidatos] = useState([]);
   const [edicao, setEdicao] = useState({});
   const [salvando, setSalvando] = useState(false);
+  // A LISTA DE TELEFONES DO CADASTRO.
+  //
+  // Vem da ficha (`cliente.telefones`) e é trocada inteira a cada gesto: as
+  // rotas devolvem a lista já refeita pelo Vantoro, que é quem sabe as regras
+  // (quem é o principal, o que não pode sair). Remontá-la aqui a partir do que
+  // foi clicado daria duas versões da mesma verdade, e a da tela seria a
+  // errada no primeiro caso que eu não tivesse previsto.
+  const [telefones, setTelefones] = useState([]);
+  const [novoNumero, setNovoNumero] = useState("");
+  const [mexendoTel, setMexendoTel] = useState(false);
   // Cliente ou parte contrária. Nasce em "cliente" porque é o caso de quase
   // todo lead — e porque um pré-cadastro sem escolha nenhuma faria o Vantoro
   // voltar a deduzir pelo documento, que é o defeito que isto conserta.
@@ -296,6 +310,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       const achado = casa || (todos.length === 1 ? todos[0] : null);
 
       setCliente(achado);
+      setTelefones(listaDeTelefones(achado));
       setEdicao(achado ? { ...achado } : {});
       // Só ABRIR a ficha já conserta o nome da conversa. Sem isto, os contatos
       // que ficaram para trás só se acertariam quando alguém os editasse — e
@@ -439,6 +454,10 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   };
 
   function desenharCampo(c) {
+    // O CAMPO "OUTRO WHATSAPP" VIRA A LISTA num cadastro que já existe. Deixar
+    // os dois na tela mostraria o mesmo número em dois lugares, com regras
+    // diferentes — e a pessoa não teria como saber qual dos dois vale.
+    if (c.chave === "telefone2" && cliente) return desenharTelefones();
     const lista = c.opcoes ? (opcoes[c.opcoes] || []) : null;
     return (
       <div key={c.chave} style={{ marginBottom: 10 }}>
@@ -490,6 +509,227 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   // acabou de digitar o número do filho não precisa salvar antes de ligar para
   // ele — e o botão diz qual número vai abrir, então não há dúvida sobre o que
   // o clique faz.
+  // ------------------------------------------------------------
+  //  OS TRÊS GESTOS DOS TELEFONES
+  //
+  //  Todos passam pela ponte, e todos recebem A LISTA REFEITA de volta. Quem
+  //  decide o que aconteceu é o Vantoro: ele é que sabe que o último número
+  //  não sai, que só há um principal, e que trocar o WhatsApp não apaga o
+  //  número velho. A tela desenha a resposta em vez de adivinhá-la.
+  //
+  //  O ERRO APARECE EM LETRAS. Um gesto que falha em silêncio faz a pessoa
+  //  clicar de novo, e de novo — e concluir que o sistema não grava telefone.
+  // ------------------------------------------------------------
+  async function mexerNosTelefones(caminho, opcoes, aviso) {
+    if (!cliente || mexendoTel) return;
+    setMexendoTel(true);
+    try {
+      const r = await chamarPonte(`/vantoro/cliente/${cliente.id}/telefones${caminho}`, opcoes);
+      if (r && Array.isArray(r.telefones)) setTelefones(r.telefones);
+      if (r && r.aviso) onAviso && onAviso(r.aviso);
+      else if (aviso) onAviso && onAviso(aviso);
+    } catch (e) {
+      onAviso && onAviso(e.message || "Não consegui mexer nos telefones.");
+    } finally {
+      setMexendoTel(false);
+    }
+  }
+
+  async function acrescentarTelefone() {
+    const numero = (novoNumero || "").trim();
+    if (!numero) return;
+    await mexerNosTelefones("", { method: "POST", body: JSON.stringify({ numero }) },
+                            "Número acrescentado.");
+    setNovoNumero("");
+  }
+
+  const editarTelefone = (t, campos, aviso) =>
+    mexerNosTelefones(`/${t.id}`, { method: "PATCH", body: JSON.stringify(campos) }, aviso);
+
+  function tirarTelefone(t) {
+    // CONFIRMAR ANTES DE TIRAR. O número é o que liga a conversa ao cadastro:
+    // tirar o errado não quebra nada na hora, e a falta só aparece dias depois,
+    // quando a pessoa escrever por ele e a ficha não abrir.
+    if (!window.confirm(`Tirar ${telefoneLegivel(t.digitos || t.numero)} deste cadastro?`)) return;
+    return mexerNosTelefones(`/${t.id}`, { method: "DELETE" }, "Número removido.");
+  }
+
+  // ------------------------------------------------------------
+  //  A LISTA DE TELEFONES NA FICHA
+  //
+  //  Os três pedidos de 04/09 aparecem aqui, e é a única tela em que eles são
+  //  visíveis para quem atende:
+  //
+  //    1. "está cadastrado em dois ou mais CPF, e poder escolher de quem é o
+  //        telefone" -> o aviso âmbar e o botão "não é dela".
+  //    2. "o principal e pelo menos mais dois" -> a lista cresce.
+  //    3. "alteração do número de WhatsApp pelo Zorvin" -> "usar este".
+  //
+  //  SÓ EM CADASTRO QUE JÁ EXISTE. Num pré-cadastro não há id para pendurar
+  //  telefone nenhum, e o campo de sempre continua servindo.
+  // ------------------------------------------------------------
+  // ------------------------------------------------------------
+  //  A LISTA, MESMO CONTRA UM VANTORO ANTIGO
+  //
+  //  `cliente.telefones` só existe depois do #228. O painel e o Vantoro são
+  //  publicados por caminhos diferentes, e o painel pode subir primeiro — numa
+  //  publicação atrasada, numa reversão, num dia em que a Render falhe num e
+  //  não no outro.
+  //
+  //  Sem esta queda, nesse intervalo a ficha ficaria SEM TELEFONE NENHUM: os
+  //  campos antigos deixaram de ser desenhados (a lista tomou o lugar deles) e
+  //  a lista viria vazia. O cliente pareceria não ter número.
+  //
+  //  Quem cai aqui não tem `id` de linha, e por isso não ganha os botões que
+  //  precisam de um: trocar o principal, dizer de quem é o aparelho, tirar.
+  //  Mostrar botão que vai falhar é pior do que não mostrar — a pessoa clica,
+  //  nada acontece, e ela conclui que o sistema não grava telefone.
+  //
+  //  Foi a suíte que apontou isto: a prova da ficha responde com um cadastro
+  //  sem `telefones`, e o botão de conversar pelo outro número sumiu.
+  function listaDeTelefones(c) {
+    if (!c) return [];
+    if (Array.isArray(c.telefones) && c.telefones.length) return c.telefones;
+    const vistos = new Set();
+    const saida = [];
+    for (const [bruto, principal] of [[c.telefone, true], [c.telefone2, false]]) {
+      const d = chaveDoNumero(bruto);
+      if (!d || vistos.has(d)) continue;
+      vistos.add(d);
+      saida.push({ id: null, numero: bruto, digitos: d, principal,
+                   proprio: true, dono: "", observacao: "", usado_por: [] });
+    }
+    return saida;
+  }
+
+  function desenharTelefones() {
+    if (!cliente) return null;
+    const AMBAR = "#d4a017";
+    return (
+      <div data-telefones style={{ marginBottom: 10 }}>
+        <label style={rotulo}>Telefones</label>
+        {telefones.map((t) => (
+          <div key={t.id} // `data-telefone-do-cliente`, e não `data-telefone`: este último já existe no
+               // painel, no seletor de telefones do escritório na barra lateral. A
+               // colisão fez uma prova contar 6 linhas onde havia 3 — e o nome curto
+               // ia continuar mentindo para quem escrevesse a próxima.
+               data-telefone-do-cliente={t.digitos || t.numero}
+               style={{ border: `1px solid ${C.divider}`, borderRadius: 8,
+                        padding: "8px 10px", marginBottom: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+              <b style={{ fontSize: 13.5 }}>{telefoneLegivel(t.digitos || t.numero)}</b>
+              {t.principal && (
+                <span data-principal style={{ fontSize: 10.5, fontWeight: 700, color: C.green,
+                               border: `1px solid ${C.green}`, borderRadius: 5, padding: "1px 5px" }}>
+                  WhatsApp
+                </span>
+              )}
+            </div>
+
+            {/* DE QUEM É O APARELHO. É o pedido 1: a mãe que atende no telefone
+                do filho não é dona dele, e sem isto os dois cadastros dizem ser
+                donos do mesmo número. */}
+            {!t.proprio && (
+              <div data-nao-e-dela style={{ fontSize: 12, color: C.textSecondary, marginTop: 4 }}>
+                O aparelho não é desta pessoa{t.dono ? ` — ${t.dono}` : ""}.
+              </div>
+            )}
+
+            {/* ESTÁ EM OUTROS CADASTROS. O aviso que faltava: a ficha aberta
+                não dizia nada, e quem atendia não tinha como saber que o mesmo
+                número serve outra pessoa. */}
+            {(t.usado_por || []).length > 0 && (
+              <div data-usado-por={(t.usado_por || []).length}
+                   style={{ fontSize: 12, color: AMBAR, marginTop: 4, lineHeight: 1.45 }}>
+                Também cadastrado em {(t.usado_por || []).length} outro(s):{" "}
+                {(t.usado_por || []).map((o) => o.nome + (o.cpf ? ` (${o.cpf})` : "")).join(" · ")}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 10, marginTop: 6, flexWrap: "wrap" }}>
+              {!t.principal && t.id != null && (
+                <button data-usar-este onClick={() => editarTelefone(t, { principal: true },
+                          "Este passou a ser o WhatsApp do cadastro. O número anterior continua na lista.")}
+                        disabled={mexendoTel}
+                        style={{ border: "none", background: "transparent", color: C.verdeTexto,
+                                 cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0 }}>
+                  usar este como WhatsApp
+                </button>
+              )}
+              {t.id != null && (
+              <button data-alternar-dono
+                      onClick={() => {
+                        if (t.proprio) {
+                          const dono = window.prompt(
+                            "De quem é este aparelho?\n\nEx.: do filho, JOÃO DA SILVA", t.dono || "");
+                          if (dono === null) return;
+                          editarTelefone(t, { proprio: false, dono }, "Anotado de quem é o aparelho.");
+                        } else {
+                          editarTelefone(t, { proprio: true }, "Marcado como aparelho da própria pessoa.");
+                        }
+                      }}
+                      disabled={mexendoTel}
+                      style={{ border: "none", background: "transparent", color: C.textSecondary,
+                               cursor: "pointer", fontSize: 12, padding: 0 }}>
+                {t.proprio ? "o aparelho não é dela" : "é o aparelho dela"}
+              </button>
+              )}
+              {/* CONVERSAR POR ESTE NÚMERO.
+                  Estava num bloco à parte, desenhado dentro do campo "Outro
+                  WhatsApp" — que a lista substituiu. A suíte pegou: o botão
+                  simplesmente sumiu para todo cliente que já existe.
+
+                  Trazê-lo para DENTRO da linha é melhor do que devolvê-lo ao
+                  lugar antigo: o bloco lia só `telefone` e `telefone2`, então o
+                  terceiro número em diante nunca teria botão nenhum. Aqui todo
+                  número da lista tem o seu.
+
+                  SAI O DA CONVERSA ABERTA: um botão que oferece abrir a
+                  conversa em que a pessoa já está não faz nada e confunde. */}
+              {aoConversarPor && chaveDoNumero(t.digitos || t.numero) !== chaveDoNumero(numero) && (
+                <button data-conversar-por={`55${t.digitos}`}
+                        onClick={() => aoConversarPor({
+                          numero: `55${t.digitos}`,
+                          // O nome do CADASTRO, e não o do contato do WhatsApp: é
+                          // o mesmo cliente, e é assim que a conversa nova nasce
+                          // com o nome certo em vez de um número seco no topo.
+                          nome: (edicao.nome || cliente?.nome || nomeContato || "").trim(),
+                          clienteId: cliente?.id || null,
+                        })}
+                        style={{ border: "none", background: "transparent", color: C.green,
+                                 cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0 }}>
+                  conversar por este
+                </button>
+              )}
+              {telefones.length > 1 && t.id != null && (
+                <button data-tirar-telefone onClick={() => tirarTelefone(t)} disabled={mexendoTel}
+                        style={{ border: "none", background: "transparent", color: C.textSecondary,
+                                 cursor: "pointer", fontSize: 12, padding: 0 }}>
+                  tirar
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+
+        {telefones.some((t) => t.id != null) || !telefones.length ? (
+        <div style={{ display: "flex", gap: 6 }}>
+          <input data-novo-telefone style={{ ...campo, flex: 1 }} value={novoNumero}
+                 inputMode="numeric" placeholder="Acrescentar outro número"
+                 onChange={(e) => setNovoNumero(e.target.value)}
+                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); acrescentarTelefone(); } }} />
+          <button data-acrescentar-telefone onClick={acrescentarTelefone}
+                  disabled={mexendoTel || !novoNumero.trim()}
+                  style={{ ...botao, padding: "7px 12px", fontSize: 12.5,
+                           opacity: (mexendoTel || !novoNumero.trim()) ? 0.5 : 1 }}>
+            + Acrescentar
+          </button>
+        </div>
+        ) : null}
+      </div>
+    );
+  }
+
   function desenharOutrosNumeros() {
     if (!aoConversarPor) return null;
     const fora = outrosNumeros(edicao, numero);
