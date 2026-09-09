@@ -164,6 +164,22 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   // (quem é o principal, o que não pode sair). Remontá-la aqui a partir do que
   // foi clicado daria duas versões da mesma verdade, e a da tela seria a
   // errada no primeiro caso que eu não tivesse previsto.
+  // ------------------------------------------------------------
+  //  DE QUEM É ESTE CPF — perguntado ENQUANTO se digita
+  //
+  //  Relato do escritório, em 08/09: "está sendo permitido cadastrar o mesmo
+  //  cliente com o mesmo CPF... o ideal é que ao digitar o CPF o sistema avise
+  //  que já existe o cadastro e se o usuário quer ver a ficha".
+  //
+  //  O Vantoro passou a RECUSAR (vantoro#232). Mas recusar no fim é tarde: a
+  //  pessoa preencheu nome, nascimento, endereço e profissão, e só então
+  //  descobre que o cadastro já existia — o trabalho todo refeito à toa, e o
+  //  cadastro certo continuando sem o que ela digitou.
+  //
+  //  `null` quer dizer "ainda não sei" e desenha nada. É diferente de "não
+  //  achei", e a diferença importa: um aviso que pisca a cada tecla ensina a
+  //  ignorar avisos.
+  const [cpfDeOutro, setCpfDeOutro] = useState(null);
   const [telefones, setTelefones] = useState([]);
   const [novoNumero, setNovoNumero] = useState("");
   const [mexendoTel, setMexendoTel] = useState(false);
@@ -275,6 +291,68 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   }
 
   /** A pessoa escolheu qual dos cadastros é o desta conversa. */
+  // A PERGUNTA SÓ SAI QUANDO A PESSOA PARA DE DIGITAR.
+  //
+  // 400ms é a pausa que separa "ainda escrevendo" de "terminei". Perguntar a
+  // cada tecla seriam onze idas à rede por CPF, num serviço que hiberna — e as
+  // respostas chegariam fora de ordem, fazendo o aviso aparecer e sumir.
+  //
+  // E O PEDIDO ANTERIOR É ABANDONADO: sem isso, a resposta de "3985066183"
+  // (dez dígitos, ainda faltando um) poderia chegar DEPOIS da de "39850661836"
+  // e apagar um aviso verdadeiro.
+  useEffect(() => {
+    const digitado = String(edicao.cpf || "").replace(/\D/g, "");
+    if (digitado.length !== 11 && digitado.length !== 14) { setCpfDeOutro(null); return; }
+    // O CPF QUE JÁ É DESTE CADASTRO NÃO É AVISO. Abrir a ficha de alguém e ver
+    // "este CPF já existe" apontando para ele mesmo seria alarme falso na
+    // ficha inteira, o tempo todo.
+    if (cliente && String(cliente.cpf || "").replace(/\D/g, "") === digitado) {
+      setCpfDeOutro(null); return;
+    }
+    let valeu = true;
+    const relogio = setTimeout(async () => {
+      try {
+        const r = await chamarPonte(`/vantoro/cpf-existe?cpf=${encodeURIComponent(digitado)}`);
+        if (!valeu) return;
+        const achado = r && r.encontrado ? r.cliente : null;
+        // O PRÓPRIO CADASTRO NÃO CONTA, de novo aqui: entre a digitação e a
+        // resposta a ficha pode ter sido trocada.
+        setCpfDeOutro(achado && (!cliente || String(achado.id) !== String(cliente.id))
+                      ? achado : null);
+      } catch (_) {
+        // A ponte hiberna. Sem resposta, nenhum aviso — e a gravação continua
+        // recusando o duplicado do lado do Vantoro, que é a trava de verdade.
+        if (valeu) setCpfDeOutro(null);
+      }
+    }, 400);
+    return () => { valeu = false; clearTimeout(relogio); };
+  }, [edicao.cpf, cliente]);
+
+  // ABRIR O CADASTRO QUE JÁ TEM ESTE CPF.
+  //
+  // `cpf-existe` responde POUCO de propósito — id, nome e as contagens —,
+  // porque é chamado enquanto a pessoa digita. Passar esse resumo direto para
+  // `escolher` desenharia uma ficha pela metade: sem processos, sem ordem de
+  // serviço, sem endereço, com os campos vazios parecendo cadastro incompleto.
+  //
+  // Então a ficha INTEIRA é buscada aqui, e só então trocamos.
+  async function abrirCadastroDeOutro(resumo) {
+    if (!resumo) return;
+    try {
+      const r = await chamarPonte(`/vantoro/cliente/${resumo.id}`);
+      const inteiro = (r && r.cliente) || null;
+      if (!inteiro) throw new Error("não veio a ficha");
+      setCpfDeOutro(null);
+      await escolher(inteiro);
+      onAviso && onAviso(`Abri o cadastro de ${inteiro.nome}.`);
+    } catch (e) {
+      // Sem a ficha inteira NÃO SE TROCA NADA. Trocar com o resumo deixaria a
+      // pessoa olhando campos vazios e concluindo que o cadastro está incompleto
+      // — e ela preencheria de novo o que já existe.
+      onAviso && onAviso(e.message || "Não consegui abrir o outro cadastro.");
+    }
+  }
+
   async function escolher(c) {
     setCliente(c);
     setEdicao({ ...c });
@@ -484,6 +562,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
         {c.cep && buscandoCep && (
           <div style={{ fontSize: 11, color: C.textSecondary, marginTop: 3 }}>Buscando endereço…</div>
         )}
+        {c.chave === "cpf" && desenharCpfDeOutro()}
         {c.chave === "telefone2" && desenharOutrosNumeros()}
       </div>
     );
@@ -600,6 +679,59 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
                    proprio: true, dono: "", observacao: "", usado_por: [] });
     }
     return saida;
+  }
+
+  // ------------------------------------------------------------
+  //  "ESTE CPF JÁ É DE OUTRO CADASTRO" — e o botão de ir até ele
+  //
+  //  O pedido tinha duas metades, e a segunda é a que evita o duplicado: "e se
+  //  o usuário quer ver a ficha do cadastro". Avisar sem oferecer o caminho faz
+  //  a pessoa procurar quem é na outra tela — e o mais provável é que ela
+  //  desista e crie o duplicado por outro caminho.
+  //
+  //  O QUE FAZ RECONHECER O CADASTRO vai junto: quem tem 17 processos é cliente
+  //  antigo, quem tem zero pode ser um pré-cadastro esquecido. É o que decide se
+  //  vale abrir a ficha ou se foi engano de digitação.
+  // ------------------------------------------------------------
+  function desenharCpfDeOutro() {
+    if (!cpfDeOutro) return null;
+    // AS CORES SAEM DA PALETA (`C`), e nao de um `modo` claro/escuro.
+    //
+    // Eu escrevi `modo === "escuro"` aqui, copiando de uma parte do Painel — e
+    // essa variavel NAO EXISTE neste arquivo. O resultado nao era um aviso
+    // feio: era `modo is not defined`, e a FICHA INTEIRA deixava de desenhar.
+    // A prova pegou pelo `pageerror`; sem ela, isso chegaria ao escritorio
+    // como "a ficha do cliente parou de abrir".
+    //
+    // Ambar na borda e no texto funciona nos dois temas, e o fundo e o do
+    // proprio painel — que ja acompanha o tema.
+    const AMBAR = "#d4a017";
+    const pedacos = [];
+    if (cpfDeOutro.processos) pedacos.push(`${cpfDeOutro.processos} ação(ões)`);
+    if (cpfDeOutro.documentos) pedacos.push(`${cpfDeOutro.documentos} documento(s)`);
+    if (cpfDeOutro.telefone) pedacos.push(telefoneLegivel(cpfDeOutro.telefone));
+    return (
+      <div data-cpf-de-outro={cpfDeOutro.id}
+           style={{ marginTop: 6, borderRadius: 8, padding: "8px 10px",
+                    border: `1px solid ${AMBAR}`,
+                    background: C.panel, color: C.textPrimary,
+                    fontSize: 12.5, lineHeight: 1.5 }}>
+        <div>
+          Este CPF já é do cadastro de <b>{cpfDeOutro.nome}</b>
+          {pedacos.length ? ` — ${pedacos.join(" · ")}` : ""}.
+        </div>
+        <div style={{ marginTop: 3 }}>
+          Dois cadastros da mesma pessoa partem o histórico em dois.
+        </div>
+        <button data-ver-cadastro={cpfDeOutro.id}
+                onClick={() => abrirCadastroDeOutro(cpfDeOutro)}
+                style={{ marginTop: 6, border: `1px solid ${AMBAR}`, borderRadius: 7,
+                         background: "transparent", color: AMBAR, cursor: "pointer",
+                         fontSize: 12.5, fontWeight: 700, padding: "5px 10px" }}>
+          Abrir o cadastro de {cpfDeOutro.nome}
+        </button>
+      </div>
+    );
   }
 
   function desenharTelefones() {
@@ -962,7 +1094,11 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
               const preenchidos = secao.campos.filter((c) => (edicao[c.chave] || "").trim()).length;
               return (
                 <div key={secao.id} style={{ borderTop: `1px solid ${C.divider}` }}>
-                  <button style={cabecalhoSecao} onClick={() => alternar(secao.id)}>
+                  {/* O `id` da seção sai no HTML para a prova poder abrir uma
+                      seção fechada e conferir o que está dentro. Sem isso, a
+                      única forma seria procurar pelo TÍTULO — que muda. */}
+                  <button data-secao={secao.id} style={cabecalhoSecao}
+                          onClick={() => alternar(secao.id)}>
                     {aberta ? <ChevronDown size={15} color={C.textSecondary} />
                             : <ChevronRight size={15} color={C.textSecondary} />}
                     <span style={{ flex: 1 }}>{secao.titulo}</span>
