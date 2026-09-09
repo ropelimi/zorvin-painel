@@ -1987,6 +1987,25 @@ export const supabase = {
     // TROCAR A PR\u00d3PRIA FOTO \u2014 s\u00f3 a pr\u00f3pria, s\u00f3 essa coluna. No banco \u00e9 uma
     // fun\u00e7\u00e3o `security definer` com `where id = auth.uid()`, e \u00e9 isso que a
     // bancada imita: `p_url` chega, `auth.uid()` n\u00e3o.
+    // OS SINAIS DE QUE ALGO PAROU.
+    //
+    // A de verdade conta linhas em `fila_envio` e `eventos_recebidos` com os
+    // prazos escritos no SQL. Aqui o teste DITA o resultado, e é de propósito:
+    // o que esta bancada precisa exercitar é o que a TELA faz com cada sinal —
+    // quais frases aparecem, para quem, e o silêncio quando não há nada. Imitar
+    // os prazos aqui seria reescrever o SQL em JavaScript e depois testar a
+    // cópia, que é o jeito de aprovar as duas com o mesmo engano.
+    if (nome === "zorvin_saude") {
+      if (globalThis.__SEM_SAUDE) {
+        return { data: null, error: { code: "PGRST202", message: "Could not find the function public.zorvin_saude" } };
+      }
+      if (globalThis.__SAUDE_RECUSA) {
+        return { data: null, error: { code: "42501", message: "permission denied for function zorvin_saude" } };
+      }
+      await espera(40);
+      return { data: globalThis.__SAUDE || [], error: null };
+    }
+
     if (nome === "salvar_minha_foto") {
       if (globalThis.__SEM_EQUIPE) {
         return { data: null, error: { code: "PGRST202", message: "Could not find the function public.salvar_minha_foto" } };
