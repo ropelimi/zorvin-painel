@@ -2868,6 +2868,38 @@ export default function Painel({ sessao }) {
         vistos.add(String(c.id));
         juntas.push(c);
       }
+
+      // ------------------------------------------------------------
+      //  A CONVERSA ABERTA ATRAVESSA A RECARGA
+      //
+      //  RELATO DE 10/09: "quando estamos dentro de uma conversa, ela sai
+      //  sozinha, como se tivesse sido apertada a tecla ESC".
+      //
+      //  Ninguém apertava nada. A tela da direita não guarda a conversa
+      //  aberta — ela a PROCURA aqui nesta lista (`conversas.find`). Some
+      //  daqui, some de lá: o `conversaId` continua o mesmo e a direita volta
+      //  ao "Selecione uma conversa" como se a pessoa tivesse saído.
+      //
+      //  E a primeira página SUBSTITUI a lista (é o `base = []` acima, e tem
+      //  de ser: sem isso a lista só cresceria). Quem não está nela — a
+      //  conversa antiga achada na busca, a aberta pela Esteira do Vantoro, a
+      //  trazida por rolagem — ia embora junto.
+      //
+      //  O gatilho é o movimento do escritório: chega mensagem de uma conversa
+      //  que a lista ainda não tem (um lead novo, alguém calado há meses) e a
+      //  primeira página é relida. Num telefone de duzentas conversas isso
+      //  nunca aparece; no telefone com dois anos de histórico é o dia inteiro,
+      //  e sempre no meio de uma resposta.
+      //
+      //  DO MESMO TELEFONE, e a conferência não é enfeite: `trocarAdvogado`
+      //  limpa o `conversaId` e manda recarregar, e entre uma coisa e outra o
+      //  `ref` ainda aponta para a conversa do telefone ANTERIOR. Sem esta
+      //  linha, ela seria transplantada para a lista do telefone novo.
+      const guardada = aberta && !vistos.has(String(aberta))
+        ? antes.find((c) => String(c.id) === String(aberta) && c.advogado_id === advId)
+        : null;
+      if (guardada) juntas.push(guardada);
+
       return juntas.sort(porFixada);
     });
     // A lista e o dono dela mudam JUNTOS — é o que garante que ninguém leia
