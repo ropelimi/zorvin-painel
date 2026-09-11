@@ -127,6 +127,19 @@ let TEM_CONTAGEM_NO_BANCO = true;
 //
 // Guardamos o id da linha, e não a mensagem: a linha continua no banco, com o
 // motivo do erro, para quem for investigar depois. O que sai é o alarme.
+// QUANTO O CANAL PODE FICAR FORA ANTES DE A FAIXA ACENDER.
+//
+// Dez segundos. Uma reconexão comum passa por "fora" e volta em poucos
+// segundos; acender ali faria a faixa piscar no meio do expediente por nada, e
+// faixa que pisca à toa se aprende a ignorar — e aí a queda de verdade passa
+// batida junto.
+//
+// A bancada encurta por `__CARENCIA_TEMPO_REAL`, e é só para isso que a
+// variável existe: uma prova que esperasse os dez segundos de produção a cada
+// cenário levaria um minuto para conferir o que se confere em três segundos.
+const CARENCIA_TEMPO_REAL_MS =
+  (typeof globalThis !== "undefined" && globalThis.__CARENCIA_TEMPO_REAL) || 10000;
+
 const CHAVE_DISPENSADOS = "zorvin_avisos_dispensados";
 function lerDispensados() {
   try {
@@ -264,7 +277,7 @@ function haQuantoTempo(desde) {
  *  quebrada, não como recado. */
 const conforme = (n, uma, muitas) => (n === 1 ? uma : muitas);
 
-function frasesDaSaude(saude, ehAdmin) {
+function frasesDaSaude(saude, ehAdmin, tempoRealCaiu = false) {
   const por = {};
   for (const l of saude || []) por[l.sinal] = l;
   const frases = [];
@@ -277,6 +290,21 @@ function frasesDaSaude(saude, ehAdmin) {
     frases.push(`${n} ${conforme(n, "mensagem", "mensagens")} de cliente`
       + ` ${conforme(n, "não entrou", "não entraram")} no Zorvin`
       + ` (${haQuantoTempo(por.eventos_desistidos.desde)}). Uma conversa calada pode não estar calada.`);
+  }
+
+  // O TEMPO REAL FORA, LOGO DEPOIS. Vem antes das paradas da fila porque muda
+  // como se lê TUDO o que está na tela: se as mensagens novas não estão
+  // chegando sozinhas, a conversa calada pode não estar calada e a lista pode
+  // estar desatualizada. Fica atrás só da mensagem que não entrou, que é
+  // perda, e não atraso.
+  //
+  // A frase diz que estamos reconectando porque é verdade — o canal volta
+  // sozinho — e porque não há gesto melhor do que esperar. Pedir para
+  // recarregar seria empurrar trabalho para quem atende por algo que o painel
+  // resolve, e resolve relendo o que passou.
+  if (tempoRealCaiu) {
+    frases.push("As mensagens novas não estão chegando sozinhas — a conexão ao vivo caiu."
+      + " Estamos reconectando; quando voltar, a tela se atualiza.");
   }
 
   // A LINHA CAÍDA DIZ O NOME. Sem ele, quem atende não sabe se é a linha que
@@ -2348,6 +2376,37 @@ export default function Painel({ sessao }) {
   //  cliente), e não é por causa de um número que isso vai mudar.
   // ============================================================
   const [saude, setSaude] = useState([]);
+
+  // ============================================================
+  //  O TEMPO REAL CAIU — e a tela ficava calada exatamente como se
+  //  ninguém tivesse escrito.
+  //
+  //  O canal era assinado com `.subscribe()` SEM retorno de chamada: o painel
+  //  nunca ficava sabendo se ele estava de pé. Caindo a conexão — o wi-fi do
+  //  escritório, a tampa do notebook fechada, o Supabase piscando —, as
+  //  mensagens novas simplesmente paravam de aparecer. E a tela de uma
+  //  conversa sem mensagem nova é IDÊNTICA à de uma conversa em que o cliente
+  //  não respondeu. A pessoa fica olhando, esperando, e conclui a coisa errada.
+  //
+  //  E TEM A METADE QUE NÃO É AVISO. O `postgres_changes` não repete o que
+  //  passou: o que o banco publicou enquanto o canal estava fora não chega
+  //  nunca, nem depois que ele volta. Avisar sem reler deixaria a pessoa
+  //  informada e a tela errada — por isso a volta do canal RELÊ.
+  // ============================================================
+  const [tempoRealCaiu, setTempoRealCaiu] = useState(false);
+
+  // O QUE RELER, GUARDADO NUM ESPELHO E NÃO NAS DEPENDÊNCIAS DO CANAL.
+  //
+  // `carregarMensagens` muda de identidade a cada conversa aberta. Pô-la nas
+  // dependências do efeito do canal derrubaria e reassinaria o canal a cada
+  // conversa — que é exatamente o defeito descrito lá embaixo, o das trinta
+  // janelas de silêncio numa manhã. O espelho deixa o efeito rodar uma vez só
+  // e ainda assim chamar a versão de agora.
+  const reporRef = useRef(() => {});
+  // "O canal JÁ esteve fora nesta montagem?" — é o que separa a primeira
+  // assinatura (a tela acabou de carregar, não há o que repor) de uma volta
+  // depois de uma queda (há uma fresta de eventos que não chegou a ninguém).
+  const caiuRef = useRef(false);
 
   const limparFalhaDeLeitura = useCallback((chave) => {
     setFalhasDeLeitura((antes) => {
@@ -4829,6 +4888,24 @@ export default function Painel({ sessao }) {
     // largura, e o que cabia em uma linha passa a caber em duas.
   }, [rascunho, conversaId, modoNota, estreito]);
 
+  // O ESPELHO DA REPOSIÇÃO, refeito a cada desenho. O que ele guarda é a
+  // versão de AGORA das leituras — inclusive `carregarMensagens`, que muda de
+  // identidade a cada conversa aberta e por isso não pode entrar nas
+  // dependências do canal.
+  //
+  // Relê a lista, os selos, as etiquetas e a conversa que está aberta: é tudo
+  // o que o tempo real mantém vivo, e portanto tudo o que pode ter ficado para
+  // trás enquanto ele esteve fora.
+  useEffect(() => {
+    reporRef.current = () => {
+      carregarConversas(advogadoIdRef.current, 0, conversaIdRef.current);
+      carregarNaoLidasPorAdv();
+      carregarTags();
+      carregarTagsConversas();
+      if (conversaIdRef.current) carregarMensagens(conversaIdRef.current);
+    };
+  });
+
   // ---- Realtime: novas mensagens e conversas atualizadas ----
   //
   // O CANAL É ASSINADO UMA VEZ SÓ, e tudo o que muda é lido por referência.
@@ -4841,6 +4918,7 @@ export default function Painel({ sessao }) {
   // mensagem que caísse numa delas simplesmente não aparecia até alguém
   // recarregar a página.
   useEffect(() => {
+    let carencia = null;
     const canal = supabase
       .channel("zorvin-realtime")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "mensagens" }, async (payload) => {
@@ -5077,8 +5155,40 @@ export default function Painel({ sessao }) {
       // Tags criadas/editadas/removidas e tags aplicadas às conversas.
       .on("postgres_changes", { event: "*", schema: "public", table: "tags" }, () => { carregarTags(); })
       .on("postgres_changes", { event: "*", schema: "public", table: "conversa_tags" }, () => { carregarTagsConversas(); })
-      .subscribe();
-    return () => { supabase.removeChannel(canal); };
+      // O ESTADO DO CANAL, QUE NINGUÉM ESTAVA OLHANDO.
+      //
+      // `.subscribe()` vinha sem retorno de chamada nenhum. O canal podia cair
+      // e o painel seguia desenhando a mesma tela — e a tela de uma conversa
+      // sem mensagem nova é idêntica à de uma conversa em que o cliente não
+      // respondeu.
+      .subscribe((estado) => {
+        if (estado === "SUBSCRIBED") {
+          // A VOLTA RELÊ. O `postgres_changes` não repete o que passou: tudo o
+          // que o banco publicou durante a queda não chega nunca. Só apagar o
+          // aviso deixaria a pessoa tranquila e a tela errada — que é pior do
+          // que o aviso aceso.
+          //
+          // Só na VOLTA, e não na primeira assinatura: ali a tela acabou de ser
+          // carregada, e reler seria uma segunda leitura de tudo a cada
+          // abertura do painel.
+          if (caiuRef.current) {
+            caiuRef.current = false;
+            reporRef.current();
+          }
+          clearTimeout(carencia);
+          setTempoRealCaiu(false);
+          return;
+        }
+        // QUEDA NÃO ACENDE A LUZ NA HORA. Uma reconexão comum passa por
+        // `CLOSED` e volta em poucos segundos; acender ali faria a faixa
+        // piscar no meio do expediente por nada, e faixa que pisca à toa se
+        // aprende a ignorar. Dez segundos calados é o que separa o soluço da
+        // queda.
+        caiuRef.current = true;
+        clearTimeout(carencia);
+        carencia = setTimeout(() => setTempoRealCaiu(true), CARENCIA_TEMPO_REAL_MS);
+      });
+    return () => { clearTimeout(carencia); supabase.removeChannel(canal); };
   }, [carregarConversas, carregarNaoLidasPorAdv, carregarTags, carregarTagsConversas]);
 
   // Ao abrir uma conversa, começa no fim (mensagens mais recentes).
@@ -11377,7 +11487,7 @@ export default function Painel({ sessao }) {
           não resolve é pior do que não oferecer nenhum. Ela some sozinha quando
           o problema passar, na pergunta seguinte. */}
       {(() => {
-        const frases = frasesDaSaude(saude, souAdmin);
+        const frases = frasesDaSaude(saude, souAdmin, tempoRealCaiu);
         if (!frases.length) return null;
         return (
           <div data-aviso-de-saude
