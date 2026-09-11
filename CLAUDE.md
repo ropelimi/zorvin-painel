@@ -71,6 +71,33 @@ RLS está **ligado** com políticas para o papel `authenticated`. Se uma consult
 4. **Duplicação de mensagens enviadas**: já corrigida **na ponte** (ignora eco com `wasSentByApi === true`). Se voltar a duplicar, o problema é lá, não aqui.
 5. Chatwoot foi tentado antes e abandonado (estourava a memória do plano free do Render). Não sugerir voltar sem discutir custo.
 
+## Os avisos de que algo parou
+
+A ponte é cheia de proteções que **avisam no log** — e ninguém abre o log. Foi
+assim com a linha do escritório que caiu em 19/08 e com o `IMPORT_TOKEN` que
+nunca foi criado: a máquina vinha dizendo o que estava errado, para uma tela que
+ninguém olhava.
+
+Hoje o painel pergunta `zorvin_saude()` de minuto em minuto e mostra numa faixa
+**vermelha** no alto (`data-aviso-de-saude`). A função devolve **contagens**, não
+conteúdo: o painel não alcança `eventos_recebidos`, que guarda texto de cliente e
+nasceu fechada, e não é por causa de um número que isso muda.
+
+**Duas plateias.** Quem atende vê só o que muda o que ela deve fazer agora —
+mensagem que não saiu, linha caída (com o nome do telefone), mensagem de cliente
+que não entrou. Quem administra vê também o que se resolve sozinho (a caixa
+atrasada). Alarme que não pede ação se aprende a ignorar, e aí o próximo passa
+batido junto.
+
+A faixa vermelha e a **âmbar** (`data-falha-de-leitura`) dizem coisas
+diferentes: a âmbar é sobre ESTA tela estar incompleta, a vermelha é sobre o
+SISTEMA ter parado. As duas moram numa coluna fixa comum — cada uma `fixed` por
+si punha uma em cima da outra.
+
+SQL: `sql/2026-09-o-painel-avisa-quando-algo-para.sql`. **Sem a função, tudo como
+antes** (aviso no console e nada na tela). Prova:
+`o-painel-avisa-quando-algo-para`.
+
 ## Pendências / próximos passos
 
 - **Mídias em alta resolução**: hoje imagens exibem só a miniatura vinda do webhook e áudios não têm arquivo. Depende de trabalho na **ponte** (baixar/descriptografar via Uazapi e salvar no Storage do Supabase).

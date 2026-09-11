@@ -225,6 +225,87 @@ function desligarRecurso(nome, erro) {
 // Sem conseguir ler as permissões, a tela não oferece telefone NENHUM. É o
 // contrário do que se faz com dado comum: aqui, na dúvida, mostrar de menos é o
 // erro barato e mostrar de mais é o caro.
+// ============================================================
+//  OS SINAIS DE `zorvin_saude()`, VIRADOS EM FRASES
+//
+//  Fora do componente de propósito: é uma decisão de conteúdo — o que se diz,
+//  para quem — e decisão de conteúdo se lê melhor num lugar só do que espalhada
+//  no meio do desenho da tela.
+//
+//  DUAS PLATEIAS, E ELAS PRECISAM DE COISAS DIFERENTES.
+//
+//  Quem atende precisa do que muda o que ela deve FAZER AGORA: se as mensagens
+//  não estão saindo, ela não promete resposta ao cliente; se a linha caiu, ela
+//  não responde por aquele telefone; se uma mensagem de cliente não entrou, ela
+//  para de acreditar que a conversa calada está calada.
+//
+//  Quem administra precisa também do que ainda vai se resolver sozinho — a
+//  caixa atrasada é assim. Mostrar isso a quem atende seria acender uma luz
+//  sobre algo que ela não tem como fazer nada a respeito, e alarme que não pede
+//  ação é alarme que se aprende a ignorar. Aí o próximo, o de verdade, passa
+//  batido junto.
+// ============================================================
+function haQuantoTempo(desde) {
+  const ms = Date.now() - new Date(desde).getTime();
+  if (!(ms > 0)) return "";
+  const min = Math.floor(ms / 60000);
+  if (min < 60) return `há ${min} min`;
+  const horas = Math.floor(min / 60);
+  if (horas < 24) return `há ${horas}h`;
+  return `há ${Math.floor(horas / 24)} dia(s)`;
+}
+
+/** Uma ou muitas, escrito como se escreve.
+ *
+ *  Estava colando "ns" no fim de "mensagem" e saía **mensagemns** na tela do
+ *  escritório. Plural de português não sai de concatenação: as duas formas
+ *  ficam escritas, e o verbo junto — "não entrou" e "não entraram" são
+ *  palavras diferentes, e um aviso mal escrito é lido como coisa de máquina
+ *  quebrada, não como recado. */
+const conforme = (n, uma, muitas) => (n === 1 ? uma : muitas);
+
+function frasesDaSaude(saude, ehAdmin) {
+  const por = {};
+  for (const l of saude || []) por[l.sinal] = l;
+  const frases = [];
+
+  // A MAIS GRAVE PRIMEIRO, e é a de entrada: alguém escreveu para o escritório
+  // e a conversa não mostra. É a única em que o silêncio da tela mente sobre
+  // uma conversa inteira, e por isso vai para todo mundo.
+  if (por.eventos_desistidos) {
+    const n = por.eventos_desistidos.quantas;
+    frases.push(`${n} ${conforme(n, "mensagem", "mensagens")} de cliente`
+      + ` ${conforme(n, "não entrou", "não entraram")} no Zorvin`
+      + ` (${haQuantoTempo(por.eventos_desistidos.desde)}). Uma conversa calada pode não estar calada.`);
+  }
+
+  // A LINHA CAÍDA DIZ O NOME. Sem ele, quem atende não sabe se é a linha que
+  // ela está usando — e é essa a única pergunta que importa neste aviso.
+  if (por.linhas_caidas) {
+    frases.push(`A linha de ${por.linhas_caidas.detalhe} está desconectada do WhatsApp.`
+      + " Nada sai por ela até alguém reconectar o aparelho.");
+  }
+
+  // AS DUAS DA FILA VIRAM UMA FRASE. Para quem atende elas querem dizer a mesma
+  // coisa — o que você escreveu não está saindo —, e a diferença entre "parada"
+  // e "travada" só interessa a quem for consertar, que tem o log.
+  const parada = por.fila_parada || por.fila_travada;
+  if (parada) {
+    const n = (por.fila_parada?.quantas || 0) + (por.fila_travada?.quantas || 0);
+    frases.push(`${n} ${conforme(n, "mensagem escrita", "mensagens escritas")} aqui`
+      + ` ${conforme(n, "não saiu", "não saíram")}`
+      + ` (a mais antiga ${haQuantoTempo(parada.desde)}). Não prometa resposta ao cliente por enquanto.`);
+  }
+
+  if (ehAdmin && por.eventos_pendentes) {
+    const n = por.eventos_pendentes.quantas;
+    frases.push(`${n} ${conforme(n, "evento esperando", "eventos esperando")} para entrar`
+      + ` (${haQuantoTempo(por.eventos_pendentes.desde)}). Costuma se resolver sozinho.`);
+  }
+
+  return frases;
+}
+
 function filtrarPermitidos(telefones, permissoes, ehAdmin, erro) {
   if (ehAdmin) return telefones;
   if (erro) return [];
@@ -2249,6 +2330,25 @@ export default function Painel({ sessao }) {
     }));
   }, []);
 
+  // ============================================================
+  //  O QUE PAROU, DITO NA TELA ONDE AS PESSOAS JÁ ESTÃO
+  //
+  //  A ponte ficou cheia de proteções — a caixa de entrada guarda o evento
+  //  antes de prometer, a fila tenta de novo sozinha, a saída termina o que
+  //  está no meio. Todas avisam quando algo dá errado. No LOG.
+  //
+  //  E ninguém abre o log. Foi assim com a linha do escritório que caiu em
+  //  19/08 e com o `IMPORT_TOKEN` que nunca foi criado: nos dois casos a
+  //  máquina vinha dizendo o que estava errado, para uma tela que ninguém
+  //  olhava. Uma proteção que avisa onde não se lê protege menos do que
+  //  parece.
+  //
+  //  Os números vêm de `zorvin_saude()` — uma função só, com CONTAGENS. O
+  //  painel não alcança `eventos_recebidos` de propósito (ela guarda texto de
+  //  cliente), e não é por causa de um número que isso vai mudar.
+  // ============================================================
+  const [saude, setSaude] = useState([]);
+
   const limparFalhaDeLeitura = useCallback((chave) => {
     setFalhasDeLeitura((antes) => {
       if (!(chave in antes)) return antes;   // nada mudou: não redesenha
@@ -3108,6 +3208,50 @@ export default function Painel({ sessao }) {
   }, [anotarFalhaDeLeitura, limparFalhaDeLeitura]);
 
   useEffect(() => { carregarRapidas(); }, [carregarRapidas]);
+
+  // ------------------------------------------------------------
+  //  A PERGUNTA "ESTÁ TUDO ANDANDO?", DE MINUTO EM MINUTO
+  //
+  //  Um minuto, e não três segundos: nenhum destes sinais nasce e morre em
+  //  segundos, e o que se ganharia perguntando mais era ruído no banco de todo
+  //  mundo o dia inteiro. Nenhum deles pede reação em segundos — o mais grave,
+  //  a mensagem de cliente que não entrou, já está parado há minutos quando
+  //  aparece.
+  //
+  //  SEM A FUNÇÃO NO BANCO, TUDO COMO ANTES. Quem ainda não rodou o SQL vê o
+  //  painel exatamente como via, com um aviso no console e nada na tela — de
+  //  novo a regra de que uma coisa nova não pode acender alarme sobre a própria
+  //  ausência.
+  //
+  //  QUALQUER OUTRO ERRO É DITO. Ele entra na mesma faixa das leituras que
+  //  falham, porque o desfecho aqui seria o pior de todos: a tela ficaria
+  //  calada, e o silêncio dela é justamente o que significa "está tudo bem".
+  // ------------------------------------------------------------
+  useEffect(() => {
+    let vivo = true;
+    let temAFuncao = true;
+    const perguntar = async () => {
+      if (!temAFuncao) return;
+      const { data, error } = await supabase.rpc("zorvin_saude");
+      if (!vivo) return;
+      if (error) {
+        if (faltaAFuncao(error)) {
+          temAFuncao = false;
+          console.info('Zorvin: a função "zorvin_saude" não existe neste banco — '
+            + "o painel não vai avisar quando algo parar. "
+            + "Rode sql/2026-09-o-painel-avisa-quando-algo-para.sql.");
+          return;
+        }
+        anotarFalhaDeLeitura("saude", "o estado do sistema", error);
+        return;
+      }
+      limparFalhaDeLeitura("saude");
+      setSaude(Array.isArray(data) ? data : []);
+    };
+    perguntar();
+    const id = setInterval(perguntar, 60 * 1000);
+    return () => { vivo = false; clearInterval(id); };
+  }, [anotarFalhaDeLeitura, limparFalhaDeLeitura]);
 
   // ---- Tags (etiquetas coloridas das conversas, compartilhadas) ----
   const carregarTags = useCallback(async () => {
@@ -11181,10 +11325,16 @@ export default function Painel({ sessao }) {
           pessoa trabalhando em cima de uma tela incompleta sem saber.
           Uma faixa só, somando tudo o que falhou: três avisos empilhados numa
           tela de atendimento viram ruído, e ruído se aprende a ignorar. */}
+      {/* AS DUAS FAIXAS MORAM NA MESMA COLUNA.
+          Cada uma era `position: fixed` no topo. Enquanto só havia uma, isso
+          bastava; com duas, a segunda cairia EM CIMA da primeira e as duas
+          ficariam ilegíveis justamente no momento em que as duas importam.
+          Uma coluna só, e elas se empilham. */}
+      <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 130,
+                    display: "flex", flexDirection: "column" }}>
       {Object.keys(falhasDeLeitura).length > 0 && (
         <div data-falha-de-leitura
-             style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 130,
-                      background: "#8a5a00", color: "#fff", padding: "9px 14px",
+             style={{ background: "#8a5a00", color: "#fff", padding: "9px 14px",
                       fontSize: 13.5, display: "flex", alignItems: "center",
                       justifyContent: "center", gap: 12, flexWrap: "wrap",
                       boxShadow: "0 2px 8px rgba(0,0,0,.25)" }}>
@@ -11216,6 +11366,36 @@ export default function Painel({ sessao }) {
           </button>
         </div>
       )}
+
+      {/* A FAIXA DO QUE PAROU.
+          VERMELHA, e não âmbar como a de cima, porque diz outra coisa. A âmbar
+          é sobre ESTA tela: o que você está vendo pode estar incompleto. Esta é
+          sobre o SISTEMA: alguma coisa parou de andar, e o que está na tela
+          está certo — é o mundo que não está.
+          Sem botão de "tentar de novo". Não há gesto daqui que conserte uma
+          linha desconectada ou uma ponte fora do ar, e oferecer um botão que
+          não resolve é pior do que não oferecer nenhum. Ela some sozinha quando
+          o problema passar, na pergunta seguinte. */}
+      {(() => {
+        const frases = frasesDaSaude(saude, souAdmin);
+        if (!frases.length) return null;
+        return (
+          <div data-aviso-de-saude
+               style={{ background: "#8e1c1c", color: "#fff", padding: "9px 14px",
+                        fontSize: 13.5, display: "flex", alignItems: "center",
+                        justifyContent: "center", gap: 10, flexWrap: "wrap",
+                        boxShadow: "0 2px 8px rgba(0,0,0,.25)" }}>
+            <AlertCircle size={15} style={{ flexShrink: 0 }} />
+            {/* UMA FRASE POR LINHA quando há mais de uma. Emendadas, "a linha do
+                Dr. X caiu" e "12 mensagens não saíram" viram um parágrafo que
+                ninguém lê no meio de um atendimento. */}
+            <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              {frases.map((f, i) => <span key={i} data-frase-de-saude>{f}</span>)}
+            </span>
+          </div>
+        );
+      })()}
+      </div>
 
       {/* Departamentos, telefones e permissões. Ao fechar, os cadastros são
           relidos: renomear um departamento tem de aparecer na hora, senão a
