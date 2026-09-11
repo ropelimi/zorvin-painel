@@ -10,6 +10,7 @@ import {
   Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList, ShieldCheck,
   ChevronLeft, ChevronRight, Images, ExternalLink, Pin, Copy, Forward, Sticker,
   History, BarChart3, Users, Smartphone, ArrowDownUp,
+  Image as ImageIcon, Video,
   Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
@@ -332,6 +333,30 @@ function frasesDaSaude(saude, ehAdmin, tempoRealCaiu = false) {
   }
 
   return frases;
+}
+
+// ============================================================
+//  O VAZIO QUE AINDA PODE ENCHER, E O QUE NÃO PODE MAIS
+//
+//  A tela dizia "indisponível" para duas coisas opostas: o arquivo que chega em
+//  dois minutos e o que não existe mais. Quem atende ficava esperando,
+//  recarregando, esperando mais — e no segundo caso esperava por nada, sem ter
+//  como saber que precisava pedir ao cliente que mandasse de novo.
+//
+//  `midia_erro` é a resposta definitiva da Uazapi, gravada pela ponte. Ela só é
+//  preenchida quando a resposta NÃO MUDA com o tempo ("esta mensagem não tem
+//  arquivo"); uma falha passageira continua sendo tentada e não marca nada. Por
+//  isso dá para confiar nela a ponto de mandar alguém pedir de novo.
+//
+//  A frase curta é a que cabe na bolha. O motivo técnico vai no `title`, para
+//  quem passar o mouse — ele não interessa a quem atende, e interessa muito a
+//  quem for investigar.
+// ============================================================
+function anexoPerdido(m) {
+  return Boolean(m && m.midia_erro && !m.midia_url);
+}
+function textoDoAnexoVazio(m) {
+  return anexoPerdido(m) ? "não veio — peça para reenviar" : "indisponível";
 }
 
 function filtrarPermitidos(telefones, permissoes, ehAdmin, erro) {
@@ -1472,7 +1497,7 @@ function PreviaDeArquivo({ C, url, mime, nome, altura = 150 }) {
   );
 }
 
-function BolhaAudio({ C, saida, url }) {
+function BolhaAudio({ C, saida, url, m }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
       {url ? (
@@ -1482,7 +1507,11 @@ function BolhaAudio({ C, saida, url }) {
           <div style={{ width: 34, height: 34, borderRadius: "50%", background: C.searchBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             <Mic size={16} color={C.textSecondary} />
           </div>
-          <span style={{ fontSize: 12, color: C.textSecondary, fontStyle: "italic" }}>Áudio indisponível</span>
+          <span title={(m && m.midia_erro) || undefined}
+                data-anexo-vazio={anexoPerdido(m) ? "perdido" : "esperando"}
+                style={{ fontSize: 12, color: C.textSecondary, fontStyle: "italic" }}>
+            Áudio {textoDoAnexoVazio(m)}
+          </span>
         </>
       )}
     </div>
@@ -1820,6 +1849,22 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
                 <img src={m.midia_url} alt="Imagem recebida na conversa" loading="lazy" decoding="async" onLoad={() => { if (pertoDoFim) fimRef.current?.scrollIntoView(); }} style={{ maxWidth: "min(260px, 62vw)", maxHeight: 320, width: "auto", height: "auto", borderRadius: 6, display: "block" }} />
               </button>
             )}
+            {/* IMAGEM SEM ARQUIVO NÃO DESENHAVA NADA.
+                A condição era `tipo === "imagem" && midia_url`: sem arquivo, a
+                bolha saía VAZIA — nem moldura, nem palavra. O cliente mandou
+                uma foto e a conversa não mostra que mandou. É o mesmo defeito
+                que a figurinha teve e que foi consertado ali embaixo; a imagem
+                ficou de fora, e a medição de 11/09 achou cinco delas assim nos
+                anexos vazios do escritório. */}
+            {m.tipo === "imagem" && !m.midia_url && (
+              <div title={m.midia_erro || undefined}
+                   data-anexo-vazio={anexoPerdido(m) ? "perdido" : "esperando"}
+                   style={{ display: "flex", alignItems: "center", gap: 8, color: C.textSecondary,
+                            background: saida ? "rgba(0,0,0,.06)" : C.searchBg,
+                            borderRadius: 6, padding: "8px 10px", fontSize: 13, fontStyle: "italic" }}>
+                <ImageIcon size={18} color={C.textSecondary} /> Imagem {textoDoAnexoVazio(m)}
+              </div>
+            )}
             {/* FIGURINHA. Eu ensinei a ponte a reconhecê-la e esqueci
                 de ensinar a TELA a desenhá-la: o tipo novo não caía
                 em nenhum dos ramos, e a bolha aparecia vazia — tanto
@@ -1841,13 +1886,28 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
                 <div style={{ display: "flex", alignItems: "center", gap: 8, color: C.textSecondary,
                               background: saida ? "rgba(0,0,0,.06)" : C.searchBg,
                               borderRadius: 6, padding: "8px 10px", fontSize: 13, fontStyle: "italic" }}>
-                  <Sticker size={18} color={C.textSecondary} /> Figurinha indisponível
+                  <Sticker size={18} color={C.textSecondary} />
+                  <span title={m.midia_erro || undefined}
+                        data-anexo-vazio={anexoPerdido(m) ? "perdido" : "esperando"}>
+                    Figurinha {textoDoAnexoVazio(m)}
+                  </span>
                 </div>
               )
             )}
-            {m.tipo === "audio" && <BolhaAudio C={C} saida={saida} url={m.midia_url} />}
+            {m.tipo === "audio" && <BolhaAudio C={C} saida={saida} url={m.midia_url} m={m} />}
             {m.tipo === "video" && m.midia_url && (
               <video controls preload="none" src={m.midia_url} style={{ maxWidth: "min(260px, 62vw)", borderRadius: 6, display: "block" }} />
+            )}
+            {/* E O VÍDEO PELO MESMO MOTIVO. Ele não apareceu na medição porque
+                são poucos, e não porque estivesse certo. */}
+            {m.tipo === "video" && !m.midia_url && (
+              <div title={m.midia_erro || undefined}
+                   data-anexo-vazio={anexoPerdido(m) ? "perdido" : "esperando"}
+                   style={{ display: "flex", alignItems: "center", gap: 8, color: C.textSecondary,
+                            background: saida ? "rgba(0,0,0,.06)" : C.searchBg,
+                            borderRadius: 6, padding: "8px 10px", fontSize: 13, fontStyle: "italic" }}>
+                <Video size={18} color={C.textSecondary} /> Vídeo {textoDoAnexoVazio(m)}
+              </div>
             )}
             {m.tipo === "documento" && (
               m.midia_url ? (
@@ -1880,7 +1940,11 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
                 <div style={{ display: "flex", alignItems: "center", gap: 8, color: C.textPrimary, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 6, padding: "8px 10px", minWidth: 180 }}>
                   <FileText size={22} color={C.textSecondary} />
                   <span style={{ flex: 1, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>{m.midia_nome || "Documento"}</span>
-                  <span style={{ fontSize: 11, color: C.textSecondary, fontStyle: "italic", flexShrink: 0 }}>indisponível</span>
+                  <span title={m.midia_erro || undefined}
+                        data-anexo-vazio={anexoPerdido(m) ? "perdido" : "esperando"}
+                        style={{ fontSize: 11, color: C.textSecondary, fontStyle: "italic", flexShrink: 0 }}>
+                    {textoDoAnexoVazio(m)}
+                  </span>
                 </div>
               )
             )}
