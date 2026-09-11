@@ -55,29 +55,44 @@ const abrir = async ({ foraDesdeOInicio = false, demoraDoCanal = 30 } = {}) => {
   await page.waitForSelector("[data-conversa-nome]");
   await page.waitForTimeout(1200);
 };
-// DERRUBAR E LEVANTAR O CANAL — e reclamar com todas as letras se não der.
+// DERRUBAR E LEVANTAR O CANAL.
 //
 // Estes dois só existem porque o painel PASSA um retorno de chamada ao assinar
-// o canal; é ao recebê-lo que a bancada os cria. Sem ele, a chamada morria com
-// "__DERRUBAR_TEMPO_REAL is not a function" e um rastro de pilha — que é a
-// mensagem certa para quem escreveu a bancada e a mensagem errada para quem vai
-// consertar o painel. Aqui ela vira a frase que diz o que de fato aconteceu.
+// o canal; é ao recebê-lo que a bancada os cria. Se ele não vier, eles não
+// existem, e aqui a chamada não faz nada — em silêncio, de propósito: quem
+// denuncia isso é a conferência 1, uma vez só e pelo nome. As conferências
+// seguintes reprovam sozinhas, dizendo que a faixa não apareceu, e a 1 explica
+// por quê.
+//
+// NENHUM `ok()` MORA DENTRO DE UM `if` AQUI. A vigia `provas-que-reprovam` pega
+// isso, e com razão: conferência dentro de condição que quase nunca acontece é
+// conferência que quase nunca roda, e uma prova cheia delas fica verde sem ter
+// conferido nada. Esta versão já foi pega por ela.
 const mexerNoCanal = async (qual) => {
-  const existe = await page.evaluate((q) => typeof globalThis[q] === "function", qual);
-  if (!existe) {
-    ok(`o painel olha o estado do canal (${qual})`, false,
-       "o painel assinou o canal SEM retorno de chamada: ele não fica sabendo se o "
-       + "tempo real caiu, e nenhuma conferência abaixo tem como rodar");
-    return false;
-  }
-  await page.evaluate((q) => globalThis[q](), qual);
-  return true;
+  await page.evaluate((q) => {
+    if (typeof globalThis[q] === "function") globalThis[q]();
+  }, qual);
 };
 const derrubar = () => mexerNoCanal("__DERRUBAR_TEMPO_REAL");
 const levantar = () => mexerNoCanal("__LEVANTAR_TEMPO_REAL");
 
 
-console.log("\n1. Com o canal de pé, a tela CALA");
+console.log("\n1. O painel OLHA o estado do canal");
+{
+  // O defeito original em uma linha: `.subscribe()` sem retorno de chamada. Sem
+  // esta conferência, um painel que voltasse a ignorar o estado do canal faria
+  // todas as outras reprovarem por motivos que apontam para o lugar errado — a
+  // faixa que não apareceu, e não a razão de ela não ter aparecido.
+  await abrir();
+  const olha = await page.evaluate(() =>
+    typeof globalThis.__DERRUBAR_TEMPO_REAL === "function");
+  ok("o painel assina o canal COM retorno de chamada", olha,
+     "assinando sem ele, o painel não fica sabendo se o tempo real caiu — "
+     + "e nenhuma das conferências abaixo tem como medir coisa alguma");
+}
+
+
+console.log("\n2. Com o canal de pé, a tela CALA");
 {
   await abrir();
   ok("nenhuma faixa quando o tempo real está funcionando",
@@ -86,7 +101,7 @@ console.log("\n1. Com o canal de pé, a tela CALA");
 }
 
 
-console.log("\n2. O soluço de dois segundos NÃO pisca na tela");
+console.log("\n3. O soluço de dois segundos NÃO pisca na tela");
 {
   // Uma reconexão comum passa por "fora" e volta em seguida. Acender a faixa
   // nesse instante encheria o expediente de piscadas — e faixa que pisca à toa
@@ -103,7 +118,7 @@ console.log("\n2. O soluço de dois segundos NÃO pisca na tela");
 }
 
 
-console.log("\n3. A queda que dura é dita");
+console.log("\n4. A queda que dura é dita");
 {
   await abrir();
   await derrubar();
@@ -119,7 +134,7 @@ console.log("\n3. A queda que dura é dita");
 }
 
 
-console.log("\n4. A VOLTA RELÊ — a mensagem que entrou durante a queda aparece");
+console.log("\n5. A VOLTA RELÊ — a mensagem que entrou durante a queda aparece");
 {
   // Esta é a conferência central. Sem ela, "o canal voltou" poderia ser só a
   // faixa sumindo — com a conversa continuando sem a mensagem que chegou no
@@ -160,7 +175,7 @@ console.log("\n4. A VOLTA RELÊ — a mensagem que entrou durante a queda aparec
 }
 
 
-console.log("\n5. A primeira assinatura não relê à toa");
+console.log("\n6. A primeira assinatura não relê à toa");
 {
   // Abrir o painel já carrega tudo. Reler ali seria uma segunda leitura de tudo
   // a cada abertura — em oito telefones e centenas de conversas, isso é caro e
@@ -201,7 +216,7 @@ console.log("\n5. A primeira assinatura não relê à toa");
 }
 
 
-console.log("\n6. Quem abre o painel com a conexão já ruim é avisado");
+console.log("\n7. Quem abre o painel com a conexão já ruim é avisado");
 {
   // O caso de quem chega de manhã com o wi-fi do escritório instável. Sem esta,
   // a tela mostraria a lista carregada e nada mais — parada para sempre, sem
