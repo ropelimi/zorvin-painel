@@ -2299,7 +2299,32 @@ export const supabase = {
     globalThis.__CANAIS = (globalThis.__CANAIS || 0) + 1;
     const canal = {
       on: (tipo, filtro, funcao) => { OUVINTES.push({ tipo, filtro, funcao }); return canal; },
-      subscribe: () => canal,
+      // O ESTADO DO CANAL CHEGA A QUEM ASSINOU.
+      //
+      // Aqui isto era `() => canal`: o retorno de chamada do painel era
+      // RECEBIDO E JOGADO FORA. Com isso, o painel podia deixar de olhar o
+      // estado do canal e nenhuma prova notaria — a bancada aprovaria os dois
+      // comportamentos igualmente, que é o jeito de um teste não testar nada.
+      //
+      // O de verdade responde depois de uma ida à rede, nunca na mesma
+      // batida; um `SUBSCRIBED` síncrono aqui esconderia todo defeito que
+      // depende de a tela existir antes de o canal estar de pé.
+      subscribe: (aoMudar) => {
+        if (typeof aoMudar === "function") {
+          globalThis.__DERRUBAR_TEMPO_REAL = (estado = "CHANNEL_ERROR") => aoMudar(estado);
+          globalThis.__LEVANTAR_TEMPO_REAL = () => aoMudar("SUBSCRIBED");
+          // A bancada pode nascer com o canal já fora, para a prova medir a
+          // tela de quem abriu o painel com a internet ruim.
+          // QUANTO O CANAL DEMORA A RESPONDER. O de verdade leva uma ida à rede;
+          // aqui 30ms bastam para não ser síncrono. A prova alonga por
+          // `__DEMORA_DO_CANAL` quando precisa medir o que acontece ENTRE a
+          // tela carregar e o canal subir — sem isso, o primeiro `SUBSCRIBED`
+          // cai junto com a carga inicial e não há janela para medir nada.
+          setTimeout(() => aoMudar(globalThis.__TEMPO_REAL_FORA ? "CHANNEL_ERROR" : "SUBSCRIBED"),
+                     globalThis.__DEMORA_DO_CANAL || 30);
+        }
+        return canal;
+      },
       unsubscribe: () => { OUVINTES.length = 0; },
     };
     return canal;

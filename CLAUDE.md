@@ -98,6 +98,31 @@ SQL: `sql/2026-09-o-painel-avisa-quando-algo-para.sql`. **Sem a função, tudo c
 antes** (aviso no console e nada na tela). Prova:
 `o-painel-avisa-quando-algo-para`.
 
+### O tempo real que cai
+
+O canal era assinado com `.subscribe()` **sem retorno de chamada**: o painel
+nunca sabia se ele estava de pé. Caindo a conexão, as mensagens novas paravam de
+aparecer — e a tela de uma conversa sem mensagem nova é **idêntica** à de uma
+conversa em que o cliente não respondeu.
+
+Hoje o estado do canal entra na mesma faixa vermelha, depois de **10 segundos**
+de carência (`CARENCIA_TEMPO_REAL_MS`) — um soluço de reconexão não pode fazer a
+faixa piscar.
+
+**E a volta RELÊ.** O `postgres_changes` não repete o que passou: o que o banco
+publicou durante a queda não chega nunca. Avisar sem reler deixaria a pessoa
+informada e a tela errada. A releitura vai por um **espelho** (`reporRef`), e não
+pelas dependências do efeito — pôr `carregarMensagens` ali derrubaria o canal a
+cada conversa aberta, que é o defeito das "trinta janelas de silêncio" descrito
+no próprio arquivo. Prova: `o-tempo-real-que-cai-e-volta`.
+
+### Armadilha das provas de navegador: `addInitScript` acumula
+
+Cada chamada acrescenta **mais um** script, e todos rodam a cada carregamento.
+Uma bandeira ligada num cenário continua valendo nos seguintes, e a prova passa a
+reprovar falando de outro assunto. Aconteceu duas vezes. A saída é o ajudante que
+abre a página escrever **todas** as bandeiras, sempre — a última escrita vence.
+
 ## Pendências / próximos passos
 
 - **Mídias em alta resolução**: hoje imagens exibem só a miniatura vinda do webhook e áudios não têm arquivo. Depende de trabalho na **ponte** (baixar/descriptografar via Uazapi e salvar no Storage do Supabase).
