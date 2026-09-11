@@ -125,8 +125,17 @@ abre a página escrever **todas** as bandeiras, sempre — a última escrita ven
 
 ## Pendências / próximos passos
 
-- **Mídias em alta resolução**: hoje imagens exibem só a miniatura vinda do webhook e áudios não têm arquivo. Depende de trabalho na **ponte** (baixar/descriptografar via Uazapi e salvar no Storage do Supabase).
-- **Enviar anexos pelo painel**: o clipe e o microfone na caixa de mensagem são só visuais hoje.
+- ~~Mídias em alta resolução~~ e ~~enviar anexos pelo painel~~ — **as duas foram
+  feitas**, e esta lista ficou meses dizendo o contrário. Isso tem custo: em
+  11/09 uma sessão leu a lista em vez do código e recomendou refazer o que já
+  estava pronto. **Ao terminar algo daqui, risque na mesma entrega.**
+  - Enviar: `enviarArquivo` cobre imagem, vídeo, áudio, documento e figurinha,
+    com prévia local; o microfone grava por `MediaRecorder` (ogg/opus, webm de
+    reserva). Vai para `fila_envio` e a ponte envia por `/send/media`.
+  - Receber: a ponte baixa pela Uazapi e guarda no Storage (`anexos`). **Em
+    aberto, e é empírico**: neste servidor as três rotas de download
+    responderam 405 ao POST (medido em 11/09); as tentativas por GET entraram
+    depois e ainda não foram confirmadas com anexo de verdade.
 - Ícones da barra lateral (telefone, engrenagem) ainda são decorativos.
 - **E-mails (Gmail)**: fase futura, fora do escopo atual.
 
