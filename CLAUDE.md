@@ -123,6 +123,27 @@ Uma bandeira ligada num cenário continua valendo nos seguintes, e a prova passa
 reprovar falando de outro assunto. Aconteceu duas vezes. A saída é o ajudante que
 abre a página escrever **todas** as bandeiras, sempre — a última escrita vence.
 
+### O anexo que não vem mais
+
+A tela dizia **"indisponível"** para duas coisas opostas: o arquivo que chega em
+dois minutos e o que não existe mais. Quem atende esperava, recarregava, esperava
+mais — e no segundo caso esperava por nada, sem saber que precisava pedir ao
+cliente que mandasse de novo.
+
+`mensagens.midia_erro` é a resposta **definitiva** da Uazapi, gravada pela ponte
+(ela só marca quando a resposta não muda com o tempo; falha passageira continua
+sendo tentada e não marca nada). Com ela preenchida, a bolha diz **"não veio —
+peça para reenviar"**; sem ela, segue "indisponível". O motivo técnico vai no
+`title`, não na bolha.
+
+**Imagem e vídeo sem arquivo não desenhavam NADA** — a condição era
+`tipo === "imagem" && midia_url`, então a bolha saía vazia e o cliente mandava
+uma foto sem a conversa mostrar que ele mandou. Foi consertado junto; a figurinha
+já tinha passado por isso, e a imagem ficara de fora.
+
+SQL: `sql/2026-09-o-anexo-que-nao-vem-mais.sql` (no repo da ponte). Prova:
+`o-anexo-que-nao-vem-mais`.
+
 ## Pendências / próximos passos
 
 - ~~Mídias em alta resolução~~ e ~~enviar anexos pelo painel~~ — **as duas foram
