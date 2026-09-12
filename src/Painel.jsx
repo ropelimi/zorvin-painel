@@ -360,9 +360,18 @@ function textoDoAnexoVazio(m) {
 }
 
 function filtrarPermitidos(telefones, permissoes, ehAdmin, erro) {
-  if (ehAdmin) return telefones;
+  // A LINHA DESATIVADA SAI DAQUI PARA TODO MUNDO, inclusive para quem
+  // administra. Desta lista sai tudo o que a tela OFERECE — começar conversa
+  // nova, encaminhar, escolher o departamento —, e a ponte recusa enviar por
+  // uma linha desativada. Oferecer o gesto seria deixar alguém escrever uma
+  // resposta inteira para ela virar bolha vermelha depois.
+  //
+  // As conversas antigas dela continuam alcançáveis, por outro caminho e só
+  // para quem administra: ver `desativadosVisiveis`.
+  const ativos = (telefones || []).filter((a) => a.ativo !== false);
+  if (ehAdmin) return ativos;
   if (erro) return [];
-  return telefones.filter((a) => (permissoes || []).some(
+  return ativos.filter((a) => (permissoes || []).some(
     (p) => (!p.departamento_id || p.departamento_id === a.departamento_id)
         && (!p.telefone_id || p.telefone_id === a.id)));
 }
@@ -2693,6 +2702,18 @@ export default function Painel({ sessao }) {
   // a tela oferece. Ver `filtrarPermitidos`.
   const advogadosPermitidos = filtrarPermitidos(advogados, minhasPermissoes, souAdmin, erroPermissoes);
   const advogadosVisiveis = advogadosPermitidos.filter((a) => a.departamento_id === departamentoId);
+  // AS LINHAS DESATIVADAS DESTE DEPARTAMENTO — só para quem administra.
+  //
+  // Um atendente não tem o que fazer com elas: não pode responder (a ponte
+  // recusa) e não escolheu desativá-las. Pôr isso na barra de todo mundo seria
+  // mais um ícone para ignorar. Quem administra é quem precisa: foi ele que
+  // desativou, e é ele quem vai querer saber o que ainda chega ali.
+  const desativadosVisiveis = souAdmin
+    ? advogados.filter((a) => a.ativo === false && a.departamento_id === departamentoId)
+    : [];
+  // A conversa aberta é de uma linha desativada? A caixa de escrever some, e no
+  // lugar dela vai a explicação — ver `caixaDeEscrever`.
+  const linhaDesativada = Boolean(advogado && advogado.ativo === false);
   // Só entram os departamentos onde esta pessoa tem ALGUM telefone permitido.
   // Mostrar um departamento que abre vazio é pior do que não mostrar — e, antes,
   // era pior ainda: parecia acesso que ela não tinha.
@@ -2747,8 +2768,20 @@ export default function Painel({ sessao }) {
     setAcessoConferido(false);
     (async () => {
       const [tel, dep, eu, perm] = await Promise.all([
-        supabase.from("advogados").select("id, nome, numero, foto_url, departamento_id")
-          .eq("ativo", true).order("nome"),
+        // AS DESATIVADAS VÊM JUNTO, com a coluna `ativo`.
+        //
+        // A consulta filtrava por `ativo = true`, e com isso as conversas de uma
+        // linha desativada ficavam GRAVADAS E INVISÍVEIS: o cliente escreve para
+        // o número antigo do advogado que saiu, a mensagem entra no banco, e
+        // ninguém no escritório tem como alcançá-la.
+        //
+        // Quem pode USAR continua sendo só a linha ativa — `filtrarPermitidos`
+        // corta as desativadas para todo mundo, inclusive para quem administra,
+        // e é dela que sai tudo o que a tela OFERECE (nova conversa,
+        // encaminhar, escolher departamento). Trazê-las aqui não abre nenhum
+        // desses caminhos; abre só a leitura, mais abaixo.
+        supabase.from("advogados").select("id, nome, numero, foto_url, departamento_id, ativo")
+          .order("nome"),
         supabase.from("departamentos").select("id, nome, slug, cor, ordem")
           .eq("ativo", true).order("ordem"),
         supabase.from("usuarios").select("admin, nome").eq("id", sessao?.user?.id || "").maybeSingle(),
@@ -8435,7 +8468,26 @@ export default function Painel({ sessao }) {
   // "/", os emojis, a formatação, o anexo e a gravação de áudio. Duas cópias
   // divergiriam na primeira correção, e o defeito apareceria só num dos dois
   // lugares — o tipo de coisa que leva meses para alguém notar.
-  const caixaDeEscrever = (
+  // NUMA LINHA DESATIVADA NÃO HÁ O QUE ESCREVER.
+  //
+  // A ponte recusa enviar por ela, então a caixa continuar ali seria um convite
+  // a escrever uma resposta inteira para virar bolha vermelha depois — o gesto
+  // oferecido e negado no fim, que é a pior ordem possível.
+  //
+  // E a frase diz o que FAZER: responder por outro telefone, ou reativar.
+  const caixaDeEscrever = linhaDesativada ? (
+    <div data-linha-desativada
+         style={{ padding: "12px 16px", background: C.headerBar, borderTop: `1px solid ${C.divider}`,
+                  color: C.textSecondary, fontSize: 13.5, display: "flex", alignItems: "center",
+                  justifyContent: "center", gap: 8, textAlign: "center" }}>
+      <Archive size={16} color={C.textSecondary} />
+      <span>
+        Esta linha está desativada — nada sai por ela. A conversa fica aqui para
+        leitura. Para responder, use outro telefone do escritório, ou peça para
+        reativar esta linha.
+      </span>
+    </div>
+  ) : (
   <>
     {/* A PÍLULA — tudo dentro de um retângulo arredondado só.
         Antes os botões ficavam SOLTOS, cada um com o seu respiro,
@@ -8897,6 +8949,37 @@ export default function Painel({ sessao }) {
                      inútil para conferir. Sem isto, uma prova sobre contagem
                      mediria o texto truncado. */
                   <span data-selo-nao-lidas={n} style={{ position: "absolute", top: -4, right: -4, minWidth: 19, height: 19, padding: "0 5px", borderRadius: 10, background: "#d92b20", color: "#fff", fontSize: 11, fontWeight: 700, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${C.rail}`, boxSizing: "border-box" }}>
+                    {n > 99 ? "99+" : n}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+          {/* AS LINHAS DESATIVADAS, embaixo e separadas.
+              Elas não são para atender: são para LER o que ainda chega. Um
+              cliente que não soube da mudança continua escrevendo para o
+              número antigo, e antes disto a mensagem entrava no banco sem
+              ninguém no escritório ter como alcançá-la.
+              Apagadas e com um traço em cima de propósito — a barra tem de
+              dizer, sem texto, que aquela linha não está em serviço. */}
+          {desativadosVisiveis.length > 0 && (
+            <div data-linhas-desativadas={desativadosVisiveis.length}
+                 style={{ width: 32, height: 1, background: C.divider, opacity: 0.6, flexShrink: 0, margin: "2px 0" }} />
+          )}
+          {desativadosVisiveis.map((a) => {
+            const n = naoLidasDoAdvogado(a.id);
+            const atual = a.id === advogadoId;
+            return (
+              <button
+                key={a.id}
+                onClick={() => trocarAdvogado(a.id)}
+                data-telefone-desativado={a.nome}
+                title={`${a.nome} — linha desativada, só leitura`}
+                style={{ position: "relative", border: "none", background: "transparent", cursor: "pointer", padding: 0, display: "flex", borderRadius: "50%", flexShrink: 0, boxShadow: atual ? `0 0 0 2px ${C.textSecondary}` : "none", opacity: atual ? 0.85 : 0.45, filter: "grayscale(1)", transition: "opacity .12s" }}
+              >
+                <Avatar nome={a.nome} foto={a.foto_url} size={42} />
+                {n > 0 && (
+                  <span data-selo-nao-lidas={n} style={{ position: "absolute", top: -4, right: -4, minWidth: 19, height: 19, padding: "0 5px", borderRadius: 10, background: C.textSecondary, color: "#fff", fontSize: 11, fontWeight: 700, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${C.rail}`, boxSizing: "border-box" }}>
                     {n > 99 ? "99+" : n}
                   </span>
                 )}
@@ -11842,7 +11925,7 @@ export default function Painel({ sessao }) {
           setTelaAdmin(false);
           Promise.all([
             supabase.from("departamentos").select("id, nome, slug, cor, ordem").eq("ativo", true).order("ordem"),
-            supabase.from("advogados").select("id, nome, numero, foto_url, departamento_id").eq("ativo", true).order("nome"),
+            supabase.from("advogados").select("id, nome, numero, foto_url, departamento_id, ativo").order("nome"),
           ]).then(([d, t]) => {
             setDepartamentos(d.data || []);
             setAdvogados(t.data || []);

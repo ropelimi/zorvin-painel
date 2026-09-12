@@ -1167,6 +1167,19 @@ const TABELAS = {
 // de outro assunto. Foi o que aconteceu na primeira tentativa desta prova.
 //
 // A mesma razão do `__NOME_NOVO_U1` logo acima, que já dizia isto por escrito.
+// UM TELEFONE DESATIVADO, para a prova das conversas invisíveis.
+//
+// `__DESATIVAR = ["a3"]` marca aquela linha com `ativo: false` — que é o
+// estado real de um advogado que saiu do escritório. Sem isto não havia como
+// exercitar o que a tela faz com as conversas dele, e o que ela fazia era
+// escondê-las.
+if (typeof globalThis !== "undefined" && Array.isArray(globalThis.__DESATIVAR)) {
+  for (const id of globalThis.__DESATIVAR) {
+    const a = ADVOGADOS.find((x) => String(x.id) === String(id));
+    if (a) a.ativo = false;
+  }
+}
+
 if (typeof globalThis !== "undefined" && globalThis.__SEMENTE) {
   for (const [nome, linhas] of Object.entries(globalThis.__SEMENTE)) {
     if (Array.isArray(TABELAS[nome]) && Array.isArray(linhas)) TABELAS[nome].push(...linhas);
