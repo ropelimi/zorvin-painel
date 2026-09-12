@@ -116,6 +116,28 @@ pelas dependências do efeito — pôr `carregarMensagens` ali derrubaria o cana
 cada conversa aberta, que é o defeito das "trinta janelas de silêncio" descrito
 no próprio arquivo. Prova: `o-tempo-real-que-cai-e-volta`.
 
+### A linha desativada não some
+
+A ponte recusa enviar por um telefone desativado (ver o CLAUDE.md dela). Só que
+o painel lia `advogados` com `ativo = true`, e a conta não fechava: as conversas
+daquela linha ficavam **gravadas e invisíveis**. O cliente que não soube da
+mudança continua escrevendo para o número antigo, a mensagem entra no banco, e
+ninguém no escritório alcança.
+
+**Duas metades, e as duas importam:**
+
+- `filtrarPermitidos` corta a desativada **para todo mundo, admin incluído**.
+  Dessa lista sai tudo o que a tela OFERECE — nova conversa, encaminhar,
+  escolher departamento —, e a ponte recusaria o envio: oferecer o gesto seria
+  deixar alguém escrever uma resposta inteira para virar bolha vermelha depois.
+- `desativadosVisiveis` traz as conversas de volta, numa seção separada da barra,
+  **só para quem administra** — foi ele que desativou, e é ele quem vai querer
+  saber o que ainda chega ali. Um atendente não tem o que fazer com elas.
+
+Com a conversa aberta, a caixa de escrever dá lugar à explicação
+(`data-linha-desativada`), que diz **o que fazer**: responder por outro telefone,
+ou reativar. Prova: `a-linha-desativada-nao-some`.
+
 ### Armadilha das provas de navegador: `addInitScript` acumula
 
 Cada chamada acrescenta **mais um** script, e todos rodam a cada carregamento.
