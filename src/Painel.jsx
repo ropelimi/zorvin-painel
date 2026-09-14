@@ -2140,6 +2140,15 @@ export default function Painel({ sessao }) {
   // Quem o Vantoro achou e o Zorvin ainda não conhece por este telefone. Ver o
   // comentário longo em `procurarNoVantoro`.
   const [semConversa, setSemConversa] = useState([]);
+  // SE A PERGUNTA AO CADASTRO AINDA ESTÁ NO AR.
+  //
+  // A busca tem dois tempos: o banco responde em milissegundos, o Vantoro leva
+  // dezenas de segundos quando a Render está acordando. `buscando` cobre o
+  // primeiro e sai assim que o banco responde — de propósito, para a lista não
+  // ficar refém do cadastro. Este cobre o segundo, e existe por uma razão só:
+  // sem ele a tela, entre um e outro, escreve "Nada encontrado para essa
+  // busca" com a segunda pergunta ainda no ar. Ver o comentário na frase.
+  const [vendoNoCadastro, setVendoNoCadastro] = useState(false);
   // Se a pergunta "quais números eu alcanço?" já foi respondida. Ver o
   // comentário longo no efeito que carrega telefones e departamentos.
   const [acessoConferido, setAcessoConferido] = useState(false);
@@ -7722,6 +7731,10 @@ export default function Painel({ sessao }) {
     // a busca continuar vendo "começar conversa com Fulano" no alto da lista
     // de sempre — uma sugestão sobre uma pergunta que ela já desfez.
     setSemConversa([]);
+    // E O AVISO DE QUE AINDA SE PROCURA NO CADASTRO SAI JUNTO. Ele é sobre a
+    // pergunta anterior; deixá-lo de pé enquanto a nova nem saiu faria a tela
+    // dizer que consulta algo por uma busca que já mudou.
+    setVendoNoCadastro(false);
     setErroBusca(""); setAlvoDaBusca({});
     if (termo.length < 3) { setBuscando(false); return; }
 
@@ -7771,6 +7784,37 @@ export default function Painel({ sessao }) {
           vistos.add(id);
           return true;
         });
+      };
+
+      // ------------------------------------------------------------
+      //  A IDA AO CADASTRO, ESCRITA UMA VEZ SÓ
+      //
+      //  Os dois caminhos — o da função do banco e o de reserva — terminam
+      //  igual: perguntam ao Vantoro e SOMAM o que ele trouxer. Eram duas
+      //  cópias das mesmas cinco linhas, e a primeira diferença entre elas
+      //  seria um defeito que só aparece em metade dos bancos.
+      //
+      //  O `setVendoNoCadastro` é o que impede a tela de responder antes de
+      //  saber. Entre `setBuscando(false)` e a volta desta chamada pode haver
+      //  meio minuto — a ponte e o Vantoro hibernam no plano gratuito da
+      //  Render —, e nesse meio a lista vazia escrevia "Nada encontrado".
+      const somarOCadastro = async (base) => {
+        setVendoNoCadastro(true);
+        let doCadastro;
+        try {
+          doCadastro = await procurarNoVantoro(termo, base, advId, sinal);
+        } finally {
+          // SÓ QUEM AINDA É A BUSCA DA VEZ MEXE NA TELA. Se a pessoa já
+          // digitou outra letra, quem manda no aviso é a busca nova: ela já o
+          // zerou e vai levantá-lo no tempo dela. Baixá-lo aqui apagaria o
+          // aviso dela com a volta atrasada desta.
+          if (meu()) setVendoNoCadastro(false);
+        }
+        if (!meu()) return;
+        setAchadosCad(doCadastro.porCad);
+        setSemConversa(doCadastro.semConversa || []);
+        // As que só o cadastro achou entram na MESMA peneira das outras.
+        setExtras(peneirar([...base, ...doCadastro.novas]));
       };
 
       // ------------------------------------------------------------
@@ -7890,12 +7934,7 @@ export default function Painel({ sessao }) {
           // ganhar nada em troca, porque ninguém está mais esperando.
           clearTimeout(relogio);
 
-          const doCadastro = await procurarNoVantoro(termo, tudo, advId, sinal);
-          if (!meu()) return;
-          setAchadosCad(doCadastro.porCad);
-          setSemConversa(doCadastro.semConversa || []);
-          // As que só o cadastro achou entram na MESMA peneira das outras.
-          setExtras(peneirar([...tudo, ...doCadastro.novas]));
+          await somarOCadastro(tudo);
           return;
         }
 
@@ -8016,11 +8055,7 @@ export default function Painel({ sessao }) {
       clearTimeout(relogio);   // o que falta só acrescenta; ver acima
 
       // ---- e só então o cadastro do Vantoro (CPF, processo) ----
-      const doCadastro = await procurarNoVantoro(termo, encontradas, advId, sinal);
-      if (!meu()) return;
-      setAchadosCad(doCadastro.porCad);
-      setSemConversa(doCadastro.semConversa || []);
-      setExtras(peneirar([...encontradas, ...doCadastro.novas]));
+      await somarOCadastro(encontradas);
       } catch (e) {
         // NENHUMA EXCEÇÃO PODE ESCAPAR DAQUI. Uma só, em qualquer das nove
         // consultas, pulava o `setBuscando(false)` — e o "Procurando…" ficava
@@ -8037,6 +8072,10 @@ export default function Painel({ sessao }) {
         clearTimeout(relogio);
         if (meu()) {
           setBuscando(false);
+          // E O AVISO DO CADASTRO SAI JUNTO, pelo mesmo motivo: ele é o único
+          // que sobra depois de `buscando`, e um aviso de "ainda procurando"
+          // que não sai é o "Procurando…" eterno com outro nome.
+          setVendoNoCadastro(false);
           if (sinal.aborted) {
             setErroBusca((antes) => antes || recadoDaBusca({
               tempoEsgotado: true, achouAlgo: false,
@@ -8218,6 +8257,48 @@ export default function Painel({ sessao }) {
       ((b.fixada ? 1 : 0) - (a.fixada ? 1 : 0))
       || String(b.ultima_atividade || "").localeCompare(String(a.ultima_atividade || "")));
   })();
+
+  // ------------------------------------------------------------------
+  //  O QUE A LISTA VAZIA DIZ — a marca e a frase, de uma escolha só
+  //
+  //  A marca é para as provas não terem de caçar a palavra no texto da página
+  //  inteira: um aviso que por acaso contivesse "Procurando" — e um já conteve
+  //  — faria a tela parecer estar procurando depois de ter desistido, e a
+  //  prova aprovaria o defeito que ela caça.
+  //
+  //  AS DUAS SAEM DAQUI JUNTAS de propósito. Escritas em duas escadas iguais,
+  //  elas divergem na primeira mudança: a prova continua verde lendo a marca
+  //  enquanto a tela passou a dizer outra coisa a quem lê.
+  //
+  //  "NADA ENCONTRADO" SÓ DEPOIS DE PERGUNTAR EM TODO LUGAR.
+  //
+  //  Relato de 14/09, com duas fotos da MESMA busca: primeiro "Nada encontrado
+  //  para essa busca", e segundos depois a ELIANA ALVES DA SILVA aparecendo,
+  //  com telefone e "Começar conversa".
+  //
+  //  A busca pergunta em dois lugares e em dois tempos: o banco responde em
+  //  milissegundos, o cadastro do Vantoro leva dezenas de segundos quando ele
+  //  e a ponte estão acordando na Render. O "Procurando…" sai quando o BANCO
+  //  responde — de propósito, para a lista não ficar refém do cadastro. Só
+  //  que, com o banco não achando nada, o que aparecia no lugar dele era esta
+  //  frase.
+  //
+  //  E ela é uma RESPOSTA. Quem lê "nada encontrado" conclui que o cliente não
+  //  está no sistema e para de procurar — a segundos de ele aparecer. É a
+  //  terceira vez que esta tela afirma uma ausência que ainda não apurou, e
+  //  agora ela espera.
+  //
+  //  CALAR NÃO SERVE: uma lista vazia sem uma palavra é a mesma dúvida sem a
+  //  frase. A tela diz o que já sabe — nas conversas não há — e o que falta.
+  // ------------------------------------------------------------------
+  const recadoDaListaVazia =
+    trocandoDeTelefone ? ["trocando", "Carregando as conversas…"]
+    : buscando ? ["procurando", "Procurando…"]
+    : vendoNoCadastro && busca.trim()
+      ? ["cadastro", "Nas conversas, nada. Vendo no cadastro do Vantoro…"]
+    : busca.trim() ? ["nada", "Nada encontrado para essa busca."]
+    : verArquivadas ? ["arquivadas", "Nenhuma conversa arquivada."]
+    : ["sem-conversa", "Nenhuma conversa ainda."];
 
   // O "+" no rodapé quer dizer "o banco tem mais do que isto". Com uma busca
   // ou uma etiqueta escolhida, ele NÃO tem: as duas já perguntaram ao banco e
@@ -9755,16 +9836,11 @@ export default function Painel({ sessao }) {
             </div>
           )}
           {conversasFiltradas.length === 0 && !erroBusca && semConversa.length === 0 && (
-            // A MARCA, para as provas não terem de caçar a palavra no texto da
-            // página inteira: um aviso que por acaso contivesse "Procurando" —
-            // e um já conteve — faria a tela parecer estar procurando depois de
-            // ter desistido, e a prova aprovaria o defeito que ela caça.
-            <div data-recado-da-lista={buscando ? "procurando" : undefined}
+            // A marca e a frase vêm de `recadoDaListaVazia`, uma escolha só —
+            // o porquê de cada uma está lá em cima, junto dela.
+            <div data-recado-da-lista={recadoDaListaVazia[0]}
                  style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>
-              {trocandoDeTelefone ? "Carregando as conversas…"
-                : buscando ? "Procurando…"
-                : busca.trim() ? "Nada encontrado para essa busca."
-                : verArquivadas ? "Nenhuma conversa arquivada." : "Nenhuma conversa ainda."}
+              {recadoDaListaVazia[1]}
             </div>
           )}
           {conversasFiltradas.slice(0, quantasNaLista).map((c) => {

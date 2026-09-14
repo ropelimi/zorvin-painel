@@ -47,8 +47,16 @@ page.on("pageerror", (e) => erros.push("pageerror: " + e.message));
 // que é exatamente o que a Render faz enquanto acorda o serviço. Se a busca
 // esperar por ela, esta prova reprova.
 let pedidosAoVantoro = 0;
+// E A SEÇÃO 3 PRECISA DELE ACORDADO. Ver o comentário lá: desde 14/09 a frase
+// "Nada encontrado" só é dita depois de o cadastro ter respondido, então medir
+// a frase com ele pendurado seria medir outra coisa.
+let vantoroAcordado = false;
 await page.route("**/vantoro/buscar*", async (rota) => {
   pedidosAoVantoro += 1;
+  if (vantoroAcordado) {
+    return rota.fulfill({ status: 200, contentType: "application/json",
+                          body: JSON.stringify({ ok: true, clientes: [] }) });
+  }
   await new Promise((r) => setTimeout(r, 60000));   // mais do que a prova espera
   rota.abort();
 });
@@ -128,12 +136,28 @@ console.log("\n3. Uma busca sem resultado diz que não achou, e não fica procur
 {
   // "Nada encontrado" e "Procurando…" são respostas opostas, e a segunda é a
   // que faz a pessoa esperar. Sem o conserto, esta busca também ficaria presa.
+  //
+  // O VANTORO ACORDA AQUI, e esta linha é uma correção desta prova, de 14/09.
+  //
+  // Ela media a frase "Nada encontrado" com o cadastro PENDURADO — e passava,
+  // porque naquele dia a tela realmente dizia isso com a pergunta ainda no ar.
+  // Era o defeito do relato ("está aparecendo uma mensagem falsa") escrito
+  // aqui como se fosse o acerto: a prova protegia o que devia caçar.
+  //
+  // O que esta seção mede é outra coisa, e continua valendo: uma busca que
+  // terminou sem ninguém RESPONDE, em vez de ficar procurando para sempre.
+  // Para terminar, o cadastro tem de ter respondido — e é o que a linha faz.
+  // A espera pelo cadastro que não responde é medida em
+  // `a-resposta-antes-da-resposta`, que espera o prazo inteiro.
+  vantoroAcordado = true;
   await caixa.fill("ZZZZNINGUEMZZZZ");
   await page.waitForTimeout(3000);
   const texto = await page.locator("body").innerText();
   ok("a tela diz que não achou nada", /Nada encontrado/i.test(texto),
      texto.slice(0, 200));
   ok("e não continua dizendo que está procurando", !/Procurando…/.test(texto));
+  ok("nem que ainda está vendo no cadastro",
+     (await page.locator('[data-recado-da-lista="cadastro"]').count()) === 0);
 }
 
 console.log(`\nerros de página: ${erros.length}`);

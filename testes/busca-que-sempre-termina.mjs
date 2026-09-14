@@ -164,7 +164,18 @@ page.on("pageerror", (e) => erros.push("pageerror: " + e.message));
 
 // O VANTORO DORMINDO — como na prova irmã. Ele não pode influir em nada do que
 // se mede aqui.
+//
+// MENOS NUMA COISA, desde 14/09: "Nada encontrado para essa busca" só é dito
+// depois de o cadastro ter respondido. A frase era escrita com a pergunta
+// ainda no ar, e era o defeito do relato ("está aparecendo uma mensagem
+// falsa"). Onde esta prova mede a FRASE — o fim da seção 5 —, o cadastro
+// precisa ter respondido; em todo o resto ele continua dormindo.
+let vantoroAcordado = false;
 await page.route("**/vantoro/buscar*", async (rota) => {
+  if (vantoroAcordado) {
+    return rota.fulfill({ status: 200, contentType: "application/json",
+                          body: JSON.stringify({ ok: true, clientes: [] }) });
+  }
   await new Promise((r) => setTimeout(r, 60000));
   rota.abort();
 });
@@ -308,6 +319,9 @@ console.log("\n5. E a busca continua servindo, com tudo respondendo de novo");
   ok("sem sobra de aviso de tempo esgotado", !/parei de esperar/i.test(texto),
      texto.slice(0, 200));
 
+  // "tudo respondendo de novo" passa a incluir o cadastro: é ele que fecha a
+  // busca agora, e sem ele a tela ainda está esperando — com razão.
+  vantoroAcordado = true;
   await caixa.fill("ZZZZNINGUEMZZZZ");
   await page.waitForTimeout(2500);
   const t2 = await page.locator("body").innerText();
