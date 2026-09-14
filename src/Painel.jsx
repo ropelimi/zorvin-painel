@@ -141,6 +141,49 @@ let TEM_CONTAGEM_NO_BANCO = true;
 const CARENCIA_TEMPO_REAL_MS =
   (typeof globalThis !== "undefined" && globalThis.__CARENCIA_TEMPO_REAL) || 10000;
 
+// ============================================================
+//  DE QUANTO EM QUANTO O PAINEL REFAZ O CANAL QUE NÃO VOLTOU
+//
+//  "Estamos reconectando" era uma promessa que o painel não cumpria: quem
+//  reconectava era a biblioteca, sozinha, e o painel só olhava.
+//
+//  Na maioria das quedas isso basta — o canal erra, agenda outra tentativa e
+//  volta. MENOS NUM CAMINHO, e ele está escrito no código da biblioteca
+//  (`RealtimeChannel.subscribe`): quando o servidor devolve um conjunto de
+//  assinaturas diferente do que foi pedido, ela faz
+//
+//      this.unsubscribe();           // e o `leave()` ZERA o relógio de retentativa
+//      callback(CHANNEL_ERROR, new Error('mismatch between server and client
+//                                         bindings for postgres changes'));
+//
+//  O canal fica morto. Nada mais tenta, e o painel segue prometendo que está
+//  reconectando — para sempre. Só recarregar a página resolve, e ninguém sabe
+//  disso porque a tela diz o contrário. Acontece, por exemplo, depois de uma
+//  publicação do Realtime do Supabase.
+//
+//  Agora o painel refaz o canal ele mesmo. Funciona justamente porque a
+//  biblioteca deixou o canal FECHADO: um canal fechado aceita ser assinado de
+//  novo (um errado, não — `subscribe` só age `if (isClosed())`).
+//
+//  AS ESPERAS CRESCEM. Refazer é uma ida à rede e uma nova inscrição; insistir
+//  de segundo em segundo com o serviço fora é bater na porta de quem já não
+//  está atendendo.
+const ESPERAS_DE_VOLTA =
+  (typeof globalThis !== "undefined" && globalThis.__ESPERAS_DE_VOLTA)
+  || [15000, 30000, 60000, 120000];
+
+//  E A PROMESSA TEM PRAZO.
+//
+//  Passado este tempo sem o canal voltar, o painel para de dizer que está
+//  reconectando e diz o que fazer. Dizer "estamos reconectando" para sempre é o
+//  mesmo defeito que esta tela já teve de três jeitos: afirmar o que não se
+//  apurou. Três minutos é longo o bastante para não mandar ninguém recarregar
+//  por causa de um soluço, e curto o bastante para não deixar alguém a manhã
+//  inteira esperando mensagem que não vem.
+const LIMITE_DA_PROMESSA_MS =
+  (typeof globalThis !== "undefined" && globalThis.__LIMITE_DA_PROMESSA) || 180000;
+// ============================================================
+
 const CHAVE_DISPENSADOS = "zorvin_avisos_dispensados";
 function lerDispensados() {
   try {
@@ -278,7 +321,7 @@ function haQuantoTempo(desde) {
  *  quebrada, não como recado. */
 const conforme = (n, uma, muitas) => (n === 1 ? uma : muitas);
 
-function frasesDaSaude(saude, ehAdmin, tempoRealCaiu = false) {
+function frasesDaSaude(saude, ehAdmin, tempoRealCaiu = false, tempoRealDesistiu = false) {
   const por = {};
   for (const l of saude || []) por[l.sinal] = l;
   const frases = [];
@@ -304,8 +347,17 @@ function frasesDaSaude(saude, ehAdmin, tempoRealCaiu = false) {
   // recarregar seria empurrar trabalho para quem atende por algo que o painel
   // resolve, e resolve relendo o que passou.
   if (tempoRealCaiu) {
-    frases.push("As mensagens novas não estão chegando sozinhas — a conexão ao vivo caiu."
-      + " Estamos reconectando; quando voltar, a tela se atualiza.");
+    // E QUANDO A PROMESSA VENCE, ELA SAI DA FRASE.
+    //
+    // "Estamos reconectando" dito por vinte minutos é a tela afirmando o que
+    // não apurou — o mesmo defeito, pela quarta porta. Há um caminho em que o
+    // canal morre de vez (ver ESPERAS_DE_VOLTA), e nele só recarregar resolve.
+    // Enquanto a frase promete, ninguém recarrega: ela diz que não precisa.
+    frases.push(tempoRealDesistiu
+      ? "As mensagens novas não estão chegando sozinhas, e as tentativas de"
+        + " reconectar não deram certo. Recarregue a página para voltar a receber."
+      : "As mensagens novas não estão chegando sozinhas — a conexão ao vivo caiu."
+        + " Estamos reconectando; quando voltar, a tela se atualiza.");
   }
 
   // A LINHA CAÍDA DIZ O NOME. Sem ele, quem atende não sabe se é a linha que
@@ -2476,6 +2528,9 @@ export default function Painel({ sessao }) {
   //  informada e a tela errada — por isso a volta do canal RELÊ.
   // ============================================================
   const [tempoRealCaiu, setTempoRealCaiu] = useState(false);
+  // E SE O PAINEL JÁ DESISTIU de reconectar sozinho. Separado de
+  // `tempoRealCaiu` porque a frase muda: uma promete, a outra pede uma ação.
+  const [tempoRealDesistiu, setTempoRealDesistiu] = useState(false);
 
   // O QUE RELER, GUARDADO NUM ESPELHO E NÃO NAS DEPENDÊNCIAS DO CANAL.
   //
@@ -5025,7 +5080,14 @@ export default function Painel({ sessao }) {
   // recarregar a página.
   useEffect(() => {
     let carencia = null;
-    const canal = supabase
+    // O relógio da promessa e o do vigia. Ver ESPERAS_DE_VOLTA, lá em cima.
+    let promessa = null;
+    let vigia = null;
+    let tentativas = 0;
+    let canal = null;
+    let vivo = true;
+
+    const montar = () => supabase
       .channel("zorvin-realtime")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "mensagens" }, async (payload) => {
         const nova = payload.new;
@@ -5267,34 +5329,81 @@ export default function Painel({ sessao }) {
       // e o painel seguia desenhando a mesma tela — e a tela de uma conversa
       // sem mensagem nova é idêntica à de uma conversa em que o cliente não
       // respondeu.
-      .subscribe((estado) => {
-        if (estado === "SUBSCRIBED") {
-          // A VOLTA RELÊ. O `postgres_changes` não repete o que passou: tudo o
-          // que o banco publicou durante a queda não chega nunca. Só apagar o
-          // aviso deixaria a pessoa tranquila e a tela errada — que é pior do
-          // que o aviso aceso.
-          //
-          // Só na VOLTA, e não na primeira assinatura: ali a tela acabou de ser
-          // carregada, e reler seria uma segunda leitura de tudo a cada
-          // abertura do painel.
-          if (caiuRef.current) {
-            caiuRef.current = false;
-            reporRef.current();
-          }
-          clearTimeout(carencia);
-          setTempoRealCaiu(false);
-          return;
+      .subscribe(aoMudarDeEstado);
+
+    function aoMudarDeEstado(estado) {
+      if (estado === "SUBSCRIBED") {
+        // A VOLTA RELÊ. O `postgres_changes` não repete o que passou: tudo o
+        // que o banco publicou durante a queda não chega nunca. Só apagar o
+        // aviso deixaria a pessoa tranquila e a tela errada — que é pior do
+        // que o aviso aceso.
+        //
+        // Só na VOLTA, e não na primeira assinatura: ali a tela acabou de ser
+        // carregada, e reler seria uma segunda leitura de tudo a cada
+        // abertura do painel. Vale também para a volta que o VIGIA conseguiu:
+        // o canal que ele refez é um canal novo, e o que passou continua
+        // tendo passado.
+        if (caiuRef.current) {
+          caiuRef.current = false;
+          reporRef.current();
         }
-        // QUEDA NÃO ACENDE A LUZ NA HORA. Uma reconexão comum passa por
-        // `CLOSED` e volta em poucos segundos; acender ali faria a faixa
-        // piscar no meio do expediente por nada, e faixa que pisca à toa se
-        // aprende a ignorar. Dez segundos calados é o que separa o soluço da
-        // queda.
-        caiuRef.current = true;
-        clearTimeout(carencia);
+        tentativas = 0;
+        clearTimeout(vigia); vigia = null;
+        clearTimeout(carencia); carencia = null;
+        clearTimeout(promessa); promessa = null;
+        setTempoRealCaiu(false);
+        setTempoRealDesistiu(false);
+        return;
+      }
+      // QUEDA NÃO ACENDE A LUZ NA HORA. Uma reconexão comum passa por
+      // `CLOSED` e volta em poucos segundos; acender ali faria a faixa
+      // piscar no meio do expediente por nada, e faixa que pisca à toa se
+      // aprende a ignorar. Dez segundos calados é o que separa o soluço da
+      // queda.
+      //
+      // OS TRÊS RELÓGIOS SÓ SÃO ARMADOS UMA VEZ, e é o que os torna relógios
+      // de "quanto tempo fora" em vez de "quanto tempo desde o último erro".
+      // Cada tentativa do vigia que não pega gera outro `CHANNEL_ERROR`; se
+      // eles rearmassem, a faixa nunca acenderia e a promessa nunca venceria —
+      // o conserto teria desligado o aviso que existe para contar a queda.
+      caiuRef.current = true;
+      if (!carencia) {
         carencia = setTimeout(() => setTempoRealCaiu(true), CARENCIA_TEMPO_REAL_MS);
-      });
-    return () => { clearTimeout(carencia); supabase.removeChannel(canal); };
+      }
+      if (!promessa) {
+        promessa = setTimeout(() => setTempoRealDesistiu(true), LIMITE_DA_PROMESSA_MS);
+      }
+      armarOVigia();
+    }
+
+    function armarOVigia() {
+      if (vigia) return;
+      vigia = setTimeout(refazerOCanal,
+                         ESPERAS_DE_VOLTA[Math.min(tentativas, ESPERAS_DE_VOLTA.length - 1)]);
+    }
+
+    function refazerOCanal() {
+      vigia = null;
+      if (!vivo) return;
+      tentativas += 1;
+      // TIRA O VELHO ANTES. Dois canais com o mesmo nome escutando as mesmas
+      // tabelas entregariam cada mensagem DUAS vezes — e as telas que somam
+      // (o selo de não lidas) contariam dobrado.
+      try { supabase.removeChannel(canal); } catch (_e) { /* já tinha saído */ }
+      canal = montar();
+      // E O VIGIA SEGUE ARMADO: se esta também não pegar, tenta de novo,
+      // esperando mais. Quem o desarma é o `SUBSCRIBED`.
+      armarOVigia();
+    }
+
+    canal = montar();
+    return () => {
+      vivo = false;
+      clearTimeout(carencia);
+      clearTimeout(promessa);
+      clearTimeout(vigia);
+      supabase.removeChannel(canal);
+    };
   }, [carregarConversas, carregarNaoLidasPorAdv, carregarTags, carregarTagsConversas]);
 
   // Ao abrir uma conversa, começa no fim (mensagens mais recentes).
@@ -11710,7 +11819,7 @@ export default function Painel({ sessao }) {
           não resolve é pior do que não oferecer nenhum. Ela some sozinha quando
           o problema passar, na pergunta seguinte. */}
       {(() => {
-        const frases = frasesDaSaude(saude, souAdmin, tempoRealCaiu);
+        const frases = frasesDaSaude(saude, souAdmin, tempoRealCaiu, tempoRealDesistiu);
         if (!frases.length) return null;
         return (
           <div data-aviso-de-saude
