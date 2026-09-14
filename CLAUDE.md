@@ -40,6 +40,8 @@ src/
 Variáveis de ambiente (Render → Static Site):
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY` — chave **anon** (pública, respeita RLS)
+- `VITE_VANTORO` — `desligado` tira o Vantoro da entrada. **Opcional: sem ela,
+  tudo como antes.** Ver "A entrada tem dois caminhos" abaixo.
 
 Build: `npm install && npm run build` · Publish directory: `dist`
 
@@ -53,6 +55,58 @@ Build: `npm install && npm run build` · Publish directory: `dist`
 - **Envio**: NÃO chama a Uazapi diretamente. Faz `insert` em `fila_envio` e a ponte cuida do resto.
 - **Tema claro/escuro**: objeto `TEMAS` no topo do `Painel.jsx`, alternado pelo ícone lua/sol na barra lateral. Estilos são inline (sem Tailwind/CSS externo).
 - **Avatares**: componente `Avatar` mostra `foto_url` se existir; senão a inicial com cor estável derivada do nome.
+
+## A entrada tem dois caminhos — e o segundo é o que permite vender
+
+A tela de entrada pedia **"Usuário do Vantoro"** e mandava usuário e senha para
+a ponte, que perguntava ao Vantoro. Para o escritório isso é o certo: é lá que o
+cadastro de pessoa mora, e manter duas listas de gente iguais é coisa que
+ninguém faz por muito tempo.
+
+Só que **isso era o portão**. Quem comprasse o Zorvin sem ter Vantoro não
+conseguia nem abrir o programa — não era uma integração faltando, era a porta
+trancada. Medido em 14/09: `src/Login.jsx` pedia o usuário do Vantoro e
+`ponte.js` trocava aquilo pelo token de lá.
+
+Com `VITE_VANTORO=desligado`, a senha é conferida pelo **Auth do próprio
+Supabase** (`signInWithPassword`), com as contas criadas em Authentication →
+Users. É o desenho original deste painel, de antes de o Vantoro entrar. **Sem a
+variável, o padrão é `ligado`** e a tela do escritório não muda uma vírgula.
+
+**E três frases mudam junto, porque duas passariam a mentir:**
+
+- "Usuário do Vantoro" vira "E-mail" (e o campo vira `type="email"`, que no
+  outro caminho recusaria "rodrigo.sousa" antes de sair da tela);
+- "o servidor estava dormindo" é sobre a **ponte** hibernando na Render, e neste
+  caminho a ponte não é chamada — repetir aquilo manda esperar por algo que não
+  está acontecendo;
+- "pode entrar normalmente: o seu login não depende desse serviço" **se
+  inverte**. Com o Vantoro, quem confere a senha é ele, e o Auth calado não
+  impede ninguém. Sem o Vantoro, quem confere a senha É o Auth — a frase antiga
+  deixaria a pessoa repetindo a senha certa contra um serviço fora do ar até
+  concluir que esqueceu a senha.
+
+A ponte continua sendo acordada por `/ping` ao abrir a tela, e isso **não** é
+resto do caminho antigo: depois de entrar, o painel fala com ela para etiquetas,
+notas e fotos. O que não acontece mais é `/auth/login`, e é isso que a prova
+confere — uma tela que diz "E-mail" e continua perguntando ao Vantoro por baixo
+pareceria consertada e recusaria todo mundo.
+
+**A linha da pessoa em `usuarios`** (quem ela é, se administra) era criada pela
+ponte no login, com o que o Vantoro respondia. Sem Vantoro ela nasce por gatilho
+no banco — `sql/automaticos/001-quem-entra-vira-gente.sql`, no repo da ponte —,
+e **a primeira conta do banco nasce administradora**, senão ninguém nunca
+administraria nada.
+
+**Ainda em aberto, e é o próximo passo:** sem Vantoro não há tela para
+**cadastrar gente nem dar permissão** — `listarAtendentes` e `gravarAtendente`
+leem e escrevem no Vantoro. O comprador entra, vê tudo (quem não tem permissão
+definida vê tudo, de propósito) e é o único administrador.
+
+Prova: `entrar-sem-vantoro`, que roda num **servidor próprio** servido com
+`VITE_VANTORO=desligado` — ver `SEM_VANTORO` em `testes/rodar.mjs`. Uma bandeira
+no navegador seria mais barata e provaria a bandeira: o caminho que a variável
+liga continuaria sem ninguém nunca ter visto funcionar.
 
 ## Banco de dados (tabelas que o painel lê/escreve)
 

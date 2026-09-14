@@ -19,6 +19,37 @@ import Marca from "./Marca";
 // celular) e estilos 100% inline (sem CSS externo), como o resto do app.
 const BRIDGE_URL = (import.meta.env.VITE_BRIDGE_URL || "").replace(/\/$/, "");
 
+// ============================================================
+//  A ENTRADA TEM DOIS CAMINHOS, E A CHAVE É `VITE_VANTORO`
+//
+//  ATÉ AQUI ERA UM SÓ, e ele passava pelo Vantoro: esta tela pedia "Usuário do
+//  Vantoro", mandava para a ponte, e era o Vantoro quem dizia se a senha
+//  estava certa. Para o escritório do Rodrigo isso é o certo — é lá que o
+//  cadastro de pessoa mora, e manter duas listas de gente iguais é coisa que
+//  ninguém faz por muito tempo.
+//
+//  Só que ISSO É O PORTÃO. Quem comprar o Zorvin e não tiver Vantoro não
+//  conseguia nem abrir o programa: não havia caminho nenhum para dentro. Não é
+//  uma integração faltando, é a porta trancada.
+//
+//  Com `VITE_VANTORO=desligado`, a senha é conferida pelo Auth do próprio
+//  Supabase — e-mail e senha, as contas criadas por quem administra. É o
+//  desenho original deste painel, que existiu antes de o Vantoro entrar.
+//
+//  SEM A VARIÁVEL, TUDO COMO ANTES. O padrão é `ligado`, e a tela do
+//  escritório não muda uma vírgula.
+//
+//  E MUDAM TRÊS FRASES JUNTO, porque duas delas passariam a MENTIR:
+//
+//    - "Usuário do Vantoro" vira "E-mail" (não há Vantoro para consultar);
+//    - "o servidor estava dormindo" é sobre a ponte hibernando na Render, e
+//      neste caminho a ponte não é chamada;
+//    - "o seu login não depende desse serviço" era verdade porque quem confere
+//      era o Vantoro. Aqui quem confere É o Auth do Supabase — dizer que não
+//      depende mandaria a pessoa tentar de novo para sempre.
+// ============================================================
+const COM_VANTORO = import.meta.env.VITE_VANTORO !== "desligado";
+
 // Quanto tempo esperar a ponte responder à entrada.
 //
 // 75 segundos porque o teto tem de ser MAIOR do que o tempo de a Render
@@ -120,6 +151,40 @@ export default function Login({ authMudo = false } = {}) {
     const avisar = setTimeout(() => setDemorando(true), 4000);
     const estourou = setTimeout(() => relogio.abort(), LIMITE_MS);
     try {
+      // ---- O CAMINHO SEM VANTORO: quem confere a senha é o Auth do Supabase.
+      //
+      // Ele sai daqui e NÃO passa pela ponte, e isso é ganho de propósito: a
+      // ponte hiberna no plano gratuito da Render, e a primeira entrada do dia
+      // esperava até um minuto por ela. Este caminho não acorda ninguém.
+      //
+      // As contas nascem em Authentication → Users, no painel do Supabase, por
+      // quem administra. É o desenho original deste painel.
+      if (!COM_VANTORO) {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: email.trim(), password: senha,
+        });
+        if (error) {
+          // "Invalid login credentials" é o que o Auth responde para e-mail que
+          // não existe E para senha errada — de propósito, para não contar a
+          // quem tenta quais e-mails existem. A frase em português mantém as
+          // duas juntas pelo mesmo motivo.
+          const cru = String((error && error.message) || "");
+          setErro(/invalid login credentials/i.test(cru)
+            ? "E-mail ou senha incorretos."
+            : "Não foi possível entrar agora. Tente de novo; se continuar, avise quem administra.");
+          // O TEXTO CRU FICA, embaixo. Sem ele, "não foi possível entrar" é
+          // igual para e-mail não confirmado, conta desativada e serviço fora
+          // do ar — três coisas que pedem providências diferentes de quem
+          // administra.
+          if (!/invalid login credentials/i.test(cru)) setDetalhe(cru);
+          setEntrando(false);
+          return;
+        }
+        // Deu certo: o `App` percebe a sessão e troca para o painel sozinho,
+        // pelo mesmo caminho do outro login.
+        return;
+      }
+
       if (!BRIDGE_URL) throw new Error("O endereço da ponte não está configurado (VITE_BRIDGE_URL).");
 
       const r = await fetch(`${BRIDGE_URL}/auth/login`, {
@@ -280,17 +345,24 @@ export default function Login({ authMudo = false } = {}) {
               sua. A resposta é sempre a mesma e agora está escrita: é o mesmo
               usuário do Vantoro, o que a pessoa digita todo dia no outro
               sistema. Não há o que decorar nem inventar. */}
-          <label style={{ fontSize: 13, fontWeight: 600, color: C.textSecondary }}>Usuário do Vantoro</label>
+          <label style={{ fontSize: 13, fontWeight: 600, color: C.textSecondary }}>
+            {COM_VANTORO ? "Usuário do Vantoro" : "E-mail"}
+          </label>
           <div style={campoWrap(foco === "email")}>
             <Mail size={18} color={foco === "email" ? C.green : C.textSecondary} style={{ flexShrink: 0 }} />
             <input
-              className="zv-input" type="text" autoComplete="username" autoCapitalize="none"
+              // `type="email"` SÓ no caminho sem Vantoro. Ali é sempre um
+              // e-mail, e a conferência do navegador ajuda; no outro, o login é
+              // "rodrigo.sousa", sem arroba, e `email` faria o formulário ser
+              // recusado antes de sair da tela.
+              className="zv-input" type={COM_VANTORO ? "text" : "email"}
+              autoComplete={COM_VANTORO ? "username" : "email"} autoCapitalize="none"
               // O cursor já começa aqui. É a primeira coisa que se faz nesta
               // tela — não há outra —, e obrigar um clique antes de digitar é
               // um passo que não serve para nada. Quem entra pelo celular
               // ganha o teclado abrindo sozinho.
               autoFocus
-              placeholder="Digite o mesmo usuário do Vantoro" value={email}
+              placeholder={COM_VANTORO ? "Digite o mesmo usuário do Vantoro" : "voce@escritorio.com"} value={email}
               onChange={(e) => { setEmail(e.target.value); if (erro) setErro(""); }} onFocus={() => setFoco("email")} onBlur={() => setFoco("")}
               required style={inputEstilo}
             />
@@ -323,8 +395,17 @@ export default function Login({ authMudo = false } = {}) {
           {authMudo && !erro && (
             <div role="status" style={{ color: "#5a4a00", background: "#ffe9a8", fontSize: 13, fontWeight: 500, marginTop: 16, padding: "9px 12px", borderRadius: 10 }}>
               A conferência de quem está entrando demorou demais para responder.
+              {/* A SEGUNDA LINHA SE INVERTE, e é o conserto de uma mentira em
+                  potencial. Com o Vantoro, quem confere a senha é ele, e o
+                  Auth calado não impede ninguém de entrar — daí "não depende".
+                  Sem o Vantoro, quem confere a senha É o Auth: mandar tentar
+                  normalmente deixaria a pessoa repetindo a senha certa contra
+                  um serviço fora do ar, concluindo que esqueceu a senha. */}
               <div style={{ marginTop: 4, fontSize: 12, fontWeight: 400 }}>
-                Pode entrar normalmente: o seu login não depende desse serviço.
+                {COM_VANTORO
+                  ? "Pode entrar normalmente: o seu login não depende desse serviço."
+                  : "É esse serviço que confere a sua senha. Tente daqui a pouco; "
+                    + "se continuar, avise quem administra."}
               </div>
             </div>
           )}
@@ -361,11 +442,18 @@ export default function Login({ authMudo = false } = {}) {
               pessoa fecha a página, tenta de novo, e é justamente a segunda
               tentativa que entraria na hora. Dizer o que está havendo é o que
               a faz esperar mais dez segundos em vez de desistir. */}
+          {/* A frase do servidor dormindo é sobre A PONTE, que hiberna no plano
+              gratuito da Render. No caminho sem Vantoro a ponte não é chamada:
+              repetir aquilo mandaria a pessoa esperar por algo que não está
+              acontecendo. Demora ali é o Auth do Supabase, e a frase diz isso. */}
           {entrando && demorando && (
             <div role="status" style={{ marginTop: 12, fontSize: 12.5, lineHeight: 1.5,
                                         color: C.textSecondary, textAlign: "center" }}>
-              O servidor estava dormindo e está acordando. A primeira entrada do
-              dia pode levar até um minuto — depois dela, tudo fica rápido.
+              {COM_VANTORO
+                ? "O servidor estava dormindo e está acordando. A primeira entrada do "
+                  + "dia pode levar até um minuto — depois dela, tudo fica rápido."
+                : "Está demorando mais do que o normal. Aguarde mais um pouco — e, "
+                  + "se não entrar, avise quem administra."}
             </div>
           )}
         </form>
