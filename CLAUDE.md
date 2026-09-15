@@ -219,6 +219,57 @@ confere os dois mundos — o menu só existe abaixo de 768px, então uma confer�
 numa janela larga passaria por não ter achado o menu, e não por o item ter
 sumido.
 
+## As palavras da casa — "advogado" não serve para todo comprador
+
+O painel dizia **"advogado" em nove frases**. Para o escritório está certo; para
+uma clínica, uma imobiliária ou uma equipe de vendas, o programa fala de uma
+profissão que não é a deles.
+
+**Onde elas ficam, medido em 15/09:** Configurações → *Importar histórico* e
+Configurações → *Contatos*. **Não na primeira tela** — ela diz "ATENDENDO COMO"
+e lista nomes de telefone. Escrevi a prova supondo o contrário e ela reprovou
+três vezes, falando de um rótulo que não existe lá. Ao mexer nisso, **olhe onde
+a palavra aparece de verdade antes de escrever a conferência.**
+
+**Uma delas quase ficou para trás:** "No celular **do advogado**: abra a
+conversa → ⋮ → Mais…". Um extrator de texto visível baseado em `>…<` não a
+pegou, porque ela tem um `<b>` no meio. Varrer por `grep` de `advogado` foi o
+que a achou — e é a frase da tela de instruções, onde o comprador mais presta
+atenção.
+
+**E o que NÃO se troca:** `origem === "advogado"` aparece vinte vezes no
+`Painel.jsx` e é **valor gravado no banco** — é o que separa mensagem da equipe
+de mensagem do cliente. Trocar junto quebraria as bolhas de todas as conversas.
+
+A palavra mora em `zorvin_palavras` (script 003, no repo da ponte) e é trocada
+numa seção da tela de administração — **não por SQL**, porque quem compra o
+programa não cola SQL, e palavra que exige chamar o fornecedor para ser trocada
+é palavra fixa.
+
+**Sem a tabela, tudo como antes**: `vocabulario.js` cai em "advogado", e a seção
+de administração nem aparece (sem a linha, o "Salvar" não teria o que
+atualizar). Esta é a **única** leitura do painel que pode desenhar ausência sem
+avisar, e por um motivo que não vale para nenhuma outra: a ausência aqui é uma
+palavra igual à de sempre, e não um dado que sumiu.
+
+**O gênero é guardado, não deduzido.** "o advogado" / "a médica", "dono" /
+"dona", "selecionado" / "selecionada". Deduzir da terminação erraria em
+"gerente", "assistente", "representante".
+
+**"Processo" não entrou, e é decisão**: toda frase visível com essa palavra está
+atrás de uma porta do Vantoro, que é o sistema do próprio escritório — onde a
+palavra é sempre "processo". Um botão para trocá-la seria um botão que ninguém
+pode usar.
+
+**Sobra da etapa anterior, consertada junto:** a caixa de busca dizia "Buscar
+por nome, mensagem, CPF ou processo", e CPF e processo vinham **só** do cadastro
+do Vantoro (o que vai ao banco é nome, os dois nomes alternativos e número).
+Escondido o cadastro, ela prometia duas coisas que não faz — e prometer busca
+por CPF é pior do que não oferecer: quem digita o CPF e não acha conclui que o
+cliente não está no sistema.
+
+Prova: `o-vocabulario`.
+
 ## Banco de dados (tabelas que o painel lê/escreve)
 
 - `advogados` — lê (id, nome, numero, foto_url) onde `ativo = true`

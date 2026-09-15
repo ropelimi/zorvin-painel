@@ -1062,7 +1062,16 @@ NOTAS.push({
   criado_em: new Date(Date.now() - 3600e3).toISOString(),
 });
 
+// AS PALAVRAS DA CASA. Vazia por padrão, e é isso que faz as provas de antes
+// continuarem iguais: sem linha, a tela cai no padrão ("advogado") e a seção
+// de administração não aparece — exatamente o banco que ainda não recebeu o
+// script 003. A bandeira `__PALAVRAS` põe a linha, para a prova do vocabulário
+// poder ver os dois estados.
+const PALAVRAS = (typeof globalThis !== "undefined" && globalThis.__PALAVRAS)
+  ? [{ id: true, ...globalThis.__PALAVRAS }] : [];
+
 const TABELAS = {
+  zorvin_palavras: PALAVRAS,
   advogados: ADVOGADOS,
   departamentos: DEPARTAMENTOS,
   conversas: CONVERSAS,
