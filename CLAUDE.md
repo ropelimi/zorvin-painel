@@ -270,6 +270,75 @@ cliente não está no sistema.
 
 Prova: `o-vocabulario`.
 
+## O aviso de mensagem nova — o som, e a quem ele interessa
+
+Pedido da equipe em 15/09: poder **escolher o som**, e ser avisado **das
+conversas em que a pessoa interagiu**.
+
+**O que havia:** um bipe fixo de 880 Hz, e o aviso filtrado pelo **telefone
+aberto** na barra lateral. A atendente que respondeu um cliente ontem na linha
+do Dr. B não era avisada quando ele voltava a escrever — bastava ela estar
+olhando a linha do Dr. A. O aviso chegava a quem estava **à vista**, e não a
+quem estava **atendendo**.
+
+### As três regras
+
+| Situação | Avisa? | Por quê |
+|---|---|---|
+| Eu já respondi nessa conversa | **sim**, em qualquer telefone | é o pedido |
+| Outra pessoa atende | não | aviso que não pede ação de quem lê se aprende a ignorar, e aí o próximo passa batido junto |
+| **Ninguém atendeu ainda** | **sim, todo mundo** | é a primeira mensagem de um lead: sem dono, e sem aviso ela fica sem resposta |
+
+A terceira é o **contrapeso**, decidida pelo Rodrigo: "só as minhas" ao pé da
+letra calaria justamente a mensagem que ninguém pode perder.
+
+**"Participei" sai das próprias mensagens** (`enviado_por_id`), e não de uma
+função nova no banco — que exigiria um script a mais para rodar. No dia em que
+isto foi escrito o Supabase estava fora do ar, o que deixa claro o valor de um
+recurso de tela não depender de um passo manual.
+
+**Uma pergunta por CONVERSA, não por mensagem**, guardada em
+`deQuemEhAConversa`. E o próprio tempo real mantém o guardado em dia: quando um
+colega responde, essa mensagem chega a todos os painéis, então dá para marcar
+ali que a conversa deixou de ser órfã sem perguntar nada ao banco. Responder
+marca na hora (`inserirNaFila`), porque o tempo real levaria segundos e nesse
+intervalo o cliente pode responder.
+
+**A leitura que falha AVISA assim mesmo.** Sem saber de quem é a conversa, o
+erro barato é um som a mais; o caro é calar a mensagem de um cliente por causa
+de uma oscilação de rede. É a armadilha nº 2 aplicada a um aviso.
+
+### O som
+
+`avisos.js`, cinco opções **sintetizadas pelo navegador** — nenhum arquivo,
+nenhuma ida à rede. Um MP3 baixado por pessoa a cada abertura é a mesma conta
+que zerou a franquia de banda e suspendeu o workspace em 21/08 (armadilha nº 6
+do CLAUDE.md da ponte).
+
+A escolha mora no **navegador** (`localStorage`), e não no banco: é preferência
+de quem está sentado ali, e responde na hora mesmo com o banco fora do ar.
+**"Sem som" não desliga o aviso**, só o barulho — a notificação e o selo
+continuam, e é isso que separa a opção de simplesmente baixar o volume da
+máquina.
+
+### A etiqueta da notificação
+
+Era `tag: "zorvin"` para tudo: cada aviso **substituía** o anterior, então dois
+clientes escrevendo ao mesmo tempo viravam **um** aviso — o segundo apagando o
+primeiro sem deixar rastro. Hoje a etiqueta é por conversa, e o título traz o
+nome de quem escreveu (dois avisos dizendo "Nova mensagem" não dizem a qual
+conversa ir).
+
+Prova: `o-aviso-de-mensagem-nova`, 15 conferências, 5 sabotagens e 5 pegas. Ela
+**espiona** o som e a notificação em vez de desligá-los — uma bancada que os
+silenciasse aprovaria um painel que nunca avisa ninguém.
+
+**E a cena do cliente novo usa uma conversa que ainda não existe.** Escrevi
+primeiro reaproveitando uma conversa da bancada, e ela reprovou: aquela já tinha
+histórico com autor, então era de alguém. A conferência dizia medir "cliente
+novo" e media outra coisa — e o cenário de verdade é este mesmo, porque cliente
+novo escrevendo cria uma conversa que nenhum painel conhece.
+
 ## Banco de dados (tabelas que o painel lê/escreve)
 
 - `advogados` — lê (id, nome, numero, foto_url) onde `ativo = true`
