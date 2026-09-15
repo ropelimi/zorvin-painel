@@ -218,6 +218,16 @@ const APARELHO = { id: null, nome: "WhatsApp", aparelho: true };
 // Os tratadores de tempo real que o painel registrou. A prova dispara por
 // `globalThis.__EMITIR`, que é o mesmo caminho por onde o Supabase avisaria.
 const OUVINTES = [];
+/** Tira da lista só os ouvintes DESTE canal — ver a nota em `on`. */
+function tirarOuvintesDe(canal) {
+  for (let i = OUVINTES.length - 1; i >= 0; i--) {
+    // SÓ OS DESTE CANAL. A tentação é acrescentar "ou os sem dono", para o
+    // caso de alguém registrar por fora — e aí a saída de um canal levaria
+    // junto os ouvintes de outro, que é o defeito que esta função existe para
+    // consertar. Todo ouvinte passa por `on`, e `on` sempre põe o dono.
+    if (!canal || OUVINTES[i].dono === canal) OUVINTES.splice(i, 1);
+  }
+}
 if (typeof globalThis !== "undefined") {
   globalThis.__EMITIR = (evento, tabela, novo, velho = null) => {
     let quantos = 0;
@@ -2382,7 +2392,14 @@ export const supabase = {
       // O NOME FICA NO CANAL para `removeChannel` saber de qual sala se está
       // saindo — sem isso não há como ver a colisão de nome.
       __nome: nome,
-      on: (tipo, filtro, funcao) => { OUVINTES.push({ tipo, filtro, funcao }); return canal; },
+      // O OUVINTE GUARDA DE QUAL CANAL É, e isto não é enfeite: `OUVINTES` é
+      // uma lista só, compartilhada por todos os canais. Com a saída passando
+      // a ser assíncrona, um `OUVINTES.length = 0` atrasado apagava a lista
+      // INTEIRA — inclusive os ouvintes do canal NOVO, registrados enquanto o
+      // velho ainda saía. O painel ficava sem escutar nada, e oito provas
+      // reprovaram com "0 tratadores ouvindo". Foi defeito meu, criado ao
+      // consertar outra coisa.
+      on: (tipo, filtro, funcao) => { OUVINTES.push({ tipo, filtro, funcao, dono: canal }); return canal; },
       // O ESTADO DO CANAL CHEGA A QUEM ASSINOU.
       //
       // Aqui isto era `() => canal`: o retorno de chamada do painel era
@@ -2409,7 +2426,7 @@ export const supabase = {
         }
         return canal;
       },
-      unsubscribe: () => { OUVINTES.length = 0; },
+      unsubscribe: () => { tirarOuvintesDe(canal); },
     };
     return canal;
   },
@@ -2432,7 +2449,7 @@ export const supabase = {
     globalThis.__SAINDO_NOMES.push(nome);
     const demora = (typeof globalThis !== "undefined" && globalThis.__SAIDA_DO_CANAL_MS) || 0;
     return new Promise((pronto) => setTimeout(() => {
-      OUVINTES.length = 0;
+      tirarOuvintesDe(canal);
       globalThis.__SAINDO_DO_CANAL -= 1;
       const i = globalThis.__SAINDO_NOMES.indexOf(nome);
       if (i >= 0) globalThis.__SAINDO_NOMES.splice(i, 1);
