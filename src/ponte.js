@@ -26,6 +26,15 @@ export const FALTA_PONTE =
 // cadastro.
 export const ESPERA_PADRAO = 30000;
 
+// AS TRÊS MENSAGENS DE ERRO NÃO DIZEM MAIS "VANTORO", e isso já era errado
+// antes de existir comprador sem Vantoro. Esta função serve etiqueta, nota,
+// foto, histórico e permissões — nenhuma delas passa pelo Vantoro. A etiqueta
+// que não salvava dizia "não consegui falar com o Vantoro", mandando procurar
+// defeito no sistema errado.
+//
+// Quem SABE que a chamada era para o Vantoro é a rota que falhou, e é ela que
+// põe o nome na frase: o `corpo.erro` da ponte vem antes do texto genérico
+// daqui, e passa inteiro.
 export async function chamarPonte(caminho, opcoes = {}) {
   if (!BRIDGE_URL) throw new Error(FALTA_PONTE);
   const { data } = await supabase.auth.getSession();
@@ -60,13 +69,13 @@ export async function chamarPonte(caminho, opcoes = {}) {
     });
   } catch (err) {
     if (err && err.name === "AbortError") {
-      throw new Error("O Vantoro demorou demais para responder. Tente de novo em alguns segundos.");
+      throw new Error("O servidor demorou demais para responder. Tente de novo em alguns segundos.");
     }
-    throw new Error("Não consegui falar com o Vantoro. Verifique a conexão.");
+    throw new Error("Não consegui falar com o servidor. Verifique a conexão.");
   } finally {
     clearTimeout(estourou);
   }
   const corpo = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(corpo.erro || "Não consegui falar com o Vantoro.");
+  if (!r.ok) throw new Error(corpo.erro || "Não consegui falar com o servidor.");
   return corpo;
 }
