@@ -130,7 +130,11 @@ export default function Departamentos({ C, aoFechar }) {
     const m = String(msg || "");
     if (m.includes("departamentos_slug_key")) return "Já existe um departamento com esse nome.";
     if (m.toLowerCase().includes("row-level security") || m.toLowerCase().includes("policy")) {
-      return "Só quem é administrador no Vantoro pode mexer aqui.";
+      // A regra do banco lê `usuarios.admin`, que é a marca DO ZORVIN — com
+      // Vantoro ela é espelhada de lá, sem Vantoro ela se marca nesta tela.
+      // Dizer "no Vantoro" era certo num caso só, e manda quem não tem
+      // Vantoro procurar a chave num sistema que ele não usa.
+      return "Só quem é administrador no Zorvin pode mexer aqui.";
     }
     return m;
   }
@@ -396,12 +400,36 @@ function Atendentes({ cx, C, departamentos, telefones, aoAvisar }) {
   const [busca, setBusca] = useState("");
   const [quem, setQuem] = useState(null);
   const [salvando, setSalvando] = useState(false);
+  // ============================================================
+  //  EM QUAL DOS DOIS MUNDOS ESTA TELA ESTÁ — e quem responde é a PONTE.
+  //
+  //  Com Vantoro, a lista de gente e a permissão moram lá, e esta tela é uma
+  //  porta para o cadastro de lá. Sem Vantoro, tudo isso mora aqui — e aí a
+  //  tela precisa oferecer o que lá era oferecido pelo outro sistema:
+  //  cadastrar pessoa, promover a administradora, desativar.
+  //
+  //  A resposta vem no `com_vantoro` da própria lista, e não de uma variável
+  //  do painel. Quem tem as variáveis do Vantoro é a ponte: uma variável
+  //  própria aqui poderia ser posta em desacordo com as de lá, e a tela
+  //  ofereceria cadastrar gente num sistema que manda o cadastro para outro
+  //  lugar — sem nada na tela dizendo isso.
+  //
+  //  Começa `null` (ainda não sei) de propósito: começar em `true` faria a
+  //  tela piscar sem o botão de cadastrar a cada abertura no cliente que não
+  //  tem Vantoro, e começar em `false` ofereceria por um instante, no
+  //  escritório, um botão que a ponte recusaria.
+  // ============================================================
+  const [comVantoro, setComVantoro] = useState(null);
+  const [cadastrando, setCadastrando] = useState(false);
+  const [criando, setCriando] = useState(false);
+  const [nova, setNova] = useState({ nome: "", email: "", senha: "" });
 
   const carregar = useCallback(async () => {
     setCarregando(true);
     try {
       const r = await chamarPonte("/permissoes/atendentes");
       setGente(r.usuarios || []);
+      setComVantoro(r.com_vantoro !== false);
     } catch (e) {
       aoAvisar(e.message || "Não consegui ler os atendentes.");
     }
@@ -425,7 +453,12 @@ function Atendentes({ cx, C, departamentos, telefones, aoAvisar }) {
     try {
       const r = await chamarPonte("/permissoes/atendente", {
         method: "POST",
-        body: JSON.stringify({ usuario: pessoa.login, ...campos }),
+        // O ID VAI JUNTO DO LOGIN. Com Vantoro quem manda é o login (é a chave
+        // de lá). Sem Vantoro o login nasce do pedaço do e-mail antes do
+        // arroba, e duas pessoas de domínios diferentes podem ter o mesmo —
+        // mexer na permissão da pessoa errada é o tipo de engano que ninguém
+        // percebe olhando a tela.
+        body: JSON.stringify({ usuario: pessoa.login, usuario_id: pessoa.id, ...campos }),
       });
       setGente((lista) => lista.map((u) => (String(u.id) === String(pessoa.id)
         ? { ...u, ...r.usuario, ja_entrou: u.ja_entrou } : u)));
@@ -437,6 +470,28 @@ function Atendentes({ cx, C, departamentos, telefones, aoAvisar }) {
       carregar();   // devolve a tela ao que o servidor tem
     }
     setSalvando(false);
+  }
+
+  async function criarPessoa() {
+    if (criando) return;
+    setCriando(true); aoAvisar("");
+    try {
+      const r = await chamarPonte("/permissoes/pessoa", {
+        method: "POST",
+        body: JSON.stringify({ nome: nova.nome.trim(), email: nova.email.trim(), senha: nova.senha }),
+      });
+      // A LISTA É RECARREGADA DO SERVIDOR, e a pessoa nova não é só encaixada
+      // aqui. O que a ponte guardou é o que vale: encaixar à mão faria a tela
+      // mostrar uma pessoa que talvez não tenha entrado na lista de verdade —
+      // e o erro só apareceria na próxima abertura, longe da causa.
+      await carregar();
+      if (r && r.usuario) setQuem(r.usuario.id);
+      setNova({ nome: "", email: "", senha: "" });
+      setCadastrando(false);
+    } catch (e) {
+      aoAvisar(e.message || "Não consegui criar a conta.");
+    }
+    setCriando(false);
   }
 
   const meusDeps = pessoa ? (pessoa.zorvin || []) : [];
@@ -453,6 +508,44 @@ function Atendentes({ cx, C, departamentos, telefones, aoAvisar }) {
     <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
       {/* ---- a lista de gente ---- */}
       <div style={{ flex: "1 1 230px", minWidth: 210, maxWidth: 320 }}>
+        {/* CADASTRAR SÓ APARECE SEM VANTORO. Com ele, quem cadastra gente é o
+            Vantoro — oferecer aqui criaria a segunda lista de pessoas, que é
+            exatamente o que fez o Vantoro virar a fonte. A ponte recusa esse
+            pedido, então o botão seria um gesto que termina em erro. */}
+        {comVantoro === false && (
+          <div style={{ marginBottom: 10 }} data-equipe-propria>
+            {!cadastrando && (
+              <button style={{ ...cx.botao, width: "100%", justifyContent: "center" }}
+                      onClick={() => { setCadastrando(true); aoAvisar(""); }}
+                      data-adicionar-pessoa>+ Adicionar pessoa</button>
+            )}
+            {cadastrando && (
+              <div style={{ ...cx.secao, marginBottom: 0 }} data-form-pessoa>
+                <div style={cx.titulo}>Nova pessoa</div>
+                <div style={cx.dica}>
+                  Ela entra com este e-mail e esta senha. Combine a senha com ela e
+                  peça que troque depois.
+                </div>
+                <input value={nova.nome} placeholder="Nome"
+                       onChange={(e) => setNova({ ...nova, nome: e.target.value })}
+                       style={{ ...cx.campo, width: "100%", marginBottom: 6 }} data-pessoa-nome />
+                <input value={nova.email} placeholder="e-mail" type="email" autoCapitalize="none"
+                       onChange={(e) => setNova({ ...nova, email: e.target.value })}
+                       style={{ ...cx.campo, width: "100%", marginBottom: 6 }} data-pessoa-email />
+                <input value={nova.senha} placeholder="senha (mínimo 8)" type="text"
+                       onChange={(e) => setNova({ ...nova, senha: e.target.value })}
+                       style={{ ...cx.campo, width: "100%", marginBottom: 8 }} data-pessoa-senha />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button style={cx.botao} disabled={criando} onClick={criarPessoa} data-pessoa-salvar>
+                    {criando ? "Criando…" : "Criar"}
+                  </button>
+                  <button style={cx.botaoFraco} disabled={criando}
+                          onClick={() => { setCadastrando(false); aoAvisar(""); }}>Cancelar</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Pesquisar…"
                style={{ ...cx.campo, width: "100%", marginBottom: 8 }} />
         {carregando && <div style={cx.dica}>Carregando…</div>}
@@ -462,6 +555,12 @@ function Atendentes({ cx, C, departamentos, telefones, aoAvisar }) {
             const on = pessoa && String(pessoa.id) === String(u.id);
             return (
               <div key={u.id} onClick={() => setQuem(u.id)}
+                   // O NOME SOZINHO NÃO SERVE PARA ACHAR ESTA LINHA. Atrás
+                   // deste painel está a lista de conversas do escritório, cheia
+                   // de gente com nome de gente — uma prova que procurasse pelo
+                   // texto acabaria clicando numa conversa. Este atributo é o
+                   // endereço da pessoa NA EQUIPE.
+                   data-pessoa-da-equipe={u.id}
                    style={{
                      display: "flex", flexDirection: "column", gap: 1, padding: "9px 11px",
                      borderRadius: 10, cursor: "pointer", minHeight: 46,
@@ -484,12 +583,45 @@ function Atendentes({ cx, C, departamentos, telefones, aoAvisar }) {
       <div style={{ flex: "2 1 340px", minWidth: 280 }}>
         {!pessoa && <div style={cx.dica}>Escolha alguém na lista ao lado.</div>}
 
+        {/* AS DUAS CHAVES SÓ EXISTEM SEM VANTORO. Com ele, `admin` é espelhado
+            do superusuário de lá a cada entrada: uma chave aqui seria desfeita
+            na entrada seguinte, sem nada na tela dizendo por quê — uma chave
+            que volta sozinha é pior do que chave nenhuma. */}
+        {pessoa && comVantoro === false && (
+          <div style={cx.secao} data-mando-da-pessoa>
+            <div style={cx.titulo}>{pessoa.nome || pessoa.login}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+              <span style={{ flex: 1 }}>
+                <span style={{ display: "block", fontSize: 13.5, fontWeight: 600 }}>Administra o Zorvin</span>
+                <span style={{ display: "block", fontSize: 12, color: C.textSecondary }}>
+                  Enxerga todas as conversas e mexe nesta tela.
+                </span>
+              </span>
+              <Chave ligada={Boolean(pessoa.admin)} rotulo="Administra o Zorvin"
+                     aoTrocar={() => mudar({ admin: !pessoa.admin })} />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+              <span style={{ flex: 1 }}>
+                <span style={{ display: "block", fontSize: 13.5, fontWeight: 600 }}>Conta ativa</span>
+                <span style={{ display: "block", fontSize: 12, color: C.textSecondary }}>
+                  Desativada, ela continua existindo e para de alcançar o Zorvin.
+                </span>
+              </span>
+              <Chave ligada={pessoa.ativo !== false} rotulo="Conta ativa"
+                     aoTrocar={() => mudar({ ativo: pessoa.ativo === false })} />
+            </div>
+          </div>
+        )}
+
         {pessoa && pessoa.admin && (
           <div style={cx.secao}>
-            <div style={cx.titulo}>{pessoa.nome || pessoa.login}</div>
-            <div style={cx.dica}>
+            {comVantoro !== false && <div style={cx.titulo}>{pessoa.nome || pessoa.login}</div>}
+            <div style={{ ...cx.dica, marginBottom: 0 }}>
               É <b>administradora</b>: enxerga todas as conversas, e nenhuma marcação aqui
-              mudaria isso. Para restringir, tire o superusuário dela no Vantoro.
+              mudaria isso.{" "}
+              {comVantoro === false
+                ? "Para restringir, desligue a chave acima."
+                : "Para restringir, tire o superusuário dela no Vantoro."}
             </div>
           </div>
         )}

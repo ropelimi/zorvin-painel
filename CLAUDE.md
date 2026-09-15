@@ -98,15 +98,60 @@ no banco — `sql/automaticos/001-quem-entra-vira-gente.sql`, no repo da ponte �
 e **a primeira conta do banco nasce administradora**, senão ninguém nunca
 administraria nada.
 
-**Ainda em aberto, e é o próximo passo:** sem Vantoro não há tela para
-**cadastrar gente nem dar permissão** — `listarAtendentes` e `gravarAtendente`
-leem e escrevem no Vantoro. O comprador entra, vê tudo (quem não tem permissão
-definida vê tudo, de propósito) e é o único administrador.
+~~**Ainda em aberto:** sem Vantoro não há tela para cadastrar gente nem dar
+permissão.~~ **Feito** — ver "A equipe sem Vantoro" logo abaixo.
 
 Prova: `entrar-sem-vantoro`, que roda num **servidor próprio** servido com
 `VITE_VANTORO=desligado` — ver `SEM_VANTORO` em `testes/rodar.mjs`. Uma bandeira
 no navegador seria mais barata e provaria a bandeira: o caminho que a variável
 liga continuaria sem ninguém nunca ter visto funcionar.
+
+## A equipe sem Vantoro — a mesma aba, outra fonte
+
+A aba **Atendentes** lia a lista de gente do Vantoro e gravava a permissão lá.
+Sem Vantoro, o comprador entrava, era o único administrador e não tinha como
+cadastrar mais ninguém: um sistema de atendimento em **equipe** com uma pessoa
+só.
+
+A aba **não ganhou uma versão paralela**. Ela aprende em qual dos dois mundos
+está pelo **`com_vantoro`** que a PONTE devolve na própria lista — e não por uma
+variável do painel. Quem tem as variáveis do Vantoro é a ponte; uma variável
+própria aqui poderia ser posta em desacordo com as de lá, e a tela ofereceria
+cadastrar gente num sistema que manda o cadastro para outro lugar, sem nada na
+tela dizendo isso.
+
+`comVantoro` começa em `null` de propósito. Começando em `true`, a tela piscaria
+sem o botão a cada abertura no cliente sem Vantoro; em `false`, ofereceria por um
+instante, no escritório, um botão que a ponte recusaria.
+
+**O que aparece só sem Vantoro:** o botão *Adicionar pessoa*, e as chaves
+*Administra o Zorvin* e *Conta ativa*. Com Vantoro, `admin` é espelhado do
+superusuário de lá a cada entrada — uma chave aqui seria desfeita na entrada
+seguinte, sem nada dizendo por quê, e chave que volta sozinha é pior do que
+chave nenhuma.
+
+**O id da pessoa vai junto do login** em toda gravação. Sem Vantoro o login
+nasce do pedaço do e-mail antes do arroba, e duas pessoas de domínios diferentes
+podem ter o mesmo — mexer na permissão da pessoa errada é o engano que ninguém
+percebe olhando a tela.
+
+**Cadastrando alguém, a lista é RELIDA do servidor**, e a pessoa não é só
+encaixada na tela: encaixar à mão mostraria alguém que talvez não tenha entrado
+na lista de verdade, e o erro só apareceria na próxima abertura, longe da causa.
+
+A mensagem de recusa do banco dizia "Só quem é administrador **no Vantoro**".
+A regra lê `usuarios.admin`, que é a marca **do Zorvin** — com Vantoro ela é
+espelhada de lá, sem Vantoro ela se marca nesta tela. A frase antiga mandava
+quem não tem Vantoro procurar a chave num sistema que não usa.
+
+**Ainda em aberto:** a aba **"Notas no Vantoro"** continua aparecendo mesmo sem
+Vantoro, e ali não há o que fazer. Ela entra na etapa de esconder o resto da
+integração, junto com a ficha do cliente e os avisos de audiência.
+
+Prova: `a-equipe-sem-vantoro`. Ela endereça as linhas da equipe por
+`data-pessoa-da-equipe`, e não pelo nome: atrás desse painel está a lista de
+conversas do escritório, cheia de gente com nome de gente — procurar por texto
+acaba clicando numa conversa.
 
 ## Banco de dados (tabelas que o painel lê/escreve)
 
