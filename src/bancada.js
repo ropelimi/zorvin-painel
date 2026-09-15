@@ -1974,6 +1974,10 @@ if (typeof globalThis !== "undefined") globalThis.__ESPERADO = ESPERADO;
 // estado que existe em produção e que nenhuma sequência de cliques cria.
 if (typeof globalThis !== "undefined") globalThis.__TABELAS = TABELAS;
 
+// Quem está ouvindo "entrou" / "saiu". Fora do objeto porque `onAuthStateChange`
+// e `signInWithPassword` precisam do MESMO conjunto, e um deles avisa o outro.
+const ouvintesDaEntrada = new Set();
+
 export const supabase = {
   from: (t) => consulta(t),
   // Quem chamar uma função que não existe recebe o mesmo erro que o Supabase
@@ -2278,7 +2282,47 @@ export const supabase = {
       // a correção não funcionou.
       user_metadata: { nome: "rodrigo" } } } } };
     },
-    onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+    // OS AVISOS DE ENTRADA E SAÍDA, que até agora eram cano vazio.
+    //
+    // O `App` troca a tela de entrada pelo painel ouvindo AQUI. Enquanto isto
+    // devolvia uma assinatura que nunca era chamada, a entrada que DÁ CERTO
+    // pelo caminho próprio (e-mail e senha, sem Vantoro) não tinha como ser
+    // provada: a senha era aceita e a tela ficava parada, igualzinho a uma
+    // senha recusada.
+    onAuthStateChange: (aoMudar) => {
+      ouvintesDaEntrada.add(aoMudar);
+      return { data: { subscription: { unsubscribe() { ouvintesDaEntrada.delete(aoMudar); } } } };
+    },
+
+    // A CONFERÊNCIA DA SENHA PELO PRÓPRIO SUPABASE — o caminho de quem não tem
+    // Vantoro. `__SENHA_BOA` diz qual senha passa; qualquer outra é recusada
+    // com a MESMA frase do Auth de verdade ("Invalid login credentials"), que
+    // ele usa tanto para senha errada quanto para e-mail que não existe — de
+    // propósito, para não contar a quem tenta quais e-mails existem.
+    //
+    // `__AUTH_FORA` faz o serviço responder outra coisa, que é o caso em que a
+    // tela tem de mostrar o texto técnico em vez de "senha incorreta": mandar
+    // alguém conferir a senha quando o serviço está fora do ar é mandá-la
+    // caçar um erro que não existe.
+    signInWithPassword: async ({ email, password }) => {
+      const g = (typeof globalThis !== "undefined") ? globalThis : {};
+      if (g.__AUTH_FORA) {
+        return { data: { session: null }, error: { message: "Service temporarily unavailable" } };
+      }
+      const senhaBoa = g.__SENHA_BOA || "senha-certa";
+      if (!email || password !== senhaBoa) {
+        return { data: { session: null }, error: { message: "Invalid login credentials" } };
+      }
+      const sessao = {
+        access_token: "jwt-de-mentira", expires_at: Math.floor(Date.now() / 1000) + 3600,
+        user: { id: "u1", email: String(email), user_metadata: { nome: String(email).split("@")[0] } },
+      };
+      try { localStorage.setItem("sb-bancada-auth-token", JSON.stringify(sessao)); } catch (_e) { /* sem armário */ }
+      for (const ouvir of ouvintesDaEntrada) {
+        try { ouvir("SIGNED_IN", sessao); } catch (_e) { /* um ouvinte ruim não derruba os outros */ }
+      }
+      return { data: { session: sessao }, error: null };
+    },
     signOut: async () => ({ error: null }),
     updateUser: async () => ({ error: null }),
 

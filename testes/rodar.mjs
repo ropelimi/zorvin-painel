@@ -42,6 +42,18 @@ const AJUDANTES = new Set([...NAO_SAO_PROVAS].map((f) => f.replace(/\.mjs$/, "")
 // um defeito que não existia.
 const NO_BUILD_DE_PRODUCAO = new Set(["desempenho", "digitar", "selos-em-rajada", "partida"]);
 
+// AS QUE RODAM COM O VANTORO DESLIGADO — a instalação de quem COMPRA o Zorvin.
+//
+// `VITE_VANTORO` é lida quando o Vite serve a página, e não em tempo de
+// execução: uma prova não tem como trocá-la com o servidor já de pé. Então
+// estas ganham um servidor próprio, servido exatamente como no cliente que não
+// tem Vantoro.
+//
+// Poderia ser mais barato pôr uma bandeira no navegador e o painel olhar para
+// ela. Seria outra coisa: provaria a bandeira, e o caminho de verdade — o que
+// a variável liga — continuaria sem ninguém nunca ter visto funcionar.
+const SEM_VANTORO = new Set(["entrar-sem-vantoro"]);
+
 // A ORDEM É A DO ALFABETO, e é de propósito: qualquer outra seria uma opinião
 // que envelhece. Cada prova sobe o seu próprio navegador e limpa o que sujou,
 // então nenhuma depende da anterior — se um dia alguma passar a depender, é
@@ -51,7 +63,11 @@ const PROVAS = readdirSync(new URL(".", import.meta.url))
   .map((f) => f.replace(/\.mjs$/, ""))
   .filter((nome) => !AJUDANTES.has(nome))
   .sort()
-  .map((nome) => ({ nome, servidor: NO_BUILD_DE_PRODUCAO.has(nome) ? "producao" : "dev" }));
+  .map((nome) => ({
+    nome,
+    servidor: SEM_VANTORO.has(nome) ? "sem-vantoro"
+            : NO_BUILD_DE_PRODUCAO.has(nome) ? "producao" : "dev",
+  }));
 
 if (!PROVAS.length) {
   console.error("Não achei prova nenhuma em testes/. Isso é um defeito daqui, e não um repositório sem provas.");
@@ -70,9 +86,9 @@ function rodar(cmd, args, opcoes = {}) {
 }
 
 function subirServidor(tipo) {
-  const args = tipo === "dev"
-    ? ["vite", "--port", String(PORTA), "--host", "127.0.0.1", "--strictPort"]
-    : ["vite", "preview", "--port", String(PORTA), "--host", "127.0.0.1", "--strictPort"];
+  const args = tipo === "producao"
+    ? ["vite", "preview", "--port", String(PORTA), "--host", "127.0.0.1", "--strictPort"]
+    : ["vite", "--port", String(PORTA), "--host", "127.0.0.1", "--strictPort"];
   // `detached` para o `npx` e o `vite` que ele abre ficarem no MESMO grupo de
   // processos: matar só o `npx` deixava o `vite` de pé segurando a porta, e a
   // prova seguinte encontrava o servidor ERRADO respondendo. Foi assim que a
@@ -95,7 +111,11 @@ function subirServidor(tipo) {
            // aqui 1,2 — a prova do Auth mudo precisa ESTOURAR esse prazo, e
            // seis segundos por caso deixariam a suíte lenta por causa de uma
            // demora que é de propósito.
-           VITE_LIMITE_SESSAO_MS: "1200" },
+           VITE_LIMITE_SESSAO_MS: "1200",
+           // O padrão é o Vantoro LIGADO, como em produção. Só o servidor
+           // "sem-vantoro" o desliga — e é ele que serve a instalação de quem
+           // compra o programa sem ter o outro sistema.
+           ...(tipo === "sem-vantoro" ? { VITE_VANTORO: "desligado" } : {}) },
     stdio: ["ignore", "ignore", "inherit"],
     detached: true,
   });
@@ -138,7 +158,7 @@ try {
 } catch (_) { /* porta livre, como tem de ser */ }
 
 let saida = 0;
-for (const tipo of ["dev", "producao"]) {
+for (const tipo of ["dev", "sem-vantoro", "producao"]) {
   const dessas = aRodar.filter((p) => p.servidor === tipo);
   if (!dessas.length) continue;
 
