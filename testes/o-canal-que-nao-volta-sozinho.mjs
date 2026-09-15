@@ -85,6 +85,16 @@ const abrir = async ({ foraDesdeOInicio = false } = {}) => {
     globalThis.__DEMORA_DO_CANAL = 30;
     globalThis.__CANAIS = 0;
     globalThis.__SAUDE = [];
+    // A SAÍDA DO CANAL DEMORA, COMO A DE VERDADE. Era instantânea na bancada,
+    // e foi por isso que este arquivo aprovou um vigia que não consertava em
+    // produção: com a saída imediata, sair-e-entrar na ordem certa e na errada
+    // davam no mesmo. 120ms é a janela em que o canal novo NÃO pode nascer.
+    globalThis.__SAIDA_DO_CANAL_MS = 120;
+    globalThis.__SAINDO_DO_CANAL = 0;
+    globalThis.__SAIDAS_CONCLUIDAS = 0;
+    globalThis.__ENTROU_NUMA_SALA_SAINDO = 0;
+    globalThis.__SAINDO_NOMES = [];
+    globalThis.__NOMES_DE_CANAL = [];
   }, [CARENCIA, ESPERAS, LIMITE, foraDesdeOInicio]);
   await page.goto(ENDERECO);
   await page.waitForSelector("[data-conversa-nome]");
@@ -201,6 +211,43 @@ console.log("\n4. E voltando depois de a promessa vencer, tudo volta ao normal")
   const naTela = await texto();
   ok("a faixa some inteira", !/chegando sozinhas/.test(naTela) && !/[Rr]ecarregue a página/.test(naTela),
      naTela.slice(0, 220));
+}
+
+console.log("\n5. E o vigia não atropela a própria saída");
+{
+  // O DEFEITO QUE ESCAPOU DAQUI ATÉ 15/09.
+  //
+  // O vigia fazia `removeChannel(canal)` SEM ESPERAR e criava o canal novo na
+  // mesma batida, com o MESMO nome. `removeChannel` é assíncrono no Supabase de
+  // verdade: ele manda o pedido de saída e só termina quando o servidor
+  // responde. Pedir a sala da qual ainda se está saindo é uma das formas de
+  // receber o "mismatch" que MATA o canal — o conserto se reinfectava, e a
+  // faixa voltava a prometer para sempre.
+  //
+  // Relato de 15/09: a faixa no ar, e só o F5 resolvendo. O vigia estava
+  // publicado e rodando; era ele que não pegava.
+  await abrir({ foraDesdeOInicio: true });
+  // Tempo para várias tentativas do vigia — é em cada uma delas que o
+  // atropelamento aconteceria.
+  await page.waitForTimeout(ESPERAS[0] * 4 + 600);
+
+  const m = await page.evaluate(() => ({
+    entrouSaindo: globalThis.__ENTROU_NUMA_SALA_SAINDO || 0,
+    saidas: globalThis.__SAIDAS_CONCLUIDAS || 0,
+    nomes: globalThis.__NOMES_DE_CANAL || [],
+  }));
+
+  // A PRIMEIRA CONFERÊNCIA GARANTE QUE HOUVE O QUE MEDIR. Sem saída nenhuma
+  // concluída, as duas de baixo passariam por não ter acontecido nada — que é
+  // exatamente como este caminho passou despercebido antes.
+  ok("o vigia chegou a refazer o canal", m.saidas >= 1, `saídas concluídas: ${m.saidas}`);
+  // DUAS SALAS DIFERENTES VIVAS AO MESMO TEMPO É O NORMAL (a tela remontando).
+  // O defeito é pedir a sala da qual ainda se está SAINDO.
+  ok("nunca entrou numa sala da qual ainda estava saindo", m.entrouSaindo === 0,
+     `entrou saindo: ${m.entrouSaindo}`);
+  ok("e cada tentativa pediu um nome próprio",
+     new Set(m.nomes).size === m.nomes.length,
+     `pedidos: ${JSON.stringify(m.nomes)}`);
 }
 
 console.log(`\nerros de página: ${erros.length}`);
