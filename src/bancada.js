@@ -218,6 +218,16 @@ const APARELHO = { id: null, nome: "WhatsApp", aparelho: true };
 // Os tratadores de tempo real que o painel registrou. A prova dispara por
 // `globalThis.__EMITIR`, que é o mesmo caminho por onde o Supabase avisaria.
 const OUVINTES = [];
+/** Tira da lista só os ouvintes DESTE canal — ver a nota em `on`. */
+function tirarOuvintesDe(canal) {
+  for (let i = OUVINTES.length - 1; i >= 0; i--) {
+    // SÓ OS DESTE CANAL. A tentação é acrescentar "ou os sem dono", para o
+    // caso de alguém registrar por fora — e aí a saída de um canal levaria
+    // junto os ouvintes de outro, que é o defeito que esta função existe para
+    // consertar. Todo ouvinte passa por `on`, e `on` sempre põe o dono.
+    if (!canal || OUVINTES[i].dono === canal) OUVINTES.splice(i, 1);
+  }
+}
 if (typeof globalThis !== "undefined") {
   globalThis.__EMITIR = (evento, tabela, novo, velho = null) => {
     let quantos = 0;
@@ -2356,15 +2366,49 @@ export const supabase = {
   //
   // Agora os tratadores ficam guardados, e a prova dispara o evento pelo
   // mesmo caminho por onde o Supabase dispararia.
-  channel: () => {
+  channel: (nome) => {
     // QUANTAS VEZES O PAINEL SE INSCREVEU. Um canal de tempo real desmontado e
     // remontado não é de graça: no Supabase de verdade a nova inscrição leva
     // uma ida e volta para valer, e o `postgres_changes` não repete o que
     // passou — o que chegar nessa fresta não chega nunca. Sem este número não
     // há como provar que trocar de telefone parou de derrubar o canal.
     globalThis.__CANAIS = (globalThis.__CANAIS || 0) + 1;
+    // OS NOMES PEDIDOS, e quantas salas nasceram COM OUTRA AINDA SAINDO.
+    //
+    // São os dois números que revelam o defeito do vigia: ele pedia sempre o
+    // MESMO nome e não esperava a saída terminar — contra o servidor de
+    // verdade, entrar numa sala da qual ainda se está saindo é uma das formas
+    // de receber o "mismatch" que mata o canal, que é justamente o que o vigia
+    // existe para consertar.
+    globalThis.__NOMES_DE_CANAL = globalThis.__NOMES_DE_CANAL || [];
+    globalThis.__NOMES_DE_CANAL.push(nome);
+    // O QUE CONTA É A COLISÃO DE NOME, e não qualquer sobreposição.
+    //
+    // Duas salas DIFERENTES vivas por um instante é o normal: acontece toda vez
+    // que a tela é remontada, e não quebra nada. O defeito é entrar numa sala
+    // da qual ainda se está SAINDO — mesmo nome —, que é o que devolve o
+    // "mismatch" e mata o canal.
+    //
+    // A primeira versão desta conta somava as duas coisas, e por isso reprovava
+    // um painel já consertado. Medir demais é tão ruim quanto medir de menos:
+    // as duas fazem a prova falar de outro assunto.
+    const saindo = globalThis.__SAINDO_NOMES || [];
+    if (saindo.includes(nome)) {
+      globalThis.__ENTROU_NUMA_SALA_SAINDO =
+        (globalThis.__ENTROU_NUMA_SALA_SAINDO || 0) + 1;
+    }
     const canal = {
-      on: (tipo, filtro, funcao) => { OUVINTES.push({ tipo, filtro, funcao }); return canal; },
+      // O NOME FICA NO CANAL para `removeChannel` saber de qual sala se está
+      // saindo — sem isso não há como ver a colisão de nome.
+      __nome: nome,
+      // O OUVINTE GUARDA DE QUAL CANAL É, e isto não é enfeite: `OUVINTES` é
+      // uma lista só, compartilhada por todos os canais. Com a saída passando
+      // a ser assíncrona, um `OUVINTES.length = 0` atrasado apagava a lista
+      // INTEIRA — inclusive os ouvintes do canal NOVO, registrados enquanto o
+      // velho ainda saía. O painel ficava sem escutar nada, e oito provas
+      // reprovaram com "0 tratadores ouvindo". Foi defeito meu, criado ao
+      // consertar outra coisa.
+      on: (tipo, filtro, funcao) => { OUVINTES.push({ tipo, filtro, funcao, dono: canal }); return canal; },
       // O ESTADO DO CANAL CHEGA A QUEM ASSINOU.
       //
       // Aqui isto era `() => canal`: o retorno de chamada do painel era
@@ -2391,10 +2435,39 @@ export const supabase = {
         }
         return canal;
       },
-      unsubscribe: () => { OUVINTES.length = 0; },
+      unsubscribe: () => { tirarOuvintesDe(canal); },
     };
     return canal;
   },
-  removeChannel: () => { OUVINTES.length = 0; },
+  // A SAÍDA DO CANAL É ASSÍNCRONA, COMO A DE VERDADE.
+  //
+  // Isto era `() => { OUVINTES.length = 0; }` — instantâneo. E foi por isso que
+  // a prova do vigia aprovou um conserto que não consertava: no Supabase real
+  // `removeChannel` manda o pedido de saída e só termina quando o servidor
+  // responde, então sair-e-entrar na mesma batida atropela os dois. Com a saída
+  // instantânea aqui, a ordem certa e a errada davam no mesmo resultado, e a
+  // bancada aprovava as duas igualmente — que é o jeito de um teste não testar
+  // nada.
+  //
+  // `__SAIDA_DO_CANAL_MS` deixa a prova alargar essa janela para medir o que
+  // acontece DENTRO dela: é ali que o canal novo não pode nascer.
+  removeChannel: (canal) => {
+    const nome = (canal && canal.__nome) || "";
+    globalThis.__SAINDO_DO_CANAL = (globalThis.__SAINDO_DO_CANAL || 0) + 1;
+    globalThis.__SAINDO_NOMES = globalThis.__SAINDO_NOMES || [];
+    globalThis.__SAINDO_NOMES.push(nome);
+    const demora = (typeof globalThis !== "undefined" && globalThis.__SAIDA_DO_CANAL_MS) || 0;
+    return new Promise((pronto) => setTimeout(() => {
+      tirarOuvintesDe(canal);
+      globalThis.__SAINDO_DO_CANAL -= 1;
+      const i = globalThis.__SAINDO_NOMES.indexOf(nome);
+      if (i >= 0) globalThis.__SAINDO_NOMES.splice(i, 1);
+      // QUANTAS SAÍDAS JÁ TERMINARAM, para a prova conferir a ORDEM: uma sala
+      // nova aberta antes de a anterior fechar é o defeito, e sem estes dois
+      // números não há como vê-lo.
+      globalThis.__SAIDAS_CONCLUIDAS = (globalThis.__SAIDAS_CONCLUIDAS || 0) + 1;
+      pronto();
+    }, demora));
+  },
   storage: { from: () => ({ upload: async () => ({ error: null }), getPublicUrl: () => ({ data: { publicUrl: "" } }) }) },
 };

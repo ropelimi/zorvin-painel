@@ -140,6 +140,16 @@ let TEM_CONTAGEM_NO_BANCO = true;
 // A bancada encurta por `__CARENCIA_TEMPO_REAL`, e é só para isso que a
 // variável existe: uma prova que esperasse os dez segundos de produção a cada
 // cenário levaria um minuto para conferir o que se confere em três segundos.
+// O CONTADOR DE NOMES DO CANAL VIVE FORA DO COMPONENTE, e isso é o conserto de
+// um defeito que eu mesmo criei e a prova pegou: dentro do efeito, ele
+// recomeçava do zero a cada montagem, e duas montagens pediam a MESMA sala
+// ("zorvin-realtime-1") — uma nascendo enquanto a outra ainda saía, que é
+// exatamente o atropelamento que este arquivo passou a evitar.
+//
+// Acontece de verdade sempre que o painel é remontado: sair e entrar, e o
+// desenvolvimento, em que o React monta duas vezes de propósito.
+let contaDeNomesDoCanal = 0;
+
 const CARENCIA_TEMPO_REAL_MS =
   (typeof globalThis !== "undefined" && globalThis.__CARENCIA_TEMPO_REAL) || 10000;
 
@@ -5101,9 +5111,27 @@ export default function Painel({ sessao }) {
     let tentativas = 0;
     let canal = null;
     let vivo = true;
+    // O NOME CARREGA O NÚMERO DA TENTATIVA, e isso não é enfeite: no painel do
+    // Supabase dá para ver quantas salas o navegador abriu, que é a única
+    // janela que existe para saber se o vigia está apanhando lá fora.
+    const proximoNome = () => `zorvin-realtime-${++contaDeNomesDoCanal}`;
 
-    const montar = () => supabase
-      .channel("zorvin-realtime")
+    // ============================================================
+    //  CADA TENTATIVA GANHA UM NOME PRÓPRIO
+    //
+    //  Era `"zorvin-realtime"` fixo. Refazendo o canal, o painel pedia ao
+    //  servidor uma sala com o MESMO nome da que ele estava acabando de
+    //  deixar — e a saída ainda não tinha terminado (ver `refazerOCanal`).
+    //  Entrar numa sala da qual ainda se está saindo é uma das formas de
+    //  receber de volta o "mismatch between server and client bindings" que
+    //  MATA o canal, que é exatamente o defeito que o vigia existe para
+    //  consertar. O conserto se reinfectava.
+    //
+    //  Nome novo a cada tentativa não tem esse problema: a sala velha fecha no
+    //  tempo dela, e a nova não espera por ninguém.
+    // ============================================================
+    const montar = (nome) => supabase
+      .channel(nome)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "mensagens" }, async (payload) => {
         const nova = payload.new;
         if (nova.conversa_id === conversaIdRef.current) {
@@ -5397,21 +5425,35 @@ export default function Painel({ sessao }) {
                          ESPERAS_DE_VOLTA[Math.min(tentativas, ESPERAS_DE_VOLTA.length - 1)]);
     }
 
-    function refazerOCanal() {
+    async function refazerOCanal() {
       vigia = null;
       if (!vivo) return;
       tentativas += 1;
-      // TIRA O VELHO ANTES. Dois canais com o mesmo nome escutando as mesmas
-      // tabelas entregariam cada mensagem DUAS vezes — e as telas que somam
-      // (o selo de não lidas) contariam dobrado.
-      try { supabase.removeChannel(canal); } catch (_e) { /* já tinha saído */ }
-      canal = montar();
+      // TIRA O VELHO ANTES, E ESPERA ELE SAIR.
+      //
+      // `removeChannel` é ASSÍNCRONO: ele manda o pedido de saída e só termina
+      // quando o servidor responde. Isto aqui não esperava — mandava sair e
+      // criava o canal novo na mesma batida. Contra o servidor de verdade, os
+      // dois se atropelam.
+      //
+      // A BANCADA NÃO PEGAVA ISSO, e é o que explica um conserto provado que
+      // não consertou: lá `removeChannel` é instantâneo, então a ordem certa e
+      // a errada davam no mesmo. Hoje ela devolve promessa, como o de verdade.
+      //
+      // Dois canais vivos ao mesmo tempo entregariam cada mensagem DUAS vezes,
+      // e as telas que somam (o selo de não lidas) contariam dobrado.
+      try { await supabase.removeChannel(canal); } catch (_e) { /* já tinha saído */ }
+      // A TELA PODE TER SIDO FECHADA NO MEIO DA ESPERA. Sem esta conferência, o
+      // canal novo nasceria órfão, depois de a limpeza do efeito já ter passado
+      // — e ninguém o removeria nunca.
+      if (!vivo) return;
+      canal = montar(proximoNome());
       // E O VIGIA SEGUE ARMADO: se esta também não pegar, tenta de novo,
       // esperando mais. Quem o desarma é o `SUBSCRIBED`.
       armarOVigia();
     }
 
-    canal = montar();
+    canal = montar(proximoNome());
     return () => {
       vivo = false;
       clearTimeout(carencia);
