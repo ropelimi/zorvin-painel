@@ -6,6 +6,7 @@ import { chamarPonte } from "./ponte.js";
 // contrato explicado. NÃO troque por `chaveDoNumero`: são perguntas
 // diferentes, e a explicação está em `numeros.js`.
 import { etiquetaDoTelefone } from "./numeros.js";
+import { useTemVantoro } from "./temVantoro.js";
 import { X, Plus, Trash2, Loader2, Building2, Phone, ShieldCheck } from "lucide-react";
 
 // ============================================================
@@ -50,6 +51,7 @@ export default function Departamentos({ C, aoFechar }) {
   const [departamentos, setDepartamentos] = useState([]);
   const [telefones, setTelefones] = useState([]);
   const [aba, setAba] = useState("estrutura"); // 'estrutura' | 'pessoas' | 'notas'
+  const temVantoro = useTemVantoro();
   const [salvando, setSalvando] = useState("");
   // O que o BANCO acha: `null` = não deu para perguntar (base antiga, sem a
   // função), `true`/`false` = a resposta dele.
@@ -187,8 +189,18 @@ export default function Departamentos({ C, aoFechar }) {
               todos os clientes de uma vez. Antes ele só existia como um POST
               com token de servidor: não havia como chamá-lo de um navegador, e
               as notas antigas ficaram paradas por isso. */}
-          <button style={cx.aba(aba === "notas")} onClick={() => setAba("notas")}
-                  data-aba-notas>Notas no Vantoro</button>
+          {/* SEM VANTORO ELA NÃO EXISTE. A aba inteira é sobre subir nota para a
+              ficha de lá: sem Vantoro ela abre, mostra números zerados e o
+              botão não leva a lugar nenhum.
+              `=== true` cobre os dois casos que devem mostrar — tem Vantoro, ou
+              a pergunta FALHOU (que o módulo já resolve como `true`, para o
+              escritório nunca perder a aba por causa de rede). O que esconde é
+              a resposta "não tem" e o instante em que a pergunta ainda está no
+              ar. Ver `temVantoro.js`. */}
+          {temVantoro === true && (
+            <button style={cx.aba(aba === "notas")} onClick={() => setAba("notas")}
+                    data-aba-notas>Notas no Vantoro</button>
+          )}
         </div>
 
         <div style={cx.corpo}>

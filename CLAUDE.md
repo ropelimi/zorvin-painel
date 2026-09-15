@@ -144,14 +144,80 @@ A regra lê `usuarios.admin`, que é a marca **do Zorvin** — com Vantoro ela �
 espelhada de lá, sem Vantoro ela se marca nesta tela. A frase antiga mandava
 quem não tem Vantoro procurar a chave num sistema que não usa.
 
-**Ainda em aberto:** a aba **"Notas no Vantoro"** continua aparecendo mesmo sem
-Vantoro, e ali não há o que fazer. Ela entra na etapa de esconder o resto da
-integração, junto com a ficha do cliente e os avisos de audiência.
+~~**Ainda em aberto:** a aba "Notas no Vantoro" continua aparecendo mesmo sem
+Vantoro.~~ **Feito** — ver "O que é do Vantoro some" logo abaixo.
 
 Prova: `a-equipe-sem-vantoro`. Ela endereça as linhas da equipe por
 `data-pessoa-da-equipe`, e não pelo nome: atrás desse painel está a lista de
 conversas do escritório, cheia de gente com nome de gente — procurar por texto
 acaba clicando numa conversa.
+
+## O que é do Vantoro some quando não há Vantoro
+
+Seis lugares da tela só existem por causa da integração. Sem Vantoro eles
+ficavam lá: um botão que abre coluna vazia, um "Procurando no Vantoro…" que não
+termina em nada, uma aba que não faz nada. Para quem compra o programa aquilo
+não é integração de outro cliente — é o programa quebrado.
+
+| Onde | Sem Vantoro |
+|---|---|
+| Ficha do cliente — botão da barra, item do menu ⋮ e a coluna | some |
+| Busca de cadastro em "Nova conversa" | não é feita nem anunciada |
+| Busca de cadastro dentro da busca geral | idem, e some o "Vendo no cadastro…" |
+| Aba "Notas no Vantoro" | some |
+| Processos que a nota oferece, e a nota que sobe para a ficha | somem |
+| Link da Esteira ("por qual telefone falar") | nunca chega — degrada sozinho |
+
+**Quem responde é a PONTE**, por `GET /vantoro/status` — que já existia, aberta
+e com CORS, e nunca tinha sido chamada. Não é uma variável do painel, pela mesma
+razão da aba de atendentes: uma variável daqui poderia ser posta em desacordo
+com as de lá, e a tela esconderia a ficha numa instalação que tem Vantoro.
+
+**Pergunta-se uma vez por abertura**, e não uma vez por tela: a promessa fica
+guardada em `temVantoro.js`. Seis telas perguntando por si seriam seis idas à
+rede para a mesma resposta, numa ponte que hiberna.
+
+**São TRÊS estados, e não dois** — e é isso que evita repetir a armadilha nº 2:
+
+| estado | a tela | por quê |
+|---|---|---|
+| `null` ainda não perguntei | esconde | é breve, e a resposta vem |
+| `false` respondeu que não tem | esconde | é a verdade |
+| `true` tem, **ou não consegui** | mostra | ausência no lugar de falha foi o que sumiu com as etiquetas em 04/09 |
+
+Tratar a falha como "não tem" faria o escritório perder a ficha, a busca de
+cadastro e a subida da nota sempre que a ponte tossisse, sem uma palavra na
+tela. Mostrando, o pior caso é abrir a ficha e ler o erro da própria ponte — que
+é uma frase, e não um sumiço.
+
+**Um corte só, na origem.** `clienteDaConversa` e `nomeTravadoPeloCadastro` são
+os dois valores derivados de onde saem todos os caminhos. Guardar cada uso
+separado seria a mesma decisão escrita em seis lugares, para divergirem no
+primeiro conserto.
+
+**E não basta a coluna estar vazia.** Numa instalação que nunca teve Vantoro ela
+está mesmo — mas num escritório que **desliga** o Vantoro os `vantoro_cliente_id`
+e `vantoro_nome` de antes continuam gravados. Sem o corte, cada nota tentaria
+subir para uma ficha que não existe e diria "não subiu agora, tente daqui a
+pouco" para sempre; e o lápis de renomear continuaria sumido, mandando usar uma
+ficha que agora está escondida — um beco.
+
+**As três frases de erro de `chamarPonte` deixaram de dizer "Vantoro"**, e isso
+já era errado antes: aquela função serve etiqueta, nota, foto, histórico e
+permissões, e nenhuma passa pelo Vantoro. A etiqueta que não salvava dizia "não
+consegui falar com o Vantoro", mandando procurar defeito no sistema errado. Quem
+sabe que a chamada era para o Vantoro é a rota que falhou, e o `corpo.erro` da
+ponte continua vindo na frente.
+
+**Ainda em aberto:** sem Vantoro não existe ficha de cliente **nenhuma** — nem a
+dele, nem uma do Zorvin. Esta etapa esconde; construir a ficha própria (nome,
+CPF, telefones, anotações, no banco do Zorvin) é decisão separada e ainda não
+tomada.
+
+Prova: `esconder-o-vantoro`. A cena do menu ⋮ roda numa janela **estreita** e
+confere os dois mundos — o menu só existe abaixo de 768px, então uma conferência
+numa janela larga passaria por não ter achado o menu, e não por o item ter
+sumido.
 
 ## Banco de dados (tabelas que o painel lê/escreve)
 

@@ -18,6 +18,7 @@ import FichaVantoro from "./FichaVantoro";
 import { numeroCanonico, chaveDoNumero, porQueNaoRecebeWhatsApp, daParaChamar,
          telefoneLegivel } from "./numeros.js";
 import { chamarPonte, ESPERA_PADRAO } from "./ponte.js";
+import { useTemVantoro } from "./temVantoro.js";
 import { PRAZO_DA_BUSCA, foiAbortada, funcaoNaoExiste,
          condicoesDeNome, recadoDaBusca } from "./busca.js";
 import { comoPrever, nomeDoTipo, tamanhoLegivel } from "./arquivos.js";
@@ -2226,6 +2227,11 @@ export default function Painel({ sessao }) {
   const conversasNaTela = listaEhDoTelefoneAberto ? conversas : [];
   // Tem telefone escolhido, mas a lista dele ainda não chegou.
   const trocandoDeTelefone = Boolean(advogadoId) && !listaEhDoTelefoneAberto;
+  // EXISTE VANTORO NESTA INSTALAÇÃO? `null` enquanto a ponte não respondeu.
+  // Seis lugares desta tela só fazem sentido com ele; sem ele viram botão que
+  // abre coluna vazia e "Procurando…" que não termina em nada. A pergunta e as
+  // três respostas estão explicadas em `temVantoro.js`.
+  const temVantoro = useTemVantoro();
   // Ficha do cliente no Vantoro (abre ao lado da conversa).
   const [fichaAberta, setFichaAberta] = useState(false);
   // "Histórico de atendimento": quem falou com este cliente, quando e por qual
@@ -3996,6 +4002,11 @@ export default function Painel({ sessao }) {
   // "Maria" faria cinco consultas ao Vantoro para mostrar o resultado de uma.
   useEffect(() => {
     if (!novaConversaAberta) { setVantoroAchados([]); setVantoroErro(""); return undefined; }
+    // SEM VANTORO NÃO SE PERGUNTA, e é aqui que a economia importa: cada tecla
+    // digitada viraria um pedido à ponte que só pode voltar com as mãos
+    // vazias. Pior que o desperdício é o que a tela mostrava enquanto ele
+    // estava no ar — "Procurando no Vantoro…" para uma procura que não existe.
+    if (temVantoro !== true) { setVantoroAchados([]); setVantoroBuscando(false); return undefined; }
     const termo = buscaContato.trim();
     setVantoroErro("");
     if (termo.length < 3) { setVantoroAchados([]); setVantoroBuscando(false); return undefined; }
@@ -4014,7 +4025,7 @@ export default function Painel({ sessao }) {
       }
     }, 350);
     return () => { cancelado = true; clearTimeout(tarefa); };
-  }, [buscaContato, novaConversaAberta]);
+  }, [buscaContato, novaConversaAberta, temVantoro]);
 
   // Vira UMA LINHA POR TELEFONE, não por cliente: quem tem dois números
   // cadastrados aparece duas vezes, porque a escolha de para qual dos dois
@@ -5470,7 +5481,31 @@ export default function Painel({ sessao }) {
   // FALHAR AQUI NÃO IMPEDE A NOTA. Sem a lista, o seletor não aparece e a nota
   // é geral; o que não pode acontecer é a pessoa não conseguir anotar porque o
   // Vantoro está fora do ar.
-  const clienteDaConversa = conversa?.contato?.vantoro_cliente_id || null;
+  // UM CORTE SÓ, NA ORIGEM. Daqui saem os três caminhos que falam com a ficha:
+  // a lista de processos do cliente, a barra que a oferece, e a subida da nota.
+  // Guardar os três separado seria a mesma decisão escrita em três lugares,
+  // para divergirem no primeiro conserto.
+  //
+  // E NÃO BASTA A COLUNA ESTAR VAZIA. Numa instalação que nunca teve Vantoro
+  // ela está mesmo — mas num escritório que DESLIGA o Vantoro os
+  // `vantoro_cliente_id` de antes continuam gravados, e aí cada nota tentaria
+  // subir para uma ficha que não existe mais e diria "não subiu agora, tente
+  // editá-la daqui a pouco". Um pedido de espera que nunca se cumpre é a
+  // armadilha do anexo indisponível de novo, agora na nota da equipe.
+  const clienteDaConversa = temVantoro === true
+    ? (conversa?.contato?.vantoro_cliente_id || null)
+    : null;
+
+  // O NOME ESTÁ TRAVADO PELO CADASTRO? Quem tem ficha no Vantoro é conhecido
+  // pelo nome dela, e o lápis de renomear some — o caminho é a ficha.
+  //
+  // SEM VANTORO ISSO VIRA UM BECO. A ficha está escondida, então o lápis que
+  // some não manda mais a lugar nenhum: o contato fica com o nome cru do
+  // WhatsApp e sem nenhuma forma de trocá-lo. Acontece de verdade num
+  // escritório que DESLIGA o Vantoro — os `vantoro_nome` de antes continuam
+  // gravados na tabela.
+  const nomeTravadoPeloCadastro = temVantoro === true
+    && Boolean(conversa?.contato?.vantoro_nome);
   useEffect(() => {
     if (!modoNota || !clienteDaConversa) { setProcessosDoCliente([]); return; }
     let valeu = true;
@@ -7908,6 +7943,12 @@ export default function Painel({ sessao }) {
       //  meio minuto — a ponte e o Vantoro hibernam no plano gratuito da
       //  Render —, e nesse meio a lista vazia escrevia "Nada encontrado".
       const somarOCadastro = async (base) => {
+        // SEM VANTORO NÃO HÁ CADASTRO A SOMAR — e a saída é AQUI, antes do
+        // `setVendoNoCadastro(true)`, e não lá dentro. Levantando o aviso para
+        // baixá-lo em seguida, a busca escreveria "Vendo no cadastro do
+        // Vantoro…" num painel que não tem Vantoro nenhum: um passo a mais que
+        // nunca existiu, anunciado a quem está esperando o resultado.
+        if (temVantoro !== true) return;
         setVendoNoCadastro(true);
         let doCadastro;
         try {
@@ -9271,7 +9312,13 @@ export default function Painel({ sessao }) {
                     // isso importa: sem a frase, "não achei no Vantoro" e "nem
                     // cheguei a perguntar" são a mesma tela em branco, e não há
                     // como saber se o cadastro está errado ou o sistema.
-                    const vantoroVazio = buscaContato.trim().length >= 3
+                    // E ELA SÓ VALE SE A PERGUNTA FOI FEITA. Sem Vantoro
+                    // nada foi consultado, e "nenhuma pessoa com esse nome no
+                    // Vantoro" passaria a ser dita sobre uma busca que não
+                    // aconteceu — a mesma confusão que a frase existe para
+                    // desfazer, agora do avesso.
+                    const vantoroVazio = temVantoro === true
+                      && buscaContato.trim().length >= 3
                       && !vantoroBuscando && !vantoroErro && !doVantoro.length;
                     const TITULO = { padding: "10px 16px 4px", fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3 };
                     const RECADO = { padding: "14px 16px", textAlign: "center", color: C.textSecondary, fontSize: 13.5 };
@@ -9299,7 +9346,8 @@ export default function Painel({ sessao }) {
                         {/* O CADASTRO DO VANTORO. Só aparece quando há o que
                             mostrar: uma seção vazia em toda busca ensinaria a
                             equipe a ignorar justamente a parte nova da tela. */}
-                        {(doVantoro.length > 0 || vantoroBuscando || vantoroErro || (vantoroVazio && !lista.length)) && (
+                        {temVantoro === true
+                          && (doVantoro.length > 0 || vantoroBuscando || vantoroErro || (vantoroVazio && !lista.length)) && (
                           <>
                             <div style={{ ...TITULO, paddingTop: 16 }}>PESSOAS DO VANTORO</div>
                             {!doVantoro.length && vantoroBuscando && <div style={RECADO}>Procurando no Vantoro…</div>}
@@ -10136,9 +10184,10 @@ export default function Painel({ sessao }) {
                         que um dedo acerta — e ficava colado no nome, que é
                         justamente onde se toca para nada acontecer. No celular
                         ele virou uma linha escrita dentro do menu ⋮. */}
-                    {!estreito && !conversa.contato?.vantoro_nome && (
+                    {!estreito && !nomeTravadoPeloCadastro && (
                       <button onClick={() => setRenomeando(conversa.contato?.nome_zorvin || "")}
                               title="Dar um nome a este contato (só no Zorvin)"
+                              data-renomear-contato
                               style={{ border: "none", background: "transparent", cursor: "pointer",
                                        color: C.textSecondary, padding: 2, display: "flex", flexShrink: 0,
                                        minHeight: 24, minWidth: 24, alignItems: "center", justifyContent: "center" }}>
@@ -10249,12 +10298,18 @@ export default function Painel({ sessao }) {
                     Marcar como não lida
                   </button>
                 )}
-                {/* Ficha do cliente no Vantoro (cadastro, esteira, processos) */}
+                {/* Ficha do cliente no Vantoro (cadastro, esteira, processos).
+                    SÓ COM VANTORO: sem ele a coluna abre e não tem o que
+                    mostrar — não há cadastro, nem esteira, nem processo. Ver
+                    `temVantoro.js` para o porquê de `=== true` (a falha de rede
+                    MOSTRA, para o escritório não perder a ficha calado). */}
+                {temVantoro === true && (
                 <button onClick={() => setFichaAberta((v) => !v)}
-                        title="Ficha no Vantoro"
+                        title="Ficha no Vantoro" data-abrir-ficha
                         style={{ ...BOTAO_ICONE, padding: 10, background: fichaAberta ? C.listActive : "transparent" }}>
                   <ClipboardList size={19} color={fichaAberta ? C.green : C.textSecondary} />
                 </button>
+                )}
                 {/* Histórico de atendimento: quem falou com este cliente, quando
                     e por qual telefone. Ao lado da ficha porque respondem à mesma
                     pergunta — "o que já aconteceu com esta pessoa" —, uma no
@@ -10381,10 +10436,17 @@ export default function Painel({ sessao }) {
                           <MessageSquare size={17} color={C.textSecondary} /> Marcar como não lida
                         </button>
                       )}
+                      {/* A MESMA FICHA, pela outra porta. Esconder só o botão
+                          da barra deixaria o caminho aberto por aqui — e o
+                          menu ⋮ é justamente onde se procura o que não está à
+                          vista. */}
+                      {temVantoro === true && (
                       <button onClick={() => { setMenuDaConversa(false); setFichaAberta(true); }}
+                              data-menu-ficha
                               style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
                         <ClipboardList size={17} color={C.textSecondary} /> Ficha no Vantoro
                       </button>
+                      )}
                       <button onClick={() => {
                                 setMenuDaConversa(false);
                                 const id = conversa.contato_id || conversa.contato?.id;
@@ -10422,7 +10484,7 @@ export default function Painel({ sessao }) {
                               style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
                         <Search size={17} color={C.textSecondary} /> Buscar nesta conversa
                       </button>
-                      {!conversa.contato?.vantoro_nome && (
+                      {!nomeTravadoPeloCadastro && (
                         <button onClick={() => { setMenuDaConversa(false); setRenomeando(conversa.contato?.nome_zorvin || ""); }}
                                 style={{ ...ITEM_DO_MENU, color: C.textPrimary, borderTop: `1px solid ${C.divider}` }}>
                           <Pencil size={17} color={C.textSecondary} /> Dar um nome a este contato
@@ -10862,7 +10924,19 @@ export default function Painel({ sessao }) {
           encolhe e cede o espaço em vez de ficar escondida atrás da ficha.
           Quem sai de cena é a lista de conversas (ver a coluna lá em cima), que
           não faz falta enquanto se atende uma pessoa só. */}
-      {fichaAberta && conversa && (
+      {/* A COLUNA CONFERE TAMBÉM, e hoje isto é um ENCOSTO INALCANÇÁVEL —
+          está escrito aqui porque descobrir de novo custaria o mesmo tempo.
+          `temVantoro` resolve uma vez por abertura: dando "não tem", nenhum dos
+          dois botões existiu, então `fichaAberta` nunca ficou verdadeiro.
+
+          Fica porque a inalcançabilidade vem do desenho das OUTRAS duas
+          guardas, e não desta: no dia em que a resposta for perguntada de novo
+          (uma reconexão, um "tentar de novo"), é esta que impede a coluna de
+          ficar de pé sozinha numa instalação sem Vantoro. Não há prova
+          apontando para ela, de propósito — a sabotagem confirmou que não há
+          como fazê-la reprovar, e prova que não pode reprovar é pior do que
+          nenhuma. */}
+      {fichaAberta && conversa && temVantoro === true && (
         <FichaVantoro
           numero={conversa.contato?.numero}
           // O NOME QUE ESTÁ NA TELA, e não o cru do WhatsApp. É daqui que sai o
