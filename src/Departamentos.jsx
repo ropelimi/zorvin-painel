@@ -7,6 +7,7 @@ import { chamarPonte } from "./ponte.js";
 // diferentes, e a explicação está em `numeros.js`.
 import { etiquetaDoTelefone } from "./numeros.js";
 import { useTemVantoro } from "./temVantoro.js";
+import { PalavrasDaCasa } from "./PalavrasDaCasa.jsx";
 import { X, Plus, Trash2, Loader2, Building2, Phone, ShieldCheck } from "lucide-react";
 
 // ============================================================
@@ -227,6 +228,13 @@ export default function Departamentos({ C, aoFechar }) {
 
           {!carregando && aba === "estrutura" && (
             <>
+              {/* AS PALAVRAS VÊM PRIMEIRO porque são a primeira coisa que um
+                  comprador de outro ramo precisa trocar: sem isto o programa
+                  fala de "advogado" na barra lateral dele desde o primeiro dia.
+                  Fica nesta aba, e não numa quarta, porque uma aba inteira para
+                  três campos é uma aba que ninguém abre. */}
+              <PalavrasDaCasa cx={cx} C={C} aoAvisar={setErro} />
+
               <div style={cx.secao}>
                 <div style={cx.titulo}><Building2 size={16} /> Novo departamento</div>
                 <div style={cx.dica}>

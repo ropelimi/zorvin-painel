@@ -19,6 +19,7 @@ import { numeroCanonico, chaveDoNumero, porQueNaoRecebeWhatsApp, daParaChamar,
          telefoneLegivel } from "./numeros.js";
 import { chamarPonte, ESPERA_PADRAO } from "./ponte.js";
 import { useTemVantoro } from "./temVantoro.js";
+import { useVocabulario } from "./vocabulario.js";
 import { PRAZO_DA_BUSCA, foiAbortada, funcaoNaoExiste,
          condicoesDeNome, recadoDaBusca } from "./busca.js";
 import { comoPrever, nomeDoTipo, tamanhoLegivel } from "./arquivos.js";
@@ -2232,6 +2233,9 @@ export default function Painel({ sessao }) {
   // abre coluna vazia e "Procurando…" que não termina em nada. A pergunta e as
   // três respostas estão explicadas em `temVantoro.js`.
   const temVantoro = useTemVantoro();
+  // COMO ESTA INSTALAÇÃO CHAMA QUEM É DONO DE UM TELEFONE. No escritório é
+  // "advogado", e sem a tabela continua sendo — ver `vocabulario.js`.
+  const voc = useVocabulario();
   // Ficha do cliente no Vantoro (abre ao lado da conversa).
   const [fichaAberta, setFichaAberta] = useState(false);
   // "Histórico de atendimento": quem falou com este cliente, quando e por qual
@@ -4113,7 +4117,7 @@ export default function Painel({ sessao }) {
   // sempre: o telefone selecionado na barra lateral.
   async function abrirConversaContato(cont, advAlvo) {
     const advId = advAlvo || advogadoId;
-    if (!advId) { mostrarAviso("Escolha um advogado na barra lateral primeiro."); return; }
+    if (!advId) { mostrarAviso(`Escolha ${voc.um} ${voc.singular} na barra lateral primeiro.`); return; }
     // Trocar de telefone é trocar de departamento junto: a barra lateral filtra
     // os telefones pelo departamento aberto, e deixar os dois em desacordo
     // esconderia da lista justamente a conversa que se acabou de abrir.
@@ -4574,9 +4578,9 @@ export default function Painel({ sessao }) {
 
   async function importarLote() {
     if (importando) return;
-    if (!impAdvId) { mostrarAviso("Escolha o advogado dono dessas conversas."); return; }
+    if (!impAdvId) { mostrarAviso(`Escolha ${voc.o} ${voc.singular} ${voc.dono} dessas conversas.`); return; }
     const meu = (impMeuNome || "").trim();
-    if (!meu) { mostrarAviso("Confirme qual nome é o seu (o advogado) nos arquivos."); return; }
+    if (!meu) { mostrarAviso(`Confirme qual nome é o seu (${voc.o} ${voc.singular}) nos arquivos.`); return; }
     // O número é OBRIGATÓRIO para conversas 1:1 (evita conversa duplicada no
     // futuro, quando o mesmo contato mandar mensagem pela ponte). Grupos não
     // têm número — são identificados pelo nome do grupo.
@@ -9631,7 +9635,15 @@ export default function Painel({ sessao }) {
         <div style={{ padding: "8px 12px", background: C.panel }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.searchBg, borderRadius: 8, padding: "6px 12px" }}>
             <Search size={16} color={C.textSecondary} />
-            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, mensagem, CPF ou processo" style={{ border: "none", outline: "none", background: "transparent", fontSize: 14, flex: 1, color: C.textPrimary }} />
+            {/* CPF E PROCESSO VINHAM SÓ DO CADASTRO DO VANTORO. O que esta
+                busca manda ao BANCO é nome, os dois nomes alternativos e
+                número — medido em 15/09. Escondido o cadastro, a caixa passou
+                a prometer duas coisas que ela não faz, e prometer busca por
+                CPF é pior do que não oferecer: quem digita o CPF e não acha
+                conclui que o cliente não está no sistema. */}
+            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder={temVantoro === true
+                     ? "Buscar por nome, mensagem, CPF ou processo"
+                     : "Buscar por nome, mensagem ou número"} style={{ border: "none", outline: "none", background: "transparent", fontSize: 14, flex: 1, color: C.textPrimary }} />
           </div>
         </div>
 
@@ -11331,7 +11343,7 @@ export default function Painel({ sessao }) {
                   <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
                     <div>
                       <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Contatos</div>
-                      <div style={{ fontSize: 13, color: C.textSecondary }}>Todos os contatos salvos. Crie novos e abra a conversa com o advogado atual.</div>
+                      <div style={{ fontSize: 13, color: C.textSecondary }}>{`Todos os contatos salvos. Crie novos e abra a conversa com ${voc.o} ${voc.singular} atual.`}</div>
                     </div>
                     {!contatoForm && (
                       <button onClick={() => setContatoForm({ nome: "", numero: "" })} style={{ display: "flex", alignItems: "center", gap: 6, border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}><UserPlus size={16} /> Novo</button>
@@ -11380,7 +11392,7 @@ export default function Painel({ sessao }) {
                         })()}
                       </div>
                       <div style={{ fontSize: 11.5, color: C.textSecondary, marginTop: 10, lineHeight: 1.4 }}>
-                        "Conversar" abre (ou cria) a conversa com o advogado que está selecionado na barra lateral ({advogado?.nome || "—"}).
+                        "Conversar" abre (ou cria) a conversa com {voc.o} {voc.singular} que está {voc.selecionado} na barra lateral ({advogado?.nome || "—"}).
                       </div>
                     </>
                   )}
@@ -11391,14 +11403,14 @@ export default function Painel({ sessao }) {
                 <div style={{ maxWidth: 620 }}>
                   <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Importar histórico</div>
                   <div style={{ fontSize: 13, color: C.textSecondary, marginBottom: 18, lineHeight: 1.5 }}>
-                    Traga conversas antigas do WhatsApp para o Zorvin. No celular do advogado: abra a conversa → <b>⋮ → Mais → Exportar conversa → Sem mídia</b>, e suba aqui o arquivo <b>.zip</b> (ou o <b>.txt</b>) que o WhatsApp gera — não precisa extrair. Pode subir vários de uma vez. As conversas que ainda não existem são <b>criadas</b>.
+                    Traga conversas antigas do WhatsApp para o Zorvin. No celular {voc.o === "a" ? "da" : "do"} {voc.singular}: abra a conversa → <b>⋮ → Mais → Exportar conversa → Sem mídia</b>, e suba aqui o arquivo <b>.zip</b> (ou o <b>.txt</b>) que o WhatsApp gera — não precisa extrair. Pode subir vários de uma vez. As conversas que ainda não existem são <b>criadas</b>.
                   </div>
 
                   <input ref={txtRef} type="file" accept=".txt,.zip,text/plain,application/zip,application/x-zip-compressed" multiple onChange={aoEscolherTxts} style={{ display: "none" }} />
 
-                  <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary }}>ADVOGADO (dono destas conversas)</label>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary }}>{`${voc.SINGULAR} (${voc.dono} destas conversas)`}</label>
                   <select value={impAdvId} onChange={(e) => setImpAdvId(e.target.value)} style={{ width: "100%", boxSizing: "border-box", marginTop: 6, marginBottom: 16, border: `1px solid ${C.divider}`, background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "10px 12px", fontSize: 14 }}>
-                    <option value="">Escolha o advogado…</option>
+                    <option value="">{`Escolha ${voc.o} ${voc.singular}…`}</option>
                     {advogados.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}
                   </select>
 
@@ -11429,7 +11441,7 @@ export default function Painel({ sessao }) {
                   {impArquivos.length > 0 && (
                     <>
                       <div style={{ marginBottom: 14 }}>
-                        <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary }}>QUAL NOME É VOCÊ (o advogado) NAS CONVERSAS?</label>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary }}>{`QUAL NOME É VOCÊ (${voc.o} ${voc.singular}) NAS CONVERSAS?`}</label>
                         <select value={impMeuNome} onChange={(e) => setImpMeuNome(e.target.value)} style={{ width: "100%", boxSizing: "border-box", marginTop: 6, border: `1px solid ${impMeuNome ? C.divider : "#e5573f"}`, background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "10px 12px", fontSize: 14 }}>
                           <option value="">Escolha o seu nome…</option>
                           {[...new Set(impArquivos.flatMap((it) => it.autores))].map((a) => <option key={a} value={a}>{a}</option>)}
