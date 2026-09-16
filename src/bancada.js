@@ -871,6 +871,34 @@ for (let i = 0; i < 1200; i++) {
   });
 }
 
+export const GRUPO_PERTO = { id: "ct-grupo-perto", numero: "grupo:120363021070929710",
+  nome: "ACORDOS — EQUIPE", vantoro_nome: null, nome_zorvin: null,
+  vantoro_cliente_id: null, foto_url: null };
+export const GRUPO_NO_FUNDO = { id: "ct-grupo-fundo", numero: "grupo:120363099988877766",
+  nome: "MUTIRÃO INSS 2024", vantoro_nome: null, nome_zorvin: null,
+  vantoro_cliente_id: null, foto_url: null };
+
+// O GRUPO LÁ NO FUNDO — fora das 200 que a primeira página traz.
+//
+// A posição é a de uma conversa parada há 1150 horas. A lista vem por
+// `ultima_atividade` desc em páginas de 200, então ele está a cinco páginas de
+// distância: filtrar só o que está carregado não o alcança nunca.
+CONVERSAS.push({
+  id: "a13-grupo",
+  advogado_id: "a13",
+  contato_id: GRUPO_NO_FUNDO.id,
+  nao_lidas: 0, arquivada: false, fixada: false, favorita: false,
+  ultima_atividade: new Date(Date.now() - 1150 * 3600e3).toISOString(),
+  ultima_mensagem: "Encerrado",
+  frente: null, vantoro_nome: null, digitando_ate: null,
+  contato: { ...GRUPO_NO_FUNDO },
+});
+
+MENSAGENS.push({
+  id: "m-grupo-fundo", conversa_id: "a13-grupo", origem: "contato", tipo: "texto",
+  texto: "Encerrado", criado_em: new Date(Date.now() - 1150 * 3600e3).toISOString(),
+});
+
 // UMA MENSAGEM COM TEXTO PRÓPRIO, numa conversa que está DEPOIS da milésima.
 // Serve para provar as duas coisas de uma vez: que a busca procura dentro das
 // mensagens, e que ela alcança conversa que a lista não trouxe.
@@ -1018,6 +1046,51 @@ CONTATOS_FILTRO.forEach((ct, i) => {
     contato: { ...ct },
   });
 });
+// ------------------------------------------------------------------
+//  OS GRUPOS
+// ------------------------------------------------------------------
+//  O WhatsApp entrega grupo com um identificador no lugar do telefone, e a
+//  ponte grava isso em `contatos.numero` com o prefixo `grupo:`. Não há coluna
+//  dizendo "isto é um grupo" — o prefixo É a marca.
+//
+//  SÃO DOIS, E OS DOIS IMPORTAM:
+//
+//   • o PERTO está entre as conversas recentes do primeiro telefone. É o caso
+//     de todo dia, e o que o filtro resolve olhando a lista que já está na
+//     tela;
+//
+//   • o FUNDO está no telefone de 1200 conversas, na posição 1150 — muito além
+//     das 200 que a primeira página traz. É ele que separa "filtrei os grupos"
+//     de "filtrei os grupos que por acaso estavam carregados": sem a ida ao
+//     banco, este some, e a tela mostra uma lista curta com cara de completa.
+CONVERSAS.push({
+  id: `${PRIMEIRO_TELEFONE.id}-grupo`,
+  advogado_id: PRIMEIRO_TELEFONE.id,
+  contato_id: GRUPO_PERTO.id,
+  // COM NÃO LIDAS, de propósito: é o número que o menu da setinha mostra ao
+  // lado de "Grupos", e um contador que nunca sai de zero passa numa prova
+  // sem nunca ter contado nada.
+  nao_lidas: 2,
+  arquivada: false, fixada: false, favorita: false,
+  ultima_atividade: new Date(Date.now() - 2 * 3600e3).toISOString(),
+  ultima_mensagem: "Combinado para amanhã",
+  frente: null, vantoro_nome: null, digitando_ate: null,
+  contato: { ...GRUPO_PERTO },
+});
+
+// E AS MENSAGENS DELE. Um grupo sem mensagem nenhuma não é um grupo de
+// verdade — e, medido aqui, a lista nem o trazia: a consulta da página pede
+// `mensagens(id)` junto, e sem nenhuma linha lá a conversa não vinha. O
+// contador de não lidas do menu ficava em zero com o grupo na tela.
+["Bom dia a todos", "Combinado para amanhã"].forEach((texto, i) => {
+  MENSAGENS.push({
+    id: `m-grupo-${i}`,
+    conversa_id: `${PRIMEIRO_TELEFONE.id}-grupo`,
+    origem: "contato", tipo: "texto", texto,
+    criado_em: new Date(Date.now() - (2 - i) * 3600e3).toISOString(),
+  });
+});
+
 const FALAS = [
   ["quem0", "Rodrigo Sousa", "u1"],
   ["quem0", "JENIFER ALMEIDA", "u-jenifer"],
@@ -1136,6 +1209,9 @@ const TABELAS = {
                                    nome_zorvin: null, vantoro_nome: null })),
     ...FUNDO.map((c) => ({ ...c })),
     ...CONTATOS_EXTRAS.map((c) => ({ ...c })),
+    // OS DOIS GRUPOS. Entram aqui à mão pelo mesmo motivo dos números ruins: a
+    // linha logo abaixo pula todo `contato_id` que começa com "ct-".
+    { ...GRUPO_PERTO }, { ...GRUPO_NO_FUNDO },
     ...CONVERSAS.filter((c) => c.contato && c.contato.numero && !c.contato_id.startsWith("ct-"))
       .map((c) => ({ id: c.contato_id, ...c.contato, vantoro_nome: null, nome_zorvin: null })),
   ],

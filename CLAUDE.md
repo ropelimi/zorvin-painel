@@ -456,6 +456,70 @@ conta e a régua passa a falar de outra coisa.
 
 Prova: `a-busca-nao-empurra-a-conversa`, 11 conferências, 2 sabotagens e 2
 pegas.
+## O campo de grupos — a setinha do fim da fita
+
+Pedido do Rodrigo em 16/09, com a tela do WhatsApp Web ao lado: lá a fita de
+filtros termina numa seta que abre "Grupos". A equipe já conhece o gesto.
+
+**Não precisou de SQL.** O WhatsApp entrega grupo com um identificador no lugar
+do telefone, e a ponte grava isso em `contatos.numero` com o prefixo `grupo:`.
+Não existe coluna dizendo "isto é um grupo" — **o prefixo É a marca**, e o
+painel já se servia dela em dois lugares. Agora são três, e por isso ela virou
+`ehGrupo()`: a terceira cópia é onde uma regra escrita à mão começa a divergir.
+
+### A seta ABSORVEU as etiquetas, e não ficou ao lado delas
+
+A fita tem **356px de vão e comporta quatro pílulas** — foi medido em 15/09, e é
+o motivo de a ordem da lista ter subido para o alto da coluna. Medido de novo
+com a seta ao lado da pílula de etiquetas: **379px, e a fita quebrou em duas
+linhas outra vez**. Nenhum aperto de recheio dá os 23px que faltam sem ficar a
+um pixel de quebrar no primeiro contador de três dígitos.
+
+É também o que o WhatsApp Web faz: aquela seta é a **gaveta** dos filtros que
+não cabem na linha, e não um filtro a mais.
+
+**Um controle, três formas:**
+
+| estado | a fita mostra |
+|---|---|
+| nada escolhido | só a seta (32px) |
+| grupos escolhido | "Grupos", verde |
+| etiqueta escolhida | o nome dela, na cor dela |
+
+**O que mudou para quem usa etiqueta:** um clique na seta em vez de um clique na
+pílula — o mesmo menu, com o mesmo conteúdo. A prova `etiquetas` passou a
+endereçar o controle por `data-mais-filtros`, e não pela palavra: o rótulo
+visível mudou uma vez e pode mudar de novo.
+
+**O desfazer mora no menu**, e não num "×" na pílula: ela é o gatilho do menu
+desde sempre (é assim que se comporta com uma etiqueta escolhida), e dar a ela
+dois significados conforme o filtro ligado faria o mesmo clique abrir um menu
+num caso e apagar o filtro no outro.
+
+### O grupo que está a cinco páginas de distância
+
+A lista vem do banco em páginas de 200, das mais recentes para as mais antigas.
+Um grupo parado há dois meses está fora delas — e filtrar só o que está na tela
+mostraria *"os grupos entre as 200 conversas mais recentes"* com cara de *"os
+grupos"*. É a armadilha nº 2 com outra roupa: uma lista curta que se lê como
+completa. Quem procura o grupo do mutirão e não acha conclui que ele não existe
+no Zorvin.
+
+Então `extrasGrupo` pergunta ao banco, no mesmo desenho do filtro de etiquetas:
+primeiro os contatos cujo número começa com `grupo:`, depois as conversas deste
+telefone com eles. **Falhando, não apaga o que já está na tela** — os grupos das
+páginas lidas aparecem por `passaNoFiltro`, que não depende dessa ida.
+
+**A bancada ganhou DOIS grupos**, e os dois importam: um entre as conversas
+recentes do primeiro telefone (o caso de todo dia) e um na posição ~1150 do
+telefone de 1200 conversas (o que separa "filtrei os grupos" de "filtrei os
+grupos que por acaso estavam carregados").
+
+**E eles precisaram de mensagens.** Medido: sem nenhuma linha em `mensagens`, a
+conversa não vinha na lista — a consulta da página pede `mensagens(id)` junto —,
+e o contador de não lidas do menu ficava em zero com o grupo na tela.
+
+Prova: `o-campo-de-grupos`, 20 conferências, 5 sabotagens e 5 pegas.
 
 ## Banco de dados (tabelas que o painel lê/escreve)
 
