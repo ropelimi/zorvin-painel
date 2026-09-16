@@ -11,7 +11,7 @@ import {
   ChevronLeft, ChevronRight, Images, ExternalLink, Pin, Copy, Forward, Sticker,
   History, BarChart3, Users, Smartphone, ArrowDownUp,
   Image as ImageIcon, Video,
-  Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote
+  Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote, Volume2
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
@@ -20,6 +20,7 @@ import { numeroCanonico, chaveDoNumero, porQueNaoRecebeWhatsApp, daParaChamar,
 import { chamarPonte, ESPERA_PADRAO } from "./ponte.js";
 import { useTemVantoro } from "./temVantoro.js";
 import { useVocabulario } from "./vocabulario.js";
+import { SONS, tocarAviso, somEscolhido, guardarSom } from "./avisos.js";
 import { PRAZO_DA_BUSCA, foiAbortada, funcaoNaoExiste,
          condicoesDeNome, recadoDaBusca } from "./busca.js";
 import { comoPrever, nomeDoTipo, tamanhoLegivel } from "./arquivos.js";
@@ -1010,33 +1011,27 @@ function formatarTexto(texto, corLink = "#53bdeb") {
   });
 }
 
-// Som curto ao chegar mensagem nova (sem precisar de arquivo de áudio).
-// Reusa um único AudioContext (não cria um novo a cada beep).
-let _audioCtx = null;
-function tocarBeep() {
-  try {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    if (!_audioCtx) _audioCtx = new AC();
-    const ctx = _audioCtx;
-    if (ctx.state === "suspended") ctx.resume();
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.connect(g); g.connect(ctx.destination);
-    o.type = "sine"; o.frequency.value = 880;
-    g.gain.setValueAtTime(0.0001, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
-    o.start();
-    o.stop(ctx.currentTime + 0.26);
-  } catch (_) { /* silêncio se o navegador bloquear */ }
-}
+// O SOM SAIU DAQUI e virou `avisos.js`, onde a equipe escolhe qual é. O bipe
+// fixo de 880 Hz atendia uma pessoa; num escritório onde oito sentam perto, o
+// som de uma é o incômodo da outra — e som que incomoda é desligado no volume
+// da máquina, o que desliga junto o aviso que importa.
 
 // Notificação na área de trabalho (se o atendente autorizou).
-function notificarDesktop(titulo, corpo) {
+//
+// A ETIQUETA É POR CONVERSA, e não uma só para o Zorvin inteiro.
+//
+// Era `tag: "zorvin"`: cada aviso substituía o anterior, então duas pessoas
+// diferentes escrevendo ao mesmo tempo viravam UM aviso — o da segunda,
+// apagando o da primeira sem deixar rastro. Com a etiqueta por conversa, cada
+// conversa tem o seu aviso, e a rajada de cinco mensagens do mesmo cliente
+// atualiza aquele aviso em vez de empilhar cinco.
+function notificarDesktop(titulo, corpo, conversaId) {
   try {
     if ("Notification" in window && Notification.permission === "granted") {
-      new Notification(titulo, { body: corpo, tag: "zorvin" });
+      new Notification(titulo, {
+        body: corpo,
+        tag: conversaId ? `zorvin-conversa-${conversaId}` : "zorvin",
+      });
     }
   } catch (_) { /* ignora */ }
 }
@@ -2242,6 +2237,39 @@ export default function Painel({ sessao }) {
   // Seis lugares desta tela só fazem sentido com ele; sem ele viram botão que
   // abre coluna vazia e "Procurando…" que não termina em nada. A pergunta e as
   // três respostas estão explicadas em `temVantoro.js`.
+  // ============================================================
+  //  DE QUEM É ESTA CONVERSA — para saber a quem o aviso interessa
+  //
+  //  O aviso de mensagem nova era filtrado pelo TELEFONE ABERTO na barra
+  //  lateral. Com isso, a atendente que respondeu um cliente ontem, na linha do
+  //  Dr. B, não era avisada quando ele voltava a escrever — bastava ela estar
+  //  olhando a linha do Dr. A. O pedido da equipe (15/09) é justamente esse:
+  //  avisar das conversas em que a pessoa interagiu, e não das que estão à
+  //  vista.
+  //
+  //  ------------------------------------------------------------
+  //  A RESPOSTA VEM DAS PRÓPRIAS MENSAGENS, e não de uma função nova
+  //
+  //  "Participei desta conversa" é "já mandei alguma coisa nela", e isso está
+  //  em `mensagens.enviado_por_id`. Uma função no banco responderia igual e
+  //  custaria um script a mais para rodar — e no dia em que isto foi escrito o
+  //  Supabase estava fora do ar, o que deixa claro o valor de não depender de
+  //  um passo manual para um recurso de tela.
+  //
+  //  ------------------------------------------------------------
+  //  UMA PERGUNTA POR CONVERSA, E NÃO POR MENSAGEM
+  //
+  //  Perguntar a cada mensagem que chega seria uma ida à rede por mensagem, o
+  //  dia inteiro, por atendente. A resposta fica guardada aqui e vale para as
+  //  seguintes daquela conversa.
+  //
+  //  E O PRÓPRIO TEMPO REAL MANTÉM O GUARDADO EM DIA: quando alguém do
+  //  escritório escreve numa conversa, essa mensagem chega a todos os painéis
+  //  — então dá para marcar ali que ela deixou de ser órfã, sem perguntar nada
+  //  ao banco.
+  // ============================================================
+  const deQuemEhAConversa = useRef(new Map());
+
   const temVantoro = useTemVantoro();
   // COMO ESTA INSTALAÇÃO CHAMA QUEM É DONO DE UM TELEFONE. No escritório é
   // "advogado", e sem a tabela continua sendo — ver `vocabulario.js`.
@@ -2630,6 +2658,69 @@ export default function Painel({ sessao }) {
   // reencontra o nome e a foto de hoje — ver `equipe` e `quemFalou` logo
   // abaixo.
   const meuId = sessao?.user?.id || null;
+  // O ID NUM ESPELHO, porque quem o consulta é o tratador do tempo real — e
+  // pôr `meuId` nas dependências daquele efeito derrubaria o canal a cada
+  // releitura da sessão, que é o defeito das "trinta janelas de silêncio"
+  // descrito no próprio arquivo.
+  const meuIdRef = useRef(null);
+  useEffect(() => { meuIdRef.current = meuId; }, [meuId]);
+
+  // O SOM ESCOLHIDO, e o que o navegador respondeu sobre notificar.
+  //
+  // `permissaoDeAviso` começa lendo o navegador porque a resposta pode ter sido
+  // dada em outro dia, noutra aba: a tela tem de abrir dizendo a verdade de
+  // agora, e não "ainda não autorizado" para quem já autorizou meses atrás.
+  const [somDoAviso, setSomDoAviso] = useState(somEscolhido);
+  const [permissaoDeAviso, setPermissaoDeAviso] = useState(
+    () => (typeof Notification !== "undefined" ? Notification.permission : "unsupported"));
+
+  function pedirPermissaoDeAviso() {
+    if (typeof Notification === "undefined") return;
+    // A RESPOSTA VOLTA PARA A TELA. Sem isto o botão continuaria ali depois de
+    // autorizado, e quem clicasse de novo não veria nada acontecer — o
+    // navegador só pergunta uma vez.
+    Notification.requestPermission()
+      .then((r) => setPermissaoDeAviso(r))
+      .catch(() => {});
+  }
+
+  // ------------------------------------------------------------
+  //  ESTE AVISO ME INTERESSA?  (ver o bloco `deQuemEhAConversa`)
+  //
+  //  Devolve `true` quando eu participei da conversa, ou quando NINGUÉM
+  //  participou — a primeira mensagem de um cliente novo não tem dono, e
+  //  deixá-la sem aviso é o lead ficar sem resposta.
+  //
+  //  A LEITURA QUE FALHA AVISA ASSIM MESMO. Sem saber de quem é a conversa, o
+  //  erro barato é tocar um som a mais; o caro é calar a mensagem de um cliente
+  //  por causa de uma oscilação de rede. É a armadilha nº 2 do CLAUDE.md
+  //  aplicada a um aviso: não desenhar ausência onde houve falha.
+  // ------------------------------------------------------------
+  const esteAvisoMeInteressa = useCallback(async (convId) => {
+    const guardado = deQuemEhAConversa.current.get(convId);
+    if (guardado) return guardado.minha || guardado.orfa;
+    const eu = meuIdRef.current;
+    if (!eu) return true;
+    try {
+      const { data: minhas, error: e1 } = await supabase.from("mensagens")
+        .select("id").eq("conversa_id", convId).eq("enviado_por_id", eu).limit(1);
+      if (e1) return true;
+      if (minhas && minhas.length) {
+        deQuemEhAConversa.current.set(convId, { minha: true, orfa: false });
+        return true;
+      }
+      // SÓ AGORA A SEGUNDA PERGUNTA, e não sempre: para quem participou — que
+      // é o caso comum de quem atende — uma ida à rede basta.
+      const { data: deOutro, error: e2 } = await supabase.from("mensagens")
+        .select("id").eq("conversa_id", convId).not("enviado_por_id", "is", null).limit(1);
+      if (e2) return true;
+      const orfa = !deOutro || !deOutro.length;
+      deQuemEhAConversa.current.set(convId, { minha: false, orfa });
+      return orfa;
+    } catch (_) {
+      return true;
+    }
+  }, []);
 
   // ------------------------------------------------------------
   //  O NOME E A FOTO DE HOJE
@@ -5209,11 +5300,50 @@ export default function Painel({ sessao }) {
           const { data } = await supabase.from("conversas").select("advogado_id").eq("id", nova.conversa_id).maybeSingle();
           doAdvogadoAtual = !!data && data.advogado_id === advogadoIdRef.current;
         }
-        // Aviso de nova mensagem (som + notificação) — inclusive para conversa
-        // nova — quando não estou olhando exatamente para ela.
-        if (nova.origem === "contato" && doAdvogadoAtual && (document.hidden || nova.conversa_id !== conversaIdRef.current)) {
-          tocarBeep();
-          notificarDesktop("Nova mensagem", nova.texto || "Mídia recebida");
+        // A MENSAGEM DO ESCRITÓRIO ATUALIZA O GUARDADO. Um colega respondendo
+        // faz a conversa deixar de ser órfã — e isso chega aqui pelo tempo
+        // real, de graça, sem perguntar nada ao banco.
+        if (nova.origem === "advogado" && nova.enviado_por_id) {
+          const antes = deQuemEhAConversa.current.get(nova.conversa_id);
+          deQuemEhAConversa.current.set(nova.conversa_id, {
+            minha: (antes && antes.minha) || String(nova.enviado_por_id) === String(meuIdRef.current),
+            orfa: false,
+          });
+        }
+
+        // ------------------------------------------------------------
+        //  A QUEM ESTE AVISO INTERESSA
+        //
+        //  Três casos, e o terceiro é o que o Rodrigo decidiu em 15/09:
+        //
+        //    1. participei da conversa  -> avisa, esteja eu olhando o telefone
+        //       que for. É o pedido da equipe.
+        //    2. participou outra pessoa -> NÃO avisa. A conversa tem dono, e
+        //       um aviso que não pede ação de quem lê se aprende a ignorar —
+        //       aí o próximo, que pedia, passa batido junto.
+        //    3. ninguém participou      -> avisa TODO MUNDO que a enxerga. É a
+        //       primeira mensagem de um cliente novo: ela não tem dono ainda, e
+        //       deixá-la sem aviso é o lead ficar sem resposta, que é o pior
+        //       desfecho deste sistema.
+        //
+        //  O TELEFONE ABERTO SAIU DA CONTA, e era ele o defeito: quem enxerga a
+        //  mensagem já passou pela regra de acesso do banco — se ela chegou
+        //  aqui, esta pessoa pode vê-la.
+        // ------------------------------------------------------------
+        if (nova.origem === "contato"
+            && (document.hidden || nova.conversa_id !== conversaIdRef.current)) {
+          const paraMim = await esteAvisoMeInteressa(nova.conversa_id);
+          if (paraMim) {
+            tocarAviso();
+            // O NOME DE QUEM ESCREVEU, e não "Nova mensagem". Com a etiqueta
+            // por conversa, dois clientes escrevendo viram dois avisos — e dois
+            // avisos dizendo "Nova mensagem" não dizem a qual conversa ir.
+            const quem = conversasRef.current.find((c) => c.id === nova.conversa_id);
+            notificarDesktop(
+              (quem && nomeDoContato(quem.contato)) || "Nova mensagem",
+              nova.texto || "Mídia recebida",
+              nova.conversa_id);
+          }
         }
         // Só re-busca a lista inteira quando é uma conversa NOVA (que ainda não
         // está na lista). Conversas que já estão na lista são atualizadas no
@@ -5651,7 +5781,11 @@ export default function Painel({ sessao }) {
     if (!conversaId || jaPediuNotif.current) return;
     jaPediuNotif.current = true;
     if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission().catch(() => {});
+      // A MESMA FUNÇÃO DA TELA DE AVISOS, e não uma segunda chamada solta: o
+      // pedido daqui também tem de atualizar o que a tela mostra, senão a aba
+      // Avisos abriria dizendo "ainda não autorizado" para quem acabou de
+      // autorizar ao abrir a primeira conversa.
+      pedirPermissaoDeAviso();
     }
   }, [conversaId]);
 
@@ -6223,6 +6357,14 @@ export default function Painel({ sessao }) {
   // Insere na fila de envio. Se a coluna "enviado_por" ainda não existir no
   // banco (SQL não rodou), tenta de novo sem ela — o envio nunca trava por isso.
   function inserirNaFila(payload) {
+    // RESPONDER É PARTICIPAR, e a marca vale já. O tempo real traria a mesma
+    // informação de volta em segundos (a mensagem gravada chega a todos os
+    // painéis), mas nesse intervalo o cliente pode responder — e a conversa que
+    // acabei de assumir me devolveria um aviso dizendo que ela é órfã, ou
+    // nenhum aviso, conforme a ordem em que as duas chegassem.
+    if (payload && payload.conversa_id != null) {
+      deQuemEhAConversa.current.set(payload.conversa_id, { minha: true, orfa: false });
+    }
     return emFila(() => gravarNaFila(payload));
   }
 
@@ -11210,7 +11352,7 @@ export default function Painel({ sessao }) {
             <div style={{ width: estreito ? "100%" : 210, background: C.headerBar, borderRight: estreito ? "none" : `1px solid ${C.divider}`, borderBottom: estreito ? `1px solid ${C.divider}` : "none", display: "flex", flexDirection: estreito ? "row" : "column", padding: estreito ? 8 : 14, gap: 4, overflowX: estreito ? "auto" : "visible", "--fita-fundo": C.headerBar }}
                  className={estreito ? "sem-scrollbar fita" : undefined}>
               <div style={{ fontSize: 16, fontWeight: 700, padding: "6px 10px 14px", color: C.textPrimary, display: estreito ? "none" : "block" }}>Configurações</div>
-              {[["perfil", "Perfil"], ["aparencia", "Aparência"], ["contatos", "Contatos"], ["rapidas", "Mensagens rápidas"], ["tags", "Etiquetas"], ["importar", "Importar histórico"]].map(([k, label]) => (
+              {[["perfil", "Perfil"], ["aparencia", "Aparência"], ["avisos", "Avisos"], ["contatos", "Contatos"], ["rapidas", "Mensagens rápidas"], ["tags", "Etiquetas"], ["importar", "Importar histórico"]].map(([k, label]) => (
                 <button key={k} onClick={() => { setAbaConfig(k); setRapidaForm(null); setTagForm(null); setContatoForm(null); }} style={{ textAlign: "left", border: "none", background: abaConfig === k ? C.listActive : "transparent", color: C.textPrimary, borderRadius: 8, padding: "10px 12px", fontSize: 14, fontWeight: abaConfig === k ? 600 : 500, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{label}</button>
               ))}
               {estreito && <span aria-hidden className="fita-borda" />}
@@ -11273,6 +11415,80 @@ export default function Painel({ sessao }) {
                     <button onClick={() => setModo(modo === "claro" ? "escuro" : "claro")} title="Alternar tema" style={{ width: 48, height: 27, borderRadius: 14, border: "none", cursor: "pointer", background: modo === "escuro" ? C.green : "#c9ced3", position: "relative", transition: "background .15s", flexShrink: 0 }}>
                       <span style={{ position: "absolute", top: 3, left: modo === "escuro" ? 24 : 3, width: 21, height: 21, borderRadius: "50%", background: "#fff", transition: "left .15s", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }} />
                     </button>
+                  </div>
+                </div>
+              )}
+
+              {abaConfig === "avisos" && (
+                <div style={{ maxWidth: 480 }} data-aba-avisos>
+                  <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Avisos</div>
+                  <div style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20, lineHeight: 1.5 }}>
+                    O som toca quando chega mensagem numa conversa <b>sua</b> — em que
+                    você já respondeu — ou numa conversa que <b>ninguém</b> atendeu
+                    ainda, que é o cliente novo. Vale para todos os telefones, e não
+                    só o que está aberto.
+                  </div>
+
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.textSecondary,
+                                letterSpacing: .3, marginBottom: 8 }}>SOM DA MENSAGEM NOVA</div>
+                  {SONS.map((som) => (
+                    <div key={som.id} data-som-opcao={som.id}
+                         onClick={() => { setSomDoAviso(som.id); guardarSom(som.id); tocarAviso(som.id); }}
+                         style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px",
+                                  marginBottom: 6, borderRadius: 10, cursor: "pointer",
+                                  background: somDoAviso === som.id ? C.listActive : C.searchBg,
+                                  border: `1px solid ${somDoAviso === som.id ? C.green : "transparent"}` }}>
+                      <span style={{ width: 16, height: 16, borderRadius: "50%", flexShrink: 0,
+                                     border: `2px solid ${somDoAviso === som.id ? C.green : C.divider}`,
+                                     background: somDoAviso === som.id ? C.green : "transparent" }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14.5, fontWeight: 600 }}>{som.nome}</div>
+                        <div style={{ fontSize: 12.5, color: C.textSecondary }}>{som.descricao}</div>
+                      </div>
+                      {/* TOCA AO ESCOLHER, e não num botão separado de "ouvir".
+                          Escolher um som sem ouvi-lo é escolher no escuro, e um
+                          botão a mais por linha faria cinco botões numa tela que
+                          tem cinco linhas. */}
+                      <Volume2 size={17} color={C.textSecondary} />
+                    </div>
+                  ))}
+
+                  {/* A PERMISSÃO DO NAVEGADOR É OUTRA COISA, e some da vista se
+                      ficar junto do som. Sem ela não há aviso na área de
+                      trabalho — e a pessoa não tem como saber disso, porque o
+                      navegador não diz nada: simplesmente não aparece nada. */}
+                  <div style={{ marginTop: 22, padding: "13px 15px", borderRadius: 10,
+                                background: C.searchBg, fontSize: 13, lineHeight: 1.5 }}
+                       data-permissao-aviso>
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>Aviso na área de trabalho</div>
+                    {permissaoDeAviso === "granted" && (
+                      <span style={{ color: C.textSecondary }}>
+                        Autorizado. As mensagens novas aparecem numa tarja do sistema,
+                        mesmo com o Zorvin atrás de outra janela.
+                      </span>
+                    )}
+                    {permissaoDeAviso === "denied" && (
+                      <span style={{ color: C.textSecondary }}>
+                        O navegador está bloqueando. Só dá para liberar por ele:
+                        clique no cadeado ao lado do endereço e autorize as
+                        notificações deste site. Daqui não há como pedir de novo.
+                      </span>
+                    )}
+                    {permissaoDeAviso !== "granted" && permissaoDeAviso !== "denied" && (
+                      <>
+                        <div style={{ color: C.textSecondary, marginBottom: 9 }}>
+                          Ainda não autorizado. Sem isso, só o som avisa — e com o
+                          Zorvin atrás de outra janela não há aviso nenhum.
+                        </div>
+                        <button onClick={pedirPermissaoDeAviso}
+                                data-pedir-permissao
+                                style={{ border: "none", background: C.green, color: "#fff",
+                                         borderRadius: 8, padding: "7px 13px", fontSize: 13,
+                                         fontWeight: 600, cursor: "pointer" }}>
+                          Autorizar
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               )}
