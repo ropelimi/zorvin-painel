@@ -512,6 +512,20 @@ function chaveDeNome(t) {
 // a diferença entre acertar e abrir outra coisa. 40 é o mínimo que a Apple
 // recomenda para qualquer coisa que se toque, e no computador nada muda de
 // aparência: os botões já tinham 39.
+
+// OS BOTÕES DA LINHA DA MARCA SÃO MENORES — NO COMPUTADOR, e só nele.
+//
+// Naquela linha cabem a marca e três controles em 356px, e com os 40px de
+// sempre a marca ficava com 122 para um nome que pede 134: saía "Ropelimi Zo",
+// cortado no meio da palavra, sem nem as reticências que avisariam que faltou
+// pedaço. Aqui são 34, que continua sendo alvo confortável de ponteiro.
+//
+// NO CELULAR ISTO NÃO VALE, e não é descuido: a regra de `@media` lá embaixo
+// devolve os 40px a todo botão abaixo de 768px, e vence este objeto porque vem
+// com `!important`. O dedo continua com o alvo que o dedo precisa; quem abre
+// mão dos 6px é o ponteiro, que não erra.
+const ICONE_DO_TOPO = { minWidth: 34, minHeight: 34, padding: 7 };
+
 const BOTAO_ICONE = {
   border: "none", background: "transparent", cursor: "pointer",
   display: "flex", alignItems: "center", justifyContent: "center",
@@ -8803,6 +8817,89 @@ export default function Painel({ sessao }) {
     </div>
   );
 
+  // O CONTROLE DA ORDEM DA LISTA — UM SÓ, e mora em lugares diferentes
+  // conforme o layout, porque os dois layouts têm folga em lugares diferentes.
+  //
+  // NO COMPUTADOR ele fica na linha da marca. A fita de filtros ali tem 357px
+  // e comporta QUATRO pílulas; com esta ela virava cinco e quebrava em duas
+  // linhas — 38px roubados da lista, medidos. O comentário do filtro de
+  // atendentes já dizia, quando ELE subiu, que "era a quinta pílula de uma
+  // linha que já quebrava em duas", e a linha continuou quebrando porque esta
+  // tomou o lugar vago. Subir a ordem é terminar aquele serviço.
+  //
+  // NO CELULAR ele fica na fita, que é de onde ele veio. Lá em cima não cabe:
+  // abaixo de 768px uma regra desta tela força todo botão a 40px de alvo de
+  // dedo (e faz bem — toque errado no telefone abre a coisa errada), e com
+  // QUATRO botões de 40 a marca ficava com 100px para um nome que pede 134.
+  // Media 390px e passava; num Android de 360 a tela dizia "Ropelimi Zo".
+  // Na fita do celular ele não custa nada: ela já usa duas linhas, e a segunda
+  // tem 307px de vão com só as etiquetas dentro.
+  //
+  // UMA DEFINIÇÃO SÓ, e não uma cópia em cada lugar: duas cópias divergem no
+  // primeiro conserto, e aqui divergir é a lista virar do avesso num layout e
+  // não no outro, com a tela dizendo a mesma coisa nos dois.
+  //
+  // ELE SEMPRE ESCREVE A ORDEM, nos dois lugares. Um botão que só troca e não
+  // conta em que estado está transforma "achei estranho" em "está quebrado".
+  const controleDaOrdem = !advogadoId ? null : (
+    <span ref={ordemMenuRef} style={{ position: "relative", display: "flex", flexShrink: 0 }}>
+      <button data-ordem onClick={() => setMenuOrdem((v) => !v)}
+              aria-expanded={menuOrdem} aria-haspopup="listbox"
+              title="Em que ordem a lista aparece"
+              style={{ display: "flex", alignItems: "center", gap: 4, minHeight: 30, flexShrink: 0,
+                       border: `1px solid ${ordem === "antigas" ? C.greenDark : C.divider}`,
+                       background: ordem === "antigas" ? C.greenDark : "transparent",
+                       color: ordem === "antigas" ? "#fff" : C.textSecondary,
+                       borderRadius: 20, padding: "4px 9px", fontSize: 12, fontWeight: 600,
+                       cursor: "pointer", whiteSpace: "nowrap" }}>
+        <ArrowDownUp size={13} />
+        {/* A PALAVRA CURTA, e nos dois lugares. Na linha da marca,
+            "Mais recentes" custa 143px e sobram 130 para um nome que
+            pede 134 — medido, e a marca saía cortada. "Recentes" custa
+            90 e devolve a folga. O menu logo abaixo continua dizendo
+            "Mais recentes primeiro", com a frase que explica o que isso
+            significa; quem precisa da forma longa está lá dentro.
+            Curta nos DOIS layouts de propósito: duas palavras para o
+            mesmo estado é a tela ensinando dois nomes para uma coisa. */}
+        {ordem === "antigas" ? "Antigas" : "Recentes"}
+      </button>
+      {menuOrdem && (
+        <div data-menu-ordem
+             style={{ position: "absolute", top: 36, ...(estreito ? { left: 0 } : { right: 0 }), zIndex: 46, width: 244,
+                      background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10,
+                      boxShadow: "0 6px 20px rgba(0,0,0,.25)", overflow: "hidden" }}>
+          <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.divider}`,
+                        fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3 }}>
+            ORDEM DA LISTA
+          </div>
+          {[["recentes", "Mais recentes primeiro", "Quem falou por último aparece no alto. É a ordem de sempre."],
+            ["antigas", "Mais antigas primeiro", "Quem está esperando há mais tempo aparece no alto."]]
+            .map(([chave, titulo, explica]) => (
+            <button key={chave} data-ordem-opcao={chave}
+                    onClick={() => { setOrdem(chave); setMenuOrdem(false); }}
+                    style={{ ...ITEM_DO_MENU, alignItems: "flex-start", color: C.textPrimary,
+                             background: ordem === chave ? C.listActive : "transparent" }}>
+              <Check size={16} color={ordem === chave ? C.green : "transparent"}
+                     style={{ flexShrink: 0, marginTop: 2 }} />
+              <span style={{ display: "block" }}>
+                {titulo}
+                {/* A FRASE EMBAIXO existe porque "mais antigas" é ambíguo
+                    para quem lê rápido: antiga é a conversa que começou
+                    faz tempo, ou a que ninguém responde faz tempo? São a
+                    mesma coisa aqui, e dizer qual das duas evita a
+                    pergunta. */}
+                <span style={{ display: "block", fontSize: 11.5, fontWeight: 400,
+                               color: C.textSecondary, marginTop: 2, whiteSpace: "normal" }}>
+                  {explica}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
+  );
+
   const listaDeEtiquetas = !conversa ? null : (
     <div style={{ position: "absolute", top: estreito ? 44 : 30, right: 0, width: 240, maxHeight: 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 46 }}>
       <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.divider}`, fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3, position: "sticky", top: 0, background: C.panel }}>MARCAR TAGS</div>
@@ -9560,12 +9657,15 @@ export default function Painel({ sessao }) {
             </div>
           </div>
         )}
-        <div style={{ background: C.headerBar, padding: "10px 16px 12px", borderBottom: `1px solid ${C.divider}` }}>
+        <div data-topo-da-coluna style={{ background: C.headerBar, padding: "8px 10px 9px", borderBottom: `1px solid ${C.divider}` }}>
           {/* O NOME DO SISTEMA, e não o de quem está logado. Quem está logado
               já se vê no rodapé da barra da esquerda, e ali com a foto — dizer
               "Você: Fulano" no topo era gastar a linha mais nobre da tela com o
               único dado que a pessoa nunca precisa consultar. */}
-          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 8, paddingBottom: 8, borderBottom: `1px solid ${C.divider}` }}>
+          {/* O TRAÇO DE DENTRO SAIU. Ele separava a marca do resto do bloco, e o
+              bloco já termina num traço — eram duas linhas horizontais em
+              sessenta pixels de tela. O WhatsApp Web não tem nenhuma. */}
+          <div data-linha-da-marca style={{ display: "flex", alignItems: "center", gap: 3, marginBottom: 6 }}>
             {/* A MARCA — o desenho mora em `Marca.jsx`, porque ela também
                 aparece na tela de entrada e no fundo sem conversa, e três
                 cópias soltas foi como o topo acabou em serifada enquanto a
@@ -9577,7 +9677,7 @@ export default function Painel({ sessao }) {
               <Marca tamanho={19} cor={C.textPrimary} corFraca={C.textSecondary} />
             </div>
             {/* Nova conversa (⊞), estilo WhatsApp Web */}
-            <button onClick={() => { setBuscaContato(""); setContatoForm(null); setNovaConversaAberta(true); carregarContatos(); }} aria-label="Nova conversa" title="Nova conversa" style={{ ...BOTAO_ICONE, color: C.textSecondary }}>
+            <button onClick={() => { setBuscaContato(""); setContatoForm(null); setNovaConversaAberta(true); carregarContatos(); }} aria-label="Nova conversa" title="Nova conversa" style={{ ...BOTAO_ICONE, ...ICONE_DO_TOPO, color: C.textSecondary }}>
               <SquarePen size={19} />
             </button>
             {/* QUEM PARTICIPOU — o filtro por atendente.
@@ -9588,9 +9688,12 @@ export default function Painel({ sessao }) {
                 abre um menu com dois modos e uma lista dentro. E era a quinta
                 pílula de uma linha que já quebrava em duas.
 
-                Aqui em cima ele fica ao lado das outras duas coisas que se faz
-                na coluna — abrir conversa nova e abrir o menu — e a fita volta
-                a ter só filtros de conversa, numa linha só.
+                Aqui em cima ele fica ao lado das outras coisas que se faz na
+                coluna — abrir conversa nova, virar a ordem da lista, abrir o
+                menu — e a fita volta a ter só filtros de conversa.
+
+                (A ordem veio depois, e pelo mesmo motivo: com ela a fita ainda
+                quebrava em duas linhas. Ver `controleDaOrdem`.)
 
                 Ícone sem rótulo porque é a vizinhança em que está: os três
                 botões desta linha são ícones. O que ele perde em nome ganha em
@@ -9600,7 +9703,7 @@ export default function Painel({ sessao }) {
               <button data-grupo="quem" onClick={() => setMenuQuem((v) => !v)}
                       aria-label="Filtrar por quem participou" aria-expanded={menuQuem}
                       title={quemFiltra.length ? "Filtrando por quem participou da conversa" : "Filtrar por quem participou da conversa"}
-                      style={{ ...BOTAO_ICONE, padding: 9,
+                      style={{ ...BOTAO_ICONE, ...ICONE_DO_TOPO,
                                background: quemFiltra.length ? C.greenDark : "transparent",
                                color: quemFiltra.length ? "#fff" : C.textSecondary }}>
                 <Users size={19} />
@@ -9674,9 +9777,10 @@ export default function Painel({ sessao }) {
               )}
             </span>
             )}
+            {!estreito && controleDaOrdem}
             {/* Menu ⋮ do topo, estilo WhatsApp Web */}
             <span ref={menuTopoRef} style={{ position: "relative", display: "flex" }}>
-              <button onClick={() => setMenuTopoAberto((v) => !v)} aria-label="Menu" title="Menu" style={{ ...BOTAO_ICONE, color: C.textSecondary }}>
+              <button onClick={() => setMenuTopoAberto((v) => !v)} aria-label="Menu" title="Menu" style={{ ...BOTAO_ICONE, ...ICONE_DO_TOPO, color: C.textSecondary }}>
                 <MoreVertical size={20} />
               </button>
               {menuTopoAberto && (
@@ -9719,13 +9823,13 @@ export default function Painel({ sessao }) {
               um. A lista rola PARA BAIXO, que é a direção que todo mundo já
               sabe que rola. Com busca quando passam de seis. */}
           {departamentosVisiveis.length > 1 && (
-            <div ref={departamentosRef} style={{ position: "relative", marginBottom: 10 }}>
+            <div ref={departamentosRef} style={{ position: "relative", marginBottom: 5 }}>
               <button onClick={() => setMenuDepartamentos((v) => !v)}
                       aria-expanded={menuDepartamentos} aria-haspopup="listbox"
                       title="Trocar de departamento"
-                      style={{ width: "100%", minHeight: 38, display: "flex", alignItems: "center", gap: 9,
+                      style={{ width: "100%", minHeight: 32, display: "flex", alignItems: "center", gap: 8,
                                border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary,
-                               borderRadius: 9, padding: "7px 11px", cursor: "pointer", textAlign: "left" }}>
+                               borderRadius: 8, padding: "4px 10px", cursor: "pointer", textAlign: "left" }}>
                 <span style={{ width: 9, height: 9, borderRadius: "50%", flexShrink: 0,
                                background: (departamentoAtual && departamentoAtual.cor) || C.textSecondary }} />
                 <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 13.5, fontWeight: 600 }}>
@@ -9737,7 +9841,7 @@ export default function Painel({ sessao }) {
                 <ChevronDown size={16} color={C.textSecondary} style={{ flexShrink: 0, transform: menuDepartamentos ? "rotate(180deg)" : "none", transition: "transform .12s" }} />
               </button>
               {menuDepartamentos && (
-                <div role="listbox" style={{ position: "absolute", top: 44, left: 0, right: 0, zIndex: 60,
+                <div role="listbox" style={{ position: "absolute", top: 37, left: 0, right: 0, zIndex: 60,
                                              background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10,
                                              boxShadow: "0 8px 24px rgba(0,0,0,.32)", overflow: "hidden" }}>
                   {/* A busca só entra quando a lista fica longa. Com quatro
@@ -9790,34 +9894,40 @@ export default function Painel({ sessao }) {
               )}
             </div>
           )}
-          {/* Sem telefone escolhido não há "atendendo como": o traço solto
+          {/* O RÓTULO E O VALOR NA MESMA LINHA, e não empilhados.
+              Eram duas linhas — "ATENDENDO COMO" numa, o nome e o número na de
+              baixo —, e a de cima gastava a altura de uma linha inteira para
+              dizer o que o valor ao lado já diria em qualquer lugar. Juntas,
+              custam 19px no lugar de 37, e nenhuma palavra se perdeu.
+
+              Sem telefone escolhido não há "atendendo como": o traço solto
               embaixo do rótulo parecia dado faltando, e não escolha pendente. */}
-          <div style={{ fontSize: 11, color: C.textSecondary, fontWeight: 600, letterSpacing: 0.3 }}>
-            {advogado ? "ATENDENDO COMO" : "ESCOLHA UM NÚMERO ABAIXO"}
-          </div>
-          {advogado && (<>
-          {/* Nome e número na MESMA linha. Quem encolhe é o nome (`minWidth: 0`
-              com reticências); o número fica inteiro (`flexShrink: 0`) porque é
-              o dado que se copia — meio número não serve para nada, e um nome
-              cortado ainda se reconhece. */}
-          <div style={{ display: "flex", alignItems: "baseline", gap: 7, marginTop: 2 }}>
-            <span style={{ fontSize: 15, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
-              {advogado ? advogado.nome : "—"}
+          <div data-atendendo-como style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
+            <span style={{ fontSize: 10.5, color: C.textSecondary, fontWeight: 700, letterSpacing: 0.3, flexShrink: 0 }}>
+              {advogado ? "ATENDENDO COMO" : "ESCOLHA UM NÚMERO ABAIXO"}
             </span>
-            {advogado && numeroBonito(advogado.numero) && (
-              <span style={{ fontSize: 12.5, color: C.textSecondary, whiteSpace: "nowrap", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
-                {numeroBonito(advogado.numero)}
+            {advogado && (<>
+              {/* Quem encolhe é o NOME (`minWidth: 0` com reticências); o
+                  número fica inteiro (`flexShrink: 0`) porque é o dado que se
+                  copia — meio número não serve para nada, e um nome cortado
+                  ainda se reconhece. */}
+              <span style={{ fontSize: 13.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+                {advogado.nome}
               </span>
-            )}
+              {numeroBonito(advogado.numero) && (
+                <span style={{ fontSize: 12, color: C.textSecondary, whiteSpace: "nowrap", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+                  {numeroBonito(advogado.numero)}
+                </span>
+              )}
+            </>)}
           </div>
-          </>)}
         </div>
 
         {/* Buscar e filtrar uma lista que ainda não existe é oferecer botão que
             não faz nada. Só aparecem com um telefone escolhido. */}
         {advogadoId && (<>
-        <div style={{ padding: "8px 12px", background: C.panel }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.searchBg, borderRadius: 8, padding: "6px 12px" }}>
+        <div style={{ padding: "7px 12px 6px", background: C.panel }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.searchBg, borderRadius: 8, padding: "5px 11px" }}>
             <Search size={16} color={C.textSecondary} />
             {/* CPF E PROCESSO VINHAM SÓ DO CADASTRO DO VANTORO. O que esta
                 busca manda ao BANCO é nome, os dois nomes alternativos e
@@ -9843,70 +9953,15 @@ export default function Painel({ sessao }) {
             menu resolve um problema que a fita tinha de nascença: etiqueta que
             ficava depois da dobra era invisível — para filtrar por ela, a
             pessoa precisava adivinhar que dava para arrastar. */}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "0 12px 8px", background: C.panel }}>
+        <div data-fita-de-filtros style={{ display: "flex", flexWrap: "wrap", gap: 5, padding: "0 12px 7px", background: C.panel }}>
           {[["tudo", "Tudo"], ["naolidas", `Não lidas${totalNaoLidasLista ? " " + totalNaoLidasLista : ""}`], ["favoritas", "Favoritas"]].map(([k, label]) => {
             const ativo = filtro === k;
             return (
-              <button key={k} data-aba={k} onClick={() => setFiltro(k)} style={{ flexShrink: 0, minHeight: 32, border: `1px solid ${ativo ? C.greenDark : C.divider}`, background: ativo ? C.greenDark : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 20, padding: "5px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
+              <button key={k} data-aba={k} onClick={() => setFiltro(k)} style={{ flexShrink: 0, minHeight: 30, border: `1px solid ${ativo ? C.greenDark : C.divider}`, background: ativo ? C.greenDark : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 20, padding: "4px 11px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
             );
           })}
-          {/* A ORDEM DA LISTA.
-              Fica aqui, ao lado dos outros filtros, porque é o mesmo tipo de
-              coisa: muda o que a lista mostra e precisa dizer, sem ser
-              perguntado, qual regra está valendo. Um botão que só troca e não
-              conta em que estado está transforma "achei estranho" em "está
-              quebrado".
-              Por isso a pílula ESCREVE a ordem em vez de ser só uma setinha —
-              e fica verde quando não é a de sempre, igual às outras. */}
-          <span ref={ordemMenuRef} style={{ position: "relative", display: "flex", flexShrink: 0 }}>
-            <button data-ordem onClick={() => setMenuOrdem((v) => !v)}
-                    aria-expanded={menuOrdem}
-                    title="Em que ordem a lista aparece"
-                    style={{ display: "flex", alignItems: "center", gap: 5, minHeight: 32,
-                             border: `1px solid ${ordem === "antigas" ? C.greenDark : C.divider}`,
-                             background: ordem === "antigas" ? C.greenDark : "transparent",
-                             color: ordem === "antigas" ? "#fff" : C.textSecondary,
-                             borderRadius: 20, padding: "5px 11px", fontSize: 12.5, fontWeight: 600,
-                             cursor: "pointer", whiteSpace: "nowrap" }}>
-              <ArrowDownUp size={13} />
-              {ordem === "antigas" ? "Mais antigas" : "Mais recentes"}
-              <ChevronDown size={13} style={{ opacity: 0.8 }} />
-            </button>
-            {menuOrdem && (
-              <div data-menu-ordem
-                   style={{ position: "absolute", top: 38, left: 0, zIndex: 46, width: 244,
-                            background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10,
-                            boxShadow: "0 6px 20px rgba(0,0,0,.25)", overflow: "hidden" }}>
-                <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.divider}`,
-                              fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3 }}>
-                  ORDEM DA LISTA
-                </div>
-                {[["recentes", "Mais recentes primeiro", "Quem falou por último aparece no alto. É a ordem de sempre."],
-                  ["antigas", "Mais antigas primeiro", "Quem está esperando há mais tempo aparece no alto."]]
-                  .map(([chave, titulo, explica]) => (
-                  <button key={chave} data-ordem-opcao={chave}
-                          onClick={() => { setOrdem(chave); setMenuOrdem(false); }}
-                          style={{ ...ITEM_DO_MENU, alignItems: "flex-start", color: C.textPrimary,
-                                   background: ordem === chave ? C.listActive : "transparent" }}>
-                    <Check size={16} color={ordem === chave ? C.green : "transparent"}
-                           style={{ flexShrink: 0, marginTop: 2 }} />
-                    <span style={{ display: "block" }}>
-                      {titulo}
-                      {/* A FRASE EMBAIXO existe porque "mais antigas" é ambíguo
-                          para quem lê rápido: antiga é a conversa que começou
-                          faz tempo, ou a que ninguém responde faz tempo? São a
-                          mesma coisa aqui, e dizer qual das duas evita a
-                          pergunta. */}
-                      <span style={{ display: "block", fontSize: 11.5, fontWeight: 400,
-                                     color: C.textSecondary, marginTop: 2, whiteSpace: "normal" }}>
-                        {explica}
-                      </span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </span>
+
+          {estreito && controleDaOrdem}
 
           {/* O RASTRO DO FILTRO DE ATENDENTES.
               O botão em si subiu para o topo da coluna, ao lado de "Nova
@@ -9967,7 +10022,7 @@ export default function Painel({ sessao }) {
           <span ref={etiquetasRef} style={{ position: "relative", display: "flex", minWidth: 0 }}>
             <button onClick={() => setMenuEtiquetas((v) => !v)}
                     title={tagFiltrada ? `Filtrando por "${tagFiltrada.nome}"` : "Filtrar por etiqueta"}
-                    style={{ flexShrink: 1, minWidth: 0, maxWidth: 190, minHeight: 32, border: `1px solid ${tagFiltrada ? tagFiltrada.cor : C.divider}`, background: tagFiltrada ? tagFiltrada.cor : "transparent", color: tagFiltrada ? corDoTextoSobre(tagFiltrada.cor) : C.textSecondary, borderRadius: 20, padding: "5px 11px 5px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                    style={{ flexShrink: 1, minWidth: 0, maxWidth: 190, minHeight: 30, border: `1px solid ${tagFiltrada ? tagFiltrada.cor : C.divider}`, background: tagFiltrada ? tagFiltrada.cor : "transparent", color: tagFiltrada ? corDoTextoSobre(tagFiltrada.cor) : C.textSecondary, borderRadius: 20, padding: "4px 9px 4px 11px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {tagFiltrada ? tagFiltrada.nome : "Etiquetas"}
               </span>
