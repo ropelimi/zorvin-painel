@@ -520,6 +520,62 @@ conversa não vinha na lista — a consulta da página pede `mensagens(id)` junt
 e o contador de não lidas do menu ficava em zero com o grupo na tela.
 
 Prova: `o-campo-de-grupos`, 20 conferências, 5 sabotagens e 5 pegas.
+## A citação leva até a mensagem citada
+
+Pedido do Rodrigo em 16/09: *"ao clicar na mensagem que foi respondida, ir para
+a mensagem"*. É o que o WhatsApp faz, e sem isso a citação é só uma prévia de
+120 caracteres — bastante para lembrar do assunto, pouco para achar o que foi
+dito antes dela.
+
+**O elo já estava gravado.** `responder_id_uazapi` guarda o id da citada desde
+que a ponte aprendeu o formato certo da Uazapi (15/09). O que faltava era o
+clique. **Nenhum SQL.**
+
+### Quatro casos, e três deles só existem com dado de propósito
+
+| o caso | o que acontece |
+|---|---|
+| a citada está carregada | rola até ela e a **marca** |
+| a citada não está carregada | vai ao banco buscar as anteriores, e só então rola |
+| a resposta não tem elo (dado antigo) | **não finge ser botão** |
+| o elo aponta para o nada (citada apagada) | **diz** que não achou |
+
+O último separa "não fez nada" de "não deu para fazer": um clique mudo é
+indistinguível de um clique quebrado, e quem atende vai clicar de novo.
+
+**Duas formas, não uma com `disabled`:** `button` quando há elo (com cursor,
+foco de teclado e `title`), `div` quando não há. O desenho é o mesmo. Um bloco
+que parece botão e não faz nada é pior do que um que não parece.
+
+**São três rodadas ao banco, e não "até achar":** cada uma é uma ida, e um id
+que não existe mais varreria a conversa inteira à toa. 360 mensagens para trás
+cobrem o que uma citação alcança na prática.
+
+### Três defeitos que só apareceram medindo, e os três eram meus
+
+**`useCallback([])` congelou `carregarAntigas`.** A função precisa ser estável
+(ela desce para `ListaDeBolhas`, que é `React.memo` — função nova a cada desenho
+faria o `memo` nunca bater, e a lista inteira seria redesenhada a cada tecla) e
+ao mesmo tempo precisa ver o presente. Congelada, ela era a versão do primeiro
+desenho, quando `mensagens` ainda era lista vazia, e desistia sem ir ao banco.
+**O sintoma era o pior possível: o clique não fazia NADA — nem levava, nem
+avisava.** Hoje tudo o que envelhece entra por espelho (`mensagensRef`,
+`temMaisAntigasRef`, `carregarAntigasRef`).
+
+**`await carregarAntigas()` não espera o React redesenhar.** O `setMensagens`
+agenda; o espelho só é atualizado no efeito que roda depois do desenho.
+Procurar ali era procurar na lista de ANTES de carregar — justamente a que não
+tem a mensagem. Por isso `carregarAntigas` passou a **devolver o lote**, e quem
+chamou procura no que chegou.
+
+**Dois cliques em menos de quatro segundos se atropelavam.** O relógio que apaga
+o destaque do primeiro disparava no meio do segundo, deixando a pessoa no meio
+da conversa sem saber qual bolha é a citada — que é exatamente o que a marca
+existe para evitar. Hoje o relógio é cancelado no clique seguinte. **Foi a prova
+que pegou.**
+
+Prova: `a-citacao-leva-a-mensagem`, 15 conferências, 5 sabotagens e 5 pegas. A
+bancada ganhou as quatro respostas que citam — uma por caso.
 
 ## Banco de dados (tabelas que o painel lê/escreve)
 
