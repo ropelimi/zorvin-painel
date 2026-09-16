@@ -420,6 +420,42 @@ errado não tem desfazer), o departamento, e a ordem da lista.
 Prova: `o-topo-mais-baixo`, 31 conferências em duas larguras, 6 sabotagens e
 6 pegas.
 
+## A busca que empurrava para fora da tela o que ela tinha achado
+
+Relato do escritório em 16/09, com foto: *"a conversa do nome que eu pesquiso
+aparece e em segundos some, e ficam aparecendo outros contatos todos sem
+conversa"*.
+
+**A conversa não sumia.** A busca pergunta em dois lugares e em dois tempos: o
+banco responde em milissegundos, o cadastro do Vantoro leva segundos (ele fica
+atrás da ponte, que hiberna na Render). O bloco *"No cadastro do Vantoro, ainda
+sem conversa por este número"* era desenhado **acima** das conversas — então,
+quando o cadastro chegava com doze homônimos, a conversa achada ia parar 800px
+abaixo da dobra.
+
+**Medido na bancada**, com doze homônimos: aos 900ms, 1 conversa e 0 ofertas;
+aos 2100ms, as MESMAS 3 conversas com 12 ofertas na frente. A primeira conversa
+saía de 0 para **868px** abaixo do alto da lista.
+
+**A ordem certa sai da pergunta que a pessoa fez.** Ela procurou um nome: se HÁ
+conversa com ele, essa é a resposta. "Comece uma conversa com alguém com quem
+você nunca falou" é o que sobra quando não há — e aí o bloco fica no alto
+sozinho, porque não há nada acima dele. O conserto é de ORDEM, e não de
+conteúdo: a oferta continua inteira, com o telefone e o "Começar conversa".
+
+**Descer não podia virar apagar.** A oferta existe por um relato anterior deste
+mesmo escritório (a ELIANA, que o Vantoro conhece e o Zorvin nunca viu), e a
+prova tem uma conferência só para isso: sem conversa nenhuma, ela aparece.
+
+**A prova mede o que se VÊ, e não a ordem no HTML.** Conferir só "o bloco vem
+depois" aprovaria uma tela em que a conversa está logo abaixo de doze ofertas
+dentro de um quadro que rola: no HTML a ordem estaria certa e na tela a
+conversa continuaria fora da vista. E a medida sai do alto do **quadro que
+rola**, não da janela — medindo da janela, os 188px do cabeçalho entram na
+conta e a régua passa a falar de outra coisa.
+
+Prova: `a-busca-nao-empurra-a-conversa`, 11 conferências, 2 sabotagens e 2
+pegas.
 ## O campo de grupos — a setinha do fim da fita
 
 Pedido do Rodrigo em 16/09, com a tela do WhatsApp Web ao lado: lá a fita de

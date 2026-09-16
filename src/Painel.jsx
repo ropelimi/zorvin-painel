@@ -10338,60 +10338,6 @@ export default function Painel({ sessao }) {
               {erroBusca}
             </div>
           )}
-          {/* ------------------------------------------------------------
-              QUEM O VANTORO ACHOU E O ZORVIN NUNCA VIU
-
-              Relato do escritório, com print: procurar "ELIANA ALVES DA SILVA"
-              devolvia "Nada encontrado para essa busca" — e a ELIANA está no
-              Vantoro, com telefone, três processos e vinte e um documentos.
-
-              O Vantoro respondia certo. Com o telefone dele em mãos, o painel
-              procurava a CONVERSA daquele número neste telefone do escritório
-              — e se a pessoa nunca escreveu para ele, não há conversa nenhuma.
-              A busca terminava sem nada a mostrar.
-
-              "Nada encontrado" era falso, e é o pior tipo de falso: uma
-              RESPOSTA. Nós encontramos a pessoa; o que não temos é conversa
-              com ela. Quem lê "não achei" conclui que o cliente não existe no
-              sistema e para de procurar — quando o que faltava era um clique.
-
-              O TELEFONE VEM DO CADASTRO, e é isso que dá valor ao gesto:
-              ninguém decora o número do cliente. Sem isto, a saída era abrir o
-              Vantoro, copiar o telefone, voltar e usar "Nova conversa".
-              ------------------------------------------------------------ */}
-          {busca.trim() && !buscando && semConversa.length > 0 && (
-            <div data-do-vantoro-sem-conversa>
-              <div style={{ padding: "10px 14px 6px", fontSize: 11.5, fontWeight: 700,
-                            letterSpacing: .4, textTransform: "uppercase",
-                            color: C.textSecondary }}>
-                No cadastro do Vantoro, ainda sem conversa por este número
-              </div>
-              {semConversa.map((p) => (
-                <div key={p.telefone} data-comecar-conversa={p.telefone}
-                     role="button" tabIndex={0}
-                     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); conversarComNumero(p.telefone); } }}
-                     onClick={() => conversarComNumero(p.telefone)}
-                     style={{ display: "flex", alignItems: "center", gap: estreito ? 10 : 12,
-                              padding: estreito ? "10px 8px" : "10px 14px",
-                              borderBottom: `1px solid ${C.divider}`, cursor: "pointer" }}>
-                  <Avatar nome={p.nome} size={48} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 15, fontWeight: 600, overflow: "hidden",
-                                  textOverflow: "ellipsis", whiteSpace: "nowrap",
-                                  color: C.textPrimary }}>{p.nome}</div>
-                    <div style={{ fontSize: 13, color: C.textSecondary }}>
-                      {telefoneLegivel(p.telefone)}
-                    </div>
-                  </div>
-                  {/* O QUE O CLIQUE FAZ, ESCRITO. As outras linhas desta lista
-                      abrem uma conversa que existe; esta CRIA uma. Sem dizer,
-                      as duas parecem a mesma coisa. */}
-                  <span style={{ fontSize: 12, fontWeight: 600, color: C.green,
-                                 whiteSpace: "nowrap" }}>Começar conversa</span>
-                </div>
-              ))}
-            </div>
-          )}
           {conversasFiltradas.length === 0 && !erroBusca && semConversa.length === 0 && (
             // A marca e a frase vêm de `recadoDaListaVazia`, uma escolha só —
             // o porquê de cada uma está lá em cima, junto dela.
@@ -10523,6 +10469,78 @@ export default function Painel({ sessao }) {
                 {Math.min(quantasNaLista, conversasFiltradas.length)} de {conversasFiltradas.length}
                 {temMaisConversas && listaPodeCrescer ? "+" : ""} conversas
               </div>
+            </div>
+          )}
+
+          {/* ------------------------------------------------------------
+              QUEM O VANTORO ACHOU E O ZORVIN NUNCA VIU
+
+              Relato do escritório, com print: procurar "ELIANA ALVES DA SILVA"
+              devolvia "Nada encontrado para essa busca" — e a ELIANA está no
+              Vantoro, com telefone, três processos e vinte e um documentos.
+
+              O Vantoro respondia certo. Com o telefone dele em mãos, o painel
+              procurava a CONVERSA daquele número neste telefone do escritório
+              — e se a pessoa nunca escreveu para ele, não há conversa nenhuma.
+              A busca terminava sem nada a mostrar.
+
+              "Nada encontrado" era falso, e é o pior tipo de falso: uma
+              RESPOSTA. Nós encontramos a pessoa; o que não temos é conversa
+              com ela. Quem lê "não achei" conclui que o cliente não existe no
+              sistema e para de procurar — quando o que faltava era um clique.
+
+              E ELA MORA DEPOIS DAS CONVERSAS, e não antes — relato de 16/09,
+              com foto: procurar "rodrigo" mostrava a conversa certa e, dois
+              segundos depois, ela "sumia" e a lista virava uma fileira de
+              gente sem conversa nenhuma.
+
+              A conversa não sumia: o cadastro respondia DEPOIS do banco (ele
+              fica atrás da ponte, que hiberna) e doze homônimos entravam ACIMA
+              dela, empurrando-a oitocentos pixels abaixo da dobra. Medido na
+              bancada: 1 conversa aos 900ms; aos 2100ms, as mesmas 3 conversas
+              com 12 ofertas na frente.
+
+              A ordem certa sai da pergunta que a pessoa fez. Ela procurou um
+              nome: se HÁ conversa com ele, essa é a resposta. "Comece uma
+              conversa com alguém com quem você nunca falou" é o que sobra
+              quando não há — e aí este bloco fica no alto sozinho, porque não
+              há nada acima dele.
+
+              O TELEFONE VEM DO CADASTRO, e é isso que dá valor ao gesto:
+              ninguém decora o número do cliente. Sem isto, a saída era abrir o
+              Vantoro, copiar o telefone, voltar e usar "Nova conversa".
+              ------------------------------------------------------------ */}
+          {busca.trim() && !buscando && semConversa.length > 0 && (
+            <div data-do-vantoro-sem-conversa>
+              <div style={{ padding: "10px 14px 6px", fontSize: 11.5, fontWeight: 700,
+                            letterSpacing: .4, textTransform: "uppercase",
+                            color: C.textSecondary }}>
+                No cadastro do Vantoro, ainda sem conversa por este número
+              </div>
+              {semConversa.map((p) => (
+                <div key={p.telefone} data-comecar-conversa={p.telefone}
+                     role="button" tabIndex={0}
+                     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); conversarComNumero(p.telefone); } }}
+                     onClick={() => conversarComNumero(p.telefone)}
+                     style={{ display: "flex", alignItems: "center", gap: estreito ? 10 : 12,
+                              padding: estreito ? "10px 8px" : "10px 14px",
+                              borderBottom: `1px solid ${C.divider}`, cursor: "pointer" }}>
+                  <Avatar nome={p.nome} size={48} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, overflow: "hidden",
+                                  textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                  color: C.textPrimary }}>{p.nome}</div>
+                    <div style={{ fontSize: 13, color: C.textSecondary }}>
+                      {telefoneLegivel(p.telefone)}
+                    </div>
+                  </div>
+                  {/* O QUE O CLIQUE FAZ, ESCRITO. As outras linhas desta lista
+                      abrem uma conversa que existe; esta CRIA uma. Sem dizer,
+                      as duas parecem a mesma coisa. */}
+                  <span style={{ fontSize: 12, fontWeight: 600, color: C.green,
+                                 whiteSpace: "nowrap" }}>Começar conversa</span>
+                </div>
+              ))}
             </div>
           )}
           </>}
