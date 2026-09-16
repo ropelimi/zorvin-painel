@@ -127,7 +127,14 @@ console.log("\nEscolhendo Grupos, a lista mostra só os grupos");
      JSON.stringify(depois));
   // E NADA ALÉM DELE. Sem esta, "mostrar os grupos" passaria numa tela que não
   // filtrou nada e só por acaso tinha o grupo no alto.
-  ok("e mais ninguém", depois.every((n) => /EQUIPE|MUTIRÃO/.test(n)),
+  //
+  // O TAMANHO VAI NA MESMA CONDIÇÃO, e isto não é enfeite: `[].every(...)` é
+  // `true` — verdade vazia. Sem ele, uma tela que filtrou até não sobrar NADA
+  // passaria nesta conferência, e ela é justamente a que existe para dizer que
+  // a lista está certa. Foi a vigia `provas-que-reprovam` que pegou, no CI: eu
+  // a tinha rodado ANTES de escrever esta prova, e não depois.
+  ok("e mais ninguém",
+     depois.length > 0 && depois.every((n) => /EQUIPE|MUTIRÃO/.test(n)),
      JSON.stringify(depois));
 
   // LIGADA, A SETA ESCREVE O QUE ESTÁ VALENDO. Uma lista que ficou curta sem
