@@ -339,6 +339,87 @@ histórico com autor, então era de alguém. A conferência dizia medir "cliente
 novo" e media outra coisa — e o cenário de verdade é este mesmo, porque cliente
 novo escrevendo cria uma conversa que nenhum painel conhece.
 
+## O topo da coluna — 283px para dizer o que cabe em 188
+
+Pedido do Rodrigo em 16/09, com as duas telas lado a lado: o topo do Zorvin
+ocupava quase o dobro do topo do WhatsApp Web, e a equipe conhece o segundo.
+
+**Medido, a 1360×900:** do alto da coluna até a primeira conversa iam **283px**;
+hoje são **188**. No WhatsApp Web são ~147, em três faixas — título, busca,
+filtros. O Zorvin tinha **seis**, e a sexta era a fita de filtros **quebrada em
+duas linhas**. No celular (390×844) foram de **315 para 281**.
+
+De onde saíam os 283:
+
+| O que | Antes | Agora | Por quê |
+|---|---|---|---|
+| Fita de filtros | 78 | 37 | cinco pílulas não cabem em 357px — a ordem saiu |
+| "ATENDENDO COMO" + nome + número | 37 | 15 | rótulo e valor na MESMA linha |
+| Traço horizontal dentro do bloco | 1 + folgas | 0 | o bloco já termina num traço |
+| Recheios e alturas | — | −30 | aperto, sem tirar nada |
+
+### O controle da ordem tem DOIS endereços, e é a decisão principal
+
+`controleDaOrdem` é **uma definição só**, renderizada num lugar ou no outro
+conforme o layout — porque a folga está em lugares diferentes em cada um.
+
+- **No computador ele fica na linha da marca.** A fita comporta QUATRO pílulas
+  em 357px; com esta ela virava cinco e quebrava. O comentário do filtro de
+  atendentes já dizia, quando ELE subiu, que *"era a quinta pílula de uma linha
+  que já quebrava em duas"* — e continuou quebrando, porque a ordem tomou o
+  lugar vago. Subir a ordem terminou aquele serviço.
+- **No celular ele fica na fita**, de onde veio. Lá em cima não cabe: abaixo de
+  768px uma regra desta tela força todo botão a **40px de alvo de dedo**, e com
+  quatro botões de 40 a marca ficava com 100px para um nome que pede 134. Na
+  fita do celular ele não custa nada — ela já usa duas linhas, e a segunda tem
+  307px de vão com só as etiquetas dentro.
+
+**Duas cópias do controle divergiriam no primeiro conserto**, e divergir aqui é
+a lista virar do avesso num layout e não no outro, com a tela dizendo a mesma
+coisa nos dois.
+
+**Ele sempre ESCREVE a ordem**, nos dois lugares — contrato antigo, com prova
+própria (`ordem`): um botão que só troca e não conta em que estado está
+transforma "achei estranho" em "está quebrado". O que mudou foi o tamanho da
+palavra, "Recentes" no lugar de "Mais recentes"; o menu segue dizendo as duas
+por extenso, com a explicação de cada uma.
+
+### Três coisas que só apareceram medindo
+
+**A marca ficou cortada, e isso aconteceu de verdade nesta mudança.** Com a
+ordem na linha da marca sobraram 130px para um nome que pede 134, e a tela
+passou a dizer "Ropelimi Zo" — cortado no meio da palavra, sem nem as
+reticências que avisariam que faltou pedaço. Ninguém reclamaria; ficaria só com
+cara de programa mal feito.
+
+**O celular tem régua própria, e a prova a 1360px não a enxerga.** A primeira
+correção que tentei (encolher os botões para 34px) **desobedecia aos 40px de
+alvo de dedo** — trocaria um defeito que se vê por um que se sente, no
+aparelho onde errar o toque abre a conversa errada. A segunda (marca a 17px no
+celular) passava num iPhone de 390 e **cortava num Android de 360**: dois pixels
+de folga não são projeto, são coincidência. O conserto que ficou é o dos dois
+endereços acima, que dá 16px de folga a 360 e 31 a 375.
+
+**O teto da prova começou em 215 e desceu para 205.** Com 215, a sabotagem que
+devolvia os recheios antigos media 215 cravados e PASSAVA. Teto que não reprova
+o defeito que motivou a mudança é decoração.
+
+**E uma sabotagem vazou:** eu media se o menu da ordem cabe na **janela**. Um
+menu de 244px em `left: 120` termina em 364px, que cabe numa janela de 1360 com
+folga — só que a coluna acaba em 380, e o menu estaria derramando por cima da
+conversa aberta, que é o defeito. **A régua é a coluna, não a janela.**
+
+### A prova tem duas metades, e a segunda importa mais
+
+A primeira mede que encolheu. Sozinha, ela aprovaria a tela que encolheu
+**apagando** coisa — e o jeito mais fácil de baixar um cabeçalho é jogar fora o
+que ele diz. A segunda confere que cada informação continua na tela: o número
+que o cliente vê chegar (o mais grave dos três, porque responder pelo número
+errado não tem desfazer), o departamento, e a ordem da lista.
+
+Prova: `o-topo-mais-baixo`, 31 conferências em duas larguras, 6 sabotagens e
+6 pegas.
+
 ## Banco de dados (tabelas que o painel lê/escreve)
 
 - `advogados` — lê (id, nome, numero, foto_url) onde `ativo = true`
