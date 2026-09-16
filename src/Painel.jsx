@@ -1651,6 +1651,10 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
   setProcessoDaNota,
   setEncaminhar, setBuscaEncaminhar, setImagemAberta, setRetratoAberto,
   setNotaParaApagar,
+  // CLICAR NA CITAÇÃO LEVA ATÉ A CITADA. Mora no `Painel` porque precisa da
+  // lista de mensagens e de ir ao banco buscar as anteriores; aqui só chega a
+  // função, como todo o resto.
+  aoIrParaCitada,
 }) {
 
   return mensagens.map((m, i) => {
@@ -1915,12 +1919,52 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
                 aoResponder={() => { setReagindo(null); setReagindoTudo(false); iniciarResposta(m); }}
                 aoCopiar={() => { setReagindo(null); setReagindoTudo(false); copiarMensagem(m); }} />
             )}
-            {m.resposta_previa && (
-              <div style={{ borderLeft: `3px solid ${C.green}`, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 4, padding: "3px 8px", marginBottom: 4 }}>
+            {m.resposta_previa && (() => {
+              // ------------------------------------------------------------
+              //  A CITAÇÃO LEVA ATÉ A MENSAGEM CITADA — quando há para onde ir.
+              //
+              //  `responder_id_uazapi` é o elo, e ele NEM SEMPRE EXISTE: as
+              //  respostas gravadas antes de a ponte aprender o formato certo
+              //  da Uazapi têm a prévia e não têm o id. Sem ele não há para
+              //  onde levar — e um bloco que parece botão e não faz nada é
+              //  pior do que um bloco que não parece botão.
+              //
+              //  Por isso são DUAS formas: `button` quando há elo (com o
+              //  cursor, o foco de teclado e o `title` que dizem que se
+              //  clica), `div` quando não há. O desenho é o mesmo nos dois.
+              const temParaOndeIr = !!m.responder_id_uazapi && !!aoIrParaCitada;
+              const dentro = (<>
                 <div style={{ color: C.verdeTexto, fontWeight: 600, fontSize: 12 }}>{m.resposta_autor === "advogado" ? "Você" : (conversa.contato?.nome || "Contato")}</div>
                 <div style={{ color: C.textSecondary, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 260 }}>{m.resposta_previa}</div>
-              </div>
-            )}
+              </>);
+              const traje = {
+                borderLeft: `3px solid ${C.green}`,
+                background: saida ? "rgba(0,0,0,.06)" : C.searchBg,
+                borderRadius: 4, padding: "3px 8px", marginBottom: 4,
+                textAlign: "left", display: "block", width: "100%",
+                border: "none", borderLeftWidth: 3, borderLeftStyle: "solid",
+                borderLeftColor: C.green,
+              };
+              if (!temParaOndeIr) {
+                return <div data-citacao style={traje}>{dentro}</div>;
+              }
+              return (
+                <button data-citacao data-citacao-leva-a={m.responder_id_uazapi}
+                        title="Ir para a mensagem citada"
+                        onClick={(e) => {
+                          // O CLIQUE NÃO PODE VIRAR SELEÇÃO. A linha inteira da
+                          // bolha tem um `onClick` que marca a mensagem quando o
+                          // modo de seleção está ligado; sem parar aqui, clicar
+                          // na citação marcaria a resposta em vez de ir para a
+                          // citada.
+                          e.stopPropagation();
+                          aoIrParaCitada(m.responder_id_uazapi);
+                        }}
+                        style={{ ...traje, cursor: "pointer" }}>
+                  {dentro}
+                </button>
+              );
+            })()}
             {m.tipo === "imagem" && m.midia_url && (
               // Um `button` de verdade em volta da imagem. Como
               // `<img onClick>` solto, ela abria no clique e não
@@ -2482,6 +2526,15 @@ export default function Painel({ sessao }) {
   // dependesse só do id não rodaria na segunda vez.
   const [salto, setSalto] = useState(null);          // { id, n }
   const [msgDestacada, setMsgDestacada] = useState(null);
+
+  // OS ESPELHOS DE `mensagens` E `temMaisAntigas`.
+  //
+  // `irParaCitada` atravessa um `await` — ela pode ir ao banco buscar as
+  // anteriores antes de achar a citada. O que estava no fecho quando ela
+  // começou já envelheceu quando ela volta: procurar ali seria procurar na
+  // lista de ANTES de carregar, que é justamente a que não tem a mensagem.
+  const mensagensRef = useRef([]);
+  const temMaisAntigasRef = useRef(false);
   const [buscandoAntigas, setBuscandoAntigas] = useState(false);
   const [importando, setImportando] = useState(false); // gravando no banco
   const [impAdvId, setImpAdvId] = useState(""); // advogado dono das conversas importadas
@@ -5039,9 +5092,19 @@ export default function Painel({ sessao }) {
   // está na tela. É o "carregar anteriores" do WhatsApp Web — e é ele que
   // permite que a abertura da conversa traga só as últimas, que é o barato.
   async function carregarAntigas() {
-    if (buscandoAntigas || !conversaId) return;
+    // ELA DEVOLVE O QUE TROUXE, e não só mexe no estado.
+    //
+    // `irParaCitada` a chama e procura a citada logo em seguida. Esperar o
+    // `await` NÃO espera o React redesenhar: o `setMensagens` agenda, e o
+    // espelho da lista só é atualizado no efeito que roda depois do desenho.
+    // Medido: o clique na citação de três meses atrás carregava as anteriores
+    // e dizia "não achei" sobre uma mensagem que tinha acabado de chegar.
+    //
+    // Com o lote na mão, quem chamou procura no que chegou, sem depender de
+    // quando o desenho acontece.
+    if (buscandoAntigas || !conversaId) return [];
     const maisAntiga = mensagens.find((m) => m.origem !== "nota");
-    if (!maisAntiga) return;
+    if (!maisAntiga) return [];
     setBuscandoAntigas(true);
     const convId = conversaId;
     const { data, error } = await supabase
@@ -5052,17 +5115,18 @@ export default function Painel({ sessao }) {
       .order("criado_em", { ascending: false })
       .limit(TETO_MENSAGENS);
     setBuscandoAntigas(false);
-    if (error) { mostrarAviso("Não consegui trazer as mensagens anteriores."); return; }
+    if (error) { mostrarAviso("Não consegui trazer as mensagens anteriores."); return []; }
     // Troquei de conversa enquanto isto vinha: joga fora, senão o histórico de
     // uma pessoa aparece na conversa de outra.
-    if (conversaIdRef.current !== convId) return;
+    if (conversaIdRef.current !== convId) return [];
     const lote = (data || []).slice().reverse();
     setTemMaisAntigas(lote.length >= TETO_MENSAGENS);
-    if (!lote.length) return;
+    if (!lote.length) return [];
     setMensagens((prev) => {
       const jaTem = new Set(prev.map((m) => m.id));
       return [...lote.filter((m) => !jaTem.has(m.id)), ...prev];
     });
+    return lote;
   }
 
   // ---- Mantém vivo o "estou atendendo" enquanto a conversa fica aberta ----
@@ -5756,6 +5820,97 @@ export default function Painel({ sessao }) {
     const apagar = setTimeout(() => setMsgDestacada(null), 4000);
     return () => { cancelAnimationFrame(quadro); clearTimeout(apagar); };
   }, [salto]);
+
+  // ------------------------------------------------------------
+  //  CLICAR NA CITAÇÃO LEVA ATÉ A MENSAGEM CITADA
+  //
+  //  Pedido do Rodrigo em 16/09: "ao clicar na mensagem que foi respondida,
+  //  ir para a mensagem". É o que o WhatsApp faz, e sem isso a citação é só
+  //  uma prévia de 120 caracteres — bastante para lembrar do assunto, pouco
+  //  para achar o que foi dito antes dela.
+  //
+  //  O ELO JÁ ESTAVA GRAVADO: `responder_id_uazapi` guarda o id da citada
+  //  desde que a ponte passou a ler o formato certo da Uazapi. O que faltava
+  //  era o clique.
+  //
+  //  A CITADA PODE NÃO ESTAR CARREGADA. A conversa abre com as 120 mensagens
+  //  mais recentes, e uma resposta a algo de três semanas atrás aponta para
+  //  fora desse pedaço. Aí o clique CARREGA as anteriores e tenta de novo —
+  //  um "não achei" sem ter ido buscar seria o painel desistindo em nome de
+  //  quem clicou.
+  //
+  //  E DESISTE DIZENDO, quando o histórico acaba sem ela: a mensagem pode ter
+  //  sido apagada, e um clique que não faz nada é indistinguível de um clique
+  //  que não funcionou.
+  //  A FUNÇÃO PRECISA SER ESTÁVEL E VER O PRESENTE — e as duas coisas brigam.
+  //
+  //  Estável porque ela desce para `ListaDeBolhas`, que é `React.memo`: uma
+  //  função nova a cada desenho faria o `memo` nunca bater, e a lista inteira
+  //  de bolhas seria redesenhada a cada tecla digitada na caixa de escrever.
+  //
+  //  Só que `useCallback([])` congela TUDO o que ela alcança. Medido aqui: com
+  //  `carregarAntigas` capturada no fecho, ela era a versão do primeiro desenho
+  //  — quando `mensagens` ainda era uma lista vazia —, e desistia na primeira
+  //  linha sem ir ao banco. O sintoma era o pior possível: clicar na citação de
+  //  três meses atrás não fazia NADA, nem levava nem avisava.
+  //
+  //  Por isso tudo o que envelhece entra por espelho.
+  const indoParaCitadaRef = useRef(false);
+  const carregarAntigasRef = useRef(null);
+  // O RELÓGIO DO DESTAQUE, guardado para ser CANCELADO no clique seguinte.
+  //
+  // Sem isto, dois cliques em menos de quatro segundos se atropelam: o relógio
+  // do primeiro dispara no meio do segundo e apaga a marca da mensagem que
+  // acabou de ser encontrada. A pessoa fica no meio da conversa sem saber qual
+  // bolha é a citada — que é exatamente o que a marca existe para evitar.
+  // (Foi a prova que pegou: o segundo salto chegava, rolava e ficava sem marca.)
+  const relogioDoDestaqueRef = useRef(null);
+  const irParaCitada = useCallback(async (idCitada) => {
+    if (!idCitada || indoParaCitadaRef.current || !carregarAntigasRef.current) return;
+    const achar = () => mensagensRef.current.find((x) => x.id_uazapi === idCitada);
+    let alvo = achar();
+    if (!alvo) {
+      indoParaCitadaRef.current = true;
+      try {
+      // TRÊS RODADAS, e não "até achar": cada uma é uma ida ao banco, e um id
+      // que não existe mais varreria a conversa inteira à toa. 360 mensagens
+      // para trás cobrem o que uma citação alcança na prática.
+      //
+      // A PRIMEIRA RODADA NÃO CONSULTA O ESPELHO de `temMaisAntigas`: ele vale
+      // o que valia no desenho anterior, e numa conversa recém-aberta isso é
+      // "ainda não sei". Quem sabe é a própria `carregarAntigas`, que devolve
+      // lista vazia quando não há mais nada — e o laço para nela.
+      for (let i = 0; i < 3 && !alvo; i++) {
+        if (i > 0 && !temMaisAntigasRef.current) break;
+        const lote = await carregarAntigasRef.current();
+        // NO LOTE QUE CHEGOU, e não só no espelho: o `await` volta antes de o
+        // React redesenhar, então o espelho ainda é o de antes de carregar.
+        alvo = (lote || []).find((x) => x.id_uazapi === idCitada) || achar();
+        if (!lote || !lote.length) break;
+      }
+      } finally {
+        // NO `finally`, e não depois do laço: um erro de rede no meio deixaria
+        // a trava levantada para sempre, e o clique seguinte não faria nada.
+        indoParaCitadaRef.current = false;
+      }
+    }
+    if (!alvo) {
+      mostrarAviso("Não achei a mensagem citada — ela pode ter sido apagada.");
+      return;
+    }
+    setMsgDestacada(String(alvo.id));
+    setPertoDoFim(false);
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-msg-id="${alvo.id}"]`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    clearTimeout(relogioDoDestaqueRef.current);
+    relogioDoDestaqueRef.current = setTimeout(() => setMsgDestacada(null), 4000);
+  }, []);
+
+  useEffect(() => { mensagensRef.current = mensagens; }, [mensagens]);
+  useEffect(() => { carregarAntigasRef.current = carregarAntigas; });
+  useEffect(() => { temMaisAntigasRef.current = temMaisAntigas; }, [temMaisAntigas]);
 
   // Mensagem nova: só rola até o fim se o atendente já estava no fim
   // (não "puxa" a tela quem está lendo mensagens antigas).
@@ -10998,6 +11153,7 @@ export default function Painel({ sessao }) {
                 selecao={selecao} msgHover={msgHover} setMsgHover={setMsgHover}
                 buscaAberta={buscaAberta} buscaConversa={buscaConversa}
                 msgDestacada={msgDestacada} idDivisorNaoLidas={idDivisorNaoLidas}
+                aoIrParaCitada={irParaCitada}
                 reagindo={reagindo} setReagindo={setReagindo}
                 reagindoTudo={reagindoTudo} setReagindoTudo={setReagindoTudo}
                 rostoAberto={rostoAberto} setRostoAberto={setRostoAberto}

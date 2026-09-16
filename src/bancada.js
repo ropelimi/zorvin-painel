@@ -641,6 +641,51 @@ for (let i = 1; i <= 200; i++) {
   });
 }
 
+// ------------------------------------------------------------------
+//  AS RESPOSTAS QUE CITAM — e os quatro casos que o clique tem de saber tratar
+// ------------------------------------------------------------------
+//  Todas entram DEPOIS das 200 "posteriores", para caírem dentro das 120 que a
+//  conversa carrega ao abrir: é a citação que se vê, e o alvo dela é que muda
+//  de caso para caso.
+//
+//  `id_uazapi` das mensagens da bancada nasce como `uz-<id>` (ver a montagem da
+//  tabela `mensagens` mais abaixo), e é por esse nome que a citação aponta.
+export const CITA_PERTO = "m-cita-perto";
+export const CITA_LONGE = "m-cita-longe";
+export const CITA_SEM_ELO = "m-cita-sem-elo";
+export const CITA_FANTASMA = "m-cita-fantasma";
+/** O alvo da citação longe: três meses atrás, com 200 mensagens depois dele —
+ *  fora das 120 que a conversa traz ao abrir. */
+export const ALVO_LONGE = MSG_ACHADA;
+
+[
+  // 1. O CASO DE TODO DIA: a citada está na tela, a dois dedos de distância.
+  [CITA_PERTO, "uz-m-depois-200", "mensagem posterior 200", "contato"],
+  // 2. A CITADA ESTÁ FORA DO QUE FOI CARREGADO. É o caso que separa "rolei até
+  //    ela" de "fui buscá-la": sem ir ao banco, este clique não tem para onde
+  //    levar, e o painel diria "não achei" sobre uma mensagem que existe.
+  [CITA_LONGE, `uz-${MSG_ACHADA}`, "Bom dia, este é um teste de envio", "advogado"],
+  // 3. A RESPOSTA ANTIGA, SEM ELO. Gravada antes de a ponte aprender o formato
+  //    certo da Uazapi: tem a prévia e não tem o id. Não há para onde levar —
+  //    e um bloco que parece botão e não faz nada é pior do que um que não
+  //    parece botão.
+  [CITA_SEM_ELO, null, "uma resposta antiga, sem o elo", "contato"],
+  // 4. O ELO APONTA PARA O NADA. A citada foi apagada: o clique tem de DIZER
+  //    isso, porque um clique que não faz nada é indistinguível de um que não
+  //    funcionou.
+  [CITA_FANTASMA, "uz-mensagem-que-nao-existe", "mensagem que foi apagada", "advogado"],
+].forEach(([id, elo, previa, autor], i) => {
+  MENSAGENS.push({
+    id, conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
+    origem: "contato", tipo: "texto",
+    texto: `resposta que cita (${i + 1})`,
+    responder_id_uazapi: elo,
+    resposta_previa: previa,
+    resposta_autor: autor,
+    criado_em: new Date(HA_TRES_MESES + (300 + i) * 60e3).toISOString(),
+  });
+});
+
 // O NOME VELHO E A FALTA DE FOTO, NA MESMA CONVERSA.
 //
 // É o relato inteiro numa montagem só. A MESMA pessoa (`u1`) escreveu três
@@ -1225,6 +1270,10 @@ if (typeof globalThis !== "undefined") {
   globalThis.__MOTIVO_CONHECIDO = MOTIVO_CONHECIDO;
   globalThis.__ERRO_CRU = ERRO_CRU;
   globalThis.__USUARIOS_FILTRO = USUARIOS_FILTRO;
+  // As quatro respostas que citam, para a prova do clique na citação.
+  globalThis.__CITACOES = { perto: CITA_PERTO, longe: CITA_LONGE,
+                            semElo: CITA_SEM_ELO, fantasma: CITA_FANTASMA,
+                            alvoLonge: ALVO_LONGE };
 }
 
 /** O `%` do PostgREST vira o `.*` de uma expressão regular, sem diferenciar
