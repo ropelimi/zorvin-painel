@@ -57,7 +57,15 @@ console.log("\nA conversa fixada");
 
 console.log("\nO filtro por etiqueta");
 {
-  await page.getByRole("button", { name: "Etiquetas" }).first().click();
+  // A PÍLULA "Etiquetas" VIROU A SETINHA DO FIM DA FITA (16/09): a fita
+  // comporta quatro pílulas, e o campo de grupos seria a quinta. A seta é a
+  // gaveta dos filtros que não cabem na linha — o mesmo desenho do WhatsApp
+  // Web —, e o menu que ela abre é o MESMO de antes, com as etiquetas
+  // inteiras e "Grupos" no alto.
+  //
+  // Endereçada pela marca, e não pela palavra: o rótulo visível mudou uma vez
+  // e pode mudar de novo; `data-mais-filtros` é o contrato.
+  await page.locator("[data-mais-filtros]").first().click();
   await page.waitForTimeout(400);
   await page.getByRole("button", { name: "Urgente", exact: true }).click();
   await page.waitForTimeout(2500);

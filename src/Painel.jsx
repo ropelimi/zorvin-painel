@@ -2642,7 +2642,7 @@ export default function Painel({ sessao }) {
   const txtRef = useRef(null); // input de arquivo .txt (importar histórico)
   const menuTopoRef = useRef(null);
   const acoesRef = useRef(null); // o ⋮ do cabeçalho da conversa (celular)
-  const etiquetasRef = useRef(null); // menu ⋮ do topo (fecha ao clicar fora)
+  const etiquetasRef = useRef(null);
   const departamentosRef = useRef(null); // seletor de departamento (fecha ao clicar fora)
 
   const C = TEMAS[modo];
@@ -3687,6 +3687,15 @@ export default function Painel({ sessao }) {
   const [modoQuem, setModoQuem] = useState("qualquer");    // "qualquer" | "todos"
   const [menuQuem, setMenuQuem] = useState(false);
   const [extrasQuem, setExtrasQuem] = useState([]);
+
+  // OS GRUPOS QUE AS PÁGINAS JÁ LIDAS NÃO TÊM.
+  //
+  // A lista vem do banco em páginas de conversas mais recentes. Um grupo
+  // parado há três meses está fora delas — e filtrar só o que está na tela
+  // mostraria três grupos onde há sete, sem nada dizendo que faltam quatro.
+  // É a armadilha nº 2 com outra roupa: ausência desenhada no lugar de
+  // "ainda não perguntei".
+  const [extrasGrupo, setExtrasGrupo] = useState([]);
   const [idsQuem, setIdsQuem] = useState(null);            // null = sem filtro
   const quemRef = useRef(null);
   // A lista de quem participou DESTA conversa (o grupinho de rostos do topo).
@@ -3764,6 +3773,51 @@ export default function Painel({ sessao }) {
     return () => { vivo = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quemFiltra, modoQuem, advogadoId, conversas.length]);
+
+  // ------------------------------------------------------------
+  //  OS GRUPOS, PERGUNTADOS AO BANCO
+  //
+  //  Mesmo desenho do filtro de etiquetas logo abaixo, e de propósito: primeiro
+  //  os contatos que são grupo, depois as conversas deste telefone com eles.
+  //  Dois passos, e não um `join` com filtro na coluna de dentro — o segundo
+  //  existe no PostgREST, mas exige `!inner` e um `like` na coluna embutida, e
+  //  isto aqui só usa o que o resto do arquivo já usa.
+  //
+  //  FALHOU, NÃO APAGA O QUE JÁ ESTÁ NA TELA. Os grupos das páginas lidas
+  //  aparecem por `passaNoFiltro`, que não depende desta ida ao banco; se ela
+  //  não voltar, a lista fica incompleta em vez de vazia — e é a diferença
+  //  entre uma lista curta e uma tela que diz "não há grupos".
+  useEffect(() => {
+    let cancelado = false;
+    setExtrasGrupo([]);
+    if (filtro !== "grupos" || !advogadoId) return;
+    const advId = advogadoId;
+    (async () => {
+      try {
+        const { data: contatos, error: e1 } = await supabase.from("contatos")
+          .select("id").ilike("numero", "grupo:%").limit(500);
+        if (e1 || cancelado || !contatos || !contatos.length) return;
+        const ids = contatos.map((c) => c.id);
+        const achadas = [];
+        // Em lotes: a lista de ids vai na URL, e centenas de uma vez fariam o
+        // pedido ser recusado pelo tamanho. Mesmo teto do filtro de etiquetas.
+        for (let i = 0; i < ids.length; i += 150) {
+          const { data, error } = await supabase.from("conversas")
+            .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
+            .eq("advogado_id", advId)
+            .in("contato_id", ids.slice(i, i + 150));
+          if (error) return;
+          achadas.push(...(data || []));
+        }
+        // Troquei de telefone ou de filtro enquanto isto vinha? É resposta de
+        // outra pergunta: descarta.
+        if (cancelado || advogadoIdRef.current !== advId) return;
+        setExtrasGrupo(achadas);
+      } catch (_) { /* sem rede: a lista fica com os grupos já carregados */ }
+    })();
+    return () => { cancelado = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtro, advogadoId]);
 
   useEffect(() => {
     let cancelado = false;
@@ -7795,6 +7849,29 @@ export default function Painel({ sessao }) {
     ? tags.find((t) => t.id === filtro.slice(4)) || null
     : null;
 
+  // ------------------------------------------------------------
+  //  O QUE É UM GRUPO — a pergunta, escrita uma vez só
+  //
+  //  O WhatsApp entrega grupo com um identificador no lugar do telefone, e a
+  //  ponte grava isso em `contatos.numero` com o prefixo `grupo:`. Não há
+  //  coluna dizendo "isto é um grupo": o prefixo É a marca, e o painel já se
+  //  servia dela em dois lugares (o nome "+70929710" que virava "Grupo", e o
+  //  autor que só aparece dentro de grupo).
+  //
+  //  Aqui ela vira função porque agora são TRÊS lugares, e a terceira cópia é
+  //  onde uma regra escrita à mão começa a divergir das outras.
+  const ehGrupo = (c) => String(c?.contato?.numero || "").startsWith("grupo:");
+
+  // QUANTAS NÃO LIDAS ESTÃO EM GRUPO — o número do menu.
+  //
+  // Sai da lista que já está na tela, e não de uma ida a mais ao banco: é um
+  // número que enfeita o menu antes do clique, e uma consulta por abertura de
+  // menu é peso para pouca coisa. Ele pode ficar curto num telefone com muitas
+  // páginas — e curto para menos é o erro barato aqui: quem clica vê a lista
+  // inteira, que é a resposta de verdade.
+  const naoLidasDosGrupos = conversas.reduce(
+    (soma, c) => soma + (ehGrupo(c) && (c.nao_lidas || 0) > 0 ? 1 : 0), 0);
+
   // Aplica a aba/filtro selecionado a uma conversa.
   function passaNoFiltro(c) {
     // O filtro de atendentes é INDEPENDENTE dos outros: dá para pedir "as não
@@ -7803,6 +7880,12 @@ export default function Painel({ sessao }) {
     if (idsQuem && !idsQuem.has(String(c.id))) return false;
     if (filtro === "naolidas") return (c.nao_lidas || 0) > 0;
     if (filtro === "favoritas") return !!c.favorita;
+    // OS GRUPOS SE RECONHECEM NA PRÓPRIA LINHA — não é preciso perguntar ao
+    // banco para saber se uma conversa JÁ CARREGADA é de grupo. O banco entra
+    // noutro lugar (`extrasGrupo`), e só para trazer os que não couberam nas
+    // páginas já lidas: sem ele, a lista mostraria "os grupos entre as 200
+    // conversas mais recentes" com cara de "os grupos".
+    if (filtro === "grupos") return ehGrupo(c);
     if (filtro.startsWith("tag:")) {
       // Nos dois lugares: o mapa das conversas carregadas E a resposta do
       // banco. Só o mapa derrubaria as conversas que o banco achou e a lista
@@ -8587,7 +8670,8 @@ export default function Painel({ sessao }) {
     // Sem busca, sem etiqueta e sem atendente escolhido não há nada a emendar,
     // e o de baixo custaria um `Set` sobre a lista inteira a cada redesenho —
     // trabalho de sobra em cima do caminho mais quente que esta tela tem.
-    if (!busca.trim() && !filtro.startsWith("tag:") && !quemFiltra.length) return daLista;
+    if (!busca.trim() && !filtro.startsWith("tag:") && filtro !== "grupos"
+        && !quemFiltra.length) return daLista;
     // As que vieram do banco e não estavam na lista. Entram na mesma ordem de
     // sempre — fixada em cima, depois recente primeiro —, e não emendadas no
     // fim, que faria a mais nova de todas aparecer embaixo da mais velha.
@@ -8602,7 +8686,7 @@ export default function Painel({ sessao }) {
       // acabou de ser encontrado.
       // (sem `casaNaBusca`: este ramo só existe quando a caixa de busca está
       // vazia — o de cima é que trata a busca.)
-      : [...extrasEtiqueta, ...extrasQuem].filter((c) => !jaTem.has(String(c.id))
+      : [...extrasEtiqueta, ...extrasQuem, ...extrasGrupo].filter((c) => !jaTem.has(String(c.id))
           && naPasta(c) && passaNoFiltro(c));
     if (!doBanco.length) return daLista;
     return [...daLista, ...doBanco].sort((a, b) =>
@@ -8650,6 +8734,10 @@ export default function Painel({ sessao }) {
       ? ["cadastro", "Nas conversas, nada. Vendo no cadastro do Vantoro…"]
     : busca.trim() ? ["nada", "Nada encontrado para essa busca."]
     : verArquivadas ? ["arquivadas", "Nenhuma conversa arquivada."]
+    // "NENHUMA CONVERSA AINDA" COM O FILTRO DE GRUPOS LIGADO seria sobre o
+    // telefone, e a pessoa acabou de ver a lista cheia dois cliques atrás. A
+    // frase tem de falar do que ela pediu.
+    : filtro === "grupos" ? ["sem-grupo", "Nenhum grupo neste telefone."]
     : ["sem-conversa", "Nenhuma conversa ainda."];
 
   // O "+" no rodapé quer dizer "o banco tem mais do que isto". Com uma busca
@@ -8657,7 +8745,8 @@ export default function Painel({ sessao }) {
   // trouxeram tudo o que casa. Deixar o "+" ali diria que ainda falta alguma
   // coisa — e quem estivesse conferindo uma etiqueta não saberia se o número
   // na tela é o número de verdade.
-  const listaPodeCrescer = !busca.trim() && !filtro.startsWith("tag:") && !quemFiltra.length;
+  const listaPodeCrescer = !busca.trim() && !filtro.startsWith("tag:")
+    && filtro !== "grupos" && !quemFiltra.length;
 
   // Não lidas de cada advogado, para o selo na barra lateral.
   // Para o advogado atual usamos a lista já carregada (que zera a conversa
@@ -10016,24 +10105,83 @@ export default function Painel({ sessao }) {
             </span>
           )}
 
-          {/* A pílula das etiquetas. Quando há uma escolhida, ela mostra a cor e
-              o nome da etiqueta — é o que responde "por que a lista está
-              curta?" sem precisar abrir nada. */}
+          {/* ------------------------------------------------------------
+              A SETINHA DO FIM DA FITA — "mais filtros"
+
+              Pedido do Rodrigo em 16/09, apontando o WhatsApp Web: lá a fita
+              termina numa seta que abre "Grupos". A equipe já conhece o gesto.
+
+              POR QUE A SETA ABSORVEU AS ETIQUETAS, e não ficou ao lado delas:
+              a fita tem 356px de vão e comporta QUATRO pílulas — foi medido
+              ontem, e é o motivo de a ordem da lista ter subido para o alto da
+              coluna. Medido de novo hoje, com a seta ao lado da pílula de
+              etiquetas: 379px, e a fita quebrou em duas linhas outra vez. Uma
+              quinta coisa escrita não cabe, e nenhum aperto de recheio dá os
+              23px que faltam sem ficar a um pixel de quebrar no primeiro
+              contador de três dígitos.
+
+              É também o que o WhatsApp Web faz: a seta ali é a GAVETA dos
+              filtros que não cabem na linha, e não um filtro a mais.
+
+              O QUE MUDA PARA QUEM USA ETIQUETA: um clique na seta em vez de um
+              clique na pílula — o mesmo menu, com o mesmo conteúdo. E quando
+              uma etiqueta ESTÁ escolhida, a seta continua virando a pílula
+              colorida com o nome dela, que é o que responde "por que a lista
+              está curta?" sem abrir nada.
+
+              TRÊS FORMAS, UM CONTROLE SÓ:
+                sem nada escolhido  -> só a seta (32px)
+                grupos escolhido    -> "Grupos ✕", verde
+                etiqueta escolhida  -> o nome dela, na cor dela
+              ------------------------------------------------------------ */}
           <span ref={etiquetasRef} style={{ position: "relative", display: "flex", minWidth: 0 }}>
-            <button onClick={() => setMenuEtiquetas((v) => !v)}
-                    title={tagFiltrada ? `Filtrando por "${tagFiltrada.nome}"` : "Filtrar por etiqueta"}
-                    style={{ flexShrink: 1, minWidth: 0, maxWidth: 190, minHeight: 30, border: `1px solid ${tagFiltrada ? tagFiltrada.cor : C.divider}`, background: tagFiltrada ? tagFiltrada.cor : "transparent", color: tagFiltrada ? corDoTextoSobre(tagFiltrada.cor) : C.textSecondary, borderRadius: 20, padding: "4px 9px 4px 11px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {tagFiltrada ? tagFiltrada.nome : "Etiquetas"}
-              </span>
+            <button data-mais-filtros onClick={() => setMenuEtiquetas((v) => !v)}
+                    aria-expanded={menuEtiquetas} aria-haspopup="listbox"
+                    aria-label={tagFiltrada ? `Filtrando por ${tagFiltrada.nome}`
+                                : filtro === "grupos" ? "Mostrando só os grupos" : "Mais filtros"}
+                    title={tagFiltrada ? `Filtrando por "${tagFiltrada.nome}"`
+                           : filtro === "grupos" ? "Mostrando só os grupos"
+                           : "Mais filtros: grupos e etiquetas"}
+                    style={{ flexShrink: 1, minWidth: 0, maxWidth: 190, minHeight: 30,
+                             border: `1px solid ${tagFiltrada ? tagFiltrada.cor : (filtro === "grupos" ? C.greenDark : C.divider)}`,
+                             background: tagFiltrada ? tagFiltrada.cor : (filtro === "grupos" ? C.greenDark : "transparent"),
+                             color: tagFiltrada ? corDoTextoSobre(tagFiltrada.cor) : (filtro === "grupos" ? "#fff" : C.textSecondary),
+                             borderRadius: 20,
+                             padding: (tagFiltrada || filtro === "grupos") ? "4px 9px 4px 11px" : "4px 8px",
+                             fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+                             display: "flex", alignItems: "center", gap: 4 }}>
+              {(tagFiltrada || filtro === "grupos") && (
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {tagFiltrada ? tagFiltrada.nome : "Grupos"}
+                </span>
+              )}
               <ChevronDown size={14} style={{ flexShrink: 0, opacity: .8 }} />
             </button>
             {menuEtiquetas && (
-              <div style={{ position: "absolute", top: 38, left: 0, zIndex: 40, width: 250, maxHeight: 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
+              <div data-menu-mais-filtros role="listbox" style={{ position: "absolute", top: 36, right: 0, zIndex: 40, width: 250, maxHeight: 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
+                {/* GRUPOS VEM PRIMEIRO, e separado por um traço: é uma
+                    pergunta de outra natureza que as etiquetas. Etiqueta é uma
+                    marca que a equipe põe; grupo é o que a conversa É. */}
+                <button data-grupos-opcao role="option" aria-selected={filtro === "grupos"}
+                        onClick={() => { setFiltro(filtro === "grupos" ? "tudo" : "grupos"); setMenuEtiquetas(false); }}
+                        style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "11px 12px", border: "none", borderBottom: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
+                  <Users size={16} color={C.textSecondary} style={{ flexShrink: 0 }} />
+                  <span style={{ flex: 1 }}>Grupos</span>
+                  {/* O CONTADOR DE NÃO LIDAS, como no WhatsApp Web: responde
+                      "vale a pena entrar aqui agora?" antes do clique. */}
+                  {naoLidasDosGrupos > 0 && (
+                    <span data-nao-lidas-grupos={naoLidasDosGrupos}
+                          style={{ flexShrink: 0, minWidth: 20, height: 20, borderRadius: 10,
+                                   background: C.unread, color: "#fff", fontSize: 11, fontWeight: 700,
+                                   display: "flex", alignItems: "center", justifyContent: "center",
+                                   padding: "0 6px" }}>{naoLidasDosGrupos}</span>
+                  )}
+                  {filtro === "grupos" && <Check size={16} color={C.green} style={{ flexShrink: 0 }} />}
+                </button>
                 <button onClick={() => { setFiltro("tudo"); setMenuEtiquetas(false); }}
                         style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", border: "none", borderBottom: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
                   Todas as conversas
-                  {!tagFiltrada && <Check size={16} color={C.green} style={{ marginLeft: "auto" }} />}
+                  {!tagFiltrada && filtro !== "grupos" && <Check size={16} color={C.green} style={{ marginLeft: "auto" }} />}
                 </button>
                 {tags.length === 0 && (
                   <div style={{ padding: 14, fontSize: 13, color: C.textSecondary, textAlign: "center" }}>Nenhuma etiqueta ainda.</div>
@@ -10056,6 +10204,7 @@ export default function Painel({ sessao }) {
               </div>
             )}
           </span>
+
         </div>
         </>)}
 
