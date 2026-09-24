@@ -142,6 +142,15 @@ export async function gravarSemAsQueFaltam(gravar, linha, opcionais = [], lembre
 //  (PGRST116), misturando "o banco recusou" com "a rede caiu" — e as duas
 //  pedem frases diferentes de quem lê. Aqui o `error` continua sendo só erro,
 //  e a lista vazia é só recusa.
+//
+//  ------------------------------------------------------------
+//  E O `DELETE` FALHA EXATAMENTE DO MESMO JEITO
+//
+//  A regra de acesso entra como um `where` a mais no DELETE também: nenhuma
+//  linha casa, zero linhas saem, `error` nulo. A diferença é o que a pessoa
+//  vê — o que ela mandou apagar VOLTA na releitura seguinte, sem uma palavra.
+//  Apagar uma etiqueta, uma resposta pronta ou uma nota cai aqui, e por isso
+//  esta pergunta vale para as duas gravações, e não só para o `update`.
 // ============================================================
 
 /** A gravação voltou sem erro e sem ter mexido em nenhuma linha?

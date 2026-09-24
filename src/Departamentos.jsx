@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "./supabase.js";
+import { naoGravouNada } from "./gravar.js";
 import { chamarPonte } from "./ponte.js";
 // A ETIQUETA do telefone do escritório — a mesma que a ponte lê para aplicar a
 // permissão. Estava escrita aqui dentro; agora tem nome e um só lugar, com o
@@ -120,7 +121,10 @@ export default function Departamentos({ C, aoFechar }) {
     // "não funcionar sem dizer nada".
     await recarregar();
     if (error) setErro(traduzir(error.message));
-    else if (Array.isArray(data) && data.length === 0) setErro(SEM_PERMISSAO);
+    // A pergunta é a mesma das outras telas, e agora é a MESMA FUNÇÃO: escrita
+    // à mão em cinco lugares, a primeira cópia a divergir seria a que ninguém
+    // provou.
+    else if (naoGravouNada({ data, error })) setErro(SEM_PERMISSAO);
     setSalvando("");
   }
 

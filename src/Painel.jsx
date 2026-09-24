@@ -277,6 +277,26 @@ function desligarRecurso(nome, erro) {
     + "Rode o SQL correspondente no Supabase e recarregue a página.");
 }
 
+// A RECUSA CALADA TAMBÉM DESLIGA O RECURSO.
+//
+// `desligarRecurso` só desliga quando FALTA COLUNA, porque foi para isso que
+// ele nasceu. A regra de acesso é outra coisa: o banco aceita o pedido e
+// atualiza zero linhas, sem erro nenhum. Sem esta segunda porta, o pulso de 60
+// segundos do "estou atendendo" continuaria batendo no banco para sempre — por
+// atendente e por conversa aberta — escrevendo nada, e ninguém saberia, porque
+// este recurso é invisível de propósito.
+//
+// NÃO VALE PARA A LIMPEZA DA SAÍDA. Lá a gravação leva `.eq('atendendo_por',
+// eu)`, e zero linhas é o caso LEGÍTIMO de outra pessoa já ter entrado na
+// conversa — desligar ali tiraria o recurso de quem está trabalhando certo.
+function desligarPorRecusa(nome) {
+  if (!RECURSOS[nome]) return;
+  RECURSOS[nome] = false;
+  console.info(`Zorvin: o recurso "${nome}" ficou desligado nesta sessão — a gravação passou `
+    + "sem erro e não alterou nenhuma linha (é a regra de acesso). Confira as políticas "
+    + "da tabela no Supabase e recarregue a página.");
+}
+
 // QUAIS TELEFONES ESTA PESSOA PODE USAR.
 //
 // O bug que isto conserta: quem tinha acesso só a "Acordos" via também as abas
@@ -3925,20 +3945,37 @@ export default function Painel({ sessao }) {
     const nome = (tagForm?.nome || "").trim();
     const cor = tagForm?.cor || CORES_TAG[0];
     if (!nome) { mostrarAviso("Digite o nome da etiqueta."); return; }
-    let error;
+    // SÓ A EDIÇÃO PRECISA PERGUNTAR SE MEXEU.
+    //
+    // Um `update` barrado pela regra de acesso volta SEM erro e com zero
+    // linhas (ver `naoGravouNada`, em `gravar.js`); um `insert` barrado
+    // levanta 42501 e cai no `if (error)` logo abaixo. É por isso que só um
+    // dos dois ganha `.select("id")` — e é por isso que este defeito mora
+    // sempre em quem edita, onde a revisão de código não o distingue.
+    let error, recusou = false;
     if (tagForm.id) {
-      ({ error } = await supabase.from("tags").update({ nome, cor }).eq("id", tagForm.id));
+      const r = await supabase.from("tags").update({ nome, cor }).eq("id", tagForm.id).select("id");
+      error = r.error; recusou = naoGravouNada(r);
     } else {
       ({ error } = await supabase.from("tags").insert({ nome, cor }));
     }
     if (error) { mostrarAviso("Não consegui salvar. Verifique se a tabela 'tags' foi criada."); return; }
+    // Sem esta linha a tela fechava o formulário dizendo "Tag salva!" e a
+    // releitura logo abaixo devolvia a etiqueta com o nome VELHO à lista. Quem
+    // renomeia conclui que errou o clique, e renomeia de novo.
+    if (recusou) { mostrarAviso("O banco não deixou salvar esta etiqueta. Nada mudou."); return; }
     setTagForm(null); carregarTags(); mostrarAviso("Tag salva!");
   }
 
   async function apagarTag(id) {
     if (!window.confirm("Apagar esta etiqueta? Ela sai de todas as conversas.")) return;
-    const { error } = await supabase.from("tags").delete().eq("id", id);
-    if (error) { mostrarAviso("Não consegui apagar a etiqueta."); return; }
+    // `.select("id")` porque um DELETE barrado apaga ZERO linhas sem erro. Sem
+    // perguntar, a releitura logo abaixo trazia a etiqueta de volta à lista, e
+    // o "Apagar esta?" que a pessoa acabou de confirmar parecia não ter sido
+    // ouvido.
+    const r = await supabase.from("tags").delete().eq("id", id).select("id");
+    if (r.error) { mostrarAviso("Não consegui apagar a etiqueta."); return; }
+    if (naoGravouNada(r)) { mostrarAviso("O banco não deixou apagar esta etiqueta. Ela continua lá."); return; }
     carregarTags(); carregarTagsConversas();
   }
 
@@ -3989,9 +4026,17 @@ export default function Painel({ sessao }) {
       } catch (_e) { /* a ponte dorme; cai para o caminho de sempre */ }
     }
     if (tem) {
-      const { error } = await supabase.from("conversa_tags")
-        .delete().eq("conversa_id", conversaId).eq("tag_id", tagId);
-      if (error) { mostrarAviso("Não consegui tirar a etiqueta."); carregarTagsConversas(); return; }
+      // O DELETE FALHA CALADO: zero linhas apagadas, sem erro. Sem perguntar, a
+      // etiqueta sumia da tela (pelo acerto otimista lá em cima) e reaparecia
+      // na releitura seguinte, sem uma palavra explicando a volta.
+      const r = await supabase.from("conversa_tags")
+        .delete().eq("conversa_id", conversaId).eq("tag_id", tagId).select("tag_id");
+      if (r.error || naoGravouNada(r)) {
+        mostrarAviso(naoGravouNada(r)
+          ? "O banco não deixou tirar a etiqueta desta conversa."
+          : "Não consegui tirar a etiqueta.");
+        carregarTagsConversas(); return;
+      }
     } else {
       const { error } = await supabase.from("conversa_tags").insert({ conversa_id: conversaId, tag_id: tagId });
       if (error) { mostrarAviso("Não consegui aplicar a etiqueta."); carregarTagsConversas(); return; }
@@ -4008,13 +4053,19 @@ export default function Painel({ sessao }) {
     const titulo = (rapidaForm?.titulo || "").trim();
     const texto = (rapidaForm?.texto || "").trim();
     if (!titulo || !texto) { mostrarAviso("Preencha o atalho e o texto."); return; }
-    let error;
+    // Mesma assimetria das etiquetas: a edição pode ser recusada em silêncio, a
+    // criação não. Aqui o que se perde é o TEXTO PRONTO que alguém escreveu
+    // para a equipe inteira usar — e ele volta ao que era na abertura seguinte.
+    let error, recusou = false;
     if (rapidaForm.id) {
-      ({ error } = await supabase.from("mensagens_rapidas").update({ titulo, texto }).eq("id", rapidaForm.id));
+      const r = await supabase.from("mensagens_rapidas")
+        .update({ titulo, texto }).eq("id", rapidaForm.id).select("id");
+      error = r.error; recusou = naoGravouNada(r);
     } else {
       ({ error } = await supabase.from("mensagens_rapidas").insert({ titulo, texto }));
     }
     if (error) { mostrarAviso("Não consegui salvar. Verifique se a tabela 'mensagens_rapidas' foi criada."); return; }
+    if (recusou) { mostrarAviso("O banco não deixou salvar esta mensagem rápida. Nada mudou."); return; }
     setRapidaForm(null);
     mostrarAviso("Mensagem rápida salva!");
     carregarRapidas();
@@ -4022,8 +4073,9 @@ export default function Painel({ sessao }) {
 
   async function apagarRapida(id) {
     if (!window.confirm("Apagar esta mensagem rápida?")) return;
-    const { error } = await supabase.from("mensagens_rapidas").delete().eq("id", id);
-    if (error) { mostrarAviso("Não consegui apagar."); return; }
+    const r = await supabase.from("mensagens_rapidas").delete().eq("id", id).select("id");
+    if (r.error) { mostrarAviso("Não consegui apagar."); return; }
+    if (naoGravouNada(r)) { mostrarAviso("O banco não deixou apagar esta mensagem rápida. Ela continua na lista."); return; }
     carregarRapidas();
   }
 
@@ -4871,11 +4923,22 @@ export default function Painel({ sessao }) {
           if (error) throw error;
         }
         const ult = it.msgs[it.msgs.length - 1];
-        await supabase.from("conversas").update({
+        // ESTA ERA A ÚNICA GRAVAÇÃO DA IMPORTAÇÃO SEM CONFERÊNCIA NENHUMA — o
+        // resultado ia inteiro para o lixo, nem o `error`. E é ela que põe a
+        // conversa no lugar certo da lista: sem `ultima_atividade`, a conversa
+        // importada nasce no fundo de mil outras e quem acabou de importar
+        // conclui que não importou. Falhar aqui sobe (`throw`), como nas outras
+        // três gravações deste laço.
+        const rConv = await supabase.from("conversas").update({
           ultima_mensagem: (rotularMidiaExport(ult.texto) || ult.texto || "").slice(0, 200),
           ultima_atividade: ult.data.toISOString(),
           nao_lidas: 0,
-        }).eq("id", conv.id);
+        }).eq("id", conv.id).select("id");
+        if (rConv.error) throw rConv.error;
+        if (naoGravouNada(rConv)) {
+          throw new Error("o banco não deixou atualizar a conversa importada — as mensagens "
+                        + "entraram, mas ela não vai aparecer no alto da lista");
+        }
         nConversas++; nMsgs += linhas.length;
       }
       mostrarAviso(`Pronto! ${nConversas} conversa(s) e ${nMsgs} mensagens importadas.`);
@@ -5142,8 +5205,11 @@ export default function Painel({ sessao }) {
     if (RECURSOS.atendendo) {
       supabase.from("conversas")
         .update({ atendendo_por: meuNome, atendendo_em: new Date().toISOString() })
-        .eq("id", convId)
-        .then(({ error }) => { if (error) desligarRecurso("atendendo", error); });
+        .eq("id", convId).select("id")
+        .then((r) => {
+          if (r.error) desligarRecurso("atendendo", r.error);
+          else if (naoGravouNada(r)) desligarPorRecusa("atendendo");
+        });
     }
   }, [meuNome]);
 
@@ -5199,10 +5265,13 @@ export default function Painel({ sessao }) {
       if (!RECURSOS.atendendo) { clearInterval(id); return; }
       supabase.from("conversas")
         .update({ atendendo_em: new Date().toISOString() })
-        .eq("id", conversaId)
-        .then(({ error }) => {
-          if (!error) return;
-          desligarRecurso("atendendo", error);
+        .eq("id", conversaId).select("id")
+        .then((r) => {
+          if (r.error) desligarRecurso("atendendo", r.error);
+          // A recusa calada não é erro passageiro: ela não muda no minuto
+          // seguinte, e sem isto o pulso bateria no banco para sempre à toa.
+          else if (naoGravouNada(r)) desligarPorRecusa("atendendo");
+          else return;
           // Só para o relógio se o recurso morreu de vez. Erro passageiro
           // (rede) não desliga nada e o próximo minuto tenta de novo.
           if (!RECURSOS.atendendo) clearInterval(id);
@@ -6692,11 +6761,11 @@ export default function Painel({ sessao }) {
       // `.select()` para saber se ALGUMA linha saiu. Sem política de exclusão
       // o Supabase não dá erro: ele apaga zero linhas em silêncio, e a
       // figurinha voltaria ao recarregar.
-      const { data, error } = await supabase.from("figurinhas_favoritas")
+      const r = await supabase.from("figurinhas_favoritas")
         .delete().eq("midia_url", url).select("id");
-      if (error || !data || data.length === 0) {
+      if (r.error || naoGravouNada(r)) {
         setFigurinhas((prev) => (prev.includes(url) ? prev : [url, ...prev]));
-        mostrarAviso("Não consegui remover a figurinha. " + (error?.message || "Rode sql/2026-08-figurinhas-favoritas.sql."));
+        mostrarAviso("Não consegui remover a figurinha. " + (r.error?.message || "Rode sql/2026-08-figurinhas-favoritas.sql."));
         return;
       }
       mostrarAviso("Figurinha removida das favoritas");
@@ -6784,7 +6853,7 @@ export default function Painel({ sessao }) {
       const { data, error } = await supabase.from("mensagens")
         .update({ apagada: true, texto: null, midia_url: null })
         .in("id", alvos.map((m) => m.id)).select("id");
-      const naoMexeu = !error && Array.isArray(data) && data.length === 0;
+      const naoMexeu = naoGravouNada({ data, error });
       if (error || naoMexeu) {
         voltarAtras();
         mostrarAviso(naoMexeu
@@ -6825,7 +6894,7 @@ export default function Painel({ sessao }) {
     setMensagens((prev) => prev.map((x) => (x.id === m.id ? { ...x, [campo]: valor } : x)));
     const { data, error } = await supabase.from("mensagens")
       .update({ [campo]: valor }).eq("id", m.id).select("id");
-    const naoMexeu = !error && Array.isArray(data) && data.length === 0;
+    const naoMexeu = naoGravouNada({ data, error });
     if (error || naoMexeu) {
       setMensagens((prev) => prev.map((x) => (x.id === m.id ? { ...x, [campo]: m[campo] } : x)));
       mostrarAviso(naoMexeu
@@ -7029,11 +7098,41 @@ export default function Painel({ sessao }) {
     setAdvogadoId(doDepartamento.length === 1 ? doDepartamento[0].id : null);
   }
 
+  // ============================================================
+  //  AS QUATRO MARCAS DA CONVERSA, NUM CAMINHO SÓ
+  //
+  //  Não lida, favorita, fixada e arquivada são o mesmo gesto com quatro
+  //  nomes: acerta a tela na hora, grava, e desfaz se o banco não gravar.
+  //  Estava escrito quatro vezes, e as quatro cópias tinham o MESMO furo —
+  //  conferiam só o `error`. Um `update` barrado pela regra de acesso não
+  //  devolve erro: ele atualiza zero linhas e responde "pronto" (ver
+  //  `naoGravouNada`, em `gravar.js`). A marca sumia na abertura seguinte.
+  //
+  //  O ACERTO VISUAL CONTINUA VINDO NA FRENTE — é o que faz o clique parecer
+  //  instantâneo. O QUE PASSOU A ESPERAR É A FRASE. Ela saía antes da
+  //  resposta: a tela dizia "Conversa fixada" e o banco podia ter recusado
+  //  calado. A frase é a tela afirmando um fato do banco, e afirmar antes de
+  //  saber é exatamente o defeito de 24/09.
+  //
+  //  E A RELEITURA DESFAZ: `carregarConversas` traz o que o banco tem de
+  //  verdade, para a lista não ficar com a marca que só existe nesta tela.
+  // ============================================================
+  async function gravarMarcaDaConversa(conv, patch, frases) {
+    setConversas((prev) => prev.map((x) => (x.id === conv.id ? { ...x, ...patch } : x)));
+    const r = await supabase.from("conversas").update(patch).eq("id", conv.id).select("id");
+    if (r.error || naoGravouNada(r)) {
+      mostrarAviso(naoGravouNada(r) ? frases.recusado : frases.erro);
+      carregarConversas(advogadoId);
+      return false;
+    }
+    mostrarAviso(frases.certo);
+    return true;
+  }
+
   // Marca a conversa como não lida (mostra o selo verde) ou como lida.
   async function marcarNaoLida(conv, naoLida) {
     setMenuConversa(null);
     const novo = naoLida ? (conv.nao_lidas > 0 ? conv.nao_lidas : 1) : 0;
-    setConversas((prev) => prev.map((x) => (x.id === conv.id ? { ...x, nao_lidas: novo } : x)));
     // FICA NA CONVERSA. Esta função saía dela ao marcar como não lida, e o
     // efeito era o de ter apertado ESC: a pessoa clicava no botão do cabeçalho
     // e era jogada para fora, sem ter pedido isso.
@@ -7046,22 +7145,25 @@ export default function Painel({ sessao }) {
     // E NÃO HÁ RISCO DE ELA SER REMARCADA POR FICAR ALI: as três marcações
     // automáticas acontecem ao ENVIAR alguma coisa (mensagem, anexo,
     // figurinha), nunca por estar dentro da conversa. Conferido antes de tirar.
-    mostrarAviso(naoLida ? "Marcada como não lida" : "Marcada como lida");
-    const { error } = await supabase.from("conversas").update({ nao_lidas: novo }).eq("id", conv.id);
     // Sem conferir, a tela dizia "Marcada como lida" e o banco continuava com o
     // contador antigo — na próxima recarga o selo voltava, e a pessoa jurava
     // ter marcado.
-    if (error) { mostrarAviso("Não consegui marcar. Tente de novo."); carregarConversas(advogadoId); }
+    await gravarMarcaDaConversa(conv, { nao_lidas: novo }, {
+      certo: naoLida ? "Marcada como não lida" : "Marcada como lida",
+      erro: "Não consegui marcar. Tente de novo.",
+      recusado: "O banco não deixou marcar. O selo continua como estava.",
+    });
   }
 
   // Favoritar / desfavoritar uma conversa (aba "Favoritas").
   async function alternarFavorita(conv) {
     setMenuConversa(null);
     const novo = !conv.favorita;
-    setConversas((prev) => prev.map((x) => (x.id === conv.id ? { ...x, favorita: novo } : x)));
-    mostrarAviso(novo ? "Adicionada aos favoritos" : "Removida dos favoritos");
-    const { error } = await supabase.from("conversas").update({ favorita: novo }).eq("id", conv.id);
-    if (error) { mostrarAviso("Não consegui favoritar. Rode o SQL da coluna 'favorita'."); carregarConversas(advogadoId); }
+    await gravarMarcaDaConversa(conv, { favorita: novo }, {
+      certo: novo ? "Adicionada aos favoritos" : "Removida dos favoritos",
+      erro: "Não consegui favoritar. Rode o SQL da coluna 'favorita'.",
+      recusado: "O banco não deixou favoritar. A marca não ficou.",
+    });
   }
 
   // FIXAR uma conversa no alto da lista.
@@ -7073,20 +7175,22 @@ export default function Painel({ sessao }) {
   async function alternarFixada(conv) {
     setMenuConversa(null);
     const novo = !conv.fixada;
-    setConversas((prev) => prev.map((x) => (x.id === conv.id ? { ...x, fixada: novo } : x)));
-    mostrarAviso(novo ? "Conversa fixada no topo" : "Conversa desafixada");
-    const { error } = await supabase.from("conversas").update({ fixada: novo }).eq("id", conv.id);
-    if (error) { mostrarAviso("Não consegui fixar. Rode o 2026-07-colunas-que-faltavam.sql no Supabase."); carregarConversas(advogadoId); }
+    await gravarMarcaDaConversa(conv, { fixada: novo }, {
+      certo: novo ? "Conversa fixada no topo" : "Conversa desafixada",
+      erro: "Não consegui fixar. Rode o 2026-07-colunas-que-faltavam.sql no Supabase.",
+      recusado: "O banco não deixou fixar. A conversa volta ao lugar na próxima abertura.",
+    });
   }
 
   // Arquivar / desarquivar uma conversa (some da lista, vai para "Arquivadas").
   async function alternarArquivada(conv, arquivar) {
     setMenuConversa(null);
-    setConversas((prev) => prev.map((x) => (x.id === conv.id ? { ...x, arquivada: arquivar } : x)));
     if (arquivar && conv.id === conversaId) setConversaId(null);
-    mostrarAviso(arquivar ? "Conversa arquivada" : "Conversa desarquivada");
-    const { error } = await supabase.from("conversas").update({ arquivada: arquivar }).eq("id", conv.id);
-    if (error) { mostrarAviso("Não consegui arquivar. Rode o SQL da coluna 'arquivada'."); carregarConversas(advogadoId); }
+    await gravarMarcaDaConversa(conv, { arquivada: arquivar }, {
+      certo: arquivar ? "Conversa arquivada" : "Conversa desarquivada",
+      erro: "Não consegui arquivar. Rode o SQL da coluna 'arquivada'.",
+      recusado: "O banco não deixou arquivar. A conversa continua na lista.",
+    });
   }
 
   // Menu ⋮ do topo: marca TODAS as conversas do advogado como lidas.
@@ -7105,10 +7209,30 @@ export default function Painel({ sessao }) {
     if (!(naoLidasPorAdv[advId] || 0)) { mostrarAviso("Nenhuma conversa não lida."); return; }
     setConversas((prev) => prev.map((c) => ({ ...c, nao_lidas: 0 })));
     setNaoLidasPorAdv((m) => ({ ...m, [advId]: 0 }));
-    const { error } = await supabase.from("conversas")
-      .update({ nao_lidas: 0 }).eq("advogado_id", advId).gt("nao_lidas", 0);
+    // AQUI "ZERO LINHAS" TEM DUAS CAUSAS, e é a única desta rodada em que tem.
+    //
+    // Em todas as outras marcas o alvo é UMA linha que a tela acabou de ler:
+    // zero linhas só pode ser a regra de acesso. Nesta o recorte vai ao banco
+    // (`advogado_id` + `nao_lidas > 0`), e entre a conferência do selo logo
+    // acima e esta gravação um colega pode ter marcado as mesmas conversas —
+    // aí zero linhas quer dizer "já estavam lidas", e o serviço está feito.
+    //
+    // Não dá para separar os dois daqui sem uma segunda ida ao banco, e a
+    // frase não pode escolher um deles no chute: acusar o banco quando foi um
+    // colega faz alguém abrir chamado por nada, e dizer "todas marcadas" numa
+    // recusa é a mentira que esta rodada existe para tirar. Então ela diz os
+    // dois e aponta onde está a resposta — o selo, que a releitura logo acima
+    // acabou de buscar.
+    const r = await supabase.from("conversas")
+      .update({ nao_lidas: 0 }).eq("advogado_id", advId).gt("nao_lidas", 0).select("id");
     carregarNaoLidasPorAdv();
-    if (error) { mostrarAviso("Não consegui marcar todas. Tente de novo."); carregarConversas(advId); return; }
+    if (r.error) { mostrarAviso("Não consegui marcar todas. Tente de novo."); carregarConversas(advId); return; }
+    if (naoGravouNada(r)) {
+      mostrarAviso("Nenhuma conversa mudou: ou um colega marcou antes de você, ou o banco "
+                 + "não deixou. O selo da barra diz qual dos dois.", 7000);
+      carregarConversas(advId);
+      return;
+    }
     mostrarAviso("Todas marcadas como lidas");
   }
 
@@ -7130,10 +7254,20 @@ export default function Painel({ sessao }) {
       }
       return prev.map((c) => (c.id === convId ? { ...c, nao_lidas: 0 } : c));
     });
-    const { error } = await supabase.from("conversas").update({ nao_lidas: 0 }).eq("id", convId);
+    const r = await supabase.from("conversas").update({ nao_lidas: 0 }).eq("id", convId).select("id");
     // Não deu para gravar: devolve o que o banco tem, senão a tela diz "lida"
     // e o resto da equipe continua vendo o selo.
-    if (error) { mostrarAviso("Não consegui marcar como lida."); carregarConversas(advogadoIdRef.current); }
+    //
+    // ZERO LINHAS É O MESMO DESFECHO, e era o que passava batido: esta é a
+    // marca que some para a EQUIPE INTEIRA. Quem respondeu vê o selo cair no
+    // seu painel e vai embora; nos outros ele continua aceso, e o cliente é
+    // cobrado duas vezes pela mesma resposta.
+    if (r.error || naoGravouNada(r)) {
+      mostrarAviso(naoGravouNada(r)
+        ? "O banco não deixou marcar como lida — o selo continua para a equipe."
+        : "Não consegui marcar como lida.");
+      carregarConversas(advogadoIdRef.current);
+    }
     else carregarNaoLidasPorAdv();
   }, [carregarConversas, carregarNaoLidasPorAdv]);
 
@@ -7311,16 +7445,24 @@ export default function Painel({ sessao }) {
     // fez 289 notas nascerem sem processo. `gravarSemAsQueFaltam` tenta com
     // tudo e, se o banco recusar uma coluna, repete sem ELA — em vez de perder
     // a correção do texto junto.
-    const { error, perdidas } = await gravarSemAsQueFaltam(
-      (linha) => supabase.from("notas").update(linha).eq("id", idReal),
+    // `.select("id")` NA GRAVAÇÃO, e não só o `error`: um `update` barrado pela
+    // regra de acesso volta sem erro e com zero linhas (ver `naoGravouNada`, em
+    // `gravar.js`). A tela mostrava a nota já corrigida, e a correção sumia no
+    // F5. Nota é TEXTO QUE ALGUÉM ESCREVEU — é o que mais dói perder calado
+    // desta lista toda.
+    const rNota = await gravarSemAsQueFaltam(
+      (linha) => supabase.from("notas").update(linha).eq("id", idReal).select("id"),
       { texto: novoTexto, editada_em: new Date().toISOString(), editada_por: meuNome,
         ...doProcesso },
       ["processo_id", "processo_numero", "processo_reu", "editada_em", "editada_por"],
       COLUNAS_QUE_FALTAM_EM_NOTAS);
-    if (error) {
+    const { error, perdidas } = rNota;
+    if (error || naoGravouNada(rNota)) {
       setMensagens((prev) => prev.map((x) => (
         x.id === m.id ? { ...x, ...comoEra, texto: antes } : x)));
-      mostrarAviso("Não consegui editar a nota. Tente de novo.");
+      mostrarAviso(naoGravouNada(rNota)
+        ? "O banco não deixou editar esta nota. O texto voltou ao que era."
+        : "Não consegui editar a nota. Tente de novo.");
       return;
     }
     // O AVISO SÓ APARECE QUANDO A PESSOA PERDEU O QUE ESCOLHEU. Perder o
@@ -7339,13 +7481,18 @@ export default function Painel({ sessao }) {
       x.id === m.id ? { ...x, apagada_em: agora, apagada_por: meuNome } : x)));
     // O TEXTO NÃO É LIMPO no banco. Some da tela; continua guardado. Quem
     // apaga não decide sozinho que o escritório perde o que estava escrito.
-    const { error } = await supabase.from("notas")
+    const r = await supabase.from("notas")
       .update({ apagada_em: agora, apagada_por: meuNome, apagada_por_id: meuId })
-      .eq("id", idReal);
-    if (error) {
+      .eq("id", idReal).select("id");
+    // ZERO LINHAS É PIOR AQUI DO QUE UM ERRO. A nota some da tela de quem
+    // apagou e continua na de todo mundo — e apagar uma nota é, quase sempre,
+    // tirar da vista alguma coisa que não devia ter sido escrita ali.
+    if (r.error || naoGravouNada(r)) {
       setMensagens((prev) => prev.map((x) => (
         x.id === m.id ? { ...x, apagada_em: null, apagada_por: null } : x)));
-      mostrarAviso("Não consegui apagar a nota. Tente de novo.");
+      mostrarAviso(naoGravouNada(r)
+        ? "O banco não deixou apagar esta nota. Ela continua na conversa."
+        : "Não consegui apagar a nota. Tente de novo.");
       return;
     }
     registrarAlteracao({ tipo: "nota_apagada", alvo: idReal, antes: m.texto || "", depois: null });
@@ -7514,7 +7661,7 @@ export default function Painel({ sessao }) {
     // SEM ERRO E SEM LINHA ALTERADA é o outro jeito de falhar em silêncio: com
     // uma regra de acesso que esconde a linha, o banco não reclama — ele
     // atualiza zero linhas e responde "tudo certo".
-    if (!data || !data.length) {
+    if (naoGravouNada({ data, error })) {
       console.error("fila_envio: a gravação passou sem erro e não alterou nenhuma linha (regra de acesso).");
       mostrarAviso("Tirei o aviso deste computador. Nos outros ele ainda vai aparecer — o banco não "
                  + "alterou nenhuma linha." + rodeOSQL, 9000);
@@ -7532,6 +7679,13 @@ export default function Painel({ sessao }) {
       // vermelha da tentativa velha voltava a cada abertura da conversa, mesmo
       // com a mensagem já entregue. Ninguém relacionaria uma coisa à outra.
       guardarDispensado(msg._filaId);
+      // E ESTA É A ÚNICA DA VARREDURA DE 24/09 QUE FICA SEM PERGUNTAR, de
+      // propósito. O `guardarDispensado` acima já resolve o caso desta pessoa
+      // neste aparelho, que é o defeito que a linha conserta; e o momento é o
+      // do reenvio, onde uma faixa dizendo "o banco não deixou aposentar a
+      // tentativa velha" confundiria com a mensagem NOVA ter falhado — que é o
+      // que quem clicou está olhando. Quem quiser a recusa com todas as letras
+      // tem o botão "Dispensar este aviso", que a diz inteira.
       supabase.from("fila_envio").update({ status: "descartada" }).eq("id", msg._filaId)
         .then(() => {}, () => {});
     }
@@ -11919,13 +12073,13 @@ export default function Painel({ sessao }) {
                         <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>Nenhuma mensagem rápida ainda. Toque em <b>Nova</b> para criar a primeira.</div>
                       )}
                       {rapidas.map((r) => (
-                        <div key={r.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px", borderBottom: `1px solid ${C.divider}` }}>
+                        <div key={r.id} data-rapida-da-config={r.titulo} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px", borderBottom: `1px solid ${C.divider}` }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 14, fontWeight: 600 }}>{r.titulo}</div>
                             <div style={{ fontSize: 13, color: C.textSecondary, marginTop: 2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{r.texto}</div>
                           </div>
-                          <button onClick={() => setRapidaForm({ id: r.id, titulo: r.titulo, texto: r.texto })} title="Editar" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex", flexShrink: 0 }}><Pencil size={16} /></button>
-                          <button onClick={() => apagarRapida(r.id)} title="Apagar" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#e5573f", display: "flex", flexShrink: 0 }}><Trash2 size={16} /></button>
+                          <button data-editar-rapida onClick={() => setRapidaForm({ id: r.id, titulo: r.titulo, texto: r.texto })} title="Editar" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex", flexShrink: 0 }}><Pencil size={16} /></button>
+                          <button data-apagar-rapida onClick={() => apagarRapida(r.id)} title="Apagar" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#e5573f", display: "flex", flexShrink: 0 }}><Trash2 size={16} /></button>
                         </div>
                       ))}
                     </div>
@@ -11967,7 +12121,7 @@ export default function Painel({ sessao }) {
                       </div>
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                         <button onClick={() => setTagForm(null)} style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary, borderRadius: 8, padding: "9px 16px", fontSize: 14, cursor: "pointer" }}>Cancelar</button>
-                        <button onClick={salvarTagForm} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Salvar</button>
+                        <button data-salvar-etiqueta onClick={salvarTagForm} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Salvar</button>
                       </div>
                     </div>
                   ) : (
@@ -11976,11 +12130,11 @@ export default function Painel({ sessao }) {
                         <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>Nenhuma tag ainda. Toque em <b>Nova</b> para criar a primeira.</div>
                       )}
                       {tags.map((t) => (
-                        <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: `1px solid ${C.divider}` }}>
+                        <div key={t.id} data-etiqueta-da-config={t.nome} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: `1px solid ${C.divider}` }}>
                           <span style={{ width: 14, height: 14, borderRadius: 4, background: t.cor, flexShrink: 0 }} />
                           <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.nome}</span>
-                          <button onClick={() => setTagForm({ id: t.id, nome: t.nome, cor: t.cor })} title="Editar" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex", flexShrink: 0 }}><Pencil size={16} /></button>
-                          <button onClick={() => apagarTag(t.id)} title="Apagar" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#e5573f", display: "flex", flexShrink: 0 }}><Trash2 size={16} /></button>
+                          <button data-editar-etiqueta onClick={() => setTagForm({ id: t.id, nome: t.nome, cor: t.cor })} title="Editar" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex", flexShrink: 0 }}><Pencil size={16} /></button>
+                          <button data-apagar-etiqueta onClick={() => apagarTag(t.id)} title="Apagar" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#e5573f", display: "flex", flexShrink: 0 }}><Trash2 size={16} /></button>
                         </div>
                       ))}
                     </div>
