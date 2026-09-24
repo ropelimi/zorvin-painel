@@ -269,7 +269,8 @@ async function cenaEditarNota(base, recusa) {
   const temNota = abriu && (await page.locator(`text="${TEXTO_DA_NOTA}"`).count()) > 0;
   ok("a nota está na tela", temNota);
   const temLapis = temNota && (await page.locator('button[title="Editar nota"]').count()) > 0;
-  if (!temLapis) { ok("cheguei a editar a nota", false); await ctx.close(); return; }
+  ok("o lápis de editar a nota está na bolha", temLapis);
+  if (!temLapis) { await ctx.close(); return; }
   await page.locator('button[title="Editar nota"]').first().click();
   await page.waitForTimeout(800);
   const caixa = page.locator("textarea").first();
@@ -309,7 +310,8 @@ async function cenaApagarNota(base, recusa) {
   const abriu = await abrirAConversaDaNota(page);
   ok("a conversa com a nota abre", abriu);
   const temLixeira = abriu && (await page.locator('button[title="Apagar nota"]').count()) > 0;
-  if (!temLixeira) { ok("cheguei a apagar a nota", false); await ctx.close(); return; }
+  ok("a lixeira de apagar a nota está na bolha", temLixeira);
+  if (!temLixeira) { await ctx.close(); return; }
   await page.locator('button[title="Apagar nota"]').first().click();
   await page.waitForTimeout(500);
   await page.getByRole("button", { name: "Apagar a nota" }).click();

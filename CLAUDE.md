@@ -710,7 +710,7 @@ já perguntavam certo, cada uma com a sua linha. Cinco escritas da mesma decisã
 **A causa no banco continua em aberto.** Nada aqui faz gravação nenhuma voltar
 a funcionar: faz a tela dizer o que o banco respondeu.
 
-Prova: `as-outras-gravacoes-caladas`, 55 conferências, 7 sabotagens e 7 pegas.
+Prova: `as-outras-gravacoes-caladas`, 59 conferências, 7 sabotagens e 7 pegas.
 Ela endereça as linhas de configuração por `data-etiqueta-da-config` e
 `data-rapida-da-config`, e não pelo nome: atrás daquela janela está a lista de
 conversas do escritório, e "Urgente" também é texto de conversa.
