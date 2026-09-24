@@ -22,6 +22,7 @@ import { chaveDoNumero, outrosNumeros, telefoneLegivel } from "./numeros.js";
 // A chamada à ponte mora em `ponte.js`: duas telas precisam dela (esta e a de
 // atendentes), e duas cópias divergiriam na primeira mudança.
 import { chamarPonte, BRIDGE_URL, FALTA_PONTE } from "./ponte.js";
+import { naoGravouNada } from "./gravar.js";
 
 // Este erro é de configuração da ponte, ou é outra coisa?
 //
@@ -212,6 +213,11 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   //
   // Agora a ficha grava na hora. É o mesmo campo, escrito pelo lado que acabou
   // de saber o nome.
+  /** Liga o cadastro do Vantoro a este contato do Zorvin.
+   *
+   *  Devolve `true` quando o vínculo ficou gravado e `false` quando não —
+   *  inclusive no caso silencioso, em que o banco responde "pronto" sem ter
+   *  mexido em nenhuma linha (ver `naoGravouNada`, em `gravar.js`). */
   async function ligarContatoAoCadastro(dadosCliente) {
     const nome = (dadosCliente?.nome || "").trim();
     if (!numero || !nome) return;
@@ -230,9 +236,30 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     // Instalação sem as colunas de vínculo: perder o vínculo é aceitável, a
     // ficha ter falhado por causa dele não é. É a mesma tolerância que a ponte
     // já tem do outro lado ao gravar.
-    const { error } = await supabase.from("contatos").update(campos).eq("numero", numero);
-    if (error && /vantoro_/i.test(error.message || "")) return;
-    if (error) return;
+    const r = await supabase.from("contatos")
+      .update(campos).eq("numero", numero).select("id");
+    if (r.error && /vantoro_/i.test(r.error.message || "")) return false;
+    if (r.error) return false;
+    // E SE O BANCO NÃO MEXEU EM NENHUMA LINHA, o vínculo NÃO existe.
+    //
+    // Sem esta pergunta a ficha seguia como se tivesse ligado o cadastro ao
+    // contato: avisava quem chamou, mandava as notas subirem e se desenhava
+    // inteira — com `vantoro_cliente_id` continuando vazio no banco. Na
+    // abertura seguinte o contato não tinha cadastro nenhum, e o relato que
+    // chegou foi "faço o pré-cadastro e a ficha não aparece".
+    //
+    // Um `update` barrado pela regra de acesso volta SEM erro e com zero
+    // linhas (ver `naoGravouNada`, em `gravar.js`) — e é justamente por isso
+    // que o `if (error)` de cima não bastava.
+    // ELA DEVOLVE SE LIGOU, e não avisa por conta própria.
+    //
+    // Escrevi primeiro com um `onAviso` aqui dentro, e a prova pegou: quem
+    // chama mostra a SUA frase logo depois ("Pré-cadastro criado no Vantoro."),
+    // e ela apagava a minha em menos de um segundo. A pessoa via a mensagem de
+    // sucesso e ia embora — que é exatamente o defeito, com um passo a mais.
+    //
+    // Quem sabe qual é a frase final da ação é quem começou a ação.
+    if (naoGravouNada(r)) return false;
     aoLigarCadastro && aoLigarCadastro({ numero, nome, clienteId: dadosCliente.id || null });
 
     // O CONTATO ACABOU DE GANHAR FICHA: o que ele já tinha anotado sobe.
@@ -248,6 +275,9 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     if (antes?.id && !antes.vantoro_cliente_id && dadosCliente.id) {
       subirNotasAntigas(antes.id);
     }
+    // LIGOU. Sem este `return`, a função devolveria `undefined` — falso — e o
+    // caminho de sucesso passaria a mostrar a frase da falha. A prova pegou.
+    return true;
   }
 
   // SEM `await`, E DE PROPÓSITO.
@@ -359,6 +389,9 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     // A ESCOLHA FICA GRAVADA, e é o que faz a pergunta não voltar amanhã. É o
     // mesmo campo que já guardava o vínculo; a diferença é que agora ele é uma
     // resposta de alguém, e não um sorteio.
+    // O retorno é ignorado aqui de propósito: esta é a resposta a uma pergunta
+    // de escolha de cadastro, e a frase que interessa já foi dada. Falhando o
+    // vínculo, quem cria ou salva logo em seguida é que avisa.
     await ligarContatoAoCadastro(c);
   }
 
@@ -439,8 +472,13 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       });
       setCliente(r.cliente);
       setEdicao({ ...r.cliente });
-      await ligarContatoAoCadastro(r.cliente);
-      onAviso && onAviso(r.criado ? "Pré-cadastro criado no Vantoro." : "Já existia no Vantoro.");
+      const ligou = await ligarContatoAoCadastro(r.cliente);
+      // O CADASTRO NASCEU LÁ; O VÍNCULO É DAQUI. Dizer só "criado" quando o
+      // segundo não gravou é o relato de 24/09: o pré-cadastro existe no
+      // Vantoro, e na abertura seguinte o contato não tem ficha nenhuma.
+      onAviso && onAviso(
+        !ligou ? "Criei no Vantoro, mas não consegui ligá-lo a este contato aqui — a ficha não vai aparecer sozinha."
+        : r.criado ? "Pré-cadastro criado no Vantoro." : "Já existia no Vantoro.");
     } catch (e) {
       onAviso && onAviso(e.message);
     } finally {
@@ -463,8 +501,10 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       });
       setCliente(r.cliente);
       setEdicao({ ...r.cliente });
-      await ligarContatoAoCadastro(r.cliente);
-      onAviso && onAviso("Cadastro atualizado no Vantoro.");
+      const ligou = await ligarContatoAoCadastro(r.cliente);
+      onAviso && onAviso(ligou
+        ? "Cadastro atualizado no Vantoro."
+        : "Atualizei no Vantoro, mas não consegui ligá-lo a este contato aqui.");
     } catch (e) {
       onAviso && onAviso(e.message);
     } finally {
