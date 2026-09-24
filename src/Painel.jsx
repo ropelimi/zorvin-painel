@@ -24,7 +24,7 @@ import { SONS, tocarAviso, somEscolhido, guardarSom } from "./avisos.js";
 import { PRAZO_DA_BUSCA, foiAbortada, funcaoNaoExiste,
          condicoesDeNome, recadoDaBusca } from "./busca.js";
 import { comoPrever, nomeDoTipo, tamanhoLegivel } from "./arquivos.js";
-import { gravarSemAsQueFaltam, naoGravouNada } from "./gravar.js";
+import { gravarSemAsQueFaltam, naoGravouNada, comOCodigo } from "./gravar.js";
 
 // O que este banco já disse que não tem, para não perguntar de novo a cada nota.
 // Vale só nesta sessão: rodar o SQL que falta e apertar F5 devolve a coluna.
@@ -3959,7 +3959,10 @@ export default function Painel({ sessao }) {
     } else {
       ({ error } = await supabase.from("tags").insert({ nome, cor }));
     }
-    if (error) { mostrarAviso("Não consegui salvar. Verifique se a tabela 'tags' foi criada."); return; }
+    if (error) {
+      mostrarAviso(comOCodigo("Não consegui salvar esta etiqueta.", error, "salvar etiqueta"), 7000);
+      return;
+    }
     // Sem esta linha a tela fechava o formulário dizendo "Tag salva!" e a
     // releitura logo abaixo devolvia a etiqueta com o nome VELHO à lista. Quem
     // renomeia conclui que errou o clique, e renomeia de novo.
@@ -3974,7 +3977,10 @@ export default function Painel({ sessao }) {
     // o "Apagar esta?" que a pessoa acabou de confirmar parecia não ter sido
     // ouvido.
     const r = await supabase.from("tags").delete().eq("id", id).select("id");
-    if (r.error) { mostrarAviso("Não consegui apagar a etiqueta."); return; }
+    if (r.error) {
+      mostrarAviso(comOCodigo("Não consegui apagar a etiqueta.", r.error, "apagar etiqueta"), 7000);
+      return;
+    }
     if (naoGravouNada(r)) { mostrarAviso("O banco não deixou apagar esta etiqueta. Ela continua lá."); return; }
     carregarTags(); carregarTagsConversas();
   }
@@ -4034,12 +4040,15 @@ export default function Painel({ sessao }) {
       if (r.error || naoGravouNada(r)) {
         mostrarAviso(naoGravouNada(r)
           ? "O banco não deixou tirar a etiqueta desta conversa."
-          : "Não consegui tirar a etiqueta.");
+          : comOCodigo("Não consegui tirar a etiqueta.", r.error, "tirar etiqueta da conversa"), 7000);
         carregarTagsConversas(); return;
       }
     } else {
       const { error } = await supabase.from("conversa_tags").insert({ conversa_id: conversaId, tag_id: tagId });
-      if (error) { mostrarAviso("Não consegui aplicar a etiqueta."); carregarTagsConversas(); return; }
+      if (error) {
+        mostrarAviso(comOCodigo("Não consegui aplicar a etiqueta.", error, "aplicar etiqueta"), 7000);
+        carregarTagsConversas(); return;
+      }
     }
     // SÓ AVISA QUANDO HÁ OUTRO TELEFONE EM JOGO. Num cliente que só falou com
     // um telefone nosso, "não valeu para os outros" seria um susto sobre nada.
@@ -4064,7 +4073,11 @@ export default function Painel({ sessao }) {
     } else {
       ({ error } = await supabase.from("mensagens_rapidas").insert({ titulo, texto }));
     }
-    if (error) { mostrarAviso("Não consegui salvar. Verifique se a tabela 'mensagens_rapidas' foi criada."); return; }
+    if (error) {
+      mostrarAviso(comOCodigo("Não consegui salvar esta mensagem rápida.", error,
+                              "salvar mensagem rápida"), 7000);
+      return;
+    }
     if (recusou) { mostrarAviso("O banco não deixou salvar esta mensagem rápida. Nada mudou."); return; }
     setRapidaForm(null);
     mostrarAviso("Mensagem rápida salva!");
@@ -4074,7 +4087,11 @@ export default function Painel({ sessao }) {
   async function apagarRapida(id) {
     if (!window.confirm("Apagar esta mensagem rápida?")) return;
     const r = await supabase.from("mensagens_rapidas").delete().eq("id", id).select("id");
-    if (r.error) { mostrarAviso("Não consegui apagar."); return; }
+    if (r.error) {
+      mostrarAviso(comOCodigo("Não consegui apagar esta mensagem rápida.", r.error,
+                              "apagar mensagem rápida"), 7000);
+      return;
+    }
     if (naoGravouNada(r)) { mostrarAviso("O banco não deixou apagar esta mensagem rápida. Ela continua na lista."); return; }
     carregarRapidas();
   }
@@ -4363,7 +4380,11 @@ export default function Painel({ sessao }) {
     if (error && /vantoro_/i.test(error.message || "")) {
       ({ data: cont, error } = await gravar({ nome: linha.nome }));
     }
-    if (error || !cont) { mostrarAviso("Não consegui criar o contato a partir do Vantoro."); return; }
+    if (error || !cont) {
+      mostrarAviso(comOCodigo("Não consegui criar o contato a partir do Vantoro.", error,
+                              "criar contato do Vantoro"), 7000);
+      return;
+    }
     carregarContatos();
     await abrirConversaContato(cont);
   }
@@ -4380,7 +4401,10 @@ export default function Painel({ sessao }) {
     const r = jaExiste
       ? await supabase.from("contatos").update({ nome }).eq("id", jaExiste.id).select("id")
       : await supabase.from("contatos").upsert({ numero, nome }, { onConflict: "numero" }).select("id");
-    if (r.error) { mostrarAviso("Não consegui salvar. Verifique as permissões (RLS) da tabela 'contatos'."); return; }
+    if (r.error) {
+      mostrarAviso(comOCodigo("Não consegui salvar este contato.", r.error, "salvar contato"), 7000);
+      return;
+    }
     if (naoGravouNada(r)) {
       mostrarAviso("O banco não deixou salvar este contato. Nada foi gravado.");
       return;
@@ -4441,7 +4465,10 @@ export default function Painel({ sessao }) {
     const { data: cont, error } = jaExiste
       ? await supabase.from("contatos").update({ nome }).eq("id", jaExiste.id).select("id").single()
       : await supabase.from("contatos").upsert({ numero, nome }, { onConflict: "numero" }).select("id").single();
-    if (error || !cont) { mostrarAviso("Não consegui salvar o contato."); return; }
+    if (error || !cont) {
+      mostrarAviso(comOCodigo("Não consegui salvar o contato.", error, "novo contato"), 7000);
+      return;
+    }
     carregarContatos();
     await abrirConversaContato(cont);
   }
@@ -4454,7 +4481,10 @@ export default function Painel({ sessao }) {
     const { data: cont, error } = jaExiste
       ? { data: jaExiste, error: null }
       : await supabase.from("contatos").upsert({ numero }, { onConflict: "numero" }).select("id").single();
-    if (error || !cont) { mostrarAviso("Não consegui iniciar a conversa."); return; }
+    if (error || !cont) {
+      mostrarAviso(comOCodigo("Não consegui iniciar a conversa.", error, "conversar com o número"), 7000);
+      return;
+    }
     carregarContatos();
     await abrirConversaContato(cont);
   }
@@ -4683,7 +4713,11 @@ export default function Painel({ sessao }) {
       const { data, error } = await supabase.from("contatos")
         .upsert(nome ? { numero, nome } : { numero }, { onConflict: "numero" })
         .select("id").single();
-      if (error || !data) { mostrarAviso("Não consegui abrir a conversa desse número."); return; }
+      if (error || !data) {
+        mostrarAviso(comOCodigo("Não consegui abrir a conversa desse número.", error,
+                                "abrir conversa pelo link"), 7000);
+        return;
+      }
       cont = data;
       carregarContatos();
     }
@@ -6717,7 +6751,10 @@ export default function Painel({ sessao }) {
       status: "pendente",
       enviado_por: meuNome, enviado_por_id: meuId,
     });
-    if (error) { mostrarAviso("Não consegui encaminhar. Tente de novo."); return; }
+    if (error) {
+      mostrarAviso(comOCodigo("Não consegui encaminhar.", error, "encaminhar mensagem"), 7000);
+      return;
+    }
     mostrarAviso(`Encaminhada para ${nomeDoContato(conv.contato) || "a conversa"}.`);
   }
 
@@ -6899,7 +6936,7 @@ export default function Painel({ sessao }) {
       setMensagens((prev) => prev.map((x) => (x.id === m.id ? { ...x, [campo]: m[campo] } : x)));
       mostrarAviso(naoMexeu
         ? "Falta rodar o SQL 2026-08-fixar-favoritar-mensagem.sql no Supabase."
-        : "Não consegui salvar a marca.");
+        : comOCodigo("Não consegui salvar a marca.", error, "marcar mensagem"), 7000);
     }
   }
 
@@ -6987,7 +7024,7 @@ export default function Painel({ sessao }) {
     });
     if (error) {
       setMensagens((prev) => prev.map((x) => (x.id === m.id ? { ...x, texto: m.texto, editada: m.editada } : x)));
-      mostrarAviso("Não consegui editar. Tente de novo.");
+      mostrarAviso(comOCodigo("Não consegui editar.", error, "editar mensagem"), 7000);
     }
   }
 
@@ -7045,7 +7082,7 @@ export default function Painel({ sessao }) {
       // Devolve a bolha ao que era: manter a pastilha que não foi enviada
       // faria a equipe achar que o contato viu uma reação que nunca saiu.
       setMensagens((prev) => prev.map((x) => (x.id === m.id ? { ...x, reacoes: atuais } : x)));
-      mostrarAviso("Não consegui enviar a reação. Tente de novo.");
+      mostrarAviso(comOCodigo("Não consegui enviar a reação.", error, "reagir à mensagem"), 7000);
     }
   }
 
@@ -7121,7 +7158,8 @@ export default function Painel({ sessao }) {
     setConversas((prev) => prev.map((x) => (x.id === conv.id ? { ...x, ...patch } : x)));
     const r = await supabase.from("conversas").update(patch).eq("id", conv.id).select("id");
     if (r.error || naoGravouNada(r)) {
-      mostrarAviso(naoGravouNada(r) ? frases.recusado : frases.erro);
+      mostrarAviso(naoGravouNada(r) ? frases.recusado
+                                    : comOCodigo(frases.erro, r.error, "marca da conversa"), 7000);
       carregarConversas(advogadoId);
       return false;
     }
@@ -7226,7 +7264,10 @@ export default function Painel({ sessao }) {
     const r = await supabase.from("conversas")
       .update({ nao_lidas: 0 }).eq("advogado_id", advId).gt("nao_lidas", 0).select("id");
     carregarNaoLidasPorAdv();
-    if (r.error) { mostrarAviso("Não consegui marcar todas. Tente de novo."); carregarConversas(advId); return; }
+    if (r.error) {
+      mostrarAviso(comOCodigo("Não consegui marcar todas.", r.error, "marcar todas como lidas"), 7000);
+      carregarConversas(advId); return;
+    }
     if (naoGravouNada(r)) {
       mostrarAviso("Nenhuma conversa mudou: ou um colega marcou antes de você, ou o banco "
                  + "não deixou. O selo da barra diz qual dos dois.", 7000);
@@ -7265,7 +7306,7 @@ export default function Painel({ sessao }) {
     if (r.error || naoGravouNada(r)) {
       mostrarAviso(naoGravouNada(r)
         ? "O banco não deixou marcar como lida — o selo continua para a equipe."
-        : "Não consegui marcar como lida.");
+        : comOCodigo("Não consegui marcar como lida.", r.error, "marcar como lida"), 7000);
       carregarConversas(advogadoIdRef.current);
     }
     else carregarNaoLidasPorAdv();
@@ -7315,7 +7356,8 @@ export default function Painel({ sessao }) {
     if (error) {
       // Nem entrou na fila: marca como erro para o atendente reenviar.
       setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _status: "erro" } : m)));
-      mostrarAviso("Não consegui enviar a mensagem. Toque em 'reenviar'.");
+      mostrarAviso(comOCodigo("Não consegui enviar a mensagem. Toque em 'reenviar'.",
+                              error, "enfileirar mensagem"), 7000);
       return;
     }
     // Respondi o contato: a conversa deixa de estar pendente.
@@ -7354,11 +7396,15 @@ export default function Painel({ sessao }) {
       setConversas((prev) => prev.map((c) => (
         c.contato && c.contato.numero === ct.numero
           ? { ...c, contato: { ...c.contato, nome_zorvin: ct.nome_zorvin } } : c)));
+      // O CÓDIGO VAI JUNTO. Era aqui que a frase morria em "Tente de novo." —
+      // e foi essa frase que custou uma rodada inteira de scripts no Supabase
+      // em 24/09 para descobrir o que o navegador sabia no primeiro segundo.
       mostrarAviso(
         recusou ? "O banco não deixou salvar o nome deste contato."
         : /nome_zorvin/i.test(r.error.message || "")
           ? "Falta rodar o SQL do nome do contato."
-          : "Não consegui salvar o nome. Tente de novo.");
+          : comOCodigo("Não consegui salvar o nome.", r.error, "renomear o contato"),
+        7000);
       return;
     }
     registrarAlteracao({ tipo: "contato_renomeado", alvo: ct.numero,
@@ -7462,7 +7508,7 @@ export default function Painel({ sessao }) {
         x.id === m.id ? { ...x, ...comoEra, texto: antes } : x)));
       mostrarAviso(naoGravouNada(rNota)
         ? "O banco não deixou editar esta nota. O texto voltou ao que era."
-        : "Não consegui editar a nota. Tente de novo.");
+        : comOCodigo("Não consegui editar a nota.", error, "editar nota"), 7000);
       return;
     }
     // O AVISO SÓ APARECE QUANDO A PESSOA PERDEU O QUE ESCOLHEU. Perder o
@@ -7492,7 +7538,7 @@ export default function Painel({ sessao }) {
         x.id === m.id ? { ...x, apagada_em: null, apagada_por: null } : x)));
       mostrarAviso(naoGravouNada(r)
         ? "O banco não deixou apagar esta nota. Ela continua na conversa."
-        : "Não consegui apagar a nota. Tente de novo.");
+        : comOCodigo("Não consegui apagar a nota.", r.error, "apagar nota"), 7000);
       return;
     }
     registrarAlteracao({ tipo: "nota_apagada", alvo: idReal, antes: m.texto || "", depois: null });
@@ -7561,7 +7607,8 @@ export default function Painel({ sessao }) {
       // pessoa escreveu some junto — sem cópia, sem rascunho, sem nada.
       setRascunho((r) => (r ? r : t));
       setModoNota(true);
-      mostrarAviso("Não consegui salvar a nota. O texto voltou para a caixa.");
+      mostrarAviso(comOCodigo("Não consegui salvar a nota. O texto voltou para a caixa.",
+                              error, "escrever nota"), 7000);
     }
     else {
       // O QUE NÃO COUBE NO BANCO PRECISA SER DITO.

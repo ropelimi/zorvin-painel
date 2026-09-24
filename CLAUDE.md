@@ -719,6 +719,61 @@ conversas do escritório, e "Urgente" também é texto de conversa.
 medido, o clique no ⋮ da lista abre a conversa em vez do menu, e a prova
 mediria outra coisa. O caminho gravado é o mesmo.
 
+### E a frase da falha leva o código junto
+
+No dia seguinte, o escritório tentou renomear um cliente e a tela — já
+consertada — disse:
+
+> *"Não consegui salvar o nome. Tente de novo."*
+
+Isso diz QUE falhou e não diz **nada** do porquê. O `error` do banco era jogado
+fora, sem nem um `console.error`. **É a mesma forma das duas anteriores com
+outra roupa:** ali a tela desenhava ausência no lugar de falha, depois sucesso
+no lugar de falha; aqui ela desenha **falha sem causa** — e o efeito prático é
+o mesmo, porque quem for consertar recomeça do zero.
+
+**O que custou, medido em 24/09:** uma rodada inteira de scripts no Supabase
+para descobrir o que o navegador sabia no primeiro segundo. E os scripts
+inocentaram todo mundo — as políticas de `contatos` liberam UPDATE para
+`authenticated` com condição `true`, não há gatilho na tabela, todas as colunas
+(inclusive `nome_zorvin`) têm permissão de UPDATE, e o **mesmo UPDATE rodado no
+papel de quem entra no painel PASSOU**. O erro vinha de antes do banco, e o
+único lugar que o tinha visto foi o único que não o guardou.
+
+**A régua já existia em um lugar só:** `dispensarFalha` mostrava a frase curta
+**com o código** e mandava o erro inteiro para o console. `comOCodigo`, em
+`gravar.js`, é essa régua virada função, aplicada a toda gravação. Despejar
+`new row violates check constraint` na faixa não ajuda quem atende a decidir
+nada — mas o CÓDIGO cabe, é o que se digita numa mensagem para quem conserta, e
+é o que separa 42501 de 42703 de PGRST301.
+
+**São TRÊS desfechos, e é isso que a prova guarda:**
+
+| o que aconteceu | a tela diz | por quê |
+|---|---|---|
+| o banco recusou com erro | a frase **mais o código** | é a pista, e ela some se não for escrita |
+| o banco aceitou e não mexeu | "o banco não deixou" | não houve erro: pôr um código aqui inventaria uma falha de banco que não existe |
+| o pedido não chegou ao banco | "não consegui falar com o banco" | é conexão, não permissão — pedem providências opostas de quem lê |
+
+Misturar os dois últimos manda a pessoa procurar defeito no sistema errado. Um
+erro **sem `code` e sem `status`** não veio do banco: o pedido não saiu.
+
+**A ficha do Vantoro precisou de um espelho.** `ligarContatoAoCadastro` devolve
+só um sim/não de propósito (avisar por conta própria fazia a frase ser apagada
+pela de quem chamou — ver acima). O erro fica em `erroDoVinculo`, um `useRef`, e
+não em estado: ele é lido no mesmo passo em que é escrito, e estado só chega no
+desenho seguinte — a frase sairia sem o código na primeira vez e com o código
+**antigo** na segunda, que é pior do que não ter.
+
+**Ainda em aberto:** o que faz a gravação falhar em produção. Este conserto não
+conserta — ele faz a próxima ocorrência **se identificar sozinha**, na foto da
+tela, em vez de custar outra rodada de scripts.
+
+Prova: `a-tela-diz-o-codigo-do-banco`, 23 conferências, 6 sabotagens e 6 pegas.
+A bancada ganhou `__ERRO_NA_GRAVACAO` — ela só sabia recusar em silêncio
+(`__ESCRITA_SEM_EFEITO`), e uma prova com só essa metade aprovaria a tela que
+não diz código nenhum.
+
 ## Banco de dados (tabelas que o painel lê/escreve)
 
 - `advogados` — lê (id, nome, numero, foto_url) onde `ativo = true`

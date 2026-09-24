@@ -1715,6 +1715,24 @@ function consulta(tabela) {
             message: `Could not find the '${faltando}' column of '${tabela}' in the schema cache` } });
         }
       }
+      // O BANCO QUE RESPONDE COM ERRO — e com um CÓDIGO.
+      //
+      // `__ERRO_NA_GRAVACAO = { contatos: { code: "PGRST301", message: "JWT
+      // expired" } }` faz a gravação nesta tabela falhar como o PostgREST
+      // falha quando o bilhete venceu. Sem código (`{ message: "Failed to
+      // fetch" }`) é o outro caso, e é diferente: o pedido não chegou ao
+      // banco, e quem lê tem de conferir a CONEXÃO, não as permissões.
+      //
+      // `__ESCRITA_SEM_EFEITO` não serve para isto: lá o banco aceita e não
+      // mexe em nada; aqui ele recusa com todas as letras. As duas falhas
+      // pedem frases diferentes, então a bancada precisa saber fazer as duas.
+      //
+      // VEM ANTES DE GRAVAR, de propósito: um banco que recusa não grava
+      // metade — a mesma razão do `__RECUSAR_STATUS` logo abaixo.
+      const erroNaGravacao = (typeof globalThis !== "undefined" && globalThis.__ERRO_NA_GRAVACAO) || {};
+      if ((gravacao || patch || apagando) && erroNaGravacao[tabela]) {
+        return resolver({ data: null, count: null, error: erroNaGravacao[tabela] });
+      }
       if (gravacao) eu.gravar(gravacao.reg, gravacao.porOnde);
       // A COLUNA COM LISTA FECHADA DE VALORES (`CHECK`).
       //

@@ -165,3 +165,53 @@ export function naoGravouNada(resposta) {
   if (!resposta || resposta.error) return false;
   return Array.isArray(resposta.data) && resposta.data.length === 0;
 }
+
+// ============================================================
+//  A FRASE DA FALHA LEVA O CÓDIGO DO BANCO JUNTO
+//
+//  RELATO DE 24/09, NO DIA SEGUINTE AO CONSERTO ANTERIOR. A tela passou a
+//  dizer "Não consegui salvar o nome. Tente de novo." — e parou aí. Aquilo
+//  diz QUE falhou e não diz NADA do porquê: o `error` que o banco devolveu
+//  era jogado fora, sem nem um `console.error`.
+//
+//  O que custou: uma rodada inteira de scripts no Supabase para descobrir o
+//  que o navegador sabia no primeiro segundo. E os scripts inocentaram todo
+//  mundo — as políticas de `contatos` liberam UPDATE com condição `true`, não
+//  há gatilho na tabela, e o mesmo UPDATE, rodado no papel de quem entra no
+//  painel, PASSOU. O erro vinha de antes do banco, e o único lugar que o tinha
+//  visto foi o único que não o guardou.
+//
+//  ------------------------------------------------------------
+//  A RÉGUA JÁ EXISTIA, EM UM LUGAR SÓ
+//
+//  `dispensarFalha` (o "Dispensar este aviso") já fazia o certo: na tela, a
+//  frase curta MAIS o código; no console, o erro inteiro. Despejar
+//  `new row for relation "x" violates check constraint` na tela de quem
+//  atende não ajuda ninguém a decidir nada — mas o CÓDIGO cabe numa faixa, é
+//  o que se digita numa mensagem para quem vai consertar, e é o que separa
+//  uma recusa de permissão (42501) de uma coluna que falta (42703) de uma
+//  sessão vencida (PGRST301).
+//
+//  ------------------------------------------------------------
+//  SEM CÓDIGO NENHUM É OUTRA COISA, E PEDE OUTRA AÇÃO
+//
+//  Um erro sem `code` e sem `status` não veio do banco: o pedido não chegou
+//  lá (rede caída, navegador offline, o pedido barrado antes de sair). Quem
+//  lê precisa conferir a conexão, e não chamar quem cuida do banco. Dizer
+//  "erro sem código" mandaria a pessoa procurar defeito no lugar errado.
+// ============================================================
+
+/** A frase da falha, com o código do banco atrás dela.
+ *
+ *  Sempre grava o erro inteiro no console: a faixa some em segundos, e quem
+ *  for investigar precisa do texto completo, não do resumo.
+ *
+ *  `onde` é o nome do que falhou ("renomear o contato"), e serve só para o
+ *  console — na tela quem diz isso é a própria frase. */
+export function comOCodigo(frase, erro, onde) {
+  console.error(`Zorvin — ${onde || "gravação"} falhou:`, erro);
+  const codigo = (erro && (erro.code || erro.status)) || null;
+  if (codigo) return `${frase} (erro ${codigo})`;
+  // NÃO CHEGOU AO BANCO. Ver o cabeçalho: é outra ação para quem lê.
+  return `${frase} Não consegui falar com o banco — confira a conexão.`;
+}
