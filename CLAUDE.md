@@ -577,6 +577,80 @@ que pegou.**
 Prova: `a-citacao-leva-a-mensagem`, 15 conferências, 5 sabotagens e 5 pegas. A
 bancada ganhou as quatro respostas que citam — uma por caso.
 
+## A tela não diz "salvei" sem ter salvo
+
+Relato do escritório em 24/09, em três partes que pareciam três defeitos:
+*"quando salvo o nome do cliente não fica salvo"*, *"não estão sendo salvos
+novos contatos"*, *"aperto em fazer pré-cadastro e a ficha não aparece"*.
+
+**É uma forma só, repetida em três lugares.**
+
+### Um `UPDATE` barrado pela RLS não devolve erro
+
+Ele não é recusado: é **filtrado**. A regra de acesso entra como um `where` a
+mais, nenhuma linha casa, e o banco responde "pronto, atualizei zero linhas" —
+com `error` nulo. Quem só olha o `error` conclui que deu certo.
+
+Num `insert` é diferente: ali a RLS levanta erro (42501). Por isso o defeito
+mora em quem **edita**, e não em quem cria — e por isso ele passa despercebido
+em revisão de código, onde os dois se parecem.
+
+| Onde | O que a tela fazia | O que havia no banco |
+|---|---|---|
+| Renomear o contato | pintava o nome novo | nada — sumia no F5 |
+| Salvar contato | escrevia **"Contato salvo!"** | nada |
+| Ligar o pré-cadastro | seguia e mandava as notas subirem | vínculo vazio |
+
+A tela **afirmava o contrário** do que estava no banco. É a armadilha nº 2 do
+avesso: ali ela desenhava ausência no lugar de falha; aqui, SUCESSO no lugar de
+falha — que é pior, porque ausência faz alguém perguntar e sucesso faz todo
+mundo ir embora tranquilo.
+
+**O conserto é `naoGravouNada()`, em `gravar.js`**, e um `.select("id")` junto
+da gravação: não é uma ida a mais à rede, é a mesma dizendo o que fez. **Sem
+`.single()`**, de propósito — ele transforma "zero linhas" num erro (PGRST116)
+e mistura "o banco recusou" com "a rede caiu", que pedem frases diferentes.
+
+### O aviso que era apagado pelo aviso seguinte
+
+`ligarContatoAoCadastro` avisava por conta própria, e quem a chama mostra a
+frase dele logo depois ("Pré-cadastro criado no Vantoro."), **apagando a
+primeira em menos de um segundo**. A pessoa via o sucesso e ia embora.
+
+Hoje ela **devolve se ligou** e quem começou a ação compõe a frase final —
+porque é quem começou que sabe qual é. E ela termina com `return true`: sem
+ele devolveria `undefined`, e o caminho de sucesso mostraria a frase da falha.
+
+### A prova precisou ver o FILME, e não a foto
+
+A faixa de aviso mostra uma frase por vez. Lendo só o que estava na tela no
+fim, a sabotagem que tirava o `return true` **passava** — a frase errada
+aparecia e era coberta pela das notas um instante depois. A prova passou a
+registrar toda mensagem que passou pela faixa (um relógio de 50ms; um
+`MutationObserver` não serve, porque `addInitScript` roda antes de existir
+documento).
+
+**E ela tem contraste em toda cena:** com o banco deixando gravar, o nome fica
+e nenhum aviso de falha aparece. Sem isso, um conserto que gritasse sempre
+passaria igual.
+
+### O que NÃO foi consertado, e é decisão
+
+**A mesma forma existe em outros 18 lugares** — varridos e listados na PR. Os
+três daqui são os que o escritório relatou; os outros vão numa rodada própria,
+por ordem do que se perde: `notas` (texto que alguém escreveu), `tags` e
+`mensagens_rapidas` (configuração), e por último as marcas de conversa
+(não lidas, favorita, fixada), que se corrigem sozinhas na abertura seguinte.
+
+**E a causa no banco ainda não foi achada.** As permissões de `contatos` foram
+conferidas em produção e estão certas (RLS ligada, políticas permissivas com
+condição `true`, `authenticated` com INSERT/UPDATE/SELECT). Este conserto faz a
+tela **parar de mentir**; ele não faz a gravação voltar a funcionar, e a próxima
+sessão vai precisar do que a tela passar a dizer para achar o resto.
+
+Prova: `a-tela-nao-diz-salvei-sem-salvar`, 26 conferências, 7 sabotagens e
+7 pegas.
+
 ## Banco de dados (tabelas que o painel lê/escreve)
 
 - `advogados` — lê (id, nome, numero, foto_url) onde `ativo = true`

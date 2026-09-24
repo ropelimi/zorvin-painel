@@ -100,3 +100,59 @@ export async function gravarSemAsQueFaltam(gravar, linha, opcionais = [], lembre
   return { data: null, perdidas,
            error: { message: `Não consegui gravar mesmo depois de tirar ${perdidas.join(", ")}.` } };
 }
+
+// ============================================================
+//  GRAVOU MESMO? — a pergunta que o Supabase não responde sozinho
+//
+//  RELATO DO ESCRITÓRIO, 24/09: "quando salvo o nome do cliente não fica
+//  salvo", "não estão sendo salvos novos contatos", "aperto em fazer
+//  pré-cadastro e a ficha não aparece". Três sintomas, uma forma só.
+//
+//  ------------------------------------------------------------
+//  UM `UPDATE` BARRADO PELA RLS NÃO DEVOLVE ERRO
+//
+//  Ele não é recusado: é FILTRADO. A regra de acesso entra como um `where` a
+//  mais, nenhuma linha casa, e o banco responde "pronto, atualizei zero
+//  linhas" — com `error` nulo. Quem só olha o `error` conclui que deu certo.
+//
+//  No `insert` é diferente: ali a RLS levanta erro (42501). Por isso o defeito
+//  aparece justamente em quem EDITA, e não em quem cria — e por isso ele passa
+//  despercebido em revisão de código, onde os dois se parecem.
+//
+//  ------------------------------------------------------------
+//  O CUSTO DISSO, MEDIDO NO RELATO
+//
+//  As três telas seguiam em frente como se tivessem gravado: uma mostrava o
+//  nome novo (e ele sumia no F5), outra escrevia "Contato salvo!", e a terceira
+//  dava o pré-cadastro por ligado ao contato. A tela AFIRMAVA o contrário do
+//  que estava no banco — que é pior do que não dizer nada, porque ninguém vai
+//  conferir o que a tela acabou de garantir.
+//
+//  ------------------------------------------------------------
+//  COMO SE PERGUNTA
+//
+//  Pedindo `.select("id")` junto da gravação, a resposta traz as linhas que
+//  ELA mexeu. Não é uma ida a mais à rede — é a mesma, dizendo o que fez.
+//
+//    const r = await supabase.from("contatos")
+//      .update({ nome }).eq("id", id).select("id");
+//    if (naoGravouNada(r)) { ...a tela diz que não conseguiu... }
+//
+//  SEM `.single()`, de propósito: ele transforma "zero linhas" num ERRO
+//  (PGRST116), misturando "o banco recusou" com "a rede caiu" — e as duas
+//  pedem frases diferentes de quem lê. Aqui o `error` continua sendo só erro,
+//  e a lista vazia é só recusa.
+// ============================================================
+
+/** A gravação voltou sem erro e sem ter mexido em nenhuma linha?
+ *
+ *  `true` quer dizer: o banco atendeu o pedido e não alterou nada — quase
+ *  sempre a RLS filtrando. Quem chama não deve seguir como se tivesse gravado.
+ *
+ *  Só responde `true` no caso EXATO. Havendo erro, quem chama já o trata; não
+ *  tendo `data` (quem esqueceu o `.select`), esta função não inventa uma
+ *  recusa que não sabe se houve. */
+export function naoGravouNada(resposta) {
+  if (!resposta || resposta.error) return false;
+  return Array.isArray(resposta.data) && resposta.data.length === 0;
+}

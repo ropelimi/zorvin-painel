@@ -24,7 +24,7 @@ import { SONS, tocarAviso, somEscolhido, guardarSom } from "./avisos.js";
 import { PRAZO_DA_BUSCA, foiAbortada, funcaoNaoExiste,
          condicoesDeNome, recadoDaBusca } from "./busca.js";
 import { comoPrever, nomeDoTipo, tamanhoLegivel } from "./arquivos.js";
-import { gravarSemAsQueFaltam } from "./gravar.js";
+import { gravarSemAsQueFaltam, naoGravouNada } from "./gravar.js";
 
 // O que este banco já disse que não tem, para não perguntar de novo a cada nota.
 // Vale só nesta sessão: rodar o SQL que falta e apertar F5 devolve a coluna.
@@ -4322,10 +4322,17 @@ export default function Painel({ sessao }) {
     if (!nome) { mostrarAviso("Digite o nome do contato."); return; }
     if (numero.length < 8) { mostrarAviso("Digite um número válido (com DDD)."); return; }
     const jaExiste = await contatoExistente(numero);
-    const { error } = jaExiste
-      ? await supabase.from("contatos").update({ nome }).eq("id", jaExiste.id)
-      : await supabase.from("contatos").upsert({ numero, nome }, { onConflict: "numero" });
-    if (error) { mostrarAviso("Não consegui salvar. Verifique as permissões (RLS) da tabela 'contatos'."); return; }
+    // O `upsert` DE UM NÚMERO QUE JÁ EXISTE vira um `update` por baixo, e cai
+    // no mesmo silêncio: por isso os dois caminhos pedem `.select("id")`, e não
+    // só o de cima. A tela chegava a escrever "Contato salvo!" sem ter salvo.
+    const r = jaExiste
+      ? await supabase.from("contatos").update({ nome }).eq("id", jaExiste.id).select("id")
+      : await supabase.from("contatos").upsert({ numero, nome }, { onConflict: "numero" }).select("id");
+    if (r.error) { mostrarAviso("Não consegui salvar. Verifique as permissões (RLS) da tabela 'contatos'."); return; }
+    if (naoGravouNada(r)) {
+      mostrarAviso("O banco não deixou salvar este contato. Nada foi gravado.");
+      return;
+    }
     if (jaExiste) { mostrarAviso(`Este número já estava salvo; atualizei o nome.`); }
     setContatoForm(null);
     mostrarAviso("Contato salvo!");
@@ -7202,15 +7209,22 @@ export default function Painel({ sessao }) {
     setConversas((prev) => prev.map((c) => (
       c.contato && c.contato.numero === ct.numero
         ? { ...c, contato: { ...c.contato, nome_zorvin: novo || null } } : c)));
-    const { error } = await supabase.from("contatos")
-      .update({ nome_zorvin: novo || null }).eq("id", ct.id);
-    if (error) {
+    // `.select("id")` NÃO é enfeite: sem ele, um `update` barrado pela regra de
+    // acesso volta sem erro e sem ter mexido em nada — e o nome que a linha de
+    // cima já pôs na tela ficaria lá até o próximo F5, quando sumiria sozinho.
+    // Ver `naoGravouNada`, em `gravar.js`.
+    const r = await supabase.from("contatos")
+      .update({ nome_zorvin: novo || null }).eq("id", ct.id).select("id");
+    const recusou = naoGravouNada(r);
+    if (r.error || recusou) {
       setConversas((prev) => prev.map((c) => (
         c.contato && c.contato.numero === ct.numero
           ? { ...c, contato: { ...c.contato, nome_zorvin: ct.nome_zorvin } } : c)));
-      mostrarAviso(/nome_zorvin/i.test(error.message || "")
-        ? "Falta rodar o SQL do nome do contato."
-        : "Não consegui salvar o nome. Tente de novo.");
+      mostrarAviso(
+        recusou ? "O banco não deixou salvar o nome deste contato."
+        : /nome_zorvin/i.test(r.error.message || "")
+          ? "Falta rodar o SQL do nome do contato."
+          : "Não consegui salvar o nome. Tente de novo.");
       return;
     }
     registrarAlteracao({ tipo: "contato_renomeado", alvo: ct.numero,
@@ -12475,8 +12489,11 @@ export default function Painel({ sessao }) {
       })()}
 
       {/* Toast discreto (avisos não bloqueantes) */}
+      {/* MARCADO (`data-aviso`) para as provas endereçarem o recado sem
+          depender das palavras dele: frase que muda não pode calar uma
+          conferência que ainda vale. */}
       {aviso && (
-        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "#333", color: "#fff", padding: "10px 18px", borderRadius: 8, fontSize: 14, boxShadow: "0 4px 12px rgba(0,0,0,.3)", zIndex: 120, maxWidth: "90%", textAlign: "center" }}>
+        <div data-aviso style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "#333", color: "#fff", padding: "10px 18px", borderRadius: 8, fontSize: 14, boxShadow: "0 4px 12px rgba(0,0,0,.3)", zIndex: 120, maxWidth: "90%", textAlign: "center" }}>
           {aviso}
         </div>
       )}
