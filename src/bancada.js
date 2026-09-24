@@ -1741,6 +1741,16 @@ function consulta(tabela) {
       if (patch && semEfeito.includes(tabela)) {
         return resolver({ data: [], count: 0, error: null });
       }
+      // E O MESMO PARA O `delete`, porque ele falha igual.
+      //
+      // A regra de acesso entra como um `where` a mais no DELETE também: zero
+      // linhas saem e o banco responde "pronto". Sem isto a bancada só sabia
+      // simular metade da falha — e as telas que APAGAM (etiqueta, resposta
+      // pronta) ficariam sem prova justamente onde o sumiço é mais visível,
+      // porque o que se mandou apagar volta sozinho na releitura seguinte.
+      if (apagando && semEfeito.includes(tabela)) {
+        return resolver({ data: [], count: 0, error: null });
+      }
       if (patch) linhas.forEach((l) => Object.assign(l, patch));
       if (apagando) {
         const tab = TABELAS[tabela] || [];

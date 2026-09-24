@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "./supabase.js";
+import { naoGravouNada } from "./gravar.js";
 import { Type, Loader2 } from "lucide-react";
 
 // ============================================================
@@ -80,12 +81,13 @@ export function PalavrasDaCasa({ cx, C, aoAvisar }) {
     // simplesmente não acha a linha. Sem isto, quem não administra apertaria
     // salvar, veria tudo normal, e a palavra voltaria ao abrir de novo. É a
     // mesma armadilha descrita em `Departamentos.jsx`.
-    const { data, error } = await supabase.from("zorvin_palavras")
+    const r = await supabase.from("zorvin_palavras")
       .update({ singular, plural, genero: p.genero, atualizado: new Date().toISOString() })
       .eq("id", true).select("id");
+    const { error } = r;
     setSalvando(false);
     if (error) { aoAvisar(`Não consegui salvar (${error.message}).`); return; }
-    if (!data || !data.length) {
+    if (naoGravouNada(r)) {
       aoAvisar("Não salvou: o banco não deixou. Só quem administra o Zorvin pode trocar as palavras.");
       return;
     }

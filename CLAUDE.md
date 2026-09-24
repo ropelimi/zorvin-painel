@@ -636,11 +636,9 @@ passaria igual.
 
 ### O que NÃO foi consertado, e é decisão
 
-**A mesma forma existe em outros 18 lugares** — varridos e listados na PR. Os
-três daqui são os que o escritório relatou; os outros vão numa rodada própria,
-por ordem do que se perde: `notas` (texto que alguém escreveu), `tags` e
-`mensagens_rapidas` (configuração), e por último as marcas de conversa
-(não lidas, favorita, fixada), que se corrigem sozinhas na abertura seguinte.
+~~**A mesma forma existe em outros 18 lugares** — varridos e listados na PR. Os
+três daqui são os que o escritório relatou; os outros vão numa rodada
+própria.~~ **Feito** — ver "E os outros dezoito lugares", logo abaixo.
 
 **E a causa no banco ainda não foi achada.** As permissões de `contatos` foram
 conferidas em produção e estão certas (RLS ligada, políticas permissivas com
@@ -650,6 +648,76 @@ sessão vai precisar do que a tela passar a dizer para achar o resto.
 
 Prova: `a-tela-nao-diz-salvei-sem-salvar`, 26 conferências, 7 sabotagens e
 7 pegas.
+
+### E os outros dezoito lugares
+
+A rodada acima consertou três telas porque foram as três que o escritório
+relatou. A varredura do mesmo dia listou **outros dezoito** com a forma
+idêntica, e nenhum deles tinha relato — porque nenhum deles avisa. Esta é a
+rodada deles.
+
+**O `DELETE` falha exatamente igual**, e metade da lista apaga. A regra de
+acesso entra como um `where` a mais, zero linhas saem, `error` nulo. A
+diferença é o que se vê: o que a pessoa mandou apagar **volta** na releitura
+seguinte, sem uma palavra. A bancada só sabia recusar `update`; agora recusa os
+dois, senão as cenas de apagar seriam verdes por não medirem nada.
+
+| Onde | O que se perdia calado |
+|---|---|
+| Nota editada e nota apagada | **texto que alguém escreveu** — o pior da lista |
+| Etiqueta (renomear e apagar) e a etiqueta tirada da conversa | configuração da equipe |
+| Mensagem rápida (editar e apagar) | idem |
+| As quatro marcas da conversa | o selo que a EQUIPE inteira vê |
+| A conversa importada | nasce no fundo da lista; parece não ter importado |
+
+**As quatro marcas viraram um caminho só** (`gravarMarcaDaConversa`). Eram
+quatro cópias com o mesmo furo — e a primeira a divergir seria a que ninguém
+provou. **O acerto visual continua vindo na frente**, que é o que faz o clique
+parecer instantâneo; **o que passou a esperar é a FRASE**. Ela saía antes de
+perguntar: a tela dizia "Conversa fixada" e o banco podia ter recusado calado.
+A frase é a tela afirmando um fato do banco.
+
+**"Marcar todas como lidas" é a única em que zero linhas tem DUAS causas**, e
+está escrito lá. Nas outras o alvo é uma linha que a tela acabou de ler; nesta
+o recorte vai ao banco (`advogado_id` + `nao_lidas > 0`), e entre a conferência
+do selo e a gravação um colega pode ter marcado as mesmas conversas. Separar os
+dois exigiria uma segunda ida ao banco, e escolher um no chute erra dos dois
+lados — acusar o banco por causa de um colega faz alguém abrir chamado por
+nada, e dizer "todas marcadas" numa recusa é a mentira que esta rodada tira. A
+frase diz os dois e aponta o selo, que é onde está a resposta.
+
+**A presença ganhou porta própria** (`desligarPorRecusa`). `desligarRecurso` só
+desliga quando FALTA COLUNA, que é para o que nasceu; com a recusa calada o
+pulso de 60 segundos bateria no banco para sempre, por atendente e por conversa
+aberta, escrevendo nada. **E ela NÃO vale para a limpeza da saída**: lá a
+gravação leva `.eq('atendendo_por', eu)`, e zero linhas é o caso legítimo de
+outra pessoa já ter entrado na conversa.
+
+**Dois lugares ficam sem perguntar, de propósito:**
+
+- o `fila_envio` do **reenviar** — o `guardarDispensado` local já resolve o caso
+  de quem clicou, e uma faixa ali confundiria com a mensagem NOVA ter falhado,
+  que é o que a pessoa está olhando. O botão "Dispensar este aviso" diz a recusa
+  inteira, com código e arquivo;
+- o `insert` do **histórico de alterações**, que é extra por desenho e não pode
+  derrubar a ação que o gerou.
+
+**E as cinco cópias escritas à mão viraram `naoGravouNada`** — figurinha,
+mensagem apagada, marca da mensagem, `Departamentos.jsx` e `PalavrasDaCasa.jsx`
+já perguntavam certo, cada uma com a sua linha. Cinco escritas da mesma decisão
+é a primeira divergir no primeiro conserto.
+
+**A causa no banco continua em aberto.** Nada aqui faz gravação nenhuma voltar
+a funcionar: faz a tela dizer o que o banco respondeu.
+
+Prova: `as-outras-gravacoes-caladas`, 59 conferências, 7 sabotagens e 7 pegas.
+Ela endereça as linhas de configuração por `data-etiqueta-da-config` e
+`data-rapida-da-config`, e não pelo nome: atrás daquela janela está a lista de
+conversas do escritório, e "Urgente" também é texto de conversa.
+
+**E a cena da marca da conversa usa o botão do CABEÇALHO**, não o ⋮ da lista:
+medido, o clique no ⋮ da lista abre a conversa em vez do menu, e a prova
+mediria outra coisa. O caminho gravado é o mesmo.
 
 ## Banco de dados (tabelas que o painel lê/escreve)
 
