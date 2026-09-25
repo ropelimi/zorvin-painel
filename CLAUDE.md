@@ -1033,6 +1033,111 @@ sai da espera sozinha.
 
 Prova: `a-espera-comeca-na-primeira`, 27 conferências, 6 sabotagens e 6 pegas.
 
+## "Já tratei" — a fila precisa de uma saída que não seja mandar mensagem
+
+A fila do script 004 nasceu com **813 conversas**, e perguntar ao banco o que
+elas são **desmentiu a minha suposição**:
+
+| | quantas |
+|---|---|
+| nós respondemos e o cliente escreveu de volta | **601** |
+| nunca respondemos nada | 214 |
+
+E o que o cliente escreveu por último, nas 601: **`[anexo]` em 99** — o maior
+grupo —, "ok" em 42, "boa tarde" em 22, "bom dia" em 12, "obrigada" em 9.
+
+Eu imaginei a fila entupida de agradecimentos. Não está: o maior grupo é
+**documento de cliente sem confirmação de recebimento**, e "bom dia" é conversa
+que começou e ninguém atendeu. Somando as vinte mais frequentes, ~140 são
+espera de verdade contra ~94 despedidas. **A fila estava certa** — e por isso o
+vermelho dos três dias NÃO foi suavizado. O que faltava era uma saída para as
+94.
+
+### O que a tela ganha
+
+Um botão na conversa aberta, que abre uma **checklist obrigatória** do que foi
+tratado, tira a conversa da fila e deixa registro. Nada de novo na lista.
+
+**A marcação é obrigatória e o botão nasce desligado.** Sem isso, "Já tratei"
+vira um botão de "sumir com esta conversa" — e some junto a resposta para *"o
+que a equipe fez em setembro"*, que é o motivo de existir um registro em vez de
+só apagar a espera. O atrito também é proposital: duas decisões (abrir e
+marcar) erram junto muito menos do que uma.
+
+**Desfazer devolve a espera ORIGINAL**, e essa é a conferência mais importante
+da prova. Escrever `esperando_desde = agora` no painel devolveria a conversa à
+fila com **zero dia** — ela desceria para o fim com cara de cliente novo,
+depois de ter esperado uma semana, e quem olha a lista não veria nada de
+errado. Quem sabe a data certa é o banco (`zorvin_recontar_espera`), porque é
+ele que tem as mensagens.
+
+**A ordem das duas gravações é a decisão.** Primeiro o registro, depois a saída
+da fila. Ao contrário, um registro que falhasse depois da saída deixaria a
+conversa sumida **sem ninguém saber por quê**; nesta ordem, a falha é uma
+conversa que continua na fila com um registro a mais — chata, e visível. Entre
+um erro que se vê e um que não, escolhe-se o que se vê. Não há transação: o
+PostgREST não oferece uma, e meia transação com desfazer-na-mão daria um
+terceiro caminho de falha.
+
+**Dois estados do banco, e são perguntas separadas:** `temTratada` (a coluna
+existe?) e `temAssuntos` (a tabela respondeu?). O script 005 cria a tabela fora
+do bloco guardado e a coluna dentro dele, então "meio aplicado" é um estado
+real. `temAssuntos` segue a régua de `temVantoro.js`: `true` quer dizer "tem,
+**ou não consegui saber**" — esconder por falha de rede tiraria a saída da fila
+no dia em que a rede tossisse.
+
+**O controle tem dois endereços, uma definição só** (`acaoJaTratei`): escrito
+no cabeçalho no computador, item do menu ⋮ no celular — abaixo de 768px o
+cabeçalho não comporta mais um botão, e os 40px de alvo de dedo não deixam
+encolher os que já estão lá. Duas cópias divergiriam no primeiro conserto, e
+divergir aqui é tirar da fila num aparelho e não no outro.
+
+### Duas mentiras da bancada que a prova pegou
+
+Nenhuma das duas era defeito do painel, e as duas teriam me feito consertar o
+lugar errado:
+
+- **`is(coluna, null)` não achava nada.** No Postgres a coluna existe em toda
+  linha e quem grava sem mencioná-la deixa `null` ali; na bancada a chave
+  simplesmente não existia, e `undefined === null` é falso. O "desfazer"
+  carimbava zero registros.
+- **A tabela que o script ainda não criou respondia LISTA VAZIA**, e não "não
+  existe". São coisas diferentes, e sem a distinção o painel esconderia o botão
+  pelo motivo errado — sumindo com a saída da fila no dia em que alguém
+  apagasse o último assunto.
+
+### Os assuntos
+
+`AssuntosDoJaTratei.jsx`, na aba Estrutura da administração. **Não se apaga
+assunto, desativa-se**: os registros guardam o `id`, e apagar deixaria o
+relatório de setembro com linhas sem nome. Por isso o banco também não oferece
+DELETE ali.
+
+**Renomear conserta o passado inteiro** — bom para erro de digitação, ruim para
+trocar de assunto, porque setembro passaria a dizer outra coisa. A dica na tela
+diz isso, e é a diferença entre usar o lápis e usar "Parar de usar" + novo.
+
+### E uma sabotagem minha que era um no-op
+
+A primeira versão da sabotagem do desfazer escrevia `esperando_desde = agora`
+no painel — e **a prova passou**. Ela estava certa: a recontagem roda logo
+depois e sobrescreve com o valor correto, então aquela linha não decide nada.
+Eu tinha sabotado um caminho que não existe.
+
+O defeito de verdade é **não chamar a recontagem**, e ele tem duas faces, as
+duas provadas agora: sem ela a conversa **não volta** (`esperando_desde` fica
+nulo e o cliente some da fila para sempre), e com "agora" no lugar dela ela
+volta com **zero dia**, descendo para o fim da lista com cara de cliente novo.
+
+Fica a régua: **sabotagem que o resto do sistema conserta sozinho não prova
+nada.** É a segunda vez nesta série — a outra foi o `nullsFirst: false`, que
+o Postgres já faz sozinho.
+
+Prova: `o-ja-tratei`, 44 conferências, 8 sabotagens e 8 pegas. A conversa da
+despedida é **plantada pela prova** (cliente escreve → respondemos → ele
+agradece) e não emprestada da bancada: a recontagem calcula a espera a partir
+das mensagens, e sem essa forma a cena do desfazer não teria o que medir.
+
 ## Banco de dados (tabelas que o painel lê/escreve)
 
 - `advogados` — lê (id, nome, numero, foto_url) onde `ativo = true`
