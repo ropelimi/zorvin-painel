@@ -101,6 +101,36 @@ function nomeDoContato(contato) {
   return numero.startsWith("grupo:") ? "Grupo" : "+" + numero;
 }
 
+// ============================================================
+//  HÁ QUANTOS DIAS ESTE CLIENTE ESPERA
+//
+//  Lê `conversas.esperando_desde`, que o banco mantém: a PRIMEIRA mensagem do
+//  cliente depois da nossa última resposta. Escrever de novo não reinicia a
+//  conta — é o Cliente A do relato de 25/09, que escreveu em 21/09 e em 24/09
+//  e espera desde 21/09.
+//
+//  DIAS CORRIDOS, decidido pelo Rodrigo: de 21/09 a 25/09 são quatro dias, com
+//  o fim de semana dentro. É o que o cliente sente — ele não sabe se o
+//  escritório abre no sábado.
+//
+//  E CONTA POR DIA DE CALENDÁRIO, e não por 24 horas cheias. Quem escreveu
+//  ontem às 23h espera "1 dia", e não "0": a pergunta que a equipe faz é "de
+//  quando é isto?", e a resposta é uma data, não um cronômetro. As duas contas
+//  divergem justamente na mensagem da noite, que é a que mais aparece de manhã.
+// ============================================================
+function diasEsperando(conversa) {
+  const desde = conversa && conversa.esperando_desde;
+  if (!desde) return 0;
+  const d = new Date(desde);
+  if (Number.isNaN(d.getTime())) return 0;
+  // Zera a hora dos dois lados antes de subtrair: assim a conta é de datas, e
+  // o horário de verão não tira nem põe um dia.
+  const inicio = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const agora = new Date();
+  const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+  return Math.max(0, Math.round((hoje - inicio) / 86400000));
+}
+
 // AS COLUNAS DE CONTATO QUE A TELA PEDE AO BANCO.
 //
 // `vantoro_nome` só existe depois do SQL das frentes. Pedir coluna que não
@@ -2395,9 +2425,45 @@ export default function Painel({ sessao }) {
   // não é nem de longe a mais antiga. Seria uma resposta errada com cara de
   // certa — e é justamente para essa pergunta que o filtro existe.
   const [ordem, setOrdem] = useState(() => {
-    try { return localStorage.getItem("zorvin_ordem") === "antigas" ? "antigas" : "recentes"; }
-    catch (_) { return "recentes"; }
+    try {
+      const guardada = localStorage.getItem("zorvin_ordem");
+      return guardada === "antigas" || guardada === "esperando" ? guardada : "recentes";
+    } catch (_) { return "recentes"; }
   });
+  // ============================================================
+  //  A COLUNA DA ESPERA EXISTE NESTE BANCO?
+  //
+  //  TRÊS ESTADOS, e pela mesma razão de `temVantoro.js`: `null` é "ainda não
+  //  sei" — lista vazia, nada a ordenar — e esconde. Começar em `true` faria a
+  //  ordem nova aparecer e QUEBRAR a consulta num banco onde o SQL ainda não
+  //  foi rodado; a lista de conversas sumiria inteira por causa de um recurso
+  //  que nem foi instalado.
+  //
+  //  E a resposta sai das LINHAS QUE JÁ VIERAM, sem consulta própria: a lista
+  //  pede `*`, então `esperando_desde` vem junto quando existe, e o PostgREST
+  //  escreve a chave mesmo com o valor nulo. Uma ida à rede a cada abertura
+  //  para uma resposta que já está na mão seria trabalho de sobra no caminho
+  //  mais quente desta tela.
+  // ============================================================
+  const [temEspera, setTemEspera] = useState(null);
+  // ============================================================
+  //  A PERGUNTA QUE A CONSULTA FAZ — UM BOOLEANO, E NÃO OS DOIS ESTADOS
+  //
+  //  MEDIDO em 25/09, e foi a prova `partida` que pegou: com `temEspera` cru
+  //  nas dependências de `carregarConversas`, TODA abertura recarregava a
+  //  lista — porque `temEspera` sai de `null` para `true`/`false` em toda
+  //  partida, e isso muda a identidade da função. A tela media 11 consultas
+  //  em duas rodadas e 1.461 ms de espera, com a ida mais lenta em 745.
+  //
+  //  O comentário que eu tinha escrito dizia "uma ida a mais, só para quem
+  //  escolheu essa ordem". Não era: era para todo mundo, sempre.
+  //
+  //  Reduzido a este booleano, o caminho comum (`ordem` diferente de
+  //  "esperando") vale `false` antes e depois da resposta — nada muda, e não
+  //  há segunda ida. Quem escolheu a fila de espera vê `false` virar `true`
+  //  uma vez, e é aí que a lista precisa mesmo ser refeita.
+  // ============================================================
+  const ordenarPelaEspera = ordem === "esperando" && temEspera === true;
   const ordemRef = useRef(ordem);
   useEffect(() => {
     ordemRef.current = ordem;
@@ -3223,26 +3289,47 @@ export default function Painel({ sessao }) {
   const carregarConversas = useCallback(async (advId, pagina = 0, manterAberta = null) => {
     if (!advId) return;
     const de = pagina * PAGINA_BANCO;
+    /** A ordem vai para o BANCO, e não para a lista já carregada.
+     *
+     *  Ordenar aqui dentro daria "quem mais espera entre as 200 que vieram",
+     *  com cara de "quem mais espera" — e o cliente antigo esquecido, que é
+     *  justamente o que esta fila existe para achar, mora fora das 200.
+     *
+     *  `temEspera === true` é exigido mesmo com `ordem === "esperando"`: a
+     *  escolha fica guardada no navegador, e num banco onde o SQL foi desfeito
+     *  ela pediria uma coluna que não existe — e a consulta inteira falharia. */
+    const porOrdem = (q) => (ordenarPelaEspera
+      // QUEM NÃO ESPERA VAI PARA O FIM.
+      //
+      // `nullsFirst: false` é EXPLÍCITO de propósito, e não por engano: subindo,
+      // o Postgres já manda o nulo para o fim sozinho. Escrevi primeiro um
+      // comentário dizendo o contrário, e foi a sabotagem que me corrigiu — ela
+      // tirava a opção e a prova passava, porque não havia o que mudar.
+      //
+      // Fica escrito porque a regra se lembra errado com facilidade (DESCENDO
+      // é ao contrário: nulo na frente), e porque trocar por `true` enche a
+      // primeira página com as conversas em que ninguém está esperando nada —
+      // é essa a sabotagem que a prova pega hoje.
+      ? q.order("esperando_desde", { ascending: true, nullsFirst: false })
+      : q.order("ultima_atividade", { ascending: ordem === "antigas" }));
     /** As fixadas: mesma consulta, filtro próprio. Separada em função porque a
      *  base sem o SQL das frentes precisa repeti-la sem as colunas novas. */
-    const buscarFixadas = () => supabase
+    const buscarFixadas = () => porOrdem(supabase
       .from("conversas")
       .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
       .eq("advogado_id", advId)
-      .eq("fixada", true)
-      .order("ultima_atividade", { ascending: ordem === "antigas" })
+      .eq("fixada", true))
       .limit(200)
       .then((r) => r);
-    const pedidoDaPagina = supabase
+    const pedidoDaPagina = porOrdem(supabase
       .from("conversas")
       // `mensagens(id)` COM TETO DE UMA: a pergunta é "existe alguma?", e não
       // "quantas são". Uma linha por conversa responde isso e não traz peso.
       .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")}), mensagens(id)`)
-      .eq("advogado_id", advId)
+      .eq("advogado_id", advId))
       // A ORDEM É DAQUI, e não de uma reordenação depois. Ver o comentário em
       // `ordem`: virar a lista já carregada mostraria "a mais antiga das 200
       // que vieram", que não é a mais antiga de nada.
-      .order("ultima_atividade", { ascending: ordem === "antigas" })
       .range(de, de + PAGINA_BANCO - 1)
       .limit(1, { referencedTable: "mensagens" })
       // `.then((r) => r)` DISPARA. O construtor do supabase-js é PREGUIÇOSO: a
@@ -3298,7 +3385,13 @@ export default function Painel({ sessao }) {
         supabase.from("conversas")
           .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")}), mensagens(id)`)
           .eq("advogado_id", advId)
-          .order("ultima_atividade", { ascending: ordem === "antigas" })
+          // `porOrdem` AQUI TAMBÉM: esta é a mesma página, refeita sem a
+          // coluna do cadastro. Deixá-la com a ordem de sempre faria a fila de
+          // espera virar do avesso só nas bases antigas — e sem nada na tela
+          // dizendo por quê.
+          .order(...( ordenarPelaEspera
+            ? ["esperando_desde", { ascending: true, nullsFirst: false }]
+            : ["ultima_atividade", { ascending: ordem === "antigas" }] ))
           .range(de, de + PAGINA_BANCO - 1)
           .limit(1, { referencedTable: "mensagens" }),
         pagina === 0 ? buscarFixadas() : Promise.resolve({ data: [], error: null }),
@@ -3323,9 +3416,23 @@ export default function Painel({ sessao }) {
     // fixadas e a página), e sem critério de desempate elas se intercalavam
     // pela ordem de chegada.
     const sinal = ordem === "antigas" ? -1 : 1;
-    const porFixada = (a, b) => (b.fixada ? 1 : 0) - (a.fixada ? 1 : 0)
+    // O DESEMPATE DA FILA DE ESPERA É O MESMO DO BANCO, e precisa ser: as
+    // fixadas chegam numa consulta e a página noutra, e é aqui que as duas se
+    // emendam. Com critérios diferentes, a lista final não seria nem uma coisa
+    // nem outra. Quem não espera vai para o fim, como lá.
+    const esperaEm = (c) => (c.esperando_desde ? new Date(c.esperando_desde).getTime() : Infinity);
+    const porEspera = (a, b) => (b.fixada ? 1 : 0) - (a.fixada ? 1 : 0)
+      || (esperaEm(a) - esperaEm(b));
+    const porRecencia = (a, b) => (b.fixada ? 1 : 0) - (a.fixada ? 1 : 0)
       || sinal * (new Date(b.ultima_atividade) - new Date(a.ultima_atividade));
+    const porFixada = ordenarPelaEspera ? porEspera : porRecencia;
     const bruto = data || [];
+    // A COLUNA EXISTE? PERGUNTA-SE ÀS LINHAS QUE JÁ VIERAM — ver o comentário
+    // em `temEspera`. O PostgREST escreve a chave mesmo quando o valor é nulo,
+    // então a presença dela na primeira linha é a resposta.
+    if (bruto.length) {
+      setTemEspera(Object.prototype.hasOwnProperty.call(bruto[0], "esperando_desde"));
+    }
     // Página cheia = provavelmente há mais. Página curta = acabou. Conta só a
     // PÁGINA — as fixadas que vêm à parte, logo abaixo, não dizem nada sobre
     // quanto ainda falta. E conta o BRUTO, antes do corte abaixo: o que foi
@@ -3441,7 +3548,14 @@ export default function Painel({ sessao }) {
     // As três que ficavam aqui saíram na frente, lá em cima: elas precisam só
     // do `advId`, e esperar a lista para pedi-las era o que fazia a terceira
     // rodada de rede.
-  }, [ordem, carregarAtendimentos, carregarUltimasMidias, carregarDigitando]);
+    // `ordenarPelaEspera` ENTRA NAS DEPENDÊNCIAS, e `temEspera` cru NÃO —
+    // ver o comentário na declaração dele. Na primeira abertura de quem tem a
+    // fila de espera escolhida ele é `false` (a coluna ainda é desconhecida) e
+    // a lista vem na ordem de sempre; quando a resposta chega ele vira `true`,
+    // esta função é outra e o efeito recarrega. Uma ida a mais, só para quem
+    // escolheu essa ordem, e só uma vez por sessão — que é o que o comentário
+    // anterior PROMETIA e o código não cumpria.
+  }, [ordem, ordenarPelaEspera, carregarAtendimentos, carregarUltimasMidias, carregarDigitando]);
 
   useEffect(() => { carregarConversas(advogadoId); }, [advogadoId, carregarConversas]);
 
@@ -9394,7 +9508,7 @@ export default function Painel({ sessao }) {
             significa; quem precisa da forma longa está lá dentro.
             Curta nos DOIS layouts de propósito: duas palavras para o
             mesmo estado é a tela ensinando dois nomes para uma coisa. */}
-        {ordem === "antigas" ? "Antigas" : "Recentes"}
+        {ordem === "esperando" ? "Esperando" : ordem === "antigas" ? "Antigas" : "Recentes"}
       </button>
       {menuOrdem && (
         <div data-menu-ordem
@@ -9406,7 +9520,21 @@ export default function Painel({ sessao }) {
             ORDEM DA LISTA
           </div>
           {[["recentes", "Mais recentes primeiro", "Quem falou por último aparece no alto. É a ordem de sempre."],
-            ["antigas", "Mais antigas primeiro", "Quem está esperando há mais tempo aparece no alto."]]
+            // A FRASE DESTA MUDOU, e a antiga estava ERRADA.
+            //
+            // Ela dizia "quem está esperando há mais tempo aparece no alto", e
+            // havia um comentário aqui afirmando que as duas coisas eram a
+            // mesma. Não são — foi o que o Rodrigo relatou em 25/09. O cliente
+            // que escreveu em 21/09 e DE NOVO em 24/09 sobe para o 24/09 nesta
+            // ordem, e fica parecendo tão novo quanto quem acabou de chegar.
+            // Esta ordem fala da última mensagem; a de baixo, da espera.
+            ["antigas", "Mais antigas primeiro", "Quem mandou a última mensagem há mais tempo aparece no alto."],
+            // SÓ APARECE COM A COLUNA NO BANCO. Oferecer sem ela seria oferecer
+            // uma ordem que faz a lista de conversas sumir.
+            ...(temEspera === true
+              ? [["esperando", "Esperando há mais tempo",
+                  "Conta desde a primeira mensagem sem resposta. Quem escreveu de novo não volta para o fim da fila."]]
+              : [])]
             .map(([chave, titulo, explica]) => (
             <button key={chave} data-ordem-opcao={chave}
                     onClick={() => { setOrdem(chave); setMenuOrdem(false); }}
@@ -9418,9 +9546,10 @@ export default function Painel({ sessao }) {
                 {titulo}
                 {/* A FRASE EMBAIXO existe porque "mais antigas" é ambíguo
                     para quem lê rápido: antiga é a conversa que começou
-                    faz tempo, ou a que ninguém responde faz tempo? São a
-                    mesma coisa aqui, e dizer qual das duas evita a
-                    pergunta. */}
+                    faz tempo, ou a que ninguém responde faz tempo?
+                    NÃO SÃO A MESMA COISA — este comentário dizia que eram, e
+                    era justamente aí que a lista enganava a equipe. Agora são
+                    duas ordens diferentes, e cada frase diz qual é qual. */}
                 <span style={{ display: "block", fontSize: 11.5, fontWeight: 400,
                                color: C.textSecondary, marginTop: 2, whiteSpace: "normal" }}>
                   {explica}
@@ -10798,6 +10927,7 @@ export default function Painel({ sessao }) {
             const bruto = c.ultima_mensagem || "";
             const previa = midia && (bruto === "[anexo]" || bruto === "")
               ? rotuloMidia(midia.tipo, midia.segundos, !estreito) : bruto;
+            const espera = diasEsperando(c);
             return (
               <div key={c.id} data-conversa-nome={nome} data-conversa-id={c.id} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrirConversa(c); } }} onClick={() => abrirConversa(c)} onMouseEnter={() => setConvHover(c.id)} onMouseLeave={() => setConvHover((h) => (h === c.id ? null : h))} style={{ position: "relative", width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: estreito ? 10 : 12, padding: estreito ? "10px 8px" : "10px 14px", background: c.id === conversaId ? C.listActive : (convHover === c.id ? C.divider : C.panel), borderBottom: `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary }}>
                 <Avatar nome={nome} foto={c.contato?.foto_url} size={48} />
@@ -10862,6 +10992,24 @@ export default function Painel({ sessao }) {
                       {c.nao_lidas > 0 && <span style={{ background: C.unread, color: "#fff", borderRadius: 12, fontSize: 11, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>{c.nao_lidas}</span>}
                     </span>
                   </div>
+                  {/* HÁ QUANTOS DIAS ESTE CLIENTE ESPERA.
+                      SÓ A PARTIR DE UM DIA, e isso é o que separa um sinal de
+                      um enfeite: numa lista de SAC quase toda conversa tem
+                      mensagem de hoje, e "esperando há 0 dias" em todas as
+                      linhas é ruído que se aprende a não ler — aí o "há 5
+                      dias" passa batido junto. Para o que é de hoje, a hora
+                      ali em cima já responde.
+                      DE ÂMBAR PARA VERMELHO aos três dias, que é quando deixa
+                      de ser atraso e vira problema. */}
+                  {espera >= 1 && (
+                    <div data-espera={espera}
+                         title={`Sem resposta desde ${new Date(c.esperando_desde).toLocaleDateString("pt-BR")}`}
+                         style={{ marginTop: 3, fontSize: 11.5, fontWeight: 600,
+                                  color: espera >= 3 ? "#e5573f"
+                                       : (modo === "escuro" ? "#e0a400" : "#8a6d00") }}>
+                      esperando há {espera} {espera === 1 ? "dia" : "dias"}
+                    </div>
+                  )}
                   {/* Por que esta conversa apareceu na busca. Sem isso, um
                       resultado que casou pelo texto de uma mensagem antiga
                       parece ter vindo do nada. */}

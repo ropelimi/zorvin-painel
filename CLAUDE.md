@@ -770,9 +770,11 @@ Ela endereça as linhas de configuração por `data-etiqueta-da-config` e
 `data-rapida-da-config`, e não pelo nome: atrás daquela janela está a lista de
 conversas do escritório, e "Urgente" também é texto de conversa.
 
-**E a cena da marca da conversa usa o botão do CABEÇALHO**, não o ⋮ da lista:
-medido, o clique no ⋮ da lista abre a conversa em vez do menu, e a prova
-mediria outra coisa. O caminho gravado é o mesmo.
+**E a cena da marca da conversa usa o botão do CABEÇALHO**, não o ⋮ da lista.
+~~Medido, o clique no ⋮ da lista abre a conversa em vez do menu.~~ **Isto estava
+errado** — o menu funciona; o que falhava era a minha prova. Ver "Uma correção
+do que ficou escrito errado em 24/09", mais abaixo. O caminho gravado é o
+mesmo, e por isso a cena continua como está.
 
 ### E a frase da falha leva o código junto
 
@@ -898,6 +900,138 @@ cliente (os dois números, cada um com conversa no SAC e no SDC CCR) ficaram
 como estão. Nada foi apagado nem movido.
 
 Prova: `duas-linhas-com-o-mesmo-nome`, 19 conferências, 5 sabotagens e 5 pegas.
+
+## A espera começa na primeira mensagem sem resposta
+
+Pedido do Rodrigo em 25/09: *"as atendentes do SAC me dizem que a organização
+não fica muito clara"*. Elas trabalham de baixo para cima numa lista ordenada
+pela **última mensagem** — e é isso que erra. O exemplo dele, com hoje em 25/09:
+
+| | escreveu em | última mensagem | **esperando desde** |
+|---|---|---|---|
+| Cliente A | 21/09 e 24/09 | 24/09 | **21/09 — 4 dias** |
+| Cliente B | 21/09 | 21/09 | **21/09 — 4 dias** |
+| Cliente C | 24/09 | 24/09 | **24/09 — 1 dia** |
+
+Pela última mensagem, A e C são a mesma coisa. A equipe zera o dia achando que
+atendeu todo mundo, e A continua lá — **parecendo tão novo quanto quem acabou
+de chegar**.
+
+**E "Mais antigas primeiro" não resolvia**, apesar de a própria tela prometer
+que sim: a frase dela dizia *"quem está esperando há mais tempo aparece no
+alto"*, e havia um comentário no código afirmando que as duas coisas eram a
+mesma. **Não são** — é exatamente aí que a lista enganava a equipe. As duas
+frases foram corrigidas nesta rodada.
+
+### `conversas.esperando_desde`, mantida pelo banco
+
+A **primeira** mensagem do cliente depois da nossa última resposta. Escrever de
+novo não reinicia a conta de ninguém. SQL:
+`sql/automaticos/004-a-espera-comeca-na-primeira.sql`, no repo da ponte.
+
+**Dois casos conferidos no código antes de escrever o gatilho:**
+
+- **nota interna não é resposta** — ela mora em `notas`, não em `mensagens`, e
+  o gatilho nunca a vê. O cliente também não;
+- **resposta que falhou não é resposta** — a ponte só grava em `mensagens`
+  depois que o WhatsApp aceita. Bolha vermelha vive em `fila_envio`.
+
+**Gatilho NOVO e separado**, e não uma mexida no que já mantém a prévia e a
+ordem: aquele foi criado à mão no começo do projeto e não está nos arquivos de
+SQL — mexer no que não se tem à mão, para ganhar uma coluna, arriscaria a lista
+inteira. E o corpo dele vive dentro de um `exception when others`, como o do
+script 001: gatilho que estoura derruba o INSERT da mensagem, e **perder a
+mensagem do cliente é o pior desfecho deste sistema**.
+
+**`zorvin_recontar_espera()`** é a conta feita do zero. Enche a coluna agora e
+conserta depois de uma importação de histórico, onde a ordem de chegada das
+mensagens não é a cronológica e o gatilho incremental não tem como acertar.
+
+### No painel
+
+Uma **ordem nova** no menu que já existia, o rótulo **`esperando há N dias`** na
+linha (âmbar, vermelho a partir de três), e nada mais — nenhuma tela nova para
+a equipe aprender, nenhuma pílula a mais numa fita que já está cheia.
+
+**Dias corridos**, decidido pelo Rodrigo: o cliente não sabe se o escritório
+abre no sábado. E **por dia de calendário**, não por 24 horas cheias: quem
+escreveu ontem às 23h espera "1 dia". As duas contas divergem justamente na
+mensagem da noite, que é a que mais aparece de manhã.
+
+**O rótulo só a partir de um dia.** Numa lista de SAC quase toda conversa tem
+mensagem de hoje, e "esperando há 0 dias" em todas as linhas é ruído que se
+aprende a não ler — aí o "há 5 dias" passa batido junto.
+
+**A ordem vai para o BANCO**, e a tela só emenda as duas consultas (as fixadas e
+a página) com o mesmo critério. Ordenar a lista já carregada daria *"quem mais
+espera entre as 200 que vieram"*, e o cliente esquecido — o motivo de tudo isto
+— mora fora das 200.
+
+**`temEspera` tem três estados**, como `temVantoro.js`: `null` esconde, e só
+`true` oferece a ordem. Sem a coluna, a consulta não devolve "sem ordem" —
+devolve **lista de conversas nenhuma**. A resposta sai das linhas que já vieram
+(a lista pede `*`, e o PostgREST escreve a chave mesmo com valor nulo), sem uma
+consulta própria a cada abertura.
+
+### Quatro coisas que só apareceram medindo, e as quatro eram minhas
+
+**A abertura do painel ficou DUAS VEZES mais lenta, para todo mundo.** Pus
+`temEspera` cru nas dependências de `carregarConversas` e escrevi no comentário
+que custaria *"uma ida a mais, só para quem escolheu essa ordem"*. Não era: ele
+sai de `null` para `true`/`false` em **toda** partida, e isso muda a identidade
+da função — então a lista era recarregada **sempre**, inclusive para quem nunca
+vai usar a fila. Medido pela prova `partida`: **11 consultas em duas rodadas e
+1.461 ms** de espera, com a ida mais lenta em 745. Depois do conserto: **6
+consultas, uma rodada, 735 ms**.
+
+O que entra nas dependências é o booleano **`ordenarPelaEspera`**
+(`ordem === "esperando" && temEspera === true`). No caminho comum ele vale
+`false` antes e depois da resposta — nada muda, e não há segunda ida. A regra
+que fica: **o que vai na lista de dependências é a PERGUNTA que a função faz, e
+não o estado de onde ela sai.** Um estado com três valores atravessa dois deles
+em toda abertura; a pergunta feita sobre ele, não.
+
+**A prova não media a ordem do banco.** Ela rodava num telefone pequeno, onde
+tudo cabe na primeira página — e ali a emenda que a tela faz já deixa a lista
+certa. Trocar a ordem do banco pela de sempre **passava**. Hoje há uma cena no
+telefone de 1.200 conversas, com um cliente cuja última mensagem é de 120 dias
+atrás e que espera há 500: ele só chega à tela se quem ordenou foi o banco.
+
+**`nullsFirst: false` é explícito, e o comentário dizia o contrário.** Subindo,
+o Postgres já manda o nulo para o fim sozinho — escrevi que ele os punha na
+frente, e foi a sabotagem que me corrigiu: ela tirava a opção e a prova
+passava, porque não havia o que mudar. Fica escrito porque a regra se lembra
+errado com facilidade (descendo é ao contrário) e porque `true` ali enche a
+primeira página com quem não está esperando nada.
+
+**A bancada monta conversa em nove lugares**, e o painel decide se a coluna
+existe olhando UMA linha — no banco de verdade as linhas são todas iguais,
+então uma basta. Bastava a primeira do telefone não ter a chave para o recurso
+parecer não existir. Hoje há uma passada que normaliza todas; a prova pegou o
+sintoma: o rótulo aparecia nas linhas e a ordem nova não era oferecida, duas
+respostas contrárias sobre a mesma coluna na mesma tela.
+
+### Uma correção do que ficou escrito errado em 24/09
+
+A entrada "E os outros dezoito lugares" dizia: *"medido, o clique no ⋮ da lista
+abre a conversa em vez do menu"*. **Está errado, e a frase foi tirada.** O menu
+funciona. O que havia era um erro na minha prova: `getByRole("button", { name:
+"Opções da conversa" })` casa com **dois** elementos — o ⋮ e a própria linha da
+conversa, que também é um botão e cujo nome acessível engole o texto de tudo o
+que está dentro dela. Medido: 19 botões pelo `aria-label`, **38** pela busca por
+papel. O `.first()` pegava a linha.
+
+**A lição que fica para as próximas provas:** dentro da lista de conversas,
+endereçar por `aria-label` ou por um `data-`, e não por papel mais nome.
+
+**Ainda em aberto, e já decidido com o Rodrigo:** o botão **"Já tratei"**, que
+tira uma conversa da fila sem mandar mensagem, com uma checklist obrigatória do
+que foi tratado (BLINDAGEM, ACORDOS, VENDA LN…) e a lista de assuntos editável
+na tela de administração. Vai numa PR própria. Sem ele, a fila acumula os
+"obrigada!" — conversa que termina em agradecimento não recebe resposta e não
+sai da espera sozinha.
+
+Prova: `a-espera-comeca-na-primeira`, 27 conferências, 6 sabotagens e 6 pegas.
 
 ## Banco de dados (tabelas que o painel lê/escreve)
 

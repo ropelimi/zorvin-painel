@@ -222,9 +222,20 @@ async function abrirAConversaDaNota(page) {
 //  que faz o clique parecer instantâneo —, mas a FRASE é a tela afirmando um
 //  fato do banco, e afirmar antes de saber é o defeito.
 //
-//  A cena usa o botão do cabeçalho (`data-marcar`), e não o menu ⋮ da lista:
-//  medido, o clique no ⋮ da lista abre a conversa em vez do menu, e a prova
-//  mediria outra coisa. O caminho gravado é o mesmo.
+//  A cena usa o botão do cabeçalho (`data-marcar`), e não o menu ⋮ da lista.
+//
+//  O comentário aqui dizia que o ⋮ da lista "abre a conversa em vez do menu".
+//  ESTAVA ERRADO — o menu funciona. O que falhava era a medição: 
+//  `getByRole("button", { name: "Opções da conversa" })` casa com DOIS
+//  elementos, o ⋮ e a própria LINHA da conversa, que também é um botão e cujo
+//  nome acessível engole o texto de tudo o que está dentro dela. Medido: 19
+//  botões pelo `aria-label`, 38 pela busca por papel — e o `.first()` pegava a
+//  linha, que ao ser clicada abre a conversa.
+//
+//  A cena continua no cabeçalho porque o caminho gravado é o mesmo e não há
+//  razão para mexer nela. A lição é outra, e vale para toda prova daqui para a
+//  frente: DENTRO DA LISTA DE CONVERSAS, endereçar por `aria-label` ou por um
+//  `data-`, e nunca por papel mais nome.
 // ==================================================================
 async function cenaMarcaDaConversa(base, recusa) {
   const { ctx, page, estouros } = await abrirPainel({
