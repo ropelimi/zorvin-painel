@@ -328,6 +328,54 @@ de quem está sentado ali, e responde na hora mesmo com o banco fora do ar.
 continuam, e é isso que separa a opção de simplesmente baixar o volume da
 máquina.
 
+### O pato, e a chave da tarja
+
+Dois pedidos do Rodrigo em 25/09: um **som de pato**, e poder **desligar as
+notificações** que aparecem quando chega mensagem.
+
+**O pato obrigou a receita a crescer.** Os quatro sons eram frequências fixas;
+um grasnado é uma **descida** de tom — começa agudo e cai depressa. Tocado como
+os outros sai um bipe grave, que não é um pato. Entraram dois campos
+**opcionais**: `ate` (a descida, por rampa exponencial na frequência) e
+`filtro` (um passa-baixa que tira o áspero da onda dente de serra, que sozinha
+soa mais a campainha quebrada do que a bicho). **Sem eles, os quatro sons de
+sempre saem exatamente como saíam** — e a prova tem uma cena só para isso.
+
+E são **dois** grasnados: "quá-quá" se reconhece, "quá" sozinho não.
+
+Continua valendo o que já estava escrito aqui: **nenhum arquivo**. O pato é
+sintetizado como os outros, e custa zero byte — um MP3 por pessoa a cada
+abertura é a mesma conta que zerou a franquia de banda em 21/08.
+
+**A chave da tarja NÃO é o "Sem som", e não podia ser.** "Sem som" tira o
+barulho e deixa a notificação; a chave tira a notificação e deixa o barulho.
+São duas incomodações diferentes — quem trabalha de fone quer o contrário de
+quem senta numa sala silenciosa —, e uma opção só obrigaria a desligar as duas
+para se livrar de uma. **O selo verde de não lidas continua nos dois casos:**
+desligar o aviso é escolher não ser interrompido, não escolher não ser avisado.
+
+**O padrão é LIGADO**, e a leitura é `!== "nao"`: armazenamento vazio (primeira
+abertura, janela anônima, cache limpo) é "ninguém escolheu ainda", e isso
+avisa. Tratar a ausência como desligado calaria justamente quem nunca pediu
+para ser calado.
+
+**A chave é perguntada dentro de `notificarDesktop`**, e não em quem chama: é a
+única porta por onde a tarja sai, e num lugar só ela não é esquecida no dia em
+que aparecer um segundo motivo para notificar. Ela lê o **armazenamento**, e
+não um estado do React — a função vive fora do componente, e vale também para
+uma segunda aba do Zorvin aberta na mesma máquina.
+
+**A chave de liga/desliga virou `Chave.jsx`.** Ela morava dentro de
+`Departamentos.jsx`; copiá-la para a tela de Avisos seria plantar a próxima
+divergência, pela mesma razão que tirou `numeros.js` de dentro do painel.
+
+Prova: `o-pato-e-a-chave-do-aviso`, 28 conferências, 6 sabotagens e 6 pegas.
+Ela **espiona o feitio do som**, e não só "tocou": contar osciladores diria que
+houve som, e um bipe também é som — o que separa o pato é a onda, a descida e o
+filtro, então é isso que fica registrado. E o vigia `provas-que-reprovam` pegou
+uma conferência minha que usava `.every` sem conferir o tamanho: numa lista
+vazia ela diria "não houve filtro" num cenário em que não houve nada.
+
 ### A etiqueta da notificação
 
 Era `tag: "zorvin"` para tudo: cada aviso **substituía** o anterior, então dois

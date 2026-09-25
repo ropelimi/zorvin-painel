@@ -62,6 +62,24 @@ export const SONS = [
     notas: [{ hz: 587, em: 0, dura: 0.55, volume: 0.07, forma: "sine" }],
   },
   {
+    // O PATO — pedido do Rodrigo em 25/09.
+    //
+    // ELE NÃO É UMA NOTA PARADA, e é por isso que o formato da receita cresceu.
+    // Um grasnado é uma DESCIDA de tom: começa agudo e cai depressa. Tocado
+    // como as outras quatro — uma frequência fixa —, sai um bipe grave e não um
+    // pato. O `ate` é essa descida, e o `filtro` tira o áspero da onda dente de
+    // serra, que sozinha soa mais a campainha quebrada do que a bicho.
+    //
+    // E SÃO DOIS, porque "quá-quá" se reconhece e um "quá" sozinho, não.
+    id: "pato",
+    nome: "Pato",
+    descricao: "Dois grasnados curtos",
+    notas: [
+      { hz: 560, ate: 250, em: 0, dura: 0.16, volume: 0.13, forma: "sawtooth", filtro: 1600 },
+      { hz: 500, ate: 200, em: 0.22, dura: 0.20, volume: 0.12, forma: "sawtooth", filtro: 1400 },
+    ],
+  },
+  {
     // SEM SOM CONTINUA AVISANDO. Quem escolhe isto não está desistindo do
     // aviso — está tirando o barulho. A notificação da área de trabalho e o
     // selo de não lidas continuam valendo, e é o que separa esta opção de
@@ -91,6 +109,46 @@ export function guardarSom(id) {
   try { localStorage.setItem(CHAVE, id); } catch (_) { /* ver acima */ }
 }
 
+// ============================================================
+//  A TARJA DO SISTEMA TEM CHAVE PRÓPRIA
+//
+//  Pedido do Rodrigo em 25/09: poder desligar as notificações que aparecem
+//  quando chega mensagem.
+//
+//  ELA NÃO É O "SEM SOM", E NÃO PODIA SER. "Sem som" tira o barulho e deixa a
+//  tarja; esta tira a tarja e deixa o barulho. São duas incomodações
+//  diferentes, e quem trabalha de fone quer justamente o contrário de quem
+//  senta numa sala silenciosa. Uma opção só obrigaria a desligar as duas para
+//  se livrar de uma.
+//
+//  O SELO VERDE DE NÃO LIDAS CONTINUA nos dois casos — ele não faz barulho
+//  nem cobre a tela, e é o que garante que nada se perca de vez. Desligar o
+//  aviso é escolher não ser interrompido, e não escolher não ser avisado.
+//
+//  O PADRÃO É LIGADO. Quem nunca abriu esta tela continua sendo avisado como
+//  sempre foi; desligar é uma escolha, e não o estado em que o programa chega.
+//
+//  Por navegador, como o som: é preferência de quem está sentado ali, responde
+//  na hora, e não depende de o banco estar de pé.
+// ============================================================
+const CHAVE_TARJA = "zorvin_aviso_na_tela";
+
+export function avisoNaTelaLigado() {
+  try {
+    // SÓ O "nao" ESCRITO DESLIGA. Armazenamento vazio — primeira abertura,
+    // janela anônima, cache limpo — é "ninguém escolheu ainda", e isso é
+    // LIGADO. Tratar a ausência como desligado calaria o aviso de quem nunca
+    // pediu para calá-lo, que é o contrário do que esta chave existe para dar.
+    return localStorage.getItem(CHAVE_TARJA) !== "nao";
+  } catch (_) {
+    return true;
+  }
+}
+
+export function guardarAvisoNaTela(ligado) {
+  try { localStorage.setItem(CHAVE_TARJA, ligado ? "sim" : "nao"); } catch (_) { /* ver acima */ }
+}
+
 // UM CONTEXTO DE ÁUDIO SÓ, para a vida inteira da página. Criar um por toque
 // esgota o limite do navegador depois de algumas dezenas de mensagens — e aí o
 // aviso para de tocar sem nada dizer.
@@ -111,10 +169,26 @@ export function tocarAviso(qual) {
     for (const n of som.notas) {
       const o = ctx.createOscillator();
       const g = ctx.createGain();
-      o.connect(g); g.connect(ctx.destination);
+      // O FILTRO TAMBÉM SÓ EXISTE PARA QUEM PEDE, e pela mesma razão: sem
+      // `filtro`, a ligação é a de sempre — oscilador direto no volume.
+      if (n.filtro) {
+        const f = ctx.createBiquadFilter();
+        f.type = "lowpass";
+        f.frequency.value = n.filtro;
+        o.connect(f); f.connect(g);
+      } else {
+        o.connect(g);
+      }
+      g.connect(ctx.destination);
       o.type = n.forma || "sine";
       o.frequency.value = n.hz;
       const comeca = ctx.currentTime + n.em;
+      // A DESCIDA DE TOM, quando a receita pede. Sem `ate` nada disto roda, e
+      // os quatro sons de sempre saem byte por byte como saíam.
+      if (n.ate) {
+        o.frequency.setValueAtTime(n.hz, comeca);
+        o.frequency.exponentialRampToValueAtTime(n.ate, comeca + n.dura);
+      }
       // A RAMPA EXPONENCIAL não aceita zero, e é por isso que o mínimo é
       // 0.0001: com zero, o navegador ignora a rampa e o som vira um estalo.
       g.gain.setValueAtTime(0.0001, comeca);
