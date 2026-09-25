@@ -774,6 +774,76 @@ A bancada ganhou `__ERRO_NA_GRAVACAO` — ela só sabia recusar em silêncio
 (`__ESCRITA_SEM_EFEITO`), e uma prova com só essa metade aprovaria a tela que
 não diz código nenhum.
 
+## Duas linhas com o mesmo nome — qual delas é qual?
+
+Relato do escritório em 25/09, com foto: duas conversas idênticas na lista —
+mesmo nome, mesma foto — e o pedido de *"juntar, porque é a mesma conversa"*.
+
+**Medido no banco, e não eram duplicadas.** Eram **dois telefones da mesma
+pessoa**:
+
+| | uma | a outra |
+|---|---|---|
+| número | **(19) 98209-4819** | **(71) 8425-3304** |
+| conta do WhatsApp (`@lid`) | `2735639489…` | `4011090094…` |
+| mensagens | 19, desde 24/09 | 90, desde 18/08 |
+| ficha no Vantoro | cliente **1233** | cliente **1233** |
+
+DDD diferente, conta diferente, as duas ativas no mesmo dia. **No WhatsApp Web
+do escritório elas também são duas conversas** — e é por isso que juntar seria
+errado: a resposta sai por UM número, e metade do histórico passaria a viver
+sob um telefone que não é o dele. Se o cliente escrevesse de novo pelo outro,
+nasceria uma terceira. Juntar não resolveria nem este caso nem os próximos.
+
+**O que estava errado era a tela.** `nomeDoContato` mostra o nome da FICHA
+quando ela existe, e os dois contatos apontam para o mesmo cliente do Vantoro.
+Os nomes do WhatsApp eram diferentes — "Cristiano" e "CristanoCristiano
+Ribeiro" — e a ficha cobriu os dois. Restaram duas linhas com o texto idêntico
+e nada dizendo por qual número cada uma fala, num sistema onde **responder pelo
+número errado não tem desfazer**.
+
+**A régua é o que se VÊ.** Não "o mesmo cadastro", nem "o mesmo nome no banco":
+é o texto que está na linha, porque é dele que vem a confusão. Duas linhas que
+escrevem a mesma coisa passam a escrever mais — o telefone, ao lado do nome.
+
+**E só elas.** Com o número em toda linha, o sinal vira ruído e deixa de ser
+lido justamente no dia em que importa. A prova tem uma conferência só para
+isso, e a sabotagem que mostra sempre é pega por ela.
+
+**A comparação ignora caixa e espaço de sobra.** "Maria Silva" e "MARIA SILVA"
+o olho separa; quem lê correndo, não. Mostrar o número a mais custa onze
+caracteres; escondê-lo quando fazia falta custa uma resposta no número errado.
+
+**Quem é cortado é o NOME, não o número** (`flexShrink: 0`). O nome está
+repetido nas duas linhas e por isso não informa nada ali; o número é a única
+coisa que as separa. Deixar o navegador escolher daria "CRISTIANO RIBEIRO DE
+JESU… (19) 9820…" — o mesmo defeito do "Ropelimi Zo", com outra roupa. O nome
+inteiro continua no `title`.
+
+**Grupo fica de fora:** o "número" dele é `grupo:<identificador>`, que não é
+telefone de ninguém — escrevê-lo trocaria um nome repetido por um código que
+não quer dizer nada. A sabotagem que tira esse corte pinta `grupo:aaa111` na
+linha, e a prova a pega.
+
+**NÃO se confere se os números são diferentes, e é decisão.** Seria a pergunta
+mais exata, e é código morto: `contatos.numero` é único e a lista é de **um**
+telefone do escritório por vez, então duas linhas são dois contatos, e dois
+contatos são dois números. A conferência daria um caminho que nenhuma prova
+consegue exercitar.
+
+**O cabeçalho da conversa já dizia o número** — foi consertado numa rodada
+anterior, e por isso esta mudança é só na lista. **Um limite conhecido, deixado
+de propósito:** naquele cabeçalho o número divide a linha com "digitando…" e
+com "Fulana também está nesta conversa", e some enquanto uma delas aparece.
+Mostrar os dois juntos é uma mudança de leiaute com medição própria, e não
+entrou aqui.
+
+**O que NÃO foi feito, por decisão do Rodrigo:** as quatro conversas deste
+cliente (os dois números, cada um com conversa no SAC e no SDC CCR) ficaram
+como estão. Nada foi apagado nem movido.
+
+Prova: `duas-linhas-com-o-mesmo-nome`, 19 conferências, 5 sabotagens e 5 pegas.
+
 ## Banco de dados (tabelas que o painel lê/escreve)
 
 - `advogados` — lê (id, nome, numero, foto_url) onde `ativo = true`

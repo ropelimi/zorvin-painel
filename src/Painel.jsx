@@ -9064,6 +9064,65 @@ export default function Painel({ sessao }) {
       || String(b.ultima_atividade || "").localeCompare(String(a.ultima_atividade || "")));
   })();
 
+  // ============================================================
+  //  DUAS LINHAS COM O MESMO NOME — qual delas é qual?
+  //
+  //  RELATO DE 25/09, com foto: duas conversas idênticas na lista, mesmo nome
+  //  e mesma foto, e o pedido de "juntar, porque é a mesma conversa".
+  //
+  //  MEDIDO NO BANCO, e não eram duplicadas: eram DOIS TELEFONES da mesma
+  //  pessoa — (19) 98209-4819 e (71) 8425-3304, contas diferentes do WhatsApp
+  //  (`@lid` diferente), as duas ativas no mesmo dia. No WhatsApp Web do
+  //  escritório elas também são duas conversas. O Zorvin não duplicou nada; o
+  //  que ele fazia de errado era ESCONDER que são dois números.
+  //
+  //  POR QUE FICARAM IGUAIS NA TELA: `nomeDoContato` mostra o nome da FICHA
+  //  quando ela existe, e os dois contatos apontam para o mesmo cliente do
+  //  Vantoro (o 1233). Os nomes do WhatsApp eram diferentes — "Cristiano" e
+  //  "CristanoCristiano Ribeiro" —, e a ficha cobriu os dois.
+  //
+  //  ------------------------------------------------------------
+  //  A RÉGUA É O QUE SE VÊ
+  //
+  //  Não é "o mesmo cadastro", nem "o mesmo nome no banco": é o TEXTO QUE ESTÁ
+  //  NA LINHA, porque é dele que vem a confusão. Duas linhas que escrevem a
+  //  mesma coisa têm de escrever mais.
+  //
+  //  E a comparação ignora caixa e espaço de sobra: "Maria Silva" e "MARIA
+  //  SILVA" o olho separa, quem lê correndo não. Mostrar o número a mais custa
+  //  onze caracteres numa linha; escondê-lo quando fazia falta é responder
+  //  pelo número errado, que não tem desfazer.
+  //
+  //  ------------------------------------------------------------
+  //  NÃO SE CONFERE SE OS NÚMEROS SÃO DIFERENTES, e isso é decisão
+  //
+  //  Seria a pergunta mais exata — "mesmo nome E números diferentes" —, e é
+  //  código morto: `contatos.numero` é único no banco e a lista é de UM
+  //  telefone do escritório de cada vez, então duas linhas são dois contatos,
+  //  e dois contatos são dois números. Escrever a conferência daria uma
+  //  ramificação que nenhuma prova consegue exercitar.
+  //
+  //  GRUPO FICA DE FORA: o "número" dele é `grupo:<identificador>`, que não é
+  //  telefone de ninguém — escrevê-lo na linha seria trocar um nome repetido
+  //  por um código que não quer dizer nada.
+  // ============================================================
+  const nomesRepetidosNaLista = (() => {
+    const quantos = new Map();
+    for (const c of conversasFiltradas) {
+      if (ehGrupo(c)) continue;
+      const chave = nomeDoContato(c.contato).trim().toLocaleLowerCase("pt-BR");
+      if (!chave) continue;
+      quantos.set(chave, (quantos.get(chave) || 0) + 1);
+    }
+    const repetidos = new Set();
+    for (const [chave, n] of quantos) if (n > 1) repetidos.add(chave);
+    return repetidos;
+  })();
+
+  /** Esta linha precisa dizer por qual telefone ela fala? */
+  const precisaMostrarONumero = (c) => !ehGrupo(c)
+    && nomesRepetidosNaLista.has(nomeDoContato(c.contato).trim().toLocaleLowerCase("pt-BR"));
+
   // ------------------------------------------------------------------
   //  O QUE A LISTA VAZIA DIZ — a marca e a frase, de uma escolha só
   //
@@ -10739,6 +10798,24 @@ export default function Painel({ sessao }) {
                           inteiro; aqui também. É de graça: o próprio navegador
                           desenha, e não custa render nenhum. */}
                       <span title={nome} style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nome}</span>
+                      {/* O NÚMERO, QUANDO O NOME SOZINHO NÃO BASTA.
+                          `flexShrink: 0` NÃO é enfeite: quem tem de ser cortado
+                          é o NOME, que está repetido nas duas linhas e por isso
+                          não informa nada — o número é a única coisa ali que
+                          separa uma da outra. Deixar o navegador escolher daria
+                          "CRISTIANO RIBEIRO DE JESU… (19) 9820…", que é o
+                          mesmo defeito do "Ropelimi Zo" com outra roupa: o
+                          pedaço que importa cortado ao meio.
+                          O nome inteiro continua a um passar de mouse, no
+                          `title` da linha acima. */}
+                      {precisaMostrarONumero(c) && (
+                        <span data-numero-que-separa={c.contato?.numero || ""}
+                              title={`Esta conversa é pelo ${numeroBonito(c.contato?.numero)}`}
+                              style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 600,
+                                       color: C.verdeTexto, whiteSpace: "nowrap" }}>
+                          {numeroBonito(c.contato?.numero)}
+                        </span>
+                      )}
                       {/* ESTÁ ARQUIVADA, E A LINHA DIZ.
                           Só durante a busca, e só fora da pasta: lá dentro
                           todas são, e repetir o selo em cada linha não informa
