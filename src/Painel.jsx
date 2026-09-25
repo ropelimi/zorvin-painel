@@ -2434,6 +2434,24 @@ export default function Painel({ sessao }) {
   //  mais quente desta tela.
   // ============================================================
   const [temEspera, setTemEspera] = useState(null);
+  // ============================================================
+  //  A PERGUNTA QUE A CONSULTA FAZ — UM BOOLEANO, E NÃO OS DOIS ESTADOS
+  //
+  //  MEDIDO em 25/09, e foi a prova `partida` que pegou: com `temEspera` cru
+  //  nas dependências de `carregarConversas`, TODA abertura recarregava a
+  //  lista — porque `temEspera` sai de `null` para `true`/`false` em toda
+  //  partida, e isso muda a identidade da função. A tela media 11 consultas
+  //  em duas rodadas e 1.461 ms de espera, com a ida mais lenta em 745.
+  //
+  //  O comentário que eu tinha escrito dizia "uma ida a mais, só para quem
+  //  escolheu essa ordem". Não era: era para todo mundo, sempre.
+  //
+  //  Reduzido a este booleano, o caminho comum (`ordem` diferente de
+  //  "esperando") vale `false` antes e depois da resposta — nada muda, e não
+  //  há segunda ida. Quem escolheu a fila de espera vê `false` virar `true`
+  //  uma vez, e é aí que a lista precisa mesmo ser refeita.
+  // ============================================================
+  const ordenarPelaEspera = ordem === "esperando" && temEspera === true;
   const ordemRef = useRef(ordem);
   useEffect(() => {
     ordemRef.current = ordem;
@@ -3265,7 +3283,7 @@ export default function Painel({ sessao }) {
      *  `temEspera === true` é exigido mesmo com `ordem === "esperando"`: a
      *  escolha fica guardada no navegador, e num banco onde o SQL foi desfeito
      *  ela pediria uma coluna que não existe — e a consulta inteira falharia. */
-    const porOrdem = (q) => (ordem === "esperando" && temEspera === true
+    const porOrdem = (q) => (ordenarPelaEspera
       // QUEM NÃO ESPERA VAI PARA O FIM.
       //
       // `nullsFirst: false` é EXPLÍCITO de propósito, e não por engano: subindo,
@@ -3356,7 +3374,7 @@ export default function Painel({ sessao }) {
           // coluna do cadastro. Deixá-la com a ordem de sempre faria a fila de
           // espera virar do avesso só nas bases antigas — e sem nada na tela
           // dizendo por quê.
-          .order(...( ordem === "esperando" && temEspera === true
+          .order(...( ordenarPelaEspera
             ? ["esperando_desde", { ascending: true, nullsFirst: false }]
             : ["ultima_atividade", { ascending: ordem === "antigas" }] ))
           .range(de, de + PAGINA_BANCO - 1)
@@ -3392,7 +3410,7 @@ export default function Painel({ sessao }) {
       || (esperaEm(a) - esperaEm(b));
     const porRecencia = (a, b) => (b.fixada ? 1 : 0) - (a.fixada ? 1 : 0)
       || sinal * (new Date(b.ultima_atividade) - new Date(a.ultima_atividade));
-    const porFixada = (ordem === "esperando" && temEspera === true) ? porEspera : porRecencia;
+    const porFixada = ordenarPelaEspera ? porEspera : porRecencia;
     const bruto = data || [];
     // A COLUNA EXISTE? PERGUNTA-SE ÀS LINHAS QUE JÁ VIERAM — ver o comentário
     // em `temEspera`. O PostgREST escreve a chave mesmo quando o valor é nulo,
@@ -3515,12 +3533,14 @@ export default function Painel({ sessao }) {
     // As três que ficavam aqui saíram na frente, lá em cima: elas precisam só
     // do `advId`, e esperar a lista para pedi-las era o que fazia a terceira
     // rodada de rede.
-    // `temEspera` ENTRA NAS DEPENDÊNCIAS de propósito: na primeira abertura
-    // ele ainda é `null`, e quem tinha a fila de espera escolhida receberia a
-    // lista na ordem de sempre. Quando a resposta chega, esta função é outra e
-    // o efeito recarrega — uma ida a mais, só para quem escolheu essa ordem, e
-    // só uma vez por sessão.
-  }, [ordem, temEspera, carregarAtendimentos, carregarUltimasMidias, carregarDigitando]);
+    // `ordenarPelaEspera` ENTRA NAS DEPENDÊNCIAS, e `temEspera` cru NÃO —
+    // ver o comentário na declaração dele. Na primeira abertura de quem tem a
+    // fila de espera escolhida ele é `false` (a coluna ainda é desconhecida) e
+    // a lista vem na ordem de sempre; quando a resposta chega ele vira `true`,
+    // esta função é outra e o efeito recarrega. Uma ida a mais, só para quem
+    // escolheu essa ordem, e só uma vez por sessão — que é o que o comentário
+    // anterior PROMETIA e o código não cumpria.
+  }, [ordem, ordenarPelaEspera, carregarAtendimentos, carregarUltimasMidias, carregarDigitando]);
 
   useEffect(() => { carregarConversas(advogadoId); }, [advogadoId, carregarConversas]);
 

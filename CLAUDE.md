@@ -925,7 +925,23 @@ devolve **lista de conversas nenhuma**. A resposta sai das linhas que já vieram
 (a lista pede `*`, e o PostgREST escreve a chave mesmo com valor nulo), sem uma
 consulta própria a cada abertura.
 
-### Três coisas que só apareceram medindo, e as três eram minhas
+### Quatro coisas que só apareceram medindo, e as quatro eram minhas
+
+**A abertura do painel ficou DUAS VEZES mais lenta, para todo mundo.** Pus
+`temEspera` cru nas dependências de `carregarConversas` e escrevi no comentário
+que custaria *"uma ida a mais, só para quem escolheu essa ordem"*. Não era: ele
+sai de `null` para `true`/`false` em **toda** partida, e isso muda a identidade
+da função — então a lista era recarregada **sempre**, inclusive para quem nunca
+vai usar a fila. Medido pela prova `partida`: **11 consultas em duas rodadas e
+1.461 ms** de espera, com a ida mais lenta em 745. Depois do conserto: **6
+consultas, uma rodada, 735 ms**.
+
+O que entra nas dependências é o booleano **`ordenarPelaEspera`**
+(`ordem === "esperando" && temEspera === true`). No caminho comum ele vale
+`false` antes e depois da resposta — nada muda, e não há segunda ida. A regra
+que fica: **o que vai na lista de dependências é a PERGUNTA que a função faz, e
+não o estado de onde ela sai.** Um estado com três valores atravessa dois deles
+em toda abertura; a pergunta feita sobre ele, não.
 
 **A prova não media a ordem do banco.** Ela rodava num telefone pequeno, onde
 tudo cabe na primeira página — e ali a emenda que a tela faz já deixa a lista
