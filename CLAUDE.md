@@ -45,6 +45,13 @@ Variáveis de ambiente (Render → Static Site):
 
 Build: `npm install && npm run build` · Publish directory: `dist`
 
+**A PUBLICAÇÃO É AUTOMÁTICA.** A Render republica o site sozinha quando a
+`main` recebe o merge — não há passo manual, e dizer ao Rodrigo para ir em
+"Manual Deploy → Deploy latest commit" é mandá-lo fazer o que já foi feito.
+Dito por ele em 25/09, depois de quatro entregas seguidas terminarem com esse
+recado. Mesclou, está no ar; o que resta a pedir, quando faz diferença, é o
+**Ctrl+Shift+R** — o navegador pode estar com a versão velha em cache.
+
 ## Como o painel funciona
 
 - **Autenticação**: Supabase Auth (e-mail/senha). Usuários criados manualmente em Authentication → Users. "Confirm email" está desligado.
