@@ -11,7 +11,7 @@
 //  um atendimento ninguém tem tempo de procurar. Só a primeira seção começa
 //  aberta — é a que responde "com quem estou falando".
 // ============================================================
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { X, Save, UserPlus, RefreshCw, ExternalLink, ChevronDown, ChevronRight,
          MessageSquare } from "lucide-react";
 import { supabase } from "./supabase";
@@ -22,7 +22,7 @@ import { chaveDoNumero, outrosNumeros, telefoneLegivel } from "./numeros.js";
 // A chamada à ponte mora em `ponte.js`: duas telas precisam dela (esta e a de
 // atendentes), e duas cópias divergiriam na primeira mudança.
 import { chamarPonte, BRIDGE_URL, FALTA_PONTE } from "./ponte.js";
-import { naoGravouNada } from "./gravar.js";
+import { naoGravouNada, comOCodigo } from "./gravar.js";
 
 // Este erro é de configuração da ponte, ou é outra coisa?
 //
@@ -158,6 +158,13 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   const [candidatos, setCandidatos] = useState([]);
   const [edicao, setEdicao] = useState({});
   const [salvando, setSalvando] = useState(false);
+  // O ERRO DA ÚLTIMA TENTATIVA DE LIGAR O CADASTRO AO CONTATO.
+  //
+  // Num espelho, e não em estado: ele é lido no mesmo passo em que é escrito
+  // (quem chamou compõe a frase logo depois), e estado só chega no desenho
+  // seguinte — a frase sairia sem o código na primeira vez e com o código
+  // antigo na segunda, que é pior do que não ter.
+  const erroDoVinculo = useRef(null);
   // A LISTA DE TELEFONES DO CADASTRO.
   //
   // Vem da ficha (`cliente.telefones`) e é trocada inteira a cada gesto: as
@@ -239,7 +246,14 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     const r = await supabase.from("contatos")
       .update(campos).eq("numero", numero).select("id");
     if (r.error && /vantoro_/i.test(r.error.message || "")) return false;
-    if (r.error) return false;
+    // O ERRO FICA GUARDADO PARA QUEM CHAMOU.
+    //
+    // A função devolve só um sim/não de propósito (ver logo abaixo: avisar por
+    // conta própria fazia a frase ser apagada pela de quem chamou). Mas o
+    // `error` é a única pista de POR QUE não ligou, e jogá-lo fora é o defeito
+    // que custou uma rodada de scripts em 24/09. Ele fica aqui, e quem compõe
+    // a frase final o põe nela.
+    if (r.error) { erroDoVinculo.current = r.error; return false; }
     // E SE O BANCO NÃO MEXEU EM NENHUMA LINHA, o vínculo NÃO existe.
     //
     // Sem esta pergunta a ficha seguia como se tivesse ligado o cadastro ao
@@ -259,7 +273,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     // sucesso e ia embora — que é exatamente o defeito, com um passo a mais.
     //
     // Quem sabe qual é a frase final da ação é quem começou a ação.
-    if (naoGravouNada(r)) return false;
+    if (naoGravouNada(r)) { erroDoVinculo.current = null; return false; }
     aoLigarCadastro && aoLigarCadastro({ numero, nome, clienteId: dadosCliente.id || null });
 
     // O CONTATO ACABOU DE GANHAR FICHA: o que ele já tinha anotado sobe.
@@ -277,6 +291,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     }
     // LIGOU. Sem este `return`, a função devolveria `undefined` — falso — e o
     // caminho de sucesso passaria a mostrar a frase da falha. A prova pegou.
+    erroDoVinculo.current = null;
     return true;
   }
 
@@ -476,8 +491,12 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       // O CADASTRO NASCEU LÁ; O VÍNCULO É DAQUI. Dizer só "criado" quando o
       // segundo não gravou é o relato de 24/09: o pré-cadastro existe no
       // Vantoro, e na abertura seguinte o contato não tem ficha nenhuma.
+      const naoLigou = "Criei no Vantoro, mas não consegui ligá-lo a este contato aqui — "
+                     + "a ficha não vai aparecer sozinha.";
       onAviso && onAviso(
-        !ligou ? "Criei no Vantoro, mas não consegui ligá-lo a este contato aqui — a ficha não vai aparecer sozinha."
+        !ligou ? (erroDoVinculo.current
+                   ? comOCodigo(naoLigou, erroDoVinculo.current, "ligar o pré-cadastro ao contato")
+                   : naoLigou)
         : r.criado ? "Pré-cadastro criado no Vantoro." : "Já existia no Vantoro.");
     } catch (e) {
       onAviso && onAviso(e.message);
@@ -502,9 +521,11 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       setCliente(r.cliente);
       setEdicao({ ...r.cliente });
       const ligou = await ligarContatoAoCadastro(r.cliente);
-      onAviso && onAviso(ligou
-        ? "Cadastro atualizado no Vantoro."
-        : "Atualizei no Vantoro, mas não consegui ligá-lo a este contato aqui.");
+      const naoLigou = "Atualizei no Vantoro, mas não consegui ligá-lo a este contato aqui.";
+      onAviso && onAviso(ligou ? "Cadastro atualizado no Vantoro."
+        : erroDoVinculo.current
+            ? comOCodigo(naoLigou, erroDoVinculo.current, "ligar o cadastro ao contato")
+            : naoLigou);
     } catch (e) {
       onAviso && onAviso(e.message);
     } finally {
