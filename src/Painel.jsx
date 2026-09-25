@@ -20,7 +20,9 @@ import { numeroCanonico, chaveDoNumero, porQueNaoRecebeWhatsApp, daParaChamar,
 import { chamarPonte, ESPERA_PADRAO } from "./ponte.js";
 import { useTemVantoro } from "./temVantoro.js";
 import { useVocabulario } from "./vocabulario.js";
-import { SONS, tocarAviso, somEscolhido, guardarSom } from "./avisos.js";
+import { SONS, tocarAviso, somEscolhido, guardarSom,
+         avisoNaTelaLigado, guardarAvisoNaTela } from "./avisos.js";
+import { Chave } from "./Chave.jsx";
 import { PRAZO_DA_BUSCA, foiAbortada, funcaoNaoExiste,
          condicoesDeNome, recadoDaBusca } from "./busca.js";
 import { comoPrever, nomeDoTipo, tamanhoLegivel } from "./arquivos.js";
@@ -1061,6 +1063,16 @@ function formatarTexto(texto, corLink = "#53bdeb") {
 // atualiza aquele aviso em vez de empilhar cinco.
 function notificarDesktop(titulo, corpo, conversaId) {
   try {
+    // A CHAVE É PERGUNTADA AQUI DENTRO, e não em quem chama.
+    //
+    // É a única porta por onde a tarja sai, e num lugar só ela não tem como
+    // ser esquecida no dia em que aparecer um segundo motivo para notificar.
+    //
+    // E LÊ O ARMAZENAMENTO, e não um estado do React: esta função vive fora do
+    // componente, e o que vale é o que a pessoa escolheu — inclusive numa
+    // OUTRA aba do Zorvin aberta na mesma máquina, que não compartilha estado
+    // nenhum com esta.
+    if (!avisoNaTelaLigado()) return;
     if ("Notification" in window && Notification.permission === "granted") {
       new Notification(titulo, {
         body: corpo,
@@ -2758,6 +2770,9 @@ export default function Painel({ sessao }) {
   // dada em outro dia, noutra aba: a tela tem de abrir dizendo a verdade de
   // agora, e não "ainda não autorizado" para quem já autorizou meses atrás.
   const [somDoAviso, setSomDoAviso] = useState(somEscolhido);
+  // A chave da tarja. O estado é só para a tela desenhar a chave no lugar
+  // certo; quem manda é o armazenamento, lido por `notificarDesktop`.
+  const [avisoNaTela, setAvisoNaTela] = useState(avisoNaTelaLigado);
   const [permissaoDeAviso, setPermissaoDeAviso] = useState(
     () => (typeof Notification !== "undefined" ? Notification.permission : "unsupported"));
 
@@ -12130,21 +12145,52 @@ export default function Painel({ sessao }) {
                   <div style={{ marginTop: 22, padding: "13px 15px", borderRadius: 10,
                                 background: C.searchBg, fontSize: 13, lineHeight: 1.5 }}
                        data-permissao-aviso>
-                    <div style={{ fontWeight: 600, marginBottom: 4 }}>Aviso na área de trabalho</div>
-                    {permissaoDeAviso === "granted" && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                      <div style={{ fontWeight: 600, flex: 1, minWidth: 0 }}>Aviso na área de trabalho</div>
+                      {/* A CHAVE FICA AQUI, e não junto dos sons.
+                          São duas incomodações diferentes: "Sem som" tira o
+                          barulho e deixa a tarja; esta tira a tarja e deixa o
+                          barulho. Quem trabalha de fone quer o contrário de
+                          quem senta numa sala silenciosa, e uma opção só
+                          obrigaria a desligar as duas para se livrar de uma.
+                          E fica no MESMO quadro da permissão do navegador
+                          porque as duas falam da mesma coisa — dois quadros
+                          intitulados "Aviso na área de trabalho" fariam a
+                          pessoa procurar a diferença entre eles. */}
+                      <span data-chave-aviso-na-tela>
+                        <Chave ligada={avisoNaTela} rotulo="Aviso na área de trabalho"
+                               aoTrocar={() => {
+                                 const novo = !avisoNaTela;
+                                 setAvisoNaTela(novo);
+                                 guardarAvisoNaTela(novo);
+                               }} />
+                      </span>
+                    </div>
+                    {/* DESLIGADO, O QUE SOBRA PRECISA SER DITO. Sem esta frase,
+                        quem desliga fica sem saber se acabou de se calar por
+                        inteiro — e é justamente por essa dúvida que alguém
+                        religa e volta a ser interrompido. */}
+                    {!avisoNaTela && (
+                      <span data-tarja-desligada style={{ color: C.textSecondary }}>
+                        Desligado. O som continua tocando e o selo verde continua
+                        contando as não lidas — o que não aparece mais é a tarja do
+                        sistema por cima das outras janelas.
+                      </span>
+                    )}
+                    {avisoNaTela && permissaoDeAviso === "granted" && (
                       <span style={{ color: C.textSecondary }}>
                         Autorizado. As mensagens novas aparecem numa tarja do sistema,
                         mesmo com o Zorvin atrás de outra janela.
                       </span>
                     )}
-                    {permissaoDeAviso === "denied" && (
+                    {avisoNaTela && permissaoDeAviso === "denied" && (
                       <span style={{ color: C.textSecondary }}>
                         O navegador está bloqueando. Só dá para liberar por ele:
                         clique no cadeado ao lado do endereço e autorize as
                         notificações deste site. Daqui não há como pedir de novo.
                       </span>
                     )}
-                    {permissaoDeAviso !== "granted" && permissaoDeAviso !== "denied" && (
+                    {avisoNaTela && permissaoDeAviso !== "granted" && permissaoDeAviso !== "denied" && (
                       <>
                         <div style={{ color: C.textSecondary, marginBottom: 9 }}>
                           Ainda não autorizado. Sem isso, só o som avisa — e com o

@@ -9,6 +9,9 @@ import { chamarPonte } from "./ponte.js";
 import { etiquetaDoTelefone } from "./numeros.js";
 import { useTemVantoro } from "./temVantoro.js";
 import { PalavrasDaCasa } from "./PalavrasDaCasa.jsx";
+// A CHAVE SAIU DAQUI para `Chave.jsx`: a tela de Avisos passou a precisar da
+// mesma peça, e uma segunda cópia divergiria da primeira no primeiro conserto.
+import { Chave } from "./Chave.jsx";
 import { X, Plus, Trash2, Loader2, Building2, Phone, ShieldCheck } from "lucide-react";
 
 // ============================================================
@@ -379,24 +382,6 @@ function Departamento({ d, cx, C, telefones, departamentos, releituras, aoRenome
 //    - CONEXÕES: com a chave ligada, ela vê SÓ os números marcados — inclusive
 //      número de departamento que ela não tem.
 // ============================================================
-function Chave({ ligada, aoTrocar, rotulo }) {
-  return (
-    <button type="button" role="switch" aria-checked={ligada} aria-label={rotulo}
-            onClick={aoTrocar}
-            style={{
-              width: 40, height: 22, borderRadius: 20, flexShrink: 0, cursor: "pointer",
-              border: "none", padding: 0, position: "relative",
-              background: ligada ? "#2e9e6b" : "#6b7280",
-              transition: "background .15s",
-            }}>
-      <span style={{
-        position: "absolute", top: 3, left: ligada ? 21 : 3, width: 16, height: 16,
-        borderRadius: "50%", background: "#fff", transition: "left .15s",
-      }} />
-    </button>
-  );
-}
-
 // Um cartão de conexão ou de departamento: nome em cima, detalhe embaixo, chave
 // à direita. O cartão inteiro é clicável — é o gesto que todo mundo tenta.
 function Cartao({ cx, C, titulo, detalhe, cor, ligada, aoTrocar, desligado }) {
