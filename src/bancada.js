@@ -166,6 +166,15 @@ for (const adv of ADVOGADOS) {
       nao_lidas: i < naoLidas ? 1 : 0,
       arquivada: false, fixada: false, favorita: false,
       ultima_atividade: new Date(Date.now() - i * 3600e3).toISOString(),
+      // A COLUNA DA ESPERA EXISTE EM TODA CONVERSA DA BANCADA, nem que seja
+      // nula: é a PRESENÇA dela nas linhas que diz ao painel que o SQL foi
+      // rodado (ver `temEspera`). Sem isto a ordem nova nunca seria oferecida,
+      // e a prova mediria uma tela onde o recurso está desligado.
+      //
+      // As não lidas nascem esperando, e as outras não — é o retrato de um
+      // telefone de verdade no meio do expediente.
+      esperando_desde: i < naoLidas
+        ? new Date(Date.now() - (i + 1) * 24 * 3600e3).toISOString() : null,
       ultima_mensagem: `Conversa ${i + 1} de ${adv.nome}`,
       frente: null, vantoro_nome: null, digitando_ate: null,
       contato: { nome: `${NOMES[i % NOMES.length]}`, numero: `5511${900000000 + i}`, foto_url: null },
@@ -1320,10 +1329,40 @@ if (typeof globalThis !== "undefined" && Array.isArray(globalThis.__DESATIVAR)) 
   }
 }
 
+// O BANCO ONDE O SQL DA ESPERA NÃO FOI RODADO.
+//
+// `__SEM_ESPERA` tira a coluna das linhas — não a põe em nulo, TIRA. É a
+// diferença que o painel usa para saber se o recurso existe: nulo é "ninguém
+// esperando", ausente é "este banco não sabe do que você está falando".
+// Sem poder simular isso, a promessa de "sem o SQL, tudo como antes" ficaria
+// sem prova, e um painel que oferece uma ordem capaz de derrubar a lista
+// inteira passaria verde.
 if (typeof globalThis !== "undefined" && globalThis.__SEMENTE) {
   for (const [nome, linhas] of Object.entries(globalThis.__SEMENTE)) {
     if (Array.isArray(TABELAS[nome]) && Array.isArray(linhas)) TABELAS[nome].push(...linhas);
   }
+}
+
+// TODA CONVERSA TEM A COLUNA DA ESPERA, nem que seja nula.
+//
+// O painel descobre se o SQL foi rodado olhando UMA linha da lista — no banco
+// de verdade as linhas são todas iguais, então uma basta. Aqui elas são
+// montadas à mão em NOVE lugares, e bastava a primeira do telefone não ter a
+// chave para o painel concluir que o recurso não existe.
+//
+// A prova pegou exatamente isso: o rótulo "esperando há N dias" aparecia nas
+// linhas e a ordem nova não era oferecida — duas respostas contrárias sobre a
+// mesma coluna, na mesma tela.
+for (const c of TABELAS.conversas || []) {
+  if (!Object.prototype.hasOwnProperty.call(c, "esperando_desde")) c.esperando_desde = null;
+}
+
+// DEPOIS DA SEMENTE, e a ordem é o conserto. Tirando a coluna antes, as
+// conversas plantadas entravam COM ela logo em seguida — e o banco "sem o
+// SQL" passava a ter a coluna em metade das linhas. A prova pegou: o rótulo
+// de espera aparecia num cenário que existe para provar que ele some.
+if (typeof globalThis !== "undefined" && globalThis.__SEM_ESPERA) {
+  for (const c of TABELAS.conversas || []) delete c.esperando_desde;
 }
 
 // O teste troca o nome de alguém no meio da prova — é o que o relato descreve.
@@ -1511,7 +1550,27 @@ function consulta(tabela) {
         ordensEmbutidas[opc.referencedTable] = { col, cres };
         return eu;
       }
-      linhas = linhas.slice().sort((a, b) => (cres ? 1 : -1) * comparar(a[col], b[col]));
+      // ONDE FICAM OS NULOS — como no Postgres, e não como no comparador.
+      //
+      // `comparar` trata nulo como texto vazio, então ele ia sempre para a
+      // FRENTE numa ordem crescente. No banco é o contrário: subindo, nulo vai
+      // para o fim; descendo, para o começo; e `nullsFirst` manda quando vem
+      // escrito, que é como o PostgREST o expõe.
+      //
+      // Sem isto, a fila de espera abriria pelas conversas em que NINGUÉM está
+      // esperando (`esperando_desde` nulo) — e a bancada aprovaria uma lista
+      // que em produção sai ao contrário.
+      const nulosPrimeiro = (opc && typeof opc.nullsFirst === "boolean")
+        ? opc.nullsFirst : !cres;
+      const vazio = (v) => v === null || v === undefined;
+      linhas = linhas.slice().sort((a, b) => {
+        const va = a[col], vb = b[col];
+        if (vazio(va) || vazio(vb)) {
+          if (vazio(va) && vazio(vb)) return 0;
+          return (vazio(va) ? 1 : -1) * (nulosPrimeiro ? -1 : 1);
+        }
+        return (cres ? 1 : -1) * comparar(va, vb);
+      });
       return eu;
     },
     limit(n, opc) {
