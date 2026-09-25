@@ -9,6 +9,7 @@ import { chamarPonte } from "./ponte.js";
 import { etiquetaDoTelefone } from "./numeros.js";
 import { useTemVantoro } from "./temVantoro.js";
 import { PalavrasDaCasa } from "./PalavrasDaCasa.jsx";
+import { AssuntosDoJaTratei } from "./AssuntosDoJaTratei.jsx";
 // A CHAVE SAIU DAQUI para `Chave.jsx`: a tela de Avisos passou a precisar da
 // mesma peça, e uma segunda cópia divergiria da primeira no primeiro conserto.
 import { Chave } from "./Chave.jsx";
@@ -241,6 +242,11 @@ export default function Departamentos({ C, aoFechar }) {
                   Fica nesta aba, e não numa quarta, porque uma aba inteira para
                   três campos é uma aba que ninguém abre. */}
               <PalavrasDaCasa cx={cx} C={C} aoAvisar={setErro} />
+
+              {/* LOGO DEPOIS DAS PALAVRAS, e pelo mesmo motivo: é uma lista
+                  que o comprador de outro ramo troca inteira no primeiro dia.
+                  Uma aba só para ela seria uma aba que ninguém abre. */}
+              <AssuntosDoJaTratei cx={cx} C={C} aoAvisar={setErro} />
 
               <div style={cx.secao}>
                 <div style={cx.titulo}><Building2 size={16} /> Novo departamento</div>

@@ -11,7 +11,8 @@ import {
   ChevronLeft, ChevronRight, Images, ExternalLink, Pin, Copy, Forward, Sticker,
   History, BarChart3, Users, Smartphone, ArrowDownUp,
   Image as ImageIcon, Video,
-  Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote, Volume2
+  Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote, Volume2,
+  ListChecks, Undo2
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
@@ -37,6 +38,7 @@ import Departamentos from "./Departamentos";
 import PainelNumeros from "./PainelNumeros";
 import Marca from "./Marca";
 import PainelEmoji, { guardarRecente } from "./Emojis";
+import JaTratei from "./JaTratei.jsx";
 
 // ============================================================
 //  ZORVIN by Ropelimi — Painel real (conectado ao Supabase)
@@ -2464,6 +2466,35 @@ export default function Painel({ sessao }) {
   //  uma vez, e é aí que a lista precisa mesmo ser refeita.
   // ============================================================
   const ordenarPelaEspera = ordem === "esperando" && temEspera === true;
+  // ============================================================
+  //  "JÁ TRATEI" — a saída da fila que não é mandar mensagem
+  //
+  //  MEDIDO em 25/09, com a fila já cheia: de 813 conversas esperando, 601
+  //  eram "nós respondemos e o cliente escreveu de volta" — e o que ele
+  //  escreveu por último era `[anexo]` em 99 delas, "ok" em 42, "obrigada"
+  //  em 9. Ou seja: ~140 são espera de verdade e ~94 são despedida, e o banco
+  //  não tem como saber a diferença. Quem sabe é quem leu a conversa.
+  //
+  //  DOIS ESTADOS DO BANCO, e são perguntas diferentes:
+  //
+  //    `temTratada`  a coluna `conversas.tratada_em` existe?  (script 005)
+  //    `temAssuntos` a tabela `zorvin_assuntos` respondeu?    (script 005)
+  //
+  //  Separados porque o script pode estar meio aplicado — a tabela nasce fora
+  //  do bloco guardado, a coluna dentro dele. Oferecer o botão sem a coluna
+  //  seria oferecer um gesto que não tira ninguém da fila.
+  //
+  //  `temAssuntos` segue a régua de `temVantoro.js`: `true` quer dizer "tem,
+  //  OU não consegui saber". Esconder por falha de rede tiraria a saída da
+  //  fila no dia em que a rede tossisse, sem uma palavra na tela — a
+  //  armadilha nº 2. Mostrando, o pior caso é abrir a janela e ler o erro.
+  // ============================================================
+  const [temTratada, setTemTratada] = useState(null);
+  const [assuntos, setAssuntos] = useState([]);
+  const [temAssuntos, setTemAssuntos] = useState(null);
+  const [jaTratei, setJaTratei] = useState(null);      // a conversa com a janela aberta
+  const [trateiOcupado, setTrateiOcupado] = useState(false);
+  const [trateiErro, setTrateiErro] = useState("");
   const ordemRef = useRef(ordem);
   useEffect(() => {
     ordemRef.current = ordem;
@@ -3432,6 +3463,11 @@ export default function Painel({ sessao }) {
     // então a presença dela na primeira linha é a resposta.
     if (bruto.length) {
       setTemEspera(Object.prototype.hasOwnProperty.call(bruto[0], "esperando_desde"));
+      // A MESMA SONDA, PELA MESMA RAZÃO — e `temTratada` NÃO entra nas
+      // dependências desta função: ela não muda a consulta (que pede `*`), só
+      // o que a tela desenha. Pôr um estado de três valores ali foi o que
+      // dobrou o tempo de abertura em 25/09; ver `ordenarPelaEspera`.
+      setTemTratada(Object.prototype.hasOwnProperty.call(bruto[0], "tratada_em"));
     }
     // Página cheia = provavelmente há mais. Página curta = acabou. Conta só a
     // PÁGINA — as fixadas que vêm à parte, logo abaixo, não dizem nada sobre
@@ -4064,6 +4100,32 @@ export default function Painel({ sessao }) {
   }, [filtro, advogadoId]);
 
   useEffect(() => { carregarTags(); }, [carregarTags]);
+
+  // ---- Os assuntos do "Já tratei" ----
+  //
+  // UMA VEZ POR ABERTURA, e não uma vez por janela: a lista tem oito linhas e
+  // quase nunca muda. Perguntar a cada clique em "Já tratei" seria uma ida à
+  // rede no meio de um gesto que precisa parecer instantâneo.
+  const carregarAssuntos = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from("zorvin_assuntos")
+        .select("id, nome, ordem, ativo").order("ordem");
+      if (error) {
+        // 42P01 = a tabela não existe: o script 005 ainda não rodou, e aí o
+        // botão não deve mesmo aparecer. Qualquer OUTRO erro mantém o botão e
+        // deixa a frase para a janela — ver o comentário em `temAssuntos`.
+        setTemAssuntos(error.code === "42P01" ? false : true);
+        if (error.code !== "42P01") console.error("Zorvin — assuntos do Já tratei:", error);
+        return;
+      }
+      setAssuntos(data || []);
+      setTemAssuntos(true);
+    } catch (e) {
+      console.error("Zorvin — assuntos do Já tratei:", e);
+      setTemAssuntos(true);
+    }
+  }, []);
+  useEffect(() => { carregarAssuntos(); }, [carregarAssuntos]);
   // As etiquetas seguem a LISTA: quando ela troca de telefone ou chega uma
   // conversa nova, são outras conversas para etiquetar.
   useEffect(() => { carregarTagsConversas(); },
@@ -7296,6 +7358,104 @@ export default function Painel({ sessao }) {
     return true;
   }
 
+  // ============================================================
+  //  "JÁ TRATEI" — tirar da fila sem mandar mensagem
+  //
+  //  A ORDEM DAS DUAS GRAVAÇÕES É A DECISÃO, e ela não é arbitrária.
+  //
+  //  Primeiro o REGISTRO, depois a saída da fila. Ao contrário:
+  //
+  //    - registro falha depois de a conversa já ter saído → ela sumiu da fila
+  //      e NINGUÉM sabe por quê. É o pior desfecho: some em silêncio;
+  //    - saída falha depois do registro → há um registro e a conversa segue na
+  //      fila. Chato, visível, e a frase diz exatamente isso.
+  //
+  //  Entre um erro que se vê e um que não, escolhe-se o que se vê.
+  //
+  //  E NÃO HÁ TRANSAÇÃO aqui: o PostgREST não oferece uma, e inventar meia
+  //  transação com desfazer-na-mão daria um terceiro caminho de falha para
+  //  cuidar. A ordem acima é o que torna a falha parcial suportável.
+  // ============================================================
+  async function confirmarJaTratei(ids) {
+    const conv = jaTratei;
+    if (!conv || !ids.length) return;
+    setTrateiOcupado(true); setTrateiErro("");
+
+    const linhas = ids.map((assunto_id) => ({
+      conversa_id: conv.id,
+      assunto_id,
+      quem: meuId,
+      // A DATA, e não o número de dias: o número é derivado dela e
+      // envelheceria escrito, dizendo outra coisa a cada relatório.
+      esperava_desde: conv.esperando_desde || null,
+    }));
+    const reg = await supabase.from("zorvin_tratamentos").insert(linhas).select("id");
+    if (reg.error || naoGravouNada(reg)) {
+      setTrateiOcupado(false);
+      setTrateiErro(naoGravouNada(reg)
+        ? "O banco não deixou registrar. Nada foi tirado da fila."
+        : comOCodigo("Não consegui registrar o que foi tratado. Nada foi tirado da fila.",
+                     reg.error, "registrar tratamento"));
+      return;
+    }
+
+    const quando = new Date().toISOString();
+    const r = await supabase.from("conversas")
+      .update({ tratada_em: quando, esperando_desde: null })
+      .eq("id", conv.id).select("id");
+    setTrateiOcupado(false);
+    if (r.error || naoGravouNada(r)) {
+      setTrateiErro(naoGravouNada(r)
+        ? "Registrei o que foi tratado, mas o banco não deixou tirar da fila. A conversa continua esperando."
+        : comOCodigo("Registrei o que foi tratado, mas não consegui tirar da fila.",
+                     r.error, "tirar da fila"));
+      return;
+    }
+
+    setConversas((prev) => prev.map((x) => (x.id === conv.id
+      ? { ...x, tratada_em: quando, esperando_desde: null } : x)));
+    setJaTratei(null);
+    mostrarAviso("Tirada da fila de espera.");
+  }
+
+  //  DESFAZER — e ele não é luxo.
+  //
+  //  Marcar por engano faz um cliente sumir da fila em silêncio. Aqui a ordem
+  //  se inverte, pela mesma régua: primeiro devolve à fila (o que se vê),
+  //  depois carimba o registro. Se o carimbo falhar, o pior é um registro
+  //  dizendo "tratada" para uma conversa que voltou — visível na tela.
+  //
+  //  E QUEM DEVOLVE A ESPERA É O BANCO, por `zorvin_recontar_espera`: só ele
+  //  sabe a data ORIGINAL (a primeira mensagem do cliente depois da nossa
+  //  última resposta). Escrever `esperando_desde = agora` aqui devolveria a
+  //  conversa à fila com zero dia de espera — apagando os 66 dias que são o
+  //  motivo de ela precisar voltar.
+  async function desfazerJaTratei(conv) {
+    setMenuDaConversa(false);
+    const r = await supabase.from("conversas")
+      .update({ tratada_em: null }).eq("id", conv.id).select("id");
+    if (r.error || naoGravouNada(r)) {
+      mostrarAviso(naoGravouNada(r)
+        ? "O banco não deixou desfazer. A conversa continua fora da fila."
+        : comOCodigo("Não consegui desfazer.", r.error, "desfazer tratamento"), 7000);
+      return;
+    }
+    const { error: erroConta } = await supabase.rpc("zorvin_recontar_espera", { p_conversa: conv.id });
+    if (erroConta) console.error("Zorvin — recontar espera:", erroConta);
+
+    await supabase.from("zorvin_tratamentos")
+      .update({ desfeito_em: new Date().toISOString(), desfeito_por: meuId })
+      .eq("conversa_id", conv.id).is("desfeito_em", null);
+
+    // RELÊ A LISTA em vez de adivinhar a data: a espera que volta é calculada
+    // pelo banco, e escrevê-la aqui de cabeça seria uma segunda conta para
+    // divergir da primeira.
+    carregarConversas(advogadoId);
+    mostrarAviso(erroConta
+      ? "Voltou para a fila, mas não consegui recalcular a espera. Atualize a página."
+      : "Voltou para a fila de espera.");
+  }
+
   // Marca a conversa como não lida (mostra o selo verde) ou como lida.
   async function marcarNaoLida(conv, naoLida) {
     setMenuConversa(null);
@@ -9583,6 +9743,62 @@ export default function Painel({ sessao }) {
   );
 
   // ------------------------------------------------------------------
+  //  O CONTROLE DO "JÁ TRATEI" — UMA DEFINIÇÃO, DOIS ENDEREÇOS
+  //
+  //  No computador ele é um botão escrito no cabeçalho da conversa; no celular
+  //  é um item do menu ⋮, porque abaixo de 768px o cabeçalho já estava com o
+  //  nome do contato espremido — a regra dos 40px de alvo de dedo não deixa
+  //  encolher botão, e mais um deles comeria o nome.
+  //
+  //  DUAS CÓPIAS DIVERGIRIAM NO PRIMEIRO CONSERTO, e divergir aqui é o botão
+  //  tirar da fila num aparelho e não no outro. É a mesma decisão do controle
+  //  da ordem, descrita no CLAUDE.md.
+  //
+  //  ELE SÓ APARECE QUANDO HÁ O QUE FAZER: conversa esperando (oferece tratar)
+  //  ou já tratada (oferece desfazer). Nas outras, um botão que não muda nada
+  //  é ruído em cima de um cabeçalho que já foi apertado uma vez.
+  // ------------------------------------------------------------------
+  const esperaDaAberta = conversa ? diasEsperando(conversa) : 0;
+  const trateiDisponivel = temTratada === true && temAssuntos === true && Boolean(conversa);
+  const estaEsperando = trateiDisponivel && Boolean(conversa.esperando_desde);
+  const estaTratada = trateiDisponivel && !conversa.esperando_desde && Boolean(conversa.tratada_em);
+
+  const acaoJaTratei = !estaEsperando && !estaTratada ? null : (escrito) => {
+    const rotulo = estaEsperando ? "Já tratei" : "Voltar para a fila";
+    const Icone = estaEsperando ? ListChecks : Undo2;
+    const cor = estaEsperando ? C.textSecondary : C.green;
+    const clique = () => {
+      if (estaEsperando) { setTrateiErro(""); setJaTratei(conversa); setMenuDaConversa(false); }
+      else desfazerJaTratei(conversa);
+    };
+    if (escrito) {
+      return (
+        <button onClick={clique} data-ja-tratei={estaEsperando ? "tratar" : "desfazer"}
+                style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
+          <Icone size={17} color={cor} /> {rotulo}
+          {estaEsperando && esperaDaAberta >= 1 && (
+            <span style={{ marginLeft: "auto", fontSize: 12, color: esperaDaAberta >= 3 ? "#e5573f" : C.textSecondary }}>
+              {esperaDaAberta}d
+            </span>
+          )}
+        </button>
+      );
+    }
+    return (
+      <button onClick={clique} aria-label={rotulo} title={estaEsperando
+                ? "Tirar da fila de espera sem mandar mensagem"
+                : "Devolver esta conversa à fila de espera"}
+              data-ja-tratei={estaEsperando ? "tratar" : "desfazer"}
+              style={{ display: "inline-flex", alignItems: "center", gap: 5, border: `1px solid ${C.divider}`,
+                       background: "transparent", color: C.textSecondary, borderRadius: 8,
+                       padding: "6px 10px", fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+                       whiteSpace: "nowrap" }}>
+        <Icone size={15} color={cor} /> {rotulo}
+      </button>
+    );
+  };
+
+  // ------------------------------------------------------------------
   //  AS AÇÕES DA BOLHA, COM IDENTIDADE FIXA
   //
   //  `ListaDeBolhas` está embrulhada em `React.memo` para que digitar não
@@ -11420,6 +11636,11 @@ export default function Painel({ sessao }) {
                   </button>
                   {tagMenuAberto && listaDeEtiquetas}
                 </span>
+                {/* O "JÁ TRATEI" VEM ANTES DA BUSCA, e escrito. É a única
+                    ação daqui que MUDA a fila do SAC — um ícone mudo ao lado
+                    dos outros seis não seria achado por quem está aprendendo
+                    a usar a fila. */}
+                {acaoJaTratei && acaoJaTratei(false)}
                 <button aria-label="Buscar na conversa" onClick={() => setBuscaAberta((v) => !v)} title="Buscar na conversa" style={{ ...BOTAO_ICONE, padding: 10 }}>
                   <Search size={19} color={buscaAberta ? C.green : C.textSecondary} />
                 </button>
@@ -11451,6 +11672,10 @@ export default function Painel({ sessao }) {
                           o único caminho, e sem o "não lida" a função
                           simplesmente não existia para quem atende pelo
                           telefone. */}
+                      {/* PRIMEIRO ITEM DO MENU, e não o último: no celular
+                          este menu é o único caminho, e a fila de espera é o
+                          motivo de a pessoa ter aberto a conversa. */}
+                      {acaoJaTratei && acaoJaTratei(true)}
                       {(conversa.nao_lidas || 0) > 0 ? (
                         <button onClick={() => { setMenuDaConversa(false); marcarLida(conversa.id); }}
                                 data-menu-marcar="lida"
@@ -13336,6 +13561,20 @@ export default function Painel({ sessao }) {
         <PainelNumeros C={C} modo={modo} advogados={advogados} departamentos={departamentos}
                        souAdmin={souAdmin} meuId={sessao?.user?.id || null} meuNome={meuNome}
                        aoFechar={() => setTelaPainel(false)} />
+      )}
+
+      {/* A JANELA DO "JÁ TRATEI". A conversa vai por `jaTratei`, e não por
+          `conversa`: fechar a conversa no meio do preenchimento não pode
+          trocar a janela por baixo de quem está marcando. */}
+      {jaTratei && (
+        <JaTratei C={C} estreito={estreito}
+                  nome={nomeDoContato(jaTratei.contato)}
+                  dias={diasEsperando(jaTratei)}
+                  assuntos={assuntos}
+                  ocupado={trateiOcupado}
+                  erro={trateiErro}
+                  aoConfirmar={confirmarJaTratei}
+                  aoFechar={() => { if (!trateiOcupado) { setJaTratei(null); setTrateiErro(""); } }} />
       )}
     </div>
   );

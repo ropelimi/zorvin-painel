@@ -1270,6 +1270,24 @@ const TABELAS = {
       .map((c) => ({ id: c.contato_id, ...c.contato, vantoro_nome: null, nome_zorvin: null })),
   ],
   notas: NOTAS, tags: TAGS, conversa_tags: CONVERSA_TAGS,
+  // OS ASSUNTOS DO "JÁ TRATEI" — os oito que o script 005 semeia, mais um
+  // DESATIVADO. O desativado não é enfeite: ele é a única maneira de a prova
+  // separar "a janela lista os assuntos" de "a janela lista os assuntos EM
+  // USO", e os dois se parecem enquanto todos estão ativos.
+  zorvin_assuntos: [
+    { id: "as-1", nome: "BLINDAGEM",           ordem: 1, ativo: true },
+    { id: "as-2", nome: "SUBSÍDIO EMENDA",     ordem: 2, ativo: true },
+    { id: "as-3", nome: "SUBSÍDIO CONDENAÇÃO", ordem: 3, ativo: true },
+    { id: "as-4", nome: "SUBSÍDIO CCR",        ordem: 4, ativo: true },
+    { id: "as-5", nome: "DOCUMENTOS JG",       ordem: 5, ativo: true },
+    { id: "as-6", nome: "ACORDOS",             ordem: 6, ativo: true },
+    { id: "as-7", nome: "VENDA CCS",           ordem: 7, ativo: true },
+    { id: "as-8", nome: "VENDA LN",            ordem: 8, ativo: true },
+    { id: "as-9", nome: "MUTIRÃO 2024",        ordem: 9, ativo: false },
+  ],
+  // COMEÇA VAZIA: as linhas nascem do que se faz na tela. Semear uma aqui
+  // esconderia uma tela que não grava nada — a mesma razão de `alteracoes`.
+  zorvin_tratamentos: [],
   // O histórico de alterações começa VAZIO: as linhas nascem do que se faz na
   // tela, e semear alguma aqui esconderia uma tela que não grava nada.
   alteracoes: [],
@@ -1355,6 +1373,10 @@ if (typeof globalThis !== "undefined" && globalThis.__SEMENTE) {
 // mesma coluna, na mesma tela.
 for (const c of TABELAS.conversas || []) {
   if (!Object.prototype.hasOwnProperty.call(c, "esperando_desde")) c.esperando_desde = null;
+  // `tratada_em` PELA MESMA RAZÃO, e é uma sonda SEPARADA no painel: o script
+  // 005 cria a tabela dos assuntos fora do bloco guardado e a coluna dentro
+  // dele, então "meio aplicado" é um estado possível de verdade.
+  if (!Object.prototype.hasOwnProperty.call(c, "tratada_em")) c.tratada_em = null;
 }
 
 // DEPOIS DA SEMENTE, e a ordem é o conserto. Tirando a coluna antes, as
@@ -1364,6 +1386,17 @@ for (const c of TABELAS.conversas || []) {
 if (typeof globalThis !== "undefined" && globalThis.__SEM_ESPERA) {
   for (const c of TABELAS.conversas || []) delete c.esperando_desde;
 }
+
+// O BANCO SEM O SCRIPT 005 — e são DUAS bandeiras, porque são duas metades.
+//
+// `__SEM_TRATADA` tira a coluna; `__SEM_ASSUNTOS` some com a tabela. O script
+// cria uma fora do bloco guardado e a outra dentro, então um banco com metade
+// aplicada existe — e o painel tem de esconder o botão nas duas situações. Uma
+// bandeira só provaria uma delas e deixaria a outra por conta da sorte.
+if (typeof globalThis !== "undefined" && globalThis.__SEM_TRATADA) {
+  for (const c of TABELAS.conversas || []) delete c.tratada_em;
+}
+
 
 // O teste troca o nome de alguém no meio da prova — é o que o relato descreve.
 if (typeof globalThis !== "undefined") {
@@ -1459,8 +1492,14 @@ function consulta(tabela) {
   // A VISTA QUE AINDA NÃO EXISTE. O código sobe antes do script — sempre sobe.
   // Nesse intervalo a tela tem de continuar desenhando o nome e a foto que
   // estão gravados na mensagem, e não uma conversa sem assinatura nenhuma.
-  const faltando = tabela === "equipe"
-    && typeof globalThis !== "undefined" && globalThis.__SEM_EQUIPE;
+  const faltando = (typeof globalThis !== "undefined")
+    && ((tabela === "equipe" && globalThis.__SEM_EQUIPE)
+        // A TABELA DO SCRIPT 005 QUE AINDA NÃO RODOU. Sem isto ela responderia
+        // uma LISTA VAZIA, e o painel não tem como distinguir "não existe" de
+        // "existe e está vazia" — ele esconderia o botão pelo motivo errado, e
+        // a prova aprovaria um painel que some com a saída da fila no dia em
+        // que alguém apagar o último assunto.
+        || (tabela === "zorvin_assuntos" && globalThis.__SEM_ASSUNTOS));
   let linhas = faltando ? [] : (TABELAS[tabela] || []).slice();
   // O QUE FOI PEDIDO, e não só o resultado. É por isto que dá para saber se a
   // consulta varreu a tabela inteira ou entrou por um recorte — a diferença
@@ -1503,7 +1542,21 @@ function consulta(tabela) {
     },
     eq(col, val) { pedidos.push(col); linhas = linhas.filter((l) => String(l[col]) === String(val)); return eu; },
     in(col, vals) { pedidos.push(col); linhas = linhas.filter((l) => vals.map(String).includes(String(l[col]))); return eu; },
-    is(col, val) { linhas = linhas.filter((l) => l[col] === val); return eu; },
+    // COLUNA NUNCA ESCRITA É NULA, e não ausente.
+    //
+    // No Postgres a coluna existe em toda linha: quem grava sem mencioná-la
+    // deixa ali um `null`, e `is null` a encontra. Aqui as linhas são objetos
+    // de JavaScript, e a chave simplesmente não existe — `undefined === null`
+    // é falso, e o `is(col, null)` não achava nada.
+    //
+    // MEDIDO: foi isto que fez o "desfazer" do "Já tratei" carimbar zero
+    // linhas. O painel estava certo e a bancada mentia.
+    is(col, val) {
+      linhas = val === null
+        ? linhas.filter((l) => l[col] === null || l[col] === undefined)
+        : linhas.filter((l) => l[col] === val);
+      return eu;
+    },
     neq(col, val) { linhas = linhas.filter((l) => String(l[col]) !== String(val)); return eu; },
     // `gt` PRECISA filtrar de verdade: o selo da barra lateral sai de
     // `.gt("nao_lidas", 0)`, e com um cano vazio aqui ele contava também as
@@ -2252,6 +2305,43 @@ export const supabase = {
       }
       await espera(40);
       return { data: globalThis.__SAUDE || [], error: null };
+    }
+
+    // A RECONTAGEM DA ESPERA — e sim, ela imita a regra do SQL.
+    //
+    // O comentário logo acima diz que imitar o SQL aqui é o jeito de aprovar
+    // as duas cópias com o mesmo engano, e isso continua valendo para PRAZOS.
+    // Este caso é outro: a data que a recontagem devolve é o CONTRATO de que o
+    // painel depende — "desfazer devolve a conversa com a espera ORIGINAL, e
+    // não com zero dia". Uma bancada que respondesse só "deu certo" deixaria a
+    // cena do desfazer sem nada a medir, e o defeito que ela existe para pegar
+    // (escrever `esperando_desde = agora` no painel) passaria.
+    //
+    // E a regra não fica provada só aqui: o mesmo cálculo foi conferido num
+    // Postgres de verdade, em onze cenas, no repo da ponte.
+    if (nome === "zorvin_recontar_espera") {
+      if (globalThis.__SEM_TRATADA || globalThis.__SEM_RECONTAGEM) {
+        return { data: null, error: { code: "PGRST202", message: "Could not find the function public.zorvin_recontar_espera" } };
+      }
+      await espera(40);
+      const alvo = args && args.p_conversa;
+      let mudaram = 0;
+      for (const c of TABELAS.conversas || []) {
+        if (alvo && String(c.id) !== String(alvo)) continue;
+        const minhas = (TABELAS.mensagens || []).filter((m) => String(m.conversa_id) === String(c.id));
+        const tempo = (x) => new Date(x).getTime();
+        const nossas = minhas.filter((m) => m.origem === "advogado").map((m) => tempo(m.criado_em));
+        // `greatest` IGNORANDO NULOS, como no Postgres: a última ação nossa é
+        // a resposta mais recente OU o tratamento, o que existir e for maior.
+        const candidatos = [...(nossas.length ? [Math.max(...nossas)] : []),
+                            ...(c.tratada_em ? [tempo(c.tratada_em)] : [])];
+        const ultimaAcao = candidatos.length ? Math.max(...candidatos) : -Infinity;
+        const deles = minhas.filter((m) => m.origem === "contato" && tempo(m.criado_em) > ultimaAcao)
+                            .map((m) => tempo(m.criado_em));
+        const novo = deles.length ? new Date(Math.min(...deles)).toISOString() : null;
+        if ((c.esperando_desde || null) !== novo) { c.esperando_desde = novo; mudaram += 1; }
+      }
+      return { data: mudaram, error: null };
     }
 
     if (nome === "salvar_minha_foto") {
