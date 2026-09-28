@@ -388,7 +388,34 @@ function haQuantoTempo(desde) {
  *  quebrada, não como recado. */
 const conforme = (n, uma, muitas) => (n === 1 ? uma : muitas);
 
-function frasesDaSaude(saude, ehAdmin, tempoRealCaiu = false, tempoRealDesistiu = false) {
+// ============================================================
+//  O MOTIVO DA QUEDA, ENCURTADO PARA CABER NUMA FAIXA
+//
+//  O erro inteiro vai para o console (ver `aoMudarDeEstado`); aqui fica o que
+//  se digita numa mensagem para quem conserta. A régua é a de `comOCodigo`,
+//  em `gravar.js`: a frase curta MAIS o código.
+//
+//  O ESTADO SOZINHO JÁ É PISTA, e por isso ele sai mesmo sem erro nenhum —
+//  `TIMED_OUT` e `CHANNEL_ERROR` pedem providências opostas de quem lê. Foi
+//  esse o engano que este projeto já cometeu de três jeitos: tratar como uma
+//  coisa só duas falhas que mandam procurar defeito em lugares diferentes.
+//
+//  E ELE É CORTADO EM 110 LETRAS. A biblioteca do Realtime chega a devolver
+//  uma pilha inteira, e uma faixa vermelha com dez linhas de erro é uma faixa
+//  que ninguém lê — inclusive a parte que importa, que vem na frente.
+const LIMITE_DO_MOTIVO = 110;
+function resumirMotivo(estado, erro) {
+  const cru = !erro ? "" : (typeof erro === "string" ? erro : (erro.message || String(erro)));
+  const texto = String(cru).trim().replace(/\s+/g, " ");
+  if (!texto) return String(estado || "").trim() || "sem motivo";
+  const curto = texto.length > LIMITE_DO_MOTIVO
+    ? texto.slice(0, LIMITE_DO_MOTIVO - 1) + "\u2026"
+    : texto;
+  return estado ? `${estado}: ${curto}` : curto;
+}
+
+function frasesDaSaude(saude, ehAdmin, tempoRealCaiu = false, tempoRealDesistiu = false,
+                       motivoDoTempoReal = "") {
   const por = {};
   for (const l of saude || []) por[l.sinal] = l;
   const frases = [];
@@ -420,11 +447,17 @@ function frasesDaSaude(saude, ehAdmin, tempoRealCaiu = false, tempoRealDesistiu 
     // não apurou — o mesmo defeito, pela quarta porta. Há um caminho em que o
     // canal morre de vez (ver ESPERAS_DE_VOLTA), e nele só recarregar resolve.
     // Enquanto a frase promete, ninguém recarrega: ela diz que não precisa.
-    frases.push(tempoRealDesistiu
+    const oQueFazer = tempoRealDesistiu
       ? "As mensagens novas não estão chegando sozinhas, e as tentativas de"
         + " reconectar não deram certo. Recarregue a página para voltar a receber."
       : "As mensagens novas não estão chegando sozinhas — a conexão ao vivo caiu."
-        + " Estamos reconectando; quando voltar, a tela se atualiza.");
+        + " Estamos reconectando; quando voltar, a tela se atualiza.";
+    // E O MOTIVO VAI JUNTO, entre parênteses, DEPOIS do que fazer.
+    //
+    // Antes, porque a ordem é a decisão: quem atende lê a primeira metade e
+    // já sabe o que fazer; quem for consertar lê a segunda. Pondo o código na
+    // frente, a frase vira coisa de máquina e o recado se perde no meio.
+    frases.push(motivoDoTempoReal ? `${oQueFazer} (${motivoDoTempoReal})` : oQueFazer);
   }
 
   // A LINHA CAÍDA DIZ O NOME. Sem ele, quem atende não sabe se é a linha que
@@ -2775,6 +2808,37 @@ export default function Painel({ sessao }) {
   // E SE O PAINEL JÁ DESISTIU de reconectar sozinho. Separado de
   // `tempoRealCaiu` porque a frase muda: uma promete, a outra pede uma ação.
   const [tempoRealDesistiu, setTempoRealDesistiu] = useState(false);
+  // ============================================================
+  //  E POR QUE ELE CAIU — a quinta roupa da mesma forma
+  //
+  //  A faixa dizia QUE o tempo real caiu e não dizia NADA do porquê. O motivo
+  //  chegava: `subscribe` chama de volta com DOIS argumentos, `(estado, erro)`,
+  //  e o painel recebia só o primeiro. O segundo era jogado fora — sem nem um
+  //  `console.error`. Era o mesmo desenho que custou uma rodada inteira de
+  //  scripts no Supabase em 24/09: o único lugar que sabia a causa foi o único
+  //  que não a guardou.
+  //
+  //  E AQUI ELE SEPARA DEFEITOS QUE PEDEM COISAS OPOSTAS:
+  //
+  //    CHANNEL_ERROR + "mismatch between server and client bindings"
+  //        → o canal MORREU de vez (ver ESPERAS_DE_VOLTA). Acontece depois de
+  //          uma publicação do Realtime, ou quando o banco publica um conjunto
+  //          de tabelas diferente do que o painel pediu.
+  //    CHANNEL_ERROR sem mensagem
+  //        → normalmente é a assinatura recusada: RLS, ou a tabela fora da
+  //          publicação `supabase_realtime`.
+  //    TIMED_OUT / CLOSED
+  //        → é rede. O wi-fi, a tampa do notebook, a Render piscando.
+  //
+  //  Sem o motivo, as três viram "a conexão ao vivo caiu" e quem for consertar
+  //  recomeça do zero, adivinhando — que foi exatamente o que aconteceu aqui.
+  //
+  //  GUARDA-SE O PRIMEIRO, e não o último, pela mesma razão que arma os três
+  //  relógios uma vez só: cada tentativa do vigia que não pega gera outro
+  //  `CHANNEL_ERROR`, e o último seria sempre o do vigia — a causa da queda
+  //  ficaria soterrada pelas consequências dela.
+  // ============================================================
+  const [motivoDoTempoReal, setMotivoDoTempoReal] = useState("");
 
   // O QUE RELER, GUARDADO NUM ESPELHO E NÃO NAS DEPENDÊNCIAS DO CANAL.
   //
@@ -5937,7 +6001,9 @@ export default function Painel({ sessao }) {
       // respondeu.
       .subscribe(aoMudarDeEstado);
 
-    function aoMudarDeEstado(estado) {
+    // O SEGUNDO ARGUMENTO É O MOTIVO, e ele vinha sendo descartado. Ver
+    // `motivoDoTempoReal`, lá em cima, para o que cada forma quer dizer.
+    function aoMudarDeEstado(estado, erro) {
       if (estado === "SUBSCRIBED") {
         // A VOLTA RELÊ. O `postgres_changes` não repete o que passou: tudo o
         // que o banco publicou durante a queda não chega nunca. Só apagar o
@@ -5959,6 +6025,7 @@ export default function Painel({ sessao }) {
         clearTimeout(promessa); promessa = null;
         setTempoRealCaiu(false);
         setTempoRealDesistiu(false);
+        setMotivoDoTempoReal("");
         return;
       }
       // QUEDA NÃO ACENDE A LUZ NA HORA. Uma reconexão comum passa por
@@ -5973,6 +6040,20 @@ export default function Painel({ sessao }) {
       // eles rearmassem, a faixa nunca acenderia e a promessa nunca venceria —
       // o conserto teria desligado o aviso que existe para contar a queda.
       caiuRef.current = true;
+      // O CONSOLE LEVA O ERRO INTEIRO, e a tela leva só a frase curta. É a
+      // mesma régua de `comOCodigo`, em `gravar.js`: despejar a pilha na faixa
+      // não ajuda quem atende a decidir nada, e jogá-la fora deixa quem for
+      // consertar sem a única pista que existiu.
+      // A MENSAGEM VAI COMO TEXTO, e o erro inteiro vai DEPOIS dela.
+      //
+      // Só o objeto não basta: no console ele chega dobrado, e quem tira a
+      // foto da tela manda a linha fechada — sem a frase que interessa. Como
+      // texto, ela está na linha; como objeto, a pilha continua a um clique.
+      console.error(
+        `[zorvin] tempo real: ${estado} — ${(erro && erro.message) || erro || "(sem motivo)"}`,
+        erro || "");
+      // GUARDA O PRIMEIRO. Ver o comentário do estado, lá em cima.
+      setMotivoDoTempoReal((antes) => antes || resumirMotivo(estado, erro));
       if (!carencia) {
         carencia = setTimeout(() => setTempoRealCaiu(true), CARENCIA_TEMPO_REAL_MS);
       }
@@ -13255,7 +13336,8 @@ export default function Painel({ sessao }) {
           não resolve é pior do que não oferecer nenhum. Ela some sozinha quando
           o problema passar, na pergunta seguinte. */}
       {(() => {
-        const frases = frasesDaSaude(saude, souAdmin, tempoRealCaiu, tempoRealDesistiu);
+        const frases = frasesDaSaude(saude, souAdmin, tempoRealCaiu, tempoRealDesistiu,
+                                     motivoDoTempoReal);
         if (!frases.length) return null;
         return (
           <div data-aviso-de-saude
