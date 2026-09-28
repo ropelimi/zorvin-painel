@@ -241,6 +241,19 @@ const LIMITE_DA_PROMESSA_MS =
   (typeof globalThis !== "undefined" && globalThis.__LIMITE_DA_PROMESSA) || 180000;
 // ============================================================
 
+// A FICHA FIXA FICA GUARDADA NO NAVEGADOR. Padrão LIGADO: `!== "nao"`, como a
+// chave da tarja — armazenamento vazio (primeira abertura, janela anônima,
+// cache limpo) é "ninguém escolheu ainda", e o pedido era que ela ficasse
+// fixa. Tratar a ausência como recolhido esconderia a ficha de todo mundo que
+// nunca mexeu nisso, que é o contrário do que foi pedido.
+const CHAVE_FICHA_FIXA = "zorvin_ficha_fixa";
+function lerFichaFixa() {
+  try { return localStorage.getItem(CHAVE_FICHA_FIXA) !== "nao"; } catch (_) { return true; }
+}
+function guardarFichaFixa(fixa) {
+  try { localStorage.setItem(CHAVE_FICHA_FIXA, fixa ? "sim" : "nao"); } catch (_) { /* ver acima */ }
+}
+
 const CHAVE_DISPENSADOS = "zorvin_avisos_dispensados";
 function lerDispensados() {
   try {
@@ -2440,6 +2453,31 @@ export default function Painel({ sessao }) {
   // "advogado", e sem a tabela continua sendo — ver `vocabulario.js`.
   const voc = useVocabulario();
   // Ficha do cliente no Vantoro (abre ao lado da conversa).
+  // ============================================================
+  //  A FICHA É UMA TERCEIRA COLUNA FIXA — pedido do Rodrigo em 28/09
+  //
+  //  Antes ela era um botão: ligada, ela ESCONDIA a lista de conversas. Não
+  //  eram três colunas, eram duas (lista OU ficha), e quem quisesse ver o
+  //  cadastro perdia a fila de quem está esperando.
+  //
+  //  Agora ela nasce aberta em toda conversa e tem uma seta para recolher.
+  //
+  //  SÃO DOIS ESTADOS, E NÃO UM, por causa do celular. Abaixo de 768px não
+  //  cabem três colunas: lá a ficha toma a tela inteira, e nascer aberta
+  //  faria abrir uma conversa mostrar o CADASTRO no lugar da conversa. No
+  //  computador ela é uma preferência guardada; no celular é um gesto de
+  //  cada vez, que não se guarda.
+  //
+  //  Derivar `fichaVisivel` dos dois — em vez de um estado só corrigido por
+  //  um efeito ao redimensionar — evita o piscar: girar o celular ou
+  //  encostar a janela nos 768px não faz a ficha abrir e fechar sozinha.
+  //
+  //  A PREFERÊNCIA É POR NAVEGADOR, como o som do aviso: quem atende do
+  //  monitor grande quer a ficha à vista, e quem atende do notebook de 1280
+  //  talvez não. Guardar no banco faria a escolha de uma máquina valer na
+  //  outra, e uma leitura a mais na abertura.
+  // ============================================================
+  const [fichaFixa, setFichaFixa] = useState(lerFichaFixa);
   const [fichaAberta, setFichaAberta] = useState(false);
   // "Histórico de atendimento": quem falou com este cliente, quando e por qual
   // telefone do escritório. `null` = fechado.
@@ -2903,6 +2941,24 @@ export default function Painel({ sessao }) {
 
   const C = TEMAS[modo];
   const estreito = largura < 768; // layout de celular: mostra lista OU conversa
+  // O ESPELHO DO LAYOUT, refeito a cada desenho. Efeitos que reagem à troca
+  // de conversa precisam saber se estamos no celular, e pôr `estreito` nas
+  // dependências deles faria cada redimensionamento da janela disparar o
+  // efeito da conversa — apagando rascunho e rolando a tela por causa de um
+  // arrastar de borda.
+  const estreitoRef = useRef(estreito);
+  estreitoRef.current = estreito;
+
+  // A FICHA À VISTA SAI DOS DOIS ESTADOS, e não de um. Ver o comentário de
+  // `fichaFixa`, lá em cima: no computador vale a preferência guardada; no
+  // celular, o gesto desta vez.
+  const fichaVisivel = estreito ? fichaAberta : fichaFixa;
+  /** Mostra ou recolhe a ficha, escrevendo no estado certo para o layout. */
+  function alternarFicha(mostrar) {
+    if (estreito) { setFichaAberta(mostrar); return; }
+    setFichaFixa(mostrar);
+    guardarFichaFixa(mostrar);
+  }
   const advogado = advogados.find((a) => a.id === advogadoId) || null;
   const conversa = conversas.find((c) => c.id === conversaId) || null;
   // O NOME VEM DO CADASTRO DO VANTORO. A ordem abaixo é essa por um motivo:
@@ -6232,7 +6288,11 @@ export default function Painel({ sessao }) {
     const guardado = conversaId ? rascunhosRef.current[conversaId] : null;
     setRascunho(guardado ? guardado.texto : "");
     setModoNota(guardado ? !!guardado.nota : false);
-    setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); setRespondendo(null); setFichaAberta(false); setHistorico(null); setTagMenuAberto(false);
+    setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); setRespondendo(null); setHistorico(null); setTagMenuAberto(false);
+    // A FICHA SÓ SE FECHA NO CELULAR ao trocar de conversa. No computador ela
+    // é coluna fixa: fechá-la aqui faria o pedido de 28/09 valer só até o
+    // segundo clique, e ninguém ligaria uma coisa à outra.
+    if (estreitoRef.current) setFichaAberta(false);
     // A rolagem para o fim NÃO acontece quando a conversa foi aberta a partir
     // de um resultado de busca por mensagem: nesse caso quem manda é o efeito
     // logo abaixo, que leva até a mensagem achada. Sem esta condição as duas
@@ -6816,7 +6876,10 @@ export default function Painel({ sessao }) {
       else if (emojiAberto) setEmojiAberto(false);
       else if (seletorAberto) setSeletorAberto(false);
       else if (historico) setHistorico(null);
-      else if (fichaAberta) setFichaAberta(false);
+      // ESC FECHA O QUE ESTÁ POR CIMA, e no computador a ficha não está: ela é
+      // coluna, como a lista. Recolher uma coluna com Esc surpreenderia quem
+      // só queria sair de um menu.
+      else if (estreito && fichaAberta) setFichaAberta(false);
       else if (buscaAberta) { setBuscaAberta(false); setBuscaConversa(""); }
       else if (respondendo) setRespondendo(null);
       else if (conversaId) setConversaId(null);
@@ -10512,7 +10575,7 @@ export default function Painel({ sessao }) {
           rolagem lateral e a lista aparecia cortada, sem a hora nem o contador
           de não lidas. Com o zero, ela encolhe para o que sobra (330px) e quem
           rola é só a fita de filtros, que já foi feita para isso. */}
-      <div style={{ position: "relative", width: estreito ? "auto" : 380, flex: estreito ? 1 : "none", minWidth: 0, borderRight: `1px solid ${C.divider}`, display: ((estreito && conversaId) || fichaAberta || historico) ? "none" : "flex", flexDirection: "column", background: C.panel }}>
+      <div style={{ position: "relative", width: estreito ? "auto" : 380, flex: estreito ? 1 : "none", minWidth: 0, borderRight: `1px solid ${C.divider}`, display: ((estreito && conversaId) || (estreito && fichaVisivel) || historico) ? "none" : "flex", flexDirection: "column", background: C.panel }}>
         {/* NOVA CONVERSA (⊞) — estilo WhatsApp Web: busca, novo contato e agenda */}
         {novaConversaAberta && (
           <div style={{ position: "absolute", inset: 0, zIndex: 40, background: C.panel, display: "flex", flexDirection: "column" }}>
@@ -11471,7 +11534,7 @@ export default function Painel({ sessao }) {
       {/* Mesmo motivo da coluna da lista: sem `minWidth: 0` a conversa aberta
           no celular fica mais larga que a tela por causa de uma mensagem
           comprida. */}
-      <div style={{ flex: 1, minWidth: 0, display: ((estreito && !conversaId) || (estreito && (fichaAberta || historico))) ? "none" : "flex", flexDirection: "column", background: C.chatBg, backgroundImage: modo === "escuro" ? PADRAO_CHAT_ESCURO : PADRAO_CHAT_CLARO, position: "relative" }}>
+      <div style={{ flex: 1, minWidth: 0, display: ((estreito && !conversaId) || (estreito && (fichaVisivel || historico))) ? "none" : "flex", flexDirection: "column", background: C.chatBg, backgroundImage: modo === "escuro" ? PADRAO_CHAT_ESCURO : PADRAO_CHAT_CLARO, position: "relative" }}>
         {!conversa ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: C.textSecondary, gap: 16 }}>
             <div style={{ width: 90, height: 90, borderRadius: "50%", background: C.placeholderCircle, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -11642,10 +11705,10 @@ export default function Painel({ sessao }) {
                     `temVantoro.js` para o porquê de `=== true` (a falha de rede
                     MOSTRA, para o escritório não perder a ficha calado). */}
                 {temVantoro === true && (
-                <button onClick={() => setFichaAberta((v) => !v)}
-                        title="Ficha no Vantoro" data-abrir-ficha
-                        style={{ ...BOTAO_ICONE, padding: 10, background: fichaAberta ? C.listActive : "transparent" }}>
-                  <ClipboardList size={19} color={fichaAberta ? C.green : C.textSecondary} />
+                <button onClick={() => alternarFicha(!fichaVisivel)}
+                        title={fichaVisivel ? "Recolher a ficha" : "Mostrar a ficha"} data-abrir-ficha
+                        style={{ ...BOTAO_ICONE, padding: 10, background: fichaVisivel ? C.listActive : "transparent" }}>
+                  <ClipboardList size={19} color={fichaVisivel ? C.green : C.textSecondary} />
                 </button>
                 )}
                 {/* Histórico de atendimento: quem falou com este cliente, quando
@@ -11788,7 +11851,7 @@ export default function Painel({ sessao }) {
                           menu ⋮ é justamente onde se procura o que não está à
                           vista. */}
                       {temVantoro === true && (
-                      <button onClick={() => { setMenuDaConversa(false); setFichaAberta(true); }}
+                      <button onClick={() => { setMenuDaConversa(false); alternarFicha(true); }}
                               data-menu-ficha
                               style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
                         <ClipboardList size={17} color={C.textSecondary} /> Ficha no Vantoro
@@ -12284,7 +12347,7 @@ export default function Painel({ sessao }) {
           apontando para ela, de propósito — a sabotagem confirmou que não há
           como fazê-la reprovar, e prova que não pode reprovar é pior do que
           nenhuma. */}
-      {fichaAberta && conversa && temVantoro === true && (
+      {fichaVisivel && conversa && temVantoro === true && (
         <FichaVantoro
           numero={conversa.contato?.numero}
           // O NOME QUE ESTÁ NA TELA, e não o cru do WhatsApp. É daqui que sai o
@@ -12294,7 +12357,7 @@ export default function Painel({ sessao }) {
           nomeContato={nomeDoContato(conversa.contato)}
           C={C}
           estreito={estreito}
-          onFechar={() => setFichaAberta(false)}
+          onFechar={() => alternarFicha(false)}
           onAviso={mostrarAviso}
           // O cabeçalho da conversa muda NA HORA, sem recarregar a página. A
           // ficha já gravou `vantoro_nome` no contato; aqui a lista em memória

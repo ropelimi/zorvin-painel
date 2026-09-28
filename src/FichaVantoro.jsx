@@ -145,6 +145,51 @@ async function buscarCep(cep) {
   };
 }
 
+// ============================================================
+//  A CONSULTA AO VANTORO FICA GUARDADA POR ALGUNS MINUTOS
+//
+//  Enquanto a ficha era um botão, ela consultava o Vantoro quando alguém
+//  clicava — três, quatro vezes por manhã. Fixa (pedido do Rodrigo em 28/09),
+//  ela passa a consultar em TODA conversa aberta: numa manhã de trinta
+//  conversas são trinta idas.
+//
+//  E essas idas são caras: o Vantoro fica atrás da ponte, que hiberna na
+//  Render, e demora segundos — foi por isso que a ponte ganhou a janela
+//  `/vantoro/tempos` em 14/09. Trinta delas atrasam a tela e incomodam um
+//  serviço que é do próprio escritório.
+//
+//  CINCO MINUTOS é o prazo, e ele sai do uso: quem atende volta à mesma
+//  conversa várias vezes seguidas enquanto resolve um caso, e é essa ida
+//  repetida que o cache corta. Meia hora seria mostrar cadastro velho depois
+//  de alguém tê-lo corrigido noutra tela.
+//
+//  E O BOTÃO DE ATUALIZAR FURA O CACHE, de propósito: é a saída de quem sabe
+//  que o cadastro mudou agora. Sem isso, o botão passaria a devolver a mesma
+//  resposta guardada e pareceria quebrado.
+//
+//  TODA GRAVAÇÃO ESQUECE A LINHA. Sem isso, salvar o CPF e voltar à conversa
+//  cinco minutos depois mostraria o CPF antigo — a tela desmentindo o que a
+//  pessoa acabou de fazer, que é a forma que esta casa persegue desde 24/09.
+// ============================================================
+const VALIDADE_DA_FICHA_MS = 5 * 60 * 1000;
+const fichasGuardadas = new Map();
+
+function fichaGuardada(numero) {
+  const linha = fichasGuardadas.get(numero);
+  if (!linha) return null;
+  if (Date.now() - linha.quando > VALIDADE_DA_FICHA_MS) {
+    fichasGuardadas.delete(numero);
+    return null;
+  }
+  return linha.resposta;
+}
+function guardarFicha(numero, resposta) {
+  if (numero) fichasGuardadas.set(numero, { quando: Date.now(), resposta });
+}
+function esquecerFicha(numero) {
+  if (numero) fichasGuardadas.delete(numero);
+}
+
 export default function FichaVantoro({ numero, nomeContato, C, estreito, onFechar, onAviso, aoLigarCadastro, aoConversarPor }) {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
@@ -410,11 +455,19 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     await ligarContatoAoCadastro(c);
   }
 
-  async function buscar() {
+  async function buscar(forcar = false) {
     setCarregando(true);
     setErro("");
     try {
-      const r = await chamarPonte(`/vantoro/cliente?telefone=${encodeURIComponent(numero || "")}`);
+      // O GUARDADO SÓ VALE NA ABERTURA. `forcar` é o botão de atualizar, e
+      // também o que qualquer conserto futuro deve usar depois de gravar.
+      let r = forcar ? null : fichaGuardada(numero);
+      if (!r) {
+        r = await chamarPonte(`/vantoro/cliente?telefone=${encodeURIComponent(numero || "")}`);
+        // SÓ GUARDA O QUE DEU CERTO: um erro cai no `catch` e não chega aqui,
+        // senão uma oscilação de rede ficaria grudada por cinco minutos.
+        guardarFicha(numero, r);
+      }
       const todos = r.clientes || [];
       if (r.opcoes?.estado_civil?.length) setOpcoes(r.opcoes);
       setCandidatos(todos);
@@ -464,6 +517,10 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
 
   async function criar() {
     setSalvando(true);
+    // GRAVOU, ESQUECE O GUARDADO. Sem isto, voltar a esta conversa dentro dos
+    // cinco minutos mostraria o cadastro de ANTES — a tela desmentindo o que a
+    // pessoa acabou de fazer.
+    esquecerFicha(numero);
     try {
       const r = await chamarPonte("/vantoro/cliente", {
         method: "POST",
@@ -508,6 +565,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   async function salvar() {
     if (!cliente) return;
     setSalvando(true);
+    esquecerFicha(numero);   // ver `criar`
     try {
       const mudou = {};
       TODOS_CAMPOS.forEach(({ chave }) => {
@@ -663,6 +721,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   async function mexerNosTelefones(caminho, opcoes, aviso) {
     if (!cliente || mexendoTel) return;
     setMexendoTel(true);
+    esquecerFicha(numero);   // ver `criar`
     try {
       const r = await chamarPonte(`/vantoro/cliente/${cliente.id}/telefones${caminho}`, opcoes);
       if (r && Array.isArray(r.telefones)) setTelefones(r.telefones);
@@ -1002,7 +1061,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   return (
     // Coluna de verdade, ao lado da conversa — não uma camada por cima dela.
     // No celular não cabem as duas, então a ficha ocupa a tela inteira.
-    <div style={{
+    <div data-ficha style={{
       width: estreito ? "100%" : 330, flex: estreito ? 1 : "none",
       background: C.panel, borderLeft: `1px solid ${C.divider}`,
       display: "flex", flexDirection: "column", height: "100%", overflow: "hidden",
@@ -1015,12 +1074,19 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
         {/* Atualizar relê o cadastro e substitui os campos — descarta o que foi
             digitado do mesmo jeito que fechar. Pergunta pelo mesmo motivo. */}
         <button onClick={() => { if (!mudouAlgumaCoisa()
-              || window.confirm("Atualizar descarta o que você digitou e ainda não salvou. Continuar?")) buscar(); }}
+              || window.confirm("Atualizar descarta o que você digitou e ainda não salvou. Continuar?")) buscar(true); }}
                 title="Atualizar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
           <RefreshCw size={16} color={C.textSecondary} />
         </button>
-        <button onClick={tentarFechar} title="Fechar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
-          <X size={18} color={C.textSecondary} />
+        {/* "RECOLHER", E NÃO "FECHAR". Desde 28/09 a ficha é uma COLUNA fixa,
+            como a lista de conversas — e "fechar" faria pensar que ela não
+            volta. No computador a escolha fica guardada no navegador; no
+            celular ela é a tela inteira, e aí voltar é o gesto natural. */}
+        <button onClick={tentarFechar} data-recolher-ficha
+                title={estreito ? "Voltar para a conversa" : "Recolher a ficha"}
+                style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
+          {estreito ? <X size={18} color={C.textSecondary} />
+                    : <ChevronRight size={18} color={C.textSecondary} />}
         </button>
       </div>
 

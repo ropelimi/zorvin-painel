@@ -71,9 +71,20 @@ async function abrir(nomeDaConversa) {
   await page.locator(`[data-conversa-nome*="${nomeDaConversa}"]`).first().click();
   await page.waitForTimeout(1200);
 }
+// A FICHA JÁ NASCE ABERTA desde 28/09 — ela virou coluna fixa. Este ajudante
+// passou a GARANTIR que ela está à vista, em vez de clicar no botão: clicando
+// sempre, ele a RECOLHERIA, e as cenas seguintes mediriam uma coluna que não
+// está na tela (foi o que aconteceu ao fazer a mudança).
+//
+// E endereça por `data-abrir-ficha`, e não pelo texto do botão: o rótulo mudou
+// de "Ficha no Vantoro" para "Recolher a ficha" nesta mesma rodada, e foi
+// exatamente por isso que o ajudante deixou de achar o botão — em silêncio,
+// porque ele estava dentro de um `if`. Mesma lição das etiquetas, em 16/09.
 async function abrirFicha() {
-  const b = page.getByRole("button", { name: /Ficha no Vantoro/ });
-  if (await b.count()) await b.first().click();
+  if (!(await page.locator("[data-ficha]").count())) {
+    const b = page.locator("[data-abrir-ficha]");
+    if (await b.count()) await b.first().click();
+  }
   await page.waitForTimeout(1500);
 }
 const textoDaFicha = () => page.locator('input[value], div').first().evaluate(() => document.body.innerText);
@@ -131,8 +142,14 @@ console.log("\n3. O que foi digitado não se perde sem aviso");
     await page.waitForTimeout(300);
     let perguntou = false;
     page.once("dialog", (d) => { perguntou = true; d.dismiss(); });
-    const fechar = page.getByRole("button", { name: "Fechar" });
-    if (await fechar.count()) await fechar.first().click();
+    // POR `data-`, E NÃO PELO RÓTULO. Ele era "Fechar" e virou "Recolher a
+    // ficha" em 28/09, quando a ficha passou a ser coluna fixa — e o clique
+    // deixou de acontecer EM SILÊNCIO, porque morava dentro de um `if`. A cena
+    // reprovou dizendo que a tela não perguntou, quando o que faltou foi o
+    // clique. Mesma lição das etiquetas, em 16/09.
+    const fechar = page.locator("[data-recolher-ficha]");
+    ok("o botão de recolher a ficha existe", (await fechar.count()) > 0);
+    await fechar.first().click();
     await page.waitForTimeout(900);
     const aindaAberta = await page.getByRole("button", { name: /Salvar no Vantoro/ }).count() > 0;
     ok("fechar a ficha com alteração não gravada pergunta antes",
@@ -153,8 +170,9 @@ console.log("\n4. Sem nada digitado, fechar é fechar");
   await abrirFicha();
   let perguntou = false;
   page.once("dialog", (d) => { perguntou = true; d.accept(); });
-  const fechar = page.getByRole("button", { name: "Fechar" });
-  if (await fechar.count()) await fechar.first().click();
+  const fechar = page.locator("[data-recolher-ficha]");
+  ok("o botão de recolher a ficha continua lá", (await fechar.count()) > 0);
+  await fechar.first().click();
   await page.waitForTimeout(900);
   const fechou = await page.getByRole("button", { name: /Salvar no Vantoro/ }).count() === 0;
   ok("sem alteração, fechar não pergunta nada", fechou && !perguntou,

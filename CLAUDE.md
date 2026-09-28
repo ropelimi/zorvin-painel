@@ -226,6 +226,92 @@ confere os dois mundos — o menu só existe abaixo de 768px, então uma confer�
 numa janela larga passaria por não ter achado o menu, e não por o item ter
 sumido.
 
+## A ficha virou uma coluna fixa — e antes ela ESCONDIA a lista
+
+Pedido do Rodrigo em 28/09, com a tela do DataCrazy ao lado: o cadastro à
+vista em toda conversa, numa terceira coluna.
+
+**O que havia não era uma coluna escondida.** O botão da ficha TROCAVA a lista
+de conversas pela ficha — eram duas colunas, não três. Quem quisesse ver o
+cadastro perdia de vista a fila de quem está esperando, que é a tela inteira
+do SAC. Por isso a conferência que mais importa nesta rodada não é *"a ficha
+apareceu"*, e sim **"a ficha apareceu E a lista continua lá"**.
+
+**E havia um segundo defeito, mais silencioso:** trocar de conversa FECHAVA a
+ficha (um `setFichaAberta(false)` no efeito da conversa). Fixa, isso faria o
+pedido valer só até o segundo clique.
+
+### São DOIS estados, e não um — por causa do celular
+
+Abaixo de 768px não cabem três colunas: lá a ficha toma a tela inteira, e
+nascer aberta faria **abrir uma conversa mostrar o cadastro no lugar da
+conversa**. Então:
+
+| | o que vale |
+|---|---|
+| computador | `fichaFixa` — preferência guardada no navegador, padrão LIGADO |
+| celular | `fichaAberta` — o gesto desta vez, que não se guarda |
+
+`fichaVisivel` é derivado dos dois. **Derivar, em vez de corrigir um estado só
+num efeito ao redimensionar**, é o que evita o piscar: girar o celular ou
+encostar a janela nos 768px não faz a ficha abrir e fechar sozinha.
+
+**A preferência é por navegador, como o som do aviso:** quem atende do monitor
+grande quer a ficha à vista; quem atende do notebook de 1280 talvez não — ali
+a conversa cai para ~510px. Padrão **ligado** (`!== "nao"`), pela mesma razão
+da chave da tarja: ausência é "ninguém escolheu ainda", e o pedido era que ela
+ficasse fixa.
+
+**O "X" virou uma seta.** "Fechar" fazia pensar que ela não volta; ela é uma
+coluna, como a lista. No celular continua um X, porque lá voltar é o gesto
+natural. E **Esc não a recolhe no computador** — Esc fecha o que está POR
+CIMA, e uma coluna não está.
+
+### O cache de cinco minutos, e por que ele não é enfeite
+
+Fixa, a ficha passa a consultar o Vantoro **em toda conversa aberta**: numa
+manhã de trinta conversas são trinta idas, contra três ou quatro antes. E
+essas idas são caras — o Vantoro fica atrás da ponte, que hiberna na Render, e
+demora segundos (foi por isso que a ponte ganhou `/vantoro/tempos` em 14/09).
+
+Cinco minutos sai do uso: quem atende volta à mesma conversa várias vezes
+enquanto resolve um caso, e é essa ida repetida que o cache corta. Meia hora
+seria mostrar cadastro velho depois de alguém tê-lo corrigido noutra tela.
+
+**O botão Atualizar fura o cache**, senão passaria a devolver a resposta
+guardada e pareceria quebrado justamente para quem sabe que o cadastro mudou
+agora. **E toda gravação esquece a linha** — sem isso, salvar o CPF e voltar
+cinco minutos depois mostraria o CPF antigo, a tela desmentindo o que a pessoa
+acabou de fazer.
+
+### Duas armadilhas de prova que esta rodada rendeu
+
+**Abrir a ficha RENOMEIA a linha da conversa.** `ligarContatoAoCadastro` grava
+o nome do cadastro no contato e a lista acompanha na hora — a conversa que se
+chamava "Deus" passa a se chamar "ANDREIA CRISTINA MARTINS" no instante em que
+a ficha carrega. Escrevi a prova endereçando por nome e ela ficou esperando
+para sempre por um texto que a própria ficha tinha apagado. **Dentro da lista,
+endereçar por posição ou por `data-`.**
+
+**E `.count()` não mede o que se vê.** A sabotagem que devolvia o defeito — a
+ficha escondendo a lista — **passou**, porque o painel esconde a coluna com
+`display:none` e as linhas continuam no documento. É o mesmo engano registrado
+em 16/09 na prova da busca, com outra roupa. Hoje a prova pergunta
+`isVisible()`.
+
+**E uma terceira, sobre o meu próprio script de sabotagem:** ele contava
+linhas "FALHA" e dizia VAZOU para uma sabotagem que **derrubava a prova
+inteira** com um estouro. Prova que estoura também reprovou — e eu quase fui
+consertar o painel por causa disso.
+
+Prova: `a-ficha-fica-fixa`, 17 conferências, 7 sabotagens e 7 pegas.
+
+**Ainda em aberto, e é decisão:** o visual POR DENTRO da ficha não mudou. Ela
+já é sanfonada como a do DataCrazy (Identificação, Endereço, Acessos, Origem);
+apertar as linhas em rótulo-e-valor na mesma linha foi deixado para depois de
+o Rodrigo ver a coluna fixa na tela — em vez de eu adivinhar o que "parecido
+com o DataCrazy" quer dizer por dentro.
+
 ## As palavras da casa — "advogado" não serve para todo comprador
 
 O painel dizia **"advogado" em nove frases**. Para o escritório está certo; para
