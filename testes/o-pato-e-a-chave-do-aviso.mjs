@@ -214,11 +214,13 @@ console.log("\nO pato é a GRAVAÇÃO que o Rodrigo mandou, e não mais um som s
   const gravacoes = tudo.filter((a) => a.o === "gravacao");
   const osciladores = tudo.filter((a) => a.o === "som");
 
-  // DOIS, e não um: "quá-quá" se reconhece, "quá" sozinho não. O arquivo tem
-  // UM grasnado; são as `repeticoes` que fazem os dois.
-  ok("toca a gravação duas vezes", gravacoes.length === 2, JSON.stringify(gravacoes));
+  // UM, e não dois. Este arquivo exigia dois desde 25/09, por um raciocínio
+  // meu sobre um som que eu não ouço; em 28/09 o Rodrigo ouviu e pediu um só.
+  // A conferência ficou INVERTIDA, e não apagada: é o que impede o segundo
+  // grasnado de voltar por engano.
+  ok("toca a gravação uma vez só", gravacoes.length === 1, JSON.stringify(gravacoes));
   ok("e o que toca é um grasnado curto, não o arquivo de 3 segundos que veio",
-     gravacoes.length === 2 && gravacoes.every((g) => g.dura > 0.1 && g.dura < 0.5),
+     gravacoes.length === 1 && gravacoes.every((g) => g.dura > 0.1 && g.dura < 0.5),
      JSON.stringify(gravacoes.map((g) => g.dura)));
   // A CONFERÊNCIA QUE PEGA O ENCOSTO ESCONDENDO O DEFEITO.
   ok("e NENHUM oscilador — ou seja, não caiu no encosto",
@@ -242,20 +244,20 @@ console.log("\nSem o arquivo, o pato vira o som sintetizado — e não silêncio
   const tocou = tudo.filter((a) => a.o === "som");
   const filtros = tudo.filter((a) => a.o === "filtro");
 
-  ok("com o arquivo fora do ar, ainda sai som", tocou.length === 2, JSON.stringify(tocou));
+  ok("com o arquivo fora do ar, ainda sai som", tocou.length === 1, JSON.stringify(tocou));
   // O CONTORNO É O QUE FAZ O PATO, e ele tem DUAS metades. Conferir só a
   // descida aprovaria de volta o bipe caindo da primeira versão.
-  ok("os dois SOBEM primeiro, bem acima de onde começaram",
-     tocou.length === 2 && tocou.every((n) => n.contorno.length === 2 && n.contorno[0] > n.hz * 1.8),
+  ok("ele SOBE primeiro, bem acima de onde começou",
+     tocou.length === 1 && tocou.every((n) => n.contorno.length === 2 && n.contorno[0] > n.hz * 1.8),
      JSON.stringify(tocou.map((n) => ({ de: n.hz, contorno: n.contorno }))));
-  ok("e depois CAEM abaixo de onde começaram",
-     tocou.length === 2 && tocou.every((n) => n.contorno.length === 2 && n.contorno[1] < n.hz),
+  ok("e depois CAI abaixo de onde começou",
+     tocou.length === 1 && tocou.every((n) => n.contorno.length === 2 && n.contorno[1] < n.hz),
      JSON.stringify(tocou.map((n) => ({ de: n.hz, contorno: n.contorno }))));
-  ok("e são onda dente de serra", tocou.length === 2 && tocou.every((n) => n.forma === "sawtooth"),
+  ok("e é onda dente de serra", tocou.length === 1 && tocou.every((n) => n.forma === "sawtooth"),
      JSON.stringify(tocou.map((n) => n.forma)));
-  ok("com dois filtros", filtros.length === 2, `${filtros.length} filtro(s)`);
-  ok("e eles RESSOAM em vez de só abafar (passa-faixa)",
-     filtros.length === 2 && filtros.every((f) => f.tipo === "bandpass"),
+  ok("com um filtro", filtros.length === 1, `${filtros.length} filtro(s)`);
+  ok("e ele RESSOA em vez de só abafar (passa-faixa)",
+     filtros.length === 1 && filtros.every((f) => f.tipo === "bandpass"),
      JSON.stringify(filtros.map((f) => f.tipo)));
   ok("sem erro de JavaScript no caminho", estouros.length === 0, estouros.join(" | "));
   await ctx.close();

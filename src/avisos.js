@@ -83,9 +83,20 @@ export const SONS = [
     //    estéreo    inútil num aviso, e o dobro do tamanho
     //    pico 0,94  perto de estourar, contra 0,07–0,20 dos outros avisos
     //
-    //  Ficou: 185 ms, mono, 22 kHz, **8 KB**. E é UM grasnado, tocado duas
-    //  vezes — "quá-quá" se reconhece, "quá" sozinho não, que é a mesma razão
-    //  escrita aqui desde 25/09.
+    //  Ficou: 185 ms, mono, 22 kHz, **8 KB**.
+    //
+    //  ------------------------------------------------------------
+    //  E É UM "QUÁ" SÓ — decisão do Rodrigo, contra o que estava escrito aqui
+    //
+    //  Desde 25/09 este arquivo dizia, em três lugares, que *"quá-quá se
+    //  reconhece e quá sozinho não"*. Era raciocínio meu sobre um som que eu
+    //  não ouço; em 28/09 ele ouviu a gravação repetida e pediu um só.
+    //
+    //  Fica escrito porque a frase antiga era categórica: quem ler isto daqui
+    //  a seis meses e achar que "faltou o segundo" encontra a resposta aqui,
+    //  em vez de repor um grasnado que foi tirado de propósito. `repeticoes`
+    //  continua existindo, com um item — é o que permite voltar atrás numa
+    //  linha, se ele mudar de ideia.
     //
     //  ------------------------------------------------------------
     //  POR QUE UM ARQUIVO NÃO REPETE O DESASTRE DE 21/08
@@ -111,22 +122,22 @@ export const SONS = [
     // ============================================================
     id: "pato",
     nome: "Pato",
-    descricao: "Dois grasnados",
+    descricao: "Um grasnado curto",
     arquivo: "/avisos/pato.wav",
-    // QUANDO CADA GRASNADO SAI. O 0,26 é o intervalo do "quá-quá": colados
-    // viram um som só, afastados viram dois avisos.
-    repeticoes: [0, 0.26],
+    // UM GRASNADO SÓ — ver acima: é decisão do Rodrigo, de 28/09.
+    repeticoes: [0],
     // MEDIDO, e não estimado — e é a SEGUNDA vez que a medição me corrige
     // aqui. Estimei 0,12 e a gravação saiu 2,35x mais alta que o encosto; na
     // rodada anterior eu tinha errado o pato-macio por 2,08x, para o outro
     // lado. Ouvido não se substitui por intuição, e a prova
     // `o-volume-dos-avisos` é o que faz as vezes dele.
     volume: 0.051,
+    // O ENCOSTO TAMBÉM PERDEU O SEGUNDO GRASNADO. Deixá-lo com dois faria a
+    // falha do arquivo devolver exatamente o que ele pediu para tirar — e
+    // ninguém ligaria uma coisa à outra.
     notas: [
-      { hz: 240, pico: 620, ate: 190, em: 0,    dura: 0.15, volume: 0.22,
+      { hz: 240, pico: 620, ate: 190, em: 0, dura: 0.15, volume: 0.22,
         forma: "sawtooth", filtro: 1100, filtroTipo: "bandpass", filtroQ: 2 },
-      { hz: 230, pico: 560, ate: 170, em: 0.21, dura: 0.17, volume: 0.20,
-        forma: "sawtooth", filtro: 1000, filtroTipo: "bandpass", filtroQ: 2 },
     ],
   },
   {

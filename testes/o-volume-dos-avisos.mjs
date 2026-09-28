@@ -139,15 +139,16 @@ console.log("\n5. Nenhum aviso estoura o ouvido de quem atende");
      `${maisAlto.id} com rms ${maisAlto.rms.toFixed(4)}`);
 }
 
-console.log("\n6. O pato continua sendo DOIS grasnados, e não um");
+console.log("\n6. O pato é UM grasnado, e não dois");
 {
-  // "quá-quá" se reconhece; "quá" sozinho, não. O arquivo que o Rodrigo
-  // mandou tem UM grasnado de 185ms — são as `repeticoes` que fazem os dois,
-  // e sem elas o som volta a ser o que ele não pediu.
-  ok("a gravação dura o bastante para dois grasnados", por.pato.dura > 0.3,
-     `${por.pato.dura.toFixed(2)}s`);
-  ok("e o encosto também", porEncosto.pato.dura > 0.3,
-     `${porEncosto.pato.dura.toFixed(2)}s`);
+  // ESCRITA AO CONTRÁRIO DE PROPÓSITO. Este arquivo exigia DOIS grasnados
+  // desde 25/09, por um raciocínio meu sobre um som que eu não ouço. Em 28/09
+  // o Rodrigo ouviu e pediu um só. Invertida, a conferência é o que impede o
+  // segundo de voltar numa limpeza futura — apagá-la deixaria a decisão dele
+  // sem nada segurando.
+  const soUm = (m) => m.dura > 0.15 && m.dura < 0.30;
+  ok("a gravação toca uma vez só", soUm(por.pato), `${por.pato.dura.toFixed(2)}s`);
+  ok("e o encosto também", soUm(porEncosto.pato), `${porEncosto.pato.dura.toFixed(2)}s`);
 }
 
 await ctx.close();

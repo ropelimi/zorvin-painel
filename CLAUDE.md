@@ -435,8 +435,16 @@ tem de ouvir por mim. **Quando quem escreve o som não pode ouvi-lo, o caminho
 | canais | estéreo, inútil num aviso e o dobro do tamanho |
 | pico | **0,94**, perto de estourar, contra 0,07–0,20 dos outros avisos |
 
-Ficou: **185 ms, mono, 22 kHz, 8 KB**. E é **um** grasnado tocado **duas**
-vezes, pela razão de sempre: "quá-quá" se reconhece, "quá" sozinho não.
+Ficou: **185 ms, mono, 22 kHz, 8 KB**.
+
+**E é um "quá" SÓ — decisão do Rodrigo, contra o que estava escrito aqui.**
+Desde 25/09 este arquivo afirmava, em três lugares, que *"quá-quá se reconhece
+e quá sozinho não"*. Era raciocínio meu sobre um som que eu não ouço; ele
+ouviu a gravação repetida e pediu um só. As conferências foram **invertidas, e
+não apagadas** — escritas ao contrário, são o que impede o segundo grasnado de
+voltar numa limpeza futura. **O encosto perdeu o segundo junto**, senão a
+falha do arquivo devolveria exatamente o que ele pediu para tirar, e ninguém
+ligaria uma coisa à outra.
 
 **Por que um arquivo não repete o desastre de 21/08.** Lá a franquia do
 Supabase zerou porque cada atendente rebaixava fotos e áudios **das conversas**
