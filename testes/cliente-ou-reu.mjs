@@ -72,11 +72,19 @@ async function abrirConversa(n) {
   await linhas.nth(n).click();
   await page.waitForTimeout(1200);
 }
-async function abrirFicha() {
-  const b = page.getByRole("button", { name: /Ficha no Vantoro/ });
-  if (await b.count()) await b.first().click();
-  await page.waitForTimeout(1500);
+// A FICHA JÁ NASCE ABERTA desde 28/09 — ela virou coluna fixa. Clicar no
+// botão para "abrir" agora a RECOLHE, e as conferências seguintes mediriam
+// uma coluna fora da tela. E o rótulo do botão mudou junto ("Ficha no
+// Vantoro" → "Recolher a ficha"), então endereçar pelo texto deixou de achar
+// qualquer coisa — em silêncio, porque o clique morava dentro de um `if`.
+async function garantirFicha(page) {
+  if (!(await page.locator("[data-ficha]").count())) {
+    const b = page.locator("[data-abrir-ficha]");
+    if (await b.count()) await b.first().click();
+  }
+  await page.waitForTimeout(1600);
 }
+const abrirFicha = () => garantirFicha(page);
 const botaoPapel = (v) => page.locator(`[data-papel="${v}"]`);
 const marcado = async (v) => (await botaoPapel(v).first().getAttribute("aria-pressed")) === "true";
 async function criarPreCadastro() {

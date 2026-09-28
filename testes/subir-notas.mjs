@@ -148,11 +148,19 @@ async function abrir(nome) {
   await page.waitForSelector("[data-topo-conversa]");
   await page.waitForTimeout(700);
 }
-async function abrirFicha() {
-  const b = page.getByRole("button", { name: /Ficha no Vantoro/ });
-  if (await b.count()) await b.first().click();
+// A FICHA JÁ NASCE ABERTA desde 28/09 — ela virou coluna fixa. Clicar no
+// botão para "abrir" agora a RECOLHE, e as conferências seguintes mediriam
+// uma coluna fora da tela. E o rótulo do botão mudou junto ("Ficha no
+// Vantoro" → "Recolher a ficha"), então endereçar pelo texto deixou de achar
+// qualquer coisa — em silêncio, porque o clique morava dentro de um `if`.
+async function garantirFicha(page) {
+  if (!(await page.locator("[data-ficha]").count())) {
+    const b = page.locator("[data-abrir-ficha]");
+    if (await b.count()) await b.first().click();
+  }
   await page.waitForTimeout(1600);
 }
+const abrirFicha = () => garantirFicha(page);
 
 console.log("\nQuem JÁ é cliente não dispara subida nenhuma");
 {

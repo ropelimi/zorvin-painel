@@ -100,8 +100,11 @@ await page.waitForSelector("[data-topo-conversa]");
 await page.waitForTimeout(600);
 
 // Abre a ficha do cliente.
-const botaoFicha = page.locator('button[title="Ficha no Vantoro"]').first();
-if (await botaoFicha.count()) await botaoFicha.click();
+// Ver o comentário de `o-cpf-que-ja-existe`: coluna fixa desde 28/09.
+if (!(await page.locator("[data-ficha]").count())) {
+  const b = page.locator("[data-abrir-ficha]");
+  if (await b.count()) await b.first().click();
+}
 await page.waitForTimeout(1800);
 
 const bloco = page.locator("[data-telefones]");

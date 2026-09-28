@@ -300,16 +300,20 @@ async function cenaDoPreCadastro({ recusar }) {
     await linha.first().click();
     await page.waitForSelector("[data-topo-conversa]").catch(() => {});
     await page.waitForTimeout(700);
-    const botaoFicha = page.getByRole("button", { name: /Ficha no Vantoro/ });
-    if (await botaoFicha.count()) {
-      await botaoFicha.first().click();
-      await page.waitForTimeout(1600);
-      const criar = page.getByRole("button", { name: /Criar pré-cadastro|Criar cadastro|pré-cadastro/i });
-      if (await criar.count()) {
-        await criar.first().click();
-        await page.waitForTimeout(2200);
-        chegou = true;
-      }
+    // A FICHA JÁ NASCE ABERTA (coluna fixa, 28/09). Clicar no botão para
+    // "abrir" agora a RECOLHE — e foi assim que esta cena reprovou dizendo
+    // que não achou o botão de pré-cadastro: ela tinha acabado de fechar a
+    // coluna onde ele mora.
+    if (!(await page.locator("[data-ficha]").count())) {
+      const b = page.locator("[data-abrir-ficha]");
+      if (await b.count()) await b.first().click();
+    }
+    await page.waitForTimeout(1600);
+    const criar = page.getByRole("button", { name: /Criar pré-cadastro|Criar cadastro|pré-cadastro/i });
+    if (await criar.count()) {
+      await criar.first().click();
+      await page.waitForTimeout(2200);
+      chegou = true;
     }
   }
   ok("cheguei a apertar 'Criar pré-cadastro'", chegou,

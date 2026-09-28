@@ -93,7 +93,12 @@ await page.waitForTimeout(1200);
 await page.locator("[data-conversa-nome]").first().click();
 await page.waitForSelector("[data-topo-conversa]");
 await page.waitForTimeout(600);
-await page.locator('button[title="Ficha no Vantoro"]').first().click();
+// A FICHA JÁ NASCE ABERTA (coluna fixa, 28/09): clicar no botão a recolheria,
+// e o título dele mudou para "Recolher a ficha", então o endereço antigo nem
+// achava mais o elemento.
+if (!(await page.locator("[data-ficha]").count())) {
+  await page.locator("[data-abrir-ficha]").first().click();
+}
 await page.waitForTimeout(1800);
 
 const campoCpf = page.locator('[data-campo="cpf"]');
