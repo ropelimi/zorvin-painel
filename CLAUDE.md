@@ -369,7 +369,45 @@ uma segunda aba do Zorvin aberta na mesma máquina.
 `Departamentos.jsx`; copiá-la para a tela de Avisos seria plantar a próxima
 divergência, pela mesma razão que tirou `numeros.js` de dentro do painel.
 
-Prova: `o-pato-e-a-chave-do-aviso`, 28 conferências, 6 sabotagens e 6 pegas.
+### O "quac" — a segunda tentativa, e por que a primeira era um bipe
+
+Relato do Rodrigo em 28/09: *"preciso que seja um 'Quac', que é mais parecido
+com um pato mesmo"*. Ele estava certo, e dá para dizer o que faltava sem
+recorrer a gosto — são **três** coisas que separam um grasnado de um bipe, e a
+primeira receita tinha uma:
+
+| | 1ª versão | agora |
+|---|---|---|
+| onda áspera | dente de serra | igual |
+| **contorno do tom** | só **desce** (560→250) | **salta** 240→620 e despenca a 190 |
+| **ressonância** | passa-**baixa** | passa-**faixa** em 1 kHz, Q 2 |
+
+**O contorno é o que mais importa.** Num grasnado o tom pula para cima num
+piscar e cai — a subida é o "qua", a queda é o "c". Só descendo, o ouvido lê
+"bipe grave": é a mesma nota com outra pressa. O `pico` é alcançado em **12%**
+da duração, e esse número é o que faz dela um SALTO; esticada, vira sirene.
+
+**E o passa-baixa era o filtro errado para a tarefa.** Ele só abafava — tirava
+o áspero e não punha nada no lugar. O que dá o timbre nasalado é uma
+ressonância estreita perto de 1 kHz, que realça os harmônicos de cima e apaga
+o resto: isso é passa-**faixa**, e o `Q` é a largura dela. O volume subiu
+junto, e não é gosto: um passa-faixa joga fora quase toda a energia fora da
+banda.
+
+**O espião da prova precisou crescer junto, e nos dois pontos.** Ele guardava
+`desceuAte` e **cada rampa sobrescrevia a anterior** — com duas rampas, a
+subida ficava invisível. E contava filtros sem olhar o **tipo**, então
+passa-baixa e passa-faixa eram a mesma coisa para ele. Sem as duas correções,
+a prova aprovaria de volta exatamente o som que o Rodrigo pediu para trocar —
+e a sabotagem confirma: devolvendo a receita antiga, as quatro conferências
+novas reprovam.
+
+**Um limite que fica escrito: quem escreve isto não ouve.** Dá para garantir
+pelos números que a onda, o contorno e a ressonância são os de um grasnado;
+não dá para garantir que soa como um. O julgamento é de quem aperta a prévia,
+e o volume em especial foi estimado.
+
+Prova: `o-pato-e-a-chave-do-aviso`, 31 conferências, 7 sabotagens e 7 pegas.
 Ela **espiona o feitio do som**, e não só "tocou": contar osciladores diria que
 houve som, e um bipe também é som — o que separa o pato é a onda, a descida e o
 filtro, então é isso que fica registrado. E o vigia `provas-que-reprovam` pegou

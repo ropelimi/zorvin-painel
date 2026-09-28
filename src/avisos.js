@@ -62,21 +62,39 @@ export const SONS = [
     notas: [{ hz: 587, em: 0, dura: 0.55, volume: 0.07, forma: "sine" }],
   },
   {
-    // O PATO — pedido do Rodrigo em 25/09.
+    // O PATO — pedido do Rodrigo em 25/09, refeito em 28/09.
     //
-    // ELE NÃO É UMA NOTA PARADA, e é por isso que o formato da receita cresceu.
-    // Um grasnado é uma DESCIDA de tom: começa agudo e cai depressa. Tocado
-    // como as outras quatro — uma frequência fixa —, sai um bipe grave e não um
-    // pato. O `ate` é essa descida, e o `filtro` tira o áspero da onda dente de
-    // serra, que sozinha soa mais a campainha quebrada do que a bicho.
+    // A PRIMEIRA VERSÃO SÓ DESCIA, e por isso saía um bipe caindo em vez de um
+    // "quac". Três coisas separam um do outro, e a receita de então tinha uma:
     //
-    // E SÃO DOIS, porque "quá-quá" se reconhece e um "quá" sozinho, não.
+    //   onda áspera        dente de serra          já tinha
+    //   contorno do tom    SOBE e depois cai       faltava
+    //   ressonância        passa-FAIXA, não baixa  faltava
+    //
+    // O CONTORNO É O QUE MAIS IMPORTA. Num grasnado de verdade o tom salta
+    // para cima num piscar e despenca — a subida é o "qua", a queda é o "c".
+    // Só descendo, o ouvido lê "bipe grave"; é a mesma nota com outra pressa.
+    // Por isso entrou o `pico`, alcançado em 12% da duração: rápido o
+    // bastante para ser um salto, e não um portamento de sirene.
+    //
+    // E O FILTRO VIROU PASSA-FAIXA. O passa-baixa só abafava — tirava o
+    // áspero e não punha nada no lugar. O que dá o timbre NASALADO do pato é
+    // uma ressonância estreita por volta de 1 kHz, que realça os harmônicos
+    // de cima e apaga o resto. O `Q` é a largura dela.
+    //
+    // O volume subiu junto, e não é gosto: um passa-faixa joga fora quase
+    // toda a energia fora da banda, então a mesma receita com o filtro novo
+    // sairia quase inaudível.
+    //
+    // E SÃO DOIS, porque "quac-quac" se reconhece e um "quac" sozinho, não.
     id: "pato",
     nome: "Pato",
     descricao: "Dois grasnados curtos",
     notas: [
-      { hz: 560, ate: 250, em: 0, dura: 0.16, volume: 0.13, forma: "sawtooth", filtro: 1600 },
-      { hz: 500, ate: 200, em: 0.22, dura: 0.20, volume: 0.12, forma: "sawtooth", filtro: 1400 },
+      { hz: 240, pico: 620, ate: 190, em: 0,    dura: 0.15, volume: 0.22,
+        forma: "sawtooth", filtro: 1100, filtroTipo: "bandpass", filtroQ: 2 },
+      { hz: 230, pico: 560, ate: 170, em: 0.21, dura: 0.17, volume: 0.20,
+        forma: "sawtooth", filtro: 1000, filtroTipo: "bandpass", filtroQ: 2 },
     ],
   },
   {
@@ -173,8 +191,14 @@ export function tocarAviso(qual) {
       // `filtro`, a ligação é a de sempre — oscilador direto no volume.
       if (n.filtro) {
         const f = ctx.createBiquadFilter();
-        f.type = "lowpass";
+        // PASSA-BAIXA CONTINUA SENDO O PADRÃO, para nenhuma receita antiga
+        // mudar de som só porque este campo passou a existir.
+        f.type = n.filtroTipo || "lowpass";
         f.frequency.value = n.filtro;
+        // O `Q` É A LARGURA DA RESSONÂNCIA, e só vale para o passa-faixa: é
+        // ele que transforma "um filtro" em "um timbre". Sem pedido, fica o
+        // padrão do navegador.
+        if (n.filtroQ) f.Q.value = n.filtroQ;
         o.connect(f); f.connect(g);
       } else {
         o.connect(g);
@@ -183,10 +207,15 @@ export function tocarAviso(qual) {
       o.type = n.forma || "sine";
       o.frequency.value = n.hz;
       const comeca = ctx.currentTime + n.em;
-      // A DESCIDA DE TOM, quando a receita pede. Sem `ate` nada disto roda, e
+      // O CONTORNO DE TOM, quando a receita pede. Sem `ate` nada disto roda, e
       // os quatro sons de sempre saem byte por byte como saíam.
+      //
+      // COM `pico`, SÃO DUAS RAMPAS: sobe depressa até ele e cai até o `ate`.
+      // É o que faz um "quac" em vez de um bipe caindo — e o 0.12 é o que
+      // torna a subida um SALTO; esticada, ela vira sirene.
       if (n.ate) {
         o.frequency.setValueAtTime(n.hz, comeca);
+        if (n.pico) o.frequency.exponentialRampToValueAtTime(n.pico, comeca + n.dura * 0.12);
         o.frequency.exponentialRampToValueAtTime(n.ate, comeca + n.dura);
       }
       // A RAMPA EXPONENCIAL não aceita zero, e é por isso que o mínimo é
