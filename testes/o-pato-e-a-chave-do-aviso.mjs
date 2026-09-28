@@ -67,10 +67,17 @@ async function abrirPainel() {
       globalThis.AudioContext = class extends ACreal {
         createOscillator() {
           const o = super.createOscillator();
-          const registro = { o: "som", forma: null, hz: null, desceuAte: null };
+          // O CONTORNO INTEIRO, e não só o último degrau.
+          //
+          // O espião guardava `desceuAte` e cada rampa o SOBRESCREVIA. Com o
+          // pato de hoje são duas rampas — sobe até o pico, cai até o fim —, e
+          // guardando só a última a prova não teria como ver a SUBIDA, que é
+          // justamente o que separa um "quac" de um bipe caindo.
+          const registro = { o: "som", forma: null, hz: null, contorno: [], desceuAte: null };
           globalThis.__AVISOS.push(registro);
           const rampaReal = o.frequency.exponentialRampToValueAtTime.bind(o.frequency);
           o.frequency.exponentialRampToValueAtTime = (v, t) => {
+            registro.contorno.push(v);
             registro.desceuAte = v;
             return rampaReal(v, t);
           };
@@ -83,8 +90,16 @@ async function abrirPainel() {
           return o;
         }
         createBiquadFilter() {
-          globalThis.__AVISOS.push({ o: "filtro" });
-          return super.createBiquadFilter();
+          const f = super.createBiquadFilter();
+          // O TIPO DO FILTRO É O QUE MUDA O TIMBRE, e contar filtros não o vê:
+          // passa-baixa abafa, passa-faixa RESSOA. Era a diferença entre um
+          // pato e um bipe abafado, e o espião não a registrava.
+          const registro = { o: "filtro", tipo: null, hz: null, q: null };
+          globalThis.__AVISOS.push(registro);
+          queueMicrotask(() => {
+            registro.tipo = f.type; registro.hz = f.frequency.value; registro.q = f.Q.value;
+          });
+          return f;
         }
       };
     }
@@ -150,7 +165,7 @@ console.log("\nO pato está na lista de sons, e a escolha fica guardada");
   await ctx.close();
 }
 
-console.log("\nE ele soa como pato: dois grasnados, e cada um DESCENDO de tom");
+console.log("\nE ele soa como pato: dois grasnados, cada um SUBINDO e depois caindo");
 {
   const { ctx, page, estouros } = await abrirPainel();
   const abriu = await abrirAbaAvisos(page);
@@ -163,15 +178,32 @@ console.log("\nE ele soa como pato: dois grasnados, e cada um DESCENDO de tom");
 
   // DOIS, e não um: "quá-quá" se reconhece, "quá" sozinho não.
   ok("toca dois grasnados", tocou.length === 2, JSON.stringify(tocou));
-  // A DESCIDA É O QUE FAZ O PATO. Sem ela é um bipe grave com outro nome — e
-  // foi por isso que a receita precisou de um campo novo.
-  ok("os dois DESCEM de tom", tocou.length === 2
-     && tocou.every((n) => n.desceuAte && n.desceuAte < n.hz), JSON.stringify(tocou));
+  // O CONTORNO É O QUE FAZ O PATO, e ele tem DUAS metades.
+  //
+  // A primeira versão só descia, e por isso saía um bipe caindo: o ouvido lê
+  // "quac" quando o tom SALTA para cima e despenca — a subida é o "qua", a
+  // queda é o "c". Conferir só a descida aprovaria de volta exatamente o som
+  // que o Rodrigo pediu para trocar em 28/09.
+  ok("os dois SOBEM primeiro, bem acima de onde começaram",
+     tocou.length === 2 && tocou.every((n) => n.contorno.length === 2 && n.contorno[0] > n.hz * 1.8),
+     JSON.stringify(tocou.map((n) => ({ de: n.hz, contorno: n.contorno }))));
+  ok("e depois CAEM abaixo de onde começaram",
+     tocou.length === 2 && tocou.every((n) => n.contorno.length === 2 && n.contorno[1] < n.hz),
+     JSON.stringify(tocou.map((n) => ({ de: n.hz, contorno: n.contorno }))));
   // A onda dente de serra é o timbre do grasnado; a senoide dos outros sons
   // sairia como um assobio.
   ok("e são onda dente de serra", tocou.every((n) => n.forma === "sawtooth"),
      JSON.stringify(tocou.map((n) => n.forma)));
-  ok("com o filtro que tira o áspero", filtros.length === 2, `${filtros.length} filtro(s)`);
+  ok("com dois filtros", filtros.length === 2, `${filtros.length} filtro(s)`);
+  // PASSA-FAIXA, E NÃO PASSA-BAIXA. Um abafa; o outro RESSOA, e é a
+  // ressonância estreita perto de 1 kHz que dá o timbre nasalado do bicho.
+  // Contar filtros não vê a diferença — e ela é metade do conserto de 28/09.
+  ok("e eles RESSOAM em vez de só abafar (passa-faixa)",
+     filtros.length === 2 && filtros.every((f) => f.tipo === "bandpass"),
+     JSON.stringify(filtros.map((f) => f.tipo)));
+  ok("com a ressonância na faixa nasalada, perto de 1 kHz",
+     filtros.length === 2 && filtros.every((f) => f.hz >= 800 && f.hz <= 1600 && f.q >= 1.5),
+     JSON.stringify(filtros));
   ok("sem erro de JavaScript no caminho", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
