@@ -190,8 +190,10 @@ console.log("\n4. O réu de um atendimento não gruda no próximo");
   await page.waitForTimeout(300);
   ok("marquei o réu no primeiro atendimento", await marcado("contraria"));
 
-  const fechar = page.getByRole("button", { name: "Fechar" });
-  ok("a ficha tem como ser fechada", await fechar.count() > 0);
+  // POR `data-`, E NÃO PELO RÓTULO: o botão era "Fechar" e virou "Recolher a
+  // ficha" em 28/09, quando a ficha passou a ser coluna fixa.
+  const fechar = page.locator("[data-recolher-ficha]");
+  ok("a ficha tem como ser recolhida", await fechar.count() > 0);
   await fechar.first().click();
   await page.waitForTimeout(700);
 
