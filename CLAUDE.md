@@ -1272,6 +1272,41 @@ SQL: `sql/2026-09-o-anexo-que-nao-vem-mais.sql` (no repo da ponte). Prova:
 - Modo claro e escuro, alternável.
 - Textos da interface em português.
 
+## As provas rodavam duas vezes, e a franquia acabou
+
+**MEDIDO em 28/09**, com a página de cobrança do GitHub aberta: **2.000 de
+2.000 minutos usados**. E o efeito não foi um aviso — foi as provas **pararem
+de rodar nos dois repositórios desde 25/09**, com os trabalhos falhando em
+5 segundos, **sem log e sem passo nenhum**. Cara de defeito de código, e eu
+cheguei a procurar defeito no código.
+
+A conta que estourou:
+
+| | tempo |
+|---|---|
+| painel, na PR | ~29 min |
+| painel, **de novo** depois do merge | ~29 min |
+| ponte, na PR | ~7 min |
+| ponte, **de novo** depois do merge | ~7 min |
+| **por entrega** | **~72 min** → 28 entregas/mês |
+
+**A rodada do `push: main` saiu.** Ela existia por uma razão verdadeira — duas
+PRs verdes separadas podem se somar numa `main` vermelha —, mas testava de
+novo, minutos depois, o mesmo código que a PR tinha acabado de aprovar. E uma
+proteção que se desliga sozinha por falta de minutos protege menos do que uma
+que roda. Agora são ~36 min por entrega, ou ~55 entregas.
+
+**O risco que ela cobria não ficou descoberto.** Entrou uma **rodada semanal**
+(segunda de manhã) mais o disparo à mão, e ela pega o que a rodada de PR nunca
+pegaria: uma versão nova de dependência quebrando a `main` parada — o
+`package-lock.json` está no `.gitignore`, então `npm install` traz o que
+houver no dia. Custa ~36 min/mês contra os ~1.000 que o `push` custava.
+
+**A lição maior é a de sempre nesta casa, com outra roupa:** o alarme ficou
+três dias desligado e ninguém soube. Ao mexer em qualquer coisa que AVISA,
+pergunte quanto ela custa para continuar de pé — e o que se vê no dia em que
+ela parar.
+
 ## Fluxo de trabalho — PRs (REGRA IMPORTANTE do Rodrigo)
 
 - **Cada entrega/pedido deve ir numa PR NOVA.** Nunca reutilizar nem estender uma PR já mesclada.
