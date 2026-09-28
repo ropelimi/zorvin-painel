@@ -276,27 +276,44 @@ export function porQueNaoRecebeWhatsApp(bruto) {
                     + "Se as mensagens não estiverem chegando, veja se há um celular na ficha." };
   }
 
-  // Onze dígitos e DDD bom: o número está bem escrito. Só falta saber se ele
-  // veio ASSIM do cadastro, ou se foi a chave que consertou na hora.
-  const certo = numeroCanonico(chave);
-  const comoEsta = guardado.length === 10 || guardado.length === 11
-    ? numeroCanonico(guardado) : guardado;
-  if (comoEsta !== certo) {
-    // "O WHATSAPP SÓ CONHECE X" ERA UMA AFIRMAÇÃO FORTE E ERRADA.
-    //
-    // Contas antigas continuam atendendo na forma de oito dígitos — o relato
-    // que corrigiu isto foi uma conversa com mensagens indo e voltando, com
-    // dois tiques, embaixo de uma tarja dizendo que o número não recebia.
-    //
-    // O que se pode dizer é o que é VERIFICÁVEL: o número está na forma
-    // antiga, e existe uma forma nova. Quem decide se é a mesma linha é quem
-    // olha a ficha.
-    return { tipo: "sem-nono", sugestao: certo,
-             titulo: "Este celular está na forma antiga, sem o nono dígito.",
-             curto: `Com o nono dígito seria ${telefoneLegivel(certo)}.`,
-             detalhe: `Está gravado como ${telefoneLegivel(comoEsta)}; com o nono dígito seria `
-                    + `${telefoneLegivel(certo)}. Números antigos ainda funcionam — mas se as `
-                    + `mensagens não estiverem chegando, confira o número na ficha do cliente.` };
-  }
+  // ============================================================
+  //  O AVISO DO NONO DÍGITO SAIU, E QUEM O TIROU FOI A MEDIÇÃO
+  //
+  //  Ele nasceu com uma afirmação forte e errada ("o WhatsApp só conhece X"),
+  //  foi corrigido uma vez para a forma cautelosa ("números antigos ainda
+  //  funcionam — mas se as mensagens não estiverem chegando, confira") e
+  //  AINDA ASSIM estava errado. O que caiu agora não foi o texto: foi a
+  //  PREMISSA dele.
+  //
+  //  MEDIDO em 28/09, nas 1.802 conversas do escritório:
+  //
+  //                            conversas   respondemos   vazias
+  //      forma antiga (8)          805        73,8%       12,0%
+  //      com o nono dígito (9)     997        72,7%       16,6%
+  //
+  //  A forma antiga não prevê NADA. Ela recebe resposta nossa um pouco MAIS
+  //  do que a nova, e fica vazia um pouco MENOS. O aviso mandava desconfiar
+  //  de uma coisa que, nos números do próprio escritório, não é um problema.
+  //
+  //  E ELE APARECIA EM 805 CONVERSAS — 44% da lista inteira. É a armadilha
+  //  do alarme que não pede ação, no pior tamanho possível: quase metade das
+  //  conversas com uma tarja âmbar que se aprende a não ler, e aí a do DDD
+  //  inválido — que prevê de verdade — passa batida junto.
+  //
+  //  E O DANO NÃO É HIPOTÉTICO. Em 28/09 ele mandou o Rodrigo conferir o
+  //  número na ficha de um cliente; ele acrescentou lá o mesmo celular com o
+  //  nono dígito, atrás de uma causa que não existia, e ficou sem entender
+  //  por que o painel não oferecia conversar pelo número novo. Não oferecia
+  //  porque é a MESMA linha — e quem o mandou procurar foi esta tarja.
+  //
+  //  OS OUTROS AVISOS FICAM. "DDD que não existe" e "isto é um fixo" dizem
+  //  coisas verificáveis sobre o número em si. Este dizia uma coisa
+  //  verificável ("está na forma antiga") e a emendava com uma INSINUAÇÃO
+  //  sobre entrega, que é o que foi medido e caiu.
+  //
+  //  Se um dia aparecer relato de uma conta que só atende numa das formas, o
+  //  caminho não é devolver a tarja para 44% das conversas: é medir aquela
+  //  conta.
+  // ============================================================
   return null;
 }

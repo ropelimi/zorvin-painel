@@ -264,20 +264,30 @@ console.log("\nO que dá para saber olhando o número, antes de tentar mandar");
 {
   const diz = (n) => porQueNaoRecebeWhatsApp(n);
 
-  // ---- os 16 sem o nono dígito ----
+  // ---- os 16 sem o nono dígito: O AVISO SAIU, E A MEDIÇÃO O TIROU ----
   {
-    // ALCIDES PINTO COLARES DOS SANTOS, 8 tentativas entre 10 e 27 de agosto.
-    const r = diz("553189271231");
-    ok("celular sem o nono dígito é reconhecido", r?.tipo === "sem-nono", JSON.stringify(r));
-    ok("e a tela recebe o número certo para conferir", r?.sugestao === "5531989271231",
-       `sugeriu ${r?.sugestao}`);
-    ok("dizendo os dois, o que está e o que devia estar",
-       /\(31\) 8927-1231/.test(r?.detalhe || "") && /98927-1231/.test(r?.detalhe || ""),
-       r?.detalhe);
-    // JUCIMARA DA SILVA PEREIRA (71) e ANDRE EUGENIO (31), da mesma varredura.
-    ok("vale para qualquer DDD", diz("557182197259")?.sugestao === "5571982197259");
-    ok("e para o celular antigo que começa com 7",
-       diz("553172371748")?.sugestao === "5531972371748");
+    // MEDIDO em 28/09, nas 1.802 conversas do escritório: a forma antiga
+    // recebe resposta nossa em 73,8% dos casos e a nova em 72,7%; vazias,
+    // 12,0% contra 16,6%. A forma antiga não prevê nada — e o aviso aparecia
+    // em 805 conversas, 44% da lista.
+    //
+    // ESTAS CONFERÊNCIAS FORAM INVERTIDAS, e é de propósito: escritas ao
+    // contrário, elas são o que impede o aviso de voltar por engano numa
+    // limpeza futura. Um `null` sem prova nenhuma seria só a ausência de
+    // teste.
+    ok("celular sem o nono dígito NÃO vira aviso", diz("553189271231") === null,
+       JSON.stringify(diz("553189271231")));
+    ok("nem em outro DDD", diz("557182197259") === null,
+       JSON.stringify(diz("557182197259")));
+    ok("nem o celular antigo que começa com 7", diz("553172371748") === null,
+       JSON.stringify(diz("553172371748")));
+    // E O NÚMERO CONTINUA SENDO ENTENDIDO — o que saiu foi o AVISO, e não o
+    // conhecimento sobre a forma antiga. `chaveDoNumero` segue juntando as
+    // duas formas na mesma conversa, que é o que impede o cliente de virar
+    // duas linhas na lista.
+    ok("mas as duas formas continuam sendo a MESMA linha",
+       chaveDoNumero("553189271231") === chaveDoNumero("5531989271231"),
+       `${chaveDoNumero("553189271231")} vs ${chaveDoNumero("5531989271231")}`);
   }
 
   // ---- os 8 fixos ----

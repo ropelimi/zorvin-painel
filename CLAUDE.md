@@ -1176,6 +1176,76 @@ despedida é **plantada pela prova** (cliente escreve → respondemos → ele
 agradece) e não emprestada da bancada: a recontagem calcula a espera a partir
 das mensagens, e sem essa forma a cena do desfazer não teria o que medir.
 
+## O aviso do nono dígito não previa nada — e mandou mexer na ficha de um cliente
+
+Relato do Rodrigo em 28/09: ele acrescentou `(71) 99259-0325` na ficha de um
+cliente que já tinha `(71) 9259-0325`, o número novo apareceu na lista com o
+selo "WhatsApp", **e não havia como conversar por ele**. Pediu para eu procurar
+o defeito.
+
+**Não havia defeito nenhum no botão.** `chaveDoNumero` junta as duas formas de
+propósito — é o que impede o mesmo cliente de virar duas conversas —, então o
+painel concluiu, corretamente, *"isto é a conversa em que você já está"*.
+
+### O que caiu foi a PREMISSA do aviso, e a medição a derrubou
+
+Eu cheguei a dizer que a conversa vazia era prova de que as duas formas não são
+intercambiáveis. **Era palpite, e o banco desmentiu** — nas 1.802 conversas do
+escritório:
+
+| forma | conversas | respondemos | vazias |
+|---|---|---|---|
+| antiga (8 dígitos) | 805 | **73,8%** | 12,0% |
+| com o nono dígito | 997 | **72,7%** | 16,6% |
+
+A forma antiga recebe resposta nossa um pouco **mais** do que a nova, e fica
+vazia um pouco **menos**. A Uazapi resolve sozinha. O aviso mandava desconfiar
+de uma coisa que, nos números do próprio escritório, não é um problema.
+
+**E ele aparecia em 805 conversas — 44% da lista inteira.** É a armadilha do
+alarme que não pede ação no pior tamanho possível: quase metade das conversas
+com uma tarja âmbar que se aprende a não ler, e aí a do **DDD inválido** — que
+prevê de verdade — passa batida junto.
+
+**O dano não é hipotético:** foi essa tarja que mandou o Rodrigo conferir a
+ficha, e é por isso que hoje há um número duplicado no cadastro de um cliente.
+
+**Os outros avisos ficam.** "DDD que não existe" e "isto é um fixo" dizem
+coisas verificáveis sobre o número em si. Este dizia uma coisa verificável
+("está na forma antiga") e a emendava com uma **insinuação sobre entrega** — e
+foi a insinuação que foi medida e caiu.
+
+**O aviso já tinha sido corrigido uma vez**, de "o WhatsApp só conhece X"
+(forte e falsa) para a redação cautelosa. Não bastou: o texto estava honesto e
+a premissa continuava errada. **Frase cuidadosa sobre um fato que não existe
+continua sendo ruído.**
+
+### E a quarta roupa da mesma forma
+
+A tela **não disse nada**. O número entrou na lista e o botão não apareceu, sem
+uma palavra. É a forma que este projeto já encontrou três vezes: ausência no
+lugar de falha (04/09), sucesso no lugar de falha (24/09), falha sem causa
+(25/09) — e agora **silêncio no lugar de uma explicação**. O efeito é sempre o
+mesmo: alguém procura defeito onde não há.
+
+Hoje a ficha recusa **antes de gravar** e diz por quê: *"é a MESMA linha de
+(71) 9259-0325 — no WhatsApp o nono dígito não muda a conta"*. Acrescentar uma
+segunda escrita do mesmo número não conserta nada e deixa a lista com duas
+linhas que parecem dois telefones.
+
+**As conferências das provas foram INVERTIDAS, e não apagadas** — escritas ao
+contrário, elas são o que impede o aviso de voltar por engano numa limpeza
+futura. Um `null` sem prova nenhuma seria só a ausência de teste. A sabotagem
+que devolve o aviso é pega por quatro delas.
+
+**E a cena do celular trocou de conversa**, não de medida: ela mede o TAMANHO
+da tarja num aparelho de 360px, e para isso precisa de uma conversa que ainda
+tenha uma — agora é a do telefone fixo. Trocar a medida por "não há tarja"
+perderia a única conferência que existe sobre a tarja não comer um quinto da
+tela.
+
+Provas: `numeros` (65), `numero-que-nao-recebe` (15), `ficha` (14).
+
 ## Banco de dados (tabelas que o painel lê/escreve)
 
 - `advogados` — lê (id, nome, numero, foto_url) onde `ativo = true`

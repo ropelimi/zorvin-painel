@@ -675,9 +675,53 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     }
   }
 
+  // ============================================================
+  //  ACRESCENTAR UM NÚMERO QUE JÁ ESTÁ AÍ, COM OUTRA ROUPA
+  //
+  //  RELATO DE 28/09, e a tela ficou calada do começo ao fim. O Rodrigo
+  //  acrescentou (71) 99259-0325 numa ficha que já tinha (71) 9259-0325, o
+  //  número novo apareceu na lista, e não havia como conversar por ele. Ele
+  //  procurou o defeito; não havia nenhum.
+  //
+  //  AS DUAS SÃO A MESMA LINHA. O painel sabe disso — `chaveDoNumero` junta
+  //  as formas com e sem o nono dígito de propósito, e é o que impede o mesmo
+  //  cliente de virar duas conversas. Por isso o botão "conversar por este"
+  //  não aparece: ele abriria a conversa em que a pessoa já está.
+  //
+  //  O CÓDIGO ESTAVA CERTO E A TELA ESTAVA ERRADA. Esta é a forma que este
+  //  projeto já encontrou três vezes, agora numa quarta roupa: antes ela
+  //  desenhou ausência no lugar de falha, sucesso no lugar de falha, e falha
+  //  sem causa; aqui ela desenha SILÊNCIO no lugar de uma explicação. O
+  //  resultado é o mesmo — alguém procura defeito onde não há.
+  //
+  //  Então a ficha passa a DIZER. E ela diz ANTES de gravar: acrescentar uma
+  //  segunda escrita do mesmo número não conserta nada e deixa a lista com
+  //  duas linhas que parecem dois telefones.
+  // ============================================================
   async function acrescentarTelefone() {
     const numero = (novoNumero || "").trim();
     if (!numero) return;
+
+    // A COMPARAÇÃO É PELA CHAVE, e não pelo texto: é justamente a diferença
+    // de escrita que engana o olho, e a chave é o que o resto do painel usa
+    // para decidir se dois números são a mesma pessoa.
+    const chaveNova = chaveDoNumero(numero);
+    const igual = telefones.find((t) => chaveDoNumero(t.digitos || t.numero) === chaveNova);
+    if (igual) {
+      const jaEsta = telefoneLegivel(igual.digitos || igual.numero);
+      const novo = telefoneLegivel(numero);
+      avisar(novo === jaEsta
+        ? `${jaEsta} já está nesta ficha.`
+        // A FRASE DIZ O PORQUÊ, e não só "não dá". Sem o motivo, quem lê
+        // conclui que o programa recusou por implicância e tenta de novo
+        // escrevendo de outro jeito — que foi o caminho do relato.
+        : `${novo} é a MESMA linha de ${jaEsta} — no WhatsApp o nono dígito `
+          + `não muda a conta, e o Zorvin já trata as duas como uma só. `
+          + `Não há uma segunda conversa para acrescentar.`);
+      setNovoNumero("");
+      return;
+    }
+
     await mexerNosTelefones("", { method: "POST", body: JSON.stringify({ numero }) },
                             "Número acrescentado.");
     setNovoNumero("");

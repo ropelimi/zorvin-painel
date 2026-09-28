@@ -57,24 +57,26 @@ async function abrir(nome) {
   });
 }
 
-console.log("\nO celular gravado sem o nono dígito");
+console.log("\nO celular gravado sem o nono dígito — NENHUMA tarja");
 {
+  // A TARJA SAIU, E QUEM A TIROU FOI A MEDIÇÃO.
+  //
+  // Ela passou por duas redações: "o WhatsApp só conhece X" (forte e falsa) e
+  // depois a cautelosa, "números antigos ainda funcionam — mas se as mensagens
+  // não estiverem chegando, confira". Nenhuma das duas era o problema: a
+  // PREMISSA é que era falsa.
+  //
+  // MEDIDO em 28/09, nas 1.802 conversas do escritório: a forma antiga recebe
+  // resposta nossa em 73,8% dos casos e a nova em 72,7%; vazias, 12,0% contra
+  // 16,6%. Ela não prevê nada — e a tarja aparecia em 805 conversas, 44% da
+  // lista, ensinando a equipe a não ler tarja âmbar nenhuma.
+  //
+  // E O DANO FOI MEDIDO TAMBÉM: ela mandou o Rodrigo conferir a ficha de um
+  // cliente, ele acrescentou lá o mesmo celular com o nono dígito, e ficou
+  // sem entender por que não havia como conversar pelo número novo. Não havia
+  // porque é a MESMA linha.
   const t = await abrir("Alcides");
-  ok("a tarja aparece", !!t, "nenhuma tarja na conversa");
-  ok("e diz que o número está na forma antiga", t?.tipo === "sem-nono", `veio ${t?.tipo}`);
-  // SEM AFIRMAR O QUE NÃO SE SABE. A primeira redação dizia "o WhatsApp só
-  // conhece (31) 98927-1231" — uma afirmação forte, e falsa: contas antigas
-  // continuam atendendo na forma antiga. A tarja diz o que é verificável.
-  ok("sem afirmar que o WhatsApp não conhece o número",
-     !/só conhece/i.test(t?.texto || ""), t?.texto);
-  // O NÚMERO CERTO NA TELA. Sem ele a tarja só reclama: quem atende teria de
-  // saber de cor a regra do nono dígito para fazer alguma coisa com o aviso.
-  ok("mostrando o número certo, pronto para conferir na ficha",
-     /98927-1231/.test(t?.texto || ""), t?.texto);
-  ok("e o número como está hoje, para a pessoa reconhecer qual é",
-     /\(31\) 8927-1231/.test(t?.texto || ""), t?.texto);
-  ok("e manda conferir na ficha, em vez de só constatar",
-     /ficha do cliente/i.test(t?.texto || ""), t?.texto);
+  ok("não há tarja nenhuma nesta conversa", t === null, JSON.stringify(t));
 }
 
 console.log("\nO telefone fixo");
@@ -148,7 +150,14 @@ console.log("\nNo celular");
   // Volta para a lista: no celular a conversa aberta ocupa a tela inteira.
   await page.locator('[aria-label="Voltar"], [title="Voltar"]').first().click().catch(() => {});
   await page.waitForTimeout(900);
-  const t = await abrir("Alcides");
+  // O FIXO, E NÃO MAIS O DO NONO DÍGITO.
+  //
+  // Esta cena mede o TAMANHO da tarja num celular, e para isso precisa de uma
+  // conversa que ainda tenha uma. A do nono dígito deixou de ter (ver o
+  // comentário lá em cima); trocar a conversa mantém a medida de pé, e trocar
+  // a medida por "não há tarja" perderia a única conferência que existe sobre
+  // a tarja não comer um quinto da tela.
+  const t = await abrir("PG Advogados");
   ok("a tarja também aparece no celular", !!t, "nenhuma tarja");
   const r = await page.evaluate(() => {
     const el = document.querySelector("[data-numero-nao-recebe]");
