@@ -62,119 +62,82 @@ export const SONS = [
     notas: [{ hz: 587, em: 0, dura: 0.55, volume: 0.07, forma: "sine" }],
   },
   {
-    // O PATO — pedido do Rodrigo em 25/09, refeito em 28/09.
+    // ============================================================
+    //  O PATO É UMA GRAVAÇÃO, E ISSO FOI UMA RENDIÇÃO MEDIDA
     //
-    // A PRIMEIRA VERSÃO SÓ DESCIA, e por isso saía um bipe caindo em vez de um
-    // "quac". Três coisas separam um do outro, e a receita de então tinha uma:
+    //  Quatro tentativas de sintetizar um grasnado, quatro reprovadas pelo
+    //  Rodrigo — e a última rodada, com TRÊS vozes de uma vez, saiu pior do
+    //  que a primeira. A causa não é ajuste de número: um oscilador com
+    //  filtro faz tom moldado, e um grasnado de verdade é em boa parte
+    //  CHIADO, que nenhum oscilador produz. Insistir era continuar na família
+    //  "campainha" e gastar as tentativas de quem tem de ouvir por mim.
     //
-    //   onda áspera        dente de serra          já tinha
-    //   contorno do tom    SOBE e depois cai       faltava
-    //   ressonância        passa-FAIXA, não baixa  faltava
+    //  Em 28/09 ele mandou o som que quer. Quando quem escreve o som não pode
+    //  ouvi-lo, essa é a única forma de acertar.
     //
-    // O CONTORNO É O QUE MAIS IMPORTA. Num grasnado de verdade o tom salta
-    // para cima num piscar e despenca — a subida é o "qua", a queda é o "c".
-    // Só descendo, o ouvido lê "bipe grave"; é a mesma nota com outra pressa.
-    // Por isso entrou o `pico`, alcançado em 12% da duração: rápido o
-    // bastante para ser um salto, e não um portamento de sirene.
+    //  ------------------------------------------------------------
+    //  O ARQUIVO NÃO É O QUE VEIO — foi medido e cortado
     //
-    // E O FILTRO VIROU PASSA-FAIXA. O passa-baixa só abafava — tirava o
-    // áspero e não punha nada no lugar. O que dá o timbre NASALADO do pato é
-    // uma ressonância estreita por volta de 1 kHz, que realça os harmônicos
-    // de cima e apaga o resto. O `Q` é a largura dela.
+    //    3,0 s      o que chegou; o grasnado vai de 0,22 s a 0,39 s
+    //    94%        do arquivo era SILÊNCIO
+    //    estéreo    inútil num aviso, e o dobro do tamanho
+    //    pico 0,94  perto de estourar, contra 0,07–0,20 dos outros avisos
     //
-    // O volume subiu junto, e não é gosto: um passa-faixa joga fora quase
-    // toda a energia fora da banda, então a mesma receita com o filtro novo
-    // sairia quase inaudível.
+    //  Ficou: 185 ms, mono, 22 kHz, **8 KB**.
     //
-    // E SÃO DOIS, porque "quac-quac" se reconhece e um "quac" sozinho, não.
+    //  ------------------------------------------------------------
+    //  E É UM "QUÁ" SÓ — decisão do Rodrigo, contra o que estava escrito aqui
+    //
+    //  Desde 25/09 este arquivo dizia, em três lugares, que *"quá-quá se
+    //  reconhece e quá sozinho não"*. Era raciocínio meu sobre um som que eu
+    //  não ouço; em 28/09 ele ouviu a gravação repetida e pediu um só.
+    //
+    //  Fica escrito porque a frase antiga era categórica: quem ler isto daqui
+    //  a seis meses e achar que "faltou o segundo" encontra a resposta aqui,
+    //  em vez de repor um grasnado que foi tirado de propósito. `repeticoes`
+    //  continua existindo, com um item — é o que permite voltar atrás numa
+    //  linha, se ele mudar de ideia.
+    //
+    //  ------------------------------------------------------------
+    //  POR QUE UM ARQUIVO NÃO REPETE O DESASTRE DE 21/08
+    //
+    //  Lá a franquia do Supabase zerou porque cada atendente rebaixava fotos
+    //  e áudios DAS CONVERSAS de hora em hora (armadilha nº 6 do CLAUDE.md da
+    //  ponte). Aqui são 8 KB servidos pelo PRÓPRIO site — não passa pelo
+    //  Supabase —, baixados uma vez e guardados pelo navegador até a próxima
+    //  publicação. E só por quem escolhe o pato: a busca acontece no primeiro
+    //  toque, e não na abertura do painel.
+    //
+    //  A régua que fica: som de aviso PODE ser arquivo, desde que seja
+    //  servido daqui, pequeno, e buscado só quando for usado.
+    //
+    //  ------------------------------------------------------------
+    //  AS `notas` CONTINUAM AQUI, E VIRARAM O ENCOSTO
+    //
+    //  Não são sobra do que não deu certo. Falhando a busca — rede caída,
+    //  publicação pela metade, navegador bloqueando —, o aviso sai
+    //  sintetizado em vez de NÃO SAIR. Um aviso mudo é indistinguível de
+    //  "ninguém escreveu", que é o defeito que esta casa persegue desde
+    //  04/09.
+    // ============================================================
     id: "pato",
     nome: "Pato",
-    descricao: "Dois grasnados curtos",
+    descricao: "Um grasnado curto",
+    arquivo: "/avisos/pato.wav",
+    // UM GRASNADO SÓ — ver acima: é decisão do Rodrigo, de 28/09.
+    repeticoes: [0],
+    // MEDIDO, e não estimado — e é a SEGUNDA vez que a medição me corrige
+    // aqui. Estimei 0,12 e a gravação saiu 2,35x mais alta que o encosto; na
+    // rodada anterior eu tinha errado o pato-macio por 2,08x, para o outro
+    // lado. Ouvido não se substitui por intuição, e a prova
+    // `o-volume-dos-avisos` é o que faz as vezes dele.
+    volume: 0.051,
+    // O ENCOSTO TAMBÉM PERDEU O SEGUNDO GRASNADO. Deixá-lo com dois faria a
+    // falha do arquivo devolver exatamente o que ele pediu para tirar — e
+    // ninguém ligaria uma coisa à outra.
     notas: [
-      { hz: 240, pico: 620, ate: 190, em: 0,    dura: 0.15, volume: 0.22,
+      { hz: 240, pico: 620, ate: 190, em: 0, dura: 0.15, volume: 0.22,
         forma: "sawtooth", filtro: 1100, filtroTipo: "bandpass", filtroQ: 2 },
-      { hz: 230, pico: 560, ate: 170, em: 0.21, dura: 0.17, volume: 0.20,
-        forma: "sawtooth", filtro: 1000, filtroTipo: "bandpass", filtroQ: 2 },
-    ],
-  },
-  // ============================================================
-  //  TRÊS VOZES DE PATO, PARA ESCOLHER OUVINDO
-  //
-  //  Relato do Rodrigo em 28/09: "o volume está bom, mas o som não está
-  //  adequado — quero outra voz". Perguntado, o que incomoda é ele estar
-  //  **agudo/estridente demais**.
-  //
-  //  A CAUSA, no pato de hoje: o passa-faixa a 1100 Hz com Q=2 ressoa
-  //  justamente na banda mais irritante do ouvido, e o pico de tom vai a
-  //  620 Hz. As três vozes abaixo descem os dois, cada uma por um caminho
-  //  diferente — e o pato de hoje FICA na lista, para ele comparar.
-  //
-  //  ELAS SÃO TEMPORÁRIAS, e é por isso que os ids são novos em vez de
-  //  substituírem o `pato`: quem já escolheu o pato continua com ele. Trocar
-  //  o id por baixo faria `somEscolhido()` não reconhecer o guardado e cair
-  //  no "Toque" — a equipe perderia a escolha sem nada dizer.
-  //
-  //  E A RODADA QUE TIRAR AS PERDEDORAS TEM DE LEVAR ISSO JUNTO: quem tiver
-  //  escolhido uma delas cai no "Toque" pelo mesmo caminho. Ao remover, some
-  //  os ids daqui a uma lista de apelidos que `somEscolhido()` traduz para o
-  //  `pato` vencedor. Escrito aqui porque é o tipo de rabicho que se esquece
-  //  três dias depois, e o sintoma — "meu som mudou sozinho" — não aponta
-  //  para a causa.
-  //
-  //  OS VOLUMES NÃO FORAM ESTIMADOS. Estão medidos para sair na mesma altura
-  //  do pato de hoje, que é o que ele aprovou — comparando timbres em alturas
-  //  diferentes, ganha o mais alto e não o melhor. Ver `o-volume-dos-avisos`.
-  // ============================================================
-  {
-    // GRAVE E REDONDO. Tira o passa-faixa e põe passa-baixa: sem ressonância
-    // não há apito, e o que sobra é o corpo do som.
-    id: "pato-grave",
-    nome: "Pato 1 — grave",
-    descricao: "Mais fundo, sem apito",
-    notas: [
-      { hz: 150, pico: 380, ate: 120, em: 0,    dura: 0.17, volume: 0.10,
-        forma: "sawtooth", filtro: 800, filtroTipo: "lowpass" },
-      { hz: 145, pico: 350, ate: 110, em: 0.23, dura: 0.19, volume: 0.09,
-        forma: "sawtooth", filtro: 750, filtroTipo: "lowpass" },
-    ],
-  },
-  {
-    // ROUCO. Dois osciladores desafinados de propósito em cada grasnado: o
-    // batimento entre eles é o que dá aspereza de bicho, que um oscilador
-    // sozinho não tem. O passa-faixa continua, mas uma oitava abaixo e com
-    // Q menor — ressoa sem apitar.
-    id: "pato-rouco",
-    nome: "Pato 2 — rouco",
-    descricao: "Áspero, mais parecido com bicho",
-    notas: [
-      { hz: 170, pico: 430, ate: 135, em: 0,    dura: 0.15, volume: 0.16,
-        forma: "sawtooth", filtro: 700, filtroTipo: "bandpass", filtroQ: 1.1 },
-      { hz: 181, pico: 458, ate: 144, em: 0,    dura: 0.15, volume: 0.13,
-        forma: "sawtooth", filtro: 700, filtroTipo: "bandpass", filtroQ: 1.1 },
-      { hz: 165, pico: 405, ate: 128, em: 0.22, dura: 0.17, volume: 0.15,
-        forma: "sawtooth", filtro: 660, filtroTipo: "bandpass", filtroQ: 1.1 },
-      { hz: 176, pico: 432, ate: 137, em: 0.22, dura: 0.17, volume: 0.12,
-        forma: "sawtooth", filtro: 660, filtroTipo: "bandpass", filtroQ: 1.1 },
-    ],
-  },
-  {
-    // MACIO. Onda triangular, que quase não tem harmônico agudo: é o mais
-    // longe possível de estridente, ao preço de soar menos "bicho". Está
-    // aqui como o extremo oposto do de hoje — comparar com um extremo é o
-    // que faz o do meio ficar evidente.
-    id: "pato-macio",
-    nome: "Pato 3 — macio",
-    descricao: "O menos incômodo dos três",
-    notas: [
-      // O 0,077 SAIU DA MEDIÇÃO, e o meu palpite era 0,16 — mais que o
-      // DOBRO. A onda triangular parecia a mais fraca das três por ter
-      // poucos harmônicos, e é o contrário: o passa-baixa quase não tira
-      // nada dela, enquanto corta metade da dente de serra. A prova
-      // `o-volume-dos-avisos` pegou, com 2,08x.
-      { hz: 200, pico: 470, ate: 155, em: 0,    dura: 0.16, volume: 0.077,
-        forma: "triangle", filtro: 1000, filtroTipo: "lowpass" },
-      { hz: 190, pico: 440, ate: 145, em: 0.22, dura: 0.18, volume: 0.072,
-        forma: "triangle", filtro: 950, filtroTipo: "lowpass" },
     ],
   },
   {
@@ -191,9 +154,25 @@ export const SONS = [
 
 export const SOM_PADRAO = "toque";
 
+// AS VOZES QUE NÃO FICARAM CONTINUAM SENDO ENTENDIDAS.
+//
+// Em 28/09 a tela ofereceu três patos candidatos, e eles saíram no dia
+// seguinte. Quem tivesse escolhido um deles cairia no "Toque" em silêncio —
+// `somEscolhido()` não reconheceria o id guardado e usaria o padrão. Trocar o
+// som de alguém sem avisar é pequeno e é exatamente o tipo de coisa que
+// ninguém liga à causa: o sintoma é "meu som mudou sozinho".
+//
+// Traduzir custa três linhas e vale para sempre; a lista só cresce quando um
+// id sai de circulação.
+const APELIDOS = {
+  "pato-grave": "pato",
+  "pato-rouco": "pato",
+  "pato-macio": "pato",
+};
+
 export function somEscolhido() {
   try {
-    const guardado = localStorage.getItem(CHAVE);
+    const guardado = APELIDOS[localStorage.getItem(CHAVE)] || localStorage.getItem(CHAVE);
     return SONS.some((s) => s.id === guardado) ? guardado : SOM_PADRAO;
   } catch (_) {
     // Navegador com armazenamento bloqueado (janela anônima, política da
@@ -267,7 +246,56 @@ let contexto = null;
 //  cópia da montagem dentro da prova mediria uma receita que não é a que
 //  toca — que é o jeito de um teste não testar nada.
 // ============================================================
-export function montarSom(ctx, som, base = 0) {
+// ============================================================
+//  A GRAVAÇÃO É BUSCADA UMA VEZ, E SÓ SE FOR USADA
+//
+//  A promessa fica guardada: quem escolheu o pato busca 8 KB no primeiro
+//  toque do dia e mais nada; quem nunca o escolheu não busca nada. Guardar a
+//  PROMESSA, e não o resultado, é o que impede duas mensagens quase juntas de
+//  dispararem duas buscas.
+//
+//  A CHAVE LEVA A TAXA DE AMOSTRAGEM do contexto: a decodificação reamostra
+//  para a taxa de quem pediu, e a prova mede num contexto de 44,1 kHz
+//  enquanto a máquina de quem atende costuma ser de 48. Uma chave só devolveria
+//  o áudio na taxa errada para o segundo a pedir.
+//
+//  FALHA VIRA `null`, E NÃO ERRO. Quem chamou cai na receita sintetizada — um
+//  aviso pior é melhor do que aviso nenhum, e aviso nenhum se parece com
+//  "ninguém escreveu".
+// ============================================================
+const gravados = new Map();
+
+export function carregarGravado(ctx, som) {
+  if (!som || !som.arquivo) return Promise.resolve(null);
+  const chave = `${som.arquivo}@${ctx.sampleRate}`;
+  if (!gravados.has(chave)) {
+    gravados.set(chave, fetch(som.arquivo)
+      .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((dados) => ctx.decodeAudioData(dados))
+      .catch((e) => {
+        // UMA LINHA NO CONSOLE, e não silêncio: sem ela, "o pato virou bipe"
+        // seria um mistério. É a mesma régua da faixa do tempo real.
+        console.error("[zorvin] não consegui carregar o som do aviso:", som.arquivo, e);
+        return null;
+      }));
+  }
+  return gravados.get(chave);
+}
+
+export function montarSom(ctx, som, base = 0, gravado = null) {
+  // O CAMINHO DA GRAVAÇÃO. Sem ela — porque a receita não tem arquivo, ou
+  // porque a busca falhou —, segue o de sempre, logo abaixo.
+  if (gravado) {
+    for (const em of (som.repeticoes || [0])) {
+      const fonte = ctx.createBufferSource();
+      const g = ctx.createGain();
+      fonte.buffer = gravado;
+      fonte.connect(g); g.connect(ctx.destination);
+      g.gain.value = som.volume == null ? 1 : som.volume;
+      fonte.start(base + em);
+    }
+    return;
+  }
   for (const n of som.notas) {
     const o = ctx.createOscillator();
     const g = ctx.createGain();
@@ -313,14 +341,17 @@ export function montarSom(ctx, som, base = 0) {
 }
 
 /** Quanto tempo o som inteiro dura, para a medição saber o que renderizar. */
-export function duracaoDoSom(som) {
+export function duracaoDoSom(som, gravado = null) {
+  if (gravado) {
+    return (som.repeticoes || [0]).reduce((t, em) => Math.max(t, em + gravado.duration + 0.02), 0);
+  }
   return (som.notas || []).reduce((t, n) => Math.max(t, n.em + n.dura + 0.02), 0);
 }
 
 /** Toca o som escolhido (ou o pedido, na prévia da tela de ajustes). */
 export function tocarAviso(qual) {
   const som = SONS.find((s) => s.id === (qual || somEscolhido()));
-  if (!som || !som.notas.length) return;
+  if (!som || (!som.notas.length && !som.arquivo)) return;
   try {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
@@ -329,6 +360,15 @@ export function tocarAviso(qual) {
     // O NAVEGADOR SUSPENDE O ÁUDIO até a pessoa interagir com a página. Sem
     // este `resume`, o primeiro aviso do dia é engolido em silêncio.
     if (ctx.state === "suspended") ctx.resume();
+    // COM ARQUIVO, O TOQUE ESPERA A BUSCA — e só na primeira vez do dia, que
+    // são 8 KB. Adiantar a busca para a abertura do painel faria todo mundo
+    // baixar o pato, inclusive quem nunca vai escolhê-lo.
+    if (som.arquivo) {
+      carregarGravado(ctx, som)
+        .then((gravado) => montarSom(ctx, som, ctx.currentTime, gravado))
+        .catch(() => { /* o encosto já está dentro de carregarGravado */ });
+      return;
+    }
     montarSom(ctx, som, ctx.currentTime);
   } catch (_) { /* silêncio se o navegador bloquear */ }
 }
