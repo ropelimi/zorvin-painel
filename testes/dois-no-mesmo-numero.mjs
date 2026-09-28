@@ -74,8 +74,11 @@ async function plantarVinculo(id) {
 async function abrirConversaEFicha() {
   await page.locator("[data-conversa-nome]").first().click();
   await page.waitForTimeout(1000);
-  const b = page.getByRole("button", { name: /Ficha no Vantoro/ });
-  if (await b.count()) await b.first().click();
+  // Ver `garantirFicha`: a ficha é coluna fixa desde 28/09, e clicar a recolhe.
+  if (!(await page.locator("[data-ficha]").count())) {
+    const b = page.locator("[data-abrir-ficha]");
+    if (await b.count()) await b.first().click();
+  }
   await page.waitForTimeout(1400);
 }
 
