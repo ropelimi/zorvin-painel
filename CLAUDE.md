@@ -306,6 +306,33 @@ consertar o painel por causa disso.
 
 Prova: `a-ficha-fica-fixa`, 17 conferências, 7 sabotagens e 7 pegas.
 
+### E a conversa ganhou espaço, dois dias depois de a ficha chegar
+
+Com a ficha fixa, o Rodrigo usou um dia e voltou com duas coisas.
+
+**A lista encolheu de 380 para 320px.** Os 380 foram medidos em 16/09, quando a
+tela tinha DUAS colunas; com três, a conversa tinha caído para ~590px a 1360.
+320 é o menor valor que ainda não corta nada na coluna — a marca, o nome do
+telefone, o nome do cliente e a prévia —, e está num lugar só
+(`LARGURA_DA_LISTA`), porque a prova mede este número.
+
+**E o cabeçalho da conversa invadia a ficha.** Relato com foto: a lupa da busca
+aparecia POR BAIXO da coluna. Medido: o bloco do nome **já tinha encolhido a
+zero** (na foto vê-se o avatar e nenhum nome) e os botões sozinhos passavam da
+borda — os dois ESCRITOS, "Marcar como não lida" e "Já tratei", custam ~280px
+dos ~550 que a fila precisa.
+
+Apertado, os dois viram **ícone** (`cabecalhoApertado`). Não somem: continuam
+com `title` e `aria-label`, e no celular continuam escritos dentro do menu ⋮.
+A conta é de LARGURA, e não de medir o DOM — medir exigiria desenhar, medir e
+redesenhar, e os rótulos piscariam a cada conversa aberta.
+
+**E o `overflow: hidden` do cabeçalho é ENCOSTO, não o conserto.** Quem faz
+caber é a conta acima; ele existe para que um botão novo, num dia em que
+ninguém refez essa conta, seja **cortado na borda** em vez de ir pintar por
+cima da ficha — que é o defeito relatado, e que ninguém lê como "falta espaço
+aqui".
+
 **Ainda em aberto, e é decisão:** o visual POR DENTRO da ficha não mudou. Ela
 já é sanfonada como a do DataCrazy (Identificação, Endereço, Acessos, Origem);
 apertar as linhas em rótulo-e-valor na mesma linha foi deixado para depois de
@@ -1504,60 +1531,84 @@ no próprio arquivo. Prova: `o-tempo-real-que-cai-e-volta`.
 
 #### E por que ele caiu — a quinta roupa da mesma forma
 
-Relato do Rodrigo em 28/09, com foto: a faixa vermelha do tempo real na tela do
-escritório, e o pedido de tirá-la. **Ela não estava errada** — enquanto ela
-aparece, mensagem nova não chega sozinha para ninguém. O que estava errado é
-que ela dizia QUE caiu e **nada** do porquê.
+O motivo da queda CHEGAVA e era jogado fora: `subscribe` chama de volta com
+**dois** argumentos — `(status, err)` —, e o painel recebia só o primeiro, sem
+nem um `console.error`. Três hipóteses minhas sobre a causa caíram, uma atrás
+da outra, porque não havia uma única linha de evidência em lugar nenhum.
 
-**E o motivo chegava.** `subscribe` chama de volta com **dois** argumentos —
-`(status, err)` —, e o painel recebia só o primeiro. O segundo era jogado fora
-**sem nem um `console.error`**: em três hipóteses minhas sobre a causa desta
-queda, nenhuma se sustentou, porque não havia uma única linha de evidência em
-lugar nenhum.
-
-É a **mesma forma** de sempre, agora pela quinta porta:
-
-| | a tela desenhava |
-|---|---|
-| 04/09 | **ausência** no lugar de falha |
-| 24/09 | **sucesso** no lugar de falha |
-| 25/09 | **falha sem causa** |
-| 28/09 | **silêncio** no lugar de uma explicação |
-| **28/09** | **falha sem causa**, no aviso que existe para contar a falha |
-
-**O motivo separa defeitos que pedem coisas opostas:**
+Hoje o motivo vai para o console, e ele separa defeitos que pedem coisas
+opostas:
 
 | o que aparece | o que é |
 |---|---|
 | `CHANNEL_ERROR: mismatch between server and client bindings…` | o canal **morreu**; só recarregar resolve (ver `ESPERAS_DE_VOLTA`) |
 | `CHANNEL_ERROR` seco | quase sempre assinatura recusada — RLS, ou a tabela fora da publicação `supabase_realtime` |
-| `TIMED_OUT` / `CLOSED` | é rede: o wi-fi, a tampa do notebook, a Render piscando |
+| `TIMED_OUT` / `CLOSED` | é rede |
 
-Sem ele, as três viram uma frase só e quem for consertar recomeça do zero —
-que foi exatamente o que aconteceu.
+**Guarda-se o PRIMEIRO, não o último:** cada tentativa do vigia que não pega
+gera outro `CHANNEL_ERROR`, e o último seria sempre o do vigia — a causa
+soterrada pelas consequências. Prova: `o-tempo-real-diz-o-motivo`.
 
-**Guarda-se o PRIMEIRO, não o último.** Cada tentativa do vigia que não pega
-gera outro `CHANNEL_ERROR`; guardando o último, a causa da queda ficaria
-soterrada pelas consequências dela. É a mesma razão que arma os três relógios
-uma vez só.
+#### E a faixa vermelha saiu — porque deixou de ser verdade
 
-**A faixa leva a frase curta, o console leva o erro inteiro** — a régua de
-`comOCodigo`, em `gravar.js`. E o motivo vai **depois** do que fazer: quem
-atende lê a primeira metade e já sabe; quem conserta lê a segunda. Na frente,
-a frase vira coisa de máquina e o recado se perde no meio. Corta em 110 letras,
-porque a biblioteca chega a devolver uma pilha inteira.
+Pedido do Rodrigo em 28/09, pela **terceira** vez: *"elimine essa mensagem
+vermelha, não quero que fique aparecendo, isso já está acontecendo há muito
+tempo, resolva logo"*.
 
-**E a bancada mentia por omissão, pela terceira vez nesta série:** o
-`subscribe` dela chamava `aoMudar(estado)` e mais nada. Uma bancada que esconde
-o segundo argumento aprova **igualmente** o painel que lê o motivo e o que o
-joga fora.
+**Ela não mentia.** Enquanto aparecia, mensagem nova não chegava sozinha, e
+apagá-la teria escondido isso — a armadilha nº 2 outra vez, agora de propósito.
+**Mas mantê-la também não resolvia nada:** não há gesto do atendente que
+conserte o canal, e alarme que não pede ação se aprende a ignorar. Ficou
+semanas de pé sendo lida como decoração vermelha.
 
-Prova: `o-tempo-real-diz-o-motivo`, 20 conferências, 7 sabotagens e 7 pegas.
+**Então o conserto não foi a faixa: foi a CONSEQUÊNCIA.** Com o canal fora, o
+painel passou a **reler sozinho de 20 em 20 segundos** (`CADENCIA_DA_PESCA_MS`,
+pela mesma `reporRef` que a volta do canal já usava). As mensagens voltam a
+chegar sem ninguém clicar — mais devagar, e chegam. Aí a frase *"as mensagens
+novas não estão chegando sozinhas"* deixou de ser verdade, e **é por isso que
+ela pôde sair: não foi escondida, foi resolvida.**
+
+**Vinte segundos, e não cinco:** cada releitura são ~7 idas a `conversas`, e
+oito atendentes a cada cinco segundos seriam onze consultas por segundo num
+banco de plano gratuito — trocaríamos um defeito por outro. E ela só começa
+**depois da carência**, aproveitando o relógio que já existia: um soluço de
+três segundos não merece uma rodada de consultas.
+
+**O que NÃO se perdeu:** o motivo continua indo para o console, e a releitura
+que falhar continua acendendo a faixa **âmbar** (`data-falha-de-leitura`), que
+é a que diz "esta tela está incompleta". Ninguém fica sem aviso quando há algo
+a fazer; some o aviso de um problema que o painel passou a contornar.
+
+**Saíram junto:** `tempoRealCaiu`, `tempoRealDesistiu`, o relógio da promessa e
+o "recarregue a página" — não havia mais o que prometer. **O vigia ficou**, e
+há uma cena só para isso: o conserto não podia ir embora junto com o alarme.
+
+**As conferências das três provas do tempo real foram INVERTIDAS, e não
+apagadas.** Escritas ao contrário, são o que impede a faixa de voltar por
+engano numa limpeza futura.
+
+**E a prova nova custou três medidas erradas minhas, todas do mesmo feitio —
+medir a coisa próxima em vez da coisa certa:**
+
+1. exigir *"no máximo 2 consultas"* no soluço curto — uma releitura sozinha
+   custa ~7, e o número estava errado, não o painel;
+2. contar **rodadas** separadas por 200ms — uma releitura se parte em duas com
+   o atraso que a bancada simula;
+3. contar rodadas separadas por 400ms — no soluço as duas releituras ficam a
+   130ms uma da outra, e o agrupamento as via como **uma só**. A sabotagem que
+   tirava a carência **passou**.
+
+O que ficou: a prova **mede o custo de uma releitura na hora** e compara com
+ele. A régua se ajusta sozinha no dia em que a releitura ficar mais cara.
+
 **Ainda em aberto:** a causa da queda no escritório. Isto não conserta — faz a
-próxima ocorrência se identificar sozinha, na foto da tela, em vez de custar
-outra rodada de adivinhação.
+próxima ocorrência não custar nada a quem atende, e deixar rastro no console
+para quem for consertar.
 
-### A linha desativada não some
+Prova: `a-pesca-enquanto-o-canal-esta-fora`, 11 conferências, 4 sabotagens e
+4 pegas.
+
+### A linha desativada não some### A linha desativada não some
 
 A ponte recusa enviar por um telefone desativado (ver o CLAUDE.md dela). Só que
 o painel lia `advogados` com `ativo = true`, e a conta não fechava: as conversas

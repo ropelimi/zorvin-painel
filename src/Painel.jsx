@@ -195,6 +195,35 @@ let TEM_CONTAGEM_NO_BANCO = true;
 // desenvolvimento, em que o React monta duas vezes de propósito.
 let contaDeNomesDoCanal = 0;
 
+// ============================================================
+//  DE QUANTO EM QUANTO O PAINEL RELÊ ENQUANTO O TEMPO REAL ESTÁ FORA
+//
+//  Pedido do Rodrigo em 28/09, pela terceira vez: *"elimine essa mensagem
+//  vermelha, isso já está acontecendo há muito tempo, resolva logo"*.
+//
+//  A faixa não mentia — enquanto ela aparecia, mensagem nova não chegava
+//  sozinha. Esconder a faixa seria esconder isso, e o cliente ficaria sem
+//  resposta com a tela calada. Mas MANTER a faixa por semanas também não
+//  resolve nada: alarme que não pede ação se aprende a ignorar, e este não
+//  pede — não há gesto do atendente que conserte o canal.
+//
+//  Então o conserto não é a faixa: é a CONSEQUÊNCIA. Com o canal fora, o
+//  painel passa a reler sozinho de 20 em 20 segundos. As mensagens voltam a
+//  chegar sem ninguém clicar — mais devagar, e chegam. Aí a frase "as
+//  mensagens novas não estão chegando sozinhas" deixou de ser verdade, e é
+//  por isso que ela pôde sair: não foi escondida, foi resolvida.
+//
+//  VINTE SEGUNDOS, e não cinco: cada releitura são ~5 consultas, e oito
+//  atendentes a cinco segundos seriam 8 consultas por segundo num banco de
+//  plano gratuito — trocaríamos um defeito por outro. Vinte dá 2/s, e só
+//  enquanto o canal está fora.
+//
+//  E ela só começa DEPOIS da carência, aproveitando o relógio que já existia:
+//  um soluço de reconexão de três segundos não merece uma rodada de consultas.
+// ============================================================
+const CADENCIA_DA_PESCA_MS =
+  (typeof globalThis !== "undefined" && globalThis.__CADENCIA_DA_PESCA) || 20000;
+
 const CARENCIA_TEMPO_REAL_MS =
   (typeof globalThis !== "undefined" && globalThis.__CARENCIA_TEMPO_REAL) || 10000;
 
@@ -229,17 +258,21 @@ const ESPERAS_DE_VOLTA =
   (typeof globalThis !== "undefined" && globalThis.__ESPERAS_DE_VOLTA)
   || [15000, 30000, 60000, 120000];
 
-//  E A PROMESSA TEM PRAZO.
-//
-//  Passado este tempo sem o canal voltar, o painel para de dizer que está
-//  reconectando e diz o que fazer. Dizer "estamos reconectando" para sempre é o
-//  mesmo defeito que esta tela já teve de três jeitos: afirmar o que não se
-//  apurou. Três minutos é longo o bastante para não mandar ninguém recarregar
-//  por causa de um soluço, e curto o bastante para não deixar alguém a manhã
-//  inteira esperando mensagem que não vem.
-const LIMITE_DA_PROMESSA_MS =
-  (typeof globalThis !== "undefined" && globalThis.__LIMITE_DA_PROMESSA) || 180000;
 // ============================================================
+
+// ============================================================
+//  A LARGURA DA COLUNA DA ESQUERDA
+//
+//  Eram 380px, medidos em 16/09 quando a tela tinha DUAS colunas. Com a ficha
+//  fixa (28/09) são três, e o Rodrigo pediu espaço para a conversa: a 1360 ela
+//  tinha caído para ~590px.
+//
+//  320 é o menor valor que ainda não corta nada na coluna — a marca, o nome do
+//  telefone em "ATENDENDO COMO", o nome do cliente e a prévia. Está num lugar
+//  só porque a prova mede este número, e duas escritas dele divergiriam no
+//  primeiro ajuste.
+// ============================================================
+const LARGURA_DA_LISTA = 320;
 
 // A FICHA FIXA FICA GUARDADA NO NAVEGADOR. Padrão LIGADO: `!== "nao"`, como a
 // chave da tarja — armazenamento vazio (primeira abertura, janela anônima,
@@ -437,8 +470,7 @@ function resumirMotivo(estado, erro) {
   return estado ? `${estado}: ${curto}` : curto;
 }
 
-function frasesDaSaude(saude, ehAdmin, tempoRealCaiu = false, tempoRealDesistiu = false,
-                       motivoDoTempoReal = "") {
+function frasesDaSaude(saude, ehAdmin) {
   const por = {};
   for (const l of saude || []) por[l.sinal] = l;
   const frases = [];
@@ -453,35 +485,28 @@ function frasesDaSaude(saude, ehAdmin, tempoRealCaiu = false, tempoRealDesistiu 
       + ` (${haQuantoTempo(por.eventos_desistidos.desde)}). Uma conversa calada pode não estar calada.`);
   }
 
-  // O TEMPO REAL FORA, LOGO DEPOIS. Vem antes das paradas da fila porque muda
-  // como se lê TUDO o que está na tela: se as mensagens novas não estão
-  // chegando sozinhas, a conversa calada pode não estar calada e a lista pode
-  // estar desatualizada. Fica atrás só da mensagem que não entrou, que é
-  // perda, e não atraso.
+  // O TEMPO REAL FORA NÃO APARECE MAIS AQUI, e isso é conserto, não omissão.
   //
-  // A frase diz que estamos reconectando porque é verdade — o canal volta
-  // sozinho — e porque não há gesto melhor do que esperar. Pedir para
-  // recarregar seria empurrar trabalho para quem atende por algo que o painel
-  // resolve, e resolve relendo o que passou.
-  if (tempoRealCaiu) {
-    // E QUANDO A PROMESSA VENCE, ELA SAI DA FRASE.
-    //
-    // "Estamos reconectando" dito por vinte minutos é a tela afirmando o que
-    // não apurou — o mesmo defeito, pela quarta porta. Há um caminho em que o
-    // canal morre de vez (ver ESPERAS_DE_VOLTA), e nele só recarregar resolve.
-    // Enquanto a frase promete, ninguém recarrega: ela diz que não precisa.
-    const oQueFazer = tempoRealDesistiu
-      ? "As mensagens novas não estão chegando sozinhas, e as tentativas de"
-        + " reconectar não deram certo. Recarregue a página para voltar a receber."
-      : "As mensagens novas não estão chegando sozinhas — a conexão ao vivo caiu."
-        + " Estamos reconectando; quando voltar, a tela se atualiza.";
-    // E O MOTIVO VAI JUNTO, entre parênteses, DEPOIS do que fazer.
-    //
-    // Antes, porque a ordem é a decisão: quem atende lê a primeira metade e
-    // já sabe o que fazer; quem for consertar lê a segunda. Pondo o código na
-    // frente, a frase vira coisa de máquina e o recado se perde no meio.
-    frases.push(motivoDoTempoReal ? `${oQueFazer} (${motivoDoTempoReal})` : oQueFazer);
-  }
+  //  A frase dizia "as mensagens novas não estão chegando sozinhas". Ela era
+  //  verdade, e por isso a faixa ficou de pé por semanas — até o Rodrigo pedir
+  //  pela terceira vez, em 28/09, que ela saísse.
+  //
+  //  O que mudou é que ela deixou de ser verdade: com o canal fora, o painel
+  //  passou a RELER sozinho de 20 em 20 segundos (ver CADENCIA_DA_PESCA_MS).
+  //  As mensagens chegam — mais devagar, e chegam. Uma faixa vermelha sobre um
+  //  problema que não tem mais consequência para quem lê é exatamente o alarme
+  //  que se aprende a ignorar, e aí o próximo passa batido junto.
+  //
+  //  O QUE NÃO SE PERDEU:
+  //   - o motivo da queda continua indo para o console, com o estado e a
+  //     mensagem da biblioteca (ver `aoMudarDeEstado`) — é de lá que sai o
+  //     diagnóstico da causa, que segue em aberto;
+  //   - a releitura que falha continua acendendo a faixa ÂMBAR
+  //     (`data-falha-de-leitura`), que é a que diz "esta tela está
+  //     incompleta". Se a pesca também não passar, a tela fala.
+  //
+  //  Ou seja: ninguém fica sem aviso quando há algo a fazer. Some o aviso de
+  //  um problema que o painel passou a contornar sozinho.
 
   // A LINHA CAÍDA DIZ O NOME. Sem ele, quem atende não sabe se é a linha que
   // ela está usando — e é essa a única pergunta que importa neste aviso.
@@ -2837,56 +2862,23 @@ export default function Painel({ sessao }) {
   const [saude, setSaude] = useState([]);
 
   // ============================================================
-  //  O TEMPO REAL CAIU — e a tela ficava calada exatamente como se
-  //  ninguém tivesse escrito.
+  //  O TEMPO REAL QUE CAI — e o painel que passa a reler sozinho
   //
-  //  O canal era assinado com `.subscribe()` SEM retorno de chamada: o painel
-  //  nunca ficava sabendo se ele estava de pé. Caindo a conexão — o wi-fi do
-  //  escritório, a tampa do notebook fechada, o Supabase piscando —, as
-  //  mensagens novas simplesmente paravam de aparecer. E a tela de uma
+  //  Caindo a conexão, as mensagens novas param de aparecer, e a tela de uma
   //  conversa sem mensagem nova é IDÊNTICA à de uma conversa em que o cliente
   //  não respondeu. A pessoa fica olhando, esperando, e conclui a coisa errada.
   //
-  //  E TEM A METADE QUE NÃO É AVISO. O `postgres_changes` não repete o que
-  //  passou: o que o banco publicou enquanto o canal estava fora não chega
-  //  nunca, nem depois que ele volta. Avisar sem reler deixaria a pessoa
-  //  informada e a tela errada — por isso a volta do canal RELÊ.
+  //  Até 28/09 a resposta a isso era uma FAIXA VERMELHA avisando. Ela era
+  //  verdadeira e ficou semanas de pé, porque não há gesto do atendente que
+  //  conserte o canal — o alarme que não pede ação, exatamente. Hoje a
+  //  resposta é outra: o painel RELÊ sozinho enquanto o canal está fora (ver
+  //  `CADENCIA_DA_PESCA_MS`), as mensagens voltam a chegar, e a faixa saiu
+  //  porque a frase dela deixou de ser verdade.
+  //
+  //  Não há estado de tela para isto, e é de propósito: não há nada que a
+  //  tela precise dizer. O motivo da queda vai para o console, e a releitura
+  //  que falhar acende a faixa âmbar de sempre.
   // ============================================================
-  const [tempoRealCaiu, setTempoRealCaiu] = useState(false);
-  // E SE O PAINEL JÁ DESISTIU de reconectar sozinho. Separado de
-  // `tempoRealCaiu` porque a frase muda: uma promete, a outra pede uma ação.
-  const [tempoRealDesistiu, setTempoRealDesistiu] = useState(false);
-  // ============================================================
-  //  E POR QUE ELE CAIU — a quinta roupa da mesma forma
-  //
-  //  A faixa dizia QUE o tempo real caiu e não dizia NADA do porquê. O motivo
-  //  chegava: `subscribe` chama de volta com DOIS argumentos, `(estado, erro)`,
-  //  e o painel recebia só o primeiro. O segundo era jogado fora — sem nem um
-  //  `console.error`. Era o mesmo desenho que custou uma rodada inteira de
-  //  scripts no Supabase em 24/09: o único lugar que sabia a causa foi o único
-  //  que não a guardou.
-  //
-  //  E AQUI ELE SEPARA DEFEITOS QUE PEDEM COISAS OPOSTAS:
-  //
-  //    CHANNEL_ERROR + "mismatch between server and client bindings"
-  //        → o canal MORREU de vez (ver ESPERAS_DE_VOLTA). Acontece depois de
-  //          uma publicação do Realtime, ou quando o banco publica um conjunto
-  //          de tabelas diferente do que o painel pediu.
-  //    CHANNEL_ERROR sem mensagem
-  //        → normalmente é a assinatura recusada: RLS, ou a tabela fora da
-  //          publicação `supabase_realtime`.
-  //    TIMED_OUT / CLOSED
-  //        → é rede. O wi-fi, a tampa do notebook, a Render piscando.
-  //
-  //  Sem o motivo, as três viram "a conexão ao vivo caiu" e quem for consertar
-  //  recomeça do zero, adivinhando — que foi exatamente o que aconteceu aqui.
-  //
-  //  GUARDA-SE O PRIMEIRO, e não o último, pela mesma razão que arma os três
-  //  relógios uma vez só: cada tentativa do vigia que não pega gera outro
-  //  `CHANNEL_ERROR`, e o último seria sempre o do vigia — a causa da queda
-  //  ficaria soterrada pelas consequências dela.
-  // ============================================================
-  const [motivoDoTempoReal, setMotivoDoTempoReal] = useState("");
 
   // O QUE RELER, GUARDADO NUM ESPELHO E NÃO NAS DEPENDÊNCIAS DO CANAL.
   //
@@ -2953,6 +2945,31 @@ export default function Painel({ sessao }) {
   // `fichaFixa`, lá em cima: no computador vale a preferência guardada; no
   // celular, o gesto desta vez.
   const fichaVisivel = estreito ? fichaAberta : fichaFixa;
+
+  // ============================================================
+  //  O CABEÇALHO DA CONVERSA APERTA QUANDO NÃO CABE
+  //
+  //  Relato do Rodrigo em 28/09, com foto: a lupa da busca aparecia POR BAIXO
+  //  da ficha. Medido: o bloco do nome já tinha encolhido a ZERO (na foto vê-se
+  //  o avatar "EG" e nenhum nome), e os botões sozinhos passavam da borda.
+  //
+  //  A conta: os dois botões ESCRITOS — "Marcar como não lida" e "Já tratei" —
+  //  custam ~280px dos ~550 que a fila de botões precisa. Com a ficha fixa
+  //  ocupando 330px, a conversa não tem esses 550 num monitor de 1300.
+  //
+  //  Apertado, os dois viram ÍCONE. Não somem: continuam com `title` e
+  //  `aria-label`, e no celular continuam escritos dentro do menu ⋮ — esconder
+  //  um botão que a equipe usa todo dia seria trocar um defeito visível por um
+  //  invisível.
+  //
+  //  A conta é de LARGURA, e não de medir o DOM: medir exigiria desenhar,
+  //  medir e redesenhar, e a tela piscaria com os rótulos aparecendo e sumindo
+  //  a cada abertura de conversa.
+  // ============================================================
+  const larguraDaConversa = largura - 60
+    - (estreito ? 0 : LARGURA_DA_LISTA)
+    - (!estreito && fichaVisivel ? 330 : 0);
+  const cabecalhoApertado = !estreito && larguraDaConversa < 620;
   /** Mostra ou recolhe a ficha, escrevendo no estado certo para o layout. */
   function alternarFicha(mostrar) {
     if (estreito) { setFichaAberta(mostrar); return; }
@@ -5759,9 +5776,9 @@ export default function Painel({ sessao }) {
   // recarregar a página.
   useEffect(() => {
     let carencia = null;
-    // O relógio da promessa e o do vigia. Ver ESPERAS_DE_VOLTA, lá em cima.
-    let promessa = null;
     let vigia = null;
+    // O RELÓGIO DA PESCA — ver CADENCIA_DA_PESCA_MS.
+    let pesca = null;
     let tentativas = 0;
     let canal = null;
     let vivo = true;
@@ -6068,7 +6085,8 @@ export default function Painel({ sessao }) {
       .subscribe(aoMudarDeEstado);
 
     // O SEGUNDO ARGUMENTO É O MOTIVO, e ele vinha sendo descartado. Ver
-    // `motivoDoTempoReal`, lá em cima, para o que cada forma quer dizer.
+    // `resumirMotivo`, lá em cima, para o que cada forma quer dizer — é a
+    // única pista que existe da causa, que segue em aberto.
     function aoMudarDeEstado(estado, erro) {
       if (estado === "SUBSCRIBED") {
         // A VOLTA RELÊ. O `postgres_changes` não repete o que passou: tudo o
@@ -6088,43 +6106,38 @@ export default function Painel({ sessao }) {
         tentativas = 0;
         clearTimeout(vigia); vigia = null;
         clearTimeout(carencia); carencia = null;
-        clearTimeout(promessa); promessa = null;
-        setTempoRealCaiu(false);
-        setTempoRealDesistiu(false);
-        setMotivoDoTempoReal("");
+        // O CANAL VOLTOU: a pesca para. Deixá-la correndo seria cinco
+        // consultas a cada vinte segundos, por atendente, para sempre.
+        clearInterval(pesca); pesca = null;
         return;
       }
-      // QUEDA NÃO ACENDE A LUZ NA HORA. Uma reconexão comum passa por
-      // `CLOSED` e volta em poucos segundos; acender ali faria a faixa
-      // piscar no meio do expediente por nada, e faixa que pisca à toa se
-      // aprende a ignorar. Dez segundos calados é o que separa o soluço da
-      // queda.
+      // QUEDA NÃO COMEÇA A PESCA NA HORA. Uma reconexão comum passa por
+      // `CLOSED` e volta em poucos segundos; sair relendo ali seria cinco
+      // consultas por soluço, por atendente. Dez segundos calados é o que
+      // separa o soluço da queda.
       //
-      // OS TRÊS RELÓGIOS SÓ SÃO ARMADOS UMA VEZ, e é o que os torna relógios
+      // OS DOIS RELÓGIOS SÓ SÃO ARMADOS UMA VEZ, e é o que os torna relógios
       // de "quanto tempo fora" em vez de "quanto tempo desde o último erro".
       // Cada tentativa do vigia que não pega gera outro `CHANNEL_ERROR`; se
-      // eles rearmassem, a faixa nunca acenderia e a promessa nunca venceria —
-      // o conserto teria desligado o aviso que existe para contar a queda.
+      // eles rearmassem, a pesca nunca começaria — o conserto teria desligado
+      // justamente o que faz as mensagens continuarem chegando.
       caiuRef.current = true;
-      // O CONSOLE LEVA O ERRO INTEIRO, e a tela leva só a frase curta. É a
-      // mesma régua de `comOCodigo`, em `gravar.js`: despejar a pilha na faixa
-      // não ajuda quem atende a decidir nada, e jogá-la fora deixa quem for
-      // consertar sem a única pista que existiu.
-      // A MENSAGEM VAI COMO TEXTO, e o erro inteiro vai DEPOIS dela.
+      // O CONSOLE É O ÚNICO LUGAR ONDE O MOTIVO FICA, desde que a faixa saiu.
       //
-      // Só o objeto não basta: no console ele chega dobrado, e quem tira a
-      // foto da tela manda a linha fechada — sem a frase que interessa. Como
-      // texto, ela está na linha; como objeto, a pilha continua a um clique.
-      console.error(
-        `[zorvin] tempo real: ${estado} — ${(erro && erro.message) || erro || "(sem motivo)"}`,
-        erro || "");
-      // GUARDA O PRIMEIRO. Ver o comentário do estado, lá em cima.
-      setMotivoDoTempoReal((antes) => antes || resumirMotivo(estado, erro));
+      // A MENSAGEM VAI COMO TEXTO, e o erro inteiro DEPOIS dela: só o objeto
+      // chega dobrado no console, e quem tira a foto manda a linha fechada —
+      // sem a frase que interessa. Como texto ela está na linha; como objeto,
+      // a pilha continua a um clique.
+      console.error(`[zorvin] tempo real: ${resumirMotivo(estado, erro)}`, erro || "");
       if (!carencia) {
-        carencia = setTimeout(() => setTempoRealCaiu(true), CARENCIA_TEMPO_REAL_MS);
-      }
-      if (!promessa) {
-        promessa = setTimeout(() => setTempoRealDesistiu(true), LIMITE_DA_PROMESSA_MS);
+        carencia = setTimeout(() => {
+          // COMEÇA A PESCAR. É isto que faz as mensagens continuarem
+          // chegando com o canal fora — ver CADENCIA_DA_PESCA_MS.
+          if (!pesca) {
+            reporRef.current();
+            pesca = setInterval(() => reporRef.current(), CADENCIA_DA_PESCA_MS);
+          }
+        }, CARENCIA_TEMPO_REAL_MS);
       }
       armarOVigia();
     }
@@ -6167,8 +6180,10 @@ export default function Painel({ sessao }) {
     return () => {
       vivo = false;
       clearTimeout(carencia);
-      clearTimeout(promessa);
       clearTimeout(vigia);
+      // A PESCA MORRE COM O EFEITO. Sem isto, sair e entrar no painel deixaria
+      // um relógio de consultas rodando para sempre, invisível.
+      clearInterval(pesca);
       supabase.removeChannel(canal);
     };
   }, [carregarConversas, carregarNaoLidasPorAdv, carregarTags, carregarTagsConversas]);
@@ -9948,9 +9963,13 @@ export default function Painel({ sessao }) {
               data-ja-tratei={estaEsperando ? "tratar" : "desfazer"}
               style={{ display: "inline-flex", alignItems: "center", gap: 5, border: `1px solid ${C.divider}`,
                        background: "transparent", color: C.textSecondary, borderRadius: 8,
-                       padding: "6px 10px", fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+                       padding: cabecalhoApertado ? "7px 9px" : "6px 10px",
+                       fontSize: 12.5, fontWeight: 600, cursor: "pointer",
                        whiteSpace: "nowrap" }}>
-        <Icone size={15} color={cor} /> {rotulo}
+        {/* APERTADO, SÓ O ÍCONE — ver `cabecalhoApertado`. O `aria-label` e o
+            `title` acima continuam dizendo o que ele faz, e no celular ele
+            continua escrito dentro do menu ⋮. */}
+        <Icone size={15} color={cor} /> {cabecalhoApertado ? "" : rotulo}
       </button>
     );
   };
@@ -10575,7 +10594,7 @@ export default function Painel({ sessao }) {
           rolagem lateral e a lista aparecia cortada, sem a hora nem o contador
           de não lidas. Com o zero, ela encolhe para o que sobra (330px) e quem
           rola é só a fita de filtros, que já foi feita para isso. */}
-      <div style={{ position: "relative", width: estreito ? "auto" : 380, flex: estreito ? 1 : "none", minWidth: 0, borderRight: `1px solid ${C.divider}`, display: ((estreito && conversaId) || (estreito && fichaVisivel) || historico) ? "none" : "flex", flexDirection: "column", background: C.panel }}>
+      <div style={{ position: "relative", width: estreito ? "auto" : LARGURA_DA_LISTA, flex: estreito ? 1 : "none", minWidth: 0, borderRight: `1px solid ${C.divider}`, display: ((estreito && conversaId) || (estreito && fichaVisivel) || historico) ? "none" : "flex", flexDirection: "column", background: C.panel }}>
         {/* NOVA CONVERSA (⊞) — estilo WhatsApp Web: busca, novo contato e agenda */}
         {novaConversaAberta && (
           <div style={{ position: "absolute", inset: 0, zIndex: 40, background: C.panel, display: "flex", flexDirection: "column" }}>
@@ -11547,7 +11566,12 @@ export default function Painel({ sessao }) {
           </div>
         ) : (
           <>
-            <div data-topo-conversa style={{ background: C.headerBar, padding: estreito ? "8px 10px" : "10px 16px", display: "flex", alignItems: "center", gap: estreito ? 6 : 12, borderBottom: `1px solid ${C.divider}` }}>
+            {/* `overflow: hidden` é ENCOSTO, e não o conserto: quem faz caber é
+                `cabecalhoApertado`. Ele existe para que um botão novo, num dia
+                em que ninguém refez esta conta, seja CORTADO na borda em vez de
+                ir pintar por cima da ficha — que foi o defeito relatado em
+                28/09, e que ninguém lê como "falta espaço aqui". */}
+            <div data-topo-conversa style={{ background: C.headerBar, padding: estreito ? "8px 10px" : "10px 16px", display: "flex", alignItems: "center", gap: estreito ? 6 : 12, borderBottom: `1px solid ${C.divider}`, overflow: "hidden" }}>
               {estreito && (
                 <button onClick={() => setConversaId(null)} title="Voltar" aria-label="Voltar" style={BOTAO_ICONE}>
                   <ArrowLeft size={20} color={C.textSecondary} />
@@ -11681,22 +11705,24 @@ export default function Painel({ sessao }) {
                   <button onClick={() => marcarLida(conversa.id)}
                           data-marcar="lida"
                           title="Marcar esta conversa como lida"
-                          style={{ ...BOTAO_ICONE, padding: "7px 11px", gap: 6,
+                          aria-label="Marcar esta conversa como lida"
+                          style={{ ...BOTAO_ICONE, padding: cabecalhoApertado ? 9 : "7px 11px", gap: 6,
                                    background: C.searchBg, color: C.verdeTexto,
                                    fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>
                     <CheckCheck size={17} />
-                    Marcar como lida
+                    {cabecalhoApertado ? "" : "Marcar como lida"}
                   </button>
                 ) : (
                   <button onClick={() => marcarNaoLida(conversa, true)}
                           data-marcar="nao-lida"
                           title="Marcar esta conversa como NÃO lida"
-                          style={{ ...BOTAO_ICONE, padding: "7px 11px", gap: 6,
+                          aria-label="Marcar esta conversa como NÃO lida"
+                          style={{ ...BOTAO_ICONE, padding: cabecalhoApertado ? 9 : "7px 11px", gap: 6,
                                    background: "transparent", color: C.textSecondary,
                                    border: `1px solid ${C.divider}`,
                                    fontSize: 12.5, fontWeight: 500, whiteSpace: "nowrap" }}>
                     <MessageSquare size={17} />
-                    Marcar como não lida
+                    {cabecalhoApertado ? "" : "Marcar como não lida"}
                   </button>
                 )}
                 {/* Ficha do cliente no Vantoro (cadastro, esteira, processos).
@@ -13412,8 +13438,7 @@ export default function Painel({ sessao }) {
           não resolve é pior do que não oferecer nenhum. Ela some sozinha quando
           o problema passar, na pergunta seguinte. */}
       {(() => {
-        const frases = frasesDaSaude(saude, souAdmin, tempoRealCaiu, tempoRealDesistiu,
-                                     motivoDoTempoReal);
+        const frases = frasesDaSaude(saude, souAdmin);
         if (!frases.length) return null;
         return (
           <div data-aviso-de-saude
