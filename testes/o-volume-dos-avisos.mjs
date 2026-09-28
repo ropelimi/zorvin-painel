@@ -33,15 +33,24 @@ await page.goto(ENDERECO);
 await page.waitForSelector("[data-conversa-nome]");
 
 // A MEDIÇÃO RODA DENTRO DA PÁGINA, onde o módulo do painel existe de verdade.
-const medidas = await page.evaluate(async () => {
+//
+// `comGravacao: false` força o caminho do ENCOSTO — a receita sintetizada que
+// sai quando o arquivo não pode ser buscado. Sem medir os dois, a prova
+// aprovaria um pato que emudece no dia em que a busca falhar.
+const medir = (comGravacao) => page.evaluate(async (comGravacao) => {
   const mod = await import("/src/avisos.js");
+  const taxa = 44100;
   const fora = [];
   for (const som of mod.SONS) {
-    if (!som.notas.length) { fora.push({ id: som.id, rms: 0, pico: 0, vazio: true }); continue; }
-    const taxa = 44100;
-    const dura = mod.duracaoDoSom(som);
+    const rascunho = new OfflineAudioContext(1, 1, taxa);
+    const gravado = comGravacao ? await mod.carregarGravado(rascunho, som) : null;
+    if (!som.notas.length && !gravado) {
+      fora.push({ id: som.id, rms: 0, pico: 0, vazio: true, gravado: false });
+      continue;
+    }
+    const dura = mod.duracaoDoSom(som, gravado);
     const off = new OfflineAudioContext(1, Math.ceil(dura * taxa) + taxa / 10, taxa);
-    mod.montarSom(off, som, 0);
+    mod.montarSom(off, som, 0, gravado);
     const buffer = await off.startRendering();
     const dados = buffer.getChannelData(0);
     let soma = 0, pico = 0;
@@ -50,17 +59,24 @@ const medidas = await page.evaluate(async () => {
       soma += v * v;
       if (Math.abs(v) > pico) pico = Math.abs(v);
     }
-    fora.push({ id: som.id, rms: Math.sqrt(soma / dados.length), pico, dura });
+    fora.push({ id: som.id, rms: Math.sqrt(soma / dados.length), pico, dura,
+                gravado: !!gravado });
   }
   return fora;
-});
+}, comGravacao);
+
+const medidas = await medir(true);
+const semArquivo = await medir(false);
 
 const por = {};
 for (const m of medidas) por[m.id] = m;
+const porEncosto = {};
+for (const m of semArquivo) porEncosto[m.id] = m;
 
 console.log("\nO que saiu da caixa de som (medido):");
 for (const m of medidas) {
-  console.log(`   ${m.id.padEnd(12)} rms ${m.rms.toFixed(5)}   pico ${m.pico.toFixed(4)}` +
+  console.log(`   ${m.id.padEnd(8)} rms ${m.rms.toFixed(5)}   pico ${m.pico.toFixed(4)}` +
+              (m.gravado ? "   (gravação)" : "") +
               (m.vazio ? "   (sem som, de propósito)" : ""));
 }
 
@@ -77,20 +93,40 @@ console.log("\n1. Todo som que promete barulho FAZ barulho");
      JSON.stringify(por.mudo));
 }
 
-console.log("\n2. As três vozes novas do pato saem na altura do pato de hoje");
+console.log("\n2. O pato é a GRAVAÇÃO, e ela chega mesmo");
 {
-  // ESTA É A CONFERÊNCIA QUE A ESCOLHA EXIGE. O Rodrigo aprovou o VOLUME do
-  // pato de hoje e reprovou o timbre; as candidatas têm de sair na mesma
-  // altura, senão ele escolhe a mais alta achando que escolheu a melhor.
-  const ref = por.pato.rms;
-  for (const id of ["pato-grave", "pato-rouco", "pato-macio"]) {
-    const razao = por[id].rms / ref;
-    ok(`${id} está na altura do pato de hoje (${razao.toFixed(2)}x)`,
-       razao >= 0.8 && razao <= 1.25, `rms ${por[id].rms.toFixed(5)} contra ${ref.toFixed(5)}`);
-  }
+  // A CONFERÊNCIA QUE PEGA O DEFEITO MAIS BOBO E MAIS CARO: o arquivo não
+  // sair na publicação. Sem ela, o pato viraria o bipe sintetizado em
+  // produção e passaria despercebido aqui — o encosto funciona bem demais
+  // para ser notado.
+  ok("o arquivo do pato foi buscado e decodificado", por.pato.gravado === true,
+     JSON.stringify(por.pato));
+  ok("e ele produz som", por.pato.rms > 0.001, `rms ${por.pato.rms.toFixed(5)}`);
 }
 
-console.log("\n3. Nenhum aviso estoura o ouvido de quem atende");
+console.log("\n3. A gravação sai na MESMA altura do encosto sintetizado");
+{
+  // É a régua do volume, e ela se sustenta sozinha: o encosto é a receita que
+  // o Rodrigo aprovou em 25/09 quanto ao VOLUME (o que ele reprovou foi o
+  // timbre). Se a gravação sair mais alta, o dia em que a busca falhar vira
+  // um susto ao contrário — e vice-versa.
+  const razao = por.pato.rms / porEncosto.pato.rms;
+  ok(`a gravação e o encosto têm o mesmo volume (${razao.toFixed(2)}x)`,
+     razao >= 0.8 && razao <= 1.25,
+     `gravação ${por.pato.rms.toFixed(5)} contra encosto ${porEncosto.pato.rms.toFixed(5)}`);
+}
+
+console.log("\n4. Sem o arquivo, o pato NÃO emudece");
+{
+  // O encosto inteiro numa conferência. Um aviso mudo é indistinguível de
+  // "ninguém escreveu", que é o defeito que esta casa persegue desde 04/09.
+  ok("o encosto sintetizado produz som", porEncosto.pato.rms > 0.001,
+     `rms ${porEncosto.pato.rms.toFixed(5)}`);
+  ok("e ele não veio de arquivo nenhum", porEncosto.pato.gravado === false,
+     JSON.stringify(porEncosto.pato));
+}
+
+console.log("\n5. Nenhum aviso estoura o ouvido de quem atende");
 {
   // O TETO EXISTE PARA O FUTURO, e não para hoje: um som novo com o volume
   // trocado de 0,2 para 2 passa em qualquer revisão de código e só é
@@ -103,14 +139,15 @@ console.log("\n3. Nenhum aviso estoura o ouvido de quem atende");
      `${maisAlto.id} com rms ${maisAlto.rms.toFixed(4)}`);
 }
 
-console.log("\n4. O pato continua sendo DOIS grasnados, e não um");
+console.log("\n6. O pato continua sendo DOIS grasnados, e não um");
 {
-  // "quá-quá" se reconhece; "quá" sozinho, não. Isto se vê na duração: um
-  // grasnado só terminaria perto de 0,18s.
-  for (const id of ["pato", "pato-grave", "pato-rouco", "pato-macio"]) {
-    ok(`${id} dura o bastante para dois grasnados`, por[id].dura > 0.3,
-       `${por[id].dura.toFixed(2)}s`);
-  }
+  // "quá-quá" se reconhece; "quá" sozinho, não. O arquivo que o Rodrigo
+  // mandou tem UM grasnado de 185ms — são as `repeticoes` que fazem os dois,
+  // e sem elas o som volta a ser o que ele não pediu.
+  ok("a gravação dura o bastante para dois grasnados", por.pato.dura > 0.3,
+     `${por.pato.dura.toFixed(2)}s`);
+  ok("e o encosto também", porEncosto.pato.dura > 0.3,
+     `${porEncosto.pato.dura.toFixed(2)}s`);
 }
 
 await ctx.close();

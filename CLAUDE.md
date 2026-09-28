@@ -414,50 +414,77 @@ filtro, então é isso que fica registrado. E o vigia `provas-que-reprovam` pego
 uma conferência minha que usava `.every` sem conferir o tamanho: numa lista
 vazia ela diria "não houve filtro" num cenário em que não houve nada.
 
-### Três vozes de pato, e o volume que passou a ser MEDIDO
+### O pato virou uma gravação, e isso foi uma rendição medida
 
-Relato do Rodrigo em 28/09: *"o volume do pato está bom, mas o som não está
-adequado — quero outra voz"*. Perguntado, o que incomoda é ele estar
-**agudo/estridente demais**.
+**Quatro tentativas de sintetizar um grasnado, quatro reprovadas** — e a
+rodada das três vozes de uma vez saiu, nas palavras do Rodrigo, *"pior que o
+primeiro"*.
 
-**A causa está escrita na receita:** o passa-faixa a 1100 Hz com `Q=2` ressoa
-justamente na banda mais irritante do ouvido, e o pico de tom vai a 620 Hz.
+A causa não é ajuste de número: um oscilador com filtro faz **tom moldado**, e
+um grasnado de verdade é em boa parte **chiado**, que nenhum oscilador produz.
+Insistir era continuar na família "campainha" gastando as tentativas de quem
+tem de ouvir por mim. **Quando quem escreve o som não pode ouvi-lo, o caminho
+é pedir o arquivo.**
 
-Entraram três candidatas — `pato-grave` (sem ressonância, tom quase à metade),
-`pato-rouco` (dois osciladores desafinados de propósito em cada grasnado: o
-batimento é o que dá aspereza de bicho) e `pato-macio` (onda triangular, o
-extremo oposto do de hoje). **O pato de hoje FICA na lista**, para comparar.
+**O arquivo que chegou não é o que foi usado.** Medido antes de mexer:
 
-**Os ids são NOVOS, e não substituem o `pato`.** Trocar o id por baixo faria
-`somEscolhido()` não reconhecer o guardado e cair no "Toque" — a equipe
-perderia a escolha sem nada dizer. **A rodada que tirar as perdedoras tem de
-levar isso junto** (uma lista de apelidos traduzidos para o vencedor), e está
-escrito no código por quê: o sintoma, "meu som mudou sozinho", não aponta para
-a causa.
+| | |
+|---|---|
+| duração | **3,0 s** — o grasnado vai de 0,22 s a 0,39 s |
+| ou seja | **94% era silêncio** |
+| canais | estéreo, inútil num aviso e o dobro do tamanho |
+| pico | **0,94**, perto de estourar, contra 0,07–0,20 dos outros avisos |
 
-#### O volume deixou de ser palpite
+Ficou: **185 ms, mono, 22 kHz, 8 KB**. E é **um** grasnado tocado **duas**
+vezes, pela razão de sempre: "quá-quá" se reconhece, "quá" sozinho não.
 
-Quem escreve estes sons não os ouve. Para escolher **timbre** é preciso que
-todos toquem na **mesma altura** — em alturas diferentes ganha o mais alto, e
-não o que soa melhor.
+**Por que um arquivo não repete o desastre de 21/08.** Lá a franquia do
+Supabase zerou porque cada atendente rebaixava fotos e áudios **das conversas**
+de hora em hora. Aqui são 8 KB servidos pelo **próprio site** — não passa pelo
+Supabase —, baixados uma vez e guardados pelo navegador até a próxima
+publicação, **e só por quem escolhe o pato**: a busca acontece no primeiro
+toque, não na abertura do painel. A régua que fica: **som de aviso pode ser
+arquivo, desde que servido daqui, pequeno, e buscado só quando usado.**
 
-Então `montarSom` saiu de dentro de `tocarAviso`, e a prova
-`o-volume-dos-avisos` desenha **o mesmo grafo** num `OfflineAudioContext`, que
-devolve as amostras em vez de mandá-las para a caixa de som, e mede RMS e
-pico. Uma segunda escrita da receita dentro da prova mediria um som que não é
-o que toca.
+**A receita sintetizada FICOU, como encosto.** Falhando a busca — rede caída,
+publicação pela metade —, o aviso sai sintetizado em vez de não sair. Aviso
+mudo é indistinguível de "ninguém escreveu".
 
-**E ela pegou um erro meu de mais do DOBRO, na primeira rodada:** o
-`pato-macio` saía a **2,08×** a altura do de hoje. Eu tinha estimado 0,16
-porque a onda triangular *parece* a mais fraca (poucos harmônicos) — e é o
-contrário: o passa-baixa quase não tira nada dela, enquanto corta metade da
-dente de serra. Com a medição, 0,077. Hoje os três saem entre **1,03× e
-1,09×**.
+**E os ids que saíram continuam sendo entendidos** (`APELIDOS`): quem tivesse
+escolhido uma das três candidatas cairia no "Toque" em silêncio. Som trocado
+sem avisar é pequeno e tem um sintoma que não aponta para a causa — "meu som
+mudou sozinho".
 
-Prova: `o-volume-dos-avisos`, 12 conferências, 7 sabotagens e 7 pegas. Ela
-também põe um **teto** para o futuro (nada perto de saturar, nada acima de
+#### O volume deixou de ser palpite, e me corrigiu DUAS vezes
+
+Para comparar timbres é preciso que todos toquem na **mesma altura**: em
+alturas diferentes ganha o mais alto, e não o melhor. Então `montarSom` saiu de
+dentro de `tocarAviso`, e a prova `o-volume-dos-avisos` desenha **o mesmo
+grafo** num `OfflineAudioContext` — que devolve as amostras em vez de
+mandá-las para a caixa de som — e mede RMS e pico. Uma segunda escrita da
+receita dentro da prova mediria um som que não é o que toca.
+
+| o que eu estimei | o que era | erro |
+|---|---|---|
+| `pato-macio` a 0,16 | 0,077 | **2,08x alto** |
+| a gravação a 0,12 | 0,051 | **2,35x alto** |
+
+Duas vezes, e nas duas eu errei para o **mesmo lado**. Ouvido não se substitui
+por intuição.
+
+**A régua do volume se sustenta sozinha:** a gravação tem de sair na mesma
+altura do **encosto**, que é a receita cujo volume o Rodrigo aprovou em 25/09
+(o que ele reprovou foi o timbre). Assim o dia em que a busca falhar não é um
+susto ao contrário.
+
+E a prova põe um **teto** para o futuro (nada perto de saturar, nada acima de
 0,2 de RMS): um som novo com o volume trocado de 0,2 para 2 passa em qualquer
 revisão de código e só é descoberto por uma pessoa de fone, no susto.
+
+Provas: `o-volume-dos-avisos` (12 conferências) e `o-pato-e-a-chave-do-aviso`
+(37), com **5 sabotagens e 5 pegas**. A conferência que mais importa é *"e
+NENHUM oscilador"*: o defeito mais provável agora é o arquivo não sair na
+publicação, e **o encosto funciona bem demais para alguém notar sozinho**.
 
 ### A etiqueta da notificação
 

@@ -89,6 +89,20 @@ async function abrirPainel() {
           };
           return o;
         }
+        // O ESPIÃO DA GRAVAÇÃO. Sem ele, a prova não consegue separar "tocou
+        // o pato" de "tocou o encosto sintetizado porque o arquivo não veio" —
+        // e o encosto funciona bem demais para alguém notar sozinho.
+        createBufferSource() {
+          const f = super.createBufferSource();
+          const registro = { o: "gravacao", dura: null };
+          globalThis.__AVISOS.push(registro);
+          const startReal = f.start.bind(f);
+          f.start = (t) => {
+            registro.dura = f.buffer ? f.buffer.duration : null;
+            return startReal(t);
+          };
+          return f;
+        }
         createBiquadFilter() {
           const f = super.createBiquadFilter();
           // O TIPO DO FILTRO É O QUE MUDA O TIMBRE, e contar filtros não o vê:
@@ -161,49 +175,88 @@ console.log("\nO pato está na lista de sons, e a escolha fica guardada");
     ok("escolher o pato guarda a escolha no navegador", false);
     ok("e continua escolhida depois de recarregar", false);
   }
+
+  // QUEM ESCOLHEU UMA DAS VOZES QUE NÃO FICARAM CONTINUA COM O PATO.
+  //
+  // Em 28/09 a tela ofereceu três candidatas e elas saíram no dia seguinte.
+  // Sem a tradução, `somEscolhido()` não reconheceria o id guardado e cairia
+  // no "Toque" — o som de alguém trocado em silêncio, com um sintoma ("meu
+  // som mudou sozinho") que não aponta para a causa.
+  await page.evaluate(() => localStorage.setItem("zorvin_som_do_aviso", "pato-rouco"));
+  const traduzido = await page.evaluate(async () =>
+    (await import("/src/avisos.js")).somEscolhido());
+  ok("uma voz de pato que saiu ainda cai no pato, e não no Toque",
+     traduzido === "pato", String(traduzido));
+  // E UM ID QUE NUNCA EXISTIU continua caindo no padrão — a tradução não pode
+  // virar um "aceita qualquer coisa".
+  await page.evaluate(() => localStorage.setItem("zorvin_som_do_aviso", "coisa-nenhuma"));
+  const inventado = await page.evaluate(async () =>
+    (await import("/src/avisos.js")).somEscolhido());
+  ok("e um id inventado continua caindo no padrão", inventado === "toque", String(inventado));
+
   ok("sem erro de JavaScript no caminho", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
 
-console.log("\nE ele soa como pato: dois grasnados, cada um SUBINDO e depois caindo");
+console.log("\nO pato é a GRAVAÇÃO que o Rodrigo mandou, e não mais um som sintetizado");
 {
+  // QUATRO TENTATIVAS DE SINTETIZAR, QUATRO REPROVADAS. Em 28/09 ele mandou o
+  // som; o painel passou a tocá-lo. Esta cena existe porque o defeito mais
+  // provável agora é o arquivo não sair na publicação — e aí o ENCOSTO assume
+  // em silêncio, soando como o bipe que ele já recusou, sem nada na tela.
   const { ctx, page, estouros } = await abrirPainel();
   const abriu = await abrirAbaAvisos(page);
   ok("a aba Avisos abre", abriu);
   await limpar(page);
   await page.locator('[data-som-opcao="pato"]').click();
-  await page.waitForTimeout(500);
-  const tocou = (await avisos(page)).filter((a) => a.o === "som");
-  const filtros = (await avisos(page)).filter((a) => a.o === "filtro");
+  await page.waitForTimeout(900);
+  const tudo = await avisos(page);
+  const gravacoes = tudo.filter((a) => a.o === "gravacao");
+  const osciladores = tudo.filter((a) => a.o === "som");
 
-  // DOIS, e não um: "quá-quá" se reconhece, "quá" sozinho não.
-  ok("toca dois grasnados", tocou.length === 2, JSON.stringify(tocou));
-  // O CONTORNO É O QUE FAZ O PATO, e ele tem DUAS metades.
-  //
-  // A primeira versão só descia, e por isso saía um bipe caindo: o ouvido lê
-  // "quac" quando o tom SALTA para cima e despenca — a subida é o "qua", a
-  // queda é o "c". Conferir só a descida aprovaria de volta exatamente o som
-  // que o Rodrigo pediu para trocar em 28/09.
+  // DOIS, e não um: "quá-quá" se reconhece, "quá" sozinho não. O arquivo tem
+  // UM grasnado; são as `repeticoes` que fazem os dois.
+  ok("toca a gravação duas vezes", gravacoes.length === 2, JSON.stringify(gravacoes));
+  ok("e o que toca é um grasnado curto, não o arquivo de 3 segundos que veio",
+     gravacoes.length === 2 && gravacoes.every((g) => g.dura > 0.1 && g.dura < 0.5),
+     JSON.stringify(gravacoes.map((g) => g.dura)));
+  // A CONFERÊNCIA QUE PEGA O ENCOSTO ESCONDENDO O DEFEITO.
+  ok("e NENHUM oscilador — ou seja, não caiu no encosto",
+     osciladores.length === 0, JSON.stringify(osciladores));
+  ok("sem erro de JavaScript no caminho", estouros.length === 0, estouros.join(" | "));
+  await ctx.close();
+}
+
+console.log("\nSem o arquivo, o pato vira o som sintetizado — e não silêncio");
+{
+  // O ENCOSTO INTEIRO, medido pela porta por onde ele falha de verdade: o
+  // arquivo não responde. Aviso mudo é indistinguível de "ninguém escreveu".
+  const { ctx, page, estouros } = await abrirPainel();
+  await page.route("**/avisos/pato.wav", (rota) => rota.abort());
+  const abriu = await abrirAbaAvisos(page);
+  ok("a aba Avisos abre", abriu);
+  await limpar(page);
+  await page.locator('[data-som-opcao="pato"]').click();
+  await page.waitForTimeout(900);
+  const tudo = await avisos(page);
+  const tocou = tudo.filter((a) => a.o === "som");
+  const filtros = tudo.filter((a) => a.o === "filtro");
+
+  ok("com o arquivo fora do ar, ainda sai som", tocou.length === 2, JSON.stringify(tocou));
+  // O CONTORNO É O QUE FAZ O PATO, e ele tem DUAS metades. Conferir só a
+  // descida aprovaria de volta o bipe caindo da primeira versão.
   ok("os dois SOBEM primeiro, bem acima de onde começaram",
      tocou.length === 2 && tocou.every((n) => n.contorno.length === 2 && n.contorno[0] > n.hz * 1.8),
      JSON.stringify(tocou.map((n) => ({ de: n.hz, contorno: n.contorno }))));
   ok("e depois CAEM abaixo de onde começaram",
      tocou.length === 2 && tocou.every((n) => n.contorno.length === 2 && n.contorno[1] < n.hz),
      JSON.stringify(tocou.map((n) => ({ de: n.hz, contorno: n.contorno }))));
-  // A onda dente de serra é o timbre do grasnado; a senoide dos outros sons
-  // sairia como um assobio.
-  ok("e são onda dente de serra", tocou.every((n) => n.forma === "sawtooth"),
+  ok("e são onda dente de serra", tocou.length === 2 && tocou.every((n) => n.forma === "sawtooth"),
      JSON.stringify(tocou.map((n) => n.forma)));
   ok("com dois filtros", filtros.length === 2, `${filtros.length} filtro(s)`);
-  // PASSA-FAIXA, E NÃO PASSA-BAIXA. Um abafa; o outro RESSOA, e é a
-  // ressonância estreita perto de 1 kHz que dá o timbre nasalado do bicho.
-  // Contar filtros não vê a diferença — e ela é metade do conserto de 28/09.
   ok("e eles RESSOAM em vez de só abafar (passa-faixa)",
      filtros.length === 2 && filtros.every((f) => f.tipo === "bandpass"),
      JSON.stringify(filtros.map((f) => f.tipo)));
-  ok("com a ressonância na faixa nasalada, perto de 1 kHz",
-     filtros.length === 2 && filtros.every((f) => f.hz >= 800 && f.hz <= 1600 && f.q >= 1.5),
-     JSON.stringify(filtros));
   ok("sem erro de JavaScript no caminho", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
