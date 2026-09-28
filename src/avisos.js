@@ -97,6 +97,86 @@ export const SONS = [
         forma: "sawtooth", filtro: 1000, filtroTipo: "bandpass", filtroQ: 2 },
     ],
   },
+  // ============================================================
+  //  TRÊS VOZES DE PATO, PARA ESCOLHER OUVINDO
+  //
+  //  Relato do Rodrigo em 28/09: "o volume está bom, mas o som não está
+  //  adequado — quero outra voz". Perguntado, o que incomoda é ele estar
+  //  **agudo/estridente demais**.
+  //
+  //  A CAUSA, no pato de hoje: o passa-faixa a 1100 Hz com Q=2 ressoa
+  //  justamente na banda mais irritante do ouvido, e o pico de tom vai a
+  //  620 Hz. As três vozes abaixo descem os dois, cada uma por um caminho
+  //  diferente — e o pato de hoje FICA na lista, para ele comparar.
+  //
+  //  ELAS SÃO TEMPORÁRIAS, e é por isso que os ids são novos em vez de
+  //  substituírem o `pato`: quem já escolheu o pato continua com ele. Trocar
+  //  o id por baixo faria `somEscolhido()` não reconhecer o guardado e cair
+  //  no "Toque" — a equipe perderia a escolha sem nada dizer.
+  //
+  //  E A RODADA QUE TIRAR AS PERDEDORAS TEM DE LEVAR ISSO JUNTO: quem tiver
+  //  escolhido uma delas cai no "Toque" pelo mesmo caminho. Ao remover, some
+  //  os ids daqui a uma lista de apelidos que `somEscolhido()` traduz para o
+  //  `pato` vencedor. Escrito aqui porque é o tipo de rabicho que se esquece
+  //  três dias depois, e o sintoma — "meu som mudou sozinho" — não aponta
+  //  para a causa.
+  //
+  //  OS VOLUMES NÃO FORAM ESTIMADOS. Estão medidos para sair na mesma altura
+  //  do pato de hoje, que é o que ele aprovou — comparando timbres em alturas
+  //  diferentes, ganha o mais alto e não o melhor. Ver `o-volume-dos-avisos`.
+  // ============================================================
+  {
+    // GRAVE E REDONDO. Tira o passa-faixa e põe passa-baixa: sem ressonância
+    // não há apito, e o que sobra é o corpo do som.
+    id: "pato-grave",
+    nome: "Pato 1 — grave",
+    descricao: "Mais fundo, sem apito",
+    notas: [
+      { hz: 150, pico: 380, ate: 120, em: 0,    dura: 0.17, volume: 0.10,
+        forma: "sawtooth", filtro: 800, filtroTipo: "lowpass" },
+      { hz: 145, pico: 350, ate: 110, em: 0.23, dura: 0.19, volume: 0.09,
+        forma: "sawtooth", filtro: 750, filtroTipo: "lowpass" },
+    ],
+  },
+  {
+    // ROUCO. Dois osciladores desafinados de propósito em cada grasnado: o
+    // batimento entre eles é o que dá aspereza de bicho, que um oscilador
+    // sozinho não tem. O passa-faixa continua, mas uma oitava abaixo e com
+    // Q menor — ressoa sem apitar.
+    id: "pato-rouco",
+    nome: "Pato 2 — rouco",
+    descricao: "Áspero, mais parecido com bicho",
+    notas: [
+      { hz: 170, pico: 430, ate: 135, em: 0,    dura: 0.15, volume: 0.16,
+        forma: "sawtooth", filtro: 700, filtroTipo: "bandpass", filtroQ: 1.1 },
+      { hz: 181, pico: 458, ate: 144, em: 0,    dura: 0.15, volume: 0.13,
+        forma: "sawtooth", filtro: 700, filtroTipo: "bandpass", filtroQ: 1.1 },
+      { hz: 165, pico: 405, ate: 128, em: 0.22, dura: 0.17, volume: 0.15,
+        forma: "sawtooth", filtro: 660, filtroTipo: "bandpass", filtroQ: 1.1 },
+      { hz: 176, pico: 432, ate: 137, em: 0.22, dura: 0.17, volume: 0.12,
+        forma: "sawtooth", filtro: 660, filtroTipo: "bandpass", filtroQ: 1.1 },
+    ],
+  },
+  {
+    // MACIO. Onda triangular, que quase não tem harmônico agudo: é o mais
+    // longe possível de estridente, ao preço de soar menos "bicho". Está
+    // aqui como o extremo oposto do de hoje — comparar com um extremo é o
+    // que faz o do meio ficar evidente.
+    id: "pato-macio",
+    nome: "Pato 3 — macio",
+    descricao: "O menos incômodo dos três",
+    notas: [
+      // O 0,077 SAIU DA MEDIÇÃO, e o meu palpite era 0,16 — mais que o
+      // DOBRO. A onda triangular parecia a mais fraca das três por ter
+      // poucos harmônicos, e é o contrário: o passa-baixa quase não tira
+      // nada dela, enquanto corta metade da dente de serra. A prova
+      // `o-volume-dos-avisos` pegou, com 2,08x.
+      { hz: 200, pico: 470, ate: 155, em: 0,    dura: 0.16, volume: 0.077,
+        forma: "triangle", filtro: 1000, filtroTipo: "lowpass" },
+      { hz: 190, pico: 440, ate: 145, em: 0.22, dura: 0.18, volume: 0.072,
+        forma: "triangle", filtro: 950, filtroTipo: "lowpass" },
+    ],
+  },
   {
     // SEM SOM CONTINUA AVISANDO. Quem escolhe isto não está desistindo do
     // aviso — está tirando o barulho. A notificação da área de trabalho e o
@@ -172,6 +252,71 @@ export function guardarAvisoNaTela(ligado) {
 // aviso para de tocar sem nada dizer.
 let contexto = null;
 
+// ============================================================
+//  A MONTAGEM DO SOM SAIU DE DENTRO DO "TOCAR"
+//
+//  Não é arrumação: é o que permite MEDIR o volume em vez de estimá-lo.
+//
+//  O pato de 25/09 saiu com o volume no chute, porque quem escreve o som aqui
+//  não o ouve. Em 28/09 o Rodrigo disse que o volume estava bom e o timbre
+//  não — e para comparar timbres é preciso que todos toquem na MESMA altura,
+//  senão a escolha é do mais alto, e não do que soa melhor.
+//
+//  Com a montagem numa função só, a prova `o-volume-dos-avisos` desenha o
+//  mesmo grafo num `OfflineAudioContext`, lê as amostras e mede. Uma segunda
+//  cópia da montagem dentro da prova mediria uma receita que não é a que
+//  toca — que é o jeito de um teste não testar nada.
+// ============================================================
+export function montarSom(ctx, som, base = 0) {
+  for (const n of som.notas) {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    // O FILTRO TAMBÉM SÓ EXISTE PARA QUEM PEDE, e pela mesma razão: sem
+    // `filtro`, a ligação é a de sempre — oscilador direto no volume.
+    if (n.filtro) {
+      const f = ctx.createBiquadFilter();
+      // PASSA-BAIXA CONTINUA SENDO O PADRÃO, para nenhuma receita antiga
+      // mudar de som só porque este campo passou a existir.
+      f.type = n.filtroTipo || "lowpass";
+      f.frequency.value = n.filtro;
+      // O `Q` É A LARGURA DA RESSONÂNCIA, e só vale para o passa-faixa: é
+      // ele que transforma "um filtro" em "um timbre". Sem pedido, fica o
+      // padrão do navegador.
+      if (n.filtroQ) f.Q.value = n.filtroQ;
+      o.connect(f); f.connect(g);
+    } else {
+      o.connect(g);
+    }
+    g.connect(ctx.destination);
+    o.type = n.forma || "sine";
+    o.frequency.value = n.hz;
+    const comeca = base + n.em;
+    // O CONTORNO DE TOM, quando a receita pede. Sem `ate` nada disto roda, e
+    // os quatro sons de sempre saem byte por byte como saíam.
+    //
+    // COM `pico`, SÃO DUAS RAMPAS: sobe depressa até ele e cai até o `ate`.
+    // É o que faz um "quac" em vez de um bipe caindo — e o 0.12 é o que
+    // torna a subida um SALTO; esticada, ela vira sirene.
+    if (n.ate) {
+      o.frequency.setValueAtTime(n.hz, comeca);
+      if (n.pico) o.frequency.exponentialRampToValueAtTime(n.pico, comeca + n.dura * 0.12);
+      o.frequency.exponentialRampToValueAtTime(n.ate, comeca + n.dura);
+    }
+    // A RAMPA EXPONENCIAL não aceita zero, e é por isso que o mínimo é
+    // 0.0001: com zero, o navegador ignora a rampa e o som vira um estalo.
+    g.gain.setValueAtTime(0.0001, comeca);
+    g.gain.exponentialRampToValueAtTime(n.volume, comeca + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, comeca + n.dura);
+    o.start(comeca);
+    o.stop(comeca + n.dura + 0.01);
+  }
+}
+
+/** Quanto tempo o som inteiro dura, para a medição saber o que renderizar. */
+export function duracaoDoSom(som) {
+  return (som.notas || []).reduce((t, n) => Math.max(t, n.em + n.dura + 0.02), 0);
+}
+
 /** Toca o som escolhido (ou o pedido, na prévia da tela de ajustes). */
 export function tocarAviso(qual) {
   const som = SONS.find((s) => s.id === (qual || somEscolhido()));
@@ -184,47 +329,6 @@ export function tocarAviso(qual) {
     // O NAVEGADOR SUSPENDE O ÁUDIO até a pessoa interagir com a página. Sem
     // este `resume`, o primeiro aviso do dia é engolido em silêncio.
     if (ctx.state === "suspended") ctx.resume();
-    for (const n of som.notas) {
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      // O FILTRO TAMBÉM SÓ EXISTE PARA QUEM PEDE, e pela mesma razão: sem
-      // `filtro`, a ligação é a de sempre — oscilador direto no volume.
-      if (n.filtro) {
-        const f = ctx.createBiquadFilter();
-        // PASSA-BAIXA CONTINUA SENDO O PADRÃO, para nenhuma receita antiga
-        // mudar de som só porque este campo passou a existir.
-        f.type = n.filtroTipo || "lowpass";
-        f.frequency.value = n.filtro;
-        // O `Q` É A LARGURA DA RESSONÂNCIA, e só vale para o passa-faixa: é
-        // ele que transforma "um filtro" em "um timbre". Sem pedido, fica o
-        // padrão do navegador.
-        if (n.filtroQ) f.Q.value = n.filtroQ;
-        o.connect(f); f.connect(g);
-      } else {
-        o.connect(g);
-      }
-      g.connect(ctx.destination);
-      o.type = n.forma || "sine";
-      o.frequency.value = n.hz;
-      const comeca = ctx.currentTime + n.em;
-      // O CONTORNO DE TOM, quando a receita pede. Sem `ate` nada disto roda, e
-      // os quatro sons de sempre saem byte por byte como saíam.
-      //
-      // COM `pico`, SÃO DUAS RAMPAS: sobe depressa até ele e cai até o `ate`.
-      // É o que faz um "quac" em vez de um bipe caindo — e o 0.12 é o que
-      // torna a subida um SALTO; esticada, ela vira sirene.
-      if (n.ate) {
-        o.frequency.setValueAtTime(n.hz, comeca);
-        if (n.pico) o.frequency.exponentialRampToValueAtTime(n.pico, comeca + n.dura * 0.12);
-        o.frequency.exponentialRampToValueAtTime(n.ate, comeca + n.dura);
-      }
-      // A RAMPA EXPONENCIAL não aceita zero, e é por isso que o mínimo é
-      // 0.0001: com zero, o navegador ignora a rampa e o som vira um estalo.
-      g.gain.setValueAtTime(0.0001, comeca);
-      g.gain.exponentialRampToValueAtTime(n.volume, comeca + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, comeca + n.dura);
-      o.start(comeca);
-      o.stop(comeca + n.dura + 0.01);
-    }
+    montarSom(ctx, som, ctx.currentTime);
   } catch (_) { /* silêncio se o navegador bloquear */ }
 }
