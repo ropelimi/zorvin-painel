@@ -2723,7 +2723,17 @@ export const supabase = {
       // depende de a tela existir antes de o canal estar de pé.
       subscribe: (aoMudar) => {
         if (typeof aoMudar === "function") {
-          globalThis.__DERRUBAR_TEMPO_REAL = (estado = "CHANNEL_ERROR") => aoMudar(estado);
+          // O MOTIVO VAI JUNTO, COMO NO DE VERDADE.
+          //
+          // Aqui isto chamava `aoMudar(estado)` e mais nada. O
+          // `RealtimeChannel.subscribe` do Supabase chama de volta com DOIS
+          // argumentos — `(status, err)` —, e uma bancada que só manda o
+          // primeiro aprova igualmente o painel que lê o motivo e o que o joga
+          // fora. É a terceira vez nesta série que a bancada mente por
+          // omissão, e as três vezes o efeito foi o mesmo: a prova mediria
+          // outra coisa.
+          globalThis.__DERRUBAR_TEMPO_REAL = (estado = "CHANNEL_ERROR", motivo) =>
+            aoMudar(estado, motivo ? new Error(motivo) : undefined);
           globalThis.__LEVANTAR_TEMPO_REAL = () => aoMudar("SUBSCRIBED");
           // A bancada pode nascer com o canal já fora, para a prova medir a
           // tela de quem abriu o painel com a internet ruim.
@@ -2732,8 +2742,14 @@ export const supabase = {
           // `__DEMORA_DO_CANAL` quando precisa medir o que acontece ENTRE a
           // tela carregar e o canal subir — sem isso, o primeiro `SUBSCRIBED`
           // cai junto com a carga inicial e não há janela para medir nada.
-          setTimeout(() => aoMudar(globalThis.__TEMPO_REAL_FORA ? "CHANNEL_ERROR" : "SUBSCRIBED"),
-                     globalThis.__DEMORA_DO_CANAL || 30);
+          setTimeout(() => {
+            if (globalThis.__TEMPO_REAL_FORA) {
+              const m = globalThis.__MOTIVO_DO_CANAL;
+              aoMudar("CHANNEL_ERROR", m ? new Error(m) : undefined);
+            } else {
+              aoMudar("SUBSCRIBED");
+            }
+          }, globalThis.__DEMORA_DO_CANAL || 30);
         }
         return canal;
       },

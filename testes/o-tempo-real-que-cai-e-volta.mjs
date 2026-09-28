@@ -49,6 +49,9 @@ const abrir = async ({ foraDesdeOInicio = false, demoraDoCanal = 30 } = {}) => {
     globalThis.__CARENCIA_TEMPO_REAL = c;
     globalThis.__TEMPO_REAL_FORA = fora;
     globalThis.__DEMORA_DO_CANAL = demora;
+    // TODAS AS BANDEIRAS, SEMPRE — inclusive esta, que este arquivo não usa.
+    // Quem mede o motivo da queda é `o-tempo-real-diz-o-motivo`.
+    globalThis.__MOTIVO_DO_CANAL = "";
     globalThis.__SAUDE = [];
   }, [CARENCIA, foraDesdeOInicio, demoraDoCanal]);
   await page.goto(ENDERECO);

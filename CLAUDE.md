@@ -1308,6 +1308,61 @@ pelas dependências do efeito — pôr `carregarMensagens` ali derrubaria o cana
 cada conversa aberta, que é o defeito das "trinta janelas de silêncio" descrito
 no próprio arquivo. Prova: `o-tempo-real-que-cai-e-volta`.
 
+#### E por que ele caiu — a quinta roupa da mesma forma
+
+Relato do Rodrigo em 28/09, com foto: a faixa vermelha do tempo real na tela do
+escritório, e o pedido de tirá-la. **Ela não estava errada** — enquanto ela
+aparece, mensagem nova não chega sozinha para ninguém. O que estava errado é
+que ela dizia QUE caiu e **nada** do porquê.
+
+**E o motivo chegava.** `subscribe` chama de volta com **dois** argumentos —
+`(status, err)` —, e o painel recebia só o primeiro. O segundo era jogado fora
+**sem nem um `console.error`**: em três hipóteses minhas sobre a causa desta
+queda, nenhuma se sustentou, porque não havia uma única linha de evidência em
+lugar nenhum.
+
+É a **mesma forma** de sempre, agora pela quinta porta:
+
+| | a tela desenhava |
+|---|---|
+| 04/09 | **ausência** no lugar de falha |
+| 24/09 | **sucesso** no lugar de falha |
+| 25/09 | **falha sem causa** |
+| 28/09 | **silêncio** no lugar de uma explicação |
+| **28/09** | **falha sem causa**, no aviso que existe para contar a falha |
+
+**O motivo separa defeitos que pedem coisas opostas:**
+
+| o que aparece | o que é |
+|---|---|
+| `CHANNEL_ERROR: mismatch between server and client bindings…` | o canal **morreu**; só recarregar resolve (ver `ESPERAS_DE_VOLTA`) |
+| `CHANNEL_ERROR` seco | quase sempre assinatura recusada — RLS, ou a tabela fora da publicação `supabase_realtime` |
+| `TIMED_OUT` / `CLOSED` | é rede: o wi-fi, a tampa do notebook, a Render piscando |
+
+Sem ele, as três viram uma frase só e quem for consertar recomeça do zero —
+que foi exatamente o que aconteceu.
+
+**Guarda-se o PRIMEIRO, não o último.** Cada tentativa do vigia que não pega
+gera outro `CHANNEL_ERROR`; guardando o último, a causa da queda ficaria
+soterrada pelas consequências dela. É a mesma razão que arma os três relógios
+uma vez só.
+
+**A faixa leva a frase curta, o console leva o erro inteiro** — a régua de
+`comOCodigo`, em `gravar.js`. E o motivo vai **depois** do que fazer: quem
+atende lê a primeira metade e já sabe; quem conserta lê a segunda. Na frente,
+a frase vira coisa de máquina e o recado se perde no meio. Corta em 110 letras,
+porque a biblioteca chega a devolver uma pilha inteira.
+
+**E a bancada mentia por omissão, pela terceira vez nesta série:** o
+`subscribe` dela chamava `aoMudar(estado)` e mais nada. Uma bancada que esconde
+o segundo argumento aprova **igualmente** o painel que lê o motivo e o que o
+joga fora.
+
+Prova: `o-tempo-real-diz-o-motivo`, 20 conferências, 7 sabotagens e 7 pegas.
+**Ainda em aberto:** a causa da queda no escritório. Isto não conserta — faz a
+próxima ocorrência se identificar sozinha, na foto da tela, em vez de custar
+outra rodada de adivinhação.
+
 ### A linha desativada não some
 
 A ponte recusa enviar por um telefone desativado (ver o CLAUDE.md dela). Só que

@@ -83,6 +83,7 @@ const abrir = async ({ foraDesdeOInicio = false } = {}) => {
     globalThis.__LIMITE_DA_PROMESSA = limite;
     globalThis.__TEMPO_REAL_FORA = fora;
     globalThis.__DEMORA_DO_CANAL = 30;
+    globalThis.__MOTIVO_DO_CANAL = "";
     globalThis.__CANAIS = 0;
     globalThis.__SAUDE = [];
     // A SAÍDA DO CANAL DEMORA, COMO A DE VERDADE. Era instantânea na bancada,
