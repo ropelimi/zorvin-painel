@@ -1608,7 +1608,7 @@ para quem for consertar.
 Prova: `a-pesca-enquanto-o-canal-esta-fora`, 11 conferências, 4 sabotagens e
 4 pegas.
 
-### A linha desativada não some### A linha desativada não some
+### A linha desativada não some
 
 A ponte recusa enviar por um telefone desativado (ver o CLAUDE.md dela). Só que
 o painel lia `advogados` com `ativo = true`, e a conta não fechava: as conversas
