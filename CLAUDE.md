@@ -1049,6 +1049,34 @@ parecer não existir. Hoje há uma passada que normaliza todas; a prova pegou o
 sintoma: o rótulo aparecia nas linhas e a ordem nova não era oferecida, duas
 respostas contrárias sobre a mesma coluna na mesma tela.
 
+### E a espera não começa no rabicho da conversa já atendida (28/09)
+
+Relato do Rodrigo, com foto: a conversa da ANDREIA dizia **"esperando há 6
+dias"**. Respondemos 22/09 **13:36**; ela escreveu "Tomara a Deus" às **13:37**
+e só voltou a escrever hoje. Pela regra acima, a espera começa naquele 13:37 —
+**um minuto** depois de a atendente ter respondido.
+
+Isso é o **rabicho** de uma conversa atendida, e não uma espera.
+
+**A regra nova:** a espera começa na primeira mensagem que chega **mais de 30
+minutos** depois da nossa última ação, com um **encosto** — se nenhuma chegar
+depois disso, vale a regra de antes, para que ninguém saia da fila em
+silêncio. A conta inteira é do BANCO
+(`sql/automaticos/006-a-espera-nao-comeca-no-rabicho.sql`, no repo da ponte);
+**a tela não faz conta nenhuma disto**, pela mesma razão de sempre: duas
+contas divergiriam, e divergir aqui é a lista dizer um número e o banco outro
+sobre a mesma conversa.
+
+**Os 30 minutos foram medidos**, e contra as 48 horas que o próprio Rodrigo
+sugeriu: sobre as 832 conversas da fila, a janela de 48 h apagava **9,8 dias**
+de espera em média contra 4,6 da de 30 min, e pulava pedidos de verdade
+("Porfavor avisa ao financeiro que minha c…"). Quantas conversas mudam quase
+não depende da janela; quanto tempo é apagado, sim.
+
+**Aqui só mudaram duas frases**, e as duas porque passariam a mentir: o
+comentário de `diasEsperando` e a explicação da ordem no menu, que dizia
+"conta desde a primeira mensagem sem resposta" sem a metade nova.
+
 ### Uma correção do que ficou escrito errado em 24/09
 
 A entrada "E os outros dezoito lugares" dizia: *"medido, o clique no ⋮ da lista

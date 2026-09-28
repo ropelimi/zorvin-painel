@@ -111,6 +111,16 @@ function nomeDoContato(contato) {
 //  conta — é o Cliente A do relato de 25/09, que escreveu em 21/09 e em 24/09
 //  e espera desde 21/09.
 //
+//  E DESDE 28/09 A CONTA IGNORA O RABICHO. O "Tomara a Deus" que chega um
+//  minuto depois de a atendente responder não é uma espera — é o fim de uma
+//  conversa que foi atendida. A espera passa a começar na primeira mensagem
+//  que chega mais de 30 minutos depois da nossa última ação; e, se nenhuma
+//  chegar depois disso, vale a regra de antes, para que ninguém saia da fila
+//  em silêncio. A regra inteira está em `006-a-espera-nao-comeca-no-rabicho`,
+//  no repo da ponte — a TELA não faz conta nenhuma disto, e é de propósito:
+//  duas contas divergiriam, e divergir aqui é a lista dizer um número e o
+//  banco outro sobre a mesma conversa.
+//
 //  DIAS CORRIDOS, decidido pelo Rodrigo: de 21/09 a 25/09 são quatro dias, com
 //  o fim de semana dentro. É o que o cliente sente — ele não sabe se o
 //  escritório abre no sábado.
@@ -9693,7 +9703,10 @@ export default function Painel({ sessao }) {
             // uma ordem que faz a lista de conversas sumir.
             ...(temEspera === true
               ? [["esperando", "Esperando há mais tempo",
-                  "Conta desde a primeira mensagem sem resposta. Quem escreveu de novo não volta para o fim da fila."]]
+                  // A FRASE DIZ AS DUAS METADES DA REGRA, e a segunda é nova:
+                  // sem ela, a pessoa que visse "esperando há 0 dias" numa
+                  // conversa de semana passada acharia que a conta quebrou.
+                  "Conta desde a primeira mensagem sem resposta — o \"obrigada\" logo depois da nossa não conta. Quem escreveu de novo não volta para o fim da fila."]]
               : [])]
             .map(([chave, titulo, explica]) => (
             <button key={chave} data-ordem-opcao={chave}
