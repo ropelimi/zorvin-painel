@@ -57,10 +57,24 @@ jobs:
   painel:
     name: Provas do painel
     runs-on: ubuntu-latest
-    # 43 provas, cada uma abrindo o seu próprio navegador, mais o build de
-    # produção que quatro delas exigem. Trinta minutos é folga com sobra; o
-    # teto existe para uma prova pendurada não ficar de pé até o fim do dia.
-    timeout-minutes: 30
+    # O TETO EXISTE PARA UMA PROVA PENDURADA, E NÃO PARA A SOMA DAS PROVAS —
+    # e em 28/09 ele passou a matar a soma.
+    #
+    # Ele foi escrito em 30 com o comentário "folga com sobra". MEDIDO: a
+    # rodada verde anterior levou 28min41s, ou seja 79 SEGUNDOS de folga, e a
+    # entrega seguinte (uma prova nova, mais duas que cresceram) estourou. A
+    # rodada morreu às 29min43s no meio da `selos-em-rajada`, com CINCO provas
+    # ainda por rodar — ~33 min de suíte.
+    #
+    # E o corte é o pior desfecho possível: a conta paga os 30 minutos
+    # INTEIROS e não responde nada. Não é economia, é gastar sem comprar.
+    #
+    # 45 dá ~12 min de folga sobre os ~33 de hoje, e continua derrubando em
+    # menos de uma hora a prova que travar. O teto NÃO muda o que a rodada
+    # consome: ela custa o tempo que a suíte leva. Ao acrescentar prova,
+    # olhe este número — uma suíte que encosta no teto reprova por relógio,
+    # e "vermelho por relógio" se parece com defeito de código.
+    timeout-minutes: 45
 
     steps:
       - name: Baixar o código

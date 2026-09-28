@@ -1715,6 +1715,24 @@ três dias desligado e ninguém soube. Ao mexer em qualquer coisa que AVISA,
 pergunte quanto ela custa para continuar de pé — e o que se vê no dia em que
 ela parar.
 
+### E no mesmo dia o teto de 30 minutos matou a suíte inteira
+
+O `timeout-minutes` da rodada estava em 30, com o comentário *"folga com
+sobra"*. **Medido em 28/09:** a última rodada verde levou **28min41s** — 79
+segundos de folga, e não sobra nenhuma. A entrega seguinte (uma prova nova
+mais duas que cresceram) foi cortada aos **29min43s**, no meio da
+`selos-em-rajada`, com **cinco provas ainda por rodar**.
+
+**E o corte é o pior desfecho que existe aqui:** a conta paga os 30 minutos
+inteiros e não responde nada. Não é economia — é gastar sem comprar. Pior, o
+X vermelho por relógio é igual ao X vermelho por defeito de código, que é
+exatamente o sintoma de 25/09 outra vez.
+
+Hoje o teto é **45**, e o comentário diz o número medido em vez de um
+adjetivo. **O teto não muda o que a rodada consome** — ela custa o tempo que a
+suíte leva; ele só decide quando uma prova TRAVADA é derrubada. **Ao
+acrescentar prova, olhe quanto a suíte já leva.**
+
 ## Fluxo de trabalho — PRs (REGRA IMPORTANTE do Rodrigo)
 
 - **Cada entrega/pedido deve ir numa PR NOVA.** Nunca reutilizar nem estender uma PR já mesclada.
