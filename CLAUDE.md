@@ -414,6 +414,51 @@ filtro, então é isso que fica registrado. E o vigia `provas-que-reprovam` pego
 uma conferência minha que usava `.every` sem conferir o tamanho: numa lista
 vazia ela diria "não houve filtro" num cenário em que não houve nada.
 
+### Três vozes de pato, e o volume que passou a ser MEDIDO
+
+Relato do Rodrigo em 28/09: *"o volume do pato está bom, mas o som não está
+adequado — quero outra voz"*. Perguntado, o que incomoda é ele estar
+**agudo/estridente demais**.
+
+**A causa está escrita na receita:** o passa-faixa a 1100 Hz com `Q=2` ressoa
+justamente na banda mais irritante do ouvido, e o pico de tom vai a 620 Hz.
+
+Entraram três candidatas — `pato-grave` (sem ressonância, tom quase à metade),
+`pato-rouco` (dois osciladores desafinados de propósito em cada grasnado: o
+batimento é o que dá aspereza de bicho) e `pato-macio` (onda triangular, o
+extremo oposto do de hoje). **O pato de hoje FICA na lista**, para comparar.
+
+**Os ids são NOVOS, e não substituem o `pato`.** Trocar o id por baixo faria
+`somEscolhido()` não reconhecer o guardado e cair no "Toque" — a equipe
+perderia a escolha sem nada dizer. **A rodada que tirar as perdedoras tem de
+levar isso junto** (uma lista de apelidos traduzidos para o vencedor), e está
+escrito no código por quê: o sintoma, "meu som mudou sozinho", não aponta para
+a causa.
+
+#### O volume deixou de ser palpite
+
+Quem escreve estes sons não os ouve. Para escolher **timbre** é preciso que
+todos toquem na **mesma altura** — em alturas diferentes ganha o mais alto, e
+não o que soa melhor.
+
+Então `montarSom` saiu de dentro de `tocarAviso`, e a prova
+`o-volume-dos-avisos` desenha **o mesmo grafo** num `OfflineAudioContext`, que
+devolve as amostras em vez de mandá-las para a caixa de som, e mede RMS e
+pico. Uma segunda escrita da receita dentro da prova mediria um som que não é
+o que toca.
+
+**E ela pegou um erro meu de mais do DOBRO, na primeira rodada:** o
+`pato-macio` saía a **2,08×** a altura do de hoje. Eu tinha estimado 0,16
+porque a onda triangular *parece* a mais fraca (poucos harmônicos) — e é o
+contrário: o passa-baixa quase não tira nada dela, enquanto corta metade da
+dente de serra. Com a medição, 0,077. Hoje os três saem entre **1,03× e
+1,09×**.
+
+Prova: `o-volume-dos-avisos`, 12 conferências, 7 sabotagens e 7 pegas. Ela
+também põe um **teto** para o futuro (nada perto de saturar, nada acima de
+0,2 de RMS): um som novo com o volume trocado de 0,2 para 2 passa em qualquer
+revisão de código e só é descoberto por uma pessoa de fone, no susto.
+
 ### A etiqueta da notificação
 
 Era `tag: "zorvin"` para tudo: cada aviso **substituía** o anterior, então dois
