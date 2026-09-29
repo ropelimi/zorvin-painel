@@ -1685,6 +1685,85 @@ tela.
 
 Provas: `numeros` (65), `numero-que-nao-recebe` (15), `ficha` (14).
 
+## O cliente que voltou por um número novo — achado pelo CPF (29/09)
+
+Relato do Rodrigo, com duas fotos: o CRISTIANO RIBEIRO DE JESUS tem cadastro
+no Vantoro com `(71) 8425-3304`, formatou o celular e voltou a escrever por
+`(19) 98209-4819`. A ficha procura pelo **número da conversa**, disse —
+corretamente — que *"este número ainda não tem cadastro"*, e ofereceu criar
+um. **Criar seria o duplicado:** o histórico do cliente partido em dois, e a
+ordem de serviço dele numa ficha que não é a dele.
+
+**O CPF é o que não muda quando o telefone muda.** Sem cadastro pelo número, a
+ficha procura pelo CPF — a mesma pergunta que já existia para avisar do CPF
+repetido (`/vantoro/cpf-existe`) — e, achando, **pergunta** se o número novo
+entra no cadastro achado. Nenhuma rota nova na ponte: o número entra pela
+mesma rota do "+ Acrescentar" da ficha aberta.
+
+**O CPF passou a vir PRIMEIRO**, antes do nome. Com ele embaixo, o gesto
+natural era preencher de cima para baixo e apertar Criar. E é o **mesmo**
+campo que o pré-cadastro usa — dois campos de CPF na mesma tela fariam a
+pessoa perguntar em qual digitar.
+
+**Quatro respostas, e cada uma diz o que fazer:**
+
+| a procura | a ficha diz | e oferece |
+|---|---|---|
+| procurando | "Procurando este CPF no Vantoro…" | — |
+| achou | de quem é, o telefone de antes, as ações | **acrescentar este número** · só abrir |
+| não achou | "Nenhum cadastro com este CPF" | o pré-cadastro |
+| **falhou** | "isto **não** quer dizer que a pessoa não seja cliente" | tentar de novo |
+
+**A última é a que evita o duplicado no dia em que a ponte tossir.** Na ficha
+aberta, a falha da mesma pergunta continua calada (lá o silêncio quer dizer
+"o CPF é livre", e o Vantoro recusa o duplicado de qualquer jeito); aqui ela
+é dita, porque o CPF foi digitado para PROCURAR alguém.
+
+**Achou, o pré-cadastro sai de cena.** Criar ali seria o duplicado, e o
+Vantoro recusaria o CPF depois de a pessoa escolher o papel. Trocando o CPF,
+ele volta.
+
+**A ordem dos passos é a decisão:** a ficha **inteira** primeiro, o número
+depois, o vínculo da conversa por último. Se a ficha não vier, **nada muda** —
+e a frase diz isso com todas as letras, porque "o Vantoro não respondeu"
+sozinho deixa a dúvida que faz clicar de novo. Ao contrário, uma conversa
+ligada a um cadastro que não tem o número dela voltaria a dizer "não tem
+cadastro" na abertura seguinte: a ficha procura pelo número, e o vínculo
+sozinho não basta para ela achar.
+
+**O número entra como mais um, e não como o WhatsApp principal.** Trocar o
+principal já tem botão próprio ("usar este como WhatsApp"); fazê-lo calado
+aqui mudaria por onde saem os avisos de audiência do cliente sem ninguém ter
+escolhido isso.
+
+**O número que já está lá com outra escrita não é mandado de novo** — com e
+sem o nono dígito são a mesma conta no WhatsApp (ver "O aviso do nono
+dígito", acima). A conversa é ligada assim mesmo, e a frase diz que ele já
+estava.
+
+**O "não é ele" também tem saída**, e ela não é criar outro cadastro: pode ser
+a mãe falando pelo celular do filho com o CPF dele na mão. *"Só abrir o
+cadastro, sem acrescentar este número"* é o caminho que já existia na ficha
+aberta.
+
+**Sobra consertada junto:** `escolher` não trazia a lista de telefones do
+cadastro escolhido — só `buscar` a preenchia. Escolher pela lista de
+candidatos ou pelo CPF de outro desenhava a ficha nova com os telefones da
+anterior, ou nenhum.
+
+**E um tropeço meu de processo, que fica escrito:** esta rodada foi feita
+numa segunda cópia da pasta (`git worktree`), com `node_modules` ligado por
+atalho à cópia principal. O `.gitignore` diz `node_modules/`, com a barra —
+e a barra só casa com **pasta**. O atalho é um arquivo, passou, e entrou no
+primeiro commit. Tirado antes da PR; ao repetir o truque, confira o
+`git status` antes do `git add -A`.
+
+Prova: `o-numero-novo-acha-o-cadastro-pelo-cpf`, 32 conferências, **6
+sabotagens e 6 pegas** (o Criar que continua; a falha que vira "não achou";
+o número mandado sem conferir o nono dígito; o número antigo no lugar do
+desta conversa; a conversa que não é ligada; o número mandado antes da ficha
+inteira).
+
 ## Banco de dados (tabelas que o painel lê/escreve)
 
 - `advogados` — lê (id, nome, numero, foto_url) onde `ativo = true`
