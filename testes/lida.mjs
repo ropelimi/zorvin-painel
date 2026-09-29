@@ -216,13 +216,42 @@ console.log("\nCom a ficha aberta o rótulo aperta, mas a palavra NÃO some");
      await p2.locator("[data-ficha]").count() === 1 &&
      await p2.locator("[data-ficha]").first().isVisible());
 
-  const botao = p2.locator('[data-marcar="lida"], [data-marcar="nao-lida"]').first();
-  ok("o botão continua na tela", await botao.count() === 1 && await botao.isVisible());
-  const titulo = (await botao.getAttribute("title")) || "";
-  const rotulo = (await botao.getAttribute("aria-label")) || "";
-  ok("e continua DIZENDO a palavra, no title e no aria-label",
-     /marcar esta conversa como/i.test(titulo) && /marcar esta conversa como/i.test(rotulo),
-     `title: "${titulo}" | aria-label: "${rotulo}"`);
+  // A 1280 COM A FICHA ABERTA A FILA SE RECOLHE NO ⋮ (29/09) — e é por isso
+  // que o botão solto não está mais aqui. Ele não sumiu: virou item de menu,
+  // e ESCRITO POR EXTENSO, que é mais do que ele dizia como ícone mudo.
+  // Ver `cabecalhoRecolhido`: quem tem prioridade na régua é o nome do
+  // cliente, porque é nele que mora o número que o cliente vê chegar.
+  const solto = p2.locator('[data-topo-conversa] [data-marcar]');
+  ok("a fila se recolheu: o botão solto saiu do cabeçalho", await solto.count() === 0);
+
+  const tresPontos = p2.locator('[aria-label="Mais opções desta conversa"]');
+  ok("e o ⋮ está lá no lugar dele",
+     await tresPontos.count() === 1 && await tresPontos.first().isVisible());
+
+  await tresPontos.first().click();
+  await p2.waitForTimeout(400);
+  const noMenu = p2.locator('[data-menu-conversa] [data-menu-marcar]');
+  ok("o menu traz a ação", await noMenu.count() === 1);
+  const escrito = (await noMenu.first().innerText()).trim();
+  ok("e ela está ESCRITA por extenso, não é um tique mudo",
+     /marcar como (não )?lida/i.test(escrito), `dizia: "${escrito}"`);
+
+  // E O MENU APARECE INTEIRO. O cabeçalho teve `overflow: hidden` por um dia
+  // (28/09, como encosto contra ele pintar por cima da ficha) e aquilo
+  // RECORTAVA os menus ancorados nele: medido, o de etiquetas pedia 139px de
+  // altura e mostrava 21. Um menu cortado no meio não é um menu.
+  const inteiro = await p2.evaluate(() => {
+    const m = document.querySelector("[data-menu-conversa]");
+    if (!m) return null;
+    const r = m.getBoundingClientRect();
+    // O QUE SE VÊ, e não o retângulo: `getBoundingClientRect` não sabe de
+    // recorte por ancestral, então a pergunta é quem está PINTADO lá embaixo.
+    const quem = document.elementFromPoint(Math.round(r.left + r.width / 2),
+                                           Math.round(r.bottom - 6));
+    return { altura: Math.round(r.height), pintado: !!(quem && m.contains(quem)) };
+  });
+  ok("e o pé do menu está pintado na tela, não recortado",
+     inteiro && inteiro.altura > 60 && inteiro.pintado, JSON.stringify(inteiro));
 
   // E O QUE SE MEDE É O NOME, NÃO A BORDA DO CABEÇALHO.
   //

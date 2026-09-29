@@ -235,6 +235,7 @@ console.log("\n6. A conversa ganhou espaço, e o cabeçalho não invade a ficha"
         fichaComecaEm: ficha ? Math.round(ficha.getBoundingClientRect().left) : null,
         larguraDoMarcar: marcar ? Math.round(marcar.getBoundingClientRect().width) : null,
         // O BLOCO DO NOME — é ELE que denuncia a falta de espaço.
+        temTresPontos: !!topo.querySelector('[aria-label="Mais opções desta conversa"]'),
         larguraDoNome: (() => {
           const bloco = [...topo.children].find((e) => getComputedStyle(e).flexGrow !== "0");
           return bloco ? Math.round(bloco.getBoundingClientRect().width) : null;
@@ -267,11 +268,21 @@ console.log("\n6. A conversa ganhou espaço, e o cabeçalho não invade a ficha"
     // borda — reprovar pelo que não se mede é o que faz alguém apagar a
     // conferência em vez de ler o que ela diz.
     ok(`a ${L}px a lista encolheu para ~360px`, Math.abs(lista - 360) <= 2, `${lista}px`);
-    // O QUE FAZ CABER: apertado, os botões escritos viram ícone. Sem isto a
-    // conferência de cima passaria só por sorte, na largura que eu escolhi.
-    const apertado = L === 1280;
-    ok(`a ${L}px o botão de marcar ${apertado ? "vira ícone" : "continua escrito"}`,
-       apertado ? m.larguraDoMarcar < 70 : m.larguraDoMarcar > 100,
+    // O QUE FAZ CABER, e são TRÊS formas desde 29/09 (ver `cabecalhoRecolhido`):
+    // sobrando espaço os botões vêm escritos; apertando viram ícone; e não
+    // cabendo se recolhem no ⋮, escritos por extenso lá dentro.
+    //
+    // ESTA CONFERÊNCIA ESTAVA VAZIA A 1280 e eu quase não vi: ela perguntava
+    // `m.larguraDoMarcar < 70`, e com o botão recolhido no ⋮ aquilo é
+    // `null < 70` — que em JavaScript vale 0 < 70, ou seja, VERDADE. Ela
+    // passava sem medir nada. Agora o que se pergunta é a forma, pelo nome.
+    const recolhido = L === 1280;
+    ok(`a ${L}px a fila ${recolhido ? "se recolhe no ⋮" : "fica solta no cabeçalho"}`,
+       recolhido ? (m.larguraDoMarcar === null && m.temTresPontos)
+                 : (m.larguraDoMarcar !== null && !m.temTresPontos),
+       JSON.stringify({ marcar: m.larguraDoMarcar, tresPontos: m.temTresPontos }));
+    ok(`a ${L}px o botão de marcar ${recolhido ? "não está solto" : "continua escrito"}`,
+       recolhido ? m.larguraDoMarcar === null : m.larguraDoMarcar > 100,
        `${m.larguraDoMarcar}px`);
     await ctx.close();
   }
