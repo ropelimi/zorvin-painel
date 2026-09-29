@@ -487,9 +487,16 @@ todo "restaurar" depois disso a devolvia — a prova passou a reprovar falando
 de um botão que a sabotagem tinha tirado. **Backup de sabotagem se tira antes
 de começar, de uma cópia conferida, e nunca com outra rodada em voo.**
 
-Prova: `o-cabecalho-nao-corta-o-que-importa`, 24 conferências. Ela mede **o
-que está PINTADO** (`elementFromPoint`), e não o retângulo: foi exatamente por
-isso que o menu de tags media 139px de altura enquanto a pessoa via 21 —
+**E os cliques dela são GUARDADOS**, o que não é zelo: `locator.click()` num
+elemento que não existe estoura a prova inteira depois de 30 segundos, e uma
+prova que estoura não diz QUAL conferência pegou o defeito — some a lista
+toda. Duas das cinco sabotagens tinham "pego" assim, e aquilo é uma pega que
+não se pode ler.
+
+Prova: `o-cabecalho-nao-corta-o-que-importa`, 25 conferências, **5 sabotagens
+e 5 pegas** (3, 9, 2, 6 e 2 conferências reprovando, todas limpas). Ela mede
+**o que está PINTADO** (`elementFromPoint`), e não o retângulo: foi exatamente
+por isso que o menu de tags media 139px de altura enquanto a pessoa via 21 —
 `getBoundingClientRect` não sabe que um ancestral está recortando.
 
 **Ainda em aberto, e é decisão:** o visual POR DENTRO da ficha não mudou. Ela
