@@ -12082,6 +12082,23 @@ export default function Painel({ sessao }) {
                               }}
                               style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
                         <History size={17} color={C.textSecondary} /> Histórico de atendimento
+                        {/* O NÚMERO VEM JUNTO, e isto é o que faz "recolher"
+                            não virar "esconder". Solto no cabeçalho, o ícone
+                            de histórico carrega um selo verde dizendo que
+                            OUTRO telefone atende este mesmo cliente — e sem
+                            ele duas pessoas atendem a mesma pessoa sem saber
+                            uma da outra. Quando a fila se recolhe aqui
+                            dentro, o selo tinha de vir também; a prova
+                            `o-cliente-e-um-so` pegou a falta. */}
+                        {outrasConversasDoContato > 0 && (
+                          <span data-outros-telefones={outrasConversasDoContato}
+                                style={{ marginLeft: "auto", minWidth: 18, height: 18,
+                                         padding: "0 5px", borderRadius: 9, background: C.green,
+                                         color: "#fff", fontSize: 11, fontWeight: 700,
+                                         lineHeight: "18px", textAlign: "center" }}>
+                            {outrasConversasDoContato}
+                          </span>
+                        )}
                       </button>
                       <button onClick={() => { setMenuDaConversa(false); setTagMenuAberto(true); }}
                               style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>

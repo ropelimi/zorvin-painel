@@ -76,6 +76,17 @@ ok("a tela perguntou à ponte quantas conversas o contato tem",
    pedidos.some((p) => /\/quantas$/.test(p.caminho)),
    JSON.stringify(pedidos.map((p) => p.caminho)));
 
+// A 1280 COM A FICHA ABERTA A FILA SE RECOLHE NO ⋮ (29/09, ver
+// `cabecalhoRecolhido`), e o selo vai junto para dentro do menu — é isso que
+// faz "recolher" não virar "esconder". Esta prova roda justamente nessa
+// largura e foi ela que pegou a falta: na primeira escrita daquela mudança o
+// número ficou de fora do menu, e saber que OUTRO telefone atende o mesmo
+// cliente voltaria a exigir clicar. Então aqui se procura nos dois lugares.
+const tresPontos = page.locator('[aria-label="Mais opções desta conversa"]');
+if (await tresPontos.count() === 1 && await page.locator("[data-outros-telefones]").count() === 0) {
+  await tresPontos.click();
+  await page.waitForTimeout(400);
+}
 const selo = page.locator("[data-outros-telefones]");
 ok("o ícone de histórico mostra um número", (await selo.count()) === 1,
    "sem ele, saber que outro telefone atende o mesmo cliente exige clicar");
@@ -112,7 +123,20 @@ const contatoAberto = await page.evaluate(() => {
 ok("sei qual contato está aberto", !!contatoAberto);
 
 const antes = pedidos.filter((p) => p.metodo === "POST").length;
-await page.locator('button[aria-label="Etiquetas"]').first().click();
+// AS ETIQUETAS TAMBÉM MUDARAM DE ENDEREÇO A 1280 (ver `cabecalhoRecolhido`):
+// com a fila recolhida, o botão solto não está no cabeçalho e o caminho é o
+// item escrito do ⋮. É o mesmo menu que abre no fim — muda só por onde se
+// chega nele.
+const botaoSolto = page.locator('button[aria-label="Etiquetas"]');
+if (await botaoSolto.count() > 0) {
+  await botaoSolto.first().click();
+} else {
+  const tres = page.locator('[aria-label="Mais opções desta conversa"]');
+  ok("com a fila recolhida, o ⋮ é o caminho das etiquetas", await tres.count() === 1);
+  await tres.click();
+  await page.waitForTimeout(400);
+  await page.locator('[data-menu-conversa] button', { hasText: /^Etiquetas/ }).first().click();
+}
 await page.waitForTimeout(600);
 const opcao = page.locator("[data-tag-opcao]").first();
 const temMenu = (await opcao.count()) > 0;

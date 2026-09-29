@@ -447,6 +447,14 @@ número que o cliente vê chegar**.
 mesmo nos dois mundos. Duas escritas divergiriam, e divergir aqui é uma ação
 existir num tamanho de janela e sumir no outro.
 
+**E "recolher não é esconder" foi mais fácil de dizer do que de fazer.** A
+prova `o-cliente-e-um-so` roda a 1280 e reprovou: o selo verde do histórico —
+o que avisa que **outro telefone atende este mesmo cliente** — ficou de fora
+do menu na primeira escrita. Recolhido, ele sumia, e duas pessoas voltariam a
+atender a mesma pessoa sem saber uma da outra. Hoje o número vai junto do
+item escrito. **Ao mover um controle para o menu, o que precisa ir junto é o
+que ele DIZ, e não só o que ele faz.**
+
 ### O menu de filtros abria fora da tela
 
 Terceiro relato do dia: *"ao clicar em Grupo e depois clicar novamente para

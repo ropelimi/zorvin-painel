@@ -135,9 +135,14 @@ console.log("\n2. O nome do cliente nunca é espremido abaixo do piso");
       + ` | ${e.recolhido ? "⋮ recolhido" : e.escrito ? "escritos   " : "ícones     "}`
       + ` | nome ${e.nome}`);
   }
+  // O TAMANHO VAI JUNTO no `.every`, e não é preciosismo: numa lista vazia
+  // ele devolve `true`, e a conferência passaria sem conferir nada. É a
+  // armadilha que o vigia `provas-que-reprovam` existe para pegar — e pegou
+  // esta, na integração contínua.
   ok(`o nome tem pelo menos ${NOME_MINIMO}px em TODAS as larguras`,
-     escada.every((e) => e.nome >= NOME_MINIMO),
-     JSON.stringify(escada.filter((e) => e.nome < NOME_MINIMO)));
+     escada.length === 6 && escada.every((e) => e.nome >= NOME_MINIMO),
+     JSON.stringify({ medidas: escada.length,
+                      abaixoDoPiso: escada.filter((e) => e.nome < NOME_MINIMO) }));
 
   // E A FORMA SÓ ABRE, nunca volta a se fechar quando a janela cresce.
   //
@@ -157,7 +162,8 @@ console.log("\n2. O nome do cliente nunca é espremido abaixo do piso");
     .map((e, i) => ({ de: escada[i].L, para: e.L, antes: forma(escada[i]), depois: forma(e) }))
     .filter((d) => d.depois < d.antes);
   ok("a fila só se abre conforme a janela cresce, nunca o contrário",
-     voltas.length === 0, JSON.stringify(voltas));
+     escada.length === 6 && voltas.length === 0,
+     JSON.stringify({ medidas: escada.length, voltas }));
 
   // E A ESCADA TEM DE TER OS TRÊS DEGRAUS. Sem isto, um painel que se
   // recolhesse SEMPRE passaria nas duas conferências de cima — e teria
