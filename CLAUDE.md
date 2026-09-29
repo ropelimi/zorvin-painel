@@ -1984,9 +1984,19 @@ inteira: ninguém clica em baixar nada, então a lista tem de terminar vazia.
 Com o painel de antes, ela pega `download.csv` e o PDF sem tipo — o relato,
 reproduzido.
 
-Prova: `documentos`, 39 conferências, **4 sabotagens e 4 pegas** (o painel de
-antes inteiro; o PDF sem perguntar o tipo; o texto de volta no iframe; a
-prévia de mandar com o iframe próprio).
+**E a integração contínua me corrigiu na primeira rodada.** Escrevi a
+conferência *"o PDF ganha prévia"* e ela passou aqui, num Chrome com leitor de
+PDF. Lá ela reprovou: o Playwright usa o `headless_shell`, que **não tem
+leitor** (`navigator.pdfViewerEnabled` é `false`) — e o painel, certo, não
+montou o iframe. A prova supunha um mundo só. Hoje ela pergunta ao navegador
+e confere o lado que valer, e ganhou uma cena que **força** o navegador sem
+leitor, para esse mundo ser visto também numa máquina que tem leitor. Nele o
+painel de antes baixava **até o PDF certo** (`download.pdf`), um terceiro caso
+que o relato nem chegou a mostrar.
+
+Prova: `documentos`, 42 conferências, **6 sabotagens e 6 pegas** (o painel de
+antes inteiro, nos dois navegadores; o PDF sem perguntar o tipo; o texto de
+volta no iframe; a prévia de mandar com o iframe próprio; o leitor ignorado).
 
 ## Pendências / próximos passos
 

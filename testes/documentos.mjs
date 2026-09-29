@@ -138,6 +138,7 @@ const porDocumento = () => page.evaluate(() =>
       previa: p ? p.getAttribute("data-previa-arquivo") : null,
       quadro: !!(p && p.querySelector("iframe")),
       texto: p ? p.innerText.slice(0, 200) : "",
+      link: !!(a && a.getAttribute("href")),
     };
   }));
 const vistos = await porDocumento();
@@ -154,9 +155,23 @@ console.log("\nNa conversa");
   ok("abrir a conversa e ler até o fim NÃO baixa arquivo nenhum",
      baixados.length === 0, JSON.stringify(baixados));
 
-  ok("o PDF ganha prévia, desenhada pelo leitor do navegador",
-     doc(/procuracao\.pdf/)?.previa === "pdf" && doc(/procuracao\.pdf/)?.quadro === true,
-     JSON.stringify(doc(/procuracao/)));
+  // O PDF CERTO DEPENDE DO NAVEGADOR, e a prova confere os dois mundos. Com
+  // leitor, ele ganha a primeira página. SEM leitor — e é o caso da
+  // integração contínua, que roda num Chromium sem leitor de PDF, e o de quem
+  // escolheu "baixar PDFs em vez de abrir" —, o iframe BAIXARIA até o PDF
+  // certo, e por isso ele não nasce. Escrevi primeiro só a primeira metade:
+  // passou aqui, num Chrome com leitor, e reprovou na integração contínua,
+  // que tinha razão.
+  const temLeitor = await page.evaluate(() => navigator.pdfViewerEnabled);
+  if (temLeitor === false) {
+    ok("sem leitor de PDF no navegador, o PDF NÃO ganha iframe — ele baixaria",
+       doc(/procuracao\.pdf/) && doc(/procuracao\.pdf/).quadro === false,
+       JSON.stringify(doc(/procuracao/)));
+  } else {
+    ok("o PDF ganha prévia, desenhada pelo leitor do navegador",
+       doc(/procuracao\.pdf/)?.previa === "pdf" && doc(/procuracao\.pdf/)?.quadro === true,
+       JSON.stringify(doc(/procuracao/)));
+  }
 
   // A METADE QUE PROTEGE: o que não tem leitor fica sem prévia.
   ok("a planilha do Excel NÃO ganha", doc(/orcamento\.xlsx/)?.previa === null,
@@ -185,20 +200,54 @@ console.log("\nNa conversa");
   // A PRÉVIA NÃO PODE ROUBAR O CLIQUE. Ela mora dentro do link que baixa o
   // arquivo; um iframe que aceita clique engole o clique do link, e um que
   // rola faz a roda do mouse parar a conversa para rolar um PDF sem querer.
-  const passaClique = await page.evaluate(() => {
-    const el = document.querySelector('[data-previa-arquivo="pdf"] iframe');
-    const tx = document.querySelector('[data-previa-arquivo="texto"] pre');
-    return [el && getComputedStyle(el).pointerEvents, tx && getComputedStyle(tx).pointerEvents];
-  });
-  ok("nenhuma das duas prévias engole o clique do link",
-     passaClique[0] === "none" && passaClique[1] === "none", JSON.stringify(passaClique));
+  //
+  // CADA PRÉVIA QUE EXISTE é conferida — e o TAMANHO vai junto: numa lista
+  // vazia `.every` diria que sim sem ter olhado nada. A do texto sempre
+  // existe; a do PDF só com leitor.
+  const cliques = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-previa-arquivo="pdf"] iframe, [data-previa-arquivo="texto"] pre')]
+      .map((e) => getComputedStyle(e).pointerEvents));
+  ok("nenhuma prévia engole o clique do link",
+     cliques.length >= (temLeitor === false ? 1 : 2) && cliques.every((c) => c === "none"),
+     JSON.stringify(cliques));
 
-  // E O ARQUIVO CONTINUA BAIXÁVEL: a prévia é um acréscimo, não uma troca.
-  const temLink = await page.evaluate(() => {
-    const p = document.querySelector('[data-previa-arquivo="pdf"]');
-    return !!(p && p.closest("a") && p.closest("a").getAttribute("href"));
+  // E O ARQUIVO CONTINUA BAIXÁVEL, com ou sem prévia: a prévia é um
+  // acréscimo, não uma troca — e o PDF que ficou sem ela é justamente o que
+  // mais precisa do clique.
+  ok("e todo documento continua abrindo com um clique",
+     vistos.length >= 4 && vistos.every((v) => v.link), JSON.stringify(vistos.map((v) => v.link)));
+}
+
+console.log("\nO navegador que BAIXA PDFs em vez de abrir");
+{
+  // No Chrome dá para escolher "baixar PDFs em vez de abrir", e aí o iframe
+  // baixaria até o PDF servido como PDF. A cena força esse mundo, para que ele
+  // seja conferido também numa máquina que tem leitor — senão ele só seria
+  // visto na integração contínua, por acaso.
+  const ctx2 = await nav.newContext({ viewport: { width: 1400, height: 900 }, acceptDownloads: true });
+  await ctx2.addInitScript(() => {
+    Object.defineProperty(Navigator.prototype, "pdfViewerEnabled", { get: () => false, configurable: true });
   });
-  ok("e o documento continua abrindo com um clique", temLink);
+  const p2 = await ctx2.newPage();
+  const baixados2 = [];
+  p2.on("download", (d) => baixados2.push(d.suggestedFilename()));
+  await p2.goto(ENDERECO);
+  await p2.waitForSelector("[data-conversa-nome]");
+  await p2.waitForTimeout(1200);
+  await p2.locator("[data-conversa-nome]").first().click();
+  await p2.waitForTimeout(1500);
+  const d2 = p2.locator("[data-doc-tipo]");
+  const n2 = await d2.count();
+  for (let i = 0; i < n2; i++) {
+    await d2.nth(i).scrollIntoViewIfNeeded().catch(() => {});
+    await p2.waitForTimeout(400);
+  }
+  await p2.waitForTimeout(1000);
+  const quadros = await p2.evaluate(() => document.querySelectorAll("[data-previa-arquivo] iframe").length);
+  ok("a cena viu os documentos", n2 >= 4, `vi ${n2}`);
+  ok("sem leitor de PDF, nenhum iframe nasce", quadros === 0, `nasceram ${quadros}`);
+  ok("e nada é baixado", baixados2.length === 0, JSON.stringify(baixados2));
+  await ctx2.close();
 }
 
 console.log("\nE a prévia antes de MANDAR, com um CSV escolhido");
