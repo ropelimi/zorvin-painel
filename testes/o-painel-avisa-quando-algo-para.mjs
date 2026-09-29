@@ -208,6 +208,70 @@ console.log("\n9. Erro DE VERDADE na pergunta é dito, e não engolido");
 }
 
 
+// ------------------------------------------------------------------
+console.log("\n10. A faixa EMPURRA a tela, e não fica por cima dela");
+{
+  // RELATO DO ESCRITÓRIO, 29/09: "essa mensagem vermelha atrapalha o
+  // funcionamento do sistema. Não dá para ver o nome dos contatos e outras
+  // funções."
+  //
+  // A coluna das faixas era `position: fixed` no topo, então ela flutuava
+  // POR CIMA do painel e comia os primeiros ~38px de tudo — a marca, a linha
+  // do departamento e o alto da barra lateral. Um aviso que esconde a tela
+  // sobre a qual avisa é pior do que aviso nenhum: não some quando a pessoa
+  // precisa trabalhar, e não há gesto que o tire.
+  //
+  // A RÉGUA É A SOBREPOSIÇÃO, e não "a faixa apareceu": ela aparecia antes e
+  // continua aparecendo. O que mudou é onde o painel começa.
+  await abrirCom([{ sinal: "linhas_caidas", quantas: 1, desde: agora(10), detalhe: "SAC" }]);
+  ok("a faixa está na tela para ser medida", await faixa().count() === 1);
+
+  const m = await page.evaluate(() => {
+    const f = document.querySelector("[data-aviso-de-saude]");
+    const marca = document.querySelector("[data-linha-da-marca]");
+    const topo = document.querySelector("[data-topo-da-coluna]");
+    if (!f || !marca || !topo) return null;
+    const r = (e) => { const b = e.getBoundingClientRect();
+                       return { top: Math.round(b.top), bottom: Math.round(b.bottom) }; };
+    return { faixa: r(f), marca: r(marca), topo: r(topo),
+             altura: Math.round(document.documentElement.clientHeight),
+             // O MAIS BAIXO DA TELA: se a coluna foi empurrada para fora, é
+             // aqui que se vê. Empurrar sem encolher troca um defeito por
+             // outro — a caixa de escrever sairia por baixo.
+             fundo: Math.round(document.querySelector("[data-topo-da-coluna]")
+                     .closest("div[style*='flex-direction: column']")
+                     .getBoundingClientRect().bottom) };
+  });
+  ok("achei a faixa, a marca e o topo da coluna", !!m, JSON.stringify(m));
+  ok("a faixa começa no alto de tudo", m && m.faixa.top === 0, JSON.stringify(m && m.faixa));
+  ok("e o painel começa DEPOIS dela, sem ficar por baixo",
+     m && m.topo.top >= m.faixa.bottom,
+     m && `faixa termina em ${m.faixa.bottom}, a coluna começa em ${m.topo.top}`);
+  ok("a marca do escritório está inteira abaixo da faixa",
+     m && m.marca.top >= m.faixa.bottom,
+     m && `faixa termina em ${m.faixa.bottom}, a marca começa em ${m.marca.top}`);
+  // E EMPURRAR NÃO PODE VIRAR TRANSBORDAR: a coluna tem de ENCOLHER a altura
+  // da faixa, senão o que sai da tela é o pé dela.
+  ok("e a coluna encolheu em vez de sair pelo pé da tela",
+     m && m.fundo <= m.altura + 1,
+     m && `a coluna termina em ${m.fundo}, a tela tem ${m.altura}`);
+}
+
+// ------------------------------------------------------------------
+console.log("\n11. E sem faixa nenhuma o painel continua colado no alto");
+{
+  // O CONTRASTE. Sem ele, um conserto que deixasse um recuo permanente no
+  // topo passaria igual — e aí todo dia sem problema nenhum teria uma tira
+  // vazia comendo tela.
+  await abrirCom([]);
+  ok("não há faixa", await faixa().count() === 0);
+  const topo = await page.evaluate(() => {
+    const t = document.querySelector("[data-topo-da-coluna]");
+    return t ? Math.round(t.getBoundingClientRect().top) : null;
+  });
+  ok("o painel começa no pixel zero", topo === 0, `começou em ${topo}`);
+}
+
 await nav.close();
 console.log(`\n${feitas - falhas}/${feitas} conferências passaram`);
 process.exit(falhas ? 1 : 0);

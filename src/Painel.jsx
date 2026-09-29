@@ -10417,7 +10417,102 @@ export default function Painel({ sessao }) {
   })();
 
   return (
-    <div style={{ display: "flex", height: "100vh", maxHeight: "100dvh", fontFamily: "'Segoe UI', Helvetica, Arial, sans-serif", background: C.headerBar, color: C.textPrimary }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", maxHeight: "100dvh", fontFamily: "'Segoe UI', Helvetica, Arial, sans-serif", background: C.headerBar, color: C.textPrimary }}>
+      {/* A FAIXA DO QUE NÃO CARREGOU.
+          Fica no ALTO e NÃO SOME sozinha, ao contrário do aviso acima — que
+          dura quatro segundos e serve para confirmar um gesto ("Tag salva!").
+          Aqui é outra coisa: a tela está mostrando MENOS do que existe, e isso
+          continua valendo enquanto durar. Um aviso que pisca e some deixaria a
+          pessoa trabalhando em cima de uma tela incompleta sem saber.
+          Uma faixa só, somando tudo o que falhou: três avisos empilhados numa
+          tela de atendimento viram ruído, e ruído se aprende a ignorar. */}
+      {/* AS DUAS FAIXAS MORAM NA MESMA COLUNA.
+          Cada uma era `position: fixed` no topo. Enquanto só havia uma, isso
+          bastava; com duas, a segunda cairia EM CIMA da primeira e as duas
+          ficariam ilegíveis justamente no momento em que as duas importam.
+          Uma coluna só, e elas se empilham.
+
+          E ELA DEIXOU DE SER `fixed` EM 29/09, por um relato do escritório:
+          "não dá para ver o nome dos contatos e outras funções". Flutuando,
+          a faixa ficava POR CIMA do topo do painel — comia a marca, a linha
+          do departamento e o alto da barra lateral. Um aviso que esconde a
+          tela sobre a qual avisa é pior do que aviso nenhum: ele não some
+          quando a pessoa precisa trabalhar, e não há gesto que o tire.
+
+          Hoje a tela inteira é uma COLUNA: as faixas em cima, e o painel
+          ocupando o que sobra (`flex: 1`). Ele encolhe, em vez de ser
+          coberto — e o quanto ele encolhe é a altura real das faixas, sem
+          ninguém precisar medir nada nem adivinhar um recuo. */}
+      <div style={{ flexShrink: 0, display: "flex", flexDirection: "column" }}>
+      {Object.keys(falhasDeLeitura).length > 0 && (
+        <div data-falha-de-leitura
+             style={{ background: "#8a5a00", color: "#fff", padding: "9px 14px",
+                      fontSize: 13.5, display: "flex", alignItems: "center",
+                      justifyContent: "center", gap: 12, flexWrap: "wrap",
+                      boxShadow: "0 2px 8px rgba(0,0,0,.25)" }}>
+          <span>
+            Não consegui carregar {Object.values(falhasDeLeitura).map((f) => f.oQue).join(", ")}.
+            {" "}O que está na tela pode estar incompleto.
+            {(() => {
+              // O CÓDIGO DO BANCO, quando há um. Ele é o que transforma "não
+              // carregou" em algo que se procura — foi por um `42501` que o
+              // caso de 04/09 se resolveu.
+              const codigos = [...new Set(Object.values(falhasDeLeitura)
+                .map((f) => f.codigo).filter(Boolean))];
+              return codigos.length ? ` Código do banco: ${codigos.join(", ")}.` : "";
+            })()}
+          </span>
+          <button data-tentar-leituras
+                  onClick={() => {
+                    carregarTags();
+                    carregarTagsConversas();
+                    carregarRapidas();
+                    // As notas e a fila são lidas ao abrir a conversa: reabrir
+                    // a que está aberta é o que as traz de volta.
+                    if (conversaId) carregarMensagens(conversaId);
+                  }}
+                  style={{ border: "1px solid rgba(255,255,255,.6)", background: "transparent",
+                           color: "#fff", borderRadius: 8, padding: "5px 14px",
+                           fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
+            Tentar de novo
+          </button>
+        </div>
+      )}
+
+      {/* A FAIXA DO QUE PAROU.
+          VERMELHA, e não âmbar como a de cima, porque diz outra coisa. A âmbar
+          é sobre ESTA tela: o que você está vendo pode estar incompleto. Esta é
+          sobre o SISTEMA: alguma coisa parou de andar, e o que está na tela
+          está certo — é o mundo que não está.
+          Sem botão de "tentar de novo". Não há gesto daqui que conserte uma
+          linha desconectada ou uma ponte fora do ar, e oferecer um botão que
+          não resolve é pior do que não oferecer nenhum. Ela some sozinha quando
+          o problema passar, na pergunta seguinte. */}
+      {(() => {
+        const frases = frasesDaSaude(saude, souAdmin);
+        if (!frases.length) return null;
+        return (
+          <div data-aviso-de-saude
+               style={{ background: "#8e1c1c", color: "#fff", padding: "9px 14px",
+                        fontSize: 13.5, display: "flex", alignItems: "center",
+                        justifyContent: "center", gap: 10, flexWrap: "wrap",
+                        boxShadow: "0 2px 8px rgba(0,0,0,.25)" }}>
+            <AlertCircle size={15} style={{ flexShrink: 0 }} />
+            {/* UMA FRASE POR LINHA quando há mais de uma. Emendadas, "a linha do
+                Dr. X caiu" e "12 mensagens não saíram" viram um parágrafo que
+                ninguém lê no meio de um atendimento. */}
+            <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              {frases.map((f, i) => <span key={i} data-frase-de-saude>{f}</span>)}
+            </span>
+          </div>
+        );
+      })()}
+      </div>
+      {/* A FILA DE COLUNAS — barra lateral, lista, conversa e ficha.
+          `minHeight: 0` não é enfeite: sem ele um filho que rola (a lista de
+          conversas) empurra a altura do flex para além da tela, e quem some
+          por baixo é a caixa de escrever. */}
+      <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
       {/* Contorno de foco só para quem navega por teclado (acessibilidade),
           sem "caixa azul" para quem usa o mouse. */}
       <style>{`
@@ -13401,85 +13496,7 @@ export default function Painel({ sessao }) {
         </div>
       )}
 
-      {/* A FAIXA DO QUE NÃO CARREGOU.
-          Fica no ALTO e NÃO SOME sozinha, ao contrário do aviso acima — que
-          dura quatro segundos e serve para confirmar um gesto ("Tag salva!").
-          Aqui é outra coisa: a tela está mostrando MENOS do que existe, e isso
-          continua valendo enquanto durar. Um aviso que pisca e some deixaria a
-          pessoa trabalhando em cima de uma tela incompleta sem saber.
-          Uma faixa só, somando tudo o que falhou: três avisos empilhados numa
-          tela de atendimento viram ruído, e ruído se aprende a ignorar. */}
-      {/* AS DUAS FAIXAS MORAM NA MESMA COLUNA.
-          Cada uma era `position: fixed` no topo. Enquanto só havia uma, isso
-          bastava; com duas, a segunda cairia EM CIMA da primeira e as duas
-          ficariam ilegíveis justamente no momento em que as duas importam.
-          Uma coluna só, e elas se empilham. */}
-      <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 130,
-                    display: "flex", flexDirection: "column" }}>
-      {Object.keys(falhasDeLeitura).length > 0 && (
-        <div data-falha-de-leitura
-             style={{ background: "#8a5a00", color: "#fff", padding: "9px 14px",
-                      fontSize: 13.5, display: "flex", alignItems: "center",
-                      justifyContent: "center", gap: 12, flexWrap: "wrap",
-                      boxShadow: "0 2px 8px rgba(0,0,0,.25)" }}>
-          <span>
-            Não consegui carregar {Object.values(falhasDeLeitura).map((f) => f.oQue).join(", ")}.
-            {" "}O que está na tela pode estar incompleto.
-            {(() => {
-              // O CÓDIGO DO BANCO, quando há um. Ele é o que transforma "não
-              // carregou" em algo que se procura — foi por um `42501` que o
-              // caso de 04/09 se resolveu.
-              const codigos = [...new Set(Object.values(falhasDeLeitura)
-                .map((f) => f.codigo).filter(Boolean))];
-              return codigos.length ? ` Código do banco: ${codigos.join(", ")}.` : "";
-            })()}
-          </span>
-          <button data-tentar-leituras
-                  onClick={() => {
-                    carregarTags();
-                    carregarTagsConversas();
-                    carregarRapidas();
-                    // As notas e a fila são lidas ao abrir a conversa: reabrir
-                    // a que está aberta é o que as traz de volta.
-                    if (conversaId) carregarMensagens(conversaId);
-                  }}
-                  style={{ border: "1px solid rgba(255,255,255,.6)", background: "transparent",
-                           color: "#fff", borderRadius: 8, padding: "5px 14px",
-                           fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
-            Tentar de novo
-          </button>
-        </div>
-      )}
-
-      {/* A FAIXA DO QUE PAROU.
-          VERMELHA, e não âmbar como a de cima, porque diz outra coisa. A âmbar
-          é sobre ESTA tela: o que você está vendo pode estar incompleto. Esta é
-          sobre o SISTEMA: alguma coisa parou de andar, e o que está na tela
-          está certo — é o mundo que não está.
-          Sem botão de "tentar de novo". Não há gesto daqui que conserte uma
-          linha desconectada ou uma ponte fora do ar, e oferecer um botão que
-          não resolve é pior do que não oferecer nenhum. Ela some sozinha quando
-          o problema passar, na pergunta seguinte. */}
-      {(() => {
-        const frases = frasesDaSaude(saude, souAdmin);
-        if (!frases.length) return null;
-        return (
-          <div data-aviso-de-saude
-               style={{ background: "#8e1c1c", color: "#fff", padding: "9px 14px",
-                        fontSize: 13.5, display: "flex", alignItems: "center",
-                        justifyContent: "center", gap: 10, flexWrap: "wrap",
-                        boxShadow: "0 2px 8px rgba(0,0,0,.25)" }}>
-            <AlertCircle size={15} style={{ flexShrink: 0 }} />
-            {/* UMA FRASE POR LINHA quando há mais de uma. Emendadas, "a linha do
-                Dr. X caiu" e "12 mensagens não saíram" viram um parágrafo que
-                ninguém lê no meio de um atendimento. */}
-            <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-              {frases.map((f, i) => <span key={i} data-frase-de-saude>{f}</span>)}
-            </span>
-          </div>
-        );
-      })()}
-      </div>
+      </div>{/* fim da fila de colunas */}
 
       {/* Departamentos, telefones e permissões. Ao fechar, os cadastros são
           relidos: renomear um departamento tem de aparecer na hora, senão a
