@@ -154,6 +154,40 @@ console.log("\nE a marca não ficou cortada para caber");
   ok("e ela continua escrevendo o nome todo",
      marca && /Ropelimi/.test(marca.diz) && /Zorvin/.test(marca.diz),
      marca && marca.diz);
+
+  // E A CONTA VALE PARA A ORDEM MAIS LARGA, não para a que está ligada.
+  //
+  // A pílula da ordem escreve "Recentes" (53px de texto), "Antigas" (44) ou
+  // "Esperando" (62) — ela MUDA de largura conforme o que a pessoa escolheu.
+  // Medir só com a de hoje aprovaria um topo que corta a marca no dia em que
+  // alguém trocar para a fila de espera, e ninguém ligaria uma coisa à outra.
+  // Aqui a régua soma a diferença da mais larga antes de comparar.
+  const pior = await page.evaluate(() => {
+    const linha = document.querySelector("[data-linha-da-marca]");
+    const botao = linha && linha.querySelector("[data-ordem]");
+    if (!botao) return null;
+    const cs = getComputedStyle(botao);
+    const regua = document.createElement("span");
+    regua.style.cssText = `position:absolute;visibility:hidden;white-space:nowrap;font:${cs.font}`;
+    document.body.appendChild(regua);
+    const larguras = {};
+    for (const t of ["Recentes", "Antigas", "Esperando"]) {
+      regua.textContent = t;
+      larguras[t] = regua.getBoundingClientRect().width;
+    }
+    regua.remove();
+    const agora = larguras[botao.innerText.replace(/\s+/g, " ").trim()];
+    const maior = Math.max(...Object.values(larguras));
+    const caixa = linha.children[0];
+    const dentro = caixa.firstElementChild || caixa;
+    return {
+      cresceria: Math.round(maior - (agora ?? maior)),
+      sobraAgora: Math.round(caixa.getBoundingClientRect().width - dentro.scrollWidth),
+    };
+  });
+  ok("achei a pílula da ordem para medir o pior caso", !!pior);
+  ok("e a marca continua cabendo com a ordem MAIS LARGA ligada",
+     pior && pior.sobraAgora - pior.cresceria >= 0, JSON.stringify(pior));
 }
 
 // ------------------------------------------------------------------
@@ -191,7 +225,7 @@ console.log("\nE NADA do que o topo dizia deixou de ser dito");
   //
   // Escrevi esta conferência medindo a JANELA primeiro, e a sabotagem passou:
   // um menu de 244px empurrado para `left: 120` termina em 364px, que cabe
-  // numa janela de 1360 com folga de sobra. Só que a coluna acaba em 380 — o
+  // numa janela de 1360 com folga de sobra. Só que a coluna acaba em 360 — o
   // menu estaria derramando por cima da conversa aberta, que é exatamente o
   // defeito. A régua é a COLUNA, e não a janela.
   // E NO COMPUTADOR ELE MORA NA LINHA DA MARCA — é isso que tira a quinta

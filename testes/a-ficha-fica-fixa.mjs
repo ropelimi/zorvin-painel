@@ -201,6 +201,82 @@ console.log("\n5. No celular ela NÃO nasce aberta — senão some a conversa");
   await ctx.close();
 }
 
+console.log("\n6. A conversa ganhou espaço, e o cabeçalho não invade a ficha");
+{
+  // Relato do Rodrigo em 28/09, com foto: a lupa da busca aparecia POR BAIXO
+  // da ficha. Medido na época: o bloco do nome já tinha encolhido a ZERO e os
+  // botões sozinhos passavam da borda — os dois ESCRITOS ("Marcar como não
+  // lida" e "Já tratei") custam ~280px dos ~550 que a fila precisa.
+  //
+  // E ele pediu junto que a lista encolhesse para a conversa respirar.
+  for (const L of [1280, 1920]) {
+    const ctx = await nav.newContext({ viewport: { width: L, height: 900 } });
+    const page = await ctx.newPage();
+    await page.route("**/ponte-de-mentira/**", (rota) =>
+      rota.fulfill({ status: 200, contentType: "application/json",
+                     body: JSON.stringify({ clientes: [], opcoes: {} }) }));
+    await page.goto(ENDERECO);
+    await page.waitForSelector("[data-conversa-nome]");
+    await page.waitForTimeout(1200);
+    const lista = await page.locator("[data-conversa-nome]").first()
+      .evaluate((e) => Math.round(e.closest("div[style*='flex-direction: column']")
+        .getBoundingClientRect().width));
+    await page.locator("[data-conversa-nome]").nth(0).click();
+    await page.waitForTimeout(1400);
+
+    const m = await page.evaluate(() => {
+      const topo = document.querySelector("[data-topo-conversa]");
+      const ficha = document.querySelector("[data-ficha]");
+      const filhos = [...topo.children].map((e) => e.getBoundingClientRect());
+      const ultimo = filhos[filhos.length - 1];
+      const marcar = document.querySelector('[data-marcar]');
+      return {
+        fimDoTopo: Math.round(ultimo.right),
+        fichaComecaEm: ficha ? Math.round(ficha.getBoundingClientRect().left) : null,
+        larguraDoMarcar: marcar ? Math.round(marcar.getBoundingClientRect().width) : null,
+        // O BLOCO DO NOME — é ELE que denuncia a falta de espaço.
+        larguraDoNome: (() => {
+          const bloco = [...topo.children].find((e) => getComputedStyle(e).flexGrow !== "0");
+          return bloco ? Math.round(bloco.getBoundingClientRect().width) : null;
+        })(),
+      };
+    });
+
+    // A CONFERÊNCIA DO DEFEITO RELATADO: nada do cabeçalho pode passar da
+    // borda esquerda da ficha. É o que a foto dele mostrava acontecendo.
+    ok(`a ${L}px o cabeçalho não entra na ficha`,
+       m.fichaComecaEm !== null && m.fimDoTopo <= m.fichaComecaEm,
+       `topo termina em ${m.fimDoTopo}, ficha começa em ${m.fichaComecaEm}`);
+    // E ESTA É A QUE PEGA DE VERDADE, aprendida numa sabotagem que VAZOU.
+    //
+    // A de cima é barata e quase não tem como reprovar: a fila é flex, então
+    // faltando espaço ela ESPREME o bloco do nome em vez de empurrar alguém
+    // para fora — e o `overflow: hidden` ainda corta o que sobrar. Medido a
+    // 1280 com os rótulos escritos à força, o último botão ainda terminava
+    // 16px ANTES da ficha, e o nome tinha ficado com 39px. Era exatamente a
+    // foto do Rodrigo: o avatar e nenhum nome.
+    ok(`a ${L}px o bloco do nome não foi espremido a nada`,
+       m.larguraDoNome !== null && m.larguraDoNome >= 100,
+       `o nome ficou com ${m.larguraDoNome}px`);
+    // E A LISTA ENCOLHEU. 360 — eram 380, e 320 foi tentado e REPROVADO por
+    // `o-topo-mais-baixo`: lá a marca ficava com 96px para um nome que pede
+    // 134 e a tela dizia "Ropelimi Zo". O piso da coluna é a linha da marca,
+    // e ele foi medido lá; aqui só se confere que este número é o que está
+    // desenhado. A conferência aceita 362: o traço divisório de 1px entra na
+    // medida do retângulo, e exigir 360 cravado reprovaria por causa de uma
+    // borda — reprovar pelo que não se mede é o que faz alguém apagar a
+    // conferência em vez de ler o que ela diz.
+    ok(`a ${L}px a lista encolheu para ~360px`, Math.abs(lista - 360) <= 2, `${lista}px`);
+    // O QUE FAZ CABER: apertado, os botões escritos viram ícone. Sem isto a
+    // conferência de cima passaria só por sorte, na largura que eu escolhi.
+    const apertado = L === 1280;
+    ok(`a ${L}px o botão de marcar ${apertado ? "vira ícone" : "continua escrito"}`,
+       apertado ? m.larguraDoMarcar < 70 : m.larguraDoMarcar > 100,
+       `${m.larguraDoMarcar}px`);
+    await ctx.close();
+  }
+}
+
 await nav.close();
 console.log(`\nerros de página: ${erros.length}`);
 erros.slice(0, 3).forEach((e) => console.log("   • " + e.slice(0, 160)));

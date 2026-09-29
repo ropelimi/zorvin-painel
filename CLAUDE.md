@@ -306,6 +306,91 @@ consertar o painel por causa disso.
 
 Prova: `a-ficha-fica-fixa`, 17 conferências, 7 sabotagens e 7 pegas.
 
+### E a conversa ganhou espaço, dois dias depois de a ficha chegar
+
+Com a ficha fixa, o Rodrigo usou um dia e voltou com duas coisas.
+
+**A lista encolheu de 380 para 360px — e eu tinha escrito 320.** Os 380 foram
+medidos em 16/09, quando a tela tinha DUAS colunas; com três, a conversa tinha
+caído para ~590px a 1360. Pus 320 afirmando neste arquivo que era *"o menor
+valor que ainda não corta nada"*, **e a prova me desmentiu**: a 320 a marca
+ficava com 96px para um nome que pede 134, e a tela voltou a dizer
+**"Ropelimi Zo"** — o mesmo defeito registrado em 16/09, reintroduzido por eu
+não ter medido de novo depois de encolher a coluna.
+
+**Quem manda na largura da coluna é a LINHA DA MARCA**, e a conta é esta, a
+1360:
+
+| | px |
+|---|---|
+| a marca | 134 |
+| "Nova conversa" + filtro de quem + menu ⋮ | 34 cada |
+| a pílula da ordem, **sem o ícone** | 82 |
+| quatro vãos de 3 | 12 |
+| **total** | **330**, mais 20 de recheio = **350 de piso** |
+
+**E a pílula da ordem NÃO tem largura fixa:** "Recentes" custa 53 de texto,
+"Antigas" 44 e **"Esperando" 62**. Quem manda é a mais larga — medir com a de
+hoje e concluir que cabe é o defeito voltando no dia em que alguém trocar a
+ordem, sem ninguém ligar uma coisa à outra. A prova passou a somar a
+diferença da mais larga antes de comparar.
+
+**O ícone da pílula saiu**, e é ele que paga 17px dos 38 que faltavam. O que
+não podia sair é a PALAVRA: o controle sempre escreve a ordem, contrato antigo
+com prova própria. O enfeite era o desenho.
+
+**Por que não dá para ir a 320:** não há de onde tirar os 38px. A fita de
+filtros tem **18px livres** e a ordem pede 95; a linha da marca já está no
+menor tamanho que o ponteiro acerta. Abaixo de 350 é preciso **tirar** algo do
+topo, e isso é decisão do Rodrigo.
+
+O número está num lugar só (`LARGURA_DA_LISTA`), porque duas provas o medem.
+
+**E o cabeçalho da conversa invadia a ficha.** Relato com foto: a lupa da busca
+aparecia POR BAIXO da coluna. Medido: o bloco do nome **já tinha encolhido a
+zero** (na foto vê-se o avatar e nenhum nome) e os botões sozinhos passavam da
+borda — os dois ESCRITOS, "Marcar como não lida" e "Já tratei", custam ~280px
+dos ~550 que a fila precisa.
+
+Apertado, os dois viram **ícone** (`cabecalhoApertado`). Não somem: continuam
+com `title` e `aria-label`, e no celular continuam escritos dentro do menu ⋮.
+A conta é de LARGURA, e não de medir o DOM — medir exigiria desenhar, medir e
+redesenhar, e os rótulos piscariam a cada conversa aberta.
+
+**E o `overflow: hidden` do cabeçalho é ENCOSTO, não o conserto.** Quem faz
+caber é a conta acima; ele existe para que um botão novo, num dia em que
+ninguém refez essa conta, seja **cortado na borda** em vez de ir pintar por
+cima da ficha — que é o defeito relatado, e que ninguém lê como "falta espaço
+aqui".
+
+**E foi ele que fez uma sabotagem VAZAR.** Eu tinha escrito a conferência como
+*"o cabeçalho termina antes de a ficha começar"* — e a sabotagem que nunca
+aperta **passou**. Duas razões, e as duas dizem a mesma coisa: a fila é
+`flex`, então faltando espaço ela **espreme o bloco do nome** em vez de
+empurrar alguém para fora; e o que ainda sobrasse o `overflow` cortaria ali
+dentro. A borda nunca tem como estourar.
+
+**O que se mede é o NOME**, que é o que a foto mostrava: o avatar e nada ao
+lado. Medido a 1280, com os rótulos escritos à força, o último botão terminava
+**16px antes** da ficha e o nome tinha ficado com **39px** (apertado ele fica
+com 166). É a régua de sempre desta casa — *medir a coisa certa, e não a coisa
+próxima* —, e valeu para as duas provas que mediam a borda.
+
+**E a 1360 com a ficha aberta o cabeçalho passou a ser o apertado** — a
+conversa fica com 610px, abaixo dos 620. Os dois botões viram ícone, e o
+bloco do nome ganha 246px em vez de 119. É a troca certa: o que está nesse
+bloco é o número que o cliente vê chegar, e **responder pelo número errado
+não tem desfazer**; o que os botões perdem é o rótulo à vista, que continua
+no `title`, no `aria-label` e escrito por extenso no menu ⋮ do celular.
+
+**A prova `lida` pegou isso, e ela estava certa.** Ela nasceu antes de existir
+a terceira coluna e exige *"a palavra escrita, não só um tique"* a 1360. Hoje
+ela roda as cenas de sempre com a ficha **recolhida** — onde a palavra cabe —
+e ganhou uma cena com a ficha **aberta**, que confere o outro mundo: o botão
+continua lá, continua clicável e continua DIZENDO a palavra. Sem essa cena,
+apertar o cabeçalho poderia um dia virar "some o botão" sem nenhuma prova ver
+diferença.
+
 **Ainda em aberto, e é decisão:** o visual POR DENTRO da ficha não mudou. Ela
 já é sanfonada como a do DataCrazy (Identificação, Endereço, Acessos, Origem);
 apertar as linhas em rótulo-e-valor na mesma linha foi deixado para depois de
@@ -892,6 +977,23 @@ documento).
 **E ela tem contraste em toda cena:** com o banco deixando gravar, o nome fica
 e nenhum aviso de falha aparece. Sem isso, um conserto que gritasse sempre
 passaria igual.
+
+**O filme tem um limite, descoberto em 29/09: um quadro que nunca foi
+pintado.** A conferência do caminho normal exigia a frase *"Pré-cadastro
+criado"* dentro do filme, e reprovou na integração contínua com o filme
+inteiro valendo *"1 nota interna foi para o histórico do cliente."*. Não foi o
+espião que perdeu o quadro — **um `MutationObserver` também não o veria**: lá
+a subida das notas resolve rápido o bastante para o React juntar as duas
+escritas no MESMO desenho, e a frase do meio não chega a existir no documento.
+
+O comentário logo acima da conferência já dizia a regra certa — *"terminou
+numa frase de sucesso, e não terminou NESTA frase"* — e o código exigia a
+frase específica. **Onde o comentário e o código discordam, é o código que
+está errado até prova em contrário.** Hoje ela aceita qualquer frase de
+sucesso, e a das notas não é consolo: elas só sobem para um contato que ganhou
+ficha. Quem guarda o defeito continua sendo a conferência vizinha, que reprova
+se o filme falar em vínculo que faltou — a sabotagem do `return true` é pega
+por ela.
 
 ### O que NÃO foi consertado, e é decisão
 
@@ -1504,58 +1606,82 @@ no próprio arquivo. Prova: `o-tempo-real-que-cai-e-volta`.
 
 #### E por que ele caiu — a quinta roupa da mesma forma
 
-Relato do Rodrigo em 28/09, com foto: a faixa vermelha do tempo real na tela do
-escritório, e o pedido de tirá-la. **Ela não estava errada** — enquanto ela
-aparece, mensagem nova não chega sozinha para ninguém. O que estava errado é
-que ela dizia QUE caiu e **nada** do porquê.
+O motivo da queda CHEGAVA e era jogado fora: `subscribe` chama de volta com
+**dois** argumentos — `(status, err)` —, e o painel recebia só o primeiro, sem
+nem um `console.error`. Três hipóteses minhas sobre a causa caíram, uma atrás
+da outra, porque não havia uma única linha de evidência em lugar nenhum.
 
-**E o motivo chegava.** `subscribe` chama de volta com **dois** argumentos —
-`(status, err)` —, e o painel recebia só o primeiro. O segundo era jogado fora
-**sem nem um `console.error`**: em três hipóteses minhas sobre a causa desta
-queda, nenhuma se sustentou, porque não havia uma única linha de evidência em
-lugar nenhum.
-
-É a **mesma forma** de sempre, agora pela quinta porta:
-
-| | a tela desenhava |
-|---|---|
-| 04/09 | **ausência** no lugar de falha |
-| 24/09 | **sucesso** no lugar de falha |
-| 25/09 | **falha sem causa** |
-| 28/09 | **silêncio** no lugar de uma explicação |
-| **28/09** | **falha sem causa**, no aviso que existe para contar a falha |
-
-**O motivo separa defeitos que pedem coisas opostas:**
+Hoje o motivo vai para o console, e ele separa defeitos que pedem coisas
+opostas:
 
 | o que aparece | o que é |
 |---|---|
 | `CHANNEL_ERROR: mismatch between server and client bindings…` | o canal **morreu**; só recarregar resolve (ver `ESPERAS_DE_VOLTA`) |
 | `CHANNEL_ERROR` seco | quase sempre assinatura recusada — RLS, ou a tabela fora da publicação `supabase_realtime` |
-| `TIMED_OUT` / `CLOSED` | é rede: o wi-fi, a tampa do notebook, a Render piscando |
+| `TIMED_OUT` / `CLOSED` | é rede |
 
-Sem ele, as três viram uma frase só e quem for consertar recomeça do zero —
-que foi exatamente o que aconteceu.
+**Guarda-se o PRIMEIRO, não o último:** cada tentativa do vigia que não pega
+gera outro `CHANNEL_ERROR`, e o último seria sempre o do vigia — a causa
+soterrada pelas consequências. Prova: `o-tempo-real-diz-o-motivo`.
 
-**Guarda-se o PRIMEIRO, não o último.** Cada tentativa do vigia que não pega
-gera outro `CHANNEL_ERROR`; guardando o último, a causa da queda ficaria
-soterrada pelas consequências dela. É a mesma razão que arma os três relógios
-uma vez só.
+#### E a faixa vermelha saiu — porque deixou de ser verdade
 
-**A faixa leva a frase curta, o console leva o erro inteiro** — a régua de
-`comOCodigo`, em `gravar.js`. E o motivo vai **depois** do que fazer: quem
-atende lê a primeira metade e já sabe; quem conserta lê a segunda. Na frente,
-a frase vira coisa de máquina e o recado se perde no meio. Corta em 110 letras,
-porque a biblioteca chega a devolver uma pilha inteira.
+Pedido do Rodrigo em 28/09, pela **terceira** vez: *"elimine essa mensagem
+vermelha, não quero que fique aparecendo, isso já está acontecendo há muito
+tempo, resolva logo"*.
 
-**E a bancada mentia por omissão, pela terceira vez nesta série:** o
-`subscribe` dela chamava `aoMudar(estado)` e mais nada. Uma bancada que esconde
-o segundo argumento aprova **igualmente** o painel que lê o motivo e o que o
-joga fora.
+**Ela não mentia.** Enquanto aparecia, mensagem nova não chegava sozinha, e
+apagá-la teria escondido isso — a armadilha nº 2 outra vez, agora de propósito.
+**Mas mantê-la também não resolvia nada:** não há gesto do atendente que
+conserte o canal, e alarme que não pede ação se aprende a ignorar. Ficou
+semanas de pé sendo lida como decoração vermelha.
 
-Prova: `o-tempo-real-diz-o-motivo`, 20 conferências, 7 sabotagens e 7 pegas.
+**Então o conserto não foi a faixa: foi a CONSEQUÊNCIA.** Com o canal fora, o
+painel passou a **reler sozinho de 20 em 20 segundos** (`CADENCIA_DA_PESCA_MS`,
+pela mesma `reporRef` que a volta do canal já usava). As mensagens voltam a
+chegar sem ninguém clicar — mais devagar, e chegam. Aí a frase *"as mensagens
+novas não estão chegando sozinhas"* deixou de ser verdade, e **é por isso que
+ela pôde sair: não foi escondida, foi resolvida.**
+
+**Vinte segundos, e não cinco:** cada releitura são ~7 idas a `conversas`, e
+oito atendentes a cada cinco segundos seriam onze consultas por segundo num
+banco de plano gratuito — trocaríamos um defeito por outro. E ela só começa
+**depois da carência**, aproveitando o relógio que já existia: um soluço de
+três segundos não merece uma rodada de consultas.
+
+**O que NÃO se perdeu:** o motivo continua indo para o console, e a releitura
+que falhar continua acendendo a faixa **âmbar** (`data-falha-de-leitura`), que
+é a que diz "esta tela está incompleta". Ninguém fica sem aviso quando há algo
+a fazer; some o aviso de um problema que o painel passou a contornar.
+
+**Saíram junto:** `tempoRealCaiu`, `tempoRealDesistiu`, o relógio da promessa e
+o "recarregue a página" — não havia mais o que prometer. **O vigia ficou**, e
+há uma cena só para isso: o conserto não podia ir embora junto com o alarme.
+
+**As conferências das três provas do tempo real foram INVERTIDAS, e não
+apagadas.** Escritas ao contrário, são o que impede a faixa de voltar por
+engano numa limpeza futura.
+
+**E a prova nova custou três medidas erradas minhas, todas do mesmo feitio —
+medir a coisa próxima em vez da coisa certa:**
+
+1. exigir *"no máximo 2 consultas"* no soluço curto — uma releitura sozinha
+   custa ~7, e o número estava errado, não o painel;
+2. contar **rodadas** separadas por 200ms — uma releitura se parte em duas com
+   o atraso que a bancada simula;
+3. contar rodadas separadas por 400ms — no soluço as duas releituras ficam a
+   130ms uma da outra, e o agrupamento as via como **uma só**. A sabotagem que
+   tirava a carência **passou**.
+
+O que ficou: a prova **mede o custo de uma releitura na hora** e compara com
+ele. A régua se ajusta sozinha no dia em que a releitura ficar mais cara.
+
 **Ainda em aberto:** a causa da queda no escritório. Isto não conserta — faz a
-próxima ocorrência se identificar sozinha, na foto da tela, em vez de custar
-outra rodada de adivinhação.
+próxima ocorrência não custar nada a quem atende, e deixar rastro no console
+para quem for consertar.
+
+Prova: `a-pesca-enquanto-o-canal-esta-fora`, 11 conferências, 4 sabotagens e
+4 pegas.
 
 ### A linha desativada não some
 
@@ -1663,6 +1789,28 @@ houver no dia. Custa ~36 min/mês contra os ~1.000 que o `push` custava.
 três dias desligado e ninguém soube. Ao mexer em qualquer coisa que AVISA,
 pergunte quanto ela custa para continuar de pé — e o que se vê no dia em que
 ela parar.
+
+### E no mesmo dia o teto de 30 minutos matou a suíte inteira
+
+O `timeout-minutes` da rodada estava em 30, com o comentário *"folga com
+sobra"*. **Medido em 28/09:** a última rodada verde levou **28min41s** — 79
+segundos de folga, e não sobra nenhuma. A entrega seguinte (uma prova nova
+mais duas que cresceram) foi cortada aos **29min43s**, no meio da
+`selos-em-rajada` — que é a **última** da suíte, porque `rodar.mjs` agrupa
+por servidor (dev, sem-vantoro, producao) e não pelo alfabeto puro. Ela foi
+cortada a segundos do fim. **Eu li errado da primeira vez** e escrevi aqui que
+faltavam cinco provas: ordenei os nomes no alfabeto sem olhar como o corredor
+agrupa.
+
+**E o corte é o pior desfecho que existe aqui:** a conta paga os 30 minutos
+inteiros e não responde nada. Não é economia — é gastar sem comprar. Pior, o
+X vermelho por relógio é igual ao X vermelho por defeito de código, que é
+exatamente o sintoma de 25/09 outra vez.
+
+Hoje o teto é **45** e a rodada seguinte fechou em ~30 min; o comentário
+diz o número medido em vez de um adjetivo. **O teto não muda o que a rodada consome** — ela custa o tempo que a
+suíte leva; ele só decide quando uma prova TRAVADA é derrubada. **Ao
+acrescentar prova, olhe quanto a suíte já leva.**
 
 ## Fluxo de trabalho — PRs (REGRA IMPORTANTE do Rodrigo)
 

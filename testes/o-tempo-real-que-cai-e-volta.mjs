@@ -52,6 +52,12 @@ const abrir = async ({ foraDesdeOInicio = false, demoraDoCanal = 30 } = {}) => {
     // TODAS AS BANDEIRAS, SEMPRE — inclusive esta, que este arquivo não usa.
     // Quem mede o motivo da queda é `o-tempo-real-diz-o-motivo`.
     globalThis.__MOTIVO_DO_CANAL = "";
+    // A PESCA FICA LONGE NESTA PROVA, de propósito. Desde 28/09 o painel relê
+    // sozinho enquanto o canal está fora, e é isso que faz a mensagem chegar
+    // mesmo sem tempo real — mas então esta prova estaria medindo a pesca, e
+    // não a VOLTA do canal, que é o assunto dela. Quem mede a pesca é
+    // `a-pesca-enquanto-o-canal-esta-fora`.
+    globalThis.__CADENCIA_DA_PESCA = 100000;
     globalThis.__SAUDE = [];
   }, [CARENCIA, foraDesdeOInicio, demoraDoCanal]);
   await page.goto(ENDERECO);
@@ -121,19 +127,23 @@ console.log("\n3. O soluço de dois segundos NÃO pisca na tela");
 }
 
 
-console.log("\n4. A queda que dura é dita");
+console.log("\n4. A queda que dura NÃO acende faixa nenhuma");
 {
+  // ESCRITA AO CONTRÁRIO DE PROPÓSITO, e por um pedido feito três vezes.
+  //
+  // Até 28/09 a faixa vermelha dizia "as mensagens novas não estão chegando
+  // sozinhas". Era verdade, e por isso ela ficou semanas de pé — sem pedir
+  // nada de quem lia, porque não há gesto do atendente que conserte o canal.
+  //
+  // Ela saiu quando deixou de ser verdade: o painel passou a RELER sozinho.
+  // Invertida, esta conferência é o que impede a faixa de voltar por engano
+  // numa limpeza futura; apagá-la deixaria a decisão sem nada segurando.
   await abrir();
   await derrubar();
   await page.waitForTimeout(CARENCIA * 3);
   const t = await texto();
-  ok("passada a carência, a faixa aparece", (await faixa().count()) === 1, "nada apareceu");
-  ok("dizendo que as mensagens novas não estão chegando sozinhas",
-     /não estão chegando sozinhas/i.test(t), t);
-  // A FRASE NÃO PEDE NADA À PESSOA. O canal volta sozinho e o painel relê —
-  // mandar recarregar seria empurrar trabalho por algo que já é resolvido aqui.
-  ok("e que estamos reconectando, em vez de mandar recarregar",
-     /reconectando/i.test(t) && !/recarregue|atualize a página/i.test(t), t);
+  ok("passada a carência, nenhuma faixa por causa do tempo real",
+     !/chegando sozinhas|conexão ao vivo|reconectando/i.test(t), t);
 }
 
 
@@ -150,7 +160,8 @@ console.log("\n5. A VOLTA RELÊ — a mensagem que entrou durante a queda aparec
 
   await derrubar();
   await page.waitForTimeout(CARENCIA * 3);
-  ok("a faixa está acesa", (await faixa().count()) === 1, await texto());
+  ok("o canal está fora, e a tela não alarma ninguém",
+     !/chegando sozinhas|reconectando/i.test(await texto()), await texto());
 
   // A MENSAGEM ENTRA NO BANCO SEM AVISO NENHUM — nada de `__EMITIR`. É assim
   // que acontece de verdade: o Postgres publicou, e o canal não estava lá para
@@ -170,7 +181,7 @@ console.log("\n5. A VOLTA RELÊ — a mensagem que entrou durante a queda aparec
 
   await levantar();
   await page.waitForTimeout(2500);
-  ok("voltando o canal, a faixa some",
+  ok("voltando o canal, a tela continua sem faixa",
      (await faixa().count()) === 0, await texto());
   ok("e a mensagem que entrou durante a queda APARECE",
      (await page.locator('[data-msg-id="durante-a-queda"]').count()) === 1,
@@ -219,15 +230,16 @@ console.log("\n6. A primeira assinatura não relê à toa");
 }
 
 
-console.log("\n7. Quem abre o painel com a conexão já ruim é avisado");
+console.log("\n7. Quem abre o painel com a conexão já ruim também não é alarmado");
 {
-  // O caso de quem chega de manhã com o wi-fi do escritório instável. Sem esta,
-  // a tela mostraria a lista carregada e nada mais — parada para sempre, sem
-  // uma palavra.
+  // O caso de quem chega de manhã com o wi-fi do escritório instável. Antes
+  // ele abria o painel e a primeira coisa que via era uma tarja vermelha.
+  // Hoje a tela é a de sempre, e quem traz as mensagens é a releitura — que
+  // esta prova desliga, e `a-pesca-enquanto-o-canal-esta-fora` mede.
   await abrir({ foraDesdeOInicio: true });
   await page.waitForTimeout(CARENCIA * 3);
-  ok("a faixa aparece mesmo sem nunca ter havido conexão ao vivo",
-     /não estão chegando sozinhas/i.test(await texto()), await texto());
+  ok("nenhuma faixa mesmo sem nunca ter havido conexão ao vivo",
+     !/chegando sozinhas|reconectando/i.test(await texto()), await texto());
 }
 
 

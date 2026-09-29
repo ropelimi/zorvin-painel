@@ -27,8 +27,9 @@
 //      desistiu;
 //   2. que ele não insista sem parar — as esperas crescem;
 //   3. que a volta conseguida pelo vigia RELEIA o que passou, como a outra;
-//   4. que a promessa tenha prazo: passado o limite, a faixa para de dizer
-//      "estamos reconectando" e diz o que fazer;
+//   4. que nada disso apareça na tela: a faixa vermelha saiu em 28/09, quando
+//      o painel passou a RELER sozinho enquanto o canal está fora. O vigia
+//      ficou; o alarme que não pedia ação de ninguém é que saiu;
 //   5. e que ela NÃO diga isso antes da hora, porque mandar recarregar por um
 //      soluço de rede é trocar um defeito por outro.
 import { abrirNavegador, ENDERECO } from "./navegador.mjs";
@@ -84,6 +85,10 @@ const abrir = async ({ foraDesdeOInicio = false } = {}) => {
     globalThis.__TEMPO_REAL_FORA = fora;
     globalThis.__DEMORA_DO_CANAL = 30;
     globalThis.__MOTIVO_DO_CANAL = "";
+    // A pesca fica longe: aqui se contam SALAS, e as consultas dela só
+    // encheriam o cenário de ruído. Quem a mede é `a-pesca-enquanto-o-canal-
+    // esta-fora`.
+    globalThis.__CADENCIA_DA_PESCA = 100000;
     globalThis.__CANAIS = 0;
     globalThis.__SAUDE = [];
     // A SAÍDA DO CANAL DEMORA, COMO A DE VERDADE. Era instantânea na bancada,
@@ -111,19 +116,18 @@ console.log("\n1. Com o canal fora, o painel refaz o canal ele mesmo");
   const primeiro = await canais();
   ok("o painel assinou o canal ao abrir", primeiro >= 1, `foram ${primeiro}`);
 
-  // A FAIXA É LIDA LOGO DEPOIS DA CARÊNCIA, e não no fim do cenário. Lida
-  // tarde, ela já podia ter virado a frase de "desisti" — o prazo da promessa
-  // é curto nesta bancada —, e a conferência reprovaria por causa do RELÓGIO,
-  // e não do que ela mede. Foi o que fez na primeira rodada.
+  // A TELA É LIDA LOGO DEPOIS DA CARÊNCIA, que é quando a faixa acenderia.
+  // Escrita ao contrário desde 28/09: o vigia continua tentando, e quem não
+  // aparece mais é o alarme — ver o cabeçalho deste arquivo.
   await page.waitForTimeout(CARENCIA + 300);
   const cedo = await texto();
-  ok("a faixa acende, prometendo que estamos reconectando",
-     /Estamos reconectando/.test(cedo), cedo.slice(0, 200));
+  ok("e a tela não alarma ninguém por causa disso",
+     !/chegando sozinhas|reconectando/i.test(cedo), cedo.slice(0, 200));
 
   await page.waitForTimeout(1200);
   const depois = await canais();
   ok("e o painel volta a assinar sozinho quando o canal não sobe", depois > primeiro,
-     `continuou em ${depois} — ninguém mais vai tentar, e a faixa promete que sim`);
+     `continuou em ${depois} — e aí ninguém mais tentaria`);
 
   // NÃO SEM PARAR. As esperas crescem: 250, 350, 450ms na bancada. Na janela
   // deste cenário cabem umas poucas tentativas; vinte seria o painel batendo
@@ -178,40 +182,35 @@ console.log("\n2. A volta que o VIGIA conseguiu relê o que passou");
      (await canais()) === paradoEm, `continuou subindo até ${await canais()}`);
 }
 
-console.log("\n3. A promessa tem prazo");
+console.log("\n3. O vigia continua tentando, e a tela segue quieta");
 {
-  // "Estamos reconectando" dito por vinte minutos é a tela afirmando o que não
-  // apurou. No caminho em que o canal morre de vez, só recarregar resolve — e
-  // enquanto a frase promete, ninguém recarrega.
+  // ESTA CENA SUBSTITUI A DA "PROMESSA", que media a faixa dizendo "estamos
+  // reconectando" e, passado o prazo, "recarregue a página".
+  //
+  // As duas frases saíram em 28/09 junto com a faixa: o painel passou a RELER
+  // sozinho enquanto o canal está fora, então não há mais o que prometer nem
+  // por que mandar alguém recarregar. O que NÃO saiu é o vigia — e é isso que
+  // esta cena guarda, para o conserto não ir junto com o alarme.
   await abrir({ foraDesdeOInicio: true });
   await page.waitForTimeout(CARENCIA + 500);
-
-  const cedo = await texto();
-  ok("no começo ela promete, e não manda recarregar",
-     /Estamos reconectando/.test(cedo) && !/[Rr]ecarregue/.test(cedo),
-     cedo.slice(0, 200));
-
-  await page.waitForTimeout(LIMITE + 800);
-  const tarde = await texto();
-  ok("passado o limite, ela para de prometer", !/Estamos reconectando/.test(tarde),
-     tarde.slice(0, 220));
-  ok("e diz o que fazer", /[Rr]ecarregue a página/.test(tarde), tarde.slice(0, 220));
-  // A FRASE CONTINUA DIZENDO O QUE ESTÁ ACONTECENDO. Trocar a promessa por uma
-  // ordem seca ("recarregue") deixaria quem lê sem saber por quê.
-  ok("sem deixar de dizer o que está acontecendo",
-     /não estão chegando sozinhas/.test(tarde), tarde.slice(0, 220));
-}
-
-console.log("\n4. E voltando depois de a promessa vencer, tudo volta ao normal");
-{
-  // A TRAVA CONTRA O CONSERTO PELA METADE: um aviso de "recarregue" que fica de
-  // pé depois de o canal ter voltado manda recarregar sem motivo — e quem
-  // recarrega perde o que estava escrevendo.
-  await deixarSubir();
-  await page.waitForTimeout(1500);
+  const antes = await canais();
+  await page.waitForTimeout(ESPERAS[0] * 3 + 600);
+  const depois = await canais();
+  ok("o vigia segue refazendo o canal minutos adentro", depois > antes,
+     `parou em ${depois}, tendo começado em ${antes}`);
   const naTela = await texto();
-  ok("a faixa some inteira", !/chegando sozinhas/.test(naTela) && !/[Rr]ecarregue a página/.test(naTela),
+  ok("e a tela continua sem prometer nem mandar recarregar",
+     !/reconectando/i.test(naTela) && !/[Rr]ecarregue a página/.test(naTela),
      naTela.slice(0, 220));
+
+  // E VOLTANDO, ELE PARA. Um vigia que continua depois de o canal subir são
+  // salas novas para sempre, e o painel recebendo cada mensagem duas vezes.
+  await deixarSubir();
+  await page.waitForTimeout(ESPERAS[0] * 2 + 800);
+  const paradoEm = await canais();
+  await page.waitForTimeout(ESPERAS[0] * 2 + 400);
+  ok("e para quando o canal sobe", (await canais()) === paradoEm,
+     `continuou subindo até ${await canais()}`);
 }
 
 console.log("\n5. E o vigia não atropela a própria saída");
@@ -222,11 +221,11 @@ console.log("\n5. E o vigia não atropela a própria saída");
   // mesma batida, com o MESMO nome. `removeChannel` é assíncrono no Supabase de
   // verdade: ele manda o pedido de saída e só termina quando o servidor
   // responde. Pedir a sala da qual ainda se está saindo é uma das formas de
-  // receber o "mismatch" que MATA o canal — o conserto se reinfectava, e a
-  // faixa voltava a prometer para sempre.
+  // receber o "mismatch" que MATA o canal — o conserto se reinfectava, e o
+  // painel ficava sem tempo real para sempre.
   //
-  // Relato de 15/09: a faixa no ar, e só o F5 resolvendo. O vigia estava
-  // publicado e rodando; era ele que não pegava.
+  // Relato de 15/09: a faixa (de então) no ar, e só o F5 resolvendo. O vigia
+  // estava publicado e rodando; era ele que não pegava.
   await abrir({ foraDesdeOInicio: true });
   // Tempo para várias tentativas do vigia — é em cada uma delas que o
   // atropelamento aconteceria.

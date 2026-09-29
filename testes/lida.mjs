@@ -22,6 +22,26 @@ const ok = (nome, cond, det = "") => {
 
 const nav = await abrirNavegador();
 const ctx = await nav.newContext({ viewport: { width: 1360, height: 900 } });
+
+// A FICHA COMEÇA RECOLHIDA NESTAS CENAS, E ISSO É PARTE DO CONTRATO.
+//
+// Desde 28/09 a ficha do cliente é uma TERCEIRA coluna, fixa por padrão, e ela
+// come 330px. A 1360 com ela aberta sobram 610 para a conversa, e a fila de
+// botões escritos precisa de ~600 só para si — foi assim que o cabeçalho
+// passou a pintar por cima da ficha, que é o defeito que o Rodrigo fotografou.
+// Apertado, os dois botões escritos viram ícone (`cabecalhoApertado`).
+//
+// Esta prova nasceu antes de existir a terceira coluna, e o que ela defende —
+// "a palavra escrita, não só um tique" — continua valendo NO ESPAÇO EM QUE
+// CABE. Então as cenas de sempre rodam com a ficha recolhida, e a última cena,
+// nova, confere o outro mundo: com a ficha aberta o botão continua lá, continua
+// clicável e continua DIZENDO a palavra, agora no `title` e no `aria-label`.
+// Sem essa última cena, apertar o cabeçalho poderia um dia virar "some o
+// botão" e esta prova não veria diferença.
+await ctx.addInitScript(() => {
+  try { localStorage.setItem("zorvin_ficha_fixa", "nao"); } catch (_) { /* janela anônima */ }
+});
+
 const page = await ctx.newPage();
 const erros = [];
 page.on("pageerror", (e) => erros.push("pageerror: " + e.message));
@@ -170,6 +190,63 @@ console.log("\nE ficar na conversa NÃO desfaz a marcação");
   await page.waitForTimeout(2500);
   ok("passados uns segundos, ainda está como não lida", await aparece(botaoLida()),
      "o botão voltou para 'não lida' sozinho — algo remarcou a conversa");
+}
+
+// ------------------------------------------------------------------
+// E COM A FICHA ABERTA, APERTADO, O BOTÃO NÃO VIRA UM TIQUE MUDO
+//
+// Este é o outro mundo, e ele é o de todo dia: a ficha nasce fixa, então a
+// 1360 o cabeçalho está apertado e os rótulos saem da tela. O que NÃO pode
+// sair junto é a palavra — um tique sozinho é uma roleta, que é exatamente o
+// que esta prova existe para impedir. Apertado, a palavra mora no `title` e no
+// `aria-label`, e é isso que se confere aqui.
+console.log("\nCom a ficha aberta o rótulo aperta, mas a palavra NÃO some");
+{
+  const ctx2 = await nav.newContext({ viewport: { width: 1280, height: 900 } });
+  const p2 = await ctx2.newPage();
+  const erros2 = [];
+  p2.on("pageerror", (e) => erros2.push(e.message));
+  await p2.goto(ENDERECO);            // sem escrever nada: a ficha nasce fixa
+  await p2.waitForSelector("[data-conversa-nome]");
+  await p2.locator("[data-conversa-nome]").first().click();
+  await p2.waitForSelector("[data-topo-conversa]");
+  await p2.waitForTimeout(700);
+
+  ok("a ficha está mesmo aberta (senão esta cena mede o outro mundo)",
+     await p2.locator("[data-ficha]").count() === 1 &&
+     await p2.locator("[data-ficha]").first().isVisible());
+
+  const botao = p2.locator('[data-marcar="lida"], [data-marcar="nao-lida"]').first();
+  ok("o botão continua na tela", await botao.count() === 1 && await botao.isVisible());
+  const titulo = (await botao.getAttribute("title")) || "";
+  const rotulo = (await botao.getAttribute("aria-label")) || "";
+  ok("e continua DIZENDO a palavra, no title e no aria-label",
+     /marcar esta conversa como/i.test(titulo) && /marcar esta conversa como/i.test(rotulo),
+     `title: "${titulo}" | aria-label: "${rotulo}"`);
+
+  // E O QUE SE MEDE É O NOME, NÃO A BORDA DO CABEÇALHO.
+  //
+  // Escrevi primeiro "o cabeçalho termina antes de a ficha começar", e a
+  // SABOTAGEM PASSOU: o cabeçalho tem `overflow: hidden`, então a caixa dele
+  // NUNCA passa da coluna — o que passa são os filhos, e eles são cortados
+  // ali dentro. Medir a borda era medir uma coisa que não tem como dar errado.
+  //
+  // O que a foto do Rodrigo mostrava é outra coisa: o bloco do nome espremido
+  // a ZERO, o avatar sozinho e nenhum nome. É ele que se mede. MEDIDO a 1280:
+  // apertado o nome fica com 166px; com os rótulos escritos à força, com 39.
+  // O número que o cliente vê chegar mora nesse bloco, e responder pelo número
+  // errado não tem desfazer.
+  const nome = await p2.evaluate(() => {
+    const topo = document.querySelector("[data-topo-conversa]");
+    if (!topo) return null;
+    const bloco = [...topo.children].find((c) => getComputedStyle(c).flexGrow !== "0");
+    return bloco ? Math.round(bloco.getBoundingClientRect().width) : null;
+  });
+  ok("e o bloco do nome não foi espremido a nada",
+     nome !== null && nome >= 100, `o nome ficou com ${nome}px`);
+
+  ok("sem erro de JavaScript nesta cena", erros2.length === 0, erros2.join(" | "));
+  await ctx2.close();
 }
 
 console.log("\nE nada disso estourou no caminho");

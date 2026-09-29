@@ -348,8 +348,24 @@ async function cenaDoPreCadastro({ recusar }) {
       // Por isso a régua é "terminou numa frase de sucesso", e não "terminou
       // nesta frase": prender a conferência à ordem de duas mensagens faria
       // ela reprovar por causa de uma corrida que não é defeito.
-      ok("no caminho normal a tela diz que criou",
-         /Pré-cadastro criado|Já existia/i.test(oFilme), oFilme.slice(0, 400));
+      // A RÉGUA É "TERMINOU NUMA FRASE DE SUCESSO", e a conferência não estava
+      // escrita assim — o comentário acima já dizia a regra certa e o código
+      // exigia UMA frase específica. REPROVOU na integração contínua em 29/09
+      // com o filme inteiro valendo "1 nota interna foi para o histórico do
+      // cliente.": lá a subida das notas resolve rápido o bastante para o
+      // React juntar as duas escritas no mesmo desenho, e aí o
+      // "Pré-cadastro criado" NUNCA CHEGA A SER PINTADO. Não é o espião que
+      // perdeu o quadro (um `MutationObserver` também não veria): o quadro
+      // não existiu.
+      //
+      // E a frase das notas não é um consolo: elas só sobem para um contato
+      // que GANHOU ficha, então vê-la é prova de que o cadastro foi criado.
+      // Quem guarda o defeito é a conferência logo abaixo, que reprova se o
+      // filme falar em vínculo que faltou — e é ela que a sabotagem do
+      // `return true` acende.
+      ok("no caminho normal a tela diz que deu certo",
+         /Pré-cadastro criado|Já existia|foi para o histórico|foram para o histórico/i.test(oFilme),
+         oFilme.slice(0, 400));
       // NO FILME INTEIRO, e não só na última frase: a mensagem errada aparecia
       // e era coberta pela das notas em menos de um segundo. Ver o espião.
       ok("e em momento nenhum fala de vínculo que faltou",
