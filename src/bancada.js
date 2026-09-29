@@ -860,6 +860,31 @@ MENSAGENS.push({
   criado_em: new Date(Date.now() - 104 * 60e3).toISOString(),
 });
 
+// E OS DOIS ANEXOS QUE BAIXAVAM SOZINHOS (29/09).
+//
+// Relato do Rodrigo: só de abrir a conversa de um cliente, o Chrome pedia para
+// salvar vários arquivos. A prévia era um iframe, e um iframe BAIXA o que é
+// servido como `text/csv` ou como `application/octet-stream` — medido. São
+// exatamente estes dois: o extrato em CSV, e o PDF que o WhatsApp manda sem
+// tipo, que o painel reconhece pelo nome. Servidos em `data:` com o tipo que
+// o depósito diria, para a bancada reproduzir o que o servidor faz.
+MENSAGENS.push({
+  id: "m-csv", conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
+  origem: "contato", tipo: "documento", texto: null,
+  midia_url: "data:text/csv;base64,ZGF0YTtkZXNjcmljYW87dmFsb3IKMDEvMDc7U2FsZG8gaW5pY2lhbDsxMyw4OAowMi8wNztQaXggcmVjZWJpZG87Mi4zNTksMTAK",
+  midia_mime: "text/csv", midia_nome: "extrato.csv",
+  enviado_por: null, enviado_por_id: null,
+  criado_em: new Date(Date.now() - 107 * 60e3).toISOString(),
+});
+MENSAGENS.push({
+  id: "m-pdf-sem-tipo", conversa_id: `${PRIMEIRO_TELEFONE.id}-apelido`,
+  origem: "contato", tipo: "documento", texto: null,
+  midia_url: "data:application/octet-stream;base64,JVBERi0xLjEKMSAwIG9iajw8L1R5cGUvQ2F0YWxvZy9QYWdlcyAyIDAgUj4+ZW5kb2JqCjIgMCBvYmo8PC9UeXBlL1BhZ2VzL0tpZHNbMyAwIFJdL0NvdW50IDE+PmVuZG9iagozIDAgb2JqPDwvVHlwZS9QYWdlL1BhcmVudCAyIDAgUi9NZWRpYUJveFswIDAgMjAwIDIwMF0+PmVuZG9iagp0cmFpbGVyPDwvUm9vdCAxIDAgUj4+",
+  midia_mime: "application/octet-stream", midia_nome: "comprovante.pdf",
+  enviado_por: null, enviado_por_id: null,
+  criado_em: new Date(Date.now() - 106 * 60e3).toISOString(),
+});
+
 // A MESMA PALAVRA, MUITAS VEZES, EM OUTROS TELEFONES.
 //
 // A busca por mensagem pedia as 1000 mensagens mais recentes que casassem —

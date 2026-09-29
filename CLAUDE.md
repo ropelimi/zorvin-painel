@@ -2009,6 +2009,74 @@ já tinha passado por isso, e a imagem ficara de fora.
 SQL: `sql/2026-09-o-anexo-que-nao-vem-mais.sql` (no repo da ponte). Prova:
 `o-anexo-que-nao-vem-mais`.
 
+### Abrir a conversa baixava arquivos sozinho (29/09)
+
+Relato do Rodrigo, com foto: só de abrir a conversa do CRISTIANO RIBEIRO DE
+JESUS o Chrome pedia *"fazer o download de vários arquivos"* e abria o
+"Salvar como" com um arquivo chamado `AC89EEE7…`, tipo **planilha CSV** —
+sem ninguém ter clicado em nada.
+
+**Era a prévia do documento.** Ela é um `<iframe>` apontando para o anexo, e
+**quem decide o que um iframe faz é o tipo que o SERVIDOR diz, e não o nome
+do arquivo**. Medido no Chromium, um tipo por vez:
+
+| o servidor diz | o iframe |
+|---|---|
+| `application/pdf`, `text/plain`, `application/json`, `text/xml` | desenha |
+| **`text/csv`** | **baixa** |
+| **`application/octet-stream`** | **baixa** |
+
+Os dois que baixam eram justamente os que `comoPrever` aceitava por caminho
+próprio: o CSV como "texto", e o PDF que o WhatsApp manda **sem tipo**,
+reconhecido só pelo nome `.pdf`. O nome do arquivo salvo é o `messageid`,
+porque é esse o endereço no depósito (`recebidos/{messageid}`).
+
+**O conserto separa duas perguntas.** `comoPrever` continua dizendo o que o
+arquivo **é**; `oQuadroDesenha` diz o que o iframe vai **fazer** com ele, e só
+responde depois de perguntar o tipo ao servidor (`tipoServido`, um `HEAD` —
+só o cabeçalho, nunca o arquivo). **Na dúvida, não mostra:** sem resposta, fica
+o cartão de sempre, que continua dizendo "PDF" e abrindo com um clique.
+
+**O texto saiu do iframe de vez.** Ele é **lido** (`comecoDoTexto`, só os
+primeiros 4 KB, com `Range`) e escrito na bolha. Ler nunca baixa, e um CSV de
+extrato com megas não vem inteiro para mostrar dez linhas.
+
+**E a leitura só sai quando a bolha chega perto da tela** — como o
+`loading="lazy"` que o iframe já tinha. Uma conversa de cliente antigo tem
+dezenas de anexos lá em cima, e perguntar por todos ao abrir seria a conta de
+banda de 21/08 com outra roupa.
+
+**Uma terceira porta, que ninguém relatou:** no Chrome dá para escolher
+*"baixar PDFs em vez de abrir"*. Aí até o PDF certo baixaria.
+`navigator.pdfViewerEnabled` diz qual das duas a pessoa escolheu, e com o
+leitor desligado a prévia não nasce.
+
+**A prévia antes de MANDAR tinha uma segunda cópia do mesmo iframe** —
+escolher um CSV para mandar a um cliente baixava o arquivo de volta para a
+própria máquina. Hoje ela usa o mesmo componente da bolha, em tamanho grande
+(`inteira`). Duas cópias foram exatamente o que deixou uma para trás.
+
+**A bancada ganhou os dois anexos do defeito**, servidos em `data:` com o
+tipo que o depósito diria: `extrato.csv` (`text/csv`) e `comprovante.pdf`
+(`application/octet-stream`). E a prova **espiona os downloads** da página
+inteira: ninguém clica em baixar nada, então a lista tem de terminar vazia.
+Com o painel de antes, ela pega `download.csv` e o PDF sem tipo — o relato,
+reproduzido.
+
+**E a integração contínua me corrigiu na primeira rodada.** Escrevi a
+conferência *"o PDF ganha prévia"* e ela passou aqui, num Chrome com leitor de
+PDF. Lá ela reprovou: o Playwright usa o `headless_shell`, que **não tem
+leitor** (`navigator.pdfViewerEnabled` é `false`) — e o painel, certo, não
+montou o iframe. A prova supunha um mundo só. Hoje ela pergunta ao navegador
+e confere o lado que valer, e ganhou uma cena que **força** o navegador sem
+leitor, para esse mundo ser visto também numa máquina que tem leitor. Nele o
+painel de antes baixava **até o PDF certo** (`download.pdf`), um terceiro caso
+que o relato nem chegou a mostrar.
+
+Prova: `documentos`, 42 conferências, **6 sabotagens e 6 pegas** (o painel de
+antes inteiro, nos dois navegadores; o PDF sem perguntar o tipo; o texto de
+volta no iframe; a prévia de mandar com o iframe próprio; o leitor ignorado).
+
 ## Pendências / próximos passos
 
 - ~~Mídias em alta resolução~~ e ~~enviar anexos pelo painel~~ — **as duas foram

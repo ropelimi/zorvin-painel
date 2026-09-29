@@ -26,7 +26,8 @@ import { SONS, tocarAviso, somEscolhido, guardarSom,
 import { Chave } from "./Chave.jsx";
 import { PRAZO_DA_BUSCA, foiAbortada, funcaoNaoExiste,
          condicoesDeNome, recadoDaBusca } from "./busca.js";
-import { comoPrever, nomeDoTipo, tamanhoLegivel } from "./arquivos.js";
+import { comoPrever, nomeDoTipo, tamanhoLegivel, tipoServido, oQuadroDesenha,
+         comecoDoTexto } from "./arquivos.js";
 import { gravarSemAsQueFaltam, naoGravouNada, comOCodigo } from "./gravar.js";
 
 // O que este banco já disse que não tem, para não perguntar de novo a cada nota.
@@ -1703,19 +1704,54 @@ function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoRespond
 // SEM CLIQUE E SEM ROLAGEM DENTRO DELA: `pointerEvents: none`. A prévia mora
 // dentro de um link que baixa o arquivo; um iframe que aceita o clique
 // engoliria o clique do link, e um que rola faria a roda do mouse parar a
-// conversa para rolar um PDF sem querer.
+// conversa para rolar um PDF sem querer. (`inteira` é a prévia grande, antes
+// de mandar um anexo: ali não há link por baixo, e rolar o PDF é o ponto.)
 //
 // QUANDO NÃO DÁ, NÃO NASCE NADA. Word, Excel e PowerPoint não têm leitor
 // nativo, e mandá-los a um conversor de terceiros seria despachar documento de
 // cliente para fora do escritório. Nesses, `comoPrever` devolve nulo e a bolha
 // fica com o cartão de sempre — que agora ao menos diz o tipo por extenso.
-function PreviaDeArquivo({ C, url, mime, nome, altura = 150 }) {
+//
+// E O IFRAME SÓ NASCE DEPOIS DE PERGUNTAR (29/09). Montado direto, ele BAIXAVA
+// o CSV e o PDF servido sem tipo, só de a conversa abrir — ver "Abrir a
+// conversa não pode baixar nada", em `src/arquivos.js`. Agora o PDF espera o
+// servidor dizer `application/pdf`, e o texto nem usa iframe: é lido e
+// escrito na bolha.
+//
+// A pergunta sai quando a bolha chega PERTO DA TELA, como o `loading="lazy"`
+// que o iframe já tinha: uma conversa de cliente antigo tem dezenas de anexos
+// lá em cima, e ninguém rolou até eles.
+function PreviaDeArquivo({ C, url, mime, nome, altura = 150, inteira = false }) {
   const como = comoPrever(mime, nome);
+  const caixa = useRef(null);
+  const [perto, setPerto] = useState(inteira);
+  // `undefined` = ainda não sei; `null` = não dá; texto ou tipo = deu.
+  const [achado, setAchado] = useState(undefined);
+
+  useEffect(() => {
+    if (perto || !caixa.current) return;
+    if (typeof IntersectionObserver === "undefined") { setPerto(true); return; }
+    const vigia = new IntersectionObserver((vistos) => {
+      if (vistos.some((v) => v.isIntersecting)) { setPerto(true); vigia.disconnect(); }
+    }, { rootMargin: "400px" });
+    vigia.observe(caixa.current);
+    return () => vigia.disconnect();
+  }, [perto, como]);
+
+  useEffect(() => {
+    setAchado(undefined);
+    if (!perto || !url || (como !== "pdf" && como !== "texto")) return;
+    let vivo = true;
+    const pergunta = como === "pdf" ? tipoServido(url) : comecoDoTexto(url, inteira ? 65536 : 4096);
+    pergunta.then((r) => { if (vivo) setAchado(r); });
+    return () => { vivo = false; };
+  }, [perto, url, como, inteira]);
+
   if (!url || !como) return null;
 
   const moldura = {
     height: altura, width: "100%", background: C.searchBg,
-    borderBottom: `1px solid ${C.divider}`, overflow: "hidden",
+    borderBottom: inteira ? "none" : `1px solid ${C.divider}`, overflow: "hidden",
     display: "grid", placeItems: "center",
   };
 
@@ -1727,18 +1763,43 @@ function PreviaDeArquivo({ C, url, mime, nome, altura = 150 }) {
     );
   }
 
+  // ENQUANTO NÃO SEI, UM ESPAÇO VAZIO DO MESMO TAMANHO — e não nada: a bolha
+  // que cresce 150px depois de desenhada empurra a conversa para baixo no
+  // meio da leitura.
+  if (achado === undefined) {
+    return <div ref={caixa} style={moldura} data-previa-arquivo="esperando" />;
+  }
+
+  if (como === "texto") {
+    // NÃO DEU PARA LER: fica o cartão, sem prévia. Nunca um iframe "para
+    // tentar" — é ele que baixa.
+    if (achado === null) return null;
+    return (
+      <div style={{ ...moldura, display: "block", background: "#fff" }} data-previa-arquivo="texto">
+        <pre style={{ margin: 0, padding: "8px 10px", height: "100%", boxSizing: "border-box",
+                      overflow: inteira ? "auto" : "hidden", whiteSpace: "pre-wrap",
+                      wordBreak: "break-word", fontSize: inteira ? 12.5 : 10.5, lineHeight: 1.35,
+                      color: "#222", fontFamily: "ui-monospace, Consolas, monospace",
+                      pointerEvents: inteira ? "auto" : "none" }}>
+          {achado}
+        </pre>
+      </div>
+    );
+  }
+
+  const leitor = typeof navigator !== "undefined" ? navigator.pdfViewerEnabled : undefined;
+  if (!oQuadroDesenha(como, achado, leitor)) return null;
+
   // `#toolbar=0…` esconde os controles do leitor: numa miniatura de 150px eles
   // ocupariam metade da altura e não servem para nada — o arquivo abre inteiro
   // com um clique. São ignorados por quem não os entende, sem quebrar nada.
-  const endereco = como === "pdf"
-    ? `${url}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`
-    : url;
+  const endereco = inteira ? `${url}#view=FitH` : `${url}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`;
 
   return (
-    <div style={{ ...moldura, position: "relative" }} data-previa-arquivo={como}>
-      <iframe src={endereco} title={nome || "prévia"} tabIndex={-1} loading="lazy"
+    <div style={{ ...moldura, position: "relative" }} data-previa-arquivo="pdf">
+      <iframe src={endereco} title={nome || "prévia"} tabIndex={inteira ? 0 : -1}
               style={{ width: "100%", height: "100%", border: "none",
-                       pointerEvents: "none", background: "#fff" }} />
+                       pointerEvents: inteira ? "auto" : "none", background: "#fff" }} />
     </div>
   );
 }
@@ -13528,8 +13589,12 @@ export default function Painel({ sessao }) {
                 // manda dez procurações por dia precisa conferir se pegou a
                 // certa, e o nome do arquivo quase nunca responde isso.
                 <div data-previa-documento style={{ width: "100%", background: "#fff", borderRadius: 8, overflow: "hidden" }}>
-                  <iframe src={atual.url + (comoPrever(atual.mime, atual.nome) === "pdf" ? "#view=FitH" : "")}
-                          title={atual.nome} style={{ width: "100%", height: "46vh", border: "none" }} />
+                  {/* A MESMA PRÉVIA DA BOLHA, em tamanho grande. Era um
+                      iframe próprio, e um CSV arrastado para cá BAIXAVA na
+                      hora em vez de aparecer — o mesmo defeito da conversa,
+                      numa segunda cópia. */}
+                  <PreviaDeArquivo C={C} url={atual.url} mime={atual.mime}
+                                   nome={atual.nome} altura="46vh" inteira />
                   <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", color: "#222" }}>
                     <FileText size={18} />
                     <span style={{ flex: 1, fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{atual.nome}</span>
