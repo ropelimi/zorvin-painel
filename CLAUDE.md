@@ -978,6 +978,23 @@ documento).
 e nenhum aviso de falha aparece. Sem isso, um conserto que gritasse sempre
 passaria igual.
 
+**O filme tem um limite, descoberto em 29/09: um quadro que nunca foi
+pintado.** A conferência do caminho normal exigia a frase *"Pré-cadastro
+criado"* dentro do filme, e reprovou na integração contínua com o filme
+inteiro valendo *"1 nota interna foi para o histórico do cliente."*. Não foi o
+espião que perdeu o quadro — **um `MutationObserver` também não o veria**: lá
+a subida das notas resolve rápido o bastante para o React juntar as duas
+escritas no MESMO desenho, e a frase do meio não chega a existir no documento.
+
+O comentário logo acima da conferência já dizia a regra certa — *"terminou
+numa frase de sucesso, e não terminou NESTA frase"* — e o código exigia a
+frase específica. **Onde o comentário e o código discordam, é o código que
+está errado até prova em contrário.** Hoje ela aceita qualquer frase de
+sucesso, e a das notas não é consolo: elas só sobem para um contato que ganhou
+ficha. Quem guarda o defeito continua sendo a conferência vizinha, que reprova
+se o filme falar em vínculo que faltou — a sabotagem do `return true` é pega
+por ela.
+
 ### O que NÃO foi consertado, e é decisão
 
 ~~**A mesma forma existe em outros 18 lugares** — varridos e listados na PR. Os
