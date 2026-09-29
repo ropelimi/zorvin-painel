@@ -13,7 +13,7 @@
 // ============================================================
 import { useEffect, useState, useRef } from "react";
 import { X, Save, UserPlus, RefreshCw, ExternalLink, ChevronDown, ChevronRight,
-         MessageSquare } from "lucide-react";
+         MessageSquare, Plus } from "lucide-react";
 import { supabase } from "./supabase";
 // As regras de telefone são as MESMAS do painel, e por isso vêm do mesmo
 // lugar: decidir se o segundo número do cadastro é outra linha ou o mesmo
@@ -233,6 +233,16 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   //  achei", e a diferença importa: um aviso que pisca a cada tecla ensina a
   //  ignorar avisos.
   const [cpfDeOutro, setCpfDeOutro] = useState(null);
+  // O ANDAMENTO DA PROCURA PELO CPF, para quem está SEM cadastro.
+  //
+  // `cpfDeOutro` só fala quando acha — e isso basta na ficha aberta, onde o
+  // silêncio quer dizer "este CPF é livre". No número sem cadastro a pergunta
+  // é outra ("ele já é cliente?"), e ali silêncio não responde nada: quem
+  // digitou o CPF precisa saber se a busca foi feita e não achou, se ainda
+  // está indo, ou se não deu para perguntar. Três respostas diferentes, que
+  // pedem três gestos diferentes.
+  //   null · "procurando" · "nao-achou" · "falhou"
+  const [cpfProcura, setCpfProcura] = useState(null);
   const [telefones, setTelefones] = useState([]);
   const [novoNumero, setNovoNumero] = useState("");
   const [mexendoTel, setMexendoTel] = useState(false);
@@ -392,27 +402,37 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   // e apagar um aviso verdadeiro.
   useEffect(() => {
     const digitado = String(edicao.cpf || "").replace(/\D/g, "");
-    if (digitado.length !== 11 && digitado.length !== 14) { setCpfDeOutro(null); return; }
+    if (digitado.length !== 11 && digitado.length !== 14) {
+      setCpfDeOutro(null); setCpfProcura(null); return;
+    }
     // O CPF QUE JÁ É DESTE CADASTRO NÃO É AVISO. Abrir a ficha de alguém e ver
     // "este CPF já existe" apontando para ele mesmo seria alarme falso na
     // ficha inteira, o tempo todo.
     if (cliente && String(cliente.cpf || "").replace(/\D/g, "") === digitado) {
-      setCpfDeOutro(null); return;
+      setCpfDeOutro(null); setCpfProcura(null); return;
     }
     let valeu = true;
     const relogio = setTimeout(async () => {
+      setCpfProcura("procurando");
       try {
         const r = await chamarPonte(`/vantoro/cpf-existe?cpf=${encodeURIComponent(digitado)}`);
         if (!valeu) return;
         const achado = r && r.encontrado ? r.cliente : null;
         // O PRÓPRIO CADASTRO NÃO CONTA, de novo aqui: entre a digitação e a
         // resposta a ficha pode ter sido trocada.
-        setCpfDeOutro(achado && (!cliente || String(achado.id) !== String(cliente.id))
-                      ? achado : null);
+        const deOutro = achado && (!cliente || String(achado.id) !== String(cliente.id))
+                        ? achado : null;
+        setCpfDeOutro(deOutro);
+        setCpfProcura(deOutro ? null : "nao-achou");
       } catch (_) {
         // A ponte hiberna. Sem resposta, nenhum aviso — e a gravação continua
         // recusando o duplicado do lado do Vantoro, que é a trava de verdade.
-        if (valeu) setCpfDeOutro(null);
+        //
+        // No número SEM cadastro, porém, a falha é dita: ali o CPF foi
+        // digitado para PROCURAR alguém, e calar faria "não deu para
+        // perguntar" parecer "ele não é cliente" — e a pessoa criaria o
+        // duplicado que esta busca existe para evitar.
+        if (valeu) { setCpfDeOutro(null); setCpfProcura("falhou"); }
       }
     }, 400);
     return () => { valeu = false; clearTimeout(relogio); };
@@ -443,9 +463,103 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     }
   }
 
+  // ============================================================
+  //  O CLIENTE QUE VOLTOU POR UM NÚMERO NOVO (29/09)
+  //
+  //  Relato do Rodrigo, com duas fotos: o CRISTIANO RIBEIRO DE JESUS tem
+  //  cadastro no Vantoro com (71) 8425-3304, formatou o celular e voltou a
+  //  escrever por (19) 98209-4819. A ficha procura pelo NÚMERO da conversa,
+  //  então disse — corretamente — que "este número ainda não tem cadastro", e
+  //  ofereceu criar um. Criar seria o duplicado: o histórico do cliente
+  //  partido em dois, e a ordem de serviço dele numa ficha que não é a dele.
+  //
+  //  O CPF é o que não muda quando o telefone muda. Então, sem cadastro pelo
+  //  número, a ficha procura pelo CPF — a mesma pergunta que já existia para
+  //  avisar do CPF repetido (`cpf-existe`) — e, achando, PERGUNTA se o número
+  //  novo entra no cadastro achado.
+  //
+  //  A ORDEM DOS PASSOS É A DECISÃO:
+  //    1. a ficha INTEIRA é buscada primeiro. Se ela não vier, nada mudou —
+  //       nenhum número foi pendurado num cadastro que a tela não consegue
+  //       mostrar;
+  //    2. o número entra no cadastro, pela mesma rota do "+ Acrescentar";
+  //    3. só então esta conversa é ligada ao cadastro.
+  //  Ao contrário, uma conversa ligada a um cadastro que não tem o número dela
+  //  voltaria a dizer "não tem cadastro" na abertura seguinte — a ficha
+  //  procura pelo número, e o vínculo sozinho não basta para ela achar.
+  //
+  //  O NÚMERO ENTRA COMO MAIS UM, e não como o WhatsApp principal. Trocar o
+  //  principal é decisão que já tem botão próprio ("usar este como WhatsApp"),
+  //  e fazê-la calada aqui mudaria por onde saem os avisos de audiência de um
+  //  cliente sem ninguém ter escolhido isso.
+  // ============================================================
+  async function acrescentarEsteNumeroAoCadastro(resumo) {
+    if (!resumo || salvando) return;
+    setSalvando(true);
+    esquecerFicha(numero);   // ver `criar`
+    const legivel = telefoneLegivel(numero);
+    try {
+      // A FRASE DIZ QUE NADA MUDOU, e não só o erro da ponte. "O Vantoro não
+      // respondeu" sozinho deixa a dúvida que faz clicar de novo: o número
+      // entrou ou não entrou?
+      let inteiro = null;
+      try {
+        const r0 = await chamarPonte(`/vantoro/cliente/${resumo.id}`);
+        inteiro = (r0 && r0.cliente) || null;
+      } catch (e) {
+        throw new Error(`Não consegui abrir o cadastro de ${resumo.nome} — ${e.message} `
+                        + "Nada foi alterado.");
+      }
+      if (!inteiro) throw new Error(`Não consegui abrir o cadastro de ${resumo.nome}. Nada foi alterado.`);
+
+      // O NÚMERO JÁ ESTÁ LÁ — com ou sem o nono dígito, que no WhatsApp são a
+      // mesma conta. Aí não há o que acrescentar, só o que ligar; mandar de
+      // novo criaria a segunda escrita do mesmo número (relato de 28/09).
+      const lista = listaDeTelefones(inteiro);
+      const jaTinha = lista.some((t) => chaveDoNumero(t.digitos || t.numero) === chaveDoNumero(numero));
+      let novaLista = lista;
+      if (!jaTinha) {
+        let r = null;
+        try {
+          r = await chamarPonte(`/vantoro/cliente/${inteiro.id}/telefones`,
+                                { method: "POST", body: JSON.stringify({ numero: legivel }) });
+        } catch (e) {
+          throw new Error(`Não consegui acrescentar ${legivel} ao cadastro de ${inteiro.nome} — `
+                          + `${e.message} Esta conversa continua sem ficha.`);
+        }
+        if (r && Array.isArray(r.telefones)) novaLista = r.telefones;
+      }
+
+      setCpfDeOutro(null);
+      setCpfProcura(null);
+      setCliente(inteiro);
+      setEdicao({ ...inteiro });
+      setTelefones(novaLista);
+      const ligou = await ligarContatoAoCadastro(inteiro);
+      const feito = jaTinha
+        ? `${legivel} já estava no cadastro de ${inteiro.nome}.`
+        : `Acrescentei ${legivel} ao cadastro de ${inteiro.nome}.`;
+      const naoLigou = `${feito} Mas não consegui ligar esta conversa a esse cadastro aqui — `
+                     + "a ficha pode não aparecer sozinha na próxima vez.";
+      onAviso && onAviso(ligou
+        ? `${feito} Esta conversa agora abre essa ficha.`
+        : erroDoVinculo.current
+            ? comOCodigo(naoLigou, erroDoVinculo.current, "ligar o cadastro ao contato")
+            : naoLigou);
+    } catch (e) {
+      onAviso && onAviso(e.message || "Não consegui acrescentar o número ao cadastro.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
   async function escolher(c) {
     setCliente(c);
     setEdicao({ ...c });
+    // A LISTA DE TELEFONES VEM JUNTO. Só `buscar` a preenchia, e escolher um
+    // cadastro por outro caminho (a lista de candidatos, o CPF de outro)
+    // desenhava a ficha nova com a lista de telefones da ANTERIOR — ou vazia.
+    setTelefones(listaDeTelefones(c));
     // A ESCOLHA FICA GRAVADA, e é o que faz a pergunta não voltar amanhã. É o
     // mesmo campo que já guardava o vínculo; a diferença é que agora ele é uma
     // resposta de alguém, e não um sorteio.
@@ -898,6 +1012,77 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     );
   }
 
+  // ------------------------------------------------------------
+  //  A PROCURA PELO CPF, NO NÚMERO SEM CADASTRO
+  //
+  //  Quatro respostas, e cada uma diz o que fazer a seguir:
+  //    procurando → espere;
+  //    achou      → é ele? acrescente este número ao cadastro dele;
+  //    não achou  → pode criar o pré-cadastro;
+  //    falhou     → NÃO conclua que não é cliente: tente de novo.
+  //  A última é a que evita o duplicado no dia em que a ponte tossir — sem
+  //  ela, "não consegui perguntar" teria a mesma cara de "não achei".
+  // ------------------------------------------------------------
+  function desenharProcuraPeloCpf() {
+    const miudo = { fontSize: 12, lineHeight: 1.45, color: C.textSecondary, marginTop: 2 };
+    if (cpfProcura === "procurando") {
+      return <div data-procura-cpf="procurando" style={miudo}>Procurando este CPF no Vantoro…</div>;
+    }
+    if (cpfProcura === "nao-achou") {
+      return (
+        <div data-procura-cpf="nao-achou" style={miudo}>
+          Nenhum cadastro com este CPF no Vantoro.
+        </div>
+      );
+    }
+    if (cpfProcura === "falhou") {
+      return (
+        <div data-procura-cpf="falhou" style={{ ...miudo, color: "#e5695a" }}>
+          Não consegui perguntar ao Vantoro agora — isto não quer dizer que a
+          pessoa não seja cliente. Tente de novo daqui a pouco antes de criar
+          um cadastro.
+        </div>
+      );
+    }
+    if (!cpfDeOutro) return null;
+    const VERDE = C.green;
+    const pedacos = [];
+    if (cpfDeOutro.processos) pedacos.push(`${cpfDeOutro.processos} ação(ões)`);
+    if (cpfDeOutro.documentos) pedacos.push(`${cpfDeOutro.documentos} documento(s)`);
+    if (cpfDeOutro.telefone) pedacos.push(telefoneLegivel(cpfDeOutro.telefone));
+    const esteNumero = telefoneLegivel(numero);
+    return (
+      <div data-procura-cpf="achou" data-achado-pelo-cpf={cpfDeOutro.id}
+           style={{ marginTop: 8, borderRadius: 9, padding: "10px 12px",
+                    border: `1px solid ${VERDE}`, background: C.panel,
+                    color: C.textPrimary, fontSize: 13, lineHeight: 1.5 }}>
+        <div>
+          Achei pelo CPF: <b>{cpfDeOutro.nome}</b>
+          {pedacos.length ? <span style={{ color: C.textSecondary }}> — {pedacos.join(" · ")}</span> : null}
+        </div>
+        <div style={{ marginTop: 4, color: C.textSecondary, fontSize: 12.5 }}>
+          É a mesma pessoa, escrevendo por um número novo? O número entra como
+          mais um telefone do cadastro — o WhatsApp principal continua o de antes.
+        </div>
+        <button data-acrescentar-ao-achado onClick={() => acrescentarEsteNumeroAoCadastro(cpfDeOutro)}
+                disabled={salvando}
+                style={{ ...botao, width: "100%", marginTop: 10, opacity: salvando ? 0.6 : 1 }}>
+          <Plus size={15} /> {salvando ? "Acrescentando…" : `Acrescentar ${esteNumero} ao cadastro`}
+        </button>
+        {/* O "NÃO" TAMBÉM TEM SAÍDA, e ela não é criar outro cadastro: pode
+            ser a mãe falando pelo filho, com o CPF dele na mão. Abrir sem
+            acrescentar é o caminho que já existia na ficha aberta. */}
+        <button data-so-abrir-achado onClick={() => abrirCadastroDeOutro(cpfDeOutro)}
+                disabled={salvando}
+                style={{ width: "100%", marginTop: 6, border: "none", background: "transparent",
+                         color: C.textSecondary, cursor: "pointer", fontSize: 12.5,
+                         textDecoration: "underline", padding: 4 }}>
+          Só abrir o cadastro, sem acrescentar este número
+        </button>
+      </div>
+    );
+  }
+
   function desenharTelefones() {
     if (!cliente) return null;
     const AMBAR = "#d4a017";
@@ -1146,14 +1331,35 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
           <div>
             <div style={{ color: C.textSecondary, fontSize: 13.5, lineHeight: 1.55, marginBottom: 14 }}>
               Este número ainda <b>não tem cadastro</b> no Vantoro.
-              Crie o pré-cadastro para abrir a ordem de serviço e iniciar a esteira.
+            </div>
+            {/* O CPF VEM PRIMEIRO, e é a mudança de 29/09. O cliente que troca
+                de celular chega aqui por um número que o Vantoro não conhece
+                — e a primeira pergunta é "ele já é cliente?", não "vamos
+                criar". Com o CPF lá embaixo, depois do nome, o gesto natural
+                era preencher de cima para baixo e apertar Criar: o duplicado.
+                É o mesmo campo que o pré-cadastro usa, e não um segundo:
+                dois campos de CPF na mesma tela fariam a pessoa perguntar em
+                qual digitar, e o outro ficaria vazio. */}
+            <label style={rotulo}>CPF</label>
+            <input data-cpf-sem-cadastro inputMode="numeric"
+                   style={{ ...campo, marginBottom: 4 }} value={edicao.cpf || ""}
+                   placeholder="Já é cliente? Digite o CPF para achar o cadastro"
+                   onChange={(e) => setEdicao({ ...edicao, cpf: e.target.value })} />
+            {desenharProcuraPeloCpf()}
+            {/* ACHOU O CADASTRO, O PRÉ-CADASTRO SAI DE CENA. Criar ali seria
+                o duplicado que a busca acabou de evitar — e o Vantoro recusa
+                CPF de outro cadastro de qualquer jeito (vantoro#232), então
+                o botão só levaria a um erro depois de a pessoa escolher o
+                papel. Trocando o CPF, ele volta. */}
+            {!cpfDeOutro && (<>
+            <div style={{ color: C.textSecondary, fontSize: 12.5, lineHeight: 1.5,
+                          margin: "10px 0 14px" }}>
+              Não é cliente ainda? Crie o pré-cadastro para abrir a ordem de
+              serviço e iniciar a esteira — o CPF é opcional agora.
             </div>
             <label style={rotulo}>Nome</label>
-            <input style={{ ...campo, marginBottom: 10 }} value={edicao.nome ?? (nomeContato || "")}
+            <input style={{ ...campo, marginBottom: 14 }} value={edicao.nome ?? (nomeContato || "")}
                    onChange={(e) => setEdicao({ ...edicao, nome: e.target.value })} />
-            <label style={rotulo}>CPF (opcional agora)</label>
-            <input style={{ ...campo, marginBottom: 14 }} value={edicao.cpf || ""}
-                   onChange={(e) => setEdicao({ ...edicao, cpf: e.target.value })} />
             {/* CLIENTE OU RÉU — a escolha que decide a ordem de serviço.
                 Dois botões, e não uma lista: são duas opções, e uma lista
                 fechada esconderia a segunda atrás de um clique. Quem atende
@@ -1182,6 +1388,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
             <button style={{ ...botao, width: "100%", opacity: salvando ? 0.6 : 1 }} onClick={criar} disabled={salvando}>
               <UserPlus size={15} /> {salvando ? "Criando…" : "Criar pré-cadastro"}
             </button>
+            </>)}
           </div>
         )}
 
