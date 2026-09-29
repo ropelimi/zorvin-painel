@@ -2988,7 +2988,50 @@ export default function Painel({ sessao }) {
   const larguraDaConversa = largura - 60
     - (estreito ? 0 : LARGURA_DA_LISTA)
     - (!estreito && fichaVisivel ? 330 : 0);
-  const cabecalhoApertado = !estreito && larguraDaConversa < 620;
+
+  // ============================================================
+  //  QUEM TEM PRIORIDADE NO CABEÇALHO É O NOME, E NÃO OS BOTÕES
+  //
+  //  Relato do Rodrigo em 29/09, com foto: com a ficha aberta a tela dizia
+  //  "ELANE GO…". O teto de 620 que estava aqui mandava os botões virarem
+  //  ícone, e nada mais — quando nem assim cabia, quem apanhava era o nome.
+  //
+  //  MEDIDO, com a ficha aberta, e o degrau é o que denuncia o desenho antigo:
+  //
+  //  | janela | conversa | rótulos  | o nome recebe |
+  //  |--------|----------|----------|---------------|
+  //  | 1280   | 528      | ícones   | 166           |
+  //  | 1366   | 614      | ícones   | 252           |
+  //  | 1440   | 688      | ESCRITOS | 199           |
+  //
+  //  Alargar a janela de 1366 para 1440 PIORAVA o nome: os rótulos voltavam e
+  //  custavam ~127px, tirados de quem não pode pagar.
+  //
+  //  Agora a conta parte do nome. Ele tem um piso, e é o piso que decide qual
+  //  das três formas a fila de botões toma:
+  //
+  //  | espaço | a fila |
+  //  |---|---|
+  //  | sobra | os dois botões ESCRITOS, como sempre |
+  //  | aperta | os mesmos, em ÍCONE (`cabecalhoApertado`) |
+  //  | não cabe | recolhe no ⋮ (`cabecalhoRecolhido`) |
+  //
+  //  A terceira NÃO ESCONDE NADA: o menu ⋮ já existia no celular com TODAS as
+  //  ações escritas por extenso — lida/não lida, ficha, histórico, etiquetas,
+  //  quem participou, buscar, renomear, já tratei. Trazê-lo para o computador
+  //  é trocar seis ícones mudos por um menu que diz o nome de cada coisa. O
+  //  que não se pode perder é o NÚMERO que o cliente vê chegar, porque
+  //  responder pelo número errado não tem desfazer.
+  // ============================================================
+  //
+  //  Os números saíram da régua do navegador, não do olho:
+  //  "ANDREIA CRISTINA MARTINS" pede 225px e "ELANE GOMES TEIXEIRA" 194.
+  const NOME_MINIMO = 230;
+  //  A fila inteira, com vãos (6x12) e recheio (2x16) já somados.
+  const FILA_ESCRITA = 487;    // 383 de botões + 72 + 32
+  const FILA_EM_ICONES = 360;  // 256 de botões + 72 + 32
+  const cabecalhoApertado  = !estreito && larguraDaConversa - FILA_ESCRITA   < NOME_MINIMO;
+  const cabecalhoRecolhido = !estreito && larguraDaConversa - FILA_EM_ICONES < NOME_MINIMO;
   /** Mostra ou recolhe a ficha, escrevendo no estado certo para o layout. */
   function alternarFicha(mostrar) {
     if (estreito) { setFichaAberta(mostrar); return; }
@@ -11125,7 +11168,9 @@ export default function Painel({ sessao }) {
             menu resolve um problema que a fita tinha de nascença: etiqueta que
             ficava depois da dobra era invisível — para filtrar por ela, a
             pessoa precisava adivinhar que dava para arrastar. */}
-        <div data-fita-de-filtros style={{ display: "flex", flexWrap: "wrap", gap: 5, padding: "0 12px 7px", background: C.panel }}>
+        {/* `position: relative` NA FITA, e não na pílula — ver o menu de mais
+            filtros logo abaixo. */}
+        <div data-fita-de-filtros style={{ position: "relative", display: "flex", flexWrap: "wrap", gap: 5, padding: "0 12px 7px", background: C.panel }}>
           {[["tudo", "Tudo"], ["naolidas", `Não lidas${totalNaoLidasLista ? " " + totalNaoLidasLista : ""}`], ["favoritas", "Favoritas"]].map(([k, label]) => {
             const ativo = filtro === k;
             return (
@@ -11217,7 +11262,7 @@ export default function Painel({ sessao }) {
                 grupos escolhido    -> "Grupos ✕", verde
                 etiqueta escolhida  -> o nome dela, na cor dela
               ------------------------------------------------------------ */}
-          <span ref={etiquetasRef} style={{ position: "relative", display: "flex", minWidth: 0 }}>
+          <span ref={etiquetasRef} style={{ display: "flex", minWidth: 0 }}>
             <button data-mais-filtros onClick={() => setMenuEtiquetas((v) => !v)}
                     aria-expanded={menuEtiquetas} aria-haspopup="listbox"
                     aria-label={tagFiltrada ? `Filtrando por ${tagFiltrada.nome}`
@@ -11241,7 +11286,28 @@ export default function Painel({ sessao }) {
               <ChevronDown size={14} style={{ flexShrink: 0, opacity: .8 }} />
             </button>
             {menuEtiquetas && (
-              <div data-menu-mais-filtros role="listbox" style={{ position: "absolute", top: 36, right: 0, zIndex: 40, width: 250, maxHeight: 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
+              /* ONDE ESTE MENU ABRE — relato do Rodrigo em 29/09, com foto:
+                 as opções apareciam CORTADAS pela esquerda ("…versas",
+                 "…Concluída").
+
+                 A causa: ele era `right: 0` ancorado na PRÓPRIA PÍLULA. Com
+                 181 não lidas a fita quebra em duas linhas e a pílula passa a
+                 começar a ~14px da borda da coluna; um menu de 250px que
+                 termina ali começa em −136, fora da tela.
+
+                 E `left: 0` na pílula não serve: com a fita numa linha só ela
+                 fica a ~258px, e 258+250 estoura a coluna pelo outro lado.
+
+                 Então quem ancora é a FITA, que tem a largura da coluna e não
+                 se move: `left: 12` alinha com as pílulas e `top: 100%` desce
+                 abaixo dela, seja ela de uma ou de duas linhas. 12+250=262
+                 cabe nos 360 da coluna e também num Android de 360.
+
+                 O menu continua sendo FILHO da pílula no documento — é o que
+                 faz o clique dentro dele contar como "dentro" para
+                 `etiquetasRef`, e não fechar o menu que a pessoa acabou de
+                 abrir. Quem mudou foi só o ponto de referência. */
+              <div data-menu-mais-filtros role="listbox" style={{ position: "absolute", top: "100%", left: 12, zIndex: 40, width: 250, maxHeight: 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
                 {/* GRUPOS VEM PRIMEIRO, e separado por um traço: é uma
                     pergunta de outra natureza que as etiquetas. Etiqueta é uma
                     marca que a equipe põe; grupo é o que a conversa É. */}
@@ -11689,7 +11755,7 @@ export default function Painel({ sessao }) {
                 em que ninguém refez esta conta, seja CORTADO na borda em vez de
                 ir pintar por cima da ficha — que foi o defeito relatado em
                 28/09, e que ninguém lê como "falta espaço aqui". */}
-            <div data-topo-conversa style={{ background: C.headerBar, padding: estreito ? "8px 10px" : "10px 16px", display: "flex", alignItems: "center", gap: estreito ? 6 : 12, borderBottom: `1px solid ${C.divider}`, overflow: "hidden" }}>
+            <div data-topo-conversa style={{ background: C.headerBar, padding: estreito ? "8px 10px" : "10px 16px", display: "flex", alignItems: "center", gap: estreito ? 6 : 12, borderBottom: `1px solid ${C.divider}` }}>
               {estreito && (
                 <button onClick={() => setConversaId(null)} title="Voltar" aria-label="Voltar" style={BOTAO_ICONE}>
                   <ArrowLeft size={20} color={C.textSecondary} />
@@ -11801,7 +11867,10 @@ export default function Painel({ sessao }) {
                   para quem procura alguma coisa pelo nome dela. É o mesmo
                   arranjo do WhatsApp no celular, e por isso não há o que
                   aprender. */}
-              {!estreito && (
+              {/* A FILA SOLTA — só enquanto ela cabe SEM comer o nome.
+                  Não cabendo, tudo isto vai para o ⋮ logo abaixo, escrito por
+                  extenso. Ver `cabecalhoRecolhido`. */}
+              {!estreito && !cabecalhoRecolhido && (
                 <>
                 {/* LIDA ↔ NÃO LIDA — o mesmo botão, nos dois sentidos.
                     Responder o contato já marca como lida sozinho; este botão é
@@ -11948,7 +12017,11 @@ export default function Painel({ sessao }) {
                 </>
               )}
 
-              {estreito && (
+              {/* O ⋮ — do celular desde sempre, e do computador quando a
+                  fila não cabe. O conteúdo é o MESMO nos dois: uma segunda
+                  escrita dele divergiria no primeiro conserto, e divergir aqui
+                  é uma ação existir num tamanho de janela e sumir no outro. */}
+              {(estreito || cabecalhoRecolhido) && (
                 <span ref={acoesRef} style={{ position: "relative", display: "flex" }}>
                   <button aria-label="Mais opções desta conversa" title="Mais opções desta conversa"
                           onClick={() => { setQuemParticipou(false); setTagMenuAberto(false); setMenuDaConversa((v) => !v); }}

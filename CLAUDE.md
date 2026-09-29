@@ -391,6 +391,107 @@ continua lá, continua clicável e continua DIZENDO a palavra. Sem essa cena,
 apertar o cabeçalho poderia um dia virar "some o botão" sem nenhuma prova ver
 diferença.
 
+### E o cabeçalho passou a cortar coisa — dois relatos no dia seguinte
+
+**O primeiro era o encosto que eu tinha acabado de pôr.** *"Quando clico em
+marcar tags não estão aparecendo as tags, está com algum erro no layout."*
+O `overflow: hidden` do cabeçalho recorta **todos** os descendentes, e os
+menus ancorados nele são descendentes. **Medido:** o menu de etiquetas pedia
+**139px de altura e mostrava 21** — só a faixa "MARCAR TAGS".
+
+E ele **nunca chegou a ser necessário**: a fila é `flex` e, faltando espaço,
+ela espreme o nome em vez de transbordar (é o que a própria medição de 28/09
+já mostrava, com o último botão terminando 16px ANTES da ficha). O encosto só
+cobrava. **Régua que fica: `overflow: hidden` não é encosto numa barra que
+ancora menus** — ele não escolhe o que corta.
+
+**O segundo:** *"com a ficha aberta o nome do cliente está sendo cortado"* —
+a tela dizia **"ELANE GO…"**. E a medição mostrou um degrau que piorava:
+
+| janela | conversa | rótulos | o nome recebia |
+|---|---|---|---|
+| 1280 | 528 | ícones | **166** |
+| 1366 | 614 | ícones | 252 |
+| 1440 | 688 | **escritos** | **199** |
+
+**Alargar a janela de 1366 para 1440 PIORAVA o nome**, porque os rótulos
+voltavam e custavam ~127px — tirados de quem não podia pagar. O teto de 620
+decidia isso sem perguntar nada sobre o nome.
+
+**Hoje a conta parte do nome**, que tem piso de **230px** (medido na fonte da
+tela: "ANDREIA CRISTINA MARTINS" pede 225, "ELANE GOMES TEIXEIRA" 194). São
+TRÊS formas, e é o piso que escolhe:
+
+| espaço | a fila |
+|---|---|
+| sobra | os dois botões **escritos** |
+| aperta | os mesmos, em **ícone** (`cabecalhoApertado`) |
+| não cabe | **recolhe no ⋮** (`cabecalhoRecolhido`) |
+
+```
+1180 → conversa  428 | ⋮ recolhido | nome 344
+1280 → conversa  528 | ⋮ recolhido | nome 444   (era 166)
+1366 → conversa  614 | ícones      | nome 252
+1440 → conversa  688 | ícones      | nome 326   (era 199)
+1600 → conversa  848 | escritos    | nome 359
+1920 → conversa 1168 | escritos    | nome 679
+```
+
+**Recolher NÃO é esconder, e essa é a decisão.** O menu ⋮ já existia no
+celular com TODAS as ações escritas por extenso; trazê-lo para o computador
+troca seis ícones mudos por um menu que diz o nome de cada coisa. O que não
+podia continuar sendo espremido é o bloco do nome, porque é nele que está **o
+número que o cliente vê chegar**.
+
+**Uma cópia só**, pelo mesmo motivo do controle da ordem: o conteúdo do ⋮ é o
+mesmo nos dois mundos. Duas escritas divergiriam, e divergir aqui é uma ação
+existir num tamanho de janela e sumir no outro.
+
+### O menu de filtros abria fora da tela
+
+Terceiro relato do dia: *"ao clicar em Grupo e depois clicar novamente para
+voltar para Todas as conversas, as opções estão cortadas"* — na foto, lia-se
+"…versas", "…Concluída".
+
+**Geometria, e só aparece com a fita QUEBRADA.** O menu era `right: 0`
+ancorado na própria pílula. Com as 181 não lidas do escritório a fita quebra
+em duas linhas e a pílula passa a começar colada na borda da coluna; um menu
+de 250px que TERMINA ali começa fora da tela. **Medido, com a fita forçada a
+quebrar: antes `left −63`, agora `left 72`.**
+
+**E `left: 0` na pílula não serve:** com a fita numa linha só ela fica a
+~258px da borda, e 258+250 estoura a coluna pelo outro lado. Quem ancora é a
+**fita**, que tem a largura da coluna e não se move.
+
+**O menu continua sendo FILHO da pílula no documento** — é isso que faz o
+clique dentro dele contar como "dentro" e não fechar o que a pessoa acabou de
+abrir. Mudou só o ponto de referência, via `position: relative` na fita.
+
+### Três coisas que as provas me ensinaram nesta rodada
+
+**`null < 70` é verdade em JavaScript.** A conferência de `a-ficha-fica-fixa`
+perguntava `larguraDoMarcar < 70` para dizer "o botão virou ícone". Com o
+botão recolhido no ⋮ aquilo virou `null < 70`, que é `0 < 70` — ela **passou
+sem medir nada**. Hoje pergunta a FORMA, pelo nome.
+
+**Eu escrevi uma conferência que proibia o comportamento certo.** Pedi que
+alargar a janela nunca encolhesse o espaço do nome — mas de 1280 para 1366 o
+nome cai de 444 para 252, e está certo: ali a fila sai do ⋮ e volta solta.
+O que não pode é o nome abaixo do piso, ou a forma ANDAR PARA TRÁS. É isso
+que está conferido.
+
+**E um erro meu de processo, que quase me fez consertar o que não estava
+quebrado:** rodei `cp src/Painel.jsx /tmp/P.bak` **enquanto** um lote de
+sabotagens ainda escrevia nesse arquivo. O backup guardou uma sabotagem, e
+todo "restaurar" depois disso a devolvia — a prova passou a reprovar falando
+de um botão que a sabotagem tinha tirado. **Backup de sabotagem se tira antes
+de começar, de uma cópia conferida, e nunca com outra rodada em voo.**
+
+Prova: `o-cabecalho-nao-corta-o-que-importa`, 24 conferências. Ela mede **o
+que está PINTADO** (`elementFromPoint`), e não o retângulo: foi exatamente por
+isso que o menu de tags media 139px de altura enquanto a pessoa via 21 —
+`getBoundingClientRect` não sabe que um ancestral está recortando.
+
 **Ainda em aberto, e é decisão:** o visual POR DENTRO da ficha não mudou. Ela
 já é sanfonada como a do DataCrazy (Identificação, Endereço, Acessos, Origem);
 apertar as linhas em rótulo-e-valor na mesma linha foi deixado para depois de
