@@ -9,7 +9,7 @@ import {
   StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star,
   Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList, ShieldCheck,
   ChevronLeft, ChevronRight, Images, ExternalLink, Pin, Copy, Forward, Sticker,
-  History, BarChart3, Users, Smartphone, ArrowDownUp,
+  History, BarChart3, Users, Smartphone,
   Image as ImageIcon, Video,
   Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote, Volume2,
   ListChecks, Undo2
@@ -267,12 +267,31 @@ const ESPERAS_DE_VOLTA =
 //  fixa (28/09) são três, e o Rodrigo pediu espaço para a conversa: a 1360 ela
 //  tinha caído para ~590px.
 //
-//  320 é o menor valor que ainda não corta nada na coluna — a marca, o nome do
-//  telefone em "ATENDENDO COMO", o nome do cliente e a prévia. Está num lugar
-//  só porque a prova mede este número, e duas escritas dele divergiriam no
-//  primeiro ajuste.
+//  ESCREVI 320 AQUI DIZENDO QUE "não corta nada", E A PROVA ME DESMENTIU.
+//  A 320 a marca ficava com 96px para um nome que pede 134, e a tela dizia
+//  "Ropelimi Zo" — o MESMO defeito registrado em 16/09, que eu tinha acabado
+//  de reintroduzir por não medir de novo depois de encolher a coluna.
+//
+//  A CONTA DA LINHA DA MARCA, medida a 1360 (é ela que manda, não a lista):
+//
+//    marca 134 + "Nova conversa" 34 + filtro de quem 34
+//    + a ordem + menu ⋮ 34 + quatro vãos de 3 = 12
+//
+//  E A ORDEM NÃO TEM LARGURA FIXA: "Recentes" custa 53 de texto, "Antigas"
+//  44 e "Esperando" 62. Quem manda é a MAIS LARGA — medir com a de hoje e
+//  achar que cabe é o defeito voltando no dia em que alguém trocar a ordem.
+//  Sem o ícone, a pílula mais larga custa 82.
+//
+//  Dá 330, mais 20 de recheio da coluna = 350 de piso. 360 deixa 10px de
+//  folga — e folga aqui não é luxo: o corte não põe reticências, então a
+//  marca some pelo meio da palavra sem nada avisando.
+//
+//  POR QUE NÃO 320: não há de onde tirar os 38px que faltam. A fita de
+//  filtros tem 18px livres e a ordem pede 95; a linha da marca já está com
+//  tudo no menor tamanho que o ponteiro acerta. Abaixo de 350 é preciso
+//  TIRAR algo do topo, e isso é decisão do Rodrigo, não minha.
 // ============================================================
-const LARGURA_DA_LISTA = 320;
+const LARGURA_DA_LISTA = 360;
 
 // A FICHA FIXA FICA GUARDADA NO NAVEGADOR. Padrão LIGADO: `!== "nao"`, como a
 // chave da tarja — armazenamento vazio (primeira abertura, janela anônima,
@@ -9828,7 +9847,11 @@ export default function Painel({ sessao }) {
                        color: ordem === "antigas" ? "#fff" : C.textSecondary,
                        borderRadius: 20, padding: "4px 9px", fontSize: 12, fontWeight: 600,
                        cursor: "pointer", whiteSpace: "nowrap" }}>
-        <ArrowDownUp size={13} />
+        {/* O ÍCONE SAIU, e por medição: ele custava 17px (13 do desenho, 4 do
+            vão) numa linha que estourava em 38. A PALAVRA é que é o contrato
+            — o controle sempre ESCREVE a ordem, e um botão que só troca sem
+            dizer em que estado está transforma "achei estranho" em "está
+            quebrado". O desenho era o enfeite; foi ele que saiu. */}
         {/* A PALAVRA CURTA, e nos dois lugares. Na linha da marca,
             "Mais recentes" custa 143px e sobram 130 para um nome que
             pede 134 — medido, e a marca saía cortada. "Recentes" custa

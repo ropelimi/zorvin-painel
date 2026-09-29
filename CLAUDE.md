@@ -310,11 +310,41 @@ Prova: `a-ficha-fica-fixa`, 17 conferências, 7 sabotagens e 7 pegas.
 
 Com a ficha fixa, o Rodrigo usou um dia e voltou com duas coisas.
 
-**A lista encolheu de 380 para 320px.** Os 380 foram medidos em 16/09, quando a
-tela tinha DUAS colunas; com três, a conversa tinha caído para ~590px a 1360.
-320 é o menor valor que ainda não corta nada na coluna — a marca, o nome do
-telefone, o nome do cliente e a prévia —, e está num lugar só
-(`LARGURA_DA_LISTA`), porque a prova mede este número.
+**A lista encolheu de 380 para 360px — e eu tinha escrito 320.** Os 380 foram
+medidos em 16/09, quando a tela tinha DUAS colunas; com três, a conversa tinha
+caído para ~590px a 1360. Pus 320 afirmando neste arquivo que era *"o menor
+valor que ainda não corta nada"*, **e a prova me desmentiu**: a 320 a marca
+ficava com 96px para um nome que pede 134, e a tela voltou a dizer
+**"Ropelimi Zo"** — o mesmo defeito registrado em 16/09, reintroduzido por eu
+não ter medido de novo depois de encolher a coluna.
+
+**Quem manda na largura da coluna é a LINHA DA MARCA**, e a conta é esta, a
+1360:
+
+| | px |
+|---|---|
+| a marca | 134 |
+| "Nova conversa" + filtro de quem + menu ⋮ | 34 cada |
+| a pílula da ordem, **sem o ícone** | 82 |
+| quatro vãos de 3 | 12 |
+| **total** | **330**, mais 20 de recheio = **350 de piso** |
+
+**E a pílula da ordem NÃO tem largura fixa:** "Recentes" custa 53 de texto,
+"Antigas" 44 e **"Esperando" 62**. Quem manda é a mais larga — medir com a de
+hoje e concluir que cabe é o defeito voltando no dia em que alguém trocar a
+ordem, sem ninguém ligar uma coisa à outra. A prova passou a somar a
+diferença da mais larga antes de comparar.
+
+**O ícone da pílula saiu**, e é ele que paga 17px dos 38 que faltavam. O que
+não podia sair é a PALAVRA: o controle sempre escreve a ordem, contrato antigo
+com prova própria. O enfeite era o desenho.
+
+**Por que não dá para ir a 320:** não há de onde tirar os 38px. A fita de
+filtros tem **18px livres** e a ordem pede 95; a linha da marca já está no
+menor tamanho que o ponteiro acerta. Abaixo de 350 é preciso **tirar** algo do
+topo, e isso é decisão do Rodrigo.
+
+O número está num lugar só (`LARGURA_DA_LISTA`), porque duas provas o medem.
 
 **E o cabeçalho da conversa invadia a ficha.** Relato com foto: a lupa da busca
 aparecia POR BAIXO da coluna. Medido: o bloco do nome **já tinha encolhido a
@@ -1721,15 +1751,19 @@ O `timeout-minutes` da rodada estava em 30, com o comentário *"folga com
 sobra"*. **Medido em 28/09:** a última rodada verde levou **28min41s** — 79
 segundos de folga, e não sobra nenhuma. A entrega seguinte (uma prova nova
 mais duas que cresceram) foi cortada aos **29min43s**, no meio da
-`selos-em-rajada`, com **cinco provas ainda por rodar**.
+`selos-em-rajada` — que é a **última** da suíte, porque `rodar.mjs` agrupa
+por servidor (dev, sem-vantoro, producao) e não pelo alfabeto puro. Ela foi
+cortada a segundos do fim. **Eu li errado da primeira vez** e escrevi aqui que
+faltavam cinco provas: ordenei os nomes no alfabeto sem olhar como o corredor
+agrupa.
 
 **E o corte é o pior desfecho que existe aqui:** a conta paga os 30 minutos
 inteiros e não responde nada. Não é economia — é gastar sem comprar. Pior, o
 X vermelho por relógio é igual ao X vermelho por defeito de código, que é
 exatamente o sintoma de 25/09 outra vez.
 
-Hoje o teto é **45**, e o comentário diz o número medido em vez de um
-adjetivo. **O teto não muda o que a rodada consome** — ela custa o tempo que a
+Hoje o teto é **45** e a rodada seguinte fechou em ~30 min; o comentário
+diz o número medido em vez de um adjetivo. **O teto não muda o que a rodada consome** — ela custa o tempo que a
 suíte leva; ele só decide quando uma prova TRAVADA é derrubada. **Ao
 acrescentar prova, olhe quanto a suíte já leva.**
 

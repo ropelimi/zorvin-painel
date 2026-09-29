@@ -242,12 +242,15 @@ console.log("\n6. A conversa ganhou espaço, e o cabeçalho não invade a ficha"
     ok(`a ${L}px o cabeçalho não entra na ficha`,
        m.fichaComecaEm !== null && m.fimDoTopo <= m.fichaComecaEm,
        `topo termina em ${m.fimDoTopo}, ficha começa em ${m.fichaComecaEm}`);
-    // E A LISTA ENCOLHEU. 320, medido como o menor valor que não corta nada
-    // na coluna. A conferência aceita 321: o traço divisório de 1px entra na
-    // medida do retângulo, e exigir 320 cravado reprovaria por causa de uma
+    // E A LISTA ENCOLHEU. 360 — eram 380, e 320 foi tentado e REPROVADO por
+    // `o-topo-mais-baixo`: lá a marca ficava com 96px para um nome que pede
+    // 134 e a tela dizia "Ropelimi Zo". O piso da coluna é a linha da marca,
+    // e ele foi medido lá; aqui só se confere que este número é o que está
+    // desenhado. A conferência aceita 362: o traço divisório de 1px entra na
+    // medida do retângulo, e exigir 360 cravado reprovaria por causa de uma
     // borda — reprovar pelo que não se mede é o que faz alguém apagar a
     // conferência em vez de ler o que ela diz.
-    ok(`a ${L}px a lista encolheu para ~320px`, Math.abs(lista - 320) <= 2, `${lista}px`);
+    ok(`a ${L}px a lista encolheu para ~360px`, Math.abs(lista - 360) <= 2, `${lista}px`);
     // O QUE FAZ CABER: apertado, os botões escritos viram ícone. Sem isto a
     // conferência de cima passaria só por sorte, na largura que eu escolhi.
     const apertado = L === 1280;
