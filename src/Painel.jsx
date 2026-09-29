@@ -9884,10 +9884,29 @@ export default function Painel({ sessao }) {
       <button data-ordem onClick={() => setMenuOrdem((v) => !v)}
               aria-expanded={menuOrdem} aria-haspopup="listbox"
               title="Em que ordem a lista aparece"
+              /* A PÍLULA ESTÁ SEMPRE CHEIA, e isso é conserto de 29/09.
+                 Relato do Rodrigo, com três fotos: *"'Recentes' e 'Esperando'
+                 quando estão selecionados, não parece que estão selecionados,
+                 pois não possuem cor de fundo"*.
+
+                 Ela pintava de verde só o `antigas` — sobra de quando havia
+                 DUAS ordens e o verde queria dizer "não é a de sempre". Com
+                 três, a conta não fecha: `esperando` é a que mais vira a lista
+                 do avesso e era a que menos aparecia.
+
+                 A régua da casa já estava escrita ao lado, na fita de filtros:
+                 a pílula escolhida é verde cheia, INCLUSIVE a padrão ("Tudo").
+                 Este controle sempre tem um valor escolhido, então está sempre
+                 cheio.
+
+                 E não se perde sinal nenhum: quem diz que a lista está fora da
+                 ordem de sempre é a PALAVRA, que a pílula sempre escreve — é o
+                 contrato antigo, com prova própria. Cor some de quem é
+                 daltônico; palavra, não. */
               style={{ display: "flex", alignItems: "center", gap: 4, minHeight: 30, flexShrink: 0,
-                       border: `1px solid ${ordem === "antigas" ? C.greenDark : C.divider}`,
-                       background: ordem === "antigas" ? C.greenDark : "transparent",
-                       color: ordem === "antigas" ? "#fff" : C.textSecondary,
+                       border: `1px solid ${C.greenDark}`,
+                       background: C.greenDark,
+                       color: "#fff",
                        borderRadius: 20, padding: "4px 9px", fontSize: 12, fontWeight: 600,
                        cursor: "pointer", whiteSpace: "nowrap" }}>
         {/* O ÍCONE SAIU, e por medição: ele custava 17px (13 do desenho, 4 do

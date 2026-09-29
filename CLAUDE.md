@@ -880,6 +880,33 @@ errado não tem desfazer), o departamento, e a ordem da lista.
 Prova: `o-topo-mais-baixo`, 31 conferências em duas larguras, 6 sabotagens e
 6 pegas.
 
+### E a pílula da ordem passou a PARECER escolhida (29/09)
+
+Relato do Rodrigo, com três fotos: *"'Recentes' e 'Esperando' quando estão
+selecionados, não parece que estão selecionados, pois não possuem cor de
+fundo"*.
+
+Ela pintava de verde **só o `antigas`** — sobra de quando havia DUAS ordens e
+o verde queria dizer *"não é a de sempre"*. Com três, a conta não fecha:
+**`esperando` é a que mais vira a lista do avesso e era a que menos
+aparecia**.
+
+**A régua já estava escrita ao lado**, na fita de filtros: a pílula escolhida
+é verde cheia, **inclusive a padrão ("Tudo")**. Este controle sempre tem um
+valor escolhido, então está sempre cheio. Inventar um segundo jeito de dizer
+"escolhida" — um enchimento neutro para a padrão e verde para as outras —
+seria uma linguagem visual que não existe em nenhum outro lugar desta tela.
+
+**E não se perde sinal nenhum:** quem diz que a lista está fora da ordem de
+sempre é a **palavra**, que a pílula sempre escreve — o contrato antigo, com
+prova própria. Cor some para quem é daltônico; palavra, não.
+
+**A conferência compara com a própria tela**, e não com um valor copiado: ela
+lê o fundo da pílula ATIVA da fita e exige o mesmo nas três ordens. Escrever
+a cor à mão na prova seria uma segunda definição dela, para divergir no dia
+em que o tema mudar. Duas sabotagens, duas pegas — devolver o verde só para
+"Antigas", e usar uma cor que não é a da fita.
+
 ## A busca que empurrava para fora da tela o que ela tinha achado
 
 Relato do escritório em 16/09, com foto: *"a conversa do nome que eu pesquiso

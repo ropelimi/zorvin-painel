@@ -168,6 +168,66 @@ console.log("\nE dá para voltar");
   ok("e a pílula acompanha", /recentes/i.test(texto), `dizia: "${texto}"`);
 }
 
+// ------------------------------------------------------------------
+console.log("\nA pílula PARECE escolhida nas três ordens");
+{
+  // RELATO DO RODRIGO, 29/09, com três fotos: "'Recentes' e 'Esperando'
+  // quando estão selecionados, não parece que estão selecionados, pois não
+  // possuem cor de fundo".
+  //
+  // Ela pintava de verde só o `antigas` — sobra de quando havia DUAS ordens e
+  // o verde queria dizer "não é a de sempre". Com três, `esperando` é a que
+  // mais vira a lista do avesso e era a que menos aparecia.
+  //
+  // A RÉGUA SAI DA PRÓPRIA TELA, e não de um valor copiado para cá: a
+  // conferência compara com a pílula ATIVA da fita de filtros, que é o jeito
+  // da casa de dizer "escolhida". Escrever a cor à mão aqui seria uma segunda
+  // definição dela, para divergir no dia em que o tema mudar.
+  const fundoDaEscolhida = await page.evaluate(() => {
+    const ativa = [...document.querySelectorAll("[data-fita-de-filtros] [data-aba]")]
+      .find((b) => getComputedStyle(b).backgroundColor !== "rgba(0, 0, 0, 0)");
+    return ativa ? getComputedStyle(ativa).backgroundColor : null;
+  });
+  ok("achei na fita a cor de 'pílula escolhida'", !!fundoDaEscolhida, String(fundoDaEscolhida));
+
+  const escolher = async (regra) => {
+    await page.locator("[data-ordem]").click();
+    await page.waitForTimeout(300);
+    const op = page.locator("[data-menu-ordem] button").filter({ hasText: regra });
+    if (await op.count() === 0) return null;
+    await op.first().click();
+    await page.waitForTimeout(600);
+    return page.evaluate(() => {
+      const b = document.querySelector("[data-ordem]");
+      const cs = getComputedStyle(b);
+      return { diz: b.innerText.trim(), fundo: cs.backgroundColor, cor: cs.color };
+    });
+  };
+
+  const vistas = [];
+  for (const [nome, regra] of [["Recentes", /Mais recentes/], ["Antigas", /Mais antigas/],
+                               ["Esperando", /Esperando/]]) {
+    const v = await escolher(regra);
+    if (!v) { console.log(`     ${nome}: não é oferecida nesta bancada`); continue; }
+    vistas.push({ nome, ...v });
+    console.log(`     ${nome.padEnd(10)} fundo ${v.fundo} | texto ${v.cor} | diz "${v.diz}"`);
+  }
+
+  // O TAMANHO VAI JUNTO: `.every` numa lista vazia devolve `true`, e a
+  // conferência passaria sem olhar nada — foi assim que o vigia
+  // `provas-que-reprovam` me pegou em 29/09.
+  ok("as três ordens foram exercitadas", vistas.length === 3,
+     JSON.stringify(vistas.map((v) => v.nome)));
+  ok("as TRÊS têm cor de fundo de escolhida, e é a mesma da fita",
+     vistas.length === 3 && vistas.every((v) => v.fundo === fundoDaEscolhida),
+     JSON.stringify(vistas));
+  // E A PALAVRA CONTINUA LÁ. A cor é o reforço; quem DIZ em que ordem a lista
+  // está é o texto, e é ele que serve a quem não distingue a cor.
+  ok("e cada uma continua escrevendo a ordem",
+     vistas.length === 3 && vistas.every((v) => v.diz.length > 5),
+     JSON.stringify(vistas.map((v) => v.diz)));
+}
+
 console.log(`\nerros de página: ${erros.length}`);
 erros.slice(0, 4).forEach((e) => console.log("   • " + e.slice(0, 160)));
 ok("nenhum erro de JavaScript no caminho todo", erros.length === 0);
