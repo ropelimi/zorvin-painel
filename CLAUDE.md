@@ -1603,11 +1603,42 @@ Hoje a linha só conta como caída se **não deu sinal de vida** depois do últi
 erro — uma mensagem que saiu por ela, ou uma que chegou. A janela de 30
 minutos fica como teto.
 
-**Nada mudou no painel:** a mudança é toda do banco, em
+A conta inteira é do banco, em
 `sql/automaticos/007-a-linha-que-voltou-nao-fica-caida.sql` (repo da ponte),
-onde está o raciocínio inteiro e as nove cenas conferidas num Postgres de
-verdade. Esta entrada existe porque é aqui que se lê sobre a faixa antes de
-mexer nela.
+onde estão o raciocínio e as nove cenas conferidas num Postgres de verdade.
+
+### E a faixa FICAVA POR CIMA da tela — que era o estrago maior
+
+Segundo relato do mesmo dia: *"essa mensagem vermelha atrapalha o
+funcionamento do sistema. **Não dá para ver o nome dos contatos e outras
+funções.**"*
+
+A coluna das duas faixas era `position: fixed` no topo, com `zIndex: 130`.
+Ela flutuava **por cima** do painel e comia os primeiros pixels de tudo — a
+marca, a linha do departamento, o alto da barra lateral. **Medido pela
+sabotagem:** a faixa termina em **33px** e a marca do escritório começava em
+**8** — debaixo dela.
+
+**Um aviso que esconde a tela sobre a qual avisa é pior do que aviso nenhum:**
+ele não some quando a pessoa precisa trabalhar, e não há gesto que o tire.
+
+Hoje a tela inteira é uma **coluna**: as faixas em cima, e a fila de colunas
+(barra, lista, conversa, ficha) ocupando o que sobra com `flex: 1`. O painel
+**encolhe** em vez de ser coberto, e o quanto ele encolhe é a altura real das
+faixas — sem ninguém medir o DOM nem adivinhar um recuo.
+
+**`minHeight: 0` na fila não é enfeite:** sem ele um filho que rola (a lista
+de conversas) empurra a altura do flex para além da tela, e quem some por
+baixo é a caixa de escrever — trocaria um defeito por outro.
+
+**A régua da prova é a SOBREPOSIÇÃO**, e não "a faixa apareceu": ela aparecia
+antes e continua aparecendo; o que mudou é onde o painel começa. E há o
+contraste — **sem faixa nenhuma, o painel começa no pixel zero** —, senão um
+conserto que deixasse um recuo permanente no topo passaria igual, comendo tela
+em todo dia sem problema nenhum.
+
+Prova: `o-painel-avisa-quando-algo-para`, 28 conferências; a sabotagem que
+devolve o `position: fixed` reprova duas delas.
 
 ### O tempo real que cai
 
