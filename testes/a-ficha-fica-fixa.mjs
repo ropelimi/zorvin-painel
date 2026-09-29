@@ -234,6 +234,11 @@ console.log("\n6. A conversa ganhou espaço, e o cabeçalho não invade a ficha"
         fimDoTopo: Math.round(ultimo.right),
         fichaComecaEm: ficha ? Math.round(ficha.getBoundingClientRect().left) : null,
         larguraDoMarcar: marcar ? Math.round(marcar.getBoundingClientRect().width) : null,
+        // O BLOCO DO NOME — é ELE que denuncia a falta de espaço.
+        larguraDoNome: (() => {
+          const bloco = [...topo.children].find((e) => getComputedStyle(e).flexGrow !== "0");
+          return bloco ? Math.round(bloco.getBoundingClientRect().width) : null;
+        })(),
       };
     });
 
@@ -242,6 +247,17 @@ console.log("\n6. A conversa ganhou espaço, e o cabeçalho não invade a ficha"
     ok(`a ${L}px o cabeçalho não entra na ficha`,
        m.fichaComecaEm !== null && m.fimDoTopo <= m.fichaComecaEm,
        `topo termina em ${m.fimDoTopo}, ficha começa em ${m.fichaComecaEm}`);
+    // E ESTA É A QUE PEGA DE VERDADE, aprendida numa sabotagem que VAZOU.
+    //
+    // A de cima é barata e quase não tem como reprovar: a fila é flex, então
+    // faltando espaço ela ESPREME o bloco do nome em vez de empurrar alguém
+    // para fora — e o `overflow: hidden` ainda corta o que sobrar. Medido a
+    // 1280 com os rótulos escritos à força, o último botão ainda terminava
+    // 16px ANTES da ficha, e o nome tinha ficado com 39px. Era exatamente a
+    // foto do Rodrigo: o avatar e nenhum nome.
+    ok(`a ${L}px o bloco do nome não foi espremido a nada`,
+       m.larguraDoNome !== null && m.larguraDoNome >= 100,
+       `o nome ficou com ${m.larguraDoNome}px`);
     // E A LISTA ENCOLHEU. 360 — eram 380, e 320 foi tentado e REPROVADO por
     // `o-topo-mais-baixo`: lá a marca ficava com 96px para um nome que pede
     // 134 e a tela dizia "Ropelimi Zo". O piso da coluna é a linha da marca,

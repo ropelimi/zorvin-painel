@@ -363,6 +363,34 @@ ninguém refez essa conta, seja **cortado na borda** em vez de ir pintar por
 cima da ficha — que é o defeito relatado, e que ninguém lê como "falta espaço
 aqui".
 
+**E foi ele que fez uma sabotagem VAZAR.** Eu tinha escrito a conferência como
+*"o cabeçalho termina antes de a ficha começar"* — e a sabotagem que nunca
+aperta **passou**. Duas razões, e as duas dizem a mesma coisa: a fila é
+`flex`, então faltando espaço ela **espreme o bloco do nome** em vez de
+empurrar alguém para fora; e o que ainda sobrasse o `overflow` cortaria ali
+dentro. A borda nunca tem como estourar.
+
+**O que se mede é o NOME**, que é o que a foto mostrava: o avatar e nada ao
+lado. Medido a 1280, com os rótulos escritos à força, o último botão terminava
+**16px antes** da ficha e o nome tinha ficado com **39px** (apertado ele fica
+com 166). É a régua de sempre desta casa — *medir a coisa certa, e não a coisa
+próxima* —, e valeu para as duas provas que mediam a borda.
+
+**E a 1360 com a ficha aberta o cabeçalho passou a ser o apertado** — a
+conversa fica com 610px, abaixo dos 620. Os dois botões viram ícone, e o
+bloco do nome ganha 246px em vez de 119. É a troca certa: o que está nesse
+bloco é o número que o cliente vê chegar, e **responder pelo número errado
+não tem desfazer**; o que os botões perdem é o rótulo à vista, que continua
+no `title`, no `aria-label` e escrito por extenso no menu ⋮ do celular.
+
+**A prova `lida` pegou isso, e ela estava certa.** Ela nasceu antes de existir
+a terceira coluna e exige *"a palavra escrita, não só um tique"* a 1360. Hoje
+ela roda as cenas de sempre com a ficha **recolhida** — onde a palavra cabe —
+e ganhou uma cena com a ficha **aberta**, que confere o outro mundo: o botão
+continua lá, continua clicável e continua DIZENDO a palavra. Sem essa cena,
+apertar o cabeçalho poderia um dia virar "some o botão" sem nenhuma prova ver
+diferença.
+
 **Ainda em aberto, e é decisão:** o visual POR DENTRO da ficha não mudou. Ela
 já é sanfonada como a do DataCrazy (Identificação, Endereço, Acessos, Origem);
 apertar as linhas em rótulo-e-valor na mesma linha foi deixado para depois de
