@@ -1693,9 +1693,74 @@ Prova: `o-outros-do-ja-tratei`, 40 conferências, **8 sabotagens e 8 pegas**.
 Os cliques e `fill` dela são guardados — a primeira sabotagem "pegou"
 estourando, e prova que estoura não diz QUAL conferência viu o defeito.
 
-**Ainda em aberto, e é o próximo pedido:** onde LER isso — o relatório do
-que foi tratado (por quem, quando, quanto) e o histórico de cada contato. O
-texto está sendo guardado desde já, para o relatório nascer com passado.
+~~**Ainda em aberto:** onde LER isso.~~ **O relatório foi feito** — ver logo
+abaixo. **Continua em aberto:** o histórico de cada contato (o "Já tratei" da
+conversa, dentro dela).
+
+### O relatório do "Já tratei" (30/09)
+
+Pedido do Rodrigo: *"preciso de algum lugar para metrificar essas
+informações, do que foi tratado, por quem"*. O "Já tratei" gravava desde 25/09
+e não havia onde ler.
+
+**Não é uma tela nova: é uma seção do Painel de números**, embaixo da MESMA
+barra de filtros (período, atendente, telefone, departamento) — a régua
+daquela tela é *"uma barra só, acima de tudo o que ela recorta"*, e um
+segundo painel com filtros próprios faria dois números vizinhos falarem de
+períodos diferentes sem avisar. Fica **fora** do bloco do Painel de sempre:
+cada um tem a sua função no banco, e a falta de uma não esconde a outra.
+
+**A conta é do banco** (`zorvin_relatorio_tratados`, script 010 da ponte),
+pela régua da tela inteira: a API corta em 1000 linhas sem avisar, e um mês de
+"Já tratei" passa disso.
+
+**Um "Já tratei" é um CLIQUE, e não uma linha.** Marcar ACORDOS e OUTROS grava
+duas linhas com a mesma conversa, a mesma pessoa e o mesmo instante; contar
+linhas diria que a equipe tratou o dobro. O banco agrupa, e são três números
+diferentes: *conversas tratadas* (clientes únicos), *vezes "Já tratei"*
+(cliques) e o *por assunto* (linhas) — e a tela explica quando o último soma
+mais que o do meio. **O desfeito não soma**, e aparece à parte e marcado na
+lista: muitos desfeitos são, eles mesmos, a notícia.
+
+**Quem não administra vê o próprio**, com o recorte feito NO BANCO
+(`auth.uid()`); o "por pessoa" mostra todo mundo, como o "por atendente" do
+Painel. E a função é `security invoker`: só enxerga as conversas que quem
+chama já enxerga — um relatório não pode ser a porta dos fundos para os
+clientes de um telefone que a pessoa não atende.
+
+**Sem a função:** quem administra lê qual script falta; quem atende não vê
+nada (um aviso sobre SQL não pede nada de quem atende). **Com a função
+falhando**, a frase aparece com o código — falha não é ausência.
+
+**Os dias sem nada entram como zero no gráfico**, completados na tela: o banco
+devolve só os dias com "Já tratei", e sem completar um mês com um dia só vira
+uma barra solta. Completar não é contar — o número de cada dia vem do banco.
+
+**A planilha** leva os registros que vieram (até 1000, os mais recentes), com
+`;` e BOM, que é o que o Excel em português abre direto e com acento.
+
+**`nomeDoContato` foi para `contato.js`.** O relatório escreve nome de cliente,
+e uma segunda regra de nome divergiria da primeira no primeiro conserto.
+
+**E a bancada ganhou o `default now()` de `zorvin_tratamentos.quando`**, com o
+MESMO instante para as linhas de um `insert` — que é o que o Postgres faz, e é
+por esse instante que o relatório junta um clique. Sem isso a cena do caminho
+inteiro (marcar na conversa e ver no relatório) não tinha o que medir.
+
+**A prova `painel` reprovou, e ela estava meio certa.** A cena "banco sem a
+função" exige *nenhum cartão de número* — e o relatório, que mora na mesma
+tela, mostrava os dele. Esconder o relatório por causa de uma função que não é
+a dele seria ausência no lugar de dado: os números vêm do script 010 e
+continuam certos. A conferência passou a contar só os cartões **fora** do
+relatório; a régua dela — *errado com cara de certo é pior do que vazio* —
+continua valendo para os números que dependem daquela função.
+
+Prova: `o-relatorio-do-ja-tratei`, 39 conferências, **8 sabotagens e 8 pegas**
+(linhas contadas no lugar de cliques; os dias sem nada sumindo; a falha virando
+ausência; o administrador sem o aviso do script; o filtro de telefone que não
+recorta; o texto do OUTROS escondido; a planilha sem BOM; o desfeito sem
+marca). A do caminho inteiro é a que importa: sem ela, a prova passaria com a
+bancada inventando números que a tela nunca gravou.
 
 ## O aviso do nono dígito não previa nada — e mandou mexer na ficha de um cliente
 

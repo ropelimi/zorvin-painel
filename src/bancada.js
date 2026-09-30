@@ -1739,8 +1739,16 @@ function consulta(tabela) {
     insert(reg) { gravacao = { reg, porOnde: null }; return eu; },
     upsert(reg, opc) { gravacao = { reg, porOnde: (opc && opc.onConflict) || null }; return eu; },
     gravar(reg, porOnde = null) {
+      // O `default now()` DAS COLUNAS DE DATA, como no banco. Um `insert` só
+      // de linhas: todas com o MESMO instante, porque no Postgres `now()` é o
+      // da transação — e é por esse instante que o relatório do "Já tratei"
+      // junta as linhas de um mesmo clique.
+      const agoraDaGravacao = new Date().toISOString();
+      const PADRAO_DE_DATA = { zorvin_tratamentos: "quando" };
       const novos = (Array.isArray(reg) ? reg : [reg]).map((r, i) => ({
-        id: r.id || `${tabela}-${(TABELAS[tabela] || []).length + i + 1}`, ...r,
+        id: r.id || `${tabela}-${(TABELAS[tabela] || []).length + i + 1}`,
+        ...(PADRAO_DE_DATA[tabela] ? { [PADRAO_DE_DATA[tabela]]: agoraDaGravacao } : {}),
+        ...r,
       }));
       const tab = TABELAS[tabela] || (TABELAS[tabela] = []);
       // AS COLUNAS DO `onConflict`, quando o painel as declara.
@@ -2613,6 +2621,93 @@ export const supabase = {
         .slice(0, (args && args.p_limite) || 80);
       if (await esperaOuAborto(120, sinal)) return respostaAbortada();
       return { data: lista, error: null };
+    }
+
+    // O RELATÓRIO DO "JÁ TRATEI" (script 010). A conta de verdade — agrupar um
+    // clique, tirar o desfeito, recortar por quem e por lugar — foi provada
+    // num Postgres de verdade, no repo da ponte. Aqui ela é refeita sobre as
+    // linhas que a TELA gravou, para a prova poder cobrar da tela o que ela
+    // mostra depois de marcar um "Já tratei" de verdade, e não um número que
+    // a bancada inventou.
+    if (nome === "zorvin_relatorio_tratados") {
+      if (globalThis.__SEM_RELATORIO) {
+        return { data: null, error: { code: "PGRST202", message: "Could not find the function public.zorvin_relatorio_tratados" } };
+      }
+      if (globalThis.__RELATORIO_FALHA) {
+        return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } };
+      }
+      await espera(40);
+      const eu = TABELAS.usuarios[0] || {};
+      const quem = eu.admin ? (args && args.p_quem) || null : eu.id || null;
+      const t0 = args && args.p_desde ? new Date(args.p_desde).getTime() : -Infinity;
+      const t1 = args && args.p_ate ? new Date(args.p_ate).getTime() : Date.now();
+      const tel = (args && args.p_telefone) || null, dep = (args && args.p_departamento) || null;
+      const conv = new Map((TABELAS.conversas || []).map((c) => [String(c.id), c]));
+      const adv = new Map(ADVOGADOS.map((a) => [String(a.id), a]));
+      const assunto = new Map((TABELAS.zorvin_assuntos || []).map((a) => [String(a.id), a]));
+      const nomeDe = new Map((TABELAS.equipe || []).map((u) => [String(u.id), u.nome]));
+      const base = (TABELAS.zorvin_tratamentos || []).filter((x) => {
+        const q = new Date(x.quando || 0).getTime();
+        const c = conv.get(String(x.conversa_id));
+        if (!c || q < t0 || q > t1) return false;
+        if (tel && String(c.advogado_id) !== String(tel)) return false;
+        if (dep && String((adv.get(String(c.advogado_id)) || {}).departamento_id) !== String(dep)) return false;
+        return true;
+      });
+      const grupos = new Map();
+      for (const x of base) {
+        const k = `${x.conversa_id}|${x.quem}|${x.quando}`;
+        const g = grupos.get(k) || { conversa_id: x.conversa_id, quem: x.quem, quando: x.quando,
+                                     assuntos: [], observacoes: [], desfeito: false, esperava_desde: null };
+        g.assuntos.push(String(x.assunto_id));
+        if (x.observacao) g.observacoes.push(x.observacao);
+        if (x.desfeito_em) g.desfeito = true;
+        if (x.esperava_desde && (!g.esperava_desde || x.esperava_desde < g.esperava_desde)) g.esperava_desde = x.esperava_desde;
+        grupos.set(k, g);
+      }
+      const eventos = [...grupos.values()];
+      const meus = eventos.filter((e) => !quem || String(e.quem) === String(quem));
+      const valendo = meus.filter((e) => !e.desfeito);
+      const esperas = valendo.filter((e) => e.esperava_desde)
+        .map((e) => (new Date(e.quando) - new Date(e.esperava_desde)) / 86400e3);
+      const conta = (lista, chave) => { const m = new Map(); for (const x of lista) { const k = chave(x); m.set(k, (m.get(k) || 0) + 1); } return m; };
+      const linhasValendo = base.filter((x) => !x.desfeito_em && (!quem || String(x.quem) === String(quem)));
+      const porAssunto = [...conta(linhasValendo, (x) => String(x.assunto_id)).entries()]
+        .map(([id, vezes]) => ({ id, nome: (assunto.get(id) || {}).nome, ativo: (assunto.get(id) || {}).ativo !== false, vezes }))
+        .sort((a, b) => b.vezes - a.vezes || String(a.nome).localeCompare(String(b.nome)));
+      const porPessoa = [...conta(eventos.filter((e) => !e.desfeito), (e) => String(e.quem)).entries()]
+        .map(([id, n]) => ({ id, nome: nomeDe.get(id) || "(sem nome)", tratamentos: n }))
+        .sort((a, b) => b.tratamentos - a.tratamentos || a.nome.localeCompare(b.nome));
+      const porDia = [...conta(valendo, (e) => iso(soDia(e.quando))).entries()]
+        .map(([quando, n]) => ({ quando, tratamentos: n })).sort((a, b) => a.quando.localeCompare(b.quando));
+      const ordemDo = (id) => (assunto.get(id) || {}).ordem || 0;
+      const registros = meus.slice().sort((a, b) => String(b.quando).localeCompare(String(a.quando)))
+        .slice(0, (args && args.p_limite) || 500)
+        .map((e) => {
+          const c = conv.get(String(e.conversa_id)) || {};
+          const ct = (TABELAS.contatos || []).find((x) => String(x.id) === String(c.contato_id)) || c.contato || {};
+          return {
+            quando: e.quando, quem: e.quem, quem_nome: nomeDe.get(String(e.quem)) || null,
+            conversa_id: e.conversa_id, advogado_id: c.advogado_id,
+            contato: { nome: ct.nome, numero: ct.numero, nome_zorvin: ct.nome_zorvin || null, vantoro_nome: ct.vantoro_nome || null },
+            assuntos: [...new Set(e.assuntos)].sort((a, b) => ordemDo(a) - ordemDo(b)).map((id) => (assunto.get(id) || {}).nome),
+            observacao: e.observacoes.length ? e.observacoes.join(" · ") : null,
+            esperava_desde: e.esperava_desde, desfeito: e.desfeito,
+          };
+        });
+      return { data: {
+        so_meu: !!quem,
+        total: {
+          tratamentos: valendo.length,
+          conversas: new Set(valendo.map((e) => String(e.conversa_id))).size,
+          marcacoes: linhasValendo.length,
+          desfeitos: meus.filter((e) => e.desfeito).length,
+          espera_mediana_dias: mediana(esperas),
+          com_espera: esperas.length,
+        },
+        por_assunto: porAssunto, por_pessoa: porPessoa, por_dia: porDia,
+        total_registros: meus.length, registros,
+      }, error: null };
     }
 
     if (nome !== "painel_dashboard" || !globalThis.__TEM_FUNCAO_PAINEL) {
