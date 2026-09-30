@@ -62,9 +62,12 @@
 // Todo gráfico tem um botão "Tabela" que troca o desenho pelos números.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabase";
+import { nomeDoContato } from "./contato.js";
+import { telefoneLegivel } from "./numeros.js";
 import {
   ArrowLeft, RefreshCw, AlertCircle, Table2, BarChart3, Info, Calendar,
   ChevronLeft, ChevronRight, ChevronDown, Check, X, Users, Phone, Building2,
+  ListChecks, Download,
 } from "lucide-react";
 
 const DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -501,6 +504,16 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
             <Ressalvas d={d} t={t} C={C} estilos={estilos} />
           </>
         )}
+
+        {/* O "JÁ TRATEI" FICA FORA do bloco de cima, de propósito: ele tem a
+            própria função no banco (script 010), e um banco sem a do Painel
+            não pode esconder o relatório — nem o contrário. Os FILTROS são os
+            mesmos: uma barra só, acima de tudo o que ela recorta. */}
+        <RelatorioJaTratei C={C} estilos={estilos} cores={cores}
+                           deIso={deIso} ateIso={ateIso} fuso={fuso} passo="day"
+                           quem={quem} telefone={telefone} departamento={departamento}
+                           souAdmin={souAdmin} meuId={meuId} advogados={advogados}
+                           aoEscolherPessoa={(id) => souAdmin && setQuem((v) => (String(v) === String(id) ? null : id))} />
       </div>
     </div>
   );
@@ -1281,5 +1294,302 @@ function Ressalvas({ d, t, C, estilos }) {
         )}
       </div>
     </>
+  );
+}
+
+/* ================================================================
+   O RELATÓRIO DO "JÁ TRATEI"
+   ================================================================
+   Pedido do Rodrigo em 30/09: *"um lugar para metrificar o que foi tratado,
+   por quem"*. O "Já tratei" gravava desde 25/09 e não havia onde ler.
+
+   A CONTA É DO BANCO (`zorvin_relatorio_tratados`, script 010 da ponte), pela
+   régua desta tela inteira: a API corta em 1000 linhas sem avisar, e um mês
+   de "Já tratei" passa disso.
+
+   UM "JÁ TRATEI" É UM CLIQUE. Marcar ACORDOS e VENDA LN grava duas linhas, e
+   contar linhas diria que a equipe tratou duas conversas quando tratou uma.
+   O banco agrupa; a tela só mostra. E o DESFEITO não entra na soma — aparece
+   ao lado, porque muitos desfeitos são, eles mesmos, a notícia.
+
+   SEM A FUNÇÃO: quem administra lê qual script falta; quem atende não vê
+   nada — um aviso sobre SQL não pede nada de quem atende. E FALHA NÃO É
+   AUSÊNCIA: qualquer outro erro vira frase, com o código (armadilha nº 2).
+   ================================================================ */
+const POR_PAGINA = 50;
+
+function RelatorioJaTratei({ C, estilos, cores, deIso, ateIso, fuso, passo, quem, telefone, departamento,
+                             souAdmin, meuId, advogados, aoEscolherPessoa }) {
+  const [r, setR] = useState(null);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState("");
+  const [falta, setFalta] = useState(false);
+  const [quantos, setQuantos] = useState(POR_PAGINA);
+
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      setCarregando(true); setErro(""); setFalta(false); setQuantos(POR_PAGINA);
+      const { data, error } = await supabase.rpc("zorvin_relatorio_tratados", {
+        p_desde: deIso, p_ate: ateIso, p_quem: quem, p_fuso: fuso,
+        p_telefone: telefone, p_departamento: departamento, p_limite: 1000,
+      });
+      if (!vivo) return;
+      setCarregando(false);
+      if (error) {
+        const m = (error.message || "") + (error.code || "");
+        if (/zorvin_relatorio_tratados|PGRST202|Could not find/i.test(m)) { setFalta(true); return; }
+        setErro(`${error.message || "erro desconhecido"}${error.code ? ` (código ${error.code})` : ""}`);
+        return;
+      }
+      setR(data || null);
+    })();
+    return () => { vivo = false; };
+  }, [deIso, ateIso, quem, telefone, departamento, fuso]);
+
+  const nomeDoTelefone = (id) => {
+    const a = advogados.find((x) => String(x.id) === String(id));
+    return a ? (a.nome || a.numero) : "";
+  };
+
+  // A PLANILHA, com o que veio. `;` e BOM, porque é o que o Excel em português
+  // abre direto, com acento e sem juntar as colunas numa só.
+  function baixarPlanilha() {
+    const regs = (r && r.registros) || [];
+    const campo = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const linhas = [
+      ["Quando", "Quem", "Cliente", "Número", "Telefone do escritório", "Assuntos", "O que foi tratado", "Esperava desde", "Desfeito"],
+      ...regs.map((x) => [
+        new Date(x.quando).toLocaleString("pt-BR"),
+        x.quem_nome || "",
+        nomeDoContato(x.contato),
+        telefoneLegivel(x.contato && x.contato.numero),
+        nomeDoTelefone(x.advogado_id),
+        (x.assuntos || []).join(", "),
+        x.observacao || "",
+        x.esperava_desde ? new Date(x.esperava_desde).toLocaleString("pt-BR") : "",
+        x.desfeito ? "sim" : "",
+      ]),
+    ];
+    const texto = "\ufeff" + linhas.map((l) => l.map(campo).join(";")).join("\r\n");
+    const url = URL.createObjectURL(new Blob([texto], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = `ja-tratei-${deIso.slice(0, 10)}-a-${ateIso.slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  if (falta && !souAdmin) return null;
+
+  return (
+    <div data-relatorio-ja-tratei>
+      <Titulo C={C}><span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+        <ListChecks size={16} /> Já tratei</span></Titulo>
+
+      {carregando && <div style={{ ...estilos.nota, padding: "8px 0" }}>Somando o que foi tratado…</div>}
+
+      {falta && (
+        <div style={{ ...estilos.cartao, display: "flex", gap: 12, alignItems: "flex-start" }} data-relatorio-falta>
+          <AlertCircle size={20} color={cores.aviso} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ ...estilos.nota, fontSize: 13.5 }}>
+            <b style={{ color: C.textPrimary }}>Falta um passo no banco.</b> O relatório é somado lá dentro, e
+            a função ainda não foi criada: rode o script{" "}
+            <code style={{ background: C.headerBar, padding: "1px 5px", borderRadius: 4 }}>
+              sql/automaticos/010-o-relatorio-do-ja-tratei.sql
+            </code>{" "}(repositório da ponte) no SQL Editor do Supabase.
+          </div>
+        </div>
+      )}
+
+      {!!erro && (
+        <div style={{ ...estilos.cartao, borderColor: "#e5573f", color: "#e5573f" }} data-relatorio-erro>
+          Não consegui somar o que foi tratado: {erro}
+        </div>
+      )}
+
+      {!carregando && !falta && !erro && r && (() => {
+        const t = r.total || {};
+        const dias = t.espera_mediana_dias == null ? null : Number(t.espera_mediana_dias);
+        const regs = r.registros || [];
+        const assuntos = r.por_assunto || [];
+        const pessoas = r.por_pessoa || [];
+        // OS DIAS SEM NADA ENTRAM COMO ZERO. O banco só devolve os dias que
+        // tiveram "Já tratei"; sem completar, um mês com um dia só vira uma
+        // barra solta no meio do gráfico, sem dizer que os outros 29 foram zero.
+        // Completar não é contar: o número de cada dia continua vindo do banco.
+        const serie = (() => {
+          const tem = new Map((r.por_dia || []).map((x) => [String(x.quando).slice(0, 10), Number(x.tratamentos || 0)]));
+          const dias = [];
+          const d0 = new Date(deIso), d1 = new Date(ateIso);
+          d0.setHours(0, 0, 0, 0);
+          for (let d = d0; d <= d1 && dias.length < 400; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+            const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+            dias.push({ quando: k, tratamentos: tem.get(k) || 0 });
+          }
+          return dias;
+        })();
+        const maiorAssunto = Math.max(1, ...assuntos.map((a) => Number(a.vezes || 0)));
+        const maiorPessoa = Math.max(1, ...pessoas.map((p) => Number(p.tratamentos || 0)));
+        return (
+          <>
+            <div style={{ ...estilos.nota, marginBottom: 12 }} data-relatorio-escopo>
+              {r.so_meu
+                ? <>O que <b style={{ color: C.textPrimary }}>você</b> tirou da fila sem mandar mensagem. A comparação por pessoa, mais abaixo, mostra todo mundo.</>
+                : <>O que <b style={{ color: C.textPrimary }}>a equipe</b> tirou da fila sem mandar mensagem, nos telefones que você alcança.</>}
+            </div>
+
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))" }}>
+              <Numero destaque C={C} estilos={estilos} antes={{}} etiqueta="Conversas tratadas" v={t.conversas}
+                      ajuda="Clientes diferentes que saíram da fila por um “Já tratei”. Tratar a mesma conversa duas vezes conta uma." />
+              <Numero C={C} estilos={estilos} antes={{}} etiqueta="Vezes “Já tratei”" v={t.tratamentos}
+                      ajuda="Cada confirmação conta uma vez, mesmo marcando vários assuntos juntos." />
+              <div style={estilos.cartao} data-cartao="Esperavam">
+                <div style={{ ...estilos.rotulo, display: "flex", alignItems: "center", gap: 5 }}>
+                  Esperavam
+                  <span title="Há quanto tempo o cliente esperava quando alguém disse “já tratei” — a mediana: metade esperava menos que isso."
+                        style={{ display: "flex", cursor: "help" }}><Info size={12} /></span>
+                </div>
+                <div style={estilos.valor} data-valor={dias == null ? "" : String(dias)}>
+                  {dias == null ? "—" : dias < 1 ? "menos de 1 dia" : `${Math.round(dias)} ${Math.round(dias) === 1 ? "dia" : "dias"}`}
+                </div>
+                <div style={{ ...estilos.nota, marginTop: 4 }}>
+                  mediana · {numero(t.com_espera)} {Number(t.com_espera) === 1 ? "caso" : "casos"}
+                </div>
+              </div>
+              <Numero C={C} estilos={estilos} antes={{}} etiqueta="Desfeitos" v={t.desfeitos}
+                      ajuda="Marcados e depois desfeitos. Não entram nas outras contas: marcar por engano não é trabalho feito." />
+            </div>
+
+            <Titulo C={C}>Já tratei por dia</Titulo>
+            <Grafico C={C} estilos={estilos} legenda={null}
+              colunas={["Quando", "Já tratei"]}
+              linhas={serie.map((x) => [rotuloData(x.quando, passo), numero(x.tratamentos)])}
+              vazio={serie.every((x) => !x.tratamentos)}
+              desenho={() => (
+                <Colunas C={C} dados={serie} passo={passo} formatar={numero}
+                         series={[{ campo: "tratamentos", cor: cores.saiu, nome: "Já tratei" }]} />
+              )} />
+
+            <div style={{ display: "grid", gap: 12, marginTop: 12, gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
+              <div style={estilos.cartao} data-relatorio-por-assunto>
+                <div style={{ ...estilos.rotulo, marginBottom: 8 }}>Por assunto</div>
+                {!assuntos.length && <div style={estilos.nota}>Nada neste período.</div>}
+                <table style={{ width: "100%", borderCollapse: "collapse" }}><tbody>
+                  {assuntos.map((a) => (
+                    <tr key={a.id} data-assunto-no-relatorio={a.nome}>
+                      <td style={{ ...estilos.td, width: "70%" }}>
+                        <div style={{ fontWeight: 600 }}>
+                          {a.nome}
+                          {!a.ativo && <span style={{ marginLeft: 7, fontSize: 11, color: C.textSecondary }}>fora de uso</span>}
+                        </div>
+                        <div style={{ height: 6, background: C.divider, borderRadius: 3, overflow: "hidden", marginTop: 6 }}>
+                          <div style={{ width: `${Math.round((Number(a.vezes) / maiorAssunto) * 100)}%`, height: "100%", background: cores.saiu }} />
+                        </div>
+                      </td>
+                      <td style={{ ...estilos.num, fontWeight: 700 }} data-vezes={a.vezes}>{numero(a.vezes)}</td>
+                    </tr>
+                  ))}
+                </tbody></table>
+                {Number(t.marcacoes) > Number(t.tratamentos) && (
+                  <div style={{ ...estilos.nota, marginTop: 10 }}>
+                    Somam {numero(t.marcacoes)}, mais que os {numero(t.tratamentos)} “Já tratei”: um mesmo
+                    atendimento pode marcar mais de um assunto.
+                  </div>
+                )}
+              </div>
+
+              <div style={estilos.cartao} data-relatorio-por-pessoa>
+                <div style={{ ...estilos.rotulo, marginBottom: 8 }}>Por pessoa</div>
+                {!pessoas.length && <div style={estilos.nota}>Ninguém usou o “Já tratei” neste período.</div>}
+                <table style={{ width: "100%", borderCollapse: "collapse" }}><tbody>
+                  {pessoas.map((p) => {
+                    const sou = meuId && String(p.id) === String(meuId);
+                    return (
+                      <tr key={p.id || p.nome} data-pessoa-no-relatorio={p.nome}
+                          onClick={() => souAdmin && p.id && aoEscolherPessoa(p.id)}
+                          style={{ cursor: souAdmin && p.id ? "pointer" : "default",
+                                   background: String(quem) === String(p.id) ? C.listActive : "transparent" }}>
+                        <td style={{ ...estilos.td, width: "70%" }}>
+                          <div style={{ fontWeight: sou ? 800 : 600 }}>
+                            {p.nome}
+                            {sou && <span style={{ marginLeft: 7, fontSize: 11, fontWeight: 700, color: "#fff",
+                                                   background: cores.saiu, borderRadius: 10, padding: "1px 7px" }}>você</span>}
+                          </div>
+                          <div style={{ height: 6, background: C.divider, borderRadius: 3, overflow: "hidden", marginTop: 6 }}>
+                            <div style={{ width: `${Math.round((Number(p.tratamentos) / maiorPessoa) * 100)}%`, height: "100%",
+                                          background: sou ? cores.saiu : cores.apagado }} />
+                          </div>
+                        </td>
+                        <td style={{ ...estilos.num, fontWeight: 700 }} data-tratamentos={p.tratamentos}>{numero(p.tratamentos)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody></table>
+              </div>
+            </div>
+
+            <Titulo C={C}>Os registros</Titulo>
+            <div style={estilos.cartao} data-relatorio-registros>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
+                <div style={{ ...estilos.nota, flex: "1 1 auto" }} data-relatorio-contagem>
+                  {Number(r.total_registros) > regs.length
+                    ? <>Os <b style={{ color: C.textPrimary }}>{numero(regs.length)}</b> mais recentes, de {numero(r.total_registros)} no período. Para ver o resto, encurte o período.</>
+                    : <>{numero(regs.length)} {regs.length === 1 ? "registro" : "registros"} no período, do mais recente para o mais antigo.</>}
+                </div>
+                {regs.length > 0 && (
+                  <button onClick={baixarPlanilha} data-relatorio-baixar
+                    style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 32, padding: "5px 12px",
+                             border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary,
+                             borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
+                    <Download size={14} /> Baixar planilha
+                  </button>
+                )}
+              </div>
+              {!regs.length && <div style={estilos.nota}>Nada neste período.</div>}
+              {regs.slice(0, quantos).map((x, i) => (
+                <div key={`${x.conversa_id}-${x.quando}-${i}`} data-registro-ja-tratei
+                     style={{ padding: "10px 0", borderTop: i ? `1px solid ${C.divider}` : "none",
+                              opacity: x.desfeito ? 0.55 : 1 }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline", fontSize: 13.5 }}>
+                    <b>{nomeDoContato(x.contato)}</b>
+                    <span style={{ color: C.textSecondary, fontSize: 12.5 }}>
+                      {telefoneLegivel(x.contato && x.contato.numero)}
+                      {nomeDoTelefone(x.advogado_id) && ` · ${nomeDoTelefone(x.advogado_id)}`}
+                    </span>
+                    <span style={{ flex: 1 }} />
+                    <span style={{ color: C.textSecondary, fontSize: 12.5 }}>
+                      {x.quem_nome || "alguém da equipe"} · {new Date(x.quando).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 5 }}>
+                    {(x.assuntos || []).map((a) => (
+                      <span key={a} style={{ fontSize: 11.5, fontWeight: 600, padding: "2px 8px", borderRadius: 10,
+                                             border: `1px solid ${C.divider}`, color: C.textPrimary }}>{a}</span>
+                    ))}
+                    {x.desfeito && (
+                      <span data-registro-desfeito style={{ fontSize: 11.5, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
+                                     color: C.textSecondary, border: `1px dashed ${C.divider}` }}>desfeito</span>
+                    )}
+                  </div>
+                  {x.observacao && (
+                    <div data-registro-observacao style={{ fontSize: 13, marginTop: 6, lineHeight: 1.45,
+                                     borderLeft: `3px solid ${cores.saiu}`, paddingLeft: 8 }}>
+                      {x.observacao}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {regs.length > quantos && (
+                <button onClick={() => setQuantos((n) => n + POR_PAGINA)} data-relatorio-mais
+                  style={{ marginTop: 8, border: "none", background: "transparent", cursor: "pointer",
+                           color: C.verdeTexto, fontSize: 13, fontWeight: 700, padding: "6px 0" }}>
+                  Mostrar mais {Math.min(POR_PAGINA, regs.length - quantos)}
+                </button>
+              )}
+            </div>
+          </>
+        );
+      })()}
+    </div>
   );
 }
