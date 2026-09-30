@@ -4481,8 +4481,11 @@ export default function Painel({ sessao }) {
   // rede no meio de um gesto que precisa parecer instantâneo.
   const carregarAssuntos = useCallback(async () => {
     try {
+      // `*`, e não a lista de colunas: `pede_descricao` só existe depois do
+      // script 009, e pedi-la por nome num banco sem ela derrubaria a leitura
+      // inteira (42703) — e com ela o botão "Já tratei".
       const { data, error } = await supabase.from("zorvin_assuntos")
-        .select("id, nome, ordem, ativo").order("ordem");
+        .select("*").order("ordem");
       if (error) {
         // 42P01 = a tabela não existe: o script 005 ainda não rodou, e aí o
         // botão não deve mesmo aparecer. Qualquer OUTRO erro mantém o botão e
@@ -7872,11 +7875,17 @@ export default function Painel({ sessao }) {
   //  transação com desfazer-na-mão daria um terceiro caminho de falha para
   //  cuidar. A ordem acima é o que torna a falha parcial suportável.
   // ============================================================
-  async function confirmarJaTratei(ids) {
+  async function confirmarJaTratei(ids, descricao) {
     const conv = jaTratei;
     if (!conv || !ids.length) return;
     setTrateiOcupado(true); setTrateiErro("");
 
+    // O TEXTO VAI SÓ NA LINHA DO ASSUNTO QUE O PEDE (o OUTROS, script 009).
+    // Repeti-lo em ACORDOS e VENDA LN faria o relatório dizer três vezes a
+    // mesma coisa sobre três assuntos diferentes. E a chave só entra quando há
+    // texto: num banco sem a coluna, mandá-la derrubaria o registro inteiro.
+    const pedeTexto = new Set(assuntos.filter((a) => a.pede_descricao).map((a) => a.id));
+    const texto = (descricao || "").trim();
     const linhas = ids.map((assunto_id) => ({
       conversa_id: conv.id,
       assunto_id,
@@ -7884,6 +7893,7 @@ export default function Painel({ sessao }) {
       // A DATA, e não o número de dias: o número é derivado dela e
       // envelheceria escrito, dizendo outra coisa a cada relatório.
       esperava_desde: conv.esperando_desde || null,
+      ...(texto && pedeTexto.has(assunto_id) ? { observacao: texto } : {}),
     }));
     const reg = await supabase.from("zorvin_tratamentos").insert(linhas).select("id");
     if (reg.error || naoGravouNada(reg)) {

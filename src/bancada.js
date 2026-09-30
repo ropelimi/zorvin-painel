@@ -1309,7 +1309,9 @@ const TABELAS = {
     { id: "as-7", nome: "VENDA CCS",           ordem: 7, ativo: true },
     { id: "as-8", nome: "VENDA LN",            ordem: 8, ativo: true },
     { id: "as-9", nome: "MUTIRÃO 2024",        ordem: 9, ativo: false },
-  ],
+    // O OUTROS, que o script 009 cria com a marca ligada.
+    { id: "as-outros", nome: "OUTROS",         ordem: 10, ativo: true, pede_descricao: true },
+  ].map((a) => ({ pede_descricao: false, ...a })),
   // COMEÇA VAZIA: as linhas nascem do que se faz na tela. Semear uma aqui
   // esconderia uma tela que não grava nada — a mesma razão de `alteracoes`.
   zorvin_tratamentos: [],
@@ -1428,6 +1430,24 @@ if (typeof globalThis !== "undefined" && globalThis.__SEM_TRATADA) {
   for (const c of TABELAS.conversas || []) delete c.tratada_em;
 }
 
+// O BANCO SEM O SCRIPT 009 — o "OUTROS" do "Já tratei". A coluna TIRADA dos
+// assuntos e dos registros, e o OUTROS junto: sem o script ele não existe.
+if (typeof globalThis !== "undefined" && globalThis.__SEM_DESCRICAO) {
+  TABELAS.zorvin_assuntos = (TABELAS.zorvin_assuntos || []).filter((a) => a.id !== "as-outros");
+  for (const a of TABELAS.zorvin_assuntos) delete a.pede_descricao;
+}
+
+// QUAIS ASSUNTOS PEDEM DESCRIÇÃO, por nome — é como a prova diz "a
+// administração ligou a marca em ACORDOS" sem depender de a bancada lembrar
+// de uma abertura para a outra (ela é refeita a cada carregamento).
+if (typeof globalThis !== "undefined" && Array.isArray(globalThis.__PEDEM_DESCRICAO)) {
+  for (const a of TABELAS.zorvin_assuntos || []) {
+    if (Object.prototype.hasOwnProperty.call(a, "pede_descricao")) {
+      a.pede_descricao = globalThis.__PEDEM_DESCRICAO.includes(a.nome);
+    }
+  }
+}
+
 // O BANCO SEM O SCRIPT 008. A coluna TIRADA, e não posta em nulo: nulo é "sem
 // responsável", ausente é "este banco não sabe o que é responsável" — e é a
 // segunda que tem de esconder o recurso inteiro.
@@ -1497,6 +1517,11 @@ function comparar(a, b) {
   const sa = String(a ?? ""), sb = String(b ?? "");
   return sa < sb ? -1 : sa > sb ? 1 : 0;
 }
+
+// AS TABELAS EM QUE A BANCADA RESPEITA A LISTA DE COLUNAS PEDIDA — ver onde
+// ela é usada, em `then`. Poucas de propósito: nas outras o painel pede `*` ou
+// junções, e projetar ali seria reescrever o PostgREST.
+const COM_PROJECAO = new Set(["zorvin_assuntos"]);
 
 // POR QUAL COLUNA CADA TABELA EMBUTIDA SE LIGA À DE FORA.
 //
@@ -1990,6 +2015,27 @@ function consulta(tabela) {
           if (teto != null) minhas = minhas.slice(0, teto);
           l[emb] = minhas;
         }
+      }
+      // AS COLUNAS PEDIDAS, e só elas — nas tabelas em que isso decide algo.
+      //
+      // Até aqui a bancada devolvia a linha INTEIRA, qualquer que fosse a
+      // lista pedida. Para os assuntos do "Já tratei" isso mentia a favor do
+      // defeito: o painel podia pedir `id, nome, ordem, ativo` e ainda assim
+      // receber `pede_descricao` — que o banco de verdade nunca mandaria. A
+      // prova do OUTROS passaria com uma tela que, em produção, jamais pede a
+      // descrição.
+      //
+      // E COLUNA QUE NÃO EXISTE É ERRO (42703), como no Postgres: é assim que
+      // um banco sem o script 009 responde a quem pede `pede_descricao`.
+      if (COM_PROJECAO.has(tabela) && colunas && colunas.trim() !== "*" && !colunas.includes("(")) {
+        const pedidas = colunas.split(",").map((c) => c.trim()).filter(Boolean);
+        const molde = (TABELAS[tabela] || [])[0];
+        const falta = molde && pedidas.find((c) => !Object.prototype.hasOwnProperty.call(molde, c));
+        if (falta) {
+          return resolver({ data: null, count: null, error: { code: "42703",
+            message: `column ${tabela}.${falta} does not exist` } });
+        }
+        linhas = linhas.map((l) => Object.fromEntries(pedidas.map((c) => [c, l[c] ?? null])));
       }
       // O "join" com contatos, refeito na hora. No Supabase a lista de
       // conversas traz o contato por junção, então uma gravação em `contatos`

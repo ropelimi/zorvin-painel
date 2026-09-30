@@ -26,13 +26,34 @@ import { ListChecks, Loader2, X } from "lucide-react";
 //  É a informação que muda a decisão: "já tratei" numa conversa de ontem é
 //  rotina; numa de 66 dias, quem está clicando precisa ver isso antes, porque
 //  provavelmente ela NÃO foi tratada — só ficou velha.
+//
+//  ------------------------------------------------------------
+//  O "OUTROS" PEDE O QUE FOI TRATADO (30/09)
+//
+//  "OUTROS" sozinho não diz nada: um relatório com "OUTROS: 40" é a mesma
+//  pergunta de antes com um número em cima. Então o assunto marcado com
+//  `pede_descricao` (script 009) abre um campo, e o botão só liga com ele
+//  preenchido. Quem decide qual assunto pede é a MARCA do banco, e não o nome
+//  "OUTROS" escrito aqui — quem compra o programa pode chamá-lo de outra
+//  coisa, ou querer descrição em mais de um.
 // ============================================================
+
+// O TETO DO TEXTO, o mesmo do banco (check de 500 no script 009). Aqui ele
+// vira contador e limite do campo; sem ele, quem cola um e-mail inteiro só
+// descobriria o teto no erro do banco, depois de apertar Confirmar.
+const TETO_DA_DESCRICAO = 500;
 
 export function JaTratei({ C, estreito, nome, dias, assuntos, ocupado, erro, aoConfirmar, aoFechar }) {
   const [escolhidos, setEscolhidos] = useState([]);
+  const [descricao, setDescricao] = useState("");
 
   const ativos = (assuntos || []).filter((a) => a.ativo);
   const nenhum = escolhidos.length === 0;
+  // OS ASSUNTOS MARCADOS QUE PEDEM TEXTO — pelos nomes, para a frase dizer
+  // qual deles está pedindo ("Descreva o que foi tratado em OUTROS").
+  const pedemTexto = ativos.filter((a) => a.pede_descricao && escolhidos.includes(a.id));
+  const faltaTexto = pedemTexto.length > 0 && !descricao.trim();
+  const bloqueado = nenhum || faltaTexto;
 
   function alternar(id) {
     setEscolhidos((v) => (v.includes(id) ? v.filter((x) => x !== id) : [...v, id]));
@@ -97,6 +118,30 @@ export function JaTratei({ C, estreito, nome, dias, assuntos, ocupado, erro, aoC
           })}
         </div>
 
+        {/* O CAMPO SÓ APARECE COM O ASSUNTO MARCADO, e não sempre: um campo
+            de texto em toda janela viraria "opcional" na cabeça de quem usa,
+            e o que era obrigatório no OUTROS passaria a ser ignorado nele
+            também. */}
+        {pedemTexto.length > 0 && (
+          <div style={{ padding: "4px 16px 10px" }}>
+            <label htmlFor="ja-tratei-descricao"
+                   style={{ display: "block", fontSize: 12.5, fontWeight: 600, marginBottom: 5 }}>
+              O que foi tratado em {pedemTexto.map((a) => a.nome).join(" e ")}?
+            </label>
+            <textarea id="ja-tratei-descricao" data-ja-tratei-descricao autoFocus
+                      value={descricao} maxLength={TETO_DA_DESCRICAO} rows={3}
+                      onChange={(e) => setDescricao(e.target.value)}
+                      placeholder="Ex.: cliente pediu a segunda via do boleto; enviado por e-mail."
+                      style={{ width: "100%", boxSizing: "border-box", resize: "vertical",
+                               border: `1px solid ${faltaTexto ? C.divider : C.green}`, borderRadius: 8,
+                               padding: "8px 10px", fontSize: 13.5, fontFamily: "inherit",
+                               background: C.panel, color: C.textPrimary, outline: "none" }} />
+            <div style={{ fontSize: 11.5, color: C.textSecondary, textAlign: "right", marginTop: 2 }}>
+              {descricao.length}/{TETO_DA_DESCRICAO}
+            </div>
+          </div>
+        )}
+
         {erro && (
           <div data-ja-tratei-erro
                style={{ margin: "0 16px 10px", padding: "9px 11px", borderRadius: 8, fontSize: 12.5,
@@ -117,13 +162,14 @@ export function JaTratei({ C, estreito, nome, dias, assuntos, ocupado, erro, aoC
           {/* O BOTÃO DIZ POR QUE ESTÁ DESLIGADO, no `title` e na frase abaixo.
               Um botão apagado sem explicação faz a pessoa clicar de novo e
               concluir que a tela travou. */}
-          <button onClick={() => aoConfirmar(escolhidos)} disabled={nenhum || ocupado}
+          <button onClick={() => aoConfirmar(escolhidos, descricao)} disabled={bloqueado || ocupado}
                   data-ja-tratei-confirmar
-                  title={nenhum ? "Marque pelo menos um assunto" : "Tirar da fila de espera"}
-                  style={{ border: "none", background: nenhum || ocupado ? C.divider : C.green,
-                           color: nenhum || ocupado ? C.textSecondary : "#fff", borderRadius: 8,
+                  title={nenhum ? "Marque pelo menos um assunto"
+                       : faltaTexto ? "Escreva o que foi tratado" : "Tirar da fila de espera"}
+                  style={{ border: "none", background: bloqueado || ocupado ? C.divider : C.green,
+                           color: bloqueado || ocupado ? C.textSecondary : "#fff", borderRadius: 8,
                            padding: "8px 16px", fontSize: 13, fontWeight: 600,
-                           cursor: nenhum || ocupado ? "not-allowed" : "pointer",
+                           cursor: bloqueado || ocupado ? "not-allowed" : "pointer",
                            display: "inline-flex", alignItems: "center", gap: 6,
                            minHeight: estreito ? 40 : undefined }}>
             {ocupado ? <Loader2 size={14} className="zv-girando" /> : null}
@@ -134,6 +180,12 @@ export function JaTratei({ C, estreito, nome, dias, assuntos, ocupado, erro, aoC
           <div data-ja-tratei-falta-marcar
                style={{ fontSize: 12, color: C.textSecondary, padding: "0 16px 12px", textAlign: "right" }}>
             Marque pelo menos um assunto para confirmar.
+          </div>
+        )}
+        {!nenhum && faltaTexto && (
+          <div data-ja-tratei-falta-texto
+               style={{ fontSize: 12, color: C.textSecondary, padding: "0 16px 12px", textAlign: "right" }}>
+            Escreva o que foi tratado para confirmar.
           </div>
         )}
       </div>
