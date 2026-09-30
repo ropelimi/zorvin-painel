@@ -1402,6 +1402,12 @@ for (const c of TABELAS.conversas || []) {
   // 005 cria a tabela dos assuntos fora do bloco guardado e a coluna dentro
   // dele, então "meio aplicado" é um estado possível de verdade.
   if (!Object.prototype.hasOwnProperty.call(c, "tratada_em")) c.tratada_em = null;
+  // O RESPONSÁVEL (script 008), pela mesma razão: o painel pergunta a UMA
+  // linha se a coluna existe, e uma conversa montada sem a chave faria o
+  // recurso parecer não instalado.
+  for (const k of ["responsavel_id", "responsavel_em", "responsavel_por"]) {
+    if (!Object.prototype.hasOwnProperty.call(c, k)) c[k] = null;
+  }
 }
 
 // DEPOIS DA SEMENTE, e a ordem é o conserto. Tirando a coluna antes, as
@@ -1420,6 +1426,15 @@ if (typeof globalThis !== "undefined" && globalThis.__SEM_ESPERA) {
 // bandeira só provaria uma delas e deixaria a outra por conta da sorte.
 if (typeof globalThis !== "undefined" && globalThis.__SEM_TRATADA) {
   for (const c of TABELAS.conversas || []) delete c.tratada_em;
+}
+
+// O BANCO SEM O SCRIPT 008. A coluna TIRADA, e não posta em nulo: nulo é "sem
+// responsável", ausente é "este banco não sabe o que é responsável" — e é a
+// segunda que tem de esconder o recurso inteiro.
+if (typeof globalThis !== "undefined" && globalThis.__SEM_RESPONSAVEL) {
+  for (const c of TABELAS.conversas || []) {
+    delete c.responsavel_id; delete c.responsavel_em; delete c.responsavel_por;
+  }
 }
 
 

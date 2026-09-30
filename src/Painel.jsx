@@ -12,7 +12,7 @@ import {
   History, BarChart3, Users, Smartphone,
   Image as ImageIcon, Video,
   Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote, Volume2,
-  ListChecks, Undo2
+  ListChecks, Undo2, UserCheck
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
@@ -131,6 +131,13 @@ function nomeDoContato(contato) {
 //  quando é isto?", e a resposta é uma data, não um cronômetro. As duas contas
 //  divergem justamente na mensagem da noite, que é a que mais aparece de manhã.
 // ============================================================
+/** "JENIFER ALMEIDA" → "JENIFER". A lista e o cabeçalho têm pouco espaço, e
+ *  numa equipe de vinte pessoas o primeiro nome basta para saber quem é; o
+ *  nome inteiro vai no `title`. */
+function primeiroNome(nome) {
+  return String(nome || "").trim().split(/\s+/)[0] || "";
+}
+
 function diasEsperando(conversa) {
   const desde = conversa && conversa.esperando_desde;
   if (!desde) return 0;
@@ -2728,6 +2735,28 @@ export default function Painel({ sessao }) {
   //  armadilha nº 2. Mostrando, o pior caso é abrir a janela e ler o erro.
   // ============================================================
   const [temTratada, setTemTratada] = useState(null);
+  // ============================================================
+  //  O RESPONSÁVEL PELA CONVERSA (30/09) — o primeiro passo do CRM
+  //
+  //  Até aqui o painel sabia quem ESCREVEU numa conversa e quem está com ela
+  //  aberta agora, mas não quem responde por aquele cliente. Sem um dono não
+  //  há "as minhas conversas", não há passar um cliente para outra pessoa, e
+  //  não há como cobrar a fila de ninguém.
+  //
+  //  `temResponsavel` tem três estados, pela régua de `temTratada`: a coluna
+  //  vem do script 008 (repo da ponte), e sem ela o recurso NÃO aparece —
+  //  oferecer "assumir" num banco que não tem onde guardar seria um botão que
+  //  diz "pronto" e não grava nada.
+  //
+  //  A sonda é a mesma das outras colunas: a presença da chave na primeira
+  //  linha que a lista trouxe (o PostgREST escreve a chave mesmo com valor
+  //  nulo). Nenhuma consulta a mais.
+  // ============================================================
+  const [temResponsavel, setTemResponsavel] = useState(null);
+  const temResponsavelRef = useRef(null);
+  useEffect(() => { temResponsavelRef.current = temResponsavel; }, [temResponsavel]);
+  const [menuResponsavel, setMenuResponsavel] = useState(false);
+  const responsavelRef = useRef(null);
   const [assuntos, setAssuntos] = useState([]);
   const [temAssuntos, setTemAssuntos] = useState(null);
   const [jaTratei, setJaTratei] = useState(null);      // a conversa com a janela aberta
@@ -3784,6 +3813,9 @@ export default function Painel({ sessao }) {
       // o que a tela desenha. Pôr um estado de três valores ali foi o que
       // dobrou o tempo de abertura em 25/09; ver `ordenarPelaEspera`.
       setTemTratada(Object.prototype.hasOwnProperty.call(bruto[0], "tratada_em"));
+      // E O RESPONSÁVEL, pela mesma porta e pela mesma razão — fora das
+      // dependências da função.
+      setTemResponsavel(Object.prototype.hasOwnProperty.call(bruto[0], "responsavel_id"));
     }
     // Página cheia = provavelmente há mais. Página curta = acabou. Conta só a
     // PÁGINA — as fixadas que vêm à parte, logo abaixo, não dizem nada sobre
@@ -4250,6 +4282,12 @@ export default function Painel({ sessao }) {
   // É a armadilha nº 2 com outra roupa: ausência desenhada no lugar de
   // "ainda não perguntei".
   const [extrasGrupo, setExtrasGrupo] = useState([]);
+  // AS MINHAS QUE AS PÁGINAS JÁ LIDAS NÃO TÊM — o mesmo raciocínio dos
+  // grupos: um cliente meu parado há dois meses mora fora das 200 mais
+  // recentes, e "as minhas" sem ele seria uma lista curta com cara de lista
+  // inteira. Quem conclui "não tenho nada pendente" a partir dela esquece
+  // justamente o cliente mais esquecido.
+  const [extrasMinhas, setExtrasMinhas] = useState([]);
   const [idsQuem, setIdsQuem] = useState(null);            // null = sem filtro
   const quemRef = useRef(null);
   // A lista de quem participou DESTA conversa (o grupinho de rostos do topo).
@@ -4290,7 +4328,7 @@ export default function Painel({ sessao }) {
 
   // Trocar de conversa fecha a lista de quem participou: ela é de UMA conversa,
   // e deixá-la aberta mostraria os rostos da anterior sobre a nova.
-  useEffect(() => { setQuemParticipou(false); }, [conversaId]);
+  useEffect(() => { setQuemParticipou(false); setMenuResponsavel(false); }, [conversaId]);
 
   // Trocar de telefone zera a escolha: os atendentes são outros.
   useEffect(() => { setQuemFiltra([]); setMenuQuem(false); }, [advogadoId]);
@@ -4341,6 +4379,25 @@ export default function Painel({ sessao }) {
   //  aparecem por `passaNoFiltro`, que não depende desta ida ao banco; se ela
   //  não voltar, a lista fica incompleta em vez de vazia — e é a diferença
   //  entre uma lista curta e uma tela que diz "não há grupos".
+  useEffect(() => {
+    let cancelado = false;
+    setExtrasMinhas([]);
+    if (filtro !== "minhas" || !advogadoId || !meuId || temResponsavel !== true) return;
+    const advId = advogadoId;
+    (async () => {
+      const { data, error } = await supabase.from("conversas")
+        .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
+        .eq("advogado_id", advId).eq("responsavel_id", meuId).limit(500);
+      // FALHOU, NÃO APAGA: as minhas das páginas lidas continuam aparecendo
+      // por `passaNoFiltro`, que não depende desta ida.
+      if (error) console.error("As minhas conversas fora das páginas lidas não vieram:", error);
+      if (error || cancelado || advogadoIdRef.current !== advId) return;
+      setExtrasMinhas(data || []);
+    })();
+    return () => { cancelado = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtro, advogadoId, meuId, temResponsavel]);
+
   useEffect(() => {
     let cancelado = false;
     setExtrasGrupo([]);
@@ -6170,6 +6227,16 @@ export default function Painel({ sessao }) {
               ? { esperando_desde: cv.esperando_desde } : {}),
             ...(Object.prototype.hasOwnProperty.call(cv, "tratada_em")
               ? { tratada_em: cv.tratada_em } : {}),
+            // O DONO, e aqui NÃO É `??`. Tirar o responsável grava NULO de
+            // propósito, e `??` trocaria esse nulo pelo dono antigo: a tela
+            // dos colegas continuaria dizendo "com a Jenifer" para uma
+            // conversa que ela devolveu. Quem decide se a coluna existe é a
+            // presença da chave, e não o valor.
+            ...(Object.prototype.hasOwnProperty.call(cv, "responsavel_id") ? {
+              responsavel_id: cv.responsavel_id,
+              responsavel_em: cv.responsavel_em,
+              responsavel_por: cv.responsavel_por,
+            } : {}),
           } : c);
           // Fixadas no alto; entre iguais, a ordem que a pessoa escolheu —
           // INCLUSIVE a da espera. Era aqui que a fila virava "Recentes" a
@@ -7066,6 +7133,7 @@ export default function Painel({ sessao }) {
       else if (menuEtiquetas) setMenuEtiquetas(false);
       else if (menuDepartamentos) setMenuDepartamentos(false);
       else if (tagMenuAberto) setTagMenuAberto(false);
+      else if (menuResponsavel) setMenuResponsavel(false);
       else if (emojiAberto) setEmojiAberto(false);
       else if (seletorAberto) setSeletorAberto(false);
       else if (historico) setHistorico(null);
@@ -7079,7 +7147,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId]);
+  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -7103,13 +7171,20 @@ export default function Painel({ sessao }) {
       if (emojiAberto && emojiRef.current && !emojiRef.current.contains(e.target)) setEmojiAberto(false);
       if (seletorAberto && seletorRef.current && !seletorRef.current.contains(e.target)) setSeletorAberto(false);
       if (tagMenuAberto && !dentroDoMenu && tagMenuRef.current && !tagMenuRef.current.contains(e.target)) setTagMenuAberto(false);
+      // O MENU DO RESPONSÁVEL tem dois endereços (ver `listaDeResponsaveis`),
+      // e "dentro" é o do endereço de onde ele foi aberto.
+      if (menuResponsavel) {
+        const dentro = menuResponsavel === "menu" ? dentroDoMenu
+          : !!(responsavelRef.current && responsavelRef.current.contains(e.target));
+        if (!dentro) setMenuResponsavel(false);
+      }
       if (menuOrdem && ordemMenuRef.current && !ordemMenuRef.current.contains(e.target)) setMenuOrdem(false);
       if (menuTopoAberto && menuTopoRef.current && !menuTopoRef.current.contains(e.target)) setMenuTopoAberto(false);
       if (menuDepartamentos && departamentosRef.current && !departamentosRef.current.contains(e.target)) setMenuDepartamentos(false);
     }
     document.addEventListener("mousedown", aoClicar);
     return () => document.removeEventListener("mousedown", aoClicar);
-  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, menuDaConversa, menuOrdem, menuDepartamentos]);
+  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, menuDaConversa, menuOrdem, menuDepartamentos, menuResponsavel]);
 
   // Fecha o menuzinho da conversa (marcar não lida) ao clicar em qualquer lugar.
   useEffect(() => {
@@ -7236,7 +7311,45 @@ export default function Painel({ sessao }) {
     if (payload && payload.conversa_id != null) {
       deQuemEhAConversa.current.set(payload.conversa_id, { minha: true, orfa: false });
     }
-    return emFila(() => gravarNaFila(payload));
+    return emFila(async () => {
+      const r = await gravarNaFila(payload);
+      if (!r.error && payload && payload.conversa_id != null) assumirSeNinguem(payload.conversa_id);
+      return r;
+    });
+  }
+
+  // ============================================================
+  //  QUEM RESPONDE PRIMEIRO, ASSUME
+  //
+  //  A conversa sem dono ganha dono na primeira resposta de alguém da equipe.
+  //  É o que evita o recurso nascer vazio: sem isto, as 1.800 conversas do
+  //  escritório ficariam "sem responsável" até alguém clicar em cada uma, e
+  //  "as minhas" não mostraria nada a ninguém.
+  //
+  //  `.is("responsavel_id", null)` NA PRÓPRIA GRAVAÇÃO, e não uma conferência
+  //  antes: duas pessoas respondendo juntas a um cliente novo fariam as duas
+  //  "verem" a conversa sem dono e a segunda gravaria por cima da primeira. Com
+  //  a condição no `update`, quem chegou primeiro fica, e a segunda recebe
+  //  zero linhas — que aqui é o desfecho LEGÍTIMO, e não recusa do banco. Por
+  //  isso esta é uma das gravações que não diz nada na tela: nenhuma das duas
+  //  respostas pede ação de quem acabou de mandar uma mensagem.
+  //
+  //  NÃO TIRA DE NINGUÉM: responder numa conversa que já tem dono não muda o
+  //  dono. Passar adiante é gesto de quem decide, pelo menu do responsável.
+  // ============================================================
+  async function assumirSeNinguem(convId) {
+    const eu = meuIdRef.current;
+    if (temResponsavelRef.current !== true || !eu) return;
+    const c = conversasRef.current.find((x) => String(x.id) === String(convId));
+    if (c && c.responsavel_id) return;
+    const agora = new Date().toISOString();
+    const r = await supabase.from("conversas")
+      .update({ responsavel_id: eu, responsavel_em: agora, responsavel_por: eu })
+      .eq("id", convId).is("responsavel_id", null).select("id");
+    if (r.error) { console.error("[Zorvin] não consegui assumir a conversa ao responder", r.error); return; }
+    if (naoGravouNada(r)) return;
+    setConversas((prev) => prev.map((x) => (String(x.id) === String(convId)
+      ? { ...x, responsavel_id: eu, responsavel_em: agora, responsavel_por: eu } : x)));
   }
 
   async function gravarNaFila(payload) {
@@ -7692,6 +7805,42 @@ export default function Painel({ sessao }) {
   //  E A RELEITURA DESFAZ: `carregarConversas` traz o que o banco tem de
   //  verdade, para a lista não ficar com a marca que só existe nesta tela.
   // ============================================================
+  // O NOME DE UMA PESSOA DA EQUIPE PELO ID — o de hoje, da vista `equipe`,
+  // pela mesma régua das bolhas: quem trocou de nome aparece com o novo.
+  // Sem a vista (ou antes de ela chegar), eu me reconheço pela sessão, e o
+  // resto vira "alguém da equipe" — nunca um id cru na tela.
+  const nomeDaPessoa = (id) => {
+    if (!id) return "";
+    const p = equipe.porId[String(id)];
+    if (p && p.nome) return p.nome;
+    if (String(id) === String(meuId)) return meuNome || "você";
+    return "alguém da equipe";
+  };
+
+  // TROCAR O DONO: assumir, passar para alguém, ou tirar.
+  //
+  // Pelo mesmo caminho das outras marcas da conversa (`gravarMarcaDaConversa`):
+  // o acerto na tela vem na frente, e a FRASE espera o banco. Dizer "agora é
+  // da Jenifer" antes de o banco aceitar seria a tela afirmando um fato que
+  // talvez não exista — a forma que esta casa persegue desde 24/09.
+  function mudarResponsavel(conv, novoId) {
+    setMenuResponsavel(false);
+    if (!conv || String(conv.responsavel_id || "") === String(novoId || "")) return;
+    const agora = new Date().toISOString();
+    const nome = novoId ? primeiroNome(nomeDaPessoa(novoId)) : "";
+    const souEu = novoId && String(novoId) === String(meuId);
+    return gravarMarcaDaConversa(conv,
+      { responsavel_id: novoId || null, responsavel_em: novoId ? agora : null,
+        responsavel_por: novoId ? meuId : null },
+      {
+        certo: !novoId ? "A conversa ficou sem responsável."
+             : souEu ? "Esta conversa agora é sua."
+             : `Esta conversa agora é de ${nome}.`,
+        recusado: "O banco não deixou trocar o responsável. Nada mudou.",
+        erro: "Não consegui trocar o responsável.",
+      });
+  }
+
   async function gravarMarcaDaConversa(conv, patch, frases) {
     setConversas((prev) => prev.map((x) => (x.id === conv.id ? { ...x, ...patch } : x)));
     const r = await supabase.from("conversas").update(patch).eq("id", conv.id).select("id");
@@ -8854,6 +9003,10 @@ export default function Painel({ sessao }) {
   const tagFiltrada = filtro.startsWith("tag:")
     ? tags.find((t) => t.id === filtro.slice(4)) || null
     : null;
+  // OS FILTROS DA GAVETA QUE PINTAM A PÍLULA DE VERDE — grupos e as minhas.
+  // Um nome só para a pergunta "a gaveta tem um filtro ligado que não é
+  // etiqueta?", escrita cinco vezes no controle.
+  const filtroVerde = filtro === "grupos" || filtro === "minhas";
 
   // ------------------------------------------------------------
   //  O QUE É UM GRUPO — a pergunta, escrita uma vez só
@@ -8892,6 +9045,9 @@ export default function Painel({ sessao }) {
     // páginas já lidas: sem ele, a lista mostraria "os grupos entre as 200
     // conversas mais recentes" com cara de "os grupos".
     if (filtro === "grupos") return ehGrupo(c);
+    // AS MINHAS: as que têm a MIM como responsável. Não "as em que falei" —
+    // isso é o filtro de atendentes, lá no alto, e responde outra pergunta.
+    if (filtro === "minhas") return !!meuId && String(c.responsavel_id || "") === String(meuId);
     if (filtro.startsWith("tag:")) {
       // Nos dois lugares: o mapa das conversas carregadas E a resposta do
       // banco. Só o mapa derrubaria as conversas que o banco achou e a lista
@@ -9676,7 +9832,7 @@ export default function Painel({ sessao }) {
     // e o de baixo custaria um `Set` sobre a lista inteira a cada redesenho —
     // trabalho de sobra em cima do caminho mais quente que esta tela tem.
     if (!busca.trim() && !filtro.startsWith("tag:") && filtro !== "grupos"
-        && !quemFiltra.length) return daLista;
+        && filtro !== "minhas" && !quemFiltra.length) return daLista;
     // As que vieram do banco e não estavam na lista. Entram na mesma ordem de
     // sempre — fixada em cima, depois recente primeiro —, e não emendadas no
     // fim, que faria a mais nova de todas aparecer embaixo da mais velha.
@@ -9691,7 +9847,7 @@ export default function Painel({ sessao }) {
       // acabou de ser encontrado.
       // (sem `casaNaBusca`: este ramo só existe quando a caixa de busca está
       // vazia — o de cima é que trata a busca.)
-      : [...extrasEtiqueta, ...extrasQuem, ...extrasGrupo].filter((c) => !jaTem.has(String(c.id))
+      : [...extrasEtiqueta, ...extrasQuem, ...extrasGrupo, ...extrasMinhas].filter((c) => !jaTem.has(String(c.id))
           && naPasta(c) && passaNoFiltro(c));
     if (!doBanco.length) return daLista;
     return [...daLista, ...doBanco].sort(compararConversas(ordem, ordenarPelaEspera));
@@ -9800,6 +9956,9 @@ export default function Painel({ sessao }) {
     // telefone, e a pessoa acabou de ver a lista cheia dois cliques atrás. A
     // frase tem de falar do que ela pediu.
     : filtro === "grupos" ? ["sem-grupo", "Nenhum grupo neste telefone."]
+    // E A DAS MINHAS DIZ COMO UMA CONVERSA VIRA MINHA — sem isso, "nenhuma"
+    // no primeiro dia pareceria defeito, e não o começo.
+    : filtro === "minhas" ? ["sem-minhas", "Nenhuma conversa sua neste telefone. Uma conversa vira sua quando você responde primeiro, ou pelo responsável no alto dela."]
     : ["sem-conversa", "Nenhuma conversa ainda."];
 
   // O "+" no rodapé quer dizer "o banco tem mais do que isto". Com uma busca
@@ -9808,7 +9967,7 @@ export default function Painel({ sessao }) {
   // coisa — e quem estivesse conferindo uma etiqueta não saberia se o número
   // na tela é o número de verdade.
   const listaPodeCrescer = !busca.trim() && !filtro.startsWith("tag:")
-    && filtro !== "grupos" && !quemFiltra.length;
+    && filtro !== "grupos" && filtro !== "minhas" && !quemFiltra.length;
 
   // Não lidas de cada advogado, para o selo na barra lateral.
   // Para o advogado atual usamos a lista já carregada (que zera a conversa
@@ -10091,6 +10250,79 @@ export default function Painel({ sessao }) {
       )}
     </span>
   );
+
+  // ------------------------------------------------------------------
+  //  QUEM É O RESPONSÁVEL — o menu, uma definição com dois endereços
+  //
+  //  No computador ele pende do nome do responsável, na linha do número do
+  //  cliente ("linha"). No celular, e no computador com a fila recolhida,
+  //  pende do ⋮ ("menu"). É a mesma lista nos dois: duas escritas divergiriam
+  //  no primeiro conserto, e divergir aqui é poder passar a conversa num
+  //  tamanho de tela e não no outro.
+  //
+  //  "ASSUMIR" VEM PRIMEIRO, e separado: é o gesto de todo dia. Passar para
+  //  outra pessoa é o de exceção, e fica embaixo, com o rosto de cada um.
+  //
+  //  E O MENU DIZ QUEM PASSOU. "Quem me deu isto?" é a primeira pergunta de
+  //  quem recebe um cliente no meio do caminho.
+  // ------------------------------------------------------------------
+  const pessoasParaPassar = Object.values(equipe.porId)
+    .filter((p) => p.nome && String(p.id) !== String(meuId))
+    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  const listaDeResponsaveis = !conversa ? null : (() => {
+    const dono = conversa.responsavel_id ? String(conversa.responsavel_id) : "";
+    const souDono = !!dono && dono === String(meuId);
+    const porOutro = dono && conversa.responsavel_por
+      && String(conversa.responsavel_por) !== dono ? nomeDaPessoa(conversa.responsavel_por) : "";
+    const quando = conversa.responsavel_em
+      ? new Date(conversa.responsavel_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+      : "";
+    const ITEM = { width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "9px 12px",
+                   border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary,
+                   textAlign: "left", fontSize: 13.5, minHeight: estreito ? 44 : 36 };
+    return (
+      <div data-menu-responsavel role="listbox"
+           style={{ position: "absolute", zIndex: 61, width: 262, maxHeight: 360, overflowY: "auto",
+                    // A LINHA DE ONDE ELE PENDE é `nowrap` (é a do número do
+                    // cliente), e a frase de quem passou a conversa herdaria
+                    // isso — saía cortada em "Quem responder primeiro assu".
+                    whiteSpace: "normal", fontWeight: 400,
+                    ...(menuResponsavel === "menu" ? { top: 44, right: 0 } : { top: "100%", left: 0, marginTop: 4 }),
+                    background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10,
+                    boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
+        <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.divider}`, position: "sticky", top: 0, background: C.panel }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3 }}>RESPONSÁVEL PELA CONVERSA</div>
+          <div data-responsavel-origem style={{ fontSize: 12, color: C.textSecondary, marginTop: 3, lineHeight: 1.4 }}>
+            {!dono ? "Ninguém ainda. Quem responder primeiro assume."
+              : `${souDono ? "Você" : nomeDaPessoa(dono)}${quando ? ` desde ${quando}` : ""}${porOutro ? ` — passada por ${nomeDaPessoa(conversa.responsavel_por)}` : ""}.`}
+          </div>
+        </div>
+        {!souDono && (
+          <button data-assumir-conversa role="option" onClick={() => mudarResponsavel(conversa, meuId)}
+                  style={{ ...ITEM, color: C.verdeTexto, fontWeight: 600, borderBottom: `1px solid ${C.divider}` }}>
+            <UserCheck size={17} color={C.green} /> Assumir esta conversa
+          </button>
+        )}
+        {pessoasParaPassar.length > 0 && (
+          <div style={{ padding: "8px 12px 2px", fontSize: 11.5, fontWeight: 600, color: C.textSecondary }}>Passar para</div>
+        )}
+        {pessoasParaPassar.map((p) => (
+          <button key={p.id} data-passar-para={p.id} role="option" aria-selected={dono === String(p.id)}
+                  onClick={() => mudarResponsavel(conversa, p.id)} style={ITEM}>
+            <Avatar nome={p.nome} foto={p.foto} size={24} />
+            <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nome}</span>
+            {dono === String(p.id) && <Check size={16} color={C.green} />}
+          </button>
+        ))}
+        {dono && (
+          <button data-tirar-responsavel onClick={() => mudarResponsavel(conversa, null)}
+                  style={{ ...ITEM, color: C.textSecondary, borderTop: `1px solid ${C.divider}` }}>
+            <X size={16} /> Deixar sem responsável
+          </button>
+        )}
+      </div>
+    );
+  })();
 
   const listaDeEtiquetas = !conversa ? null : (
     <div style={{ position: "absolute", top: estreito ? 44 : 30, right: 0, width: 240, maxHeight: 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 46 }}>
@@ -11398,21 +11630,23 @@ export default function Painel({ sessao }) {
             <button data-mais-filtros onClick={() => setMenuEtiquetas((v) => !v)}
                     aria-expanded={menuEtiquetas} aria-haspopup="listbox"
                     aria-label={tagFiltrada ? `Filtrando por ${tagFiltrada.nome}`
-                                : filtro === "grupos" ? "Mostrando só os grupos" : "Mais filtros"}
+                                : filtro === "grupos" ? "Mostrando só os grupos"
+                                : filtro === "minhas" ? "Mostrando só as minhas conversas" : "Mais filtros"}
                     title={tagFiltrada ? `Filtrando por "${tagFiltrada.nome}"`
                            : filtro === "grupos" ? "Mostrando só os grupos"
-                           : "Mais filtros: grupos e etiquetas"}
+                           : filtro === "minhas" ? "Mostrando só as conversas em que você é o responsável"
+                           : "Mais filtros: minhas conversas, grupos e etiquetas"}
                     style={{ flexShrink: 1, minWidth: 0, maxWidth: 190, minHeight: 30,
-                             border: `1px solid ${tagFiltrada ? tagFiltrada.cor : (filtro === "grupos" ? C.greenDark : C.divider)}`,
-                             background: tagFiltrada ? tagFiltrada.cor : (filtro === "grupos" ? C.greenDark : "transparent"),
-                             color: tagFiltrada ? corDoTextoSobre(tagFiltrada.cor) : (filtro === "grupos" ? "#fff" : C.textSecondary),
+                             border: `1px solid ${tagFiltrada ? tagFiltrada.cor : (filtroVerde ? C.greenDark : C.divider)}`,
+                             background: tagFiltrada ? tagFiltrada.cor : (filtroVerde ? C.greenDark : "transparent"),
+                             color: tagFiltrada ? corDoTextoSobre(tagFiltrada.cor) : (filtroVerde ? "#fff" : C.textSecondary),
                              borderRadius: 20,
-                             padding: (tagFiltrada || filtro === "grupos") ? "4px 9px 4px 11px" : "4px 8px",
+                             padding: (tagFiltrada || filtroVerde) ? "4px 9px 4px 11px" : "4px 8px",
                              fontSize: 12.5, fontWeight: 600, cursor: "pointer",
                              display: "flex", alignItems: "center", gap: 4 }}>
-              {(tagFiltrada || filtro === "grupos") && (
+              {(tagFiltrada || filtroVerde) && (
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {tagFiltrada ? tagFiltrada.nome : "Grupos"}
+                  {tagFiltrada ? tagFiltrada.nome : filtro === "minhas" ? "Minhas" : "Grupos"}
                 </span>
               )}
               <ChevronDown size={14} style={{ flexShrink: 0, opacity: .8 }} />
@@ -11443,6 +11677,18 @@ export default function Painel({ sessao }) {
                 {/* GRUPOS VEM PRIMEIRO, e separado por um traço: é uma
                     pergunta de outra natureza que as etiquetas. Etiqueta é uma
                     marca que a equipe põe; grupo é o que a conversa É. */}
+                {/* AS MINHAS VÊM PRIMEIRO: é o filtro de todo dia de quem
+                    atende. Só com o script 008 — sem a coluna, a lista viria
+                    sempre vazia, e "nenhuma conversa sua" seria mentira. */}
+                {temResponsavel === true && (
+                  <button data-minhas-opcao role="option" aria-selected={filtro === "minhas"}
+                          onClick={() => { setFiltro(filtro === "minhas" ? "tudo" : "minhas"); setMenuEtiquetas(false); }}
+                          style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "11px 12px", border: "none", borderBottom: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
+                    <UserCheck size={16} color={C.textSecondary} style={{ flexShrink: 0 }} />
+                    <span style={{ flex: 1 }}>Minhas conversas</span>
+                    {filtro === "minhas" && <Check size={16} color={C.green} style={{ flexShrink: 0 }} />}
+                  </button>
+                )}
                 <button data-grupos-opcao role="option" aria-selected={filtro === "grupos"}
                         onClick={() => { setFiltro(filtro === "grupos" ? "tudo" : "grupos"); setMenuEtiquetas(false); }}
                         style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "11px 12px", border: "none", borderBottom: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
@@ -11462,7 +11708,7 @@ export default function Painel({ sessao }) {
                 <button onClick={() => { setFiltro("tudo"); setMenuEtiquetas(false); }}
                         style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", border: "none", borderBottom: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
                   Todas as conversas
-                  {!tagFiltrada && filtro !== "grupos" && <Check size={16} color={C.green} style={{ marginLeft: "auto" }} />}
+                  {!tagFiltrada && !filtroVerde && <Check size={16} color={C.green} style={{ marginLeft: "auto" }} />}
                 </button>
                 {tags.length === 0 && (
                   <div style={{ padding: 14, fontSize: 13, color: C.textSecondary, textAlign: "center" }}>Nenhuma etiqueta ainda.</div>
@@ -11696,6 +11942,20 @@ export default function Painel({ sessao }) {
                         fica no alto da lista sem nenhuma explicação visível, e
                         a lista passa a parecer simplesmente fora de ordem. */}
                     <span style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                      {/* O ROSTO DO RESPONSÁVEL, no canto — e não uma linha a
+                          mais: com o nome escrito, cada conversa ficaria mais
+                          alta e a fila caberia menos na tela. O nome inteiro
+                          vai no `title`. O MEU ganha um anel verde, que é o
+                          que se procura correndo o olho pela lista. */}
+                      {temResponsavel === true && c.responsavel_id && (
+                        <span data-responsavel-na-linha={c.responsavel_id}
+                              title={`Responsável: ${String(c.responsavel_id) === String(meuId) ? "você" : nomeDaPessoa(c.responsavel_id)}`}
+                              style={{ display: "flex", borderRadius: "50%",
+                                       boxShadow: String(c.responsavel_id) === String(meuId) ? `0 0 0 2px ${C.green}` : "none" }}>
+                          <Avatar nome={nomeDaPessoa(c.responsavel_id)}
+                                  foto={equipe.porId[String(c.responsavel_id)]?.foto} size={18} />
+                        </span>
+                      )}
                       {c.fixada && <Pin size={13} color={C.textSecondary} fill={C.textSecondary} style={{ transform: "rotate(45deg)" }} />}
                       {c.nao_lidas > 0 && <span style={{ background: C.unread, color: "#fff", borderRadius: 12, fontSize: 11, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>{c.nao_lidas}</span>}
                     </span>
@@ -11973,10 +12233,63 @@ export default function Painel({ sessao }) {
                      onde o olho procura quem é ele, gastava-se repetindo quem
                      somos nós. O número do cliente é o que se precisa ler dali
                      — para conferir, para ditar, para procurar no cadastro. */
-                  <div style={{ fontSize: 12, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {String(conversa.contato?.numero || "").startsWith("grupo:")
-                      ? "Grupo"
-                      : (numeroBonito(conversa.contato?.numero) || "sem número")}
+                  <div style={{ fontSize: 12, color: C.textSecondary, display: "flex", alignItems: "center", gap: 4, minWidth: 0, whiteSpace: "nowrap" }}>
+                    {/* O NÚMERO NÃO ENCOLHE (`flexShrink: 0`): responder
+                        pelo número errado não tem desfazer. Quem cede espaço
+                        é o nome do responsável, ao lado. */}
+                    <span style={{ flexShrink: 0 }}>
+                      {String(conversa.contato?.numero || "").startsWith("grupo:")
+                        ? "Grupo"
+                        : (numeroBonito(conversa.contato?.numero) || "sem número")}
+                    </span>
+                    {/* O RESPONSÁVEL, na linha do número e não num botão a
+                        mais na fila da direita: aquela fila tem a conta de
+                        largura medida em 29/09 (`FILA_ESCRITA`), e um botão
+                        novo empurraria o nome do cliente de volta para o
+                        "ELANE GO…". Aqui ele ocupa espaço que já existia.
+                        No celular é só texto — o alvo de dedo mínimo (40px)
+                        não cabe nesta linha —, e o gesto vai pelo ⋮. */}
+                    {temResponsavel === true && (
+                      <span ref={responsavelRef} style={{ position: "relative", display: "flex", minWidth: 0 }}>
+                        <span style={{ opacity: .6, flexShrink: 0 }}>·</span>
+                        {estreito ? (
+                          <span data-responsavel-da-conversa={conversa.responsavel_id || ""}
+                                style={{ marginLeft: 4, overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {conversa.responsavel_id
+                              ? (String(conversa.responsavel_id) === String(meuId) ? "com você"
+                                 : `com ${primeiroNome(nomeDaPessoa(conversa.responsavel_id))}`)
+                              : "sem responsável"}
+                          </span>
+                        ) : (
+                          <button data-responsavel-da-conversa={conversa.responsavel_id || ""}
+                                  onClick={() => setMenuResponsavel((v) => (v === "linha" ? false : "linha"))}
+                                  aria-expanded={menuResponsavel === "linha"} aria-haspopup="listbox"
+                                  title={conversa.responsavel_id
+                                    ? `Responsável: ${nomeDaPessoa(conversa.responsavel_id)} — clique para passar adiante`
+                                    : "Sem responsável — clique para assumir"}
+                                  style={{ border: "none", background: "transparent", cursor: "pointer",
+                                           display: "flex", alignItems: "center", gap: 4, minWidth: 0,
+                                           padding: "1px 4px", marginLeft: 1, borderRadius: 6, minHeight: 20,
+                                           fontSize: 12, color: conversa.responsavel_id ? C.textPrimary : C.verdeTexto,
+                                           fontWeight: conversa.responsavel_id ? 500 : 600 }}>
+                            {conversa.responsavel_id ? (
+                              <>
+                                <Avatar nome={nomeDaPessoa(conversa.responsavel_id)}
+                                        foto={equipe.porId[String(conversa.responsavel_id)]?.foto} size={16} />
+                                <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                                  {String(conversa.responsavel_id) === String(meuId) ? "Você"
+                                    : primeiroNome(nomeDaPessoa(conversa.responsavel_id))}
+                                </span>
+                              </>
+                            ) : (
+                              <><UserPlus size={13} style={{ flexShrink: 0 }} /><span>Assumir</span></>
+                            )}
+                            <ChevronDown size={12} style={{ flexShrink: 0, opacity: .7 }} />
+                          </button>
+                        )}
+                        {menuResponsavel === "linha" && listaDeResponsaveis}
+                      </span>
+                    )}
                   </div>
                 )}
                 {!estreito && tagsDaConversa(conversa.id).length > 0 && (
@@ -12182,6 +12495,22 @@ export default function Painel({ sessao }) {
                           este menu é o único caminho, e a fila de espera é o
                           motivo de a pessoa ter aberto a conversa. */}
                       {acaoJaTratei && acaoJaTratei(true)}
+                      {/* O RESPONSÁVEL, escrito — no celular este é o único
+                          caminho para assumir ou passar a conversa. */}
+                      {temResponsavel === true && (
+                        <button onClick={() => { setMenuDaConversa(false); setMenuResponsavel("menu"); }}
+                                data-menu-responsavel-item
+                                style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
+                          <UserCheck size={17} color={conversa.responsavel_id ? C.green : C.textSecondary} />
+                          {conversa.responsavel_id ? "Responsável" : "Assumir esta conversa"}
+                          {conversa.responsavel_id && (
+                            <span style={{ marginLeft: "auto", fontSize: 12, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 110 }}>
+                              {String(conversa.responsavel_id) === String(meuId) ? "você"
+                                : primeiroNome(nomeDaPessoa(conversa.responsavel_id))}
+                            </span>
+                          )}
+                        </button>
+                      )}
                       {(conversa.nao_lidas || 0) > 0 ? (
                         <button onClick={() => { setMenuDaConversa(false); marcarLida(conversa.id); }}
                                 data-menu-marcar="lida"
@@ -12271,6 +12600,7 @@ export default function Painel({ sessao }) {
 
                   {tagMenuAberto && listaDeEtiquetas}
                   {quemParticipou && listaDeParticipantes}
+                  {menuResponsavel === "menu" && listaDeResponsaveis}
                 </span>
               )}
             </div>
