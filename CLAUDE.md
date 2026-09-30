@@ -1488,6 +1488,43 @@ não depende da janela; quanto tempo é apagado, sim.
 comentário de `diasEsperando` e a explicação da ordem no menu, que dizia
 "conta desde a primeira mensagem sem resposta" sem a metade nova.
 
+### E a fila se embaralhava a cada conversa aberta (30/09)
+
+Relato do Rodrigo, com duas fotos: *"com o filtro 'Esperando' ativado, após
+eu clicar em qualquer conversa, a lista de conversas fica se atualizando e
+mudando sozinha"*. Na primeira foto a fila abria em "esperando há 48 dias";
+um clique depois, no alto estava "esperando há 7 dias".
+
+**A ordem estava escrita em QUATRO lugares, e só um sabia da espera.** O
+banco e `carregarConversas` ordenavam pela espera; o **tempo real**, a
+conversa emendada pela busca e a emenda das conversas de fora das páginas
+reordenavam por conta própria pela última mensagem. Abrir a conversa zera as
+não lidas, o Supabase avisa a mudança, e o tempo real virava a lista para
+"Recentes". A releitura seguinte (a pesca de 20s, a volta do canal, trocar de
+filtro) a desvirava — daí o "fica mudando sozinha". Quando a ordem nova
+entrou, em 25/09, só a primeira das quatro cópias foi ensinada.
+
+Hoje é **uma régua só**, `compararConversas(ordem, pelaEspera)`, usada nos
+quatro lugares; o tempo real a lê por espelho (`ordenarPelaEsperaRef`),
+porque o tratador é registrado uma vez.
+
+**E o tempo real passou a trazer a espera**, pela presença da chave e não
+por `??`: quando a equipe responde, o banco grava `esperando_desde` NULO, e a
+conversa tem de sair da fila na hora. Sem isso a linha continuava dizendo
+"esperando há 48 dias" até a próxima releitura.
+
+**O desempate é o do banco**: quem não espera vai para o fim, e entre esses a
+mais recente primeiro. Antes era `Infinity - Infinity`, que dá `NaN` — o
+navegador decidia a ordem de quem não espera, e ela podia mudar a cada
+reordenação.
+
+Prova: `a-fila-nao-se-embaralha`, 15 conferências. Com o painel de antes ela
+reproduz o relato (a fila `48,30,20,7` vira `30,7,20,48` depois do clique).
+**5 sabotagens e 5 pegas** — e uma vazou primeiro: a de "Antigas" esquecer o
+sentido passava, porque a prova só conferia que a lista não MEXIA, e uma
+lista na ordem errada também fica parada. Entrou a conferência da ordem em
+si. **"Não mudou" não é "está certo".**
+
 ### Uma correção do que ficou escrito errado em 24/09
 
 A entrada "E os outros dezoito lugares" dizia: *"medido, o clique no ⋮ da lista
