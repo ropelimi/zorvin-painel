@@ -144,6 +144,54 @@ function diasEsperando(conversa) {
   return Math.max(0, Math.round((hoje - inicio) / 86400000));
 }
 
+// ============================================================
+//  A ORDEM DA LISTA — UMA RÉGUA SÓ, para os quatro lugares que reordenam
+//
+//  RELATO DE 30/09, com duas fotos: com "Esperando" escolhido, bastava abrir
+//  uma conversa para a lista se embaralhar sozinha. Na primeira foto a fila
+//  começava em "esperando há 48 dias"; um clique depois, no alto estava
+//  "esperando há 7 dias" — a lista tinha virado "Recentes" sem ninguém pedir.
+//
+//  A CAUSA: o banco ordenava pela espera, e a TELA reordenava por conta
+//  própria em outros três lugares — o tempo real, a conversa emendada pela
+//  busca e a emenda das conversas de fora das páginas —, e os três só sabiam
+//  a ordem por data da última mensagem. Abrir a conversa zera as não lidas, o
+//  banco avisa pelo tempo real, e o tempo real reordenava a lista inteira
+//  pela régua errada. A releitura seguinte (a volta do canal, a pesca de 20
+//  segundos, trocar de filtro) reordenava de novo pela certa: a lista ia e
+//  voltava, que é o "ficam se atualizando e mudando sozinhas".
+//
+//  Quatro escritas da mesma ordem foi exatamente o que deixou três delas para
+//  trás quando a ordem nova entrou em 25/09. Hoje é esta, e só esta.
+//
+//  O DESEMPATE É O DO BANCO: quem não espera vai para o fim, e entre esses a
+//  mais recente primeiro. Sem desempate, `Infinity - Infinity` dá `NaN`, e o
+//  navegador decide sozinho a ordem de quem não espera — que muda a cada
+//  reordenação, e é outra forma de a lista "mexer sozinha".
+// ============================================================
+function compararConversas(ordem, pelaEspera) {
+  const sinal = ordem === "antigas" ? -1 : 1;
+  const quando = (c) => {
+    const t = c && c.ultima_atividade ? new Date(c.ultima_atividade).getTime() : 0;
+    return Number.isNaN(t) ? 0 : t;
+  };
+  const recencia = (a, b) => sinal * (quando(b) - quando(a));
+  const esperaEm = (c) => {
+    const t = c && c.esperando_desde ? new Date(c.esperando_desde).getTime() : NaN;
+    return Number.isNaN(t) ? null : t;
+  };
+  return (a, b) => {
+    const fixa = (b.fixada ? 1 : 0) - (a.fixada ? 1 : 0);
+    if (fixa) return fixa;
+    if (!pelaEspera) return recencia(a, b);
+    const ea = esperaEm(a), eb = esperaEm(b);
+    if (ea !== null && eb !== null) return (ea - eb) || recencia(a, b);
+    if (ea !== null) return -1;
+    if (eb !== null) return 1;
+    return recencia(a, b);
+  };
+}
+
 // AS COLUNAS DE CONTATO QUE A TELA PEDE AO BANCO.
 //
 // `vantoro_nome` só existe depois do SQL das frentes. Pedir coluna que não
@@ -2652,6 +2700,10 @@ export default function Painel({ sessao }) {
   //  uma vez, e é aí que a lista precisa mesmo ser refeita.
   // ============================================================
   const ordenarPelaEspera = ordem === "esperando" && temEspera === true;
+  // O TEMPO REAL PRECISA DA MESMA PERGUNTA, e por espelho: o tratador é
+  // registrado uma vez e ficaria preso na resposta daquele instante.
+  const ordenarPelaEsperaRef = useRef(ordenarPelaEspera);
+  ordenarPelaEsperaRef.current = ordenarPelaEspera;
   // ============================================================
   //  "JÁ TRATEI" — a saída da fila que não é mandar mensagem
   //
@@ -3716,17 +3768,11 @@ export default function Painel({ sessao }) {
     // `ultima_atividade` importa porque a lista é emendada de duas fontes (as
     // fixadas e a página), e sem critério de desempate elas se intercalavam
     // pela ordem de chegada.
-    const sinal = ordem === "antigas" ? -1 : 1;
     // O DESEMPATE DA FILA DE ESPERA É O MESMO DO BANCO, e precisa ser: as
     // fixadas chegam numa consulta e a página noutra, e é aqui que as duas se
-    // emendam. Com critérios diferentes, a lista final não seria nem uma coisa
-    // nem outra. Quem não espera vai para o fim, como lá.
-    const esperaEm = (c) => (c.esperando_desde ? new Date(c.esperando_desde).getTime() : Infinity);
-    const porEspera = (a, b) => (b.fixada ? 1 : 0) - (a.fixada ? 1 : 0)
-      || (esperaEm(a) - esperaEm(b));
-    const porRecencia = (a, b) => (b.fixada ? 1 : 0) - (a.fixada ? 1 : 0)
-      || sinal * (new Date(b.ultima_atividade) - new Date(a.ultima_atividade));
-    const porFixada = ordenarPelaEspera ? porEspera : porRecencia;
+    // emendam. A régua é `compararConversas`, a mesma dos outros três lugares
+    // que reordenam a lista — ver o relato de 30/09 ali.
+    const porFixada = compararConversas(ordem, ordenarPelaEspera);
     const bruto = data || [];
     // A COLUNA EXISTE? PERGUNTA-SE ÀS LINHAS QUE JÁ VIERAM — ver o comentário
     // em `temEspera`. O PostgREST escreve a chave mesmo quando o valor é nulo,
@@ -6115,13 +6161,22 @@ export default function Painel({ sessao }) {
             // coluna: ali `cv.fixada` vem indefinido e não pode apagar o que
             // esta tela já sabe.
             fixada: cv.fixada ?? c.fixada,
+            // A ESPERA ACOMPANHA, e pela PRESENÇA da chave, não pelo valor: a
+            // resposta da equipe grava NULO de propósito (saiu da fila), e um
+            // `??` manteria a data velha — a linha continuaria dizendo
+            // "esperando há 6 dias" e no lugar de quem espera. Sem a coluna
+            // (script 004 não rodado) a chave não vem, e nada muda.
+            ...(Object.prototype.hasOwnProperty.call(cv, "esperando_desde")
+              ? { esperando_desde: cv.esperando_desde } : {}),
+            ...(Object.prototype.hasOwnProperty.call(cv, "tratada_em")
+              ? { tratada_em: cv.tratada_em } : {}),
           } : c);
-          // Fixadas no alto; entre iguais, a ordem que a pessoa escolheu.
-          // Pelo `ref` e não pelo estado: este tratador é registrado uma vez e
-          // ficaria preso na ordem que valia naquele instante.
-          const sentido = ordemRef.current === "antigas" ? -1 : 1;
-          return patched.sort((a, b) => (b.fixada ? 1 : 0) - (a.fixada ? 1 : 0)
-            || sentido * (new Date(b.ultima_atividade) - new Date(a.ultima_atividade)));
+          // Fixadas no alto; entre iguais, a ordem que a pessoa escolheu —
+          // INCLUSIVE a da espera. Era aqui que a fila virava "Recentes" a
+          // cada conversa aberta (relato de 30/09, ver `compararConversas`).
+          // Pelos `ref`s e não pelo estado: este tratador é registrado uma vez
+          // e ficaria preso na ordem que valia naquele instante.
+          return patched.sort(compararConversas(ordemRef.current, ordenarPelaEsperaRef.current));
         });
         carregarNaoLidasPorAdv();
       })
@@ -9544,8 +9599,7 @@ export default function Painel({ sessao }) {
     // para os três caminhos de uma vez.
     setConversas((antes) => (antes.some((x) => String(x.id) === String(c.id))
       ? antes
-      : [...antes, c].sort((a, b) => ((b.fixada ? 1 : 0) - (a.fixada ? 1 : 0))
-          || String(b.ultima_atividade || "").localeCompare(String(a.ultima_atividade || "")))));
+      : [...antes, c].sort(compararConversas(ordem, ordenarPelaEspera))));
 
     // A CONVERSA JÁ ABERTA NÃO RECARREGA SOZINHA.
     //
@@ -9640,9 +9694,7 @@ export default function Painel({ sessao }) {
       : [...extrasEtiqueta, ...extrasQuem, ...extrasGrupo].filter((c) => !jaTem.has(String(c.id))
           && naPasta(c) && passaNoFiltro(c));
     if (!doBanco.length) return daLista;
-    return [...daLista, ...doBanco].sort((a, b) =>
-      ((b.fixada ? 1 : 0) - (a.fixada ? 1 : 0))
-      || String(b.ultima_atividade || "").localeCompare(String(a.ultima_atividade || "")));
+    return [...daLista, ...doBanco].sort(compararConversas(ordem, ordenarPelaEspera));
   })();
 
   // ============================================================
