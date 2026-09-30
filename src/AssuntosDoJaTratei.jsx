@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "./supabase.js";
 import { naoGravouNada, comOCodigo } from "./gravar.js";
-import { ListChecks, Plus, Loader2, Check, EyeOff, Eye } from "lucide-react";
+import { ListChecks, Plus, Loader2, Check, EyeOff, Eye, PenLine } from "lucide-react";
 
 // ============================================================
 //  OS ASSUNTOS DO "JÁ TRATEI" — a tela onde a lista é editada
@@ -40,6 +40,15 @@ import { ListChecks, Plus, Loader2, Check, EyeOff, Eye } from "lucide-react";
 //  outro erro — permissão, banco fora — vira frase na tela. É a armadilha nº 2:
 //  desenhar ausência no lugar de falha foi o que sumiu com as etiquetas em
 //  04/09.
+//
+//  ------------------------------------------------------------
+//  "PEDE DESCRIÇÃO" (script 009)
+//
+//  A marca que faz o assunto abrir um campo de texto obrigatório no "Já
+//  tratei". Nasce ligada no OUTROS; a chave está aqui porque quem compra o
+//  programa pode querer descrição em outro assunto, ou chamar o OUTROS de
+//  outra coisa. Sem o script, a chave não aparece — ela ligaria uma coluna
+//  que não existe.
 // ============================================================
 
 export function AssuntosDoJaTratei({ cx, C, aoAvisar }) {
@@ -50,8 +59,10 @@ export function AssuntosDoJaTratei({ cx, C, aoAvisar }) {
   const [editando, setEditando] = useState(null);   // { id, nome }
 
   const ler = useCallback(async (primeira) => {
+    // `*`: `pede_descricao` só existe depois do script 009, e pedi-la por
+    // nome num banco sem ela derrubaria a leitura da seção inteira.
     const { data, error } = await supabase.from("zorvin_assuntos")
-      .select("id, nome, ordem, ativo").order("ativo", { ascending: false }).order("ordem");
+      .select("*").order("ativo", { ascending: false }).order("ordem");
     if (error) {
       // 42P01 = a tabela não existe. É o único caso em que sumir é o certo.
       if (error.code === "42P01") { setExiste(false); return; }
@@ -125,6 +136,10 @@ export function AssuntosDoJaTratei({ cx, C, aoAvisar }) {
 
   if (existe !== true) return null;
 
+  // A COLUNA EXISTE? Perguntado à linha que veio, como no resto do painel.
+  const temDescricao = assuntos.length > 0
+    && Object.prototype.hasOwnProperty.call(assuntos[0], "pede_descricao");
+
   return (
     <div style={cx.secao} data-assuntos-do-ja-tratei>
       <div style={cx.titulo}><ListChecks size={16} /> Assuntos do “Já tratei”</div>
@@ -168,7 +183,22 @@ export function AssuntosDoJaTratei({ cx, C, aoAvisar }) {
               <span style={{ flex: 1, fontSize: 13.5, textDecoration: a.ativo ? "none" : "line-through" }}>
                 {a.nome}
                 {!a.ativo && <span style={{ marginLeft: 8, fontSize: 11.5, color: C.textSecondary }}>fora de uso</span>}
+                {a.ativo && a.pede_descricao && (
+                  <span style={{ marginLeft: 8, fontSize: 11.5, color: C.textSecondary }}>pede descrição</span>
+                )}
               </span>
+              {temDescricao && a.ativo && (
+                <button onClick={() => gravar(a, { pede_descricao: !a.pede_descricao },
+                                              a.pede_descricao ? "parar de pedir descrição" : "pedir descrição")}
+                        disabled={ocupado} data-assunto-pede-descricao={a.pede_descricao ? "sim" : "nao"}
+                        title={a.pede_descricao
+                          ? "Marcar este assunto deixa de pedir o que foi tratado"
+                          : "Marcar este assunto passa a exigir que se escreva o que foi tratado"}
+                        style={{ ...cx.botao, background: "transparent", color: C.textSecondary, border: `1px solid ${C.divider}` }}>
+                  <PenLine size={15} />
+                  {a.pede_descricao ? "Não pedir descrição" : "Pedir descrição"}
+                </button>
+              )}
               <button onClick={() => setEditando({ id: a.id, nome: a.nome })} disabled={ocupado}
                       data-assunto-renomear
                       style={{ ...cx.botao, background: "transparent", color: C.textSecondary, border: `1px solid ${C.divider}` }}>

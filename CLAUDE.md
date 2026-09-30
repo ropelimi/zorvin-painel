@@ -1652,6 +1652,51 @@ despedida é **plantada pela prova** (cliente escreve → respondemos → ele
 agradece) e não emprestada da bancada: a recontagem calcula a espera a partir
 das mensagens, e sem essa forma a cena do desfazer não teria o que medir.
 
+### O "OUTROS", e por que ele pede o que foi tratado (30/09)
+
+Pedido do Rodrigo: *"preciso que seja incluída a opção OUTROS"*. Os oito
+assuntos cobrem o dia a dia; o que sobrava não tinha onde ir, e a equipe
+marcava o mais parecido — o relatório mentindo em silêncio.
+
+**"OUTROS" sozinho não diz nada.** Um relatório com "OUTROS: 40" é a mesma
+pergunta de antes com um número em cima. Então ele vem com um campo de texto
+**obrigatório**: marcado, a janela pergunta *"O que foi tratado em OUTROS?"* e
+o botão só liga com texto (espaço em branco não conta).
+
+**Quem pede o texto é a MARCA do banco** (`zorvin_assuntos.pede_descricao`,
+script 009 da ponte), e não o nome "OUTROS" escrito aqui. Quem compra o
+programa pode chamar de "Diversos", ou querer descrição em "RECLAMAÇÃO"; a
+chave *Pedir descrição* fica na administração, ao lado de *Parar de usar*.
+
+**O texto vai só na linha do assunto que o pede** (`observacao`). Marcando
+ACORDOS e OUTROS, a linha de ACORDOS fica sem texto — repetir ali faria o
+relatório dizer a mesma coisa sobre dois assuntos. **E a chave nem vai quando
+não há texto**: num banco sem a coluna, mandá-la derrubaria o registro inteiro.
+
+**O campo só aparece com o assunto marcado.** Sempre à vista, ele viraria
+"opcional" na cabeça de quem usa, e o obrigatório do OUTROS passaria a ser
+ignorado junto. **Teto de 500**, o mesmo do banco, com contador.
+
+**A leitura dos assuntos passou a pedir `*`.** Pedir `pede_descricao` por nome
+num banco sem o script daria 42703 e derrubaria a lista — e com ela o botão
+"Já tratei".
+
+**E a bancada mentia a favor do defeito.** Ela devolvia a linha inteira
+qualquer que fosse a coluna pedida — um painel que pedisse `id, nome, ordem,
+ativo` receberia `pede_descricao` aqui e nunca no banco de verdade, e a prova
+passaria com o OUTROS mudo em produção. Hoje `zorvin_assuntos` está em
+`COM_PROJECAO`: a bancada devolve só o que foi pedido, e coluna que não existe
+é 42703, como no Postgres. **A sabotagem que volta à lista de colunas é pega
+por dez conferências.**
+
+Prova: `o-outros-do-ja-tratei`, 40 conferências, **8 sabotagens e 8 pegas**.
+Os cliques e `fill` dela são guardados — a primeira sabotagem "pegou"
+estourando, e prova que estoura não diz QUAL conferência viu o defeito.
+
+**Ainda em aberto, e é o próximo pedido:** onde LER isso — o relatório do
+que foi tratado (por quem, quando, quanto) e o histórico de cada contato. O
+texto está sendo guardado desde já, para o relatório nascer com passado.
+
 ## O aviso do nono dígito não previa nada — e mandou mexer na ficha de um cliente
 
 Relato do Rodrigo em 28/09: ele acrescentou `(71) 99259-0325` na ficha de um
