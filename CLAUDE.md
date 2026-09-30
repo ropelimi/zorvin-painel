@@ -1801,6 +1801,105 @@ o número mandado sem conferir o nono dígito; o número antigo no lugar do
 desta conversa; a conversa que não é ligada; o número mandado antes da ficha
 inteira).
 
+## O responsável pela conversa — o primeiro passo para CRM (30/09)
+
+Pedido do Rodrigo, depois de perguntar o que falta para o Zorvin virar CRM:
+*"pode começar pelo responsável pela conversa"*. Até aqui o banco sabia quem
+ESCREVEU em cada conversa (`mensagens.enviado_por_id`) e quem está com ela
+aberta agora (`atendendo_por`), mas não quem **responde** por aquele cliente.
+Sem isso não há "as minhas conversas", não há passar um cliente adiante, e
+não há como cobrar a fila de ninguém.
+
+**Três colunas em `conversas`, e nenhuma tabela nova** —
+`responsavel_id`, `responsavel_em`, `responsavel_por` (script
+`sql/automaticos/008-o-responsavel-pela-conversa.sql`, no repo da ponte). A
+tela precisa da resposta em toda linha da lista, e uma tabela à parte seria
+uma segunda consulta por página. `responsavel_por` existe porque *"quem me
+passou isto?"* é a primeira pergunta de quem recebe um cliente no meio.
+
+**`temResponsavel` tem três estados**, pela régua de `temTratada`: sem o
+script, NADA aparece — nem o controle, nem o filtro, nem o rosto na linha.
+"Minhas conversas" sem a coluna seria uma lista sempre vazia dizendo "nenhuma
+conversa sua", que é mentira.
+
+### Quem responde primeiro, assume — e só se não houver dono
+
+Sem isto as 1.800 conversas nasceriam "sem responsável" e o recurso ficaria
+vazio até alguém clicar em cada uma. **E não toma de ninguém:** responder
+numa conversa que já tem dono não muda o dono. "Assume sempre quem responde"
+faria a conversa trocar de mãos a cada ajuda de colega, e o responsável
+deixaria de querer dizer qualquer coisa.
+
+**A condição vai NA gravação** (`.is("responsavel_id", null)`), e não numa
+conferência antes. Conferir a lista local não basta, porque a lista local é
+justamente o que está atrasado quando duas pessoas respondem juntas. Zero
+linhas ali é o desfecho LEGÍTIMO (a colega chegou antes), e por isso essa é
+uma gravação que não diz nada na tela. **Foi a sabotagem que me mostrou que
+a prova não tinha essa cena**: tirando a condição, ela passava, porque a
+conferência local cobria todos os casos em que a tela já sabia do dono.
+
+### Onde ele mora na tela
+
+| | computador | celular |
+|---|---|---|
+| a conversa aberta | na linha do número, um botão com o rosto e o nome | a mesma linha, só texto ("com você") |
+| o gesto | clicar ali | pelo ⋮ |
+| a lista | rosto de 18px no canto da linha; **o meu tem anel verde** | igual |
+| o filtro | "Minhas conversas" no menu da seta | igual |
+
+**Na linha do número, e não um botão a mais na fila da direita:** aquela
+fila tem a conta de largura de 29/09, e um botão novo empurraria o nome do
+cliente de volta para o "ELANE GO…". **O número não encolhe** (`flexShrink:
+0`): quem cede espaço é o nome do responsável.
+
+**O menu é uma definição com dois endereços** (`listaDeResponsaveis`,
+`menuResponsavel` = `"linha"` ou `"menu"`), pela régua de sempre: duas
+escritas divergiriam, e divergir aqui é poder passar a conversa num tamanho
+de tela e não no outro. **"Assumir" vem primeiro e separado** — é o gesto de
+todo dia; passar adiante é o de exceção.
+
+**A frase espera o banco** (`gravarMarcaDaConversa`, o caminho das quatro
+marcas). **E a frase do menu não pode herdar `nowrap`**: a linha de onde ele
+pende é a do número, e "Quem responder primeiro assume" saía cortada em
+"assu" — foi a primeira coisa que a foto da bancada mostrou.
+
+**O tempo real traz o dono pela PRESENÇA da chave**, não por `??`: tirar o
+responsável grava nulo de propósito, e `??` deixaria a tela dos colegas
+dizendo "com a Jenifer" para uma conversa que ela devolveu.
+
+**"Minhas conversas" vai ao banco** (`extrasMinhas`), pela mesma razão do
+filtro de grupos: a minha conversa de dois meses atrás está fora das 200 da
+primeira página, e filtrar só o que está carregado seria "as minhas entre as
+recentes" com cara de "as minhas".
+
+### O Vantoro fica para o escritório; quem compra ganha o Zorvin sozinho
+
+A pergunta do Rodrigo veio junto: *"se para o escritório for melhor usar o
+Vantoro, mantenha; para vender, veja se dá para liberar as telas do Vantoro
+ou de outra forma"*. **O responsável não depende do Vantoro em nada** — é
+pessoa do Zorvin (`usuarios.id`), nos dois mundos. O caminho para vender
+continua sendo o de 14/09 (`VITE_VANTORO=desligado`), e o que falta nele é a
+ficha própria do Zorvin; "liberar as telas do Vantoro" amarraria cada
+comprador a um segundo sistema para instalar e manter.
+
+### E um erro meu de processo, que repete o de 29/09 com outra roupa
+
+Uma rodada de sabotagens foi **interrompida no meio** (o Rodrigo chegou com
+o relato da fila). A interrupção matou o script entre escrever a sabotagem nº
+2 e restaurar o arquivo — e eu, sem conferir, guardei aquilo num commit de
+rascunho. A cópia "conferida" da rodada seguinte foi tirada DESSE commit, e a
+primeira sabotagem pareceu pegar por um motivo que não era o dela. **Hoje o
+script restaura num `finally`, e a cópia de referência sai de um commit cuja
+prova acabou de passar inteira.**
+
+Prova: `o-responsavel-pela-conversa`, 62 conferências, **8 sabotagens e 8
+pegas**. Ela mede o menu **pintado** (`elementFromPoint`), porque o menu de
+etiquetas já foi recortado por um ancestral sem o retângulo saber.
+
+**Ainda em aberto:** o histórico de quem passou para quem (hoje só o último
+passe fica), e o relatório por responsável — os dois ficam para quando
+alguém pedir, e o segundo junto com as métricas do "Já tratei".
+
 ## Banco de dados (tabelas que o painel lê/escreve)
 
 - `advogados` — lê (id, nome, numero, foto_url) onde `ativo = true`
