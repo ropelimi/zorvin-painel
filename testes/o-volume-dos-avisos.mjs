@@ -60,7 +60,7 @@ const medir = (comGravacao) => page.evaluate(async (comGravacao) => {
       if (Math.abs(v) > pico) pico = Math.abs(v);
     }
     fora.push({ id: som.id, rms: Math.sqrt(soma / dados.length), pico, dura,
-                gravado: !!gravado });
+                gravado: !!gravado, temArquivo: !!som.arquivo });
   }
   return fora;
 }, comGravacao);
@@ -93,37 +93,67 @@ console.log("\n1. Todo som que promete barulho FAZ barulho");
      JSON.stringify(por.mudo));
 }
 
-console.log("\n2. O pato é a GRAVAÇÃO, e ela chega mesmo");
+// OS QUE SÃO ARQUIVO — o pato desde 28/09, e a galinha desde 01/10. A lista
+// sai do próprio painel (`arquivo` na receita), e não de uma cópia escrita
+// aqui: um bicho novo entra nas três conferências abaixo sem ninguém lembrar
+// de acrescentá-lo, e um que esquecesse o arquivo seria pego pela 2.
+const gravacoes = medidas.filter((m) => m.temArquivo);
+
+console.log("\n2. Cada som que é GRAVAÇÃO chega mesmo");
 {
   // A CONFERÊNCIA QUE PEGA O DEFEITO MAIS BOBO E MAIS CARO: o arquivo não
-  // sair na publicação. Sem ela, o pato viraria o bipe sintetizado em
+  // sair na publicação. Sem ela, o bicho viraria o bipe sintetizado em
   // produção e passaria despercebido aqui — o encosto funciona bem demais
   // para ser notado.
-  ok("o arquivo do pato foi buscado e decodificado", por.pato.gravado === true,
-     JSON.stringify(por.pato));
-  ok("e ele produz som", por.pato.rms > 0.001, `rms ${por.pato.rms.toFixed(5)}`);
+  ok("há gravações para medir (o pato e a galinha)", gravacoes.length >= 2,
+     gravacoes.map((m) => m.id).join(", "));
+  for (const m of gravacoes) {
+    ok(`o arquivo d${m.id === "galinha" ? "a" : "o"} ${m.id} foi buscado e decodificado`,
+       m.gravado === true, JSON.stringify(m));
+    ok(`e produz som (${m.id})`, m.rms > 0.001, `rms ${m.rms.toFixed(5)}`);
+  }
 }
 
-console.log("\n3. A gravação sai na MESMA altura do encosto sintetizado");
+console.log("\n3. Cada gravação sai na MESMA altura do seu encosto sintetizado");
 {
-  // É a régua do volume, e ela se sustenta sozinha: o encosto é a receita que
-  // o Rodrigo aprovou em 25/09 quanto ao VOLUME (o que ele reprovou foi o
-  // timbre). Se a gravação sair mais alta, o dia em que a busca falhar vira
-  // um susto ao contrário — e vice-versa.
-  const razao = por.pato.rms / porEncosto.pato.rms;
-  ok(`a gravação e o encosto têm o mesmo volume (${razao.toFixed(2)}x)`,
-     razao >= 0.8 && razao <= 1.25,
-     `gravação ${por.pato.rms.toFixed(5)} contra encosto ${porEncosto.pato.rms.toFixed(5)}`);
+  ok(`as ${gravacoes.length} gravações entram na conta`, gravacoes.length >= 2);
+  // É a régua do volume, e ela se sustenta sozinha: o encosto do pato é a
+  // receita que o Rodrigo aprovou em 25/09 quanto ao VOLUME (o que ele
+  // reprovou foi o timbre). Se a gravação sair mais alta, o dia em que a
+  // busca falhar vira um susto ao contrário — e vice-versa.
+  for (const m of gravacoes) {
+    const razao = m.rms / porEncosto[m.id].rms;
+    ok(`${m.id}: a gravação e o encosto têm o mesmo volume (${razao.toFixed(2)}x)`,
+       razao >= 0.8 && razao <= 1.25,
+       `gravação ${m.rms.toFixed(5)} contra encosto ${porEncosto[m.id].rms.toFixed(5)}`);
+  }
 }
 
-console.log("\n4. Sem o arquivo, o pato NÃO emudece");
+console.log("\n3b. Os bichos tocam na altura do pato");
 {
+  ok(`as ${gravacoes.length} gravações entram na conta`, gravacoes.length >= 2);
+  // O PATO É O VOLUME APROVADO. Um bicho bem mais alto que ele é o susto de
+  // quem trocou de som sem baixar o volume da máquina; bem mais baixo, é o
+  // aviso que passa batido. A margem é larga porque cada bicho dura um tanto,
+  // e a medida é a média do trecho inteiro.
+  for (const m of gravacoes.filter((g) => g.id !== "pato")) {
+    const razao = m.rms / por.pato.rms;
+    ok(`${m.id} toca perto da altura do pato (${razao.toFixed(2)}x)`,
+       razao >= 0.67 && razao <= 1.5, `${m.id} ${m.rms.toFixed(5)} contra pato ${por.pato.rms.toFixed(5)}`);
+  }
+}
+
+console.log("\n4. Sem o arquivo, nenhum deles emudece");
+{
+  ok(`as ${gravacoes.length} gravações entram na conta`, gravacoes.length >= 2);
   // O encosto inteiro numa conferência. Um aviso mudo é indistinguível de
   // "ninguém escreveu", que é o defeito que esta casa persegue desde 04/09.
-  ok("o encosto sintetizado produz som", porEncosto.pato.rms > 0.001,
-     `rms ${porEncosto.pato.rms.toFixed(5)}`);
-  ok("e ele não veio de arquivo nenhum", porEncosto.pato.gravado === false,
-     JSON.stringify(porEncosto.pato));
+  for (const m of gravacoes) {
+    ok(`o encosto d${m.id === "galinha" ? "a" : "o"} ${m.id} produz som`,
+       porEncosto[m.id].rms > 0.001, `rms ${porEncosto[m.id].rms.toFixed(5)}`);
+    ok(`e ele não veio de arquivo nenhum (${m.id})`, porEncosto[m.id].gravado === false,
+       JSON.stringify(porEncosto[m.id]));
+  }
 }
 
 console.log("\n5. Nenhum aviso estoura o ouvido de quem atende");

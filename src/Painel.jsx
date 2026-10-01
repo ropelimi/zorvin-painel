@@ -13525,8 +13525,8 @@ export default function Painel({ sessao }) {
                       </div>
                       {/* TOCA AO ESCOLHER, e não num botão separado de "ouvir".
                           Escolher um som sem ouvi-lo é escolher no escuro, e um
-                          botão a mais por linha faria cinco botões numa tela que
-                          tem cinco linhas. */}
+                          botão a mais por linha dobraria os botões de uma tela
+                          que só tem linhas. */}
                       <Volume2 size={17} color={C.textSecondary} />
                     </div>
                   ))}
