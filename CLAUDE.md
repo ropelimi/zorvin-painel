@@ -507,6 +507,41 @@ e 5 pegas** (3, 9, 2, 6 e 2 conferências reprovando, todas limpas). Ela mede
 por isso que o menu de tags media 139px de altura enquanto a pessoa via 21 —
 `getBoundingClientRect` não sabe que um ancestral está recortando.
 
+### As observações do cadastro (01/10)
+
+Pedido do Rodrigo em 30/09: *"Na Ficha do Vantoro, no Zorvin, precisa
+aparecer as Observações também"*.
+
+**Não precisou de nada no Vantoro nem na ponte.** Lido no código do Vantoro
+antes de mexer: `Cliente.observacoes` já saía na ficha (`_resumo`) e já
+estava em `CAMPOS_EDITAVEIS`; a ponte só repassa. O Zorvin simplesmente não
+desenhava o campo.
+
+**Uma seção própria, ABERTA, logo depois da identificação.** É onde o
+escritório escreve o que não cabe em campo nenhum, e observação que ninguém
+vê não serve de aviso — uma seção fechada no fim da ficha seria o mesmo que
+não ter trazido o campo.
+
+**Caixa de várias linhas** (`multilinha`), e não um campo de uma linha: as
+observações vêm do Vantoro em parágrafos, e um `<input>` as juntaria numa
+linha só — e gravaria assim de volta, apagando os parágrafos de quem
+escreveu lá. A sabotagem que troca a caixa pelo campo de uma linha é pega
+por cinco conferências.
+
+**O campo que não veio não vira caixa vazia.** Um cadastro aberto sem a
+chave desenharia a caixa em branco, e o que se digitasse ali SOBRESCREVERIA
+no Vantoro as observações que existem e não chegaram. Então a ficha diz que
+o campo não veio e não deixa editar — a régua das senhas, que para quem não
+pode vê-las não vêm vazias: não vêm.
+
+**Gravar manda só o que mudou**, pela conta que já existia (`salvar`):
+editar a profissão não regrava as observações, e vice-versa.
+
+Prova: `as-observacoes-na-ficha`, 21 conferências, **6 sabotagens e 6
+pegas** (o campo que não existe; a seção fechada; o campo de uma linha; sem
+a guarda da chave ausente; gravar mandando tudo; as quebras de linha
+sumindo).
+
 **Ainda em aberto, e é decisão:** o visual POR DENTRO da ficha não mudou. Ela
 já é sanfonada como a do DataCrazy (Identificação, Endereço, Acessos, Origem);
 apertar as linhas em rótulo-e-valor na mesma linha foi deixado para depois de
