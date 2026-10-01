@@ -2098,8 +2098,49 @@ pegas**. Ela mede o menu **pintado** (`elementFromPoint`), porque o menu de
 etiquetas já foi recortado por um ancestral sem o retângulo saber.
 
 **Ainda em aberto:** o histórico de quem passou para quem (hoje só o último
-passe fica), e o relatório por responsável — os dois ficam para quando
-alguém pedir, e o segundo junto com as métricas do "Já tratei".
+passe fica). ~~E o relatório por responsável.~~ **Feito** — ver logo abaixo.
+
+### O relatório por responsável (01/10)
+
+Pedido do Rodrigo: *"pode seguir com o relatório por responsável"*. O
+responsável nasceu para dar para **cobrar a fila de alguém**, e faltava onde
+LER a fila de cada um.
+
+**Uma seção do Painel de números**, entre o Painel de sempre e o "Já tratei",
+com uma linha por pessoa e **uma linha para "sem responsável"** — a fila de
+onde qualquer um pode puxar trabalho. Por linha: conversas, quantas esperam,
+quantas **há 3 dias ou mais** (o vermelho da lista, com a mesma cor), a espera
+mais antiga e as não lidas. **Quem tem mais atrasada vem primeiro**, que é a
+pergunta da tela.
+
+**É uma FOTO DE AGORA, e a seção diz isso.** O banco guarda só o dono de hoje
+(o histórico de passes não existe), então o período da barra NÃO vale aqui —
+quem escolhe "setembro" leria a carteira de hoje achando que é a de setembro.
+Telefone e departamento valem.
+
+**A conta é do banco** (`zorvin_relatorio_responsaveis`, script 011 da ponte):
+a API corta em 1000 linhas e o escritório tem ~1.800 conversas. **Arquivadas e
+telefones desativados ficam fora** — não são trabalho de ninguém agora.
+
+**Quem não administra vê a própria carteira e a fila sem dono**; as dos
+colegas são para quem administra cobrar. O recorte é feito no banco.
+
+**A conta dos dias mora em `espera.js` (`diasDesde`)**, e `diasEsperando` da
+lista passou a chamá-la: o relatório e o rótulo "esperando há N dias" diriam
+dois números sobre o mesmo cliente se cada um fizesse a sua.
+
+**Três estados que dizem o seu:** sem a função, quem administra lê "rode o
+011"; **sem a coluna do responsável, "rode o 008"** — a função responde
+`{falta: "008"}` em vez de uma lista vazia, que se leria como "ninguém tem
+conversa"; com a função falhando, a frase com o código. Quem atende não vê
+aviso de script.
+
+Prova: `o-relatorio-por-responsavel`, 33 conferências, **7 sabotagens e 7
+pegas** (a linha sem dono escondida; a falha virando ausência; o 008 que falta
+virando tabela vazia; o filtro de telefone ignorado; a seção sem dizer que é
+agora; a atrasada sem vermelho; a minha linha sem o "você"). E três no SQL,
+num Postgres de verdade (a arquivada contando, o recorte de quem não
+administra tirado, a régua dos três dias trocada), as três pegas.
 
 ## Banco de dados (tabelas que o painel lê/escreve)
 

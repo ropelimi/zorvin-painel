@@ -2627,6 +2627,57 @@ export const supabase = {
       return { data: lista, error: null };
     }
 
+    // O RELATÓRIO POR RESPONSÁVEL (script 011). Mesma ideia do de baixo: a
+    // conta de verdade foi provada num Postgres no repo da ponte; aqui ela é
+    // refeita sobre as conversas da bancada — inclusive as que a TELA acabou
+    // de passar para alguém —, para a prova cobrar o que a tela mostra.
+    if (nome === "zorvin_relatorio_responsaveis") {
+      if (globalThis.__SEM_RELATORIO_RESP) {
+        return { data: null, error: { code: "PGRST202", message: "Could not find the function public.zorvin_relatorio_responsaveis" } };
+      }
+      if (globalThis.__RELATORIO_RESP_FALHA) {
+        return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } };
+      }
+      await espera(40);
+      if (globalThis.__SEM_RESPONSAVEL) return { data: { falta: "008" }, error: null };
+      const eu = TABELAS.usuarios[0] || {};
+      const tel = (args && args.p_telefone) || null, dep = (args && args.p_departamento) || null;
+      const adv = new Map(ADVOGADOS.map((a) => [String(a.id), a]));
+      const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+      const dias = (iso) => { const d = new Date(iso); d.setHours(0, 0, 0, 0); return Math.round((hoje - d) / 86400000); };
+      const grupos = new Map();
+      for (const c of TABELAS.conversas || []) {
+        const a = adv.get(String(c.advogado_id));
+        if (c.arquivada || (a && a.ativo === false)) continue;
+        if (tel && String(c.advogado_id) !== String(tel)) continue;
+        if (dep && (!a || String(a.departamento_id) !== String(dep))) continue;
+        const k = c.responsavel_id ? String(c.responsavel_id) : "";
+        if (!eu.admin && k && k !== String(eu.id)) continue;
+        const g = grupos.get(k) || { id: c.responsavel_id || null, conversas: 0, esperando: 0, atrasadas: 0, mais_antiga: null, nao_lidas: 0 };
+        g.conversas++;
+        g.nao_lidas += Number(c.nao_lidas || 0);
+        if (c.esperando_desde) {
+          g.esperando++;
+          if (dias(c.esperando_desde) >= 3) g.atrasadas++;
+          if (!g.mais_antiga || new Date(c.esperando_desde) < new Date(g.mais_antiga)) g.mais_antiga = c.esperando_desde;
+        }
+        grupos.set(k, g);
+      }
+      const nomeDe = new Map((TABELAS.equipe || []).map((u) => [String(u.id), u.nome]));
+      const semDono = grupos.get("") || null;
+      grupos.delete("");
+      const linhas = [...grupos.values()].map((g) => ({ ...g, nome: nomeDe.get(String(g.id)) || null }))
+        .sort((x, y) => y.atrasadas - x.atrasadas || y.esperando - x.esperando || y.conversas - x.conversas
+                        || String(x.nome).localeCompare(String(y.nome)));
+      const todos = [...linhas, ...(semDono ? [semDono] : [])];
+      const soma = (k) => todos.reduce((n, g) => n + Number(g[k] || 0), 0);
+      return { data: {
+        so_meu: !eu.admin, agora: new Date().toISOString(), linhas,
+        sem_responsavel: semDono ? (({ id, ...resto }) => resto)(semDono) : null,
+        total: { conversas: soma("conversas"), esperando: soma("esperando"), atrasadas: soma("atrasadas") },
+      }, error: null };
+    }
+
     // O RELATÓRIO DO "JÁ TRATEI" (script 010). A conta de verdade — agrupar um
     // clique, tirar o desfeito, recortar por quem e por lugar — foi provada
     // num Postgres de verdade, no repo da ponte. Aqui ela é refeita sobre as

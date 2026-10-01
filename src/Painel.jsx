@@ -41,6 +41,7 @@ import Marca from "./Marca";
 import PainelEmoji, { guardarRecente } from "./Emojis";
 import JaTratei from "./JaTratei.jsx";
 import { nomeDoContato } from "./contato.js";
+import { diasDesde } from "./espera.js";
 
 // ============================================================
 //  ZORVIN by Ropelimi — Painel real (conectado ao Supabase)
@@ -123,16 +124,9 @@ function primeiroNome(nome) {
 }
 
 function diasEsperando(conversa) {
-  const desde = conversa && conversa.esperando_desde;
-  if (!desde) return 0;
-  const d = new Date(desde);
-  if (Number.isNaN(d.getTime())) return 0;
-  // Zera a hora dos dois lados antes de subtrair: assim a conta é de datas, e
-  // o horário de verão não tira nem põe um dia.
-  const inicio = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const agora = new Date();
-  const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
-  return Math.max(0, Math.round((hoje - inicio) / 86400000));
+  // A CONTA mora em `espera.js`: o relatório por responsável a faz também, e
+  // duas escritas diriam dois números sobre o mesmo cliente.
+  return diasDesde(conversa && conversa.esperando_desde);
 }
 
 // ============================================================

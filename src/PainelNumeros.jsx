@@ -64,10 +64,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabase";
 import { nomeDoContato } from "./contato.js";
 import { telefoneLegivel } from "./numeros.js";
+import { diasDesde } from "./espera.js";
 import {
   ArrowLeft, RefreshCw, AlertCircle, Table2, BarChart3, Info, Calendar,
   ChevronLeft, ChevronRight, ChevronDown, Check, X, Users, Phone, Building2,
-  ListChecks, Download,
+  ListChecks, Download, UserCheck,
 } from "lucide-react";
 
 const DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -504,6 +505,14 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
             <Ressalvas d={d} t={t} C={C} estilos={estilos} />
           </>
         )}
+
+        {/* A CARTEIRA DE CADA RESPONSÁVEL — fora do bloco de cima pela mesma
+            razão do "Já tratei": função própria no banco (script 011). Usa
+            telefone e departamento da barra, e NÃO o período: é a foto de
+            agora, e a seção diz isso. */}
+        <RelatorioResponsaveis C={C} estilos={estilos} cores={cores} fuso={fuso}
+                               telefone={telefone} departamento={departamento}
+                               souAdmin={souAdmin} meuId={meuId} />
 
         {/* O "JÁ TRATEI" FICA FORA do bloco de cima, de propósito: ele tem a
             própria função no banco (script 010), e um banco sem a do Painel
@@ -1317,6 +1326,169 @@ function Ressalvas({ d, t, C, estilos }) {
    AUSÊNCIA: qualquer outro erro vira frase, com o código (armadilha nº 2).
    ================================================================ */
 const POR_PAGINA = 50;
+
+/* ================================================================
+   O RELATÓRIO POR RESPONSÁVEL — a carteira de cada pessoa, AGORA
+   ================================================================
+   Pedido do Rodrigo em 01/10. O responsável nasceu em 30/09 para que desse
+   para "cobrar a fila de alguém"; faltava o lugar onde se LÊ a fila de cada
+   um. A conta é do banco (`zorvin_relatorio_responsaveis`, script 011 da
+   ponte), pela régua da tela inteira: a API corta em 1000 linhas sem avisar,
+   e o escritório tem ~1.800 conversas.
+
+   É UMA FOTO DE AGORA, e não um período: o banco guarda só o dono de hoje.
+   Por isso o período da barra não vale aqui — e a seção diz isso, senão quem
+   escolhe "setembro" lê a carteira de hoje achando que é a de setembro.
+
+   "SEM RESPONSÁVEL" É UMA LINHA, e não um rodapé: é a fila de onde qualquer
+   um pode puxar trabalho, e quem não administra também a vê.
+
+   SEM A FUNÇÃO ou SEM O SCRIPT 008, quem administra lê qual script falta;
+   quem atende não vê nada. COM A FUNÇÃO FALHANDO, a frase vem com o código
+   — falha não é ausência (armadilha nº 2). */
+function RelatorioResponsaveis({ C, estilos, cores, fuso, telefone, departamento, souAdmin, meuId }) {
+  const [r, setR] = useState(null);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState("");
+  const [falta, setFalta] = useState(null);   // "011" | "008" | null
+
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      setCarregando(true); setErro(""); setFalta(null);
+      const { data, error } = await supabase.rpc("zorvin_relatorio_responsaveis", {
+        p_telefone: telefone, p_departamento: departamento, p_fuso: fuso,
+      });
+      if (!vivo) return;
+      setCarregando(false);
+      if (error) {
+        const m = (error.message || "") + (error.code || "");
+        if (/zorvin_relatorio_responsaveis|PGRST202|Could not find/i.test(m)) { setFalta("011"); return; }
+        setErro(`${error.message || "erro desconhecido"}${error.code ? ` (código ${error.code})` : ""}`);
+        return;
+      }
+      if (data && data.falta) { setFalta(String(data.falta)); return; }
+      setR(data || null);
+    })();
+    return () => { vivo = false; };
+  }, [telefone, departamento, fuso]);
+
+  if (falta && !souAdmin) return null;
+
+  const SCRIPTS = {
+    "011": "sql/automaticos/011-o-relatorio-por-responsavel.sql",
+    "008": "sql/automaticos/008-o-responsavel-pela-conversa.sql",
+  };
+  const linhas = (r && r.linhas) || [];
+  const sem = r && r.sem_responsavel;
+  const total = (r && r.total) || {};
+  const maiorCarteira = Math.max(1, ...linhas.map((l) => Number(l.conversas || 0)),
+                                 sem ? Number(sem.conversas || 0) : 0);
+
+  // UMA LINHA, DESENHADA DO MESMO JEITO para as pessoas e para "sem
+  // responsável": duas escritas divergiriam, e a fila sem dono pareceria
+  // medida com outra régua.
+  const linha = (l, chave, nome, { sou = false, semDono = false } = {}) => {
+    const atrasadas = Number(l.atrasadas || 0);
+    const dias = l.mais_antiga ? diasDesde(l.mais_antiga) : null;
+    return (
+      <tr key={chave} data-responsavel-no-relatorio={semDono ? "sem" : nome}
+          style={{ background: semDono ? C.headerBar : "transparent" }}>
+        <td style={{ ...estilos.td, width: "34%" }}>
+          <div style={{ fontWeight: sou ? 800 : 600, fontStyle: semDono ? "italic" : "normal" }}>
+            {nome}
+            {sou && <span style={{ marginLeft: 7, fontSize: 11, fontWeight: 700, color: "#fff",
+                                   background: cores.saiu, borderRadius: 10, padding: "1px 7px" }}>você</span>}
+          </div>
+          <div style={{ height: 6, background: C.divider, borderRadius: 3, overflow: "hidden", marginTop: 6 }}>
+            <div style={{ width: `${Math.round((Number(l.conversas || 0) / maiorCarteira) * 100)}%`, height: "100%",
+                          background: sou ? cores.saiu : cores.apagado }} />
+          </div>
+        </td>
+        <td style={estilos.num} data-conversas={l.conversas}>{numero(l.conversas)}</td>
+        <td style={estilos.num} data-esperando={l.esperando}>{numero(l.esperando)}</td>
+        {/* O VERMELHO É O DA LISTA: três dias ou mais. Uma cor diferente aqui
+            ensinaria duas réguas para a mesma coisa. */}
+        <td style={{ ...estilos.num, color: atrasadas ? "#e5573f" : C.textSecondary, fontWeight: atrasadas ? 700 : 400 }}
+            data-atrasadas={l.atrasadas}>{numero(atrasadas)}</td>
+        <td style={{ ...estilos.num, color: dias != null && dias >= 3 ? "#e5573f" : C.textPrimary }}
+            data-mais-antiga={dias == null ? "" : dias}>
+          {dias == null ? "—" : dias === 0 ? "hoje" : `há ${dias} ${dias === 1 ? "dia" : "dias"}`}
+        </td>
+        <td style={estilos.num} data-nao-lidas={l.nao_lidas}>{numero(l.nao_lidas)}</td>
+      </tr>
+    );
+  };
+
+  return (
+    <div data-relatorio-responsaveis>
+      <Titulo C={C}><span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+        <UserCheck size={16} /> Por responsável</span></Titulo>
+
+      {carregando && <div style={{ ...estilos.nota, padding: "8px 0" }}>Contando as carteiras…</div>}
+
+      {falta && (
+        <div style={{ ...estilos.cartao, display: "flex", gap: 12, alignItems: "flex-start" }} data-responsaveis-falta={falta}>
+          <AlertCircle size={20} color={cores.aviso} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ ...estilos.nota, fontSize: 13.5 }}>
+            <b style={{ color: C.textPrimary }}>Falta um passo no banco.</b>{" "}
+            {falta === "008"
+              ? "As conversas ainda não têm responsável: "
+              : "A conta é feita lá dentro, e a função ainda não foi criada: "}
+            rode o script{" "}
+            <code style={{ background: C.headerBar, padding: "1px 5px", borderRadius: 4 }}>
+              {SCRIPTS[falta] || SCRIPTS["011"]}
+            </code>{" "}(repositório da ponte) no SQL Editor do Supabase.
+          </div>
+        </div>
+      )}
+
+      {!!erro && (
+        <div style={{ ...estilos.cartao, borderColor: "#e5573f", color: "#e5573f" }} data-responsaveis-erro>
+          Não consegui contar as carteiras: {erro}
+        </div>
+      )}
+
+      {!carregando && !falta && !erro && r && (
+        <>
+          <div style={{ ...estilos.nota, marginBottom: 12 }} data-responsaveis-escopo>
+            <b style={{ color: C.textPrimary }}>Agora</b> — este bloco não usa o período escolhido no alto:
+            o banco guarda só o responsável de hoje.{" "}
+            {r.so_meu
+              ? <>Aqui estão <b style={{ color: C.textPrimary }}>a sua carteira</b> e a fila sem responsável.</>
+              : <>Arquivadas e telefones desativados ficam de fora.</>}
+          </div>
+          <div style={{ ...estilos.cartao, overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
+              <thead><tr>
+                <th style={estilos.th}>Responsável</th>
+                <th style={estilos.thNum}>Conversas</th>
+                <th style={estilos.thNum} title="Com cliente esperando resposta">Esperando</th>
+                <th style={estilos.thNum} title="Esperando há 3 dias ou mais — o vermelho da lista">Há 3+ dias</th>
+                <th style={estilos.thNum} title="A espera do cliente mais esquecido">Mais antiga</th>
+                <th style={estilos.thNum}>Não lidas</th>
+              </tr></thead>
+              <tbody>
+                {linhas.map((l) => linha(l, l.id, l.nome || "(sem nome)",
+                                         { sou: meuId && String(l.id) === String(meuId) }))}
+                {sem && linha(sem, "sem", "Sem responsável", { semDono: true })}
+              </tbody>
+            </table>
+            {!linhas.length && !sem && (
+              <div style={{ ...estilos.nota, marginTop: 8 }}>Nenhuma conversa aberta nestes telefones.</div>
+            )}
+            {!r.so_meu && (linhas.length + (sem ? 1 : 0)) > 1 && (
+              <div style={{ ...estilos.nota, marginTop: 10 }} data-responsaveis-total>
+                No total: {numero(total.conversas)} conversas, {numero(total.esperando)} esperando,{" "}
+                <b style={{ color: Number(total.atrasadas) ? "#e5573f" : C.textPrimary }}>{numero(total.atrasadas)}</b> há 3 dias ou mais.
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 function RelatorioJaTratei({ C, estilos, cores, deIso, ateIso, fuso, passo, quem, telefone, departamento,
                              souAdmin, meuId, advogados, aoEscolherPessoa }) {
