@@ -30,7 +30,12 @@ const ok = (nome, cond, det = "") => {
 };
 
 const nav = await abrirNavegador();
-const horasAtras = (h) => new Date(Date.now() - h * 3600e3).toISOString();
+// UM "AGORA" SÓ para a semente inteira. Cada `Date.now()` separado cai num
+// milissegundo diferente, e aí "o mesmo instante" vira dois cliques e uma
+// espera de 7 dias vira 6,99999. A prova reprovava às vezes falando de um
+// defeito que era dela.
+const AGORA = Date.now();
+const horasAtras = (h) => new Date(AGORA - h * 3600e3).toISOString();
 const diasAtras = (d) => horasAtras(d * 24);
 
 /** Os dois telefones: o que o painel abre, e outro qualquer. */
@@ -60,6 +65,7 @@ const conversa = (id, nome, numero, adv, espera = null) => ({
   ultima_mensagem: "oi", frente: null, vantoro_nome: null, digitando_ate: null,
   contato: { id: `ct-${id}`, nome, numero, foto_url: null },
 });
+const UM_CLIQUE = diasAtras(1);
 const SEMENTE = {
   contatos: [
     { id: "ct-cv-r1", numero: "5511970006601", nome: "ROSA DO RELATÓRIO" },
@@ -78,8 +84,12 @@ const SEMENTE = {
   ],
   zorvin_tratamentos: [
     // UM CLIQUE, DOIS ASSUNTOS: mesmo instante, mesma conversa, mesma pessoa.
-    { id: "tr-1a", conversa_id: "cv-r1", assunto_id: "as-6", quem: "u1", quando: diasAtras(1), esperava_desde: diasAtras(5) },
-    { id: "tr-1b", conversa_id: "cv-r1", assunto_id: "as-outros", quem: "u1", quando: diasAtras(1), esperava_desde: diasAtras(5),
+    // UMA constante, e não duas chamadas a `diasAtras(1)`: duas chamadas podem
+    // cair em milissegundos diferentes e virar dois cliques de verdade — a
+    // prova reprovaria às vezes, falando de um defeito que era da semente.
+    // Achado em 01/10, pela prova irmã do histórico.
+    { id: "tr-1a", conversa_id: "cv-r1", assunto_id: "as-6", quem: "u1", quando: UM_CLIQUE, esperava_desde: diasAtras(5) },
+    { id: "tr-1b", conversa_id: "cv-r1", assunto_id: "as-outros", quem: "u1", quando: UM_CLIQUE, esperava_desde: diasAtras(5),
       observacao: "Pediu a segunda via do boleto; enviada por e-mail." },
     // A JENIFER, no OUTRO telefone.
     { id: "tr-2", conversa_id: "cv-r2", assunto_id: "as-1", quem: "u-jenifer", quando: diasAtras(2), esperava_desde: diasAtras(12) },

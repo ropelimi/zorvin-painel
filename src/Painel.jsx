@@ -78,6 +78,12 @@ const RESUMO_ALTERACAO = {
   contato_renomeado: "deu um nome ao contato",
 };
 
+// QUANTAS LINHAS do "Já tratei" o histórico de um cliente lê. Cada clique
+// grava uma linha por assunto marcado, então 300 linhas são, na prática, mais
+// de cem cliques — anos de atendimento de uma pessoa só. Bater no teto não
+// esconde nada calado: a seção diz que mostra só os mais recentes.
+const LIMITE_DO_JA_TRATEI_NO_HISTORICO = 300;
+
 // COMO UM CONTATO SE CHAMA NA TELA — mora em `contato.js`, porque o relatório
 // do "Já tratei" (no Painel de números) também escreve nome de cliente, e uma
 // segunda regra de nome divergiria desta no primeiro conserto.
@@ -5148,7 +5154,12 @@ export default function Painel({ sessao }) {
   // Só entram mensagens ENVIADAS (`origem = 'advogado'`). "Quem falou com o
   // cliente" é sobre nós; o que ele mandou está na conversa.
   async function carregarHistorico(contatoId) {
-    setHistorico({ carregando: true, linhas: [], erro: "", parcial: false, alteracoes: [] });
+    // `contatoId` vai junto para as leituras que chegam depois (alterações,
+    // "Já tratei") saberem se o painel ainda é o deste cliente: trocar de
+    // conversa com ele aberto, e a resposta atrasada da anterior pintaria o
+    // histórico de um cliente na tela de outro.
+    setHistorico({ contatoId, carregando: true, linhas: [], erro: "", parcial: false, alteracoes: [],
+                   tratados: { carregando: true, grupos: [], erro: "" } });
 
     // O HISTÓRICO DE ALTERAÇÕES, direto do banco. É do escritório inteiro e
     // não passa pela ponte: são linhas do Zorvin, não do Vantoro, e a regra de
@@ -5192,6 +5203,7 @@ export default function Painel({ sessao }) {
       // Forma funcional: as alterações chegam por outra promessa, e trocar o
       // objeto inteiro aqui apagaria as que já tivessem chegado.
       setHistorico((h) => ({ ...(h || {}), carregando: false, linhas, erro: "", parcial: false }));
+      carregarTratadosDoHistorico(contatoId, linhas.map((l) => l.conversaId));
       return;
     } catch (_e) {
       // A ponte dorme no plano gratuito e pode demorar a acordar. Em vez de
@@ -5204,7 +5216,8 @@ export default function Painel({ sessao }) {
       .select("id, advogado_id").eq("contato_id", contatoId);
     if (error) {
       setHistorico((h) => ({ ...(h || {}), carregando: false, linhas: [], parcial: false,
-                             erro: "Não consegui ler o histórico." }));
+                             erro: "Não consegui ler o histórico.",
+                             tratados: { grupos: [], erro: "Sem a lista de conversas deste cliente, não há onde procurar o que foi tratado." } }));
       return;
     }
     const pontas = (v, crescente) => supabase.from("mensagens")
@@ -5226,6 +5239,80 @@ export default function Painel({ sessao }) {
     // viva, e é a linha que quase sempre se procura.
     linhas.sort((a, b) => new Date(b.ultima?.criado_em || 0) - new Date(a.ultima?.criado_em || 0));
     setHistorico((h) => ({ ...(h || {}), carregando: false, linhas, erro: "", parcial: true }));
+    carregarTratadosDoHistorico(contatoId, linhas.map((l) => l.conversaId));
+  }
+
+  // ---- O "JÁ TRATEI" DESTE CLIENTE, dentro do histórico ----
+  //
+  //  Pedido do Rodrigo em 30/09: o que foi tratado tinha de aparecer "em cada
+  //  contato também, talvez no histórico". O relatório responde "o que a
+  //  equipe fez"; esta seção responde "o que já fizemos POR ESTA PESSOA" —
+  //  que é a pergunta de quem abre a conversa de um cliente que voltou.
+  //
+  //  POR CONTATO, como o resto do painel: as conversas de TODOS os telefones
+  //  dele, e não só a aberta. O "Já tratei" do SAC sobre este cliente é
+  //  justamente o que o SDC precisa saber antes de responder.
+  //
+  //  DIRETO DO BANCO, sem a ponte. A regra de leitura de `zorvin_tratamentos`
+  //  é aberta a quem entrou (script 005), então nada fica recortado pelos
+  //  telefones da pessoa. As conversas vêm da lista que o histórico JÁ leu —
+  //  pela ponte, o escritório inteiro; sem ela, o recorte que o painel já
+  //  avisa ser parcial. Uma consulta, nenhuma rota nova, nenhum script.
+  //
+  //  UM CLIQUE É UM REGISTRO, e não uma linha: marcar ACORDOS e OUTROS grava
+  //  duas linhas com a mesma conversa, a mesma pessoa e o mesmo instante —
+  //  é assim que o relatório (script 010) conta, e as duas telas têm de dizer
+  //  o mesmo número.
+  //
+  //  E A LEITURA QUE FALHA DIZ QUE FALHOU (armadilha nº 2): uma seção vazia
+  //  aqui diria "ninguém tratou nada deste cliente", e quem lê vai responder
+  //  como se fosse a primeira vez. A única ausência calada é a da TABELA —
+  //  sem o script 005 o "Já tratei" não existe, e não há o que dizer.
+  async function carregarTratadosDoHistorico(contatoId, conversaIds) {
+    const por = (t) => setHistorico((h) => (h && h.contatoId === contatoId ? { ...h, tratados: t } : h));
+    if (!conversaIds.length) { por({ grupos: [], erro: "" }); return; }
+    const { data, error } = await supabase.from("zorvin_tratamentos")
+      // `*`: `observacao` só existe depois do script 009, e pedi-la por nome
+      // num banco sem ela derrubaria a leitura inteira (42703).
+      .select("*")
+      .in("conversa_id", conversaIds)
+      .order("quando", { ascending: false })
+      .limit(LIMITE_DO_JA_TRATEI_NO_HISTORICO);
+    if (error) {
+      if (error.code === "42P01" || error.code === "PGRST205") { por(null); return; }
+      por({ grupos: [], erro: comOCodigo("Não consegui ler o que já foi tratado com este cliente.",
+                                         error, "histórico do Já tratei") });
+      return;
+    }
+    const grupos = [];
+    const porChave = new Map();
+    for (const t of data || []) {
+      const chave = `${t.conversa_id}|${t.quem}|${t.quando}`;
+      let g = porChave.get(chave);
+      if (!g) {
+        g = { chave, conversaId: t.conversa_id, quem: t.quem, quando: t.quando,
+              assuntos: [], observacoes: [], desfeitoEm: null, desfeitoPor: null };
+        porChave.set(chave, g);
+        grupos.push(g);
+      }
+      g.assuntos.push(t.assunto_id);
+      if (t.observacao) g.observacoes.push(t.observacao);
+      if (t.desfeito_em) { g.desfeitoEm = t.desfeito_em; g.desfeitoPor = t.desfeito_por || null; }
+    }
+    // CORTADO quando a leitura bateu no teto: o mais antigo pode ter ficado
+    // de fora, e a tela diz isso em vez de mostrar a lista curta como inteira.
+    por({ grupos, erro: "", cortado: (data || []).length >= LIMITE_DO_JA_TRATEI_NO_HISTORICO });
+  }
+
+  // Marcou ou desfez com o histórico aberto ao lado: a seção acompanha. Sem
+  // isto ela continuaria dizendo o que era verdade antes do clique — e quem
+  // acabou de marcar conclui que não gravou.
+  function releTratadosDoHistorico(conversaId) {
+    const h = historico;
+    if (!h || !h.contatoId || !h.tratados) return;
+    const ids = (h.linhas || []).map((l) => l.conversaId);
+    if (!ids.some((id) => String(id) === String(conversaId))) return;
+    carregarTratadosDoHistorico(h.contatoId, ids);
   }
 
   // "Ver a conversa" de uma linha do histórico: troca para aquele telefone e
@@ -7899,6 +7986,7 @@ export default function Painel({ sessao }) {
     setConversas((prev) => prev.map((x) => (x.id === conv.id
       ? { ...x, tratada_em: quando, esperando_desde: null } : x)));
     setJaTratei(null);
+    releTratadosDoHistorico(conv.id);
     mostrarAviso("Tirada da fila de espera.");
   }
 
@@ -7935,6 +8023,7 @@ export default function Painel({ sessao }) {
     // pelo banco, e escrevê-la aqui de cabeça seria uma segunda conta para
     // divergir da primeira.
     carregarConversas(advogadoId);
+    releTratadosDoHistorico(conv.id);
     mostrarAviso(erroConta
       ? "Voltou para a fila, mas não consegui recalcular a espera. Atualize a página."
       : "Voltou para a fila de espera.");
@@ -13127,6 +13216,102 @@ export default function Painel({ sessao }) {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* "JÁ TRATEI" — o que a equipe já resolveu com este cliente.
+                Antes da lista de telefones e fora do bloco dela, pelo mesmo
+                motivo das alterações: o que foi tratado não depende de alguém
+                ter MANDADO mensagem — "Já tratei" existe justamente para a
+                conversa que sai da fila sem resposta escrita.
+                `tratados === null` é o banco sem o script 005: aí o recurso
+                não existe, e a seção não aparece. Ver
+                `carregarTratadosDoHistorico`. */}
+            {!!historico.tratados && (
+              <div data-historico-ja-tratei style={{ marginBottom: 18 }}>
+                <div style={{ fontSize: 11, color: C.textSecondary, fontWeight: 700, letterSpacing: 0.3, textTransform: "uppercase", marginBottom: 8 }}>
+                  Já tratei{historico.tratados.carregando ? "" : ` (${historico.tratados.grupos.length})`}
+                </div>
+                {historico.tratados.carregando && (
+                  <div style={{ fontSize: 13, color: C.textSecondary }}>Levantando…</div>
+                )}
+                {!!historico.tratados.erro && (
+                  <div data-historico-ja-tratei-erro style={{ fontSize: 13, color: C.textSecondary, lineHeight: 1.5 }}>
+                    {historico.tratados.erro}
+                  </div>
+                )}
+                {!historico.tratados.carregando && !historico.tratados.erro && !historico.tratados.grupos.length && (
+                  <div style={{ fontSize: 13, color: C.textSecondary, lineHeight: 1.5 }}>
+                    Ninguém marcou “Já tratei” com este cliente ainda.
+                  </div>
+                )}
+                {historico.tratados.grupos.map((g) => {
+                  const pessoa = equipe.porId[String(g.quem)];
+                  const nome = pessoa?.nome || (String(g.quem) === String(meuId) ? "Você" : "alguém da equipe");
+                  const linha = (historico.linhas || []).find((l) => String(l.conversaId) === String(g.conversaId));
+                  // Os assuntos na ORDEM da administração, e não na do banco:
+                  // é a ordem em que a equipe os lê na janela do "Já tratei".
+                  const nomes = g.assuntos
+                    .map((id) => assuntos.find((a) => String(a.id) === String(id)))
+                    .sort((a, b) => (a?.ordem ?? 999) - (b?.ordem ?? 999))
+                    .map((a) => a?.nome || "assunto removido");
+                  const quemDesfez = g.desfeitoPor ? (equipe.porId[String(g.desfeitoPor)]?.nome || "alguém") : null;
+                  return (
+                    <div key={g.chave} data-registro-no-historico data-desfeito={g.desfeitoEm ? "sim" : undefined}
+                         style={{ display: "flex", gap: 9, marginBottom: 12, opacity: g.desfeitoEm ? 0.65 : 1 }}>
+                      <div style={{ marginTop: 2 }}><Avatar nome={nome} foto={pessoa?.foto} size={28} /></div>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 13.5, lineHeight: 1.45 }}>
+                          <b>{nome}</b> marcou “Já tratei”
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+                          {nomes.map((n, i) => (
+                            <span key={i} data-assunto-no-historico
+                                  style={{ fontSize: 11.5, fontWeight: 600, padding: "2px 8px", borderRadius: 999,
+                                           background: C.listActive, color: C.textPrimary,
+                                           textDecoration: g.desfeitoEm ? "line-through" : "none" }}>
+                              {n}
+                            </span>
+                          ))}
+                        </div>
+                        {/* O TEXTO DO OUTROS — é ele que diz o que "outros"
+                            quis dizer. Sem ele a seção repetiria a pergunta
+                            que o campo obrigatório existe para responder. */}
+                        {g.observacoes.map((o, i) => (
+                          <div key={i} data-observacao-no-historico
+                               style={{ fontSize: 12.5, marginTop: 4, lineHeight: 1.45, overflowWrap: "anywhere",
+                                        fontStyle: "italic", color: C.textPrimary }}>
+                            “{o}”
+                          </div>
+                        ))}
+                        <div style={{ fontSize: 11.5, color: C.textSecondary, marginTop: 3 }}>
+                          {dataHoraDe(g.quando)}
+                          {linha?.adv ? <> · por {comNumero(linha.adv)}</> : null}
+                        </div>
+                        {/* O DESFEITO FICA, marcado — não some. "Marcaram e
+                            desfizeram" é uma resposta diferente de "ninguém
+                            marcou", e quem desfez e quando é justamente o que
+                            se pergunta depois. */}
+                        {g.desfeitoEm && (
+                          <div style={{ fontSize: 11.5, color: C.textSecondary, marginTop: 2 }}>
+                            <b>desfeito</b>{quemDesfez ? ` por ${quemDesfez}` : ""} · {dataHoraDe(g.desfeitoEm)}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                {historico.parcial && !historico.tratados.carregando && !historico.tratados.erro && (
+                  <div style={{ fontSize: 11.5, color: C.textSecondary, lineHeight: 1.5 }}>
+                    Só das conversas dos telefones que você alcança — a ponte não
+                    respondeu, e sem ela não sei quais são as outras.
+                  </div>
+                )}
+                {historico.tratados.cortado && (
+                  <div style={{ fontSize: 11.5, color: C.textSecondary, lineHeight: 1.5 }}>
+                    Mostrando só os mais recentes. O relatório do Painel tem o resto.
+                  </div>
+                )}
               </div>
             )}
 
