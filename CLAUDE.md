@@ -816,6 +816,65 @@ Provas: `o-volume-dos-avisos` (12 conferências) e `o-pato-e-a-chave-do-aviso`
 NENHUM oscilador"*: o defeito mais provável agora é o arquivo não sair na
 publicação, e **o encosto funciona bem demais para alguém notar sozinho**.
 
+### A galinha — e a quinta tentativa de sintetizar bicho (01/10)
+
+Pedido do Rodrigo depois do pato: vaca, porco, galinha e gato. **A galinha
+ele mandou** (um trecho de 4,45 s do clipe "Pó Pó Pó", pedindo "um único
+pó"); os outros três ele não tinha, e pediu que eu fizesse.
+
+**Vaca, porco e gato foram reprovados — "não gostei dos sons" — e saíram.**
+Desta vez não foram oscilador: foram sintetizados fora do navegador por
+**fonte-e-filtro** (pulsos de pregas vocais com o tom subindo e caindo, as
+ressonâncias da boca abrindo e fechando, aspereza e sopro), gravados em
+arquivo, com o espectro conferido — o arco do "miau", o grave do mugido, as
+fungadas do porco. **O feitio estava certo e não bastou.** É a quinta
+tentativa de fabricar bicho nesta casa, depois das quatro do pato, e a régua
+é a mesma de 28/09, agora sem exceção: **quem não ouve o som não o fabrica —
+pede a gravação.** Serve qualquer coisa de onde se ouça o bicho (vídeo,
+áudio de WhatsApp, desenho); cortar e limpar é comigo. A prova
+`os-bichos-do-aviso` tem uma conferência para eles não voltarem do mesmo
+jeito numa limpeza futura.
+
+**Os arquivos foram mandados para ele ouvir ANTES de mesclar**, e é isso que
+fica como processo: a reprovação chegou antes de ir para a equipe, e não
+depois. (A primeira tentativa de mandar foi como anexo no chat, e ele
+perguntou *"como vou ouvir se você ainda não mesclou?"* — o anexo passou
+despercebido. Ao mandar som para ouvir, **diga onde ele está**.)
+
+**A galinha é UM "pó", e SÓ A VOZ** — o segundo pedido dele, depois de ouvir
+a primeira versão com a música por baixo. A música saiu por um **separador
+de voz** (UVR, modelo `Kim_Vocal_2`, rodado pelo `audio-separator` com o
+modelo baixado do GitHub), e não por filtro: a voz e as notas da música
+ocupam as mesmas frequências, e filtro que tira uma tira a outra.
+
+**E o separador corrigiu uma leitura minha.** O trecho tem dois "pó"
+alternados, e eu supus que os dois eram a galinha. A faixa da voz trouxe só
+o de ataque seco: **o "ó" grave era instrumento.** Dos sete "pó" da voz
+ficou o de 0,91 s — o de mais voz e menos música no original (63%, contra
+41% do que eu tinha usado na primeira versão) e que começa depois de
+silêncio. **300 ms, mono, 22 kHz, 13 KB.** O trecho inteiro não foi para o
+repositório. A receita é `sons/cortar-a-galinha.py`, que refaz o arquivo
+**byte por byte** a partir da faixa da voz.
+
+**O volume sai do pato**, que é o volume aprovado: a galinha toca a 1,08x a
+altura dele, e o encosto na mesma altura do arquivo (0,99x). A prova
+`o-volume-dos-avisos` deixou de conferir "o pato" e passou a conferir **todo
+som que é arquivo**, lido da própria receita (`arquivo`): o próximo bicho
+entra nas conferências sem ninguém lembrar de acrescentá-lo.
+
+Prova: `os-bichos-do-aviso`, 19 conferências, **8 sabotagens e 8 pegas**
+(o arquivo com nome errado; a galinha que some da lista; ela dez vezes mais
+alta; o encosto vazio; o "Sem som" antes dela; a vaca sintetizada de volta;
+a mensagem nova tocando o pato no lugar do escolhido; **o arquivo antigo,
+com música**). A do nome errado importa porque o encosto toca no lugar, e
+funciona bem demais para alguém notar sozinho.
+
+**A última vazou primeiro, e ensinou o de sempre:** devolver a galinha com
+música passava em tudo — mesma duração, mesmo tamanho, mesmo volume. O que a
+separa da certa é o CONTEÚDO, e nenhuma medida de tela o vê. Hoje a prova
+confere a **impressão digital** do arquivo que a receita faz; trocá-lo de
+propósito é refazer pela receita e trocar o número na prova.
+
 ### A etiqueta da notificação
 
 Era `tag: "zorvin"` para tudo: cada aviso **substituía** o anterior, então dois

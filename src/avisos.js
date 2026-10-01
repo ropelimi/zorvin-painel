@@ -140,6 +140,49 @@ export const SONS = [
         forma: "sawtooth", filtro: 1100, filtroTipo: "bandpass", filtroQ: 2 },
     ],
   },
+  // ============================================================
+  //  A GALINHA (01/10) — um "pó" só, e SÓ A VOZ
+  //
+  //  Pedido do Rodrigo depois do pato. Ele mandou um trecho de 4,45 s do
+  //  clipe "Pó Pó Pó" e pediu um "pó" só — e depois, ouvindo, pediu SÓ A VOZ,
+  //  sem a música de fundo.
+  //
+  //  A MÚSICA SAIU POR UM SEPARADOR DE VOZ, e não por filtro. A voz e a
+  //  música ocupam as mesmas frequências (as notas da música são as linhas
+  //  retas do espectro, em 1, 2, 3,4 kHz…); um filtro que tirasse as notas
+  //  tiraria a voz junto. O separador (UVR, modelo Kim_Vocal_2) foi treinado
+  //  para isso e devolve as duas faixas.
+  //
+  //  E ELE CORRIGIU UMA LEITURA MINHA. O trecho tem dois "pó" alternados, e
+  //  eu tinha suposto que os dois eram a galinha. A faixa da voz trouxe só o
+  //  de ataque seco: o "ó" grave era INSTRUMENTO. Dos sete "pó" da voz,
+  //  ficou o de 0,91 s — o que tinha mais voz e menos música no original
+  //  (63%, contra 41% do que eu tinha usado antes) e que começa depois de
+  //  silêncio. A receita é `sons/cortar-a-galinha.py`.
+  //
+  //  O VOLUME SAI DO PATO, que é o volume que ele aprovou. E ela tem o seu
+  //  ENCOSTO sintetizado, pela régua do pato: falhando a busca, sai um som
+  //  parecido em vez de silêncio.
+  //
+  //  VACA, PORCO E GATO SAÍRAM, e ficam escritos aqui para não voltarem do
+  //  mesmo jeito: foram sintetizados por mim, fora do navegador, por
+  //  fonte-e-filtro (pregas vocais + ressonâncias da boca), e o Rodrigo não
+  //  gostou. É a quinta tentativa de sintetizar bicho, depois das quatro do
+  //  pato, e a régua continua a mesma: quem não ouve o som não o fabrica —
+  //  pede a gravação.
+  // ============================================================
+  {
+    id: "galinha",
+    nome: "Galinha",
+    descricao: "Um “pó” só",
+    arquivo: "/avisos/galinha.wav",
+    repeticoes: [0],
+    volume: 0.0697,
+    notas: [
+      { hz: 420, pico: 640, ate: 360, em: 0, dura: 0.2, volume: 0.19,
+        forma: "sawtooth", filtro: 1000, filtroTipo: "bandpass", filtroQ: 1.5 },
+    ],
+  },
   {
     // SEM SOM CONTINUA AVISANDO. Quem escolhe isto não está desistindo do
     // aviso — está tirando o barulho. A notificação da área de trabalho e o
