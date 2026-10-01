@@ -61,6 +61,7 @@ const ESTADO_CIVIL_RESERVA = [
 //   data      → máscara DD/MM/AAAA
 //   cep       → máscara 00000-000 e busca o endereço sozinho
 //   opcoes    → vira lista de escolha em vez de texto livre
+//   multilinha → caixa de várias linhas, para texto corrido
 const SECOES = [
   {
     id: "identificacao",
@@ -79,6 +80,25 @@ const SECOES = [
       { chave: "nascimento", rotulo: "Nascimento", dica: "DD/MM/AAAA", data: true },
       { chave: "estado_civil", rotulo: "Estado civil", opcoes: "estado_civil" },
       { chave: "ocupacao", rotulo: "Profissão" },
+    ],
+  },
+  // AS OBSERVAÇÕES DO CADASTRO — pedido do Rodrigo em 30/09.
+  //
+  // É o campo "Observações" da ficha do Vantoro, o mesmo texto: o Vantoro já
+  // mandava o campo na ficha e já aceitava gravá-lo (`CAMPOS_EDITAVEIS`), e o
+  // Zorvin simplesmente não o desenhava. É onde o escritório escreve o que
+  // não cabe em campo nenhum — e quem atende pelo WhatsApp era quem menos o
+  // via.
+  //
+  // ABERTA, e logo depois da identificação: observação que ninguém vê não
+  // serve de aviso. Uma seção fechada no fim da ficha seria o mesmo que não
+  // ter trazido o campo.
+  {
+    id: "observacoes",
+    titulo: "Observações",
+    aberta: true,
+    campos: [
+      { chave: "observacoes", rotulo: "Observações do cadastro", multilinha: true },
     ],
   },
   {
@@ -769,6 +789,22 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     // os dois na tela mostraria o mesmo número em dois lugares, com regras
     // diferentes — e a pessoa não teria como saber qual dos dois vale.
     if (c.chave === "telefone2" && cliente) return desenharTelefones();
+    // O CAMPO QUE NÃO VEIO NÃO VIRA CAMPO VAZIO. Um cadastro aberto sem a
+    // chave (um Vantoro mais antigo, um resumo curto) desenharia a caixa em
+    // branco — e o que se digitasse ali SOBRESCREVERIA no Vantoro as
+    // observações que existem e não chegaram. É a régua das senhas, que não
+    // vêm vazias para quem não pode vê-las: elas não vêm.
+    if (c.multilinha && cliente && !Object.prototype.hasOwnProperty.call(cliente, c.chave)) {
+      return (
+        <div key={c.chave} data-campo-ausente={c.chave} style={{ marginBottom: 10 }}>
+          <label style={rotulo}>{c.rotulo}</label>
+          <div style={{ fontSize: 12.5, color: C.textSecondary, lineHeight: 1.5 }}>
+            O Vantoro não mandou este campo agora. Para não apagar o que está
+            lá, ele não pode ser editado daqui — veja no Vantoro.
+          </div>
+        </div>
+      );
+    }
     const lista = c.opcoes ? (opcoes[c.opcoes] || []) : null;
     return (
       <div key={c.chave} style={{ marginBottom: 10 }}>
@@ -779,6 +815,16 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
             <option value="">—</option>
             {lista.map((o) => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
           </select>
+        ) : c.multilinha ? (
+          // QUEBRA DE LINHA É CONTEÚDO aqui: as observações vêm do Vantoro
+          // escritas em parágrafos, e um <input> as juntaria numa linha só —
+          // e gravaria assim de volta, apagando os parágrafos de quem
+          // escreveu lá.
+          <textarea data-campo={c.chave} rows={5}
+                    style={{ ...campo, resize: "vertical", minHeight: 90, lineHeight: 1.45,
+                             fontFamily: "inherit", whiteSpace: "pre-wrap" }}
+                    value={edicao[c.chave] || ""}
+                    onChange={(e) => setEdicao({ ...edicao, [c.chave]: e.target.value })} />
         ) : (
           <input data-campo={c.chave} style={campo} value={edicao[c.chave] || ""}
                  inputMode={(c.data || c.cep) ? "numeric" : undefined}
