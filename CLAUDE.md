@@ -1694,8 +1694,8 @@ Os cliques e `fill` dela são guardados — a primeira sabotagem "pegou"
 estourando, e prova que estoura não diz QUAL conferência viu o defeito.
 
 ~~**Ainda em aberto:** onde LER isso.~~ **O relatório foi feito** — ver logo
-abaixo. **Continua em aberto:** o histórico de cada contato (o "Já tratei" da
-conversa, dentro dela).
+abaixo. ~~**Continua em aberto:** o histórico de cada contato.~~ **Feito** —
+ver "O "Já tratei" no histórico de cada cliente", mais abaixo.
 
 ### O relatório do "Já tratei" (30/09)
 
@@ -1761,6 +1761,62 @@ ausência; o administrador sem o aviso do script; o filtro de telefone que não
 recorta; o texto do OUTROS escondido; a planilha sem BOM; o desfeito sem
 marca). A do caminho inteiro é a que importa: sem ela, a prova passaria com a
 bancada inventando números que a tela nunca gravou.
+
+### O "Já tratei" no histórico de cada cliente (01/10)
+
+A outra metade do pedido de 30/09: *"e ter em cada contato também, talvez no
+histórico"*. O relatório responde **o que a equipe fez**; esta seção responde
+**o que já fizemos por esta pessoa** — a pergunta de quem abre a conversa de
+um cliente que voltou.
+
+**Mora no painel "Histórico de atendimento"**, que já existia e já era por
+CONTATO: uma seção *Já tratei (N)* entre as alterações e a lista de
+telefones. Cada registro diz quem marcou, os assuntos (na ordem da
+administração), o texto do OUTROS, quando e por qual telefone.
+
+**Por contato, e não por conversa.** O "Já tratei" do SAC sobre este cliente é
+justamente o que o SDC precisa saber antes de responder — e é o que se perde
+olhando só a conversa aberta.
+
+**Direto do banco, sem a ponte e sem SQL.** A regra de leitura de
+`zorvin_tratamentos` é aberta a quem entrou (script 005), então nada fica
+recortado pelos telefones da pessoa. As conversas vêm da lista que o histórico
+JÁ leu pela ponte — o escritório inteiro. Sem a ponte, ele lê o recorte que
+alcança e **diz** que é parcial, como a lista de telefones já dizia.
+
+**Um clique é um registro**, pela régua do relatório: as duas telas têm de
+dizer o mesmo número.
+
+**Três estados, e cada um diz o seu:**
+
+| o banco | a seção |
+|---|---|
+| sem a tabela (005 não rodou) | não aparece — o recurso não existe |
+| leitura falhou | a frase **com o código**, e nunca "ninguém marcou" |
+| nenhum registro | "Ninguém marcou “Já tratei” com este cliente ainda" |
+
+O segundo é a armadilha nº 2: "ninguém marcou" no lugar de "não consegui ler"
+faria a pessoa responder o cliente como se fosse a primeira vez.
+
+**O desfeito fica, marcado e com quem desfez.** "Marcaram e desfizeram" é
+outra resposta que "ninguém marcou".
+
+**E a seção acompanha o clique:** marcar ou desfazer com o histórico aberto
+ao lado relê a seção. Sem isso ela continuaria dizendo o que era verdade antes
+do clique, e quem acabou de marcar concluiria que não gravou.
+
+**Um defeito da prova do relatório, achado por esta:** a semente chamava
+`diasAtras(1)` duas vezes para "o mesmo instante" de um clique, e duas
+chamadas podem cair em milissegundos diferentes — viram dois cliques. Ela
+passava por sorte; a irmã desta rodada pegou na sabotagem, contando quatro
+registros onde havia três. Hoje as duas provas têm UM `AGORA` para a semente
+inteira.
+
+Prova: `o-historico-do-ja-tratei`, 34 conferências, **8 sabotagens e 8 pegas**
+(linhas no lugar de cliques; a falha virando ausência; o desfeito sumindo; o
+texto do OUTROS escondido; só um telefone; a seção que não relê depois de
+marcar; o aviso de parcial tirado; a tabela que falta virando "ninguém
+marcou").
 
 ## O aviso do nono dígito não previa nada — e mandou mexer na ficha de um cliente
 

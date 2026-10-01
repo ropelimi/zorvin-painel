@@ -1564,7 +1564,11 @@ function consulta(tabela) {
         // "existe e está vazia" — ele esconderia o botão pelo motivo errado, e
         // a prova aprovaria um painel que some com a saída da fila no dia em
         // que alguém apagar o último assunto.
-        || (tabela === "zorvin_assuntos" && globalThis.__SEM_ASSUNTOS));
+        || (tabela === "zorvin_assuntos" && globalThis.__SEM_ASSUNTOS)
+        // A TABELA DOS REGISTROS mora DENTRO do bloco guardado do 005, junto
+        // da coluna: sem `__SEM_TRATADA` ela responderia lista vazia, e o
+        // histórico diria "ninguém marcou" num banco onde o recurso nem existe.
+        || (tabela === "zorvin_tratamentos" && (globalThis.__SEM_TRATADA || globalThis.__SEM_ASSUNTOS)));
   let linhas = faltando ? [] : (TABELAS[tabela] || []).slice();
   // O QUE FOI PEDIDO, e não só o resultado. É por isto que dá para saber se a
   // consulta varreu a tabela inteira ou entrou por um recorte — a diferença
