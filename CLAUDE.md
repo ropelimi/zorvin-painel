@@ -950,6 +950,35 @@ histórico com autor, então era de alguém. A conferência dizia medir "cliente
 novo" e media outra coisa — e o cenário de verdade é este mesmo, porque cliente
 novo escrevendo cria uma conversa que nenhum painel conhece.
 
+## O áudio em 2x (02/10)
+
+Pedido da equipe (Jenifer): *"colocar x2 nos áudios do Zorvin"*. Um botão ao
+lado do tocador de cada bolha de áudio, que anda **1x → 1,5x → 2x → 1x**, como
+o do WhatsApp, e sempre escreve a velocidade de agora.
+
+**Uma escolha só, para todos os áudios** (`velocidadeDoAudio.js`), guardada no
+navegador como o som do aviso. Trocada numa bolha, todas acompanham na hora;
+cada bolha com o seu estado faria duas bolhas da mesma conversa tocarem em
+velocidades diferentes.
+
+**A velocidade é posta DUAS vezes, e as duas importam juntas:** o navegador
+devolve `playbackRate` ao `defaultPlaybackRate` sempre que carrega o arquivo —
+e o arquivo só carrega no primeiro play. Então a bolha põe as duas, e põe de
+novo no `loadedmetadata`. **As duas sabotagens que tiram uma delas VAZAM, com
+razão**: uma cobre a outra. A que tira as duas é pega ("continua em 2x depois
+de carregar o arquivo").
+
+Prova: `o-audio-em-2x`, 15 conferências, **7 sabotagens de verdade e 7 pegas**
+(o rótulo que muda sem o tocador; sem aplicar ao trocar; sem guardar; só 1x e
+2x; qualquer valor guardado aceito; cada bolha por si; as duas camadas do
+carregamento tiradas juntas). Os áudios são plantados pela prova
+(`__SEMENTE`): a bancada não tem nenhum.
+
+**Ainda em aberto, e já decidido com o Rodrigo:** a **transcrição** dos áudios
+— pelo **Groq** (Whisper, ~US$ 0,04 por hora de áudio), **ao clicar** num
+botão "Transcrever", com o texto guardado no banco para a equipe inteira não
+pagar duas vezes pelo mesmo áudio. Vai numa PR própria, com a chave na ponte.
+
 ## O topo da coluna — 283px para dizer o que cabe em 188
 
 Pedido do Rodrigo em 16/09, com as duas telas lado a lado: o topo do Zorvin

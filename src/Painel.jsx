@@ -24,6 +24,7 @@ import { useVocabulario } from "./vocabulario.js";
 import { SONS, tocarAviso, somEscolhido, guardarSom,
          avisoNaTelaLigado, guardarAvisoNaTela } from "./avisos.js";
 import { Chave } from "./Chave.jsx";
+import { useVelocidadeDoAudio, proximaVelocidade, rotuloDaVelocidade } from "./velocidadeDoAudio.js";
 import { PRAZO_DA_BUSCA, foiAbortada, funcaoNaoExiste,
          condicoesDeNome, recadoDaBusca } from "./busca.js";
 import { comoPrever, nomeDoTipo, tamanhoLegivel, tipoServido, oQuadroDesenha,
@@ -1838,10 +1839,38 @@ function PreviaDeArquivo({ C, url, mime, nome, altura = 150, inteira = false }) 
 }
 
 function BolhaAudio({ C, saida, url, m }) {
+  const velocidade = useVelocidadeDoAudio();
+  const tocador = useRef(null);
+  // AS DUAS, E DE NOVO A CADA ARQUIVO CARREGADO: o navegador devolve
+  // `playbackRate` ao `defaultPlaybackRate` sempre que carrega o áudio, e o
+  // arquivo só carrega no primeiro play. Pondo só a primeira, o 2x escolhido
+  // antes de tocar voltaria a 1x no instante em que o áudio começa.
+  const aplicar = useCallback(() => {
+    const a = tocador.current;
+    if (!a) return;
+    a.defaultPlaybackRate = velocidade;
+    a.playbackRate = velocidade;
+  }, [velocidade]);
+  useEffect(aplicar, [aplicar, url]);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
       {url ? (
-        <audio controls src={url} style={{ height: 32, maxWidth: "min(220px, 100%)", minWidth: 0 }} />
+        <>
+          <audio ref={tocador} controls src={url} onLoadedMetadata={aplicar}
+                 style={{ height: 32, maxWidth: "min(220px, 100%)", minWidth: 0 }} />
+          {/* O BOTÃO DIZ A VELOCIDADE DE AGORA, como o do WhatsApp: um botão
+              que só troca e não conta em que estado está faz "achei
+              estranho" virar "está quebrado". */}
+          <button type="button" data-velocidade-audio={velocidade} onClick={proximaVelocidade}
+                  title="Velocidade do áudio — clique para trocar"
+                  aria-label={`Velocidade do áudio: ${rotuloDaVelocidade(velocidade)}. Clique para trocar.`}
+                  style={{ flexShrink: 0, minWidth: 38, height: 24, padding: "0 7px", borderRadius: 12,
+                           border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700,
+                           background: velocidade === 1 ? C.searchBg : C.green,
+                           color: velocidade === 1 ? C.textSecondary : "#fff" }}>
+            {rotuloDaVelocidade(velocidade)}
+          </button>
+        </>
       ) : (
         <>
           <div style={{ width: 34, height: 34, borderRadius: "50%", background: C.searchBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
