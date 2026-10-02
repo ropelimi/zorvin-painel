@@ -42,10 +42,16 @@ const nav = await abrirNavegador();
  *  trocar o `.catch(() => true)` por `false` — que é a armadilha nº 2 de volta
  *  inteira — passava sem ninguém reprovar.
  */
-async function abrirPainel(status, largura = 1360) {
+async function abrirPainel(status, largura = 1600) {
   // A LARGURA IMPORTA: o menu ⋮ da conversa só existe abaixo de 768px (é o
   // layout de celular). Conferir o item do menu numa janela larga passaria
   // porque o menu inteiro não está lá — uma conferência que não pode reprovar.
+  //
+  // E A LARGA É 1600, não 1360 (02/10): com a ficha aberta, a 1360 a barra
+  // da conversa RECOLHE no ⋮ (a conta de largura passou a somar o "Já
+  // tratei", que antes ficava de fora), e o botão da ficha sai da barra por
+  // falta de espaço — não por falta de Vantoro. A 1600 a barra vem solta, e
+  // "está na barra" volta a medir só o que esta prova quer medir.
   const ctx = await nav.newContext({ viewport: { width: largura, height: 900 } });
   const page = await ctx.newPage();
   const estouros = [];

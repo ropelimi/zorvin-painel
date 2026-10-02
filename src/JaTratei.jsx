@@ -43,7 +43,7 @@ import { ListChecks, Loader2, X } from "lucide-react";
 // descobriria o teto no erro do banco, depois de apertar Confirmar.
 const TETO_DA_DESCRICAO = 500;
 
-export function JaTratei({ C, estreito, nome, dias, assuntos, ocupado, erro, aoConfirmar, aoFechar }) {
+export function JaTratei({ C, estreito, nome, dias, esperando = true, assuntos, ocupado, erro, aoConfirmar, aoFechar }) {
   const [escolhidos, setEscolhidos] = useState([]);
   const [descricao, setDescricao] = useState("");
 
@@ -91,8 +91,11 @@ export function JaTratei({ C, estreito, nome, dias, assuntos, ocupado, erro, aoC
         </div>
 
         <div style={{ padding: "12px 16px", fontSize: 12.5, color: C.textSecondary, lineHeight: 1.5 }}>
-          Tira esta conversa da fila de espera <b>sem mandar mensagem</b>.
-          Marque o que foi tratado.
+          {/* SÓ PROMETE TIRAR DA FILA QUEM ESTÁ NELA. Na conversa respondida
+              o "Já tratei" só registra, e a frase diz isso. */}
+          {esperando
+            ? <>Tira esta conversa da fila de espera <b>sem mandar mensagem</b>. Marque o que foi tratado.</>
+            : <>Esta conversa não está esperando resposta: o “Já tratei” só <b>registra</b> o que foi tratado.</>}
         </div>
 
         <div style={{ overflowY: "auto", padding: "0 16px 4px" }}>
@@ -165,7 +168,7 @@ export function JaTratei({ C, estreito, nome, dias, assuntos, ocupado, erro, aoC
           <button onClick={() => aoConfirmar(escolhidos, descricao)} disabled={bloqueado || ocupado}
                   data-ja-tratei-confirmar
                   title={nenhum ? "Marque pelo menos um assunto"
-                       : faltaTexto ? "Escreva o que foi tratado" : "Tirar da fila de espera"}
+                       : faltaTexto ? "Escreva o que foi tratado" : esperando ? "Tirar da fila de espera" : "Registrar"}
                   style={{ border: "none", background: bloqueado || ocupado ? C.divider : C.green,
                            color: bloqueado || ocupado ? C.textSecondary : "#fff", borderRadius: 8,
                            padding: "8px 16px", fontSize: 13, fontWeight: 600,
@@ -173,7 +176,7 @@ export function JaTratei({ C, estreito, nome, dias, assuntos, ocupado, erro, aoC
                            display: "inline-flex", alignItems: "center", gap: 6,
                            minHeight: estreito ? 40 : undefined }}>
             {ocupado ? <Loader2 size={14} className="zv-girando" /> : null}
-            {ocupado ? "Tirando da fila…" : "Confirmar"}
+            {ocupado ? (esperando ? "Tirando da fila…" : "Registrando…") : "Confirmar"}
           </button>
         </div>
         {nenhum && ativos.length > 0 && (

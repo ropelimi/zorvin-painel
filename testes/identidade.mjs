@@ -22,7 +22,11 @@ const ok = (nome, cond, det = "") => {
 };
 
 const nav = await abrirNavegador();
-const ctx = await nav.newContext({ viewport: { width: 1360, height: 900 } });
+// 1600, e não 1360 (02/10): com a ficha aberta, a 1360 a barra da conversa
+// RECOLHE no ⋮ desde que a conta de largura passou a somar o "Já tratei", e o
+// grupinho de "quem participou" sai da barra por falta de espaço. Esta prova
+// é sobre quem aparece na conversa, e não sobre a largura da barra.
+const ctx = await nav.newContext({ viewport: { width: 1600, height: 900 } });
 const page = await ctx.newPage();
 const erros = [];
 page.on("pageerror", (e) => erros.push("pageerror: " + e.message));

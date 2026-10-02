@@ -1998,6 +1998,64 @@ texto do OUTROS escondido; só um telefone; a seção que não relê depois de
 marcar; o aviso de parcial tirado; a tabela que falta virando "ninguém
 marcou").
 
+### O "Já tratei" em toda conversa (02/10)
+
+Relato do Rodrigo, com foto: a conversa da BEATRIZ aberta e **nenhum "Já
+tratei" no cabeçalho** — *"veja se não está acontecendo em outros contatos
+também"*. Estava: em **toda conversa em que a equipe respondeu por último**.
+
+**Não era defeito de leiaute, era desenho meu.** O botão nasceu para aparecer
+só "quando há o que fazer" — conversa esperando (tratar) ou já tratada
+(desfazer) —, e o comentário dizia que nas outras ele seria ruído. A suposição
+errada era que o "Já tratei" serve só para tirar da fila. Ele é também **o
+registro do que foi feito**, e é dele que saem o relatório e o histórico do
+cliente: o que se tratou numa conversa respondida conta igual.
+
+**Hoje ele aparece em toda conversa**, e são três casos:
+
+| a conversa | o botão | marcar faz |
+|---|---|---|
+| esperando | "Já tratei" | registra e **tira da fila** (como antes) |
+| respondida | "Já tratei" | **só registra** — a janela diz isso, e não promete fila |
+| tirada da fila pelo "Já tratei" | "Voltar para a fila" | desfaz (como antes) |
+
+**Na respondida, `tratada_em` NÃO é gravado.** Gravado, o botão viraria
+"Voltar para a fila" numa conversa que nunca esteve nela. O que não tem nesse
+caso é o desfazer: um registro errado ali só pesa no relatório e no histórico,
+onde aparece com quem marcou.
+
+**E a largura do cabeçalho tinha um furo que eu afirmei não existir.**
+Escrevi aqui que `FILA_ESCRITA` e `FILA_EM_ICONES` já somavam o botão; a prova
+`o-cabecalho-nao-corta-o-que-importa` reprovou (o nome com **205px** a 1366,
+abaixo do piso de 230) e a medição mostrou que **não somavam**: 383 e 256 são
+os seis botões SEM ele. O furo já existia em toda conversa da fila, calado,
+porque a prova abre a primeira conversa da bancada e ela não esperava.
+
+Hoje o botão soma à parte, medido na régua do navegador: escrito, "Já tratei"
+custa 90 e "Voltar para a fila" 139; em ícone, 35 — mais o vão de 12. Com
+isso, a 1366 com a ficha aberta a fila **recolhe no ⋮** (antes ficava em
+ícones e espremia o nome), e a 1600 fica em ícones. **Medir de novo depois de
+mudar o que a fila mostra** — é a lição do "Ropelimi Zo" outra vez.
+
+**E a integração contínua pegou uma prova que supunha a largura antiga.**
+`esconder-o-vantoro` abria a 1360 com a ficha aberta e procurava o botão da
+ficha NA BARRA — que, com a conta certa, recolhe no ⋮ ali. O botão saía da
+barra por falta de espaço, e não por falta de Vantoro: a conferência passou a
+medir outra coisa. Ela roda a 1600 agora, com o motivo escrito no ajudante.
+**E na rodada seguinte foi a `identidade`**, pelo mesmo motivo: a 1360 o
+grupinho de "quem participou" tinha ido para o ⋮, e o clique nele estourou a
+prova inteira depois de 30 segundos. Também roda a 1600. Rodei aqui as provas
+do cabeçalho e do "Já tratei", e não estas duas — **ao mexer na conta de
+largura, rode toda prova que procura um botão da barra**, e não só as que têm
+"cabeçalho" no nome.
+
+Prova: `o-ja-tratei-em-toda-conversa`, 25 conferências, com a conversa da foto
+plantada (o cliente pergunta, nós respondemos por último) e o contraste da que
+espera. **5 sabotagens e 5 pegas** (o botão só na que espera; a respondida
+ganhando `tratada_em`; a janela prometendo a fila; o aviso dizendo que tirou da
+fila; a largura sem a parcela do "Já tratei", pega por
+`o-cabecalho-nao-corta-o-que-importa`).
+
 ## O aviso do nono dígito não previa nada — e mandou mexer na ficha de um cliente
 
 Relato do Rodrigo em 28/09: ele acrescentou `(71) 99259-0325` na ficha de um
