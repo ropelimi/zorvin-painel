@@ -2331,6 +2331,70 @@ agora; a atrasada sem vermelho; a minha linha sem o "você"). E três no SQL,
 num Postgres de verdade (a arquivada contando, o recorte de quem não
 administra tirado, a régua dos três dias trocada), as três pegas.
 
+## A mensagem agendada (02/10)
+
+Pedido do Rodrigo: *"ter a opção de agendar mensagens"*. Decidido com ele:
+**texto e anexo**; a mensagem **sai na hora marcada mesmo que o cliente
+escreva antes**; **qualquer pessoa da equipe cancela** enquanto ela não saiu.
+
+**Não é uma tabela nova: é um item da `fila_envio` com hora marcada**
+(`agendada_para`, script 013 da ponte). A fila já sabe mandar texto, imagem,
+áudio, documento e figurinha, já insiste quando a Uazapi tosse e já avisa
+quando para — uma segunda fila divergiria no primeiro conserto.
+
+**A hora vai em DOIS lugares, `agendada_para` e `tentar_em`.** A leitura da
+ponte já pula quem tem `tentar_em` no futuro, e o `fila_parada` do
+`zorvin_saude()` também — então nem a ponte nem o aviso vermelho precisavam
+mudar para a agendada esperar. A ponte ganhou assim mesmo uma guarda própria
+pela `agendada_para` (ver o CLAUDE.md dela): mensagem que sai antes da hora
+não tem desfazer.
+
+**Agendar NÃO passa por `inserirNaFila`.** Lá, responder marca a conversa como
+minha e assume o dono. Agendar não é responder: o cliente não recebeu nada, e
+a conversa não pode sair da fila de quem espera nem trocar de mãos por uma
+mensagem que talvez seja cancelada. Pela mesma razão **não há bolha
+provisória** — uma bolha com relóginho diria que algo foi ao cliente.
+
+**Onde aparece:** o relógio fica ao lado do Enviar, **só com texto na caixa**
+(agendar é agendar ESTE texto), e na prévia dos anexos. A janela da hora é uma
+só (`EscolherHora.jsx`), com três atalhos ("Daqui a 1 hora", "Amanhã às 9h",
+"Amanhã às 14h") e o campo de dia e hora. **O botão de confirmar escreve a
+hora** ("Agendar para amanhã às 09:00"): é a última chance de conferir. Hora
+que já passou é **dita** e o botão fica desligado — aceita calada, a mensagem
+sairia agora. As contas de hora moram em `agenda.js`.
+
+**As agendadas ficam numa faixa logo acima da caixa de escrever**, e não no
+meio das bolhas: nada daquilo chegou ao cliente. Cada linha diz a hora, quem
+agendou e tem **Cancelar**; a que já está na hora diz "Saindo agora…" e não
+oferece cancelar. A lista se relê sozinha dez segundos depois da próxima
+hora, e pelo tempo real quando um colega agenda ou cancela.
+
+**Cancelar é virar o item para `cancelada`**, com `.eq("status","pendente")`
+na gravação: se a ponte pegou o item no mesmo segundo, quem chegou primeiro
+fica, e zero linhas vira a frase *"ela já saiu, ou o banco não deixou"* — e
+nunca "cancelado". A política do 013 deixa fazer só essa passagem.
+
+**`temAgenda` tem três estados**, como `temTratada`: sem a coluna o relógio não
+aparece. A leitura das agendadas pede as colunas **pelo nome**, e é a coluna
+que falta que responde se o 013 rodou. **Falha de leitura vai para a faixa
+âmbar**, e não vira "nada agendado": aquilo faria alguém agendar de novo, e o
+cliente receberia duas.
+
+**O botão "Ir para o fim" pousava em cima do Cancelar.** Ele era
+`bottom: 84` contado do fundo da coluna, supondo só a barra de escrever
+embaixo; com qualquer faixa acima dela (as agendadas, a citação, a edição) ele
+caía em cima. Hoje ele pende de uma âncora de altura zero entre as bolhas e o
+que vier embaixo. **Foi a prova que achou**, por um clique que não passava.
+
+**A bancada aprendeu duas coisas:** recusar a LEITURA que pede pelo nome uma
+coluna de `__SEM_COLUNAS` (só recusava gravação), e `__DEPOSITO_COM_ENDERECO`,
+um endereço de depósito de verdade para o anexo chegar à fila (o padrão
+continua vazio, que é sobre o que as provas dos anexos foram escritas).
+
+Prova: `a-mensagem-agendada`. **E uma armadilha dela:** a bancada já tem um
+`procuracao.pdf` na conversa, e a conferência "nenhuma bolha do anexo"
+reprovou por causa DELE. Arquivo de prova leva nome que ninguém mais usa.
+
 ## Banco de dados (tabelas que o painel lê/escreve)
 
 - `advogados` — lê (id, nome, numero, foto_url) onde `ativo = true`
