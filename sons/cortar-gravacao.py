@@ -1,9 +1,14 @@
 """OS AVISOS QUE SÃO GRAVAÇÃO — como cada arquivo foi feito, para poder refazer.
 
-Em 02/10 o Rodrigo mandou duas gravações e pediu que fossem elas:
+Em 02/10 o Rodrigo mandou quatro gravações e pediu que fossem elas:
 
     python3 sons/cortar-gravacao.py galinha001.mp3 public/avisos/galinha.wav
     python3 sons/cortar-gravacao.py gato001.mp3    public/avisos/gato.wav
+    python3 sons/cortar-gravacao.py assobio.mp3    public/avisos/assobio.wav
+    python3 sons/cortar-gravacao.py cachorro001.mp3 public/avisos/cachorro.wav
+
+(O assobio e o cachorro vieram depois, do mesmo jeito: limpos, os dois
+lados iguais, 24 kHz.)
 
 (pip install numpy scipy soundfile)
 

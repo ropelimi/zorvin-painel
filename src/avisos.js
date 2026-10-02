@@ -205,6 +205,59 @@ export const SONS = [
         forma: "triangle", filtro: 1500, filtroTipo: "bandpass", filtroQ: 1 },
     ],
   },
+  // ============================================================
+  //  O CACHORRO (02/10) — a gravação que o Rodrigo mandou, inteira
+  //
+  //  Um latido só: um rosnadinho grave (~450 Hz) e o "au" (~1 kHz caindo a
+  //  ~600 Hz). Fica o rosnadinho, que é o começo do latido, e sai o
+  //  silêncio das pontas. 365 ms, pela mesma receita
+  //  (`sons/cortar-gravacao.py`).
+  //
+  //  O ENCOSTO são as mesmas duas partes, curtas e ásperas, para o dia em
+  //  que a busca falhar não ser silêncio.
+  // ============================================================
+  {
+    id: "cachorro",
+    nome: "Cachorro",
+    descricao: "Um latido",
+    arquivo: "/avisos/cachorro.wav",
+    repeticoes: [0],
+    volume: 0.095,
+    notas: [
+      { hz: 450, em: 0, dura: 0.17, volume: 0.16,
+        forma: "sawtooth", filtro: 800, filtroTipo: "bandpass", filtroQ: 1.5 },
+      { hz: 1050, ate: 560, em: 0.18, dura: 0.17, volume: 0.16,
+        forma: "sawtooth", filtro: 1000, filtroTipo: "bandpass", filtroQ: 1.5 },
+    ],
+  },
+  // ============================================================
+  //  O ASSOBIO (02/10) — a gravação que o Rodrigo mandou, inteira
+  //
+  //  Não é bicho, e entrou pelo mesmo caminho: ele mandou a gravação e pediu
+  //  que fosse ela. É um "fiu-fiuuu" — o primeiro sobe de ~1,1 kHz a ~2,3 kHz
+  //  e fica; o segundo sobe a ~2,1 kHz e cai a ~1 kHz. 771 ms, pela mesma
+  //  receita (`sons/cortar-gravacao.py`), sem o silêncio das pontas.
+  //
+  //  O VOLUME é o da mesma régua (a altura do pato, medida pela prova
+  //  `o-volume-dos-avisos`). Um assobio mora em 1–2 kHz, onde o ouvido é
+  //  mais sensível do que no grave do miado: na mesma medida ele pode soar
+  //  mais agudo de ouvir. O julgamento é de quem aperta a prévia.
+  //
+  //  O ENCOSTO são as duas subidas do assobio em onda pura (um assobio é
+  //  quase um tom só), para o dia em que a busca falhar não ser silêncio.
+  // ============================================================
+  {
+    id: "assobio",
+    nome: "Assobio",
+    descricao: "Um fiu-fiu",
+    arquivo: "/avisos/assobio.wav",
+    repeticoes: [0],
+    volume: 0.044,
+    notas: [
+      { hz: 1125, pico: 2270, ate: 2240, em: 0, dura: 0.33, volume: 0.068, forma: "sine" },
+      { hz: 1320, pico: 2060, ate: 1050, em: 0.38, dura: 0.38, volume: 0.068, forma: "sine" },
+    ],
+  },
   {
     // SEM SOM CONTINUA AVISANDO. Quem escolhe isto não está desistindo do
     // aviso — está tirando o barulho. A notificação da área de trabalho e o

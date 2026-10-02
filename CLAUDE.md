@@ -915,6 +915,23 @@ vezes mais alta; a vaca sintetizada de volta; o "pó" antigo de volta; a
 mensagem nova tocando o pato). A troca entre os dois só a impressão digital
 pega: eles têm a mesma duração, e tudo o mais que se mede de fora passaria.
 
+**E o assobio, no mesmo dia** — o primeiro aviso que não é bicho, e entrou
+pelo mesmo caminho: gravação que ele mandou, cortada pela mesma receita
+(`sons/cortar-gravacao.py`), um "fiu-fiuuu" de 771 ms entre 1 e 2,3 kHz.
+Toca na altura do pato como os outros (1,19x), com o encosto em duas notas
+de onda pura (0,96x). **Um limite que fica escrito:** RMS igual não é altura
+igual para o ouvido, que é mais sensível em 1–2 kHz do que no grave do
+miado — o assobio pode soar mais agudo de ouvir na mesma medida. Se ele
+achar alto, o número é o `volume` da receita, e a prova `o-volume-dos-avisos`
+aceita de 0,67x a 1,5x do pato. Na prova `os-bichos-do-aviso` ele entrou na
+lista `BICHOS`; trocar o arquivo dele pelo do gato é pego pela duração e
+pela impressão digital.
+
+**E o cachorro, logo depois**, pelo mesmo caminho: um latido só, 365 ms — o
+rosnadinho grave do começo (~450 Hz) fica, porque é o começo do latido. Na
+altura do pato (1,19x), encosto em duas notas ásperas (0,98x). Com ele,
+`os-bichos-do-aviso` tem 49 conferências e `o-volume-dos-avisos` 40.
+
 ### A etiqueta da notificação
 
 Era `tag: "zorvin"` para tudo: cada aviso **substituía** o anterior, então dois
