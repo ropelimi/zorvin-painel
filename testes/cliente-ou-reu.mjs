@@ -115,7 +115,7 @@ console.log("\n1. A escolha existe, e está à vista");
   // A CONSEQUÊNCIA ESCRITA NA TELA. "Cliente" e "parte contrária" são palavras
   // de processo, não de sistema: quem atende não tem por que adivinhar que uma
   // delas abre trabalho para o escritório e a outra não.
-  ok("a tela diz o que a escolha provoca", /ordem de serviço/i.test(texto),
+  ok("a tela diz o que a escolha provoca", /ordem/i.test(texto),
      "a escolha aparece sem dizer o que ela muda");
 }
 

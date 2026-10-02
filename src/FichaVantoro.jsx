@@ -270,6 +270,11 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   // todo lead — e porque um pré-cadastro sem escolha nenhuma faria o Vantoro
   // voltar a deduzir pelo documento, que é o defeito que isto conserta.
   const [papel, setPapel] = useState("cliente");
+  // A TAREFA "Cadastro de ações do cliente" É PEDIDA, E NÃO PRESUMIDA. Nasce
+  // DESMARCADA: sem ela o pré-cadastro é só o cadastro, e a ordem abre quando
+  // a venda for lançada. Marcada, o Vantoro já abre a ordem com a tarefa na
+  // fila. Só vale para "Cliente" — parte contrária não abre ordem nenhuma.
+  const [criarTarefa, setCriarTarefa] = useState(false);
   const [buscandoCep, setBuscandoCep] = useState(false);
   const [opcoes, setOpcoes] = useState({ estado_civil: ESTADO_CIVIL_RESERVA });
   const [abertas, setAbertas] = useState(
@@ -647,7 +652,22 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   // tarefa no pool e sem aviso nenhum — quem atendeu juraria ter criado um
   // cliente. Uma garantia desse tamanho não fica pendurada num detalhe alheio
   // que ninguém lembra de conferir ao mexer.
-  useEffect(() => { setPapel("cliente"); if (numero) buscar(); /* eslint-disable-next-line */ }, [numero]);
+  //
+  // A CAIXA DA TAREFA VOLTA DESMARCADA PELO MESMO MOTIVO: marcada num
+  // atendimento e esquecida, ela abriria ordem com tarefa no pool para o lead
+  // seguinte sem ninguém ter pedido.
+  useEffect(() => { setPapel("cliente"); setCriarTarefa(false); if (numero) buscar(); /* eslint-disable-next-line */ }, [numero]);
+
+  // A FRASE SAI DO QUE O VANTORO RESPONDEU (`tarefa_cadastro`), e não da
+  // caixa: é ele quem sabe se a tarefa nasceu. Sem a resposta (um Vantoro de
+  // antes desta mudança), a frase não afirma nada sobre a tarefa — e, se ela
+  // foi pedida, manda conferir.
+  function fraseDoCriado(tarefa, pediu) {
+    if (tarefa === true) return "Pré-cadastro criado no Vantoro, com a tarefa “Cadastro de ações do cliente”.";
+    if (tarefa === false) return "Pré-cadastro criado no Vantoro, sem tarefa.";
+    return "Pré-cadastro criado no Vantoro."
+      + (pediu ? " Ele não disse se a tarefa foi criada — confira na ficha de lá." : "");
+  }
 
   async function criar() {
     setSalvando(true);
@@ -674,8 +694,13 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
           // Quem está falando com o lead é o único, em todo o sistema, que sabe
           // a resposta. É aqui que ela é dada.
           papel,
+          // SEMPRE VAI, true OU false — e false para a parte contrária mesmo
+          // que a caixa tenha ficado marcada antes de trocar o papel: ali ela
+          // nem aparece, e o que não se vê não pode ser pedido.
+          criar_tarefa_cadastro: papel === "cliente" && criarTarefa,
         }),
       });
+      const pediuTarefa = papel === "cliente" && criarTarefa;
       setCliente(r.cliente);
       setEdicao({ ...r.cliente });
       const ligou = await ligarContatoAoCadastro(r.cliente);
@@ -688,7 +713,11 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
         !ligou ? (erroDoVinculo.current
                    ? comOCodigo(naoLigou, erroDoVinculo.current, "ligar o pré-cadastro ao contato")
                    : naoLigou)
-        : r.criado ? "Pré-cadastro criado no Vantoro." : "Já existia no Vantoro.");
+        : r.criado ? fraseDoCriado(r.tarefa_cadastro, pediuTarefa)
+        // JÁ EXISTIA: por este caminho a tarefa não é criada. Quem pediu
+        // precisa saber, senão conclui que ela está na fila.
+        : "Já existia no Vantoro."
+          + (pediuTarefa ? " A tarefa “Cadastro de ações do cliente” não é criada por aqui — abra pela ficha no Vantoro." : ""));
     } catch (e) {
       onAviso && onAviso(e.message);
     } finally {
@@ -1400,8 +1429,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
             {!cpfDeOutro && (<>
             <div style={{ color: C.textSecondary, fontSize: 12.5, lineHeight: 1.5,
                           margin: "10px 0 14px" }}>
-              Não é cliente ainda? Crie o pré-cadastro para abrir a ordem de
-              serviço e iniciar a esteira — o CPF é opcional agora.
+              Não é cliente ainda? Crie o pré-cadastro — o CPF é opcional agora.
             </div>
             <label style={rotulo}>Nome</label>
             <input style={{ ...campo, marginBottom: 14 }} value={edicao.nome ?? (nomeContato || "")}
@@ -1426,10 +1454,24 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
                 </button>
               ))}
             </div>
+            {/* A TAREFA, SÓ PARA CLIENTE. Parte contrária não abre ordem, e
+                uma caixa ali seria uma promessa que o Vantoro não cumpre.
+                Vem ANTES da frase de baixo porque a frase diz o que as duas
+                escolhas juntas provocam. */}
+            {papel === "cliente" && (
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
+                              fontSize: 13, color: C.textPrimary, margin: "4px 0 6px" }}>
+                <input type="checkbox" data-criar-tarefa checked={criarTarefa}
+                       onChange={(e) => setCriarTarefa(e.target.checked)} />
+                Criar a tarefa “Cadastro de ações do cliente”
+              </label>
+            )}
             <div style={{ color: C.textSecondary, fontSize: 12, lineHeight: 1.45, marginBottom: 14 }}>
               {papel === "contraria"
                 ? "A parte contrária entra no cadastro, mas NÃO abre ordem de serviço."
-                : "O cliente abre a ordem de serviço e entra na esteira."}
+                : criarTarefa
+                  ? "Abre a ordem de serviço com a tarefa na fila."
+                  : "Nasce só o cadastro — a ordem abre quando a venda for lançada."}
             </div>
             <button style={{ ...botao, width: "100%", opacity: salvando ? 0.6 : 1 }} onClick={criar} disabled={salvando}>
               <UserPlus size={15} /> {salvando ? "Criando…" : "Criar pré-cadastro"}
