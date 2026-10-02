@@ -2010,7 +2010,10 @@ mudar o que a fila mostra** — é a lição do "Ropelimi Zo" outra vez.
 
 Prova: `o-ja-tratei-em-toda-conversa`, 25 conferências, com a conversa da foto
 plantada (o cliente pergunta, nós respondemos por último) e o contraste da que
-espera.
+espera. **5 sabotagens e 5 pegas** (o botão só na que espera; a respondida
+ganhando `tratada_em`; a janela prometendo a fila; o aviso dizendo que tirou da
+fila; a largura sem a parcela do "Já tratei", pega por
+`o-cabecalho-nao-corta-o-que-importa`).
 
 ## O aviso do nono dígito não previa nada — e mandou mexer na ficha de um cliente
 
