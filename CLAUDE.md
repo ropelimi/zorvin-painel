@@ -2101,6 +2101,41 @@ o número mandado sem conferir o nono dígito; o número antigo no lugar do
 desta conversa; a conversa que não é ligada; o número mandado antes da ficha
 inteira).
 
+## O pré-cadastro não promete mais a ordem — a tarefa é pedida (02/10)
+
+Pedido do Rodrigo: no pré-cadastro, uma caixa **"Criar a tarefa “Cadastro de
+ações do cliente”"**, desmarcada, e os textos parando de prometer que o
+pré-cadastro abre a ordem de serviço. Desmarcada, nasce só o cadastro, e a
+ordem abre quando a venda for lançada.
+
+**O pedido sempre leva `criar_tarefa_cadastro`, true ou false**, junto com
+`papel` — a ponte repassa o corpo como vem e não mudou. **Para a parte
+contrária vai `false` mesmo que a caixa tenha ficado marcada** antes de trocar
+o papel: ali ela nem aparece, e o que não se vê não pode ser pedido.
+
+**A caixa volta desmarcada a cada troca de conversa**, no mesmo efeito que
+volta o papel para "cliente". Com a ficha fixa ela não é remontada, e uma
+marca esquecida abriria tarefa no pool para o lead seguinte.
+
+**O aviso sai da RESPOSTA (`tarefa_cadastro`), e não da caixa**: é o Vantoro
+quem sabe se a tarefa nasceu. Três casos:
+
+| a resposta | o aviso |
+|---|---|
+| `criado` e `tarefa_cadastro: true` | "…criado no Vantoro, com a tarefa…" |
+| `criado` e `tarefa_cadastro: false` | "…criado no Vantoro, sem tarefa." |
+| `criado: false` (já existia) | "Já existia no Vantoro." e, **se a tarefa foi pedida**, que ela não é criada por ali — abrir pela ficha no Vantoro |
+
+Sem `tarefa_cadastro` na resposta (um Vantoro de antes desta mudança), a
+frase não afirma nada sobre a tarefa e, se ela foi pedida, manda conferir.
+
+Prova: `o-pre-cadastro-e-a-tarefa`. Ela lê o aviso pelo **filme**, começando
+na frase que já está na tela — a faixa dura quatro segundos, e o aviso do
+pré-cadastro anterior entraria no filme do seguinte como se fosse dele (foi a
+primeira reprovação da prova, e era dela, não do painel). A conferência de
+`cliente-ou-reu` que pedia "ordem de serviço" na frase de Cliente passou a
+pedir "ordem": a frase desmarcada fala da ordem que abre com a venda.
+
 ## O responsável pela conversa — o primeiro passo para CRM (30/09)
 
 Pedido do Rodrigo, depois de perguntar o que falta para o Zorvin virar CRM:
