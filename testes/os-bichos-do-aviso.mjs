@@ -1,4 +1,4 @@
-// OS BICHOS DO AVISO — hoje, a galinha e o gato (02/10)
+// OS BICHOS DO AVISO — hoje, a galinha, o gato e o cachorro; e o assobio (02/10)
 //
 // Pedido do Rodrigo, depois do pato: outros bichos. A galinha e o gato são as
 // gravações que ele mandou em 02/10, inteiras — só sem o silêncio das pontas.
@@ -38,7 +38,7 @@ const ok = (nome, cond, det = "") => {
 // UMA LISTA ESCRITA AQUI, e não lida do painel: se um bicho sumir da receita,
 // é esta lista que o procura e reprova. Lida de lá, ela encolheria junto.
 const BICHOS = [
-  // A IMPRESSÃO DIGITAL é a do arquivo que `sons/cortar-a-galinha.py` faz a
+  // A IMPRESSÃO DIGITAL é a do arquivo que `sons/cortar-gravacao.py` faz a
   // partir da gravação que o Rodrigo escolheu. Sem ela, devolver um arquivo
   // antigo passaria no que se mede de fora — em 01/10 a galinha com música
   // tinha a mesma duração, o mesmo tamanho e o mesmo volume da certa. Trocou
@@ -50,6 +50,15 @@ const BICHOS = [
     sha256: "03746544b0074b4932739d826bd5dd0c266d645c6995d7b034d46d4c5cf4eb13" },
   { id: "gato", nome: "Gato", min: 0.65, max: 0.80, notas: 1,
     sha256: "e4ebd3ce69b64654d94822e1809c2820bc5a3300ca176e3aed3960e3cf042b36" },
+  // O CACHORRO é um latido só, curto: o rosnadinho e o "au". Duas notas no
+  // encosto, como as duas partes.
+  { id: "cachorro", nome: "Cachorro", min: 0.32, max: 0.42, notas: 2,
+    sha256: "ac1db05bc623f62d394aedae4cd61467e9bd6abdbb60160e44514533ed0f5b08" },
+  // O ASSOBIO não é bicho, e mora aqui pelo mesmo motivo: é uma gravação que
+  // o Rodrigo mandou, e tudo o que esta prova guarda vale para ele igual.
+  // Duas notas no encosto, como o "fiu" e o "fiuuu".
+  { id: "assobio", nome: "Assobio", min: 0.72, max: 0.82, notas: 2,
+    sha256: "14976e16368fce6e31d155af710cc8836588622777c41f1db9f428beda18a5a5" },
 ];
 const ESCOLHIDO = BICHOS[0];
 
