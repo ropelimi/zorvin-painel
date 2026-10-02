@@ -2008,6 +2008,14 @@ isso, a 1366 com a ficha aberta a fila **recolhe no ⋮** (antes ficava em
 ícones e espremia o nome), e a 1600 fica em ícones. **Medir de novo depois de
 mudar o que a fila mostra** — é a lição do "Ropelimi Zo" outra vez.
 
+**E a integração contínua pegou uma prova que supunha a largura antiga.**
+`esconder-o-vantoro` abria a 1360 com a ficha aberta e procurava o botão da
+ficha NA BARRA — que, com a conta certa, recolhe no ⋮ ali. O botão saía da
+barra por falta de espaço, e não por falta de Vantoro: a conferência passou a
+medir outra coisa. Ela roda a 1600 agora, com o motivo escrito no ajudante.
+Rodei aqui as provas do cabeçalho e do "Já tratei", e não esta — **ao mexer
+na conta de largura, rode toda prova que procura um botão da barra**.
+
 Prova: `o-ja-tratei-em-toda-conversa`, 25 conferências, com a conversa da foto
 plantada (o cliente pergunta, nós respondemos por último) e o contraste da que
 espera. **5 sabotagens e 5 pegas** (o botão só na que espera; a respondida
