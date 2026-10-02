@@ -43,6 +43,8 @@ import PainelEmoji, { guardarRecente } from "./Emojis";
 import JaTratei from "./JaTratei.jsx";
 import { nomeDoContato } from "./contato.js";
 import { diasDesde } from "./espera.js";
+import EscolherHora from "./EscolherHora.jsx";
+import { rotuloDaHora, porQueNaoServe, semAColunaDaAgenda } from "./agenda.js";
 
 // ============================================================
 //  ZORVIN by Ropelimi — Painel real (conectado ao Supabase)
@@ -2894,6 +2896,20 @@ export default function Painel({ sessao }) {
   // cinco fotos de um documento repetia cinco vezes o mesmo caminho.
   // Cada item: { file, url, tipo, nome, legenda }.
   const [anexosPendentes, setAnexosPendentes] = useState([]);
+  // ============================================================
+  //  AS MENSAGENS AGENDADAS DA CONVERSA ABERTA (pedido de 02/10)
+  //
+  //  `temAgenda` tem TRÊS estados, como `temTratada`: `null` ainda não sei,
+  //  `false` o script 013 não rodou (o relógio não aparece), `true` tem. Sem a
+  //  coluna, oferecer agendar seria deixar a pessoa escolher a hora e ver a
+  //  gravação morrer no fim — o gesto oferecido e negado, a pior ordem.
+  //
+  //  `escolhendoHora` é DE ONDE veio o pedido: "texto" (a caixa de escrever)
+  //  ou "anexo" (a prévia dos arquivos). A janela é uma só.
+  // ============================================================
+  const [temAgenda, setTemAgenda] = useState(null);
+  const [agendadas, setAgendadas] = useState([]);
+  const [escolhendoHora, setEscolhendoHora] = useState(null);
   // Qual deles está grande na prévia. A legenda é DE CADA arquivo, como no
   // WhatsApp: uma legenda só para o lote descreveria errado quatro dos cinco.
   const [anexoAtivo, setAnexoAtivo] = useState(0);
@@ -5917,6 +5933,127 @@ export default function Painel({ sessao }) {
 
   useEffect(() => { carregarMensagens(conversaId); }, [conversaId, carregarMensagens]);
 
+  // ------------------------------------------------------------
+  //  O QUE ESTÁ AGENDADO NESTA CONVERSA
+  //
+  //  Os PENDENTES da conversa, e o recorte dos agendados é feito aqui: os
+  //  pendentes comuns são um punhado e saem em segundos, e perguntar "com hora
+  //  marcada" ao banco exigiria um `not is null` que a bancada não sabe fazer —
+  //  uma conferência montada sobre ele não provaria nada.
+  //
+  //  As colunas vão PELO NOME, e não `*`: é a coluna que falta que responde se
+  //  o script 013 rodou, sem uma consulta própria para isso.
+  // ------------------------------------------------------------
+  const carregarAgendadas = useCallback(async (convId) => {
+    if (!convId) { setAgendadas([]); return; }
+    const r = await supabase.from("fila_envio")
+      .select("id, conversa_id, tipo, texto, midia_nome, agendada_para, enviado_por, enviado_por_id, criado_em")
+      .eq("conversa_id", convId).eq("status", "pendente")
+      .order("criado_em", { ascending: true }).limit(100);
+    // A RESPOSTA DE OUTRA CONVERSA não pinta esta: quem trocou de conversa no
+    // meio da ida veria as agendadas da anterior, com o botão de cancelar.
+    if (String(convId) !== String(conversaIdRef.current)) return;
+    if (r.error) {
+      if (semAColunaDaAgenda(r.error)) { setTemAgenda(false); setAgendadas([]); return; }
+      // FALHA NÃO É AUSÊNCIA: "nada agendado" no lugar de "não consegui ler"
+      // faria alguém agendar de novo uma mensagem que já está na fila — e o
+      // cliente receberia duas.
+      anotarFalhaDeLeitura("agendadas", "as mensagens agendadas", r.error);
+      return;
+    }
+    limparFalhaDeLeitura("agendadas");
+    setTemAgenda(true);
+    setAgendadas((r.data || []).filter((x) => x.agendada_para)
+      .sort((a, b) => new Date(a.agendada_para) - new Date(b.agendada_para)));
+  }, [anotarFalhaDeLeitura, limparFalhaDeLeitura]);
+
+  // ESPELHO para o tempo real, que registra o tratador uma vez só.
+  const carregarAgendadasRef = useRef(carregarAgendadas);
+  carregarAgendadasRef.current = carregarAgendadas;
+
+  useEffect(() => { setAgendadas([]); setEscolhendoHora(null); carregarAgendadas(conversaId); },
+    [conversaId, carregarAgendadas]);
+
+  // NA HORA MARCADA, A LISTA SE RELÊ SOZINHA. A ponte manda a mensagem e ela
+  // aparece na conversa pelo tempo real; sem esta releitura, a mesma mensagem
+  // continuaria embaixo dizendo "agendada", com um Cancelar que já não cancela
+  // nada. Dez segundos depois da hora, que é o que a ponte leva para ler a
+  // fila e falar com a Uazapi.
+  useEffect(() => {
+    if (!agendadas.length || !conversaId) return undefined;
+    const proxima = Math.min(...agendadas.map((a) => new Date(a.agendada_para).getTime()));
+    const espera = Math.max(proxima - Date.now(), 0) + 10000;
+    // `setTimeout` não aguenta mais de ~24 dias: passado disso ele dispara na
+    // hora. Uma agendada para daqui a um mês faria a lista se reler em loop.
+    if (espera > 2 ** 31 - 1) return undefined;
+    const t = setTimeout(() => carregarAgendadas(conversaId), espera);
+    return () => clearTimeout(t);
+  }, [agendadas, conversaId, carregarAgendadas]);
+
+  /** Grava UMA mensagem agendada. A hora vai em `agendada_para` E em
+   *  `tentar_em`: a leitura da ponte já pula quem tem `tentar_em` no futuro, e
+   *  o aviso de "fila parada" também — ele só conta item cuja hora passou.
+   *
+   *  NÃO PASSA POR `inserirNaFila`, e é de propósito: lá, responder marca a
+   *  conversa como minha e assume o dono. Agendar não é responder — o cliente
+   *  ainda não recebeu nada, e a conversa não pode sair da fila de quem
+   *  espera nem trocar de mãos por causa de uma mensagem que talvez seja
+   *  cancelada. */
+  async function gravarAgendada(payload, quando) {
+    const motivo = porQueNaoServe(quando);
+    if (motivo) return { error: { message: motivo }, motivo };
+    return emFila(() => gravarNaFila({
+      ...payload, status: "pendente", agendada_para: quando, tentar_em: quando,
+      enviado_por: meuNome, enviado_por_id: meuId, enviado_por_foto: minhaFoto,
+    }));
+  }
+
+  async function agendarTexto(quando) {
+    const t = rascunho.trim();
+    const convId = conversaId;
+    if (!t || !convId) return;
+    setEscolhendoHora(null);
+    const payload = { conversa_id: convId, texto: t };
+    const alvo = respondendo;
+    if (alvo) {
+      payload.responder_id_uazapi = alvo.id_uazapi;
+      payload.resposta_previa = alvo.previa;
+      payload.resposta_autor = alvo.autor;
+    }
+    const r = await gravarAgendada(payload, quando);
+    if (r.error) {
+      // O TEXTO FICA NA CAIXA. Apagar antes de saber se gravou faria quem
+      // escreveu um recado longo perdê-lo junto com a gravação.
+      mostrarAviso(r.motivo || comOCodigo("Não consegui agendar a mensagem.", r.error, "agendar mensagem"), 7000);
+      return;
+    }
+    setRascunho("");
+    setRespondendo(null);
+    mostrarAviso(`Mensagem agendada para ${rotuloDaHora(quando)}.`);
+    carregarAgendadas(convId);
+  }
+
+  /** Cancela uma agendada. A condição `status = pendente` vai NA gravação: se
+   *  a ponte pegou o item no mesmo segundo, quem chegou primeiro fica, e a
+   *  frase diz o que aconteceu em vez de afirmar um cancelamento que não
+   *  houve. */
+  async function cancelarAgendada(item) {
+    const r = await supabase.from("fila_envio")
+      .update({ status: "cancelada", cancelada_em: new Date().toISOString(), cancelada_por: meuId })
+      .eq("id", item.id).eq("status", "pendente").select("id");
+    if (r.error) {
+      mostrarAviso(comOCodigo("Não consegui cancelar a mensagem agendada.", r.error, "cancelar agendada"), 7000);
+    } else if (naoGravouNada(r)) {
+      // ZERO LINHAS TEM DUAS CAUSAS, e as duas cabem numa frase: a ponte já a
+      // mandou (a hora chegou), ou o banco não deixou. A lista relida abaixo
+      // responde qual — se ela sumiu da lista e apareceu na conversa, saiu.
+      mostrarAviso("Não deu para cancelar: ela já saiu, ou o banco não deixou. Confira a conversa.", 7000);
+    } else {
+      mostrarAviso("Agendamento cancelado — a mensagem não vai sair.");
+    }
+    carregarAgendadas(item.conversa_id);
+  }
+
   // SOBE MAIS UM LOTE de histórico, a partir da mensagem mais antiga que já
   // está na tela. É o "carregar anteriores" do WhatsApp Web — e é ele que
   // permite que a abertura da conversa traga só as últimas, que é o barato.
@@ -6355,6 +6492,10 @@ export default function Painel({ sessao }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "fila_envio" }, (payload) => {
         const row = payload.new;
         if (!row || row.conversa_id !== conversaIdRef.current) return;
+        // UMA AGENDADA MEXEU — um colega agendou, cancelou, ou a ponte a
+        // mandou. A lista de baixo se relê; sem isto, quem está com a conversa
+        // aberta veria uma agendada que outra pessoa já cancelou.
+        if (row.agendada_para) carregarAgendadasRef.current(row.conversa_id);
         // A FILA JÁ DISSE QUE SAIU: o relógio tem de parar aqui.
         //
         // Quem tirava o relógio era só a chegada da mensagem "de verdade" pelo
@@ -7204,6 +7345,9 @@ export default function Painel({ sessao }) {
   useEffect(() => {
     function aoTeclar(e) {
       if (e.key !== "Escape") return;
+      // A JANELA DA HORA está por cima de tudo onde ela abre — inclusive da
+      // prévia dos anexos: Esc fecha ELA, e não o lote que a pessoa montou.
+      if (escolhendoHora) { setEscolhendoHora(null); return; }
       if (imagemAberta) { setImagemAberta(null); setRetratoAberto(false); }
       else if (anexosPendentes.length) fecharAnexoPendente();
       else if (audioPronto) descartarAudioPronto();
@@ -7251,7 +7395,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId]);
+  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId, escolhendoHora]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -8888,6 +9032,7 @@ export default function Painel({ sessao }) {
     }
     setAnexosPendentes([]);
     setAnexoAtivo(0);
+    setEscolhendoHora(null);
   }
 
   /** Tira um da fila sem fechar a prévia — para quem colou quatro e quer três. */
@@ -8912,8 +9057,35 @@ export default function Painel({ sessao }) {
     for (const { file, legenda } of lote) enviarArquivo(file, legenda);
   }
 
-  async function enviarArquivo(file, legenda = "", convId = conversaId, tipoForcado = null) {
-    if (!convId || !file) return;
+  /** Os anexos da prévia, AGENDADOS. Um atrás do outro, e não juntos: a ordem
+   *  da prévia é a ordem em que o cliente vai receber, e a fila sai por
+   *  `criado_em`. A hora é conferida ANTES de subir arquivo nenhum — subir dez
+   *  documentos para descobrir no fim que a hora já tinha passado seria
+   *  trabalho jogado fora. */
+  async function agendarAnexos(quando) {
+    setEscolhendoHora(null);
+    if (!anexosPendentes.length) return;
+    const motivo = porQueNaoServe(quando);
+    if (motivo) { mostrarAviso(motivo, 6000); return; }
+    const lote = anexosPendentes.map((a) => ({ file: a.file, legenda: (a.legenda || "").trim() }));
+    const convId = conversaId;
+    for (const a of anexosPendentes) { try { URL.revokeObjectURL(a.url); } catch (_) {} }
+    setAnexosPendentes([]);
+    setAnexoAtivo(0);
+    let foram = 0;
+    for (const { file, legenda } of lote) {
+      if (await enviarArquivo(file, legenda, convId, null, quando)) foram++;
+    }
+    if (foram) {
+      mostrarAviso(foram === 1 ? `Anexo agendado para ${rotuloDaHora(quando)}.`
+        : `${foram} anexos agendados para ${rotuloDaHora(quando)}.`);
+    }
+    carregarAgendadas(convId);
+  }
+
+  async function enviarArquivo(file, legenda = "", convId = conversaId, tipoForcado = null, quando = null) {
+    if (!convId || !file) return false;
+    if (quando) return agendarArquivo(file, legenda, convId, quando);
     setPertoDoFim(true);
     const ehImagem = file.type.startsWith("image/");
     const ehVideo = file.type.startsWith("video/");
@@ -8958,6 +9130,33 @@ export default function Painel({ sessao }) {
     } catch (err) {
       setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _status: "erro" } : m)));
       mostrarAviso("Não consegui enviar o anexo. " + (err?.message || err));
+    }
+  }
+
+  /** O ANEXO AGENDADO sobe agora e espera na fila. Subir na hora marcada
+   *  exigiria o navegador aberto naquela hora — e a mensagem agendada existe
+   *  justamente para sair com ninguém olhando. Sem bolha provisória: nada foi
+   *  para o cliente, e uma bolha com relóginho na conversa diria o contrário. */
+  async function agendarArquivo(file, legenda, convId, quando) {
+    const ehImagem = file.type.startsWith("image/");
+    const ehVideo = file.type.startsWith("video/");
+    const ehAudio = file.type.startsWith("audio/");
+    const tipo = ehImagem ? "imagem" : ehVideo ? "video" : ehAudio ? "audio" : "documento";
+    try {
+      const nome = (file.name || "arquivo").replace(/[^\w.\-]+/g, "_");
+      const caminho = `${convId}/${Date.now()}-${nome}`;
+      const { error: upErr } = await supabase.storage.from("anexos").upload(caminho, file, { contentType: file.type });
+      if (upErr) throw new Error("Falha ao subir o arquivo (Storage): " + (upErr.message || upErr));
+      const { data: pub } = supabase.storage.from("anexos").getPublicUrl(caminho);
+      const url = pub?.publicUrl;
+      if (!url) throw new Error("sem URL pública do arquivo");
+      const r = await gravarAgendada({ conversa_id: convId, texto: legenda || "", tipo,
+        midia_url: url, midia_mime: file.type, midia_nome: nome }, quando);
+      if (r.error) throw new Error(r.motivo || comOCodigo("Falha ao agendar (banco).", r.error, "agendar anexo"));
+      return true;
+    } catch (err) {
+      mostrarAviso(`Não consegui agendar ${file.name || "o anexo"}. ` + (err?.message || err), 8000);
+      return false;
     }
   }
 
@@ -10868,6 +11067,24 @@ export default function Painel({ sessao }) {
                                   : "Digite uma mensagem")}
       style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", color: C.textPrimary, boxSizing: "border-box", padding: "10px 6px", fontSize: 14.5, resize: "none", lineHeight: "20px", maxHeight: 120, overflowY: "auto", fontFamily: "inherit", alignSelf: "flex-end" }}
     />
+    {/* O RELÓGIO SÓ APARECE COM TEXTO NA CAIXA: agendar é agendar ESTE texto,
+        e com a caixa vazia a janela abriria para nada. Some na nota interna
+        (nota não vai ao cliente, não há o que agendar) e na edição (editar
+        corrige o que já saiu). */}
+    {temAgenda === true && rascunho.trim() && !modoNota && !editando && (
+      <button data-agendar onClick={() => setEscolhendoHora((v) => (v === "texto" ? null : "texto"))}
+              title="Agendar esta mensagem" aria-label="Agendar esta mensagem"
+              aria-expanded={escolhendoHora === "texto"}
+              style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0, alignSelf: "flex-end" }}>
+        <Clock size={22} color={escolhendoHora === "texto" ? C.green : C.textSecondary} />
+      </button>
+    )}
+    {escolhendoHora === "texto" && rascunho.trim() && (
+      <div style={{ position: "absolute", bottom: 60, right: 12, zIndex: 40 }}>
+        <EscolherHora C={C} titulo="Agendar esta mensagem"
+                      aoEscolher={agendarTexto} aoFechar={() => setEscolhendoHora(null)} />
+      </div>
+    )}
     {(rascunho.trim() || modoNota) ? (
       <button onClick={enviar} title={modoNota ? "Salvar nota" : "Enviar"} style={{ border: "none", background: modoNota ? "#d4a017" : C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, alignSelf: "flex-end" }}>{modoNota ? <StickyNote size={19} color="#fff" /> : <Send size={20} color="#fff" />}</button>
     ) : (
@@ -13002,10 +13219,18 @@ export default function Painel({ sessao }) {
               <div ref={fimRef} />
             </div>
 
+            {/* PRESO AO FIM DA ÁREA DAS BOLHAS, e não ao fundo da coluna. Era
+                `bottom: 84` contado do fundo, que supunha só a barra de escrever
+                embaixo — e com as agendadas, a citação ou a edição acima dela
+                o botão ia pousar EM CIMA delas: medido, ele cobria o
+                "Cancelar" da mensagem agendada. A âncora de altura zero fica
+                entre as bolhas e o que vier embaixo, então o botão acompanha. */}
             {!pertoDoFim && (
-              <button onClick={irParaOFim} title="Ir para o fim" style={{ position: "absolute", right: 24, bottom: 84, width: 42, height: 42, borderRadius: "50%", background: C.panel, border: `1px solid ${C.divider}`, boxShadow: "0 2px 6px rgba(0,0,0,.25)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.textSecondary, zIndex: 5 }}>
+              <div style={{ position: "relative", height: 0, flexShrink: 0 }}>
+              <button onClick={irParaOFim} title="Ir para o fim" style={{ position: "absolute", right: 24, bottom: 22, width: 42, height: 42, borderRadius: "50%", background: C.panel, border: `1px solid ${C.divider}`, boxShadow: "0 2px 6px rgba(0,0,0,.25)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.textSecondary, zIndex: 5 }}>
                 <ChevronDown size={22} />
               </button>
+              </div>
             )}
 
             {editando && (
@@ -13020,6 +13245,47 @@ export default function Painel({ sessao }) {
                     <X size={18} color={C.textSecondary} />
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* AS AGENDADAS DESTA CONVERSA, logo acima da caixa de escrever.
+                Ali, e não no meio das bolhas: nada disto chegou ao cliente
+                ainda, e uma bolha na conversa diria que chegou. E é o lugar
+                que quem vai escrever olha — a pergunta "já não agendei isso?"
+                é feita na hora de escrever. */}
+            {agendadas.length > 0 && (
+              <div data-agendadas style={{ background: C.headerBar, padding: estreito ? "6px 8px 0" : "8px 16px 0",
+                                           maxHeight: 150, overflowY: "auto" }}>
+                {agendadas.map((a) => {
+                  const saindo = new Date(a.agendada_para).getTime() <= Date.now();
+                  const quem = a.enviado_por_id && a.enviado_por_id === meuId ? "você" : (a.enviado_por || "");
+                  const anexo = a.tipo && a.tipo !== "texto";
+                  return (
+                    <div key={a.id} data-agendada={a.id}
+                         style={{ display: "flex", alignItems: "center", gap: 8, background: C.searchBg,
+                                  borderLeft: `4px solid ${C.green}`, borderRadius: 6, padding: "5px 10px",
+                                  marginBottom: 4 }}>
+                      <Clock size={15} color={C.green} style={{ flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div data-agendada-quando style={{ color: C.verdeTexto, fontWeight: 600, fontSize: 12 }}>
+                          {saindo ? "Saindo agora…" : `Agendada para ${rotuloDaHora(a.agendada_para)}`}
+                          {quem ? <span style={{ fontWeight: 400, color: C.textSecondary }}> · por {quem}</span> : null}
+                        </div>
+                        <div style={{ color: C.textSecondary, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {anexo ? <><Paperclip size={12} style={{ verticalAlign: "-1px" }} /> {a.midia_nome || "anexo"}{a.texto ? ` — ${a.texto}` : ""}</> : a.texto}
+                        </div>
+                      </div>
+                      {!saindo && (
+                        <button data-cancelar-agendada onClick={() => cancelarAgendada(a)}
+                                title="Cancelar esta mensagem agendada"
+                                style={{ border: `1px solid ${C.divider}`, background: "transparent", color: "#e53935",
+                                         borderRadius: 14, padding: "4px 10px", fontSize: 12.5, cursor: "pointer", flexShrink: 0 }}>
+                          Cancelar
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -14260,6 +14526,23 @@ export default function Painel({ sessao }) {
               <input autoFocus value={atual.legenda || ""} onChange={(e) => trocarLegenda(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); confirmarEnviarAnexo(); } }}
                 placeholder={anexosPendentes.length > 1 ? `Legenda de ${atual.nome}…` : "Adicione uma legenda…"}
                 style={{ flex: 1, border: "none", outline: "none", background: "transparent", color: C.textPrimary, fontSize: 14.5, padding: "8px 4px" }} />
+              {/* AGENDAR OS ANEXOS — a mesma janela da caixa de escrever. */}
+              {temAgenda === true && (
+                <span style={{ position: "relative", display: "flex", flexShrink: 0 }}>
+                  {escolhendoHora === "anexo" && (
+                    <div style={{ position: "absolute", bottom: 54, right: 0, zIndex: 5 }}>
+                      <EscolherHora C={C}
+                        titulo={anexosPendentes.length > 1 ? `Agendar os ${anexosPendentes.length} anexos` : "Agendar este anexo"}
+                        aoEscolher={agendarAnexos} aoFechar={() => setEscolhendoHora(null)} />
+                    </div>
+                  )}
+                  <button data-agendar-anexo onClick={() => setEscolhendoHora((v) => (v === "anexo" ? null : "anexo"))}
+                          title="Agendar" aria-label="Agendar" aria-expanded={escolhendoHora === "anexo"}
+                          style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 44, height: 44, borderRadius: 22, padding: 0 }}>
+                    <Clock size={22} color={escolhendoHora === "anexo" ? C.green : C.textSecondary} />
+                  </button>
+                </span>
+              )}
               <button onClick={confirmarEnviarAnexo} title={anexosPendentes.length > 1 ? `Enviar os ${anexosPendentes.length}` : "Enviar"}
                 style={{ border: "none", background: C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, minWidth: 44, height: 44, borderRadius: 22, padding: "0 14px", flexShrink: 0 }}>
                 <Send size={20} color="#fff" />

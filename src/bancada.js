@@ -1975,6 +1975,22 @@ function consulta(tabela) {
       // Vem ANTES da junção abaixo de propósito: uma consulta que não respondeu
       // não tem o que juntar, e resolver as tabelas embutidas para depois jogar
       // o resultado fora seria trabalho que o PostgREST nunca faria.
+      // A LEITURA QUE PEDE, PELO NOME, UMA COLUNA QUE ESTA BASE NÃO TEM.
+      //
+      // `__SEM_COLUNAS` só recusava GRAVAÇÃO. Mas é pela leitura que o painel
+      // descobre se um script rodou (a mensagem agendada, script 013, pergunta
+      // `agendada_para` pelo nome): o PostgREST responde 42703, e sem isto a
+      // bancada devolveria as linhas — e um painel que oferece agendar num
+      // banco sem a coluna passaria por certo. Só quando a coluna vem ESCRITA
+      // no `select`: `*` no banco de verdade também não reclama.
+      if (semColunas.length && !gravacao && !patch && !apagando && colunas && colunas.trim() !== "*") {
+        const nomes = colunas.split(",").map((c) => c.trim());
+        const falta = semColunas.find((c) => nomes.includes(c));
+        if (falta) {
+          return resolver({ data: null, count: null, error: { code: "42703",
+            message: `column ${tabela}.${falta} does not exist` } });
+        }
+      }
       const quebradas = (typeof globalThis !== "undefined" && globalThis.__QUEBRAR) || [];
       if (quebradas.includes(tabela)) {
         return resolver({ data: null, count: null,
@@ -3023,5 +3039,11 @@ export const supabase = {
       pronto();
     }, demora));
   },
-  storage: { from: () => ({ upload: async () => ({ error: null }), getPublicUrl: () => ({ data: { publicUrl: "" } }) }) },
+  // O DEPÓSITO devolve endereço VAZIO por padrão — é o que sempre fez, e as
+  // provas dos anexos foram escritas sobre isso. `__DEPOSITO_COM_ENDERECO`
+  // faz ele devolver um endereço de verdade, para a prova que precisa ver o
+  // anexo chegar à fila (a mensagem agendada).
+  storage: { from: (balde) => ({ upload: async () => ({ error: null }),
+    getPublicUrl: (caminho) => ({ data: { publicUrl: (typeof globalThis !== "undefined" && globalThis.__DEPOSITO_COM_ENDERECO)
+      ? `https://deposito.bancada/${balde}/${caminho}` : "" } }) }) },
 };
