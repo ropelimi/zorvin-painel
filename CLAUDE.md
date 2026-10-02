@@ -2013,8 +2013,12 @@ mudar o que a fila mostra** — é a lição do "Ropelimi Zo" outra vez.
 ficha NA BARRA — que, com a conta certa, recolhe no ⋮ ali. O botão saía da
 barra por falta de espaço, e não por falta de Vantoro: a conferência passou a
 medir outra coisa. Ela roda a 1600 agora, com o motivo escrito no ajudante.
-Rodei aqui as provas do cabeçalho e do "Já tratei", e não esta — **ao mexer
-na conta de largura, rode toda prova que procura um botão da barra**.
+**E na rodada seguinte foi a `identidade`**, pelo mesmo motivo: a 1360 o
+grupinho de "quem participou" tinha ido para o ⋮, e o clique nele estourou a
+prova inteira depois de 30 segundos. Também roda a 1600. Rodei aqui as provas
+do cabeçalho e do "Já tratei", e não estas duas — **ao mexer na conta de
+largura, rode toda prova que procura um botão da barra**, e não só as que têm
+"cabeçalho" no nome.
 
 Prova: `o-ja-tratei-em-toda-conversa`, 25 conferências, com a conversa da foto
 plantada (o cliente pergunta, nós respondemos por último) e o contraste da que
