@@ -1995,8 +1995,18 @@ cliente: o que se tratou numa conversa respondida conta igual.
 caso é o desfazer: um registro errado ali só pesa no relatório e no histórico,
 onde aparece com quem marcou.
 
-**A largura do cabeçalho não mudou de conta:** `FILA_ESCRITA` e
-`FILA_EM_ICONES` já somavam o botão — ele só não estava sendo desenhado.
+**E a largura do cabeçalho tinha um furo que eu afirmei não existir.**
+Escrevi aqui que `FILA_ESCRITA` e `FILA_EM_ICONES` já somavam o botão; a prova
+`o-cabecalho-nao-corta-o-que-importa` reprovou (o nome com **205px** a 1366,
+abaixo do piso de 230) e a medição mostrou que **não somavam**: 383 e 256 são
+os seis botões SEM ele. O furo já existia em toda conversa da fila, calado,
+porque a prova abre a primeira conversa da bancada e ela não esperava.
+
+Hoje o botão soma à parte, medido na régua do navegador: escrito, "Já tratei"
+custa 90 e "Voltar para a fila" 139; em ícone, 35 — mais o vão de 12. Com
+isso, a 1366 com a ficha aberta a fila **recolhe no ⋮** (antes ficava em
+ícones e espremia o nome), e a 1600 fica em ícones. **Medir de novo depois de
+mudar o que a fila mostra** — é a lição do "Ropelimi Zo" outra vez.
 
 Prova: `o-ja-tratei-em-toda-conversa`, 25 conferências, com a conversa da foto
 plantada (o cliente pergunta, nós respondemos por último) e o contraste da que

@@ -3147,11 +3147,24 @@ export default function Painel({ sessao }) {
   //  Os números saíram da régua do navegador, não do olho:
   //  "ANDREIA CRISTINA MARTINS" pede 225px e "ELANE GOMES TEIXEIRA" 194.
   const NOME_MINIMO = 230;
-  //  A fila inteira, com vãos (6x12) e recheio (2x16) já somados.
+  //  A fila inteira SEM o "Já tratei", com vãos (6x12) e recheio (2x16).
   const FILA_ESCRITA = 487;    // 383 de botões + 72 + 32
   const FILA_EM_ICONES = 360;  // 256 de botões + 72 + 32
-  const cabecalhoApertado  = !estreito && larguraDaConversa - FILA_ESCRITA   < NOME_MINIMO;
-  const cabecalhoRecolhido = !estreito && larguraDaConversa - FILA_EM_ICONES < NOME_MINIMO;
+  //  E O "JÁ TRATEI" SOMA À PARTE — os dois números acima NÃO o contavam, e
+  //  em 02/10 eu escrevi que contavam. Medido na régua do navegador, com o
+  //  vão de 12: escrito, "Já tratei" custa 90 e "Voltar para a fila" 139; em
+  //  ícone, 35. Ele aparece em toda conversa desde 02/10 (antes só na que
+  //  esperava), e sem esta parcela a 1366 o nome caía a 205px — o defeito da
+  //  "ELANE GO…", que já acontecia calado em toda conversa da fila.
+  const fichaDoJaTratei = temTratada === true && temAssuntos === true && conversaId != null;
+  const abertaFoiTratada = fichaDoJaTratei && (() => {
+    const c = conversas.find((x) => x.id === conversaId);
+    return Boolean(c && !c.esperando_desde && c.tratada_em);
+  })();
+  const JA_TRATEI_ESCRITO = !fichaDoJaTratei ? 0 : (abertaFoiTratada ? 139 : 90) + 12;
+  const JA_TRATEI_EM_ICONE = !fichaDoJaTratei ? 0 : 35 + 12;
+  const cabecalhoApertado  = !estreito && larguraDaConversa - FILA_ESCRITA - JA_TRATEI_ESCRITO < NOME_MINIMO;
+  const cabecalhoRecolhido = !estreito && larguraDaConversa - FILA_EM_ICONES - JA_TRATEI_EM_ICONE < NOME_MINIMO;
   /** Mostra ou recolhe a ficha, escrevendo no estado certo para o layout. */
   function alternarFicha(mostrar) {
     if (estreito) { setFichaAberta(mostrar); return; }
@@ -10447,7 +10460,7 @@ export default function Painel({ sessao }) {
   //
   //  Na conversa que NÃO espera, ele só registra: não há fila de onde tirar,
   //  e a janela diz isso em vez de prometer "tirar da fila". A conta de
-  //  largura do cabeçalho (`FILA_ESCRITA`) já contava com ele lá.
+  //  largura do cabeçalho soma a parcela dele (`JA_TRATEI_ESCRITO`).
   // ------------------------------------------------------------------
   const esperaDaAberta = conversa ? diasEsperando(conversa) : 0;
   const trateiDisponivel = temTratada === true && temAssuntos === true && Boolean(conversa);
