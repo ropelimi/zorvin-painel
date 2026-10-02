@@ -1,8 +1,9 @@
-// OS BICHOS DO AVISO — hoje, a galinha (01/10)
+// OS BICHOS DO AVISO — hoje, a galinha e o gato (02/10)
 //
-// Pedido do Rodrigo, depois do pato: outros bichos. A galinha é um "pó" só,
-// cortado do arquivo que ele mandou e com a música tirada por um separador de
-// voz. Vaca, porco e gato entraram sintetizados e SAÍRAM — ele não gostou; a
+// Pedido do Rodrigo, depois do pato: outros bichos. A galinha e o gato são as
+// gravações que ele mandou em 02/10, inteiras — só sem o silêncio das pontas.
+// (Antes delas houve um "pó" cortado de um clipe e um miado sintetizado, que
+// ele não aprovou.) Vaca e porco entraram sintetizados e SAÍRAM — ele não gostou; a
 // régua é a do pato: quem não ouve o som não o fabrica, pede a gravação.
 // Quando elas chegarem, cada bicho novo entra na lista BICHOS abaixo.
 //
@@ -29,19 +30,26 @@ const ok = (nome, cond, det = "") => {
 };
 
 // QUANTO CADA UM DURA, com folga. Mede que é O bicho, e não outro arquivo
-// trocado no caminho: o "pó" tem um terço de segundo, o pato pouco mais de
-// um quinto.
+// trocado no caminho: o cacarejo e o miado têm sete décimos de segundo, o
+// pato pouco mais de um quinto — e o "pó" de 01/10, que saiu, tinha três.
+// Como os dois bichos têm a mesma duração, quem os separa é a impressão
+// digital (um arquivo trocado pelo outro passaria em tudo o mais).
 //
 // UMA LISTA ESCRITA AQUI, e não lida do painel: se um bicho sumir da receita,
 // é esta lista que o procura e reprova. Lida de lá, ela encolheria junto.
 const BICHOS = [
   // A IMPRESSÃO DIGITAL é a do arquivo que `sons/cortar-a-galinha.py` faz a
-  // partir da faixa SÓ DA VOZ — o pedido do Rodrigo depois de ouvir a versão
-  // com música. Sem ela, devolver o arquivo antigo passava em tudo: ele tem a
-  // mesma duração, o mesmo tamanho e o mesmo volume. Trocou o arquivo de
-  // propósito? Refaça pela receita e troque o número aqui.
-  { id: "galinha", nome: "Galinha", min: 0.25, max: 0.36, notas: 1,
-    sha256: "352a2d67538175475a4372246e01ef2da72e20ff42119e717a6fffa8734c1237" },
+  // partir da gravação que o Rodrigo escolheu. Sem ela, devolver um arquivo
+  // antigo passaria no que se mede de fora — em 01/10 a galinha com música
+  // tinha a mesma duração, o mesmo tamanho e o mesmo volume da certa. Trocou
+  // o arquivo de propósito? Refaça pela receita e troque o número aqui.
+  //
+  // DUAS NOTAS NO ENCOSTO, como as duas partes do cacarejo: o "có" curto e
+  // o "cóóó" longo.
+  { id: "galinha", nome: "Galinha", min: 0.65, max: 0.80, notas: 2,
+    sha256: "03746544b0074b4932739d826bd5dd0c266d645c6995d7b034d46d4c5cf4eb13" },
+  { id: "gato", nome: "Gato", min: 0.65, max: 0.80, notas: 1,
+    sha256: "e4ebd3ce69b64654d94822e1809c2820bc5a3300ca176e3aed3960e3cf042b36" },
 ];
 const ESCOLHIDO = BICHOS[0];
 
@@ -129,11 +137,12 @@ console.log("\nOs bichos estão na tela de Avisos, com o nome escrito");
   // e no meio dos bichos ele seria clicado por engano procurando o próximo.
   const ordem = await page.$$eval("[data-som-opcao]", (ns) => ns.map((n) => n.getAttribute("data-som-opcao")));
   ok('"Sem som" continua no fim da lista', ordem[ordem.length - 1] === "mudo", ordem.join(","));
-  // OS QUE SAÍRAM NÃO VOLTAM calados: vaca, porco e gato foram sintetizados
-  // e reprovados por quem ouve, e uma limpeza futura que os devolvesse com a
-  // mesma receita passaria por aqui.
-  ok("vaca, porco e gato sintetizados não estão na lista",
-     !["vaca", "porco", "gato"].some((id) => ordem.includes(id)), ordem.join(","));
+  // OS QUE SAÍRAM NÃO VOLTAM calados: vaca e porco foram sintetizados e
+  // reprovados por quem ouve, e uma limpeza futura que os devolvesse com a
+  // mesma receita passaria por aqui. (O gato voltou como GRAVAÇÃO, e é a
+  // impressão digital, mais abaixo, que garante que é ela.)
+  ok("vaca e porco sintetizados não estão na lista",
+     !["vaca", "porco"].some((id) => ordem.includes(id)), ordem.join(","));
   ok("sem erro de JavaScript no caminho", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }

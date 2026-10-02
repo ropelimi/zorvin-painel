@@ -853,7 +853,7 @@ o de ataque seco: **o "ó" grave era instrumento.** Dos sete "pó" da voz
 ficou o de 0,91 s — o de mais voz e menos música no original (63%, contra
 41% do que eu tinha usado na primeira versão) e que começa depois de
 silêncio. **300 ms, mono, 22 kHz, 13 KB.** O trecho inteiro não foi para o
-repositório. A receita é `sons/cortar-a-galinha.py`, que refaz o arquivo
+repositório. A receita era `sons/cortar-a-galinha.py`, que refazia o arquivo
 **byte por byte** a partir da faixa da voz.
 
 **O volume sai do pato**, que é o volume aprovado: a galinha toca a 1,08x a
@@ -874,6 +874,46 @@ música passava em tudo — mesma duração, mesmo tamanho, mesmo volume. O que 
 separa da certa é o CONTEÚDO, e nenhuma medida de tela o vê. Hoje a prova
 confere a **impressão digital** do arquivo que a receita faz; trocá-lo de
 propósito é refazer pela receita e trocar o número na prova.
+
+### A galinha e o gato gravados (02/10) — e por que o "pó" saiu
+
+**O "pó" de 01/10 não ficou.** O Rodrigo pediu *"mais agudo"*; mandei três
+versões (subindo 3, 5 e 7 semitons) e ele respondeu *"nenhuma ficou boa"* —
+e mandou **outra gravação de galinha**, pedindo *"use ele"*. No meio do
+trabalho mandou também **uma de gato**. As duas entraram nesta rodada, e o
+miado sintetizado de 01/10 voltou como gravação.
+
+**O tratamento é pouco, de propósito.** As duas vêm limpas (fundo 70–80 dB
+abaixo do som, sem música) e são o som que ELE escolheu; mexer no timbre seria
+trocar o som dele por um palpite de quem não ouve. **Fica o som inteiro** — as
+duas partes do cacarejo ("có" curto e "cóóó" longo, 723 ms) e o miado desde o
+"m" baixinho (711 ms) —, sai só o silêncio das pontas, estéreo vira mono e
+24 kHz vira 22,05. Uma receita só para as duas: `sons/cortar-gravacao.py`,
+que refaz os arquivos **byte por byte**.
+
+**As pontas se medem em relação ao trecho mais alto DO PRÓPRIO arquivo**, e
+não por uma régua fixa: o gato veio gravado bem mais baixo que a galinha
+(pico 0,05 contra 0,14), e a régua fixa da primeira escrita (-50 dB) cortaria
+o "m" do miado. Pela régua relativa (32 dB abaixo do mais alto) o miado
+começa no "m" e fica de fora um estalinho que a gravação tinha depois dele.
+
+**A lição das tentativas, agora com sete:** quatro do pato, a rodada de
+vaca/porco/gato sintetizados, o "pó" cortado de um clipe e as três versões
+mais agudas dele — todas reprovadas. **O que ele aprova é gravação que ele
+mesmo escolheu.** Quando o pedido for "outro bicho" ou "mudar este", o
+primeiro passo é pedir a gravação, e o trabalho daqui é cortar, limpar e
+acertar o volume — não fabricar.
+
+**O volume sai do pato**: galinha e gato tocam a 1,19x a altura dele, e cada
+encosto na mesma altura do seu arquivo (1,06x e 1,01x). O encosto da galinha
+ganhou **duas notas**, como as duas partes do cacarejo.
+
+Prova: `os-bichos-do-aviso`, 29 conferências, **8 sabotagens e 8 pegas** (o
+arquivo do gato com nome errado; o gato que some da lista; **os arquivos da
+galinha e do gato trocados um pelo outro**; o gato sem encosto; a galinha dez
+vezes mais alta; a vaca sintetizada de volta; o "pó" antigo de volta; a
+mensagem nova tocando o pato). A troca entre os dois só a impressão digital
+pega: eles têm a mesma duração, e tudo o mais que se mede de fora passaria.
 
 ### A etiqueta da notificação
 
