@@ -141,46 +141,68 @@ export const SONS = [
     ],
   },
   // ============================================================
-  //  A GALINHA (01/10) — um "pó" só, e SÓ A VOZ
+  //  A GALINHA (02/10) — a gravação que o Rodrigo mandou, inteira
   //
-  //  Pedido do Rodrigo depois do pato. Ele mandou um trecho de 4,45 s do
-  //  clipe "Pó Pó Pó" e pediu um "pó" só — e depois, ouvindo, pediu SÓ A VOZ,
-  //  sem a música de fundo.
+  //  É a TERCEIRA galinha, e as duas primeiras ensinam o que esta é. Em 01/10
+  //  ele mandou um trecho do clipe "Pó Pó Pó"; cortei um "pó", depois tirei a
+  //  música com um separador de voz. Ele não gostou, nem das três versões mais
+  //  agudas que mandei em seguida. Em 02/10 ele achou OUTRA gravação e disse
+  //  "use ele" — e é ela que está aqui.
   //
-  //  A MÚSICA SAIU POR UM SEPARADOR DE VOZ, e não por filtro. A voz e a
-  //  música ocupam as mesmas frequências (as notas da música são as linhas
-  //  retas do espectro, em 1, 2, 3,4 kHz…); um filtro que tirasse as notas
-  //  tiraria a voz junto. O separador (UVR, modelo Kim_Vocal_2) foi treinado
-  //  para isso e devolve as duas faixas.
-  //
-  //  E ELE CORRIGIU UMA LEITURA MINHA. O trecho tem dois "pó" alternados, e
-  //  eu tinha suposto que os dois eram a galinha. A faixa da voz trouxe só o
-  //  de ataque seco: o "ó" grave era INSTRUMENTO. Dos sete "pó" da voz,
-  //  ficou o de 0,91 s — o que tinha mais voz e menos música no original
-  //  (63%, contra 41% do que eu tinha usado antes) e que começa depois de
-  //  silêncio. A receita é `sons/cortar-a-galinha.py`.
+  //  POUCA COISA FOI MEXIDA, de propósito: a gravação já vem limpa (o fundo
+  //  está 70 dB abaixo do som) e é o som que ELE escolheu. Mexer no timbre
+  //  seria trocar o som dele por um palpite de quem não ouve. Ficam as DUAS
+  //  partes do cacarejo — o "có" curto e o "cóóó" longo —, e sai só o
+  //  silêncio das pontas. 723 ms. A receita é `sons/cortar-gravacao.py`.
   //
   //  O VOLUME SAI DO PATO, que é o volume que ele aprovou. E ela tem o seu
   //  ENCOSTO sintetizado, pela régua do pato: falhando a busca, sai um som
-  //  parecido em vez de silêncio.
+  //  parecido em vez de silêncio — com as mesmas duas partes, curta e longa,
+  //  e o tom da gravação (~370 Hz).
   //
-  //  VACA, PORCO E GATO SAÍRAM, e ficam escritos aqui para não voltarem do
-  //  mesmo jeito: foram sintetizados por mim, fora do navegador, por
-  //  fonte-e-filtro (pregas vocais + ressonâncias da boca), e o Rodrigo não
-  //  gostou. É a quinta tentativa de sintetizar bicho, depois das quatro do
-  //  pato, e a régua continua a mesma: quem não ouve o som não o fabrica —
-  //  pede a gravação.
+  //  VACA E PORCO SAÍRAM, e ficam escritos aqui para não voltarem do mesmo
+  //  jeito: foram sintetizados por mim, fora do navegador, por fonte-e-filtro
+  //  (pregas vocais + ressonâncias da boca), e o Rodrigo não gostou. É a
+  //  quinta tentativa de sintetizar bicho, depois das quatro do pato, e a
+  //  régua continua a mesma: quem não ouve o som não o fabrica — pede a
+  //  gravação. O GATO voltou assim: ele mandou a gravação (logo abaixo).
   // ============================================================
   {
     id: "galinha",
     nome: "Galinha",
-    descricao: "Um “pó” só",
+    descricao: "Um cacarejo",
     arquivo: "/avisos/galinha.wav",
     repeticoes: [0],
-    volume: 0.0697,
+    volume: 0.047,
     notas: [
-      { hz: 420, pico: 640, ate: 360, em: 0, dura: 0.2, volume: 0.19,
+      { hz: 520, em: 0, dura: 0.05, volume: 0.225,
         forma: "sawtooth", filtro: 1000, filtroTipo: "bandpass", filtroQ: 1.5 },
+      { hz: 370, ate: 400, em: 0.2, dura: 0.5, volume: 0.225,
+        forma: "sawtooth", filtro: 1000, filtroTipo: "bandpass", filtroQ: 1.5 },
+    ],
+  },
+  // ============================================================
+  //  O GATO (02/10) — a gravação que o Rodrigo mandou, inteira
+  //
+  //  O miado sintetizado de 01/10 foi reprovado; esta é a gravação que ele
+  //  achou. O mesmo tratamento da galinha: fica o som inteiro — do "m"
+  //  baixinho do começo ao fim do "iau" —, sai só o silêncio das pontas, e
+  //  fica de fora um estalinho que a gravação tinha depois do miado. 711 ms,
+  //  pela mesma receita (`sons/cortar-gravacao.py`).
+  //
+  //  O ENCOSTO é o contorno de um miado — o tom sobe e cai —, para o dia em
+  //  que a busca falhar não ser silêncio.
+  // ============================================================
+  {
+    id: "gato",
+    nome: "Gato",
+    descricao: "Um miado",
+    arquivo: "/avisos/gato.wav",
+    repeticoes: [0],
+    volume: 0.0645,
+    notas: [
+      { hz: 520, pico: 760, ate: 430, em: 0, dura: 0.65, volume: 0.17,
+        forma: "triangle", filtro: 1500, filtroTipo: "bandpass", filtroQ: 1 },
     ],
   },
   {
