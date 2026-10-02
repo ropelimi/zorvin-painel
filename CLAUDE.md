@@ -2136,6 +2136,15 @@ primeira reprovação da prova, e era dela, não do painel). A conferência de
 `cliente-ou-reu` que pedia "ordem de serviço" na frase de Cliente passou a
 pedir "ordem": a frase desmarcada fala da ordem que abre com a venda.
 
+**8 sabotagens e 8 pegas** (a chave fora do corpo; o réu levando a caixa; a
+caixa que não desmarca na troca; o aviso lido da caixa e não da resposta; o
+"já existia" calado; a caixa para o réu; a promessa antiga de volta; a caixa
+nascendo e voltando marcada). **E uma vazou, com razão:** trocar só o
+`useState(false)` por `true` não muda nada, porque o efeito da conversa
+desmarca a caixa assim que a ficha monta — é a régua de 25/09, *sabotagem que
+o resto do sistema conserta sozinho não prova nada*. O defeito de verdade é o
+efeito voltando para marcada, e esse a prova pega por 17 conferências.
+
 ## O responsável pela conversa — o primeiro passo para CRM (30/09)
 
 Pedido do Rodrigo, depois de perguntar o que falta para o Zorvin virar CRM:
