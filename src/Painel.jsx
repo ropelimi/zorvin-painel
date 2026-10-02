@@ -7964,6 +7964,17 @@ export default function Painel({ sessao }) {
       return;
     }
 
+    // A CONVERSA QUE NÃO ESPERA SÓ GANHA O REGISTRO. Não há fila de onde
+    // tirá-la, e marcar `tratada_em` faria o botão virar "Voltar para a fila"
+    // numa conversa que nunca esteve nela.
+    if (!conv.esperando_desde) {
+      setTrateiOcupado(false);
+      setJaTratei(null);
+      releTratadosDoHistorico(conv.id);
+      mostrarAviso("Registrei o que foi tratado.");
+      return;
+    }
+
     const quando = new Date().toISOString();
     const r = await supabase.from("conversas")
       .update({ tratada_em: quando, esperando_desde: null })
@@ -10427,26 +10438,34 @@ export default function Painel({ sessao }) {
   //  tirar da fila num aparelho e não no outro. É a mesma decisão do controle
   //  da ordem, descrita no CLAUDE.md.
   //
-  //  ELE SÓ APARECE QUANDO HÁ O QUE FAZER: conversa esperando (oferece tratar)
-  //  ou já tratada (oferece desfazer). Nas outras, um botão que não muda nada
-  //  é ruído em cima de um cabeçalho que já foi apertado uma vez.
+  //  ELE APARECE EM TODA CONVERSA, e isto mudou em 02/10. Antes ele só
+  //  aparecia na que estava esperando (ou na já tratada, para desfazer), e
+  //  sumia justamente na conversa em que a equipe RESPONDEU por último — o
+  //  relato do Rodrigo, com a conversa da Beatriz aberta e o botão ausente.
+  //  O "Já tratei" é também o registro do que foi feito (é dele que sai o
+  //  relatório), e o que se fez numa conversa respondida conta igual.
+  //
+  //  Na conversa que NÃO espera, ele só registra: não há fila de onde tirar,
+  //  e a janela diz isso em vez de prometer "tirar da fila". A conta de
+  //  largura do cabeçalho (`FILA_ESCRITA`) já contava com ele lá.
   // ------------------------------------------------------------------
   const esperaDaAberta = conversa ? diasEsperando(conversa) : 0;
   const trateiDisponivel = temTratada === true && temAssuntos === true && Boolean(conversa);
   const estaEsperando = trateiDisponivel && Boolean(conversa.esperando_desde);
   const estaTratada = trateiDisponivel && !conversa.esperando_desde && Boolean(conversa.tratada_em);
+  const podeTratar = trateiDisponivel && !estaTratada;
 
-  const acaoJaTratei = !estaEsperando && !estaTratada ? null : (escrito) => {
-    const rotulo = estaEsperando ? "Já tratei" : "Voltar para a fila";
-    const Icone = estaEsperando ? ListChecks : Undo2;
-    const cor = estaEsperando ? C.textSecondary : C.green;
+  const acaoJaTratei = !podeTratar && !estaTratada ? null : (escrito) => {
+    const rotulo = podeTratar ? "Já tratei" : "Voltar para a fila";
+    const Icone = podeTratar ? ListChecks : Undo2;
+    const cor = podeTratar ? C.textSecondary : C.green;
     const clique = () => {
-      if (estaEsperando) { setTrateiErro(""); setJaTratei(conversa); setMenuDaConversa(false); }
+      if (podeTratar) { setTrateiErro(""); setJaTratei(conversa); setMenuDaConversa(false); }
       else desfazerJaTratei(conversa);
     };
     if (escrito) {
       return (
-        <button onClick={clique} data-ja-tratei={estaEsperando ? "tratar" : "desfazer"}
+        <button onClick={clique} data-ja-tratei={podeTratar ? "tratar" : "desfazer"}
                 style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
           <Icone size={17} color={cor} /> {rotulo}
           {estaEsperando && esperaDaAberta >= 1 && (
@@ -10460,8 +10479,9 @@ export default function Painel({ sessao }) {
     return (
       <button onClick={clique} aria-label={rotulo} title={estaEsperando
                 ? "Tirar da fila de espera sem mandar mensagem"
+                : podeTratar ? "Registrar o que foi tratado nesta conversa"
                 : "Devolver esta conversa à fila de espera"}
-              data-ja-tratei={estaEsperando ? "tratar" : "desfazer"}
+              data-ja-tratei={podeTratar ? "tratar" : "desfazer"}
               style={{ display: "inline-flex", alignItems: "center", gap: 5, border: `1px solid ${C.divider}`,
                        background: "transparent", color: C.textSecondary, borderRadius: 8,
                        padding: cabecalhoApertado ? "7px 9px" : "6px 10px",
@@ -14516,6 +14536,7 @@ export default function Painel({ sessao }) {
         <JaTratei C={C} estreito={estreito}
                   nome={nomeDoContato(jaTratei.contato)}
                   dias={diasEsperando(jaTratei)}
+                  esperando={Boolean(jaTratei.esperando_desde)}
                   assuntos={assuntos}
                   ocupado={trateiOcupado}
                   erro={trateiErro}
