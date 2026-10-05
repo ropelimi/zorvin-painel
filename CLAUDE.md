@@ -993,6 +993,15 @@ teria o que ler.
 
 Prova: `transcrever-o-audio`, 22 conferências, com a ponte fingida pela prova.
 
+**E a PR saiu com uma sabotagem dentro — a terceira vez desta forma.** Uma
+rodada de sabotagens foi interrompida no meio, e o `catch` da bolha ficou
+`void e`: o erro da ponte sumia calado, e o botão continuava dizendo
+"Transcrever" como se nada tivesse acontecido. Eu conferi o arquivo depois da
+interrupção e não vi; **a integração contínua viu**, nas duas conferências da
+cena do erro. A régua escrita em 30/09 vale também para o commit, e não só
+para a cópia de referência: **depois de uma rodada de sabotagens
+interrompida, rode a prova inteira ANTES de fazer o commit.**
+
 ## O topo da coluna — 283px para dizer o que cabe em 188
 
 Pedido do Rodrigo em 16/09, com as duas telas lado a lado: o topo do Zorvin

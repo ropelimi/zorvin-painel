@@ -1893,7 +1893,7 @@ function BolhaAudio({ C, saida, url, m }) {
       if (texto) setTranscrita(texto);
       else setErroDaTranscricao("O áudio não tem fala que desse para transcrever.");
     } catch (e) {
-      void e;
+      setErroDaTranscricao((e && e.message) || "Não consegui transcrever agora. Tente de novo.");
     } finally {
       setTranscrevendo(false);
     }
