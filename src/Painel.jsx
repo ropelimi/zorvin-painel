@@ -44,7 +44,7 @@ import JaTratei from "./JaTratei.jsx";
 import { nomeDoContato } from "./contato.js";
 import { diasDesde } from "./espera.js";
 import EscolherHora from "./EscolherHora.jsx";
-import { rotuloDaHora, porQueNaoServe, semAColunaDaAgenda } from "./agenda.js";
+import { rotuloDaHora, porQueNaoServe, semAColunaDaAgenda, aindaDaParaEditar } from "./agenda.js";
 
 // ============================================================
 //  ZORVIN by Ropelimi — Painel real (conectado ao Supabase)
@@ -2910,6 +2910,8 @@ export default function Painel({ sessao }) {
   const [temAgenda, setTemAgenda] = useState(null);
   const [agendadas, setAgendadas] = useState([]);
   const [escolhendoHora, setEscolhendoHora] = useState(null);
+  // A AGENDADA SENDO EDITADA (pedido de 05/10): o item da fila, ou nulo.
+  const [editandoAgendada, setEditandoAgendada] = useState(null);
   // Qual deles está grande na prévia. A legenda é DE CADA arquivo, como no
   // WhatsApp: uma legenda só para o lote descreveria errado quatro dos cinco.
   const [anexoAtivo, setAnexoAtivo] = useState(0);
@@ -5971,7 +5973,7 @@ export default function Painel({ sessao }) {
   const carregarAgendadasRef = useRef(carregarAgendadas);
   carregarAgendadasRef.current = carregarAgendadas;
 
-  useEffect(() => { setAgendadas([]); setEscolhendoHora(null); carregarAgendadas(conversaId); },
+  useEffect(() => { setAgendadas([]); setEscolhendoHora(null); setEditandoAgendada(null); carregarAgendadas(conversaId); },
     [conversaId, carregarAgendadas]);
 
   // NA HORA MARCADA, A LISTA SE RELÊ SOZINHA. A ponte manda a mensagem e ela
@@ -6037,6 +6039,38 @@ export default function Painel({ sessao }) {
    *  a ponte pegou o item no mesmo segundo, quem chegou primeiro fica, e a
    *  frase diz o que aconteceu em vez de afirmar um cancelamento que não
    *  houve. */
+  /** EDITAR UMA AGENDADA (pedido de 05/10): o texto (ou a legenda do anexo) e
+   *  a hora. A hora vai de novo nos DOIS lugares, como ao agendar.
+   *
+   *  `.eq("status", "pendente")` na gravação, e a regra do banco (script 016)
+   *  só deixa mexer antes da hora: perto dela a ponte pode estar pegando o
+   *  item, e é por isso que o botão some no último minuto. Recusada, a edição
+   *  vem como ERRO (42501) — a regra do cancelar alcança a mesma linha —, e a
+   *  frase diz as duas causas possíveis com o código. */
+  async function salvarAgendada(item, quando, texto) {
+    const motivo = porQueNaoServe(quando);
+    if (motivo) { mostrarAviso(motivo, 6000); return; }
+    setEditandoAgendada(null);
+    const mudancas = { texto: texto || "", agendada_para: quando, tentar_em: quando };
+    let r = await supabase.from("fila_envio")
+      .update({ ...mudancas, editada_em: new Date().toISOString(), editada_por: meuId })
+      .eq("id", item.id).eq("status", "pendente").select("id");
+    // BASE SEM AS COLUNAS DE QUEM EDITOU: grava o que importa sem elas.
+    if (r.error && /editada_/.test(String(r.error.message || ""))) {
+      r = await supabase.from("fila_envio").update(mudancas)
+        .eq("id", item.id).eq("status", "pendente").select("id");
+    }
+    if (r.error) {
+      mostrarAviso(comOCodigo("Não deu para editar: a mensagem já está na hora de sair, ou o banco não deixou.",
+                              r.error, "editar agendada"), 8000);
+    } else if (naoGravouNada(r)) {
+      mostrarAviso("Não deu para editar: ela já saiu, ou o banco não deixou. Confira a conversa.", 7000);
+    } else {
+      mostrarAviso(`Mensagem agendada alterada — sai ${rotuloDaHora(quando)}.`);
+    }
+    carregarAgendadas(item.conversa_id);
+  }
+
   async function cancelarAgendada(item) {
     const r = await supabase.from("fila_envio")
       .update({ status: "cancelada", cancelada_em: new Date().toISOString(), cancelada_por: meuId })
@@ -7348,6 +7382,7 @@ export default function Painel({ sessao }) {
       // A JANELA DA HORA está por cima de tudo onde ela abre — inclusive da
       // prévia dos anexos: Esc fecha ELA, e não o lote que a pessoa montou.
       if (escolhendoHora) { setEscolhendoHora(null); return; }
+      if (editandoAgendada) { setEditandoAgendada(null); return; }
       if (imagemAberta) { setImagemAberta(null); setRetratoAberto(false); }
       else if (anexosPendentes.length) fecharAnexoPendente();
       else if (audioPronto) descartarAudioPronto();
@@ -7395,7 +7430,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId, escolhendoHora]);
+  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -11081,7 +11116,8 @@ export default function Painel({ sessao }) {
     )}
     {escolhendoHora === "texto" && rascunho.trim() && (
       <div style={{ position: "absolute", bottom: 60, right: 12, zIndex: 40 }}>
-        <EscolherHora C={C} titulo="Agendar esta mensagem"
+        <EscolherHora C={C} escuro={modo === "escuro"} titulo="Agendar esta mensagem"
+                      previa={`“${rascunho.trim().replace(/\s+/g, " ")}”`}
                       aoEscolher={agendarTexto} aoFechar={() => setEscolhendoHora(null)} />
       </div>
     )}
@@ -13275,6 +13311,16 @@ export default function Painel({ sessao }) {
                           {anexo ? <><Paperclip size={12} style={{ verticalAlign: "-1px" }} /> {a.midia_nome || "anexo"}{a.texto ? ` — ${a.texto}` : ""}</> : a.texto}
                         </div>
                       </div>
+                      {/* EDITAR some no último minuto antes da hora: ali a ponte
+                          pode estar pegando o item, e o banco recusa (016). */}
+                      {!saindo && aindaDaParaEditar(a.agendada_para) && (
+                        <button data-editar-agendada onClick={() => setEditandoAgendada(a)}
+                                title="Editar o texto ou a hora desta mensagem agendada"
+                                style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.verdeTexto || C.green,
+                                         borderRadius: 14, padding: "4px 10px", fontSize: 12.5, cursor: "pointer", flexShrink: 0 }}>
+                          Editar
+                        </button>
+                      )}
                       {!saindo && (
                         <button data-cancelar-agendada onClick={() => cancelarAgendada(a)}
                                 title="Cancelar esta mensagem agendada"
@@ -14531,8 +14577,9 @@ export default function Painel({ sessao }) {
                 <span style={{ position: "relative", display: "flex", flexShrink: 0 }}>
                   {escolhendoHora === "anexo" && (
                     <div style={{ position: "absolute", bottom: 54, right: 0, zIndex: 5 }}>
-                      <EscolherHora C={C}
+                      <EscolherHora C={C} escuro={modo === "escuro"}
                         titulo={anexosPendentes.length > 1 ? `Agendar os ${anexosPendentes.length} anexos` : "Agendar este anexo"}
+                        previa={anexosPendentes.map((a) => a.nome).join(", ")}
                         aoEscolher={agendarAnexos} aoFechar={() => setEscolhendoHora(null)} />
                     </div>
                   )}
@@ -14553,6 +14600,24 @@ export default function Painel({ sessao }) {
         </div>
         );
       })()}
+
+      {/* EDITAR UMA AGENDADA — no meio da tela, e não pendurada na faixa: a
+          faixa fica logo acima da caixa de escrever, e uma janela de 340px
+          ancorada ali cobriria a conversa no celular sem caber na tela. */}
+      {editandoAgendada && (
+        <div data-editar-agendada-janela onClick={() => setEditandoAgendada(null)}
+             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 96,
+                      display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+          <EscolherHora C={C} escuro={modo === "escuro"} editar
+                        titulo="Editar mensagem agendada"
+                        textoInicial={editandoAgendada.texto || ""}
+                        quandoInicial={editandoAgendada.agendada_para}
+                        rotuloDoTexto={editandoAgendada.tipo && editandoAgendada.tipo !== "texto" ? "Legenda do anexo" : "Mensagem"}
+                        textoObrigatorio={!editandoAgendada.tipo || editandoAgendada.tipo === "texto"}
+                        aoEscolher={(quando, texto) => salvarAgendada(editandoAgendada, quando, texto)}
+                        aoFechar={() => setEditandoAgendada(null)} />
+        </div>
+      )}
 
       {/* Toast discreto (avisos não bloqueantes) */}
       {/* MARCADO (`data-aviso`) para as provas endereçarem o recado sem

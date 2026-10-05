@@ -2453,6 +2453,37 @@ Prova: `a-mensagem-agendada`. **E uma armadilha dela:** a bancada já tem um
 `procuracao.pdf` na conversa, e a conferência "nenhuma bolha do anexo"
 reprovou por causa DELE. Arquivo de prova leva nome que ninguém mais usa.
 
+### Editar a agendada, e a janela redesenhada (05/10)
+
+Pedido do Rodrigo, com a foto da primeira janela: *"quero que tenha a opção de
+editar a mensagem. E melhore o visual da tela de agendamento"*.
+
+**Editar** — botão ao lado do Cancelar, na faixa. Abre a MESMA janela
+(`EscolherHora`, modo `editar`), no meio da tela, com o texto (ou a legenda do
+anexo) numa caixa e a hora de agora já escolhida. Salvar grava texto e hora —
+a hora nos dois lugares, como ao agendar — com `.eq("status","pendente")`.
+**Texto de mensagem não pode ficar vazio** (para não mandar, é o Cancelar);
+legenda de anexo pode.
+
+**O botão some no último minuto antes da hora** (`aindaDaParaEditar`), e o
+banco recusa a partir da hora (script 016 da ponte): é o que fecha a corrida
+com a ponte, que só lê a agendada depois da hora. **A recusa vem como erro
+(42501), e não como zero linhas** — a regra do cancelar alcança a mesma linha
+—, e a frase diz as duas causas com o código.
+
+**O redesenho:** atalhos em CARTÕES com a hora escrita embaixo ("amanhã,
+09:00"), com nomes curtos para não quebrar a linha ("Amanhã cedo", "Na
+segunda" — a próxima segunda depois de amanhã); **dia e hora em dois campos**,
+com rótulo e `colorScheme` do tema (o campo único aparecia como
+"dd/mm/aaaa --:--" e, no escuro, sem o ícone do calendário); um **resumo
+verde** por extenso ("Sai segunda-feira, 13/10, às 09:00") entre a escolha e o
+botão; e a prévia da mensagem embaixo do título. **O botão continua escrevendo
+a hora**, e a hora que não serve continua sendo dita.
+
+Prova: `a-mensagem-agendada`, agora **73 conferências**, com as cenas da
+edição (o texto e a hora mudando nos dois lugares; o vazio recusado; o botão
+sumido no último minuto; a recusa do banco dita com o código).
+
 ## Banco de dados (tabelas que o painel lê/escreve)
 
 - `advogados` — lê (id, nome, numero, foto_url) onde `ativo = true`
