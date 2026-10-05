@@ -974,10 +974,24 @@ Prova: `o-audio-em-2x`, 15 conferências, **7 sabotagens de verdade e 7 pegas**
 carregamento tiradas juntas). Os áudios são plantados pela prova
 (`__SEMENTE`): a bancada não tem nenhum.
 
-**Ainda em aberto, e já decidido com o Rodrigo:** a **transcrição** dos áudios
-— pelo **Groq** (Whisper, ~US$ 0,04 por hora de áudio), **ao clicar** num
-botão "Transcrever", com o texto guardado no banco para a equipe inteira não
-pagar duas vezes pelo mesmo áudio. Vai numa PR própria, com a chave na ponte.
+### A transcrição, ao clicar (05/10)
+
+Pedido da equipe junto com o 2x. Decidido com o Rodrigo: pelo **Groq**
+(Whisper, ~US$ 0,04 por hora de áudio), **ao clicar** no botão
+**"Transcrever"** embaixo do tocador. Quem fala com o Groq é a **ponte**
+(`POST /transcrever`), onde mora a chave `GROQ_API_KEY`; a bolha só pede.
+
+**O texto guardado aparece direto.** A ponte grava em `mensagens.transcricao`
+(script 015), e a conversa lida com `*` traz o campo: quem abrir depois lê o
+texto sem botão e sem pagar de novo. O estado da bolha é só o desta sessão,
+para o texto aparecer na hora do clique.
+
+**O erro é dito na bolha**, com a frase da ponte (que diz o que fazer — a chave
+que falta, o limite do Groq), e o botão fica, oferecendo tentar de novo. **A
+bolha provisória e o áudio sem arquivo não oferecem transcrever**: a ponte não
+teria o que ler.
+
+Prova: `transcrever-o-audio`, 22 conferências, com a ponte fingida pela prova.
 
 ## O topo da coluna — 283px para dizer o que cabe em 188
 
