@@ -1854,7 +1854,53 @@ function BolhaAudio({ C, saida, url, m }) {
     a.playbackRate = velocidade;
   }, [velocidade]);
   useEffect(aplicar, [aplicar, url]);
+
+  // ------------------------------------------------------------
+  //  A TRANSCRIÇÃO, AO CLICAR (pedido da equipe, 02/10)
+  //
+  //  Quem fala com o Groq é a PONTE (a chave mora lá); a bolha só pede. E só
+  //  AO CLICAR: transcrever todo áudio que chega pagaria pelos que ninguém
+  //  precisou ler.
+  //
+  //  O texto que a ponte guardou volta em `m.transcricao` na próxima leitura
+  //  da conversa, e aí aparece direto, sem botão — a equipe inteira lê o que
+  //  uma pessoa transcreveu, sem pagar de novo. O estado daqui é só o desta
+  //  sessão, para o texto aparecer na hora do clique.
+  //
+  //  O ERRO É DITO NA PRÓPRIA BOLHA, com a frase da ponte (que diz o que
+  //  fazer: a chave que falta, o limite do Groq), e o botão continua lá para
+  //  tentar de novo. Um clique que falha calado se repete até a pessoa
+  //  desistir achando que o recurso não existe.
+  // ------------------------------------------------------------
+  const [transcrita, setTranscrita] = useState(null);
+  const [transcrevendo, setTranscrevendo] = useState(false);
+  const [erroDaTranscricao, setErroDaTranscricao] = useState(null);
+  const textoTranscrito = transcrita || (m && m.transcricao) || null;
+  // A BOLHA PROVISÓRIA (o áudio que eu acabei de gravar) ainda não existe no
+  // banco: a ponte não teria o que ler, e o botão viraria um "não achei".
+  const daParaTranscrever = Boolean(url && m && m.id != null && !String(m.id).startsWith("temp-"));
+  async function transcrever() {
+    if (transcrevendo || !daParaTranscrever) return;
+    setTranscrevendo(true);
+    setErroDaTranscricao(null);
+    try {
+      // ESPERA LONGA: a ponte pode estar acordando na Render, e um áudio de
+      // vários minutos leva seu tempo no Groq.
+      const r = await chamarPonte("/transcrever", {
+        method: "POST", body: JSON.stringify({ mensagem_id: m.id }), espera: 120000,
+      });
+      const texto = String((r && r.texto) || "").trim();
+      if (texto) setTranscrita(texto);
+      else setErroDaTranscricao("O áudio não tem fala que desse para transcrever.");
+    } catch (e) {
+      setErroDaTranscricao((e && e.message) || "Não consegui transcrever agora. Tente de novo.");
+    } finally {
+      setTranscrevendo(false);
+    }
+  }
+
   return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
     <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
       {url ? (
         <>
@@ -1885,6 +1931,30 @@ function BolhaAudio({ C, saida, url, m }) {
           </span>
         </>
       )}
+    </div>
+    {textoTranscrito ? (
+      <div data-transcricao style={{ maxWidth: 280, fontSize: 13, lineHeight: 1.4, color: C.textPrimary,
+                                     whiteSpace: "pre-wrap", wordBreak: "break-word",
+                                     borderLeft: `3px solid ${C.green}`, paddingLeft: 7, marginTop: 2 }}>
+        <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: C.textSecondary }}>Transcrição</span>
+        {textoTranscrito}
+      </div>
+    ) : daParaTranscrever && (
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <button type="button" data-transcrever onClick={transcrever} disabled={transcrevendo}
+                title="Transformar este áudio em texto"
+                style={{ alignSelf: "flex-start", border: "none", background: "transparent", padding: "2px 0",
+                         cursor: transcrevendo ? "default" : "pointer", color: C.verdeTexto || C.green,
+                         fontSize: 12.5, fontWeight: 600 }}>
+          {transcrevendo ? "Transcrevendo…" : (erroDaTranscricao ? "Tentar transcrever de novo" : "Transcrever")}
+        </button>
+        {erroDaTranscricao && (
+          <span data-transcricao-erro style={{ maxWidth: 280, fontSize: 12, color: "#e53935", lineHeight: 1.35 }}>
+            {erroDaTranscricao}
+          </span>
+        )}
+      </div>
+    )}
     </div>
   );
 }
