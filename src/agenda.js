@@ -48,22 +48,36 @@ export function porQueNaoServe(iso, agora = Date.now()) {
   return null;
 }
 
-/** Os atalhos de todo dia. "Amanhã" quer dizer o dia seguinte do calendário,
- *  e não "daqui a 24 horas": quem agenda às 23h para "amanhã às 9h" quer as 9h
- *  de daqui a dez horas. */
+/** Os atalhos de todo dia, cada um com a hora que ele dá ESCRITA embaixo:
+ *  "Amanhã de manhã" sozinho deixa a dúvida de que horas, e a dúvida se tira
+ *  agendando errado. "Amanhã" quer dizer o dia seguinte do calendário, e não
+ *  "daqui a 24 horas": quem agenda às 23h para "amanhã de manhã" quer as 9h
+ *  de daqui a dez horas.
+ *
+ *  OS NOMES SÃO CURTOS DE PROPÓSITO ("Amanhã cedo", e não "Amanhã de
+ *  manhã"): o cartão tem ~150px, e o nome que quebra em duas linhas desalinha
+ *  os quatro — a hora exata já vai escrita embaixo.
+ *
+ *  O QUARTO É A SEGUNDA DE MANHÃ — a próxima segunda DEPOIS de amanhã. Na
+ *  sexta é o "depois do fim de semana", que é o atalho que mais falta numa
+ *  equipe que não atende sábado; num domingo ele pularia a segunda de amanhã,
+ *  que já é o "Amanhã de manhã". */
 export function opcoesRapidas(agora = new Date()) {
   const daquiAUmaHora = new Date(agora.getTime() + 60 * 60 * 1000);
   daquiAUmaHora.setSeconds(0, 0);
-  const amanha = (h) => {
+  const emDias = (n, h) => {
     const d = new Date(agora);
-    d.setDate(d.getDate() + 1);
+    d.setDate(d.getDate() + n);
     d.setHours(h, 0, 0, 0);
     return d;
   };
+  let ateSegunda = 2;
+  while (emDias(ateSegunda, 9).getDay() !== 1) ateSegunda++;
   return [
     { id: "1h", rotulo: "Daqui a 1 hora", quando: daquiAUmaHora },
-    { id: "amanha9", rotulo: "Amanhã às 9h", quando: amanha(9) },
-    { id: "amanha14", rotulo: "Amanhã às 14h", quando: amanha(14) },
+    { id: "amanha9", rotulo: "Amanhã cedo", quando: emDias(1, 9) },
+    { id: "amanha14", rotulo: "Amanhã à tarde", quando: emDias(1, 14) },
+    { id: "segunda9", rotulo: "Na segunda", quando: emDias(ateSegunda, 9) },
   ];
 }
 
@@ -83,6 +97,41 @@ export function rotuloDaHora(iso, agora = new Date()) {
   const data = `${dois(d.getDate())}/${dois(d.getMonth() + 1)}`
     + (d.getFullYear() !== agora.getFullYear() ? `/${d.getFullYear()}` : "");
   return `${DIAS[d.getDay()]}, ${data} às ${hora}`;
+}
+
+const DIAS_POR_EXTENSO = ["domingo", "segunda-feira", "terça-feira", "quarta-feira",
+                          "quinta-feira", "sexta-feira", "sábado"];
+
+/** "hoje às 15:30", "amanhã às 09:00", "segunda-feira, 13/10, às 09:00" — a
+ *  frase do RESUMO da janela, que é a última conferência antes de agendar e
+ *  por isso vai com o dia da semana por extenso. */
+export function rotuloLongo(iso, agora = new Date()) {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "";
+  const curto = rotuloDaHora(iso, agora);
+  if (/^(hoje|amanhã)/.test(curto)) return curto;
+  const hora = `${dois(d.getHours())}:${dois(d.getMinutes())}`;
+  const data = `${dois(d.getDate())}/${dois(d.getMonth() + 1)}`
+    + (d.getFullYear() !== agora.getFullYear() ? `/${d.getFullYear()}` : "");
+  return `${DIAS_POR_EXTENSO[d.getDay()]}, ${data}, às ${hora}`;
+}
+
+/** Só o "15:30" ou "seg., 13/10 · 09:00" que vai embaixo de cada atalho. */
+export function legendaDoAtalho(data, agora = new Date()) {
+  const hora = `${dois(data.getHours())}:${dois(data.getMinutes())}`;
+  const dia = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const dif = Math.round((dia(data) - dia(agora)) / 86400000);
+  if (dif === 0) return `hoje, ${hora}`;
+  if (dif === 1) return `amanhã, ${hora}`;
+  return `${DIAS[data.getDay()]} ${dois(data.getDate())}/${dois(data.getMonth() + 1)}, ${hora}`;
+}
+
+/** A agendada ainda pode ser EDITADA? Até um minuto antes da hora — a mesma
+ *  antecedência mínima de agendar. Mais perto disso a ponte pode estar
+ *  pegando o item, e o banco recusa a edição a partir da hora (script 016). */
+export function aindaDaParaEditar(iso, agora = Date.now()) {
+  const t = new Date(iso).getTime();
+  return Number.isFinite(t) && t - agora > ANTECEDENCIA_MINIMA_MS;
 }
 
 /** A coluna não existe nesta base (script 013 não rodou)? */

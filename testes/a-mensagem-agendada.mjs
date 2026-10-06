@@ -56,6 +56,7 @@ async function abrirPainel({ largura = 1400, bandeiras = {}, semente = {} } = {}
     globalThis.__SEM_COLUNAS = b.semColunas || {};
     globalThis.__ESCRITA_SEM_EFEITO = b.semEfeito || [];
     globalThis.__QUEBRAR = b.quebrar || [];
+    globalThis.__ERRO_NA_GRAVACAO = b.erroNaGravacao || {};
     globalThis.__DEPOSITO_COM_ENDERECO = true;
     globalThis.__AVISOS_VISTOS = [];
     setInterval(() => {
@@ -111,7 +112,8 @@ console.log("\n1. Com texto na caixa, o relógio; a janela diz a hora no botão"
   ok("sem hora escolhida, o botão nasce desligado", desligado);
 
   console.log("\n3. Hora que já passou é dita, e não é aceita");
-  await page.locator("[data-agenda-campo]").fill("2020-01-01T09:00");
+  await page.locator("[data-agenda-dia]").fill("2020-01-01");
+  await page.locator("[data-agenda-hora]").fill("09:00");
   await page.waitForTimeout(150);
   ok("a janela diz que a hora já passou",
      /já passou/.test(await page.locator("[data-agenda-problema]").innerText().catch(() => "")));
@@ -192,6 +194,68 @@ console.log("\n4c. Cancelar que o banco não deixa: a tela DIZ, e não finge");
   ok("a tela diz que não deu", /Não deu para cancelar/.test(f), f);
   ok("e NÃO diz que cancelou", !/Agendamento cancelado/.test(f), f);
   ok("a agendada continua na lista", (await page.locator('[data-agendada="ag-preso"]').count()) === 1);
+  await ctx.close();
+}
+
+console.log("\n4d. Editar a agendada: o texto e a hora (pedido de 05/10)");
+{
+  const { ctx, page, estouros } = await abrirPainel({ semente: { fila_envio: [
+    { id: "ag-editar", conversa_id: ALVO, tipo: "texto", texto: "Texto antigo do lembrete",
+      status: "pendente", agendada_para: DAQUI_3H, tentar_em: DAQUI_3H,
+      enviado_por: "Jenifer", enviado_por_id: "u-jenifer", criado_em: new Date(AGORA - 60000).toISOString() },
+    { id: "ag-quase", conversa_id: ALVO, tipo: "texto", texto: "Sai em meio minuto",
+      status: "pendente", agendada_para: new Date(AGORA + 40000).toISOString(),
+      tentar_em: new Date(AGORA + 40000).toISOString(), criado_em: new Date(AGORA - 60000).toISOString() },
+  ] } });
+  ok("a agendada tem o botão Editar", (await page.locator('[data-agendada="ag-editar"] [data-editar-agendada]').count()) === 1);
+  ok("a que sai em menos de um minuto NÃO oferece editar",
+     (await page.locator('[data-agendada="ag-quase"] [data-editar-agendada]').count()) === 0);
+  ok("abri a edição", await clicar(page, '[data-agendada="ag-editar"] [data-editar-agendada]'));
+  const janela = page.locator('[data-escolher-hora][data-modo="editar"]');
+  ok("a janela de editar abriu", (await janela.count()) === 1);
+  ok("com o texto de agora na caixa",
+     (await janela.locator("[data-agenda-texto]").inputValue().catch(() => "")) === "Texto antigo do lembrete");
+  const resumo = await janela.locator("[data-agenda-resumo]").innerText().catch(() => "");
+  ok("e com a hora que estava marcada já escolhida", /Sai/.test(resumo), resumo);
+  // TEXTO VAZIO NÃO SE SALVA: para não mandar, é o Cancelar.
+  await janela.locator("[data-agenda-texto]").fill("   ");
+  ok("texto vazio desliga o salvar", await janela.locator("[data-agenda-confirmar]").isDisabled().catch(() => false));
+  await janela.locator("[data-agenda-texto]").fill("Texto NOVO do lembrete");
+  await clicar(page, '[data-escolher-hora][data-modo="editar"] [data-agenda-rapida="amanha14"]');
+  const esperado = await amanhaAs(page, 14);
+  ok("salvei", await clicar(page, '[data-escolher-hora][data-modo="editar"] [data-agenda-confirmar]'));
+  await page.waitForTimeout(700);
+  const item = (await fila(page)).find((x) => x.id === "ag-editar");
+  ok("o texto mudou na fila", item && item.texto === "Texto NOVO do lembrete", JSON.stringify(item));
+  ok("e a hora mudou nos DOIS lugares", item && item.agendada_para === esperado && item.tentar_em === esperado,
+     JSON.stringify(item));
+  ok("continua pendente, e com quem editou", item && item.status === "pendente" && Boolean(item.editada_por),
+     JSON.stringify(item));
+  ok("a janela fechou", (await page.locator("[data-editar-agendada-janela]").count()) === 0);
+  const linha = await page.locator('[data-agendada="ag-editar"]').innerText().catch(() => "");
+  ok("a faixa mostra o texto e a hora novos", /Texto NOVO/.test(linha) && /amanhã às 14:00/.test(linha), linha);
+  ok("o aviso diz que alterou", /alterada/.test(await filme(page)), await filme(page));
+  ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
+  await ctx.close();
+}
+
+console.log("\n4e. Editar que o banco recusa: a tela DIZ, com o código, e nada muda");
+{
+  const { ctx, page } = await abrirPainel({ bandeiras: { erroNaGravacao: { fila_envio: {
+      code: "42501", message: "new row violates row-level security policy for table \"fila_envio\"" } } },
+    semente: { fila_envio: [
+      { id: "ag-recusa", conversa_id: ALVO, tipo: "texto", texto: "Não muda",
+        status: "pendente", agendada_para: DAQUI_3H, tentar_em: DAQUI_3H, criado_em: new Date(AGORA - 60000).toISOString() },
+    ] } });
+  await clicar(page, '[data-agendada="ag-recusa"] [data-editar-agendada]');
+  await page.locator('[data-escolher-hora][data-modo="editar"] [data-agenda-texto]').fill("Tentativa");
+  await clicar(page, '[data-escolher-hora][data-modo="editar"] [data-agenda-confirmar]');
+  await page.waitForTimeout(700);
+  const f = await filme(page);
+  ok("a tela diz que não deu, com o código", /Não deu para editar/.test(f) && /42501/.test(f), f);
+  ok("e não diz que alterou", !/alterada/.test(f), f);
+  ok("e o texto continua o de antes",
+     (await fila(page)).find((x) => x.id === "ag-recusa")?.texto === "Não muda");
   await ctx.close();
 }
 
