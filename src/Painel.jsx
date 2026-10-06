@@ -12,7 +12,7 @@ import {
   History, BarChart3, Users, Smartphone,
   Image as ImageIcon, Video,
   Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote, Volume2,
-  ListChecks, Undo2, UserCheck, SquareKanban
+  ListChecks, Undo2, UserCheck, SquareKanban, BellRing, BellPlus, CircleCheck, RotateCcw
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
@@ -39,6 +39,10 @@ import { ZOOM_MIN, ZOOM_MAX, ZOOM_PARADO, ZOOM_DO_TOQUE_DUPLO, degrauSeguinte,
 import Departamentos from "./Departamentos";
 import PainelNumeros from "./PainelNumeros";
 import Funil from "./Funil";
+import Tarefas from "./Tarefas.jsx";
+import NovaTarefa from "./NovaTarefa.jsx";
+import { situacao, ordenarAbertas, rotuloDaTarefa, fimDeHoje, semATabelaDeTarefas, quemTocaAgora,
+         marcarAvisadas, chaveDoAviso } from "./tarefas.js";
 import Marca from "./Marca";
 import PainelEmoji, { guardarRecente } from "./Emojis";
 import JaTratei from "./JaTratei.jsx";
@@ -2854,6 +2858,29 @@ export default function Painel({ sessao }) {
   // computador, pendurado na linha do número) e "menu" (pelo ⋮).
   const [menuEtapa, setMenuEtapa] = useState(false);
   const etapaRef = useRef(null);
+  // ---- TAREFAS E LEMBRETES (script 018) ----
+  //
+  // `temTarefas` tem os três estados de `temFunil`: `null` ainda não
+  // perguntei, `false` o script não rodou, `true` existe OU não consegui
+  // saber — esconder por falha de rede sumiria com os lembretes de todo mundo
+  // no dia em que a rede tossisse.
+  const [temTarefas, setTemTarefas] = useState(null);
+  const [telaTarefas, setTelaTarefas] = useState(false);
+  // AS TAREFAS DA CONVERSA ABERTA: `{ conversaId, carregando, lista, erro }`.
+  const [tarefasDaConversa, setTarefasDaConversa] = useState(null);
+  // O menu das tarefas tem os dois endereços dos outros menus da linha do
+  // número: "linha" (computador) e "menu" (pelo ⋮).
+  const [menuTarefa, setMenuTarefa] = useState(false);
+  const tarefaRef = useRef(null);
+  // A JANELA DE CRIAR/EDITAR: `null`, ou `{ tarefa }` (tarefa nula = nova).
+  const [janelaTarefa, setJanelaTarefa] = useState(null);
+  // AS MINHAS ABERTAS, relidas de minuto em minuto: é delas que saem o número
+  // da barra lateral e o aviso na hora.
+  const [minhasTarefas, setMinhasTarefas] = useState([]);
+  // O FILTRO "Com tarefa para hoje": as conversas com tarefa aberta que vence
+  // até o fim do dia (atrasadas incluídas), e as que as páginas lidas não têm.
+  const [idsTarefaHoje, setIdsTarefaHoje] = useState(null);
+  const [extrasTarefas, setExtrasTarefas] = useState([]);
   // AS ETAPAS DE CADA DEPARTAMENTO, guardadas: mudam quase nunca, e perguntar
   // a cada conversa aberta seria uma ida a mais por clique. Fechar a tela do
   // funil esquece o guardado — é lá que quem administra acabou de mexer.
@@ -3178,6 +3205,10 @@ export default function Painel({ sessao }) {
     });
   }, []);
   const [filtro, setFiltro] = useState("tudo"); // aba/filtro da lista: 'tudo' | 'naolidas' | 'favoritas' | 'tag:<id>' | 'frente:<FRENTE>'
+  // O filtro de agora, para quem é chamado fora do desenho (a releitura das
+  // tarefas depois de um clique).
+  const filtroRef = useRef("tudo");
+  useEffect(() => { filtroRef.current = filtro; }, [filtro]);
   const [tagForm, setTagForm] = useState(null); // { id?, nome, cor } sendo criada/editada
   const [tagMenuAberto, setTagMenuAberto] = useState(false); // menu de aplicar tags na conversa aberta
   const [menuTopoAberto, setMenuTopoAberto] = useState(false); // menu ⋮ do topo da lista
@@ -3302,6 +3333,37 @@ export default function Painel({ sessao }) {
   const JA_TRATEI_EM_ICONE = !fichaDoJaTratei ? 0 : 35 + 12;
   const cabecalhoApertado  = !estreito && larguraDaConversa - FILA_ESCRITA - JA_TRATEI_ESCRITO < NOME_MINIMO;
   const cabecalhoRecolhido = !estreito && larguraDaConversa - FILA_EM_ICONES - JA_TRATEI_EM_ICONE < NOME_MINIMO;
+  // ============================================================
+  //  A LINHA DO NÚMERO E OS SEUS SELOS (06/10)
+  //
+  //  Responsável, etapa e tarefa moram na linha do número, e não na fila de
+  //  botões, para não mexer na conta acima. Só que a linha tem a largura do
+  //  bloco do nome, e com a ficha aberta ela fica estreita: MEDIDO a 1400, 187px
+  //  para o número (~95) e três selos escritos (~100 cada). Antes das tarefas
+  //  já não cabia — "Assumir" era pintado por cima de "Pôr no funil" — e
+  //  ninguém tinha medido isso depois do funil entrar.
+  //
+  //  A LINHA É CALCULADA, e não medida no DOM, pela régua do cabeçalho: as
+  //  mesmas parcelas da fila mais 56px (avatar e recheio), conferidas a 1180,
+  //  1280, 1366, 1400, 1440, 1600 e 1920, com e sem a ficha. Faltando espaço
+  //  para os selos ESCRITOS, eles viram ÍCONE (o rosto, a bolinha da etapa, o
+  //  sino) — o texto continua no `title` e por extenso no menu de cada um.
+  //  O NÚMERO NÃO ENCOLHE nunca: responder pelo número errado não tem desfazer.
+  // ============================================================
+  //  ESCRITO, o selo pode perder umas letras no fim ("Proposta/acor…"), e
+  //  não mais que isso: medido a 1366 sem a ficha, com 66px por selo a linha
+  //  dizia "Assum", "Pô…" e "L…" — três palavras cortadas dizem menos que três
+  //  ícones com o nome no `title`. Inteiros, os três pedem ~300; com 92 por
+  //  selo eles perdem no máximo umas três letras cada.
+  const NUMERO_NA_LINHA = 95;
+  const SELO_ESCRITO = 92;
+  const espacoDaLinha = larguraDaConversa - 56
+    - (cabecalhoRecolhido ? 82
+       : cabecalhoApertado ? FILA_EM_ICONES + JA_TRATEI_EM_ICONE
+       : FILA_ESCRITA + JA_TRATEI_ESCRITO);
+  const selosNaLinha = (temResponsavel === true ? 1 : 0) + (temFunil === true && funilDaConversa ? 1 : 0)
+    + (temTarefas === true && tarefasDaConversa ? 1 : 0);
+  const selosCompactos = !estreito && espacoDaLinha - NUMERO_NA_LINHA < selosNaLinha * SELO_ESCRITO;
   /** Mostra ou recolhe a ficha, escrevendo no estado certo para o layout. */
   function alternarFicha(mostrar) {
     if (estreito) { setFichaAberta(mostrar); return; }
@@ -4697,6 +4759,166 @@ export default function Painel({ sessao }) {
     if (temFunil === true) lerFunilDaConversa(contatoDoFunil, depDoFunil);
     else setFunilDaConversa(null);
   }, [temFunil, contatoDoFunil, depDoFunil, lerFunilDaConversa]);
+
+  // ---- As tarefas: existem? ----
+  //
+  // UMA pergunta por abertura, como a do funil.
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        const { error } = await supabase.from("zorvin_tarefas").select("id").limit(1);
+        if (!vivo) return;
+        if (error && !semATabelaDeTarefas(error)) console.error("Zorvin — tarefas:", error);
+        setTemTarefas(error ? !semATabelaDeTarefas(error) : true);
+      } catch (e) {
+        console.error("Zorvin — tarefas:", e);
+        if (vivo) setTemTarefas(true);
+      }
+    })();
+    return () => { vivo = false; };
+  }, []);
+
+  // ---- As tarefas da conversa aberta ----
+  //
+  // TODAS, abertas e feitas: o menu mostra as abertas e conta as feitas — "já
+  // ligamos na quinta" é parte do que se precisa saber antes de responder.
+  const lerTarefasDaConversa = useCallback(async (cvId) => {
+    if (!cvId) { setTarefasDaConversa(null); return; }
+    setTarefasDaConversa((t) => (t && t.conversaId === cvId ? t
+      : { conversaId: cvId, carregando: true, lista: [], erro: null }));
+    try {
+      const r = await supabase.from("zorvin_tarefas").select("*")
+        .eq("conversa_id", cvId).order("vence_em", { ascending: true }).limit(200);
+      // A RESPOSTA DE UMA CONVERSA QUE JÁ FOI FECHADA não pinta a de agora.
+      setTarefasDaConversa((t) => (t && t.conversaId !== cvId ? t : {
+        conversaId: cvId, carregando: false, lista: r.error ? [] : (r.data || []),
+        // Leitura que falhou NÃO vira "nenhuma tarefa": o menu diz por quê.
+        erro: r.error ? comOCodigo("Não consegui ler as tarefas desta conversa.", r.error, "tarefas da conversa") : null,
+      }));
+    } catch (e) {
+      console.error("Zorvin — tarefas da conversa:", e);
+      setTarefasDaConversa((t) => (t && t.conversaId !== cvId ? t
+        : { conversaId: cvId, carregando: false, lista: [], erro: "Não consegui ler as tarefas desta conversa." }));
+    }
+  }, []);
+  const idDaConversaAberta = conversa ? conversa.id : null;
+  useEffect(() => {
+    setMenuTarefa(false);
+    if (temTarefas === true) lerTarefasDaConversa(idDaConversaAberta);
+    else setTarefasDaConversa(null);
+  }, [temTarefas, idDaConversaAberta, lerTarefasDaConversa]);
+
+  // ---- As minhas abertas, e o AVISO NA HORA ----
+  //
+  // SÓ QUEM RECEBEU É AVISADO (decisão do Rodrigo): os outros veem a tarefa
+  // atrasada na conversa, na tela de tarefas e no funil, mas não são
+  // interrompidos — aviso que não pede ação de quem lê se aprende a ignorar.
+  //
+  // DE 30 EM 30 SEGUNDOS: o lembrete das 14h tem de tocar perto das 14h. É uma
+  // consulta pequena (as minhas abertas, por um índice próprio), e oito
+  // pessoas a cada 30s são uma consulta a cada quatro segundos — nada.
+  //
+  // O SOM É O DO AVISO DE MENSAGEM, o que a pessoa escolheu, e a tarja passa
+  // pela mesma chave (`notificarDesktop`): quem desligou as tarjas não é
+  // interrompido por elas aqui também.
+  const lerMinhasTarefas = useCallback(async () => {
+    if (!meuId) return;
+    try {
+      const r = await supabase.from("zorvin_tarefas").select("*")
+        .eq("para_quem", meuId).is("feita_em", null)
+        .order("vence_em", { ascending: true }).limit(500);
+      if (r.error) {
+        // FALHOU, DIZ: o número da barra ficaria parado no de antes, com cara
+        // de número de agora.
+        anotarFalhaDeLeitura("minhas-tarefas", "os seus lembretes", r.error);
+        return;
+      }
+      limparFalhaDeLeitura("minhas-tarefas");
+      const lista = r.data || [];
+      setMinhasTarefas(lista);
+      const tocar = quemTocaAgora(lista, meuId);
+      if (!tocar.length) return;
+      // MARCA ANTES DE TOCAR: uma segunda aba que leia no mesmo segundo acha
+      // a marca e não toca de novo.
+      marcarAvisadas(tocar.map(chaveDoAviso));
+      tocarAviso();
+      for (const t of tocar.slice(0, 3)) {
+        const cv = conversasRef.current.find((c) => String(c.id) === String(t.conversa_id));
+        notificarDesktop(`Lembrete: ${t.texto}`,
+          cv ? `${nomeDoContato(cv.contato) || "Cliente"} — abra Tarefas no Zorvin` : "Abra Tarefas no Zorvin",
+          `tarefa-${t.id}`);
+      }
+      mostrarAviso(tocar.length === 1
+        ? `Lembrete: ${tocar[0].texto}`
+        : `${tocar.length} lembretes venceram agora — veja em Tarefas, na barra lateral.`, 9000);
+    } catch (e) {
+      console.error("Zorvin — minhas tarefas:", e);
+    }
+  }, [meuId, anotarFalhaDeLeitura, limparFalhaDeLeitura]);
+  useEffect(() => {
+    if (temTarefas !== true || !meuId) { setMinhasTarefas([]); return undefined; }
+    lerMinhasTarefas();
+    const t = setInterval(lerMinhasTarefas, 30000);
+    return () => clearInterval(t);
+  }, [temTarefas, meuId, lerMinhasTarefas]);
+  // O NÚMERO DA BARRA: atrasadas e as de hoje. As de amanhã não pedem nada
+  // agora, e um número que nunca zera se aprende a não ler.
+  const tarefasParaAgora = minhasTarefas.filter((t) => situacao(t) !== "proxima").length;
+  const tarefasAtrasadas = minhasTarefas.filter((t) => situacao(t) === "atrasada").length;
+
+  // ---- O filtro "Com tarefa para hoje" ----
+  //
+  // VAI AO BANCO, pela régua do filtro de grupos: a conversa com tarefa de
+  // hoje pode estar fora das 200 mais recentes, e é justamente a esquecida.
+  const lerFiltroDeTarefas = useCallback(async (advId) => {
+    try {
+      const r = await supabase.from("zorvin_tarefas").select("conversa_id")
+        .is("feita_em", null).lte("vence_em", fimDeHoje().toISOString()).limit(1000);
+      if (r.error) {
+        anotarFalhaDeLeitura("filtro-tarefas", "as conversas com tarefa para hoje", r.error);
+        return;
+      }
+      limparFalhaDeLeitura("filtro-tarefas");
+      const ids = [...new Set((r.data || []).map((t) => String(t.conversa_id)))];
+      if (advogadoIdRef.current !== advId) return;
+      setIdsTarefaHoje(new Set(ids));
+      const achadas = [];
+      for (let i = 0; i < ids.length; i += 150) {
+        const { data, error } = await supabase.from("conversas")
+          .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
+          .eq("advogado_id", advId).in("id", ids.slice(i, i + 150));
+        // FALHOU, NÃO APAGA: as das páginas lidas aparecem pelo conjunto.
+        if (error) { console.error("Conversas com tarefa fora das páginas lidas:", error); break; }
+        achadas.push(...(data || []));
+      }
+      if (advogadoIdRef.current !== advId) return;
+      setExtrasTarefas(achadas);
+    } catch (e) {
+      console.error("Zorvin — filtro de tarefas:", e);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anotarFalhaDeLeitura, limparFalhaDeLeitura]);
+  useEffect(() => {
+    setExtrasTarefas([]);
+    setIdsTarefaHoje(null);
+    if (filtro !== "tarefas" || !advogadoId || temTarefas !== true) {
+      limparFalhaDeLeitura("filtro-tarefas");
+      return undefined;
+    }
+    const advId = advogadoId;
+    lerFiltroDeTarefas(advId);
+    const t = setInterval(() => lerFiltroDeTarefas(advId), 60000);
+    return () => clearInterval(t);
+  }, [filtro, advogadoId, temTarefas, lerFiltroDeTarefas, limparFalhaDeLeitura]);
+  // DEPOIS DE CRIAR, CONCLUIR OU APAGAR, tudo o que conta tarefas é relido: a
+  // conversa, o número da barra e o filtro. Sem isso o número diria o que era
+  // verdade antes do clique.
+  const tarefasMudaram = useCallback(() => {
+    lerTarefasDaConversa(conversaIdRef.current);
+    lerMinhasTarefas();
+    if (filtroRef.current === "tarefas" && advogadoIdRef.current) lerFiltroDeTarefas(advogadoIdRef.current);
+  }, [lerTarefasDaConversa, lerMinhasTarefas, lerFiltroDeTarefas]);
   // As etiquetas seguem a LISTA: quando ela troca de telefone ou chega uma
   // conversa nova, são outras conversas para etiquetar.
   useEffect(() => { carregarTagsConversas(); },
@@ -7555,6 +7777,8 @@ export default function Painel({ sessao }) {
       else if (tagForm) setTagForm(null);
       else if (rapidaForm) setRapidaForm(null);
       else if (contatoForm) setContatoForm(null);
+      // A JANELA DA TAREFA fica por cima de tudo, inclusive da tela de tarefas.
+      else if (janelaTarefa) setJanelaTarefa(null);
       // As três telas que cobrem tudo. Faltavam aqui, e como o Esc é uma
       // escada, faltar não era "o Esc não faz nada": ele descia até o último
       // degrau e FECHAVA A CONVERSA lá atrás, por baixo do que estava aberto.
@@ -7563,6 +7787,7 @@ export default function Painel({ sessao }) {
       else if (telaAdmin) setTelaAdmin(false);
       else if (telaPainel) setTelaPainel(false);
       else if (telaFunil) setTelaFunil(false);
+      else if (telaTarefas) setTelaTarefas(false);
       else if (configAberta) setConfigAberta(false);
       else if (novaConversaAberta) setNovaConversaAberta(false);
       else if (menuConversa) setMenuConversa(null);
@@ -7576,6 +7801,7 @@ export default function Painel({ sessao }) {
       else if (tagMenuAberto) setTagMenuAberto(false);
       else if (menuResponsavel) setMenuResponsavel(false);
       else if (menuEtapa) setMenuEtapa(false);
+      else if (menuTarefa) setMenuTarefa(false);
       else if (emojiAberto) setEmojiAberto(false);
       else if (seletorAberto) setSeletorAberto(false);
       else if (historico) setHistorico(null);
@@ -7589,7 +7815,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, telaFunil, menuEtapa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada]);
+  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, telaFunil, menuEtapa, telaTarefas, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -7625,13 +7851,18 @@ export default function Painel({ sessao }) {
           : !!(etapaRef.current && etapaRef.current.contains(e.target));
         if (!dentro) setMenuEtapa(false);
       }
+      if (menuTarefa) {
+        const dentro = menuTarefa === "menu" ? dentroDoMenu
+          : !!(tarefaRef.current && tarefaRef.current.contains(e.target));
+        if (!dentro) setMenuTarefa(false);
+      }
       if (menuOrdem && ordemMenuRef.current && !ordemMenuRef.current.contains(e.target)) setMenuOrdem(false);
       if (menuTopoAberto && menuTopoRef.current && !menuTopoRef.current.contains(e.target)) setMenuTopoAberto(false);
       if (menuDepartamentos && departamentosRef.current && !departamentosRef.current.contains(e.target)) setMenuDepartamentos(false);
     }
     document.addEventListener("mousedown", aoClicar);
     return () => document.removeEventListener("mousedown", aoClicar);
-  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, menuDaConversa, menuOrdem, menuDepartamentos, menuResponsavel, menuEtapa]);
+  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, menuDaConversa, menuOrdem, menuDepartamentos, menuResponsavel, menuEtapa, menuTarefa]);
 
   // Fecha o menuzinho da conversa (marcar não lida) ao clicar em qualquer lugar.
   useEffect(() => {
@@ -9528,7 +9759,7 @@ export default function Painel({ sessao }) {
   // OS FILTROS DA GAVETA QUE PINTAM A PÍLULA DE VERDE — grupos e as minhas.
   // Um nome só para a pergunta "a gaveta tem um filtro ligado que não é
   // etiqueta?", escrita cinco vezes no controle.
-  const filtroVerde = filtro === "grupos" || filtro === "minhas";
+  const filtroVerde = filtro === "grupos" || filtro === "minhas" || filtro === "tarefas";
 
   // ------------------------------------------------------------
   //  O QUE É UM GRUPO — a pergunta, escrita uma vez só
@@ -9570,6 +9801,10 @@ export default function Painel({ sessao }) {
     // AS MINHAS: as que têm a MIM como responsável. Não "as em que falei" —
     // isso é o filtro de atendentes, lá no alto, e responde outra pergunta.
     if (filtro === "minhas") return !!meuId && String(c.responsavel_id || "") === String(meuId);
+    // COM TAREFA PARA HOJE: a resposta é do banco (`idsTarefaHoje`), porque a
+    // tarefa não mora na linha da conversa. Antes de ela chegar, nada passa —
+    // é breve, e "todas" no lugar de "ainda não sei" seria o filtro mentindo.
+    if (filtro === "tarefas") return idsTarefaHoje ? idsTarefaHoje.has(String(c.id)) : false;
     if (filtro.startsWith("tag:")) {
       // Nos dois lugares: o mapa das conversas carregadas E a resposta do
       // banco. Só o mapa derrubaria as conversas que o banco achou e a lista
@@ -10354,7 +10589,7 @@ export default function Painel({ sessao }) {
     // e o de baixo custaria um `Set` sobre a lista inteira a cada redesenho —
     // trabalho de sobra em cima do caminho mais quente que esta tela tem.
     if (!busca.trim() && !filtro.startsWith("tag:") && filtro !== "grupos"
-        && filtro !== "minhas" && !quemFiltra.length) return daLista;
+        && filtro !== "minhas" && filtro !== "tarefas" && !quemFiltra.length) return daLista;
     // As que vieram do banco e não estavam na lista. Entram na mesma ordem de
     // sempre — fixada em cima, depois recente primeiro —, e não emendadas no
     // fim, que faria a mais nova de todas aparecer embaixo da mais velha.
@@ -10369,7 +10604,7 @@ export default function Painel({ sessao }) {
       // acabou de ser encontrado.
       // (sem `casaNaBusca`: este ramo só existe quando a caixa de busca está
       // vazia — o de cima é que trata a busca.)
-      : [...extrasEtiqueta, ...extrasQuem, ...extrasGrupo, ...extrasMinhas].filter((c) => !jaTem.has(String(c.id))
+      : [...extrasEtiqueta, ...extrasQuem, ...extrasGrupo, ...extrasMinhas, ...extrasTarefas].filter((c) => !jaTem.has(String(c.id))
           && naPasta(c) && passaNoFiltro(c));
     if (!doBanco.length) return daLista;
     return [...daLista, ...doBanco].sort(compararConversas(ordem, ordenarPelaEspera));
@@ -10480,6 +10715,9 @@ export default function Painel({ sessao }) {
     : filtro === "grupos" ? ["sem-grupo", "Nenhum grupo neste telefone."]
     // E A DAS MINHAS DIZ COMO UMA CONVERSA VIRA MINHA — sem isso, "nenhuma"
     // no primeiro dia pareceria defeito, e não o começo.
+    : filtro === "tarefas" ? ["sem-tarefas-hoje", idsTarefaHoje
+        ? "Nenhuma conversa deste telefone com tarefa para hoje ou atrasada."
+        : "Procurando as conversas com tarefa para hoje…"]
     : filtro === "minhas" ? ["sem-minhas", "Nenhuma conversa sua neste telefone. Uma conversa vira sua quando você responde primeiro, ou pelo responsável no alto dela."]
     : ["sem-conversa", "Nenhuma conversa ainda."];
 
@@ -10489,7 +10727,7 @@ export default function Painel({ sessao }) {
   // coisa — e quem estivesse conferindo uma etiqueta não saberia se o número
   // na tela é o número de verdade.
   const listaPodeCrescer = !busca.trim() && !filtro.startsWith("tag:")
-    && filtro !== "grupos" && filtro !== "minhas" && !quemFiltra.length;
+    && filtro !== "grupos" && filtro !== "minhas" && filtro !== "tarefas" && !quemFiltra.length;
 
   // Não lidas de cada advogado, para o selo na barra lateral.
   // Para o advogado atual usamos a lista já carregada (que zera a conversa
@@ -10884,6 +11122,161 @@ export default function Painel({ sessao }) {
             <button data-tirar-do-funil onClick={tirarDoFunilDaConversa} style={{ ...ITEM, color: "#c0392b" }}>
               <X size={15} /> Tirar do funil
             </button>
+          </>
+        )}
+      </div>
+    );
+  })();
+
+  // ---- AS TAREFAS DA CONVERSA: criar, editar, concluir, apagar ----
+  //
+  // A FRASE ESPERA O BANCO (a régua de `gravarMarcaDaConversa`): "Lembrete
+  // marcado" é a tela afirmando um fato do banco.
+  async function salvarTarefa({ texto, vence_em, para_quem }) {
+    const j = janelaTarefa;
+    if (!j) return;
+    const editando = j.tarefa;
+    const r = editando
+      ? await supabase.from("zorvin_tarefas").update({ texto, vence_em, para_quem })
+          .eq("id", editando.id).select("id")
+      // `criada_por` vai junto para a bancada; no banco quem escreve é o
+      // gatilho do 018, com quem entrou — a tela não tem como dizer outra pessoa.
+      : await supabase.from("zorvin_tarefas")
+          .insert({ conversa_id: j.conversaId, texto, vence_em, para_quem, criada_por: meuId || null }).select("id");
+    // A FALHA VOLTA PARA A JANELA, e não para a faixa de aviso: a janela fica
+    // aberta (o que foi escrito não se perde) e cobre a faixa — dita lá, a
+    // frase ficaria por baixo do fundo escuro, e o clique pareceria mudo.
+    if (r.error || naoGravouNada(r)) {
+      return r.error
+        ? comOCodigo(editando ? "Não consegui salvar a tarefa." : "Não consegui criar a tarefa.", r.error,
+                     editando ? "editar tarefa" : "criar tarefa")
+        : "Não consegui salvar a tarefa: o banco não deixou.";
+    }
+    setJanelaTarefa(null);
+    const quem = String(para_quem) === String(meuId) ? "você" : primeiroNome(nomeDaPessoa(para_quem));
+    mostrarAviso(editando ? `Tarefa atualizada — ${quem}, ${rotuloDaHora(vence_em)}.`
+                          : `Lembrete marcado para ${quem}, ${rotuloDaHora(vence_em)}.`);
+    tarefasMudaram();
+    return null;
+  }
+  async function concluirTarefaDaConversa(t, feita) {
+    const r = await supabase.from("zorvin_tarefas")
+      .update(feita ? { feita_em: new Date().toISOString(), feita_por: meuId || null }
+                    : { feita_em: null, feita_por: null })
+      .eq("id", t.id).select("id");
+    if (r.error || naoGravouNada(r)) {
+      mostrarAviso(r.error
+        ? comOCodigo(feita ? "Não consegui concluir a tarefa." : "Não consegui reabrir a tarefa.", r.error,
+                     feita ? "concluir tarefa" : "reabrir tarefa")
+        : `Não consegui ${feita ? "concluir" : "reabrir"} a tarefa: o banco não deixou.`, 7000);
+      return;
+    }
+    mostrarAviso(feita ? "Tarefa concluída." : "Tarefa reaberta.");
+    tarefasMudaram();
+  }
+  async function apagarTarefa(t) {
+    // APAGAR PERGUNTA ANTES: não há desfazer, e "concluída" é o gesto de quem
+    // fez. Apagar é para a tarefa criada por engano.
+    if (!window.confirm(`Apagar a tarefa "${t.texto}"? Para dizer que foi feita, use Concluir.`)) return;
+    const r = await supabase.from("zorvin_tarefas").delete().eq("id", t.id).select("id");
+    if (r.error || naoGravouNada(r)) {
+      mostrarAviso(r.error ? comOCodigo("Não consegui apagar a tarefa.", r.error, "apagar tarefa")
+                           : "Não consegui apagar a tarefa: o banco não deixou.", 7000);
+      return;
+    }
+    mostrarAviso("Tarefa apagada.");
+    tarefasMudaram();
+  }
+  const abrirNovaTarefa = (tarefa = null) => {
+    if (!conversa) return;
+    setMenuTarefa(false);
+    setJanelaTarefa({ tarefa, conversaId: conversa.id,
+                      cliente: nomeDoContato(conversa.contato) || numeroBonito(conversa.contato?.numero) || "" });
+  };
+  const tarefasAbertasDaConversa = tarefasDaConversa ? ordenarAbertas(tarefasDaConversa.lista) : [];
+  const tarefasFeitasDaConversa = tarefasDaConversa
+    ? tarefasDaConversa.lista.filter((t) => t.feita_em)
+        .sort((a, b) => String(b.feita_em).localeCompare(String(a.feita_em)))
+    : [];
+  const proximaTarefa = tarefasAbertasDaConversa[0] || null;
+  const corDaSituacao = (s) => (s === "atrasada" ? "#e53935" : s === "hoje" ? "#d99a1e" : C.textSecondary);
+
+  const listaDeTarefas = !conversa || !tarefasDaConversa ? null : (() => {
+    const f = tarefasDaConversa;
+    const ITEM = { width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "9px 12px",
+                   border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary,
+                   textAlign: "left", fontSize: 13.5, minHeight: estreito ? 44 : 36 };
+    const ICONE = { border: "none", background: "transparent", cursor: "pointer", display: "flex", padding: 4,
+                    borderRadius: 6, flexShrink: 0, minWidth: estreito ? 36 : 26, minHeight: estreito ? 36 : 26,
+                    alignItems: "center", justifyContent: "center" };
+    const linhaDaTarefa = (t, feita) => {
+      const s = situacao(t);
+      return (
+        <div key={t.id} data-tarefa-da-conversa-item={t.id} data-situacao={feita ? "feita" : s}
+             style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "8px 8px 8px 10px",
+                      borderTop: `1px solid ${C.divider}` }}>
+          <button data-concluir-tarefa={feita ? undefined : t.id} data-reabrir-tarefa={feita ? t.id : undefined}
+                  onClick={() => concluirTarefaDaConversa(t, !feita)}
+                  title={feita ? "Reabrir" : "Marcar como feita"} aria-label={feita ? "Reabrir" : "Marcar como feita"}
+                  style={ICONE}>
+            {feita ? <RotateCcw size={16} color={C.textSecondary} /> : <CircleCheck size={19} color={C.green} />}
+          </button>
+          <div style={{ flex: 1, minWidth: 0, paddingTop: 3 }}>
+            <div data-texto-da-tarefa style={{ fontSize: 13.5, lineHeight: 1.35, whiteSpace: "pre-wrap", wordBreak: "break-word",
+                          textDecoration: feita ? "line-through" : "none", color: feita ? C.textSecondary : C.textPrimary }}>
+              {t.texto}
+            </div>
+            <div style={{ fontSize: 11.5, color: C.textSecondary, marginTop: 2 }}>
+              {String(t.para_quem || "") === String(meuId) ? "Você" : primeiroNome(nomeDaPessoa(t.para_quem)) || "Sem pessoa"}
+              {" · "}
+              <span data-quando-da-tarefa style={{ color: feita ? C.textSecondary : corDaSituacao(s), fontWeight: s === "atrasada" && !feita ? 600 : 400 }}>
+                {feita ? `feita ${rotuloDaHora(t.feita_em)}` : rotuloDaTarefa(t)}
+              </span>
+            </div>
+          </div>
+          {!feita && (
+            <button data-editar-tarefa={t.id} onClick={() => abrirNovaTarefa(t)} title="Editar" aria-label="Editar tarefa" style={ICONE}>
+              <Pencil size={14} color={C.textSecondary} />
+            </button>
+          )}
+          <button data-apagar-tarefa={t.id} onClick={() => apagarTarefa(t)} title="Apagar" aria-label="Apagar tarefa" style={ICONE}>
+            <Trash2 size={14} color={C.textSecondary} />
+          </button>
+        </div>
+      );
+    };
+    return (
+      <div data-menu-tarefas role="dialog"
+           style={{ position: "absolute", zIndex: 61, width: 300, maxHeight: 420, overflowY: "auto",
+                    whiteSpace: "normal", fontWeight: 400,
+                    ...(menuTarefa === "menu" ? { top: 44, right: 0 } : { top: "100%", left: 0, marginTop: 4 }),
+                    background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10,
+                    boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
+        <div style={{ padding: "10px 12px" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3 }}>TAREFAS DESTA CONVERSA</div>
+          <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>
+            Quem recebe a tarefa é avisado na hora. Quem vê esta conversa vê as tarefas dela.
+          </div>
+        </div>
+        {f.erro && (
+          <div data-erro-das-tarefas style={{ padding: "8px 12px", fontSize: 12.5, color: "#c0392b", borderTop: `1px solid ${C.divider}` }}>{f.erro}</div>
+        )}
+        {!f.erro && tarefasAbertasDaConversa.map((t) => linhaDaTarefa(t, false))}
+        {!f.erro && !tarefasAbertasDaConversa.length && (
+          <div data-sem-tarefas-na-conversa style={{ padding: "8px 12px", fontSize: 12.5, color: C.textSecondary, borderTop: `1px solid ${C.divider}` }}>
+            Nenhuma tarefa aberta com este cliente.
+          </div>
+        )}
+        <button data-nova-tarefa onClick={() => abrirNovaTarefa(null)}
+                style={{ ...ITEM, color: C.verdeTexto, fontWeight: 600, borderTop: `1px solid ${C.divider}` }}>
+          <BellPlus size={16} color={C.green} /> Nova tarefa
+        </button>
+        {!f.erro && tarefasFeitasDaConversa.length > 0 && (
+          <>
+            <div style={{ padding: "8px 12px 2px", fontSize: 11.5, fontWeight: 600, color: C.textSecondary, borderTop: `1px solid ${C.divider}` }}>
+              Concluídas ({tarefasFeitasDaConversa.length})
+            </div>
+            {tarefasFeitasDaConversa.slice(0, 5).map((t) => linhaDaTarefa(t, true))}
           </>
         )}
       </div>
@@ -11733,6 +12126,31 @@ export default function Painel({ sessao }) {
         </div>
         {/* Um único ícone de Configurações: perfil, aparência, sair e mensagens
             rápidas ficam todos lá dentro. */}
+        {/* AS TAREFAS, com o número do que pede ação AGORA (atrasadas e de
+            hoje). Na barra, e não na linha da marca: aquela linha tem a conta
+            de largura medida em 16/09, e um ícone a mais cortaria a marca. */}
+        {temTarefas === true && (
+          <button data-abrir-tarefas onClick={() => setTelaTarefas(true)}
+                  title={tarefasParaAgora > 0
+                    ? `Tarefas — ${tarefasParaAgora} para agora${tarefasAtrasadas ? ` (${tarefasAtrasadas} atrasada${tarefasAtrasadas === 1 ? "" : "s"})` : ""}`
+                    : "Tarefas e lembretes"}
+                  aria-label="Tarefas e lembretes"
+                  style={{ position: "relative", width: 40, height: 40, borderRadius: 8, border: "none",
+                           display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+                           color: telaTarefas ? "#fff" : "#aebac1",
+                           background: telaTarefas ? "rgba(255,255,255,.12)" : "transparent" }}>
+            <BellRing size={22} />
+            {tarefasParaAgora > 0 && (
+              <span data-selo-tarefas={tarefasParaAgora} data-atrasadas={tarefasAtrasadas}
+                    style={{ position: "absolute", top: 1, right: 0, minWidth: 18, height: 18, padding: "0 4px",
+                             borderRadius: 9, background: tarefasAtrasadas ? "#d92b20" : "#d99a1e", color: "#fff",
+                             fontSize: 10.5, fontWeight: 700, lineHeight: 1, display: "flex", alignItems: "center",
+                             justifyContent: "center", border: `2px solid ${C.rail}`, boxSizing: "border-box" }}>
+                {tarefasParaAgora > 99 ? "99+" : tarefasParaAgora}
+              </span>
+            )}
+          </button>
+        )}
         {/* MÍDIAS de todas as conversas — o mesmo lugar do WhatsApp Web. */}
         <div onClick={() => abrirMidias()} title="Mídias, documentos e links"
              style={{ width: 40, height: 40, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: midiasAberta ? "#fff" : "#aebac1", background: midiasAberta ? "rgba(255,255,255,.12)" : "transparent", cursor: "pointer" }}>
@@ -12030,6 +12448,14 @@ export default function Painel({ sessao }) {
                   {temFunil === true && (
                     <button data-abrir-funil onClick={() => { setMenuTopoAberto(false); setTelaFunil(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><SquareKanban size={17} color={C.textSecondary} /> Funil</button>
                   )}
+                  {temTarefas === true && (
+                    <button data-abrir-tarefas-menu onClick={() => { setMenuTopoAberto(false); setTelaTarefas(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}>
+                      <BellRing size={17} color={C.textSecondary} /> <span style={{ flex: 1 }}>Tarefas</span>
+                      {tarefasParaAgora > 0 && (
+                        <span style={{ fontSize: 12, fontWeight: 700, color: tarefasAtrasadas ? "#d92b20" : "#d99a1e" }}>{tarefasParaAgora}</span>
+                      )}
+                    </button>
+                  )}
                   <button onClick={() => { setMenuTopoAberto(false); setTelaPainel(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><BarChart3 size={17} color={C.textSecondary} /> Painel</button>
                   {/* Quem administra no Vantoro administra aqui. Esconder o botão
                       é cortesia, não segurança: quem não é admin esbarra nas
@@ -12286,10 +12712,12 @@ export default function Painel({ sessao }) {
                     aria-expanded={menuEtiquetas} aria-haspopup="listbox"
                     aria-label={tagFiltrada ? `Filtrando por ${tagFiltrada.nome}`
                                 : filtro === "grupos" ? "Mostrando só os grupos"
-                                : filtro === "minhas" ? "Mostrando só as minhas conversas" : "Mais filtros"}
+                                : filtro === "minhas" ? "Mostrando só as minhas conversas"
+                                : filtro === "tarefas" ? "Mostrando só as conversas com tarefa para hoje" : "Mais filtros"}
                     title={tagFiltrada ? `Filtrando por "${tagFiltrada.nome}"`
                            : filtro === "grupos" ? "Mostrando só os grupos"
                            : filtro === "minhas" ? "Mostrando só as conversas em que você é o responsável"
+                           : filtro === "tarefas" ? "Mostrando só as conversas com tarefa para hoje ou atrasada"
                            : "Mais filtros: minhas conversas, grupos e etiquetas"}
                     style={{ flexShrink: 1, minWidth: 0, maxWidth: 190, minHeight: 30,
                              border: `1px solid ${tagFiltrada ? tagFiltrada.cor : (filtroVerde ? C.greenDark : C.divider)}`,
@@ -12301,7 +12729,7 @@ export default function Painel({ sessao }) {
                              display: "flex", alignItems: "center", gap: 4 }}>
               {(tagFiltrada || filtroVerde) && (
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {tagFiltrada ? tagFiltrada.nome : filtro === "minhas" ? "Minhas" : "Grupos"}
+                  {tagFiltrada ? tagFiltrada.nome : filtro === "minhas" ? "Minhas" : filtro === "tarefas" ? "Tarefas hoje" : "Grupos"}
                 </span>
               )}
               <ChevronDown size={14} style={{ flexShrink: 0, opacity: .8 }} />
@@ -12342,6 +12770,19 @@ export default function Painel({ sessao }) {
                     <UserCheck size={16} color={C.textSecondary} style={{ flexShrink: 0 }} />
                     <span style={{ flex: 1 }}>Minhas conversas</span>
                     {filtro === "minhas" && <Check size={16} color={C.green} style={{ flexShrink: 0 }} />}
+                  </button>
+                )}
+                {/* COM TAREFA PARA HOJE (script 018): as conversas deste
+                    telefone com tarefa aberta que vence hoje ou já venceu — de
+                    qualquer pessoa, porque quem vê a conversa vê as tarefas
+                    dela. As MINHAS ficam na tela de Tarefas, na barra. */}
+                {temTarefas === true && (
+                  <button data-tarefas-opcao role="option" aria-selected={filtro === "tarefas"}
+                          onClick={() => { setFiltro(filtro === "tarefas" ? "tudo" : "tarefas"); setMenuEtiquetas(false); }}
+                          style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "11px 12px", border: "none", borderBottom: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
+                    <BellRing size={16} color={C.textSecondary} style={{ flexShrink: 0 }} />
+                    <span style={{ flex: 1 }}>Com tarefa para hoje</span>
+                    {filtro === "tarefas" && <Check size={16} color={C.green} style={{ flexShrink: 0 }} />}
                   </button>
                 )}
                 <button data-grupos-opcao role="option" aria-selected={filtro === "grupos"}
@@ -12888,7 +13329,7 @@ export default function Painel({ sessao }) {
                      onde o olho procura quem é ele, gastava-se repetindo quem
                      somos nós. O número do cliente é o que se precisa ler dali
                      — para conferir, para ditar, para procurar no cadastro. */
-                  <div style={{ fontSize: 12, color: C.textSecondary, display: "flex", alignItems: "center", gap: 4, minWidth: 0, whiteSpace: "nowrap" }}>
+                  <div data-linha-do-numero style={{ fontSize: 12, color: C.textSecondary, display: "flex", alignItems: "center", gap: 4, minWidth: 0, whiteSpace: "nowrap" }}>
                     {/* O NÚMERO NÃO ENCOLHE (`flexShrink: 0`): responder
                         pelo número errado não tem desfazer. Quem cede espaço
                         é o nome do responsável, ao lado. */}
@@ -12906,7 +13347,7 @@ export default function Painel({ sessao }) {
                         não cabe nesta linha —, e o gesto vai pelo ⋮. */}
                     {temResponsavel === true && (
                       <span ref={responsavelRef} style={{ position: "relative", display: "flex", minWidth: 0 }}>
-                        <span style={{ opacity: .6, flexShrink: 0 }}>·</span>
+                        {!selosCompactos && <span style={{ opacity: .6, flexShrink: 0 }}>·</span>}
                         {estreito ? (
                           <span data-responsavel-da-conversa={conversa.responsavel_id || ""}
                                 style={{ marginLeft: 4, overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -12917,13 +13358,18 @@ export default function Painel({ sessao }) {
                           </span>
                         ) : (
                           <button data-responsavel-da-conversa={conversa.responsavel_id || ""}
+                                  data-selo-compacto={selosCompactos ? "sim" : "nao"}
                                   onClick={() => setMenuResponsavel((v) => (v === "linha" ? false : "linha"))}
                                   aria-expanded={menuResponsavel === "linha"} aria-haspopup="listbox"
                                   title={conversa.responsavel_id
                                     ? `Responsável: ${nomeDaPessoa(conversa.responsavel_id)} — clique para passar adiante`
                                     : "Sem responsável — clique para assumir"}
+                                  // `overflow: hidden` NO BOTÃO, e não na linha: a linha
+                                  // ancora o menu, e recortá-la sumiria com ele (29/09).
+                                  // No botão, faltando espaço, o selo é cortado na própria
+                                  // borda em vez de pintar por cima do vizinho.
                                   style={{ border: "none", background: "transparent", cursor: "pointer",
-                                           display: "flex", alignItems: "center", gap: 4, minWidth: 0,
+                                           display: "flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden",
                                            padding: "1px 4px", marginLeft: 1, borderRadius: 6, minHeight: 20,
                                            fontSize: 12, color: conversa.responsavel_id ? C.textPrimary : C.verdeTexto,
                                            fontWeight: conversa.responsavel_id ? 500 : 600 }}>
@@ -12931,15 +13377,17 @@ export default function Painel({ sessao }) {
                               <>
                                 <Avatar nome={nomeDaPessoa(conversa.responsavel_id)}
                                         foto={equipe.porId[String(conversa.responsavel_id)]?.foto} size={16} />
-                                <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
-                                  {String(conversa.responsavel_id) === String(meuId) ? "Você"
-                                    : primeiroNome(nomeDaPessoa(conversa.responsavel_id))}
-                                </span>
+                                {!selosCompactos && (
+                                  <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                                    {String(conversa.responsavel_id) === String(meuId) ? "Você"
+                                      : primeiroNome(nomeDaPessoa(conversa.responsavel_id))}
+                                  </span>
+                                )}
                               </>
                             ) : (
-                              <><UserPlus size={13} style={{ flexShrink: 0 }} /><span>Assumir</span></>
+                              <><UserPlus size={13} style={{ flexShrink: 0 }} />{!selosCompactos && <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>Assumir</span>}</>
                             )}
-                            <ChevronDown size={12} style={{ flexShrink: 0, opacity: .7 }} />
+                            {!selosCompactos && <ChevronDown size={12} style={{ flexShrink: 0, opacity: .7 }} />}
                           </button>
                         )}
                         {menuResponsavel === "linha" && listaDeResponsaveis}
@@ -12951,7 +13399,7 @@ export default function Painel({ sessao }) {
                         só texto, e o gesto vai pelo ⋮. */}
                     {temFunil === true && funilDaConversa && !funilDaConversa.carregando && (
                       <span ref={etapaRef} style={{ position: "relative", display: "flex", minWidth: 0 }}>
-                        <span style={{ opacity: .6, flexShrink: 0, marginLeft: 2 }}>·</span>
+                        {!selosCompactos && <span style={{ opacity: .6, flexShrink: 0, marginLeft: 2 }}>·</span>}
                         {estreito ? (
                           <span data-etapa-da-conversa={etapaAtualDaConversa ? etapaAtualDaConversa.nome : ""}
                                 style={{ marginLeft: 4, overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -12960,27 +13408,74 @@ export default function Painel({ sessao }) {
                           </span>
                         ) : (
                           <button data-etapa-da-conversa={etapaAtualDaConversa ? etapaAtualDaConversa.nome : ""}
+                                  data-selo-compacto={selosCompactos ? "sim" : "nao"}
                                   onClick={() => setMenuEtapa((v) => (v === "linha" ? false : "linha"))}
                                   aria-expanded={menuEtapa === "linha"} aria-haspopup="listbox"
                                   title={etapaAtualDaConversa ? `Etapa no funil: ${etapaAtualDaConversa.nome} — clique para mudar`
                                     : "Este cliente não está no funil — clique para pôr"}
                                   style={{ border: "none", background: "transparent", cursor: "pointer",
-                                           display: "flex", alignItems: "center", gap: 4, minWidth: 0,
+                                           display: "flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden",
                                            padding: "1px 4px", marginLeft: 1, borderRadius: 6, minHeight: 20,
                                            fontSize: 12, color: etapaAtualDaConversa ? C.textPrimary : C.textSecondary,
                                            fontWeight: 500 }}>
                             <span style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
                                            background: etapaAtualDaConversa ? (etapaAtualDaConversa.cor || C.green) : "transparent",
                                            border: etapaAtualDaConversa ? "none" : `1px solid ${C.textSecondary}` }} />
-                            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
-                              {etapaAtualDaConversa
-                                ? etapaAtualDaConversa.nome + (etapaAtualDaConversa.ativo === false ? " (desativada)" : "")
-                                : funilDaConversa.cartao === null ? "Pôr no funil" : "Etapa"}
-                            </span>
-                            <ChevronDown size={12} style={{ flexShrink: 0, opacity: .7 }} />
+                            {!selosCompactos && (
+                              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                                {etapaAtualDaConversa
+                                  ? etapaAtualDaConversa.nome + (etapaAtualDaConversa.ativo === false ? " (desativada)" : "")
+                                  : funilDaConversa.cartao === null ? "Pôr no funil" : "Etapa"}
+                              </span>
+                            )}
+                            {!selosCompactos && <ChevronDown size={12} style={{ flexShrink: 0, opacity: .7 }} />}
                           </button>
                         )}
                         {menuEtapa === "linha" && listaDeEtapas}
+                      </span>
+                    )}
+                    {/* AS TAREFAS, na mesma linha e pela mesma razão do
+                        responsável e da etapa. Diz a PRÓXIMA (vermelha se
+                        atrasou, âmbar se é hoje); sem nenhuma, oferece
+                        "Lembrar". No celular é só texto, e o gesto vai pelo ⋮. */}
+                    {temTarefas === true && tarefasDaConversa && !tarefasDaConversa.carregando && (
+                      <span ref={tarefaRef} style={{ position: "relative", display: "flex", minWidth: 0 }}>
+                        {!selosCompactos && <span style={{ opacity: .6, flexShrink: 0, marginLeft: 2 }}>·</span>}
+                        {estreito ? (
+                          <span data-tarefa-da-conversa={proximaTarefa ? situacao(proximaTarefa) : ""}
+                                style={{ marginLeft: 4, overflow: "hidden", textOverflow: "ellipsis",
+                                         color: proximaTarefa ? corDaSituacao(situacao(proximaTarefa)) : undefined }}>
+                            {tarefasDaConversa.erro ? "tarefas ?"
+                              : proximaTarefa ? `tarefa ${rotuloDaHora(proximaTarefa.vence_em)}` : "sem tarefa"}
+                          </span>
+                        ) : (
+                          <button data-tarefa-da-conversa={proximaTarefa ? situacao(proximaTarefa) : ""}
+                                  data-selo-compacto={selosCompactos ? "sim" : "nao"}
+                                  onClick={() => setMenuTarefa((v) => (v === "linha" ? false : "linha"))}
+                                  aria-expanded={menuTarefa === "linha"} aria-haspopup="dialog"
+                                  title={proximaTarefa ? `Próxima tarefa: ${proximaTarefa.texto} — ${rotuloDaTarefa(proximaTarefa)}`
+                                    : "Criar um lembrete para esta conversa"}
+                                  style={{ border: "none", background: "transparent", cursor: "pointer",
+                                           display: "flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden",
+                                           padding: "1px 4px", marginLeft: 1, borderRadius: 6, minHeight: 20,
+                                           fontSize: 12, fontWeight: proximaTarefa ? 600 : 500,
+                                           color: tarefasDaConversa.erro ? C.textSecondary
+                                             : proximaTarefa ? corDaSituacao(situacao(proximaTarefa)) : C.verdeTexto }}>
+                            {proximaTarefa ? <BellRing size={13} style={{ flexShrink: 0 }} /> : <BellPlus size={13} style={{ flexShrink: 0 }} />}
+                            {!selosCompactos && (
+                              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                                {tarefasDaConversa.erro ? "Tarefas"
+                                  : proximaTarefa ? (situacao(proximaTarefa) === "atrasada" ? "Tarefa atrasada" : rotuloDaHora(proximaTarefa.vence_em))
+                                  : "Lembrar"}
+                              </span>
+                            )}
+                            {!selosCompactos && tarefasAbertasDaConversa.length > 1 && (
+                              <span data-mais-tarefas style={{ flexShrink: 0, opacity: .8 }}>+{tarefasAbertasDaConversa.length - 1}</span>
+                            )}
+                            {!selosCompactos && <ChevronDown size={12} style={{ flexShrink: 0, opacity: .7 }} />}
+                          </button>
+                        )}
+                        {menuTarefa === "linha" && listaDeTarefas}
                       </span>
                     )}
                   </div>
@@ -13204,6 +13699,20 @@ export default function Painel({ sessao }) {
                           )}
                         </button>
                       )}
+                      {temTarefas === true && tarefasDaConversa && !tarefasDaConversa.carregando && (
+                        <button onClick={() => { setMenuDaConversa(false); setMenuTarefa("menu"); }}
+                                data-menu-tarefa-item
+                                style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
+                          {proximaTarefa ? <BellRing size={17} color={corDaSituacao(situacao(proximaTarefa))} />
+                            : <BellPlus size={17} color={C.textSecondary} />}
+                          {proximaTarefa ? "Tarefas" : "Lembrar"}
+                          {proximaTarefa && (
+                            <span style={{ marginLeft: "auto", fontSize: 12, color: corDaSituacao(situacao(proximaTarefa)), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 130 }}>
+                              {situacao(proximaTarefa) === "atrasada" ? "atrasada" : rotuloDaHora(proximaTarefa.vence_em)}
+                            </span>
+                          )}
+                        </button>
+                      )}
                       {temFunil === true && funilDaConversa && !funilDaConversa.carregando && (
                         <button onClick={() => { setMenuDaConversa(false); setMenuEtapa("menu"); }}
                                 data-menu-etapa-item
@@ -13308,6 +13817,7 @@ export default function Painel({ sessao }) {
                   {quemParticipou && listaDeParticipantes}
                   {menuResponsavel === "menu" && listaDeResponsaveis}
                   {menuEtapa === "menu" && listaDeEtapas}
+                  {menuTarefa === "menu" && listaDeTarefas}
                 </span>
               )}
             </div>
@@ -15246,7 +15756,7 @@ export default function Painel({ sessao }) {
           caminho do histórico: troca de telefone e abre a conversa. */}
       {telaFunil && (
         <Funil C={C} departamentos={departamentosVisiveis} advogados={advogadosPermitidos}
-               souAdmin={souAdmin} departamentoInicial={departamentoId}
+               souAdmin={souAdmin} departamentoInicial={departamentoId} comTarefas={temTarefas === true}
                aoAbrirConversa={(cv) => {
                  setTelaFunil(false);
                  verConversaDoHistorico({ advogadoId: cv.advogado_id, conversaId: cv.id });
@@ -15258,6 +15768,33 @@ export default function Painel({ sessao }) {
                  etapasPorDep.current.clear();
                  if (temFunil === true) lerFunilDaConversa(contatoDoFunil, depDoFunil);
                }} />
+      )}
+
+      {/* A TELA DE TAREFAS (script 018). Abrir uma tarefa é o caminho do
+          histórico e do funil: troca de telefone e abre a conversa. */}
+      {telaTarefas && (
+        <Tarefas C={C} meuId={meuId} pessoas={equipe.porId} advogados={advogadosPermitidos}
+                 aoAbrirConversa={(cv) => {
+                   setTelaTarefas(false);
+                   verConversaDoHistorico({ advogadoId: cv.advogado_id, conversaId: cv.id });
+                 }}
+                 aoMudou={tarefasMudaram}
+                 aoFechar={() => { setTelaTarefas(false); tarefasMudaram(); }} />
+      )}
+
+      {/* A JANELA DA TAREFA, no meio da tela — como a de editar a agendada:
+          ancorada na linha do número, uma janela de 360px sairia da tela no
+          celular. A conversa vai em `janelaTarefa`, e não em `conversa`:
+          trocar de conversa no meio não pode mudar de quem é a tarefa. */}
+      {janelaTarefa && (
+        <div data-janela-tarefa-fundo onClick={() => setJanelaTarefa(null)}
+             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 230,
+                      display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+          <NovaTarefa C={C} escuro={modo === "escuro"} meuId={meuId}
+                      pessoas={pessoasParaPassar} cliente={janelaTarefa.cliente}
+                      tarefa={janelaTarefa.tarefa} aoSalvar={salvarTarefa}
+                      aoFechar={() => setJanelaTarefa(null)} />
+        </div>
       )}
 
       {/* A JANELA DO "JÁ TRATEI". A conversa vai por `jaTratei`, e não por

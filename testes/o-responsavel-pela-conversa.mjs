@@ -192,7 +192,10 @@ console.log("\nSem a coluna no banco, o painel não oferece o que não pode grav
 // ==================================================================
 console.log("\nAssumir, passar para uma colega e deixar sem dono — e o banco acompanha");
 {
-  const { ctx, page, estouros } = await abrirPainel();
+  // A 1920: a cena lê a PALAVRA escrita no controle ("Assumir", "Você", o
+  // nome), e a 1400 com a ficha aberta a linha do número só cabe os selos em
+  // ÍCONE desde 06/10 (ver "Tarefas e lembretes" no CLAUDE.md).
+  const { ctx, page, estouros } = await abrirPainel({ largura: 1920 });
   ok("achei a conversa sem dono", await abrir(page, LIVRE));
 
   const antes = await controle(page);
