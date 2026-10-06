@@ -12,7 +12,7 @@ import {
   History, BarChart3, Users, Smartphone,
   Image as ImageIcon, Video,
   Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote, Volume2,
-  ListChecks, Undo2, UserCheck
+  ListChecks, Undo2, UserCheck, SquareKanban
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
@@ -38,6 +38,7 @@ import { ZOOM_MIN, ZOOM_MAX, ZOOM_PARADO, ZOOM_DO_TOQUE_DUPLO, degrauSeguinte,
          porcentagem, limitarPosicao, zoomAncorado, distancia } from "./zoom.js";
 import Departamentos from "./Departamentos";
 import PainelNumeros from "./PainelNumeros";
+import Funil from "./Funil";
 import Marca from "./Marca";
 import PainelEmoji, { guardarRecente } from "./Emojis";
 import JaTratei from "./JaTratei.jsx";
@@ -2838,6 +2839,25 @@ export default function Painel({ sessao }) {
   const responsavelRef = useRef(null);
   const [assuntos, setAssuntos] = useState([]);
   const [temAssuntos, setTemAssuntos] = useState(null);
+  // ---- O FUNIL DE ETAPAS (script 017 da ponte) ----
+  //
+  // `temFunil` tem TRÊS estados, pela régua de `temAssuntos`: `null` ainda não
+  // perguntei, `false` o script não rodou (42P01), `true` existe OU não
+  // consegui saber — esconder por falha de rede sumiria com o funil inteiro
+  // no dia em que a rede tossisse.
+  const [temFunil, setTemFunil] = useState(null);
+  const [telaFunil, setTelaFunil] = useState(false);
+  // A ETAPA DA CONVERSA ABERTA: `{ chave, carregando, etapas, cartao, erro }`,
+  // e `chave` = contato|departamento — é o que identifica um cartão.
+  const [funilDaConversa, setFunilDaConversa] = useState(null);
+  // O menu da etapa tem os DOIS endereços do menu do responsável: "linha" (no
+  // computador, pendurado na linha do número) e "menu" (pelo ⋮).
+  const [menuEtapa, setMenuEtapa] = useState(false);
+  const etapaRef = useRef(null);
+  // AS ETAPAS DE CADA DEPARTAMENTO, guardadas: mudam quase nunca, e perguntar
+  // a cada conversa aberta seria uma ida a mais por clique. Fechar a tela do
+  // funil esquece o guardado — é lá que quem administra acabou de mexer.
+  const etapasPorDep = useRef(new Map());
   const [jaTratei, setJaTratei] = useState(null);      // a conversa com a janela aberta
   const [trateiOcupado, setTrateiOcupado] = useState(false);
   const [trateiErro, setTrateiErro] = useState("");
@@ -4610,6 +4630,73 @@ export default function Painel({ sessao }) {
     }
   }, []);
   useEffect(() => { carregarAssuntos(); }, [carregarAssuntos]);
+
+  // ---- O funil: existe? ----
+  //
+  // UMA pergunta por abertura, de uma linha só. Não sai das linhas da lista
+  // (como `temResponsavel`): o funil mora em tabelas próprias, e a lista não
+  // tem como saber delas.
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        const { error } = await supabase.from("zorvin_etapas").select("id").limit(1);
+        if (!vivo) return;
+        if (error && error.code !== "42P01") console.error("Zorvin — funil:", error);
+        setTemFunil(error ? error.code !== "42P01" : true);
+      } catch (e) {
+        console.error("Zorvin — funil:", e);
+        if (vivo) setTemFunil(true);
+      }
+    })();
+    return () => { vivo = false; };
+  }, []);
+
+  // ---- O funil: a etapa da conversa aberta ----
+  //
+  // O CARTÃO É O CLIENTE NO DEPARTAMENTO (decisão do Rodrigo): a conversa
+  // aberta aponta para ele pelo contato e pelo departamento do telefone. Grupo
+  // não é cliente, e telefone sem departamento não tem funil.
+  const contatoDoFunil = conversa && !String(conversa.contato?.numero || "").startsWith("grupo:")
+    ? conversa.contato_id : null;
+  const depDoFunil = conversa
+    ? ((advogados.find((a) => String(a.id) === String(conversa.advogado_id)) || {}).departamento_id ?? null)
+    : null;
+  const lerFunilDaConversa = useCallback(async (contatoId, depId) => {
+    if (!contatoId || depId == null) { setFunilDaConversa(null); return; }
+    const chave = `${contatoId}|${depId}`;
+    setFunilDaConversa((f) => (f && f.chave === chave ? f
+      : { chave, carregando: true, etapas: [], cartao: null, erro: null }));
+    try {
+      let etapas = etapasPorDep.current.get(String(depId));
+      const [rc, re] = await Promise.all([
+        supabase.from("zorvin_cartoes").select("*")
+          .eq("contato_id", contatoId).eq("departamento_id", depId).limit(1),
+        etapas ? Promise.resolve(null)
+          : supabase.from("zorvin_etapas").select("*").eq("departamento_id", depId).order("ordem"),
+      ]);
+      let erro = null;
+      if (re && re.error) erro = comOCodigo("Não consegui ler as etapas do funil.", re.error, "etapas");
+      else if (re) { etapas = re.data || []; etapasPorDep.current.set(String(depId), etapas); }
+      if (rc.error) erro = comOCodigo("Não consegui ler a etapa deste cliente.", rc.error, "cartão");
+      // A RESPOSTA DE UMA CONVERSA QUE JÁ FOI FECHADA não pinta a de agora.
+      setFunilDaConversa((f) => (f && f.chave !== chave ? f : {
+        chave, carregando: false, etapas: etapas || [], erro,
+        // Leitura que falhou NÃO vira "fora do funil": a etapa fica desconhecida
+        // e o menu diz por quê (armadilha nº 2).
+        cartao: rc.error ? undefined : ((rc.data || [])[0] || null),
+      }));
+    } catch (e) {
+      console.error("Zorvin — etapa da conversa:", e);
+      setFunilDaConversa((f) => (f && f.chave !== chave ? f
+        : { chave, carregando: false, etapas: [], cartao: undefined, erro: "Não consegui ler a etapa deste cliente." }));
+    }
+  }, []);
+  useEffect(() => {
+    setMenuEtapa(false);
+    if (temFunil === true) lerFunilDaConversa(contatoDoFunil, depDoFunil);
+    else setFunilDaConversa(null);
+  }, [temFunil, contatoDoFunil, depDoFunil, lerFunilDaConversa]);
   // As etiquetas seguem a LISTA: quando ela troca de telefone ou chega uma
   // conversa nova, são outras conversas para etiquetar.
   useEffect(() => { carregarTagsConversas(); },
@@ -7475,6 +7562,7 @@ export default function Painel({ sessao }) {
       else if (midiasAberta) setMidiasAberta(false);
       else if (telaAdmin) setTelaAdmin(false);
       else if (telaPainel) setTelaPainel(false);
+      else if (telaFunil) setTelaFunil(false);
       else if (configAberta) setConfigAberta(false);
       else if (novaConversaAberta) setNovaConversaAberta(false);
       else if (menuConversa) setMenuConversa(null);
@@ -7487,6 +7575,7 @@ export default function Painel({ sessao }) {
       else if (menuDepartamentos) setMenuDepartamentos(false);
       else if (tagMenuAberto) setTagMenuAberto(false);
       else if (menuResponsavel) setMenuResponsavel(false);
+      else if (menuEtapa) setMenuEtapa(false);
       else if (emojiAberto) setEmojiAberto(false);
       else if (seletorAberto) setSeletorAberto(false);
       else if (historico) setHistorico(null);
@@ -7500,7 +7589,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada]);
+  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, telaFunil, menuEtapa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -7531,13 +7620,18 @@ export default function Painel({ sessao }) {
           : !!(responsavelRef.current && responsavelRef.current.contains(e.target));
         if (!dentro) setMenuResponsavel(false);
       }
+      if (menuEtapa) {
+        const dentro = menuEtapa === "menu" ? dentroDoMenu
+          : !!(etapaRef.current && etapaRef.current.contains(e.target));
+        if (!dentro) setMenuEtapa(false);
+      }
       if (menuOrdem && ordemMenuRef.current && !ordemMenuRef.current.contains(e.target)) setMenuOrdem(false);
       if (menuTopoAberto && menuTopoRef.current && !menuTopoRef.current.contains(e.target)) setMenuTopoAberto(false);
       if (menuDepartamentos && departamentosRef.current && !departamentosRef.current.contains(e.target)) setMenuDepartamentos(false);
     }
     document.addEventListener("mousedown", aoClicar);
     return () => document.removeEventListener("mousedown", aoClicar);
-  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, menuDaConversa, menuOrdem, menuDepartamentos, menuResponsavel]);
+  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, menuDaConversa, menuOrdem, menuDepartamentos, menuResponsavel, menuEtapa]);
 
   // Fecha o menuzinho da conversa (marcar não lida) ao clicar em qualquer lugar.
   useEffect(() => {
@@ -10697,6 +10791,105 @@ export default function Painel({ sessao }) {
   const pessoasParaPassar = Object.values(equipe.porId)
     .filter((p) => p.nome && String(p.id) !== String(meuId))
     .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  // ---- A ETAPA DO FUNIL, a partir da conversa ----
+  //
+  // ESCOLHER UMA ETAPA põe o cliente no funil se ele ainda não estiver, e o
+  // move se estiver. A frase espera o banco (a régua de `gravarMarcaDaConversa`):
+  // "Etapa: X" é a tela afirmando um fato do banco.
+  const etapaAtualDaConversa = funilDaConversa && funilDaConversa.cartao
+    ? (funilDaConversa.etapas || []).find((e) => String(e.id) === String(funilDaConversa.cartao.etapa_id)) || null
+    : null;
+  async function escolherEtapa(etapa) {
+    const f = funilDaConversa;
+    setMenuEtapa(false);
+    if (!f || !conversa || f.cartao === undefined) return;
+    if (f.cartao && String(f.cartao.etapa_id) === String(etapa.id)) return;
+    const [contatoId, depId] = f.chave.split("|");
+    const r = f.cartao
+      ? await supabase.from("zorvin_cartoes").update({ etapa_id: etapa.id }).eq("id", f.cartao.id).select("*")
+      : await supabase.from("zorvin_cartoes")
+          .insert({ contato_id: contatoId, departamento_id: depDoFunil ?? depId, etapa_id: etapa.id }).select("*");
+    if (r.error) {
+      // 23505 = OUTRA PESSOA PÔS ESTE CLIENTE NO FUNIL AGORA (o cartão é único
+      // por cliente e departamento). Não é falha: é a tela atrasada.
+      if (r.error.code === "23505") {
+        await lerFunilDaConversa(contatoId, depDoFunil);
+        mostrarAviso("Outra pessoa acabou de pôr este cliente no funil — confira a etapa e escolha de novo.", 6000);
+        return;
+      }
+      mostrarAviso(comOCodigo(f.cartao ? "Não consegui mudar a etapa." : "Não consegui pôr este cliente no funil.",
+                              r.error, "etapa da conversa"), 6000);
+      return;
+    }
+    if (naoGravouNada(r)) {
+      mostrarAviso("Não consegui mudar a etapa: o banco não deixou.", 6000);
+      return;
+    }
+    const novo = (r.data || [])[0] || { ...(f.cartao || {}), etapa_id: etapa.id };
+    setFunilDaConversa((x) => (x && x.chave === f.chave ? { ...x, cartao: novo } : x));
+    mostrarAviso(f.cartao ? `Etapa: ${etapa.nome}.` : `Entrou no funil, em “${etapa.nome}”.`);
+  }
+  async function tirarDoFunilDaConversa() {
+    const f = funilDaConversa;
+    setMenuEtapa(false);
+    if (!f || !f.cartao) return;
+    if (!window.confirm("Tirar este cliente do funil? A conversa continua; só o cartão sai.")) return;
+    const r = await supabase.from("zorvin_cartoes").delete().eq("id", f.cartao.id).select("id");
+    if (r.error) { mostrarAviso(comOCodigo("Não consegui tirar do funil.", r.error, "tirar do funil"), 6000); return; }
+    if (naoGravouNada(r)) { mostrarAviso("Não consegui tirar do funil: o banco não deixou.", 6000); return; }
+    setFunilDaConversa((x) => (x && x.chave === f.chave ? { ...x, cartao: null } : x));
+    mostrarAviso("Saiu do funil.");
+  }
+  const listaDeEtapas = !conversa || !funilDaConversa ? null : (() => {
+    const f = funilDaConversa;
+    const ativas = (f.etapas || []).filter((e) => e.ativo !== false)
+      .sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
+    const ITEM = { width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "9px 12px",
+                   border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary,
+                   textAlign: "left", fontSize: 13.5, minHeight: estreito ? 44 : 36 };
+    const atual = f.cartao ? String(f.cartao.etapa_id) : "";
+    return (
+      <div data-menu-etapa role="listbox"
+           style={{ position: "absolute", zIndex: 61, width: 250, maxHeight: 360, overflowY: "auto",
+                    whiteSpace: "normal", fontWeight: 400,
+                    ...(menuEtapa === "menu" ? { top: 44, right: 0 } : { top: "100%", left: 0, marginTop: 4 }),
+                    background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10,
+                    boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
+        <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.divider}` }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3 }}>ETAPA NO FUNIL</div>
+          <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>
+            {f.cartao ? "Escolha para onde este cliente vai." : f.cartao === null
+              ? "Este cliente ainda não está no funil. Escolha a etapa para pôr." : ""}
+          </div>
+        </div>
+        {f.erro && (
+          <div data-erro-da-etapa style={{ padding: "8px 12px", fontSize: 12.5, color: "#c0392b" }}>{f.erro}</div>
+        )}
+        {f.cartao !== undefined && ativas.map((e) => (
+          <button key={e.id} data-escolher-etapa={e.nome} role="option" aria-selected={atual === String(e.id)}
+                  onClick={() => escolherEtapa(e)} style={ITEM}>
+            <span style={{ width: 9, height: 9, borderRadius: "50%", background: e.cor || C.green, flexShrink: 0 }} />
+            <span style={{ flex: 1 }}>{e.nome}</span>
+            {atual === String(e.id) && <Check size={15} color={C.green} />}
+          </button>
+        ))}
+        {f.cartao !== undefined && !ativas.length && !f.erro && (
+          <div style={{ padding: "10px 12px", fontSize: 12.5, color: C.textSecondary }}>
+            Este departamento ainda não tem etapas no funil.
+          </div>
+        )}
+        {f.cartao && (
+          <>
+            <div style={{ height: 1, background: C.divider, margin: "4px 0" }} />
+            <button data-tirar-do-funil onClick={tirarDoFunilDaConversa} style={{ ...ITEM, color: "#c0392b" }}>
+              <X size={15} /> Tirar do funil
+            </button>
+          </>
+        )}
+      </div>
+    );
+  })();
+
   const listaDeResponsaveis = !conversa ? null : (() => {
     const dono = conversa.responsavel_id ? String(conversa.responsavel_id) : "";
     const souDono = !!dono && dono === String(meuId);
@@ -11831,6 +12024,12 @@ export default function Painel({ sessao }) {
                       inteiros, e o recorte é feito no banco (`painel_dashboard`
                       ignora o "quem" que o navegador manda quando quem chama
                       não é administrador). */}
+                  {/* O FUNIL DE ETAPAS (script 017). Só aparece com o script
+                      rodado: sem ele, o botão abriria uma tela que diz "falta
+                      rodar o 017" para quem não pode fazer nada a respeito. */}
+                  {temFunil === true && (
+                    <button data-abrir-funil onClick={() => { setMenuTopoAberto(false); setTelaFunil(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><SquareKanban size={17} color={C.textSecondary} /> Funil</button>
+                  )}
                   <button onClick={() => { setMenuTopoAberto(false); setTelaPainel(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><BarChart3 size={17} color={C.textSecondary} /> Painel</button>
                   {/* Quem administra no Vantoro administra aqui. Esconder o botão
                       é cortesia, não segurança: quem não é admin esbarra nas
@@ -12746,6 +12945,44 @@ export default function Painel({ sessao }) {
                         {menuResponsavel === "linha" && listaDeResponsaveis}
                       </span>
                     )}
+                    {/* A ETAPA NO FUNIL, na mesma linha e pela mesma razão do
+                        responsável: a fila de botões da direita tem a conta de
+                        largura de 29/09, e esta linha já existia. No celular é
+                        só texto, e o gesto vai pelo ⋮. */}
+                    {temFunil === true && funilDaConversa && !funilDaConversa.carregando && (
+                      <span ref={etapaRef} style={{ position: "relative", display: "flex", minWidth: 0 }}>
+                        <span style={{ opacity: .6, flexShrink: 0, marginLeft: 2 }}>·</span>
+                        {estreito ? (
+                          <span data-etapa-da-conversa={etapaAtualDaConversa ? etapaAtualDaConversa.nome : ""}
+                                style={{ marginLeft: 4, overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {etapaAtualDaConversa ? etapaAtualDaConversa.nome
+                              : funilDaConversa.cartao === null ? "fora do funil" : "etapa ?"}
+                          </span>
+                        ) : (
+                          <button data-etapa-da-conversa={etapaAtualDaConversa ? etapaAtualDaConversa.nome : ""}
+                                  onClick={() => setMenuEtapa((v) => (v === "linha" ? false : "linha"))}
+                                  aria-expanded={menuEtapa === "linha"} aria-haspopup="listbox"
+                                  title={etapaAtualDaConversa ? `Etapa no funil: ${etapaAtualDaConversa.nome} — clique para mudar`
+                                    : "Este cliente não está no funil — clique para pôr"}
+                                  style={{ border: "none", background: "transparent", cursor: "pointer",
+                                           display: "flex", alignItems: "center", gap: 4, minWidth: 0,
+                                           padding: "1px 4px", marginLeft: 1, borderRadius: 6, minHeight: 20,
+                                           fontSize: 12, color: etapaAtualDaConversa ? C.textPrimary : C.textSecondary,
+                                           fontWeight: 500 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+                                           background: etapaAtualDaConversa ? (etapaAtualDaConversa.cor || C.green) : "transparent",
+                                           border: etapaAtualDaConversa ? "none" : `1px solid ${C.textSecondary}` }} />
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                              {etapaAtualDaConversa
+                                ? etapaAtualDaConversa.nome + (etapaAtualDaConversa.ativo === false ? " (desativada)" : "")
+                                : funilDaConversa.cartao === null ? "Pôr no funil" : "Etapa"}
+                            </span>
+                            <ChevronDown size={12} style={{ flexShrink: 0, opacity: .7 }} />
+                          </button>
+                        )}
+                        {menuEtapa === "linha" && listaDeEtapas}
+                      </span>
+                    )}
                   </div>
                 )}
                 {!estreito && tagsDaConversa(conversa.id).length > 0 && (
@@ -12967,6 +13204,19 @@ export default function Painel({ sessao }) {
                           )}
                         </button>
                       )}
+                      {temFunil === true && funilDaConversa && !funilDaConversa.carregando && (
+                        <button onClick={() => { setMenuDaConversa(false); setMenuEtapa("menu"); }}
+                                data-menu-etapa-item
+                                style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
+                          <SquareKanban size={17} color={etapaAtualDaConversa ? C.green : C.textSecondary} />
+                          {etapaAtualDaConversa ? "Etapa no funil" : "Pôr no funil"}
+                          {etapaAtualDaConversa && (
+                            <span style={{ marginLeft: "auto", fontSize: 12, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 110 }}>
+                              {etapaAtualDaConversa.nome}
+                            </span>
+                          )}
+                        </button>
+                      )}
                       {(conversa.nao_lidas || 0) > 0 ? (
                         <button onClick={() => { setMenuDaConversa(false); marcarLida(conversa.id); }}
                                 data-menu-marcar="lida"
@@ -13057,6 +13307,7 @@ export default function Painel({ sessao }) {
                   {tagMenuAberto && listaDeEtiquetas}
                   {quemParticipou && listaDeParticipantes}
                   {menuResponsavel === "menu" && listaDeResponsaveis}
+                  {menuEtapa === "menu" && listaDeEtapas}
                 </span>
               )}
             </div>
@@ -14987,6 +15238,26 @@ export default function Painel({ sessao }) {
         <PainelNumeros C={C} modo={modo} advogados={advogados} departamentos={departamentos}
                        souAdmin={souAdmin} meuId={sessao?.user?.id || null} meuNome={meuNome}
                        aoFechar={() => setTelaPainel(false)} />
+      )}
+
+      {/* O FUNIL. Recebe os telefones e departamentos que esta pessoa
+          ALCANÇA — um funil de um departamento que ela não atende abriria
+          vazio, e vazio se lê como "ninguém". Abrir um cartão é o mesmo
+          caminho do histórico: troca de telefone e abre a conversa. */}
+      {telaFunil && (
+        <Funil C={C} departamentos={departamentosVisiveis} advogados={advogadosPermitidos}
+               souAdmin={souAdmin} departamentoInicial={departamentoId}
+               aoAbrirConversa={(cv) => {
+                 setTelaFunil(false);
+                 verConversaDoHistorico({ advogadoId: cv.advogado_id, conversaId: cv.id });
+               }}
+               aoFechar={() => {
+                 setTelaFunil(false);
+                 // Quem administra pode ter mexido nas etapas: esquece o
+                 // guardado e relê a etapa da conversa aberta.
+                 etapasPorDep.current.clear();
+                 if (temFunil === true) lerFunilDaConversa(contatoDoFunil, depDoFunil);
+               }} />
       )}
 
       {/* A JANELA DO "JÁ TRATEI". A conversa vai por `jaTratei`, e não por

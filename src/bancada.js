@@ -1315,6 +1315,19 @@ const TABELAS = {
   // COMEÇA VAZIA: as linhas nascem do que se faz na tela. Semear uma aqui
   // esconderia uma tela que não grava nada — a mesma razão de `alteracoes`.
   zorvin_tratamentos: [],
+  // O FUNIL DE ETAPAS (script 017 da ponte). As ETAPAS nascem como o script
+  // as semeia — as sete sugeridas, em cada departamento. Os CARTÕES e os
+  // MOVIMENTOS começam vazios, pela régua de `zorvin_tratamentos`: as linhas
+  // nascem do que se faz na tela (ou da `__SEMENTE` de cada prova), e semear
+  // aqui esconderia uma tela que não grava nada.
+  zorvin_etapas: DEPARTAMENTOS.flatMap((d) => [
+    ["Novo contato", "#53bdeb"], ["Em atendimento", "#00a884"], ["Aguardando cliente", "#ffb02e"],
+    ["Proposta/acordo enviado", "#a78bfa"], ["Acordo fechado", "#25d366"], ["Em execução", "#0ea5e9"],
+    ["Encerrado", "#8696a0"],
+  ].map(([nome, cor], i) => ({ id: `et-${d.id}-${i + 1}`, departamento_id: d.id, nome, cor,
+                               ordem: (i + 1) * 10, ativo: true, criado_em: "2026-10-06T10:00:00Z" }))),
+  zorvin_cartoes: [],
+  zorvin_movimentos: [],
   // O histórico de alterações começa VAZIO: as linhas nascem do que se faz na
   // tela, e semear alguma aqui esconderia uma tela que não grava nada.
   alteracoes: [],
@@ -1568,7 +1581,11 @@ function consulta(tabela) {
         // A TABELA DOS REGISTROS mora DENTRO do bloco guardado do 005, junto
         // da coluna: sem `__SEM_TRATADA` ela responderia lista vazia, e o
         // histórico diria "ninguém marcou" num banco onde o recurso nem existe.
-        || (tabela === "zorvin_tratamentos" && (globalThis.__SEM_TRATADA || globalThis.__SEM_ASSUNTOS)));
+        || (tabela === "zorvin_tratamentos" && (globalThis.__SEM_TRATADA || globalThis.__SEM_ASSUNTOS))
+        // O FUNIL (script 017) QUE AINDA NÃO RODOU: as três tabelas respondem
+        // "não existe", e não lista vazia — "existe e está vazio" é outro
+        // estado, em que o funil APARECE e diz que não há ninguém.
+        || (/^zorvin_(etapas|cartoes|movimentos)$/.test(tabela) && globalThis.__SEM_FUNIL));
   let linhas = faltando ? [] : (TABELAS[tabela] || []).slice();
   // O QUE FOI PEDIDO, e não só o resultado. É por isto que dá para saber se a
   // consulta varreu a tabela inteira ou entrou por um recorte — a diferença
@@ -2700,6 +2717,49 @@ export const supabase = {
     // linhas que a TELA gravou, para a prova poder cobrar da tela o que ela
     // mostra depois de marcar um "Já tratei" de verdade, e não um número que
     // a bancada inventou.
+    // TRAZER PARA O FUNIL o que já existia — a regra do script 017, imitada
+    // porque o NÚMERO que ela devolve é o que a tela escreve ("N clientes
+    // entraram"), e os cartões que ela cria são o que a tela passa a mostrar.
+    // A mesma conta foi conferida num Postgres de verdade, no repo da ponte.
+    if (nome === "zorvin_funil_trazer") {
+      if (globalThis.__SEM_FUNIL) {
+        return { data: null, error: { code: "PGRST202", message: "Could not find the function public.zorvin_funil_trazer" } };
+      }
+      const eu = TABELAS.usuarios[0] || {};
+      if (!eu.admin) {
+        return { data: null, error: { code: "42501", message: "Só quem administra traz as conversas para o funil." } };
+      }
+      await espera(40);
+      const dep = String(args && args.p_departamento);
+      const dias = Number((args && args.p_dias) || 30);
+      const primeira = (TABELAS.zorvin_etapas || [])
+        .filter((e) => String(e.departamento_id) === dep && e.ativo)
+        .sort((a, b) => a.ordem - b.ordem)[0];
+      if (!primeira) {
+        return { data: null, error: { code: "22023", message: "Este departamento ainda não tem etapa ativa no funil." } };
+      }
+      const telefones = new Set((TABELAS.advogados || ADVOGADOS)
+        .filter((a) => String(a.departamento_id) === dep).map((a) => String(a.id)));
+      const contato = new Map((TABELAS.contatos || []).map((c) => [String(c.id), c]));
+      const desde = Date.now() - dias * 86400000;
+      const ja = new Set((TABELAS.zorvin_cartoes || [])
+        .filter((c) => String(c.departamento_id) === dep).map((c) => String(c.contato_id)));
+      let n = 0;
+      for (const c of TABELAS.conversas || []) {
+        if (!telefones.has(String(c.advogado_id))) continue;
+        if (new Date(c.ultima_atividade || 0).getTime() < desde) continue;
+        const numero = String((contato.get(String(c.contato_id)) || c.contato || {}).numero || "");
+        if (numero.startsWith("grupo:") || ja.has(String(c.contato_id))) continue;
+        ja.add(String(c.contato_id));
+        const agora = new Date().toISOString();
+        TABELAS.zorvin_cartoes.push({ id: `zorvin_cartoes-t${TABELAS.zorvin_cartoes.length + 1}`,
+          contato_id: c.contato_id, departamento_id: Number(dep), etapa_id: primeira.id,
+          criado_em: agora, movido_em: agora, movido_por: eu.id });
+        n++;
+      }
+      return { data: n, error: null };
+    }
+
     if (nome === "zorvin_relatorio_tratados") {
       if (globalThis.__SEM_RELATORIO) {
         return { data: null, error: { code: "PGRST202", message: "Could not find the function public.zorvin_relatorio_tratados" } };

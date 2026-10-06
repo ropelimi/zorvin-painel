@@ -10,6 +10,7 @@ import { etiquetaDoTelefone } from "./numeros.js";
 import { useTemVantoro } from "./temVantoro.js";
 import { PalavrasDaCasa } from "./PalavrasDaCasa.jsx";
 import { AssuntosDoJaTratei } from "./AssuntosDoJaTratei.jsx";
+import { EtapasDoFunil } from "./EtapasDoFunil.jsx";
 // A CHAVE SAIU DAQUI para `Chave.jsx`: a tela de Avisos passou a precisar da
 // mesma peça, e uma segunda cópia divergiria da primeira no primeiro conserto.
 import { Chave } from "./Chave.jsx";
@@ -270,6 +271,15 @@ export default function Departamentos({ C, aoFechar }) {
                   aoMoverTelefone={(telId) => gravar("tel", () => supabase.from("advogados").update({ departamento_id: d.id }).eq("id", telId).select("id"))}
                 />
               ))}
+
+              {/* AS ETAPAS DO FUNIL (script 017) vêm DEPOIS dos departamentos,
+                  e não junto das palavras e dos assuntos: cada funil É de um
+                  departamento, e quem cria um departamento novo desce até aqui
+                  para dar as etapas a ele. Acima, o seletor de departamento
+                  desta seção passava a ser o primeiro da tela — antes do de
+                  trazer telefone, que é o gesto de todo dia desta aba.
+                  Sem o script, a seção não aparece. */}
+              <EtapasDoFunil cx={cx} C={C} departamentos={departamentos} aoAvisar={setErro} />
             </>
           )}
 
