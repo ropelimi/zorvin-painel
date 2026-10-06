@@ -5,6 +5,7 @@ import { naoGravouNada, comOCodigo } from "./gravar.js";
 import { nomeDoContato } from "./contato.js";
 import { telefoneLegivel } from "./numeros.js";
 import { diasDesde } from "./espera.js";
+import { situacao, semATabelaDeTarefas, rotuloDaTarefa, ordenarAbertas } from "./tarefas.js";
 
 // ============================================================
 //  O FUNIL DE ETAPAS (06/10)
@@ -81,7 +82,7 @@ function haQuanto(iso) {
 
 export default function Funil({
   C, departamentos = [], advogados = [], souAdmin = false,
-  departamentoInicial = null, aoAbrirConversa, aoFechar,
+  departamentoInicial = null, aoAbrirConversa, aoFechar, comTarefas = false,
 }) {
   const [depId, setDepId] = useState(() => {
     const ini = departamentos.find((d) => String(d.id) === String(departamentoInicial));
@@ -92,6 +93,11 @@ export default function Funil({
   const [cartoes, setCartoes] = useState([]);
   const [contatos, setContatos] = useState({});  // id → contato
   const [conversas, setConversas] = useState({}); // contato_id → a conversa mais recente
+  // A TAREFA ABERTA MAIS URGENTE de cada cliente (contato_id → tarefa), de
+  // qualquer conversa dele neste departamento. `falhaTarefas` diz quando não
+  // deu para ler — sem isso, um cartão sem o sinal se leria como "sem tarefa".
+  const [tarefasPorContato, setTarefasPorContato] = useState({});
+  const [falhaTarefas, setFalhaTarefas] = useState(null);
   const [cortado, setCortado] = useState(false);
   const [carregando, setCarregando] = useState(false);
   const [falha, setFalha] = useState(null);
@@ -161,6 +167,7 @@ export default function Funil({
       const ids = [...new Set(todos.map((c) => c.contato_id))];
       const porId = {};
       const conv = {};
+      const contatoDaConversa = {};
       for (const lote of emLotes(ids)) {
         const [rct, rcv] = await Promise.all([
           supabase.from("contatos").select("*").in("id", lote),
@@ -176,6 +183,7 @@ export default function Funil({
         }
         for (const c of rct.data || []) porId[c.id] = c;
         for (const c of rcv.data || []) {
+          contatoDaConversa[String(c.id)] = c.contato_id;
           const atual = conv[c.contato_id];
           if (!atual || new Date(c.ultima_atividade || 0) > new Date(atual.ultima_atividade || 0)) {
             conv[c.contato_id] = c;
@@ -183,6 +191,30 @@ export default function Funil({
         }
       }
       if (minha !== leitura.current) return;
+      // AS TAREFAS ABERTAS dos clientes do funil (script 018): o cartão diz a
+      // mais urgente. É um sinal a mais, e a falha dele não derruba o funil —
+      // mas é DITA, e não vira "sem tarefa".
+      let tarefas = {};
+      let erroTarefas = null;
+      if (comTarefas) {
+        const idsConversa = Object.keys(contatoDaConversa);
+        for (const lote of emLotes(idsConversa)) {
+          const rt = await supabase.from("zorvin_tarefas").select("*")
+            .is("feita_em", null).in("conversa_id", lote);
+          if (minha !== leitura.current) return;
+          if (rt.error) {
+            if (!semATabelaDeTarefas(rt.error)) {
+              erroTarefas = comOCodigo("Não consegui ler as tarefas dos clientes.", rt.error, "tarefas do funil");
+            }
+            tarefas = {};
+            break;
+          }
+          for (const t of ordenarAbertas(rt.data || [])) {
+            const ct = contatoDaConversa[String(t.conversa_id)];
+            if (ct && !tarefas[ct]) tarefas[ct] = t;
+          }
+        }
+      }
       setEtapas(re.data || []);
       // UM MOVIMENTO EM VOO NÃO É DESFEITO PELA RELEITURA: a resposta do banco
       // pode ser de antes do clique, e o cartão voltaria para a coluna velha
@@ -190,12 +222,14 @@ export default function Funil({
       if (movendo.current === 0) setCartoes(todos);
       setContatos(porId);
       setConversas(conv);
+      setTarefasPorContato(tarefas);
+      setFalhaTarefas(erroTarefas);
       setCortado(passou);
       setFalha(null);
     } finally {
       if (minha === leitura.current) setCarregando(false);
     }
-  }, [depId, telefonesDoDep]);
+  }, [depId, telefonesDoDep, comTarefas]);
 
   useEffect(() => { setCartoes([]); setEtapas([]); ler(true); }, [ler]);
 
@@ -315,6 +349,7 @@ export default function Funil({
     const cv = conversas[c.contato_id];
     const espera = cv && cv.esperando_desde ? diasDesde(cv.esperando_desde) : 0;
     const naoLidas = (cv && cv.nao_lidas) || 0;
+    const tarefa = tarefasPorContato[c.contato_id] || null;
     return (
       <div key={c.id} data-cartao-do-funil={c.contato_id} data-etapa={c.etapa_id}
            draggable onDragStart={(e) => {
@@ -355,6 +390,14 @@ export default function Funil({
           )}
           {!cv && <span>· <MessageCircle size={11} style={{ verticalAlign: -1 }} /> sem conversa à vista</span>}
         </div>
+        {tarefa && (
+          <div data-tarefa-no-cartao={situacao(tarefa)} title={tarefa.texto}
+               style={{ marginTop: 6, fontSize: 11.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        color: situacao(tarefa) === "atrasada" ? "#e53935" : situacao(tarefa) === "hoje" ? "#d99a1e" : C.textSecondary }}>
+            ⏰ {situacao(tarefa) === "atrasada" ? "Tarefa atrasada" : `Tarefa ${rotuloDaTarefa(tarefa)}`}: {tarefa.texto}
+          </div>
+        )}
         <select data-mover-cartao value="" aria-label={`Mover ${nome} para outra etapa`}
                 onChange={(e) => {
                   const v = e.target.value;
@@ -477,11 +520,17 @@ export default function Funil({
         )}
       </div>
 
-      {(aviso || falha || cortado) && (
+      {(aviso || falha || cortado || falhaTarefas) && (
         <div style={{ padding: "8px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
           {falha && (
             <div data-falha-do-funil style={{ background: "#fff4e5", color: "#7a4b00", border: "1px solid #ffd699",
                                               borderRadius: 8, padding: "8px 12px", fontSize: 13 }}>{falha}</div>
+          )}
+          {!falha && falhaTarefas && (
+            <div data-falha-das-tarefas-do-funil style={{ background: "#fff4e5", color: "#7a4b00", border: "1px solid #ffd699",
+                                                          borderRadius: 8, padding: "8px 12px", fontSize: 13 }}>
+              {falhaTarefas} Os cartões estão sem o aviso de tarefa.
+            </div>
           )}
           {cortado && (
             <div style={{ background: "#fff4e5", color: "#7a4b00", border: "1px solid #ffd699",

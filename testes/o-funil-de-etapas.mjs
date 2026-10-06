@@ -236,7 +236,10 @@ console.log("\n6. O banco que recusa: o cartão VOLTA, e a frase diz por quê");
 // ------------------------------------------------------------------
 console.log("\n7. A etapa na conversa — e escolher outra grava");
 {
-  const { ctx, page, estouros } = await abrirPainel();
+  // A 1920, e não a 1400: a 1400 com a ficha aberta a linha do número só tem
+  // espaço para os selos em ÍCONE (desde 06/10, ver "Tarefas e lembretes" no
+  // CLAUDE.md), e a cena 8 lê a PALAVRA "Pôr no funil" escrita no selo.
+  const { ctx, page, estouros } = await abrirPainel({ largura: 1920 });
   await abrirConversa(page, NOMES.f1);
   const chip = page.locator("[data-etapa-da-conversa]");
   ok("a linha do número diz a etapa", (await chip.getAttribute("data-etapa-da-conversa").catch(() => null)) === "Novo contato");

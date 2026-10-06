@@ -1328,6 +1328,9 @@ const TABELAS = {
                                ordem: (i + 1) * 10, ativo: true, criado_em: "2026-10-06T10:00:00Z" }))),
   zorvin_cartoes: [],
   zorvin_movimentos: [],
+  // AS TAREFAS (script 018 da ponte) começam VAZIAS, pela mesma régua: nascem
+  // do que se faz na tela ou da `__SEMENTE` de cada prova.
+  zorvin_tarefas: [],
   // O histórico de alterações começa VAZIO: as linhas nascem do que se faz na
   // tela, e semear alguma aqui esconderia uma tela que não grava nada.
   alteracoes: [],
@@ -1585,7 +1588,10 @@ function consulta(tabela) {
         // O FUNIL (script 017) QUE AINDA NÃO RODOU: as três tabelas respondem
         // "não existe", e não lista vazia — "existe e está vazio" é outro
         // estado, em que o funil APARECE e diz que não há ninguém.
-        || (/^zorvin_(etapas|cartoes|movimentos)$/.test(tabela) && globalThis.__SEM_FUNIL));
+        || (/^zorvin_(etapas|cartoes|movimentos)$/.test(tabela) && globalThis.__SEM_FUNIL)
+        // AS TAREFAS (script 018) QUE AINDA NÃO RODARAM: "não existe", e não
+        // lista vazia — vazia é o estado em que a tela aparece e diz que não há.
+        || (tabela === "zorvin_tarefas" && globalThis.__SEM_TAREFAS));
   let linhas = faltando ? [] : (TABELAS[tabela] || []).slice();
   // O QUE FOI PEDIDO, e não só o resultado. É por isto que dá para saber se a
   // consulta varreu a tabela inteira ou entrou por um recorte — a diferença
@@ -1765,7 +1771,7 @@ function consulta(tabela) {
       // da transação — e é por esse instante que o relatório do "Já tratei"
       // junta as linhas de um mesmo clique.
       const agoraDaGravacao = new Date().toISOString();
-      const PADRAO_DE_DATA = { zorvin_tratamentos: "quando" };
+      const PADRAO_DE_DATA = { zorvin_tratamentos: "quando", zorvin_tarefas: "criada_em" };
       const novos = (Array.isArray(reg) ? reg : [reg]).map((r, i) => ({
         id: r.id || `${tabela}-${(TABELAS[tabela] || []).length + i + 1}`,
         ...(PADRAO_DE_DATA[tabela] ? { [PADRAO_DE_DATA[tabela]]: agoraDaGravacao } : {}),

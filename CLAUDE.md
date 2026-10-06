@@ -2589,6 +2589,117 @@ recusa calada dizendo "foi para…").
 já guarda em `zorvin_movimentos`), e o relatório do funil (quantos em cada
 etapa, quanto tempo em cada uma).
 
+## Tarefas e lembretes (06/10)
+
+Pedido do Rodrigo como terceiro passo para CRM: *"pode começar pelas tarefas
+e lembretes"*. Responsável e funil dizem de quem é o cliente e em que pé ele
+está; faltava **quando agir de novo** ("ligar na quinta para confirmar o
+acordo") — que hoje fica na cabeça de quem atende, e o cliente esfria no dia
+em que ela esquece.
+
+**Decidido com ele:** quem vê a conversa vê as tarefas dela (a equipe do
+telefone, para um colega cobrir quem faltou); uma tela própria **mais** um
+filtro na lista; e **só quem recebeu a tarefa é avisado** na hora.
+
+SQL: `sql/automaticos/018-tarefas-e-lembretes.sql`, no repo da ponte. As
+contas de "atrasada / hoje / próxima" e do aviso moram em **`tarefas.js`**,
+e é a MESMA régua na conversa, na tela, no filtro e no cartão do funil —
+quatro contas divergiriam.
+
+### Onde ela mora na tela
+
+| | |
+|---|---|
+| **criar e ver as da conversa** | na linha do número, depois da etapa: o selo diz a PRÓXIMA (vermelho atrasada, âmbar hoje) ou oferece **"Lembrar"**; no celular, pelo ⋮ |
+| **a janela** | `NovaTarefa.jsx` — o que fazer, para quem (começa em você), quando; o mesmo desenho da janela de agendar |
+| **a tela** | o **sino da barra lateral**, com o número de atrasadas + hoje (vermelho se alguma atrasou); também no menu ⋮ do topo |
+| **o filtro** | "Com tarefa para hoje", na gaveta da fita — de qualquer pessoa, porque quem vê a conversa vê as tarefas dela |
+| **o funil** | o cartão diz a tarefa aberta mais urgente do cliente |
+
+**A tela (`Tarefas.jsx`) tem duas abas, e a diferença é de pergunta:**
+*Minhas* (atrasadas, hoje, próximas, e as concluídas dos últimos sete dias,
+para desfazer um clique errado) e *Da equipe* (tudo o que está aberto nas
+conversas que eu vejo, com a conta de cada pessoa no alto — é a cobrança da
+fila, e a ordem é de quem tem mais atrasada).
+
+### O aviso na hora
+
+**É do painel**, e não do banco: o navegador de quem recebeu relê as
+próprias abertas **de 30 em 30 segundos** e, vencida uma, toca o som que a
+pessoa escolheu para as mensagens, mostra a tarja (pela mesma chave de
+`notificarDesktop`) e escreve o lembrete na faixa.
+
+**Toca uma vez só por navegador** (`zorvin-tarefas-avisadas`, no
+`localStorage`): recarregar não toca de novo, e duas abas não tocam duas
+vezes. **A chave é o id mais a hora**: adiar a tarefa para amanhã é um
+lembrete novo, e toca de novo.
+
+**A vencida há mais de 12 horas não toca ao abrir**: doze tarefas de ontem
+tocando juntas às 8h é susto, e não aviso. Ela continua no número vermelho
+e na tela.
+
+**O número da barra conta atrasadas e de hoje**, e não as de amanhã: um
+número que nunca zera se aprende a não ler.
+
+### Três decisões pequenas
+
+- **Apagar existe e pergunta antes**; "concluída" é para o que foi feito.
+- **A falha ao criar fica NA JANELA**, que continua aberta com o que foi
+  escrito. Na faixa de aviso ela ficaria por baixo do fundo escuro da
+  janela, e o clique pareceria mudo.
+- **Toda gravação relê tudo o que conta tarefas** (`tarefasMudaram`): a
+  conversa, o número da barra e o filtro. Sem isso o número diria o que era
+  verdade antes do clique.
+
+### E a linha do número estava se sobrepondo desde o funil
+
+A primeira foto desta rodada mostrou **"Assumir" pintado por cima de "Pôr
+no funil"** a 1400 com a ficha aberta — e conferido sem as tarefas, **já era
+assim desde o funil (02/10)**. Ninguém tinha medido a linha do número depois
+de o funil pôr o segundo selo nela.
+
+**Medido:** a linha tem a largura do bloco do nome, e com a ficha aberta a
+1400 são **187px** para o número (~95) e três selos que pedem ~300 escritos.
+
+**O conserto tem duas partes:**
+
+1. **a linha é CALCULADA** (`espacoDaLinha`), pela régua do cabeçalho — as
+   mesmas parcelas da fila mais 56px, conferidas em sete larguras com e sem
+   a ficha — e, sem espaço para ~92px por selo, os três viram **ícone** (o
+   rosto, a bolinha da etapa, o sino), com o texto no `title` e por extenso
+   no menu de cada um. Medido com 66px por selo, a linha dizia "Assum",
+   "Pô…" e "L…": três palavras cortadas dizem menos que três ícones;
+2. **`overflow: hidden` em cada BOTÃO**, e não na linha: a linha ancora os
+   menus, e recortá-la os sumiria — a régua de 29/09. No botão, faltando
+   espaço, o selo é cortado na própria borda em vez de pintar no vizinho.
+
+**O número nunca encolhe**, como sempre.
+
+**E a suíte inteira pegou duas provas que liam a PALAVRA do selo a 1400**
+(`o-funil-de-etapas` e `o-responsavel-pela-conversa`): ali, com a ficha
+aberta, o selo agora é ícone — de propósito, é onde ele se sobrepunha. As
+duas cenas rodam a 1920, com o motivo escrito. É a lição de 02/10 com outra
+roupa: **ao mexer na linha do número, rode toda prova que lê um selo dela**,
+e não só a que tem o nome do recurso novo.
+
+Prova: `tarefas-e-lembretes`, **113 conferências**, **10 sabotagens e 10
+pegas** (sem a janela de 12 horas; sem guardar o que tocou; o número contando
+as de amanhã; a recusa calada virando "concluída"; a falha ao criar calada;
+os selos que nunca viram ícone; o filtro sem o "até hoje"; a falha da tela
+virando "nenhuma"; o cartão do funil sem a tarefa; a leitura das minhas sem
+o recorte da pessoa). A cena dos selos mede **o que está pintado**
+(`elementFromPoint` no centro de cada selo), em seis larguras.
+
+**E uma vazou, com razão:** tirar de `quemTocaAgora` a pergunta "é minha?"
+passava, porque a leitura já pede só as minhas ao banco — a função é a
+segunda guarda. É a régua de 25/09, *sabotagem que o resto do sistema
+conserta sozinho não prova nada*. O defeito de verdade é a LEITURA sem o
+recorte, e esse é pego pelo número da barra.
+
+**Ainda em aberto:** tarefa repetida ("toda segunda"), e tarefa que nasce
+sozinha de uma etapa do funil — as duas ficam para quando o Rodrigo usar
+esta.
+
 ## Banco de dados (tabelas que o painel lê/escreve)
 
 - `advogados` — lê (id, nome, numero, foto_url) onde `ativo = true`
