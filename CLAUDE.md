@@ -2507,6 +2507,88 @@ Prova: `a-mensagem-agendada`, agora **73 conferências**, com as cenas da
 edição (o texto e a hora mudando nos dois lugares; o vazio recusado; o botão
 sumido no último minuto; a recusa do banco dita com o código).
 
+## O funil de etapas (06/10)
+
+Pedido do Rodrigo como segundo passo para CRM: *"pode começar pelo funil de
+etapas"*. Decidido com ele: **um funil por departamento**, as etapas
+sugeridas (Novo contato → Em atendimento → Aguardando cliente →
+Proposta/acordo enviado → Acordo fechado → Em execução → Encerrado),
+editáveis na administração, e **o cartão é o cliente**. Enquanto o Zorvin não
+tem ficha própria, "cliente" é o **contato** (um número de WhatsApp): a mesma
+pessoa por dois números são dois cartões — dito a ele antes de começar.
+
+SQL: `sql/automaticos/017-o-funil-de-etapas.sql`, no repo da ponte, onde
+estão as regras do banco (etapa não se apaga, o histórico é do gatilho, o
+cliente novo entra sozinho na primeira etapa, quem vê o cartão é quem vê as
+conversas dele).
+
+### Onde ele mora na tela
+
+| | |
+|---|---|
+| **a tela de colunas** | menu ⋮ do topo → **Funil** (`Funil.jsx`, `data-tela="funil"`) |
+| **a etapa da conversa aberta** | na linha do número, ao lado do responsável — clicar troca a etapa, ou **"Pôr no funil"** |
+| no celular | a linha só diz a etapa; trocar é pelo ⋮ ("Etapa no funil") |
+| **as etapas** | administração → aba Estrutura → *Etapas do funil* (`EtapasDoFunil.jsx`) |
+
+**Mover tem dois caminhos, arrastar e a lista "Mover para…" do cartão.** A
+lista não é enfeite: arrastar não funciona no celular nem por teclado, e um
+funil que só se move com mouse deixa metade da equipe sem mexer nele.
+
+**O cartão mostra o que decide o próximo passo**: nome, número, não lidas,
+*"nesta etapa há N dias"* e o *"esperando há N dias"* da lista, com a mesma
+cor. Clicar abre a conversa — no telefone dela, mesmo que não seja o aberto
+(`verConversaDoHistorico`).
+
+**O cartão numa etapa DESATIVADA não some**: vai para a coluna *"Em etapas
+desativadas"*, no fim, até alguém movê-lo. Escondê-lo seria o cliente sumindo
+do funil por uma decisão de configuração, sem ninguém ter mexido nele.
+
+**Mover é otimista e VOLTA na recusa**, e a frase diz por quê — com o código
+quando houve erro, e *"o banco não deixou"* quando foi recusa calada
+(`naoGravouNada`). Nunca *"foi para…"* sem ter ido.
+
+**"Trazer conversas"** (só quem administra) põe na primeira etapa quem
+conversou nos últimos N dias e ainda não está no funil, e **diz quantos** —
+o número sai do banco, e não da tela.
+
+**`temFunil` tem três estados**, como `temTratada`: sem o 017 nada aparece —
+nem o item do menu, nem a etapa na conversa, nem a seção da administração. A
+leitura que FALHA diz que falhou, com o código, e não vira *"o funil está
+vazio"* (armadilha nº 2).
+
+**Os cartões vêm em páginas de 1000**, até cinco, e passando disso a tela
+DIZ que cortou: o PostgREST corta calado, e um funil cortado se leria como
+completo.
+
+**Cartão e coluna são FUNÇÕES que desenham, e não componentes declarados
+dentro de `Funil`.** Componente declarado ali dentro é um tipo novo a cada
+desenho; o React trocaria o elemento inteiro, e a releitura de 30 segundos
+no meio de um arraste mataria o arraste. O id arrastado também mora num
+espelho (`arrastandoRef`), além do `dataTransfer`.
+
+### Duas armadilhas da prova
+
+**`dragTo` para uma coluna fora da tela não dispara NADA** — medido, zero
+eventos, nem o `dragstart`. A prova reprovava o arraste, e o arraste
+funcionava: com o mouse passo a passo (`mouse.down` / `move` com `steps` /
+`up`) e uma coluna à vista, passa. Quem arrasta de verdade arrasta para o que
+está vendo.
+
+**Quem não administra precisa de permissão na semente.** Sem nenhuma linha
+em `permissoes` a bancada não deixa ver telefone nenhum, e a prova esperava
+para sempre por uma lista de conversas que não ia aparecer.
+
+Prova: `o-funil-de-etapas`, 58 conferências, **8 sabotagens e 8 pegas**
+(o cartão que não volta na recusa; a coluna das desativadas sumindo; o menu
+sem o script; o "trazer" sem dizer quantos; a falha de leitura virando funil
+vazio; a conversa oferecendo etapa desativada; "parar de usar" apagando; a
+recusa calada dizendo "foi para…").
+
+**Ainda em aberto:** o histórico de movimentos do cliente na tela (o banco
+já guarda em `zorvin_movimentos`), e o relatório do funil (quantos em cada
+etapa, quanto tempo em cada uma).
+
 ## Banco de dados (tabelas que o painel lê/escreve)
 
 - `advogados` — lê (id, nome, numero, foto_url) onde `ativo = true`
