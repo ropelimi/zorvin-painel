@@ -48,6 +48,7 @@ import PainelEmoji, { guardarRecente } from "./Emojis";
 import JaTratei from "./JaTratei.jsx";
 import { nomeDoContato } from "./contato.js";
 import { diasDesde } from "./espera.js";
+import { montarCaminho, duracaoLegivel } from "./caminhoNoFunil.js";
 import EscolherHora from "./EscolherHora.jsx";
 import { rotuloDaHora, porQueNaoServe, semAColunaDaAgenda, aindaDaParaEditar } from "./agenda.js";
 
@@ -92,6 +93,9 @@ const RESUMO_ALTERACAO = {
 // de cem cliques — anos de atendimento de uma pessoa só. Bater no teto não
 // esconde nada calado: a seção diz que mostra só os mais recentes.
 const LIMITE_DO_JA_TRATEI_NO_HISTORICO = 300;
+// O CAMINHO NO FUNIL, no mesmo histórico: os passos mais recentes. Um cliente
+// mexido todo dia por um ano passaria disso, e aí a seção diz que cortou.
+const LIMITE_DO_CAMINHO_NO_HISTORICO = 300;
 
 // COMO UM CONTATO SE CHAMA NA TELA — mora em `contato.js`, porque o relatório
 // do "Já tratei" (no Painel de números) também escreve nome de cliente, e uma
@@ -5761,7 +5765,11 @@ export default function Painel({ sessao }) {
     // conversa com ele aberto, e a resposta atrasada da anterior pintaria o
     // histórico de um cliente na tela de outro.
     setHistorico({ contatoId, carregando: true, linhas: [], erro: "", parcial: false, alteracoes: [],
-                   tratados: { carregando: true, grupos: [], erro: "" } });
+                   tratados: { carregando: true, grupos: [], erro: "" },
+                   funil: temFunil === true ? { carregando: true, grupos: [], erro: "" } : null });
+    // O CAMINHO NO FUNIL não depende da ponte nem da lista de conversas: é por
+    // contato, e a regra de leitura do banco já recorta pelo que a pessoa vê.
+    carregarCaminhoDoHistorico(contatoId);
 
     // O HISTÓRICO DE ALTERAÇÕES, direto do banco. É do escritório inteiro e
     // não passa pela ponte: são linhas do Zorvin, não do Vantoro, e a regra de
@@ -5918,6 +5926,62 @@ export default function Painel({ sessao }) {
     // CORTADO quando a leitura bateu no teto: o mais antigo pode ter ficado
     // de fora, e a tela diz isso em vez de mostrar a lista curta como inteira.
     por({ grupos, erro: "", cortado: (data || []).length >= LIMITE_DO_JA_TRATEI_NO_HISTORICO });
+  }
+
+  // ---- O CAMINHO DO CLIENTE NO FUNIL, dentro do histórico ----
+  //
+  //  Pedido do Rodrigo em 07/10. O banco guarda cada passo desde o funil
+  //  (script 017, `zorvin_movimentos`) e nada na tela os mostrava: dava para
+  //  ver ONDE o cliente está, e não por onde passou, quem o moveu nem quanto
+  //  tempo ele ficou parado em cada etapa — que é o que se pergunta antes de
+  //  cobrar alguém por um acordo que não anda.
+  //
+  //  DIRETO DO BANCO, sem a ponte e sem SQL novo: a regra de leitura dos
+  //  movimentos (`zorvin_ve_no_funil`) libera os dos departamentos em que a
+  //  pessoa vê alguma conversa deste cliente, e é o mesmo recorte do funil.
+  //
+  //  TRÊS ESTADOS, como o "Já tratei" do histórico: sem o script 017 a seção
+  //  não existe (`funil: null`); a leitura que falha diz que falhou, com o
+  //  código, e nunca vira "nunca passou pelo funil" (armadilha nº 2); e o
+  //  caminho vazio é dito com todas as letras.
+  //
+  //  AS ETAPAS SÃO LIDAS PELO ID, e não pelo departamento aberto: o caminho
+  //  inclui etapas desativadas e de outros departamentos, e uma etapa
+  //  desativada continua tendo nome — é por isso que ela não se apaga.
+  async function carregarCaminhoDoHistorico(contatoId) {
+    if (temFunil !== true) return;
+    const por = (f) => setHistorico((h) => (h && h.contatoId === contatoId ? { ...h, funil: f } : h));
+    const { data, error } = await supabase.from("zorvin_movimentos")
+      .select("*")
+      .eq("contato_id", contatoId)
+      .order("quando", { ascending: false })
+      .limit(LIMITE_DO_CAMINHO_NO_HISTORICO);
+    if (error) {
+      if (semATabela(error)) { por(null); return; }
+      por({ grupos: [], erro: comOCodigo("Não consegui ler o caminho deste cliente no funil.", error, "caminho no funil") });
+      return;
+    }
+    const movimentos = data || [];
+    const ids = [...new Set(movimentos.flatMap((m) => [m.de_etapa, m.para_etapa]).filter((x) => x != null).map(String))];
+    let etapas = {};
+    if (ids.length) {
+      const re = await supabase.from("zorvin_etapas").select("*").in("id", ids);
+      if (re.error) {
+        por({ grupos: [], erro: comOCodigo("Não consegui ler as etapas do caminho deste cliente.", re.error, "etapas do caminho") });
+        return;
+      }
+      for (const e of re.data || []) etapas[String(e.id)] = e;
+    }
+    por({ grupos: montarCaminho(movimentos), etapas, erro: "",
+          cortado: movimentos.length >= LIMITE_DO_CAMINHO_NO_HISTORICO });
+  }
+
+  // Mudou a etapa com o histórico deste cliente aberto ao lado: o caminho
+  // acompanha, pela mesma razão do "Já tratei" logo abaixo.
+  function releCaminhoDoHistorico(contatoId) {
+    const h = historico;
+    if (!h || !h.funil || String(h.contatoId) !== String(contatoId)) return;
+    carregarCaminhoDoHistorico(h.contatoId);
   }
 
   // Marcou ou desfez com o histórico aberto ao lado: a seção acompanha. Sem
@@ -11387,6 +11451,7 @@ export default function Painel({ sessao }) {
     const novo = (r.data || [])[0] || { ...(f.cartao || {}), etapa_id: etapa.id };
     setFunilDaConversa((x) => (x && x.chave === f.chave ? { ...x, cartao: novo } : x));
     mostrarAviso(f.cartao ? `Etapa: ${etapa.nome}.` : `Entrou no funil, em “${etapa.nome}”.`);
+    releCaminhoDoHistorico(contatoId);
   }
   async function tirarDoFunilDaConversa() {
     const f = funilDaConversa;
@@ -11398,6 +11463,7 @@ export default function Painel({ sessao }) {
     if (naoGravouNada(r)) { mostrarAviso("Não consegui tirar do funil: o banco não deixou.", 6000); return; }
     setFunilDaConversa((x) => (x && x.chave === f.chave ? { ...x, cartao: null } : x));
     mostrarAviso("Saiu do funil.");
+    releCaminhoDoHistorico(f.chave.split("|")[0]);
   }
   const listaDeEtapas = !conversa || !funilDaConversa ? null : (() => {
     const f = funilDaConversa;
@@ -14879,6 +14945,105 @@ export default function Painel({ sessao }) {
                 )}
               </div>
             )}
+
+            {/* O CAMINHO NO FUNIL — por onde o cliente passou, quem o moveu e
+                quanto tempo ele ficou em cada etapa. Fora do bloco dos
+                telefones pelo mesmo motivo do "Já tratei": o funil não
+                depende de alguém ter mandado mensagem. `funil === null` é o
+                banco sem o script 017 — aí não há o que mostrar. Ver
+                `carregarCaminhoDoHistorico`. */}
+            {!!historico.funil && (() => {
+              const f = historico.funil;
+              const etapa = (id) => (id == null ? null : (f.etapas || {})[String(id)] || null);
+              const quemFoi = (id) => {
+                if (id == null) return "O Zorvin";
+                if (String(id) === String(meuId)) return "Você";
+                return equipe.porId[String(id)]?.nome || "Alguém da equipe";
+              };
+              const etapaChip = (id) => {
+                const e = etapa(id);
+                return (
+                  <span data-etapa-no-caminho style={{ display: "inline-flex", alignItems: "center", gap: 5,
+                                                      fontWeight: 600, whiteSpace: "nowrap" }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 999, flexShrink: 0,
+                                   background: e?.cor || C.textSecondary }} />
+                    {e?.nome || "uma etapa"}
+                    {e && e.ativo === false && (
+                      <span style={{ fontWeight: 400, color: C.textSecondary }}> (desativada)</span>
+                    )}
+                  </span>
+                );
+              };
+              return (
+                <div data-historico-funil style={{ marginBottom: 18 }}>
+                  <div style={{ fontSize: 11, color: C.textSecondary, fontWeight: 700, letterSpacing: 0.3, textTransform: "uppercase", marginBottom: 8 }}>
+                    Caminho no funil
+                  </div>
+                  {f.carregando && <div style={{ fontSize: 13, color: C.textSecondary }}>Levantando…</div>}
+                  {!!f.erro && (
+                    <div data-historico-funil-erro style={{ fontSize: 13, color: C.textSecondary, lineHeight: 1.5 }}>{f.erro}</div>
+                  )}
+                  {!f.carregando && !f.erro && !f.grupos.length && (
+                    <div data-historico-funil-vazio style={{ fontSize: 13, color: C.textSecondary, lineHeight: 1.5 }}>
+                      Este cliente ainda não passou pelo funil{souAdmin ? "" : " dos departamentos que você atende"}.
+                    </div>
+                  )}
+                  {f.grupos.map((g) => {
+                    const dep = departamentos.find((d) => String(d.id) === String(g.departamentoId));
+                    return (
+                      <div key={g.departamentoId} data-caminho-do-departamento={g.departamentoId} style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{dep?.nome || "Departamento"}</div>
+                        <div data-onde-esta-agora style={{ fontSize: 12.5, color: C.textSecondary, marginBottom: 8, lineHeight: 1.5 }}>
+                          {g.atual
+                            ? <>Agora em {etapaChip(g.atual)} · há {duracaoLegivel(Date.now() - new Date(g.desde)) || "pouco"}</>
+                            : "Fora do funil agora."}
+                        </div>
+                        {g.passos.map((p) => (
+                          <div key={p.id} data-passo-no-caminho={p.tipo}
+                               style={{ display: "flex", gap: 9, marginBottom: 10 }}>
+                            <div style={{ marginTop: 2 }}>
+                              <Avatar nome={quemFoi(p.quem)} foto={p.quem ? equipe.porId[String(p.quem)]?.foto : undefined} size={24} />
+                            </div>
+                            <div style={{ minWidth: 0, flex: 1, fontSize: 13, lineHeight: 1.5 }}>
+                              {p.tipo === "entrou" && (
+                                p.quem == null
+                                  ? <>Entrou no funil em {etapaChip(p.para)}, sozinho, quando escreveu pela primeira vez</>
+                                  : <><b>{quemFoi(p.quem)}</b> pôs no funil em {etapaChip(p.para)}</>
+                              )}
+                              {p.tipo === "moveu" && (
+                                <><b>{quemFoi(p.quem)}</b> moveu de {etapaChip(p.de)} para {etapaChip(p.para)}</>
+                              )}
+                              {p.tipo === "saiu" && (
+                                <><b>{quemFoi(p.quem)}</b> tirou do funil, de {etapaChip(p.de)}</>
+                              )}
+                              {/* QUANTO TEMPO FICOU — da última chegada à etapa
+                                  até sair dela. Sem a chegada (o caminho
+                                  começou antes), não se inventa número. */}
+                              {p.ficouMs != null && (
+                                <div data-ficou-na-etapa style={{ fontSize: 12, color: C.textSecondary }}>
+                                  ficou {duracaoLegivel(p.ficouMs)} em {etapa(p.de)?.nome || "uma etapa"}
+                                </div>
+                              )}
+                              <div style={{ fontSize: 11.5, color: C.textSecondary }}>{dataHoraDe(p.quando)}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                  {!f.carregando && !f.erro && !!f.grupos.length && !souAdmin && (
+                    <div style={{ fontSize: 11.5, color: C.textSecondary, lineHeight: 1.5 }}>
+                      Só dos departamentos que você atende.
+                    </div>
+                  )}
+                  {f.cortado && (
+                    <div style={{ fontSize: 11.5, color: C.textSecondary, lineHeight: 1.5 }}>
+                      Mostrando só os passos mais recentes.
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {!historico.carregando && !historico.erro && (() => {
               const comEnvio = historico.linhas.filter((l) => l.primeira);
