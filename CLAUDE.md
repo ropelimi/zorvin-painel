@@ -1545,7 +1545,14 @@ anterior, e por isso esta mudança é só na lista. **Um limite conhecido, deixa
 de propósito:** naquele cabeçalho o número divide a linha com "digitando…" e
 com "Fulana também está nesta conversa", e some enquanto uma delas aparece.
 Mostrar os dois juntos é uma mudança de leiaute com medição própria, e não
-entrou aqui.
+entrou aqui. ~~(… e com "Fulana também está nesta conversa")~~ **Feito em
+07/10, a pedido do Rodrigo com foto:** o aviso desceu para a linha das
+etiquetas (`data-linha-das-etiquetas`, `data-tambem-esta`), e não cede espaço
+para elas — duas pessoas respondendo o mesmo cliente é o que ele existe para
+evitar. Na linha do número ele escondia também os três selos (responsável,
+etapa, lembrete). O "digitando…" continua ali: dura segundos. Prova:
+`presenca`, que mede o que se VÊ — a linha do número visível, e o aviso
+abaixo dela; com o código antigo, três conferências reprovam.
 
 **O que NÃO foi feito, por decisão do Rodrigo:** as quatro conversas deste
 cliente (os dois números, cada um com conversa no SAC e no SDC CCR) ficaram

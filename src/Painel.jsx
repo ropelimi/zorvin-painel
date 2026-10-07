@@ -13314,12 +13314,14 @@ export default function Painel({ sessao }) {
                     </button>
                   </div>
                 )}
+                {/* "FULANA TAMBÉM ESTÁ NESTA CONVERSA" NÃO OCUPA MAIS ESTA LINHA.
+                    Ocupava, e tomava o lugar do número e dos três selos
+                    (responsável, etapa, lembrete) enquanto a colega estivesse
+                    ali — justamente o que se confere antes de responder. Pedido
+                    do Rodrigo em 07/10, com foto: o aviso desce para a linha das
+                    etiquetas, logo abaixo. */}
                 {digitandoAtivo(conversa.id) ? (
                   <div style={{ fontSize: 12, color: C.verdeTexto, fontWeight: 600 }}>digitando…</div>
-                ) : atendidoPorOutro(conversa.id) ? (
-                  <div style={{ fontSize: 12, color: modo === "escuro" ? "#e0a400" : "#8a6d00", fontWeight: 600, display: "flex", alignItems: "center", gap: 4, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
-                    <AlertCircle size={13} style={{ flexShrink: 0 }} /> {atendidoPorOutro(conversa.id)} também está nesta conversa
-                  </div>
                 ) : (
                   /* O TELEFONE DO CLIENTE, e não o nosso.
                      Aqui ficava "via Audiências · (11) 91355-9990" — o telefone
@@ -13480,11 +13482,29 @@ export default function Painel({ sessao }) {
                     )}
                   </div>
                 )}
-                {!estreito && tagsDaConversa(conversa.id).length > 0 && (
-                  <div style={{ display: "flex", gap: 4, marginTop: 4, overflow: "hidden" }}>
-                    {tagsDaConversa(conversa.id).map((t) => (
-                      <span key={t.id} style={{ fontSize: 10.5, fontWeight: 600, color: corDoTextoSobre(t.cor), background: t.cor, borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: t.nome.length > 12 ? 1 : 0 }}>{t.nome}</span>
-                    ))}
+                {/* A LINHA DAS ETIQUETAS, e agora também a do aviso de quem
+                    está junto. O AVISO NÃO ENCOLHE ANTES DAS ETIQUETAS: duas
+                    pessoas respondendo o mesmo cliente é o que ele existe para
+                    evitar, e uma etiqueta cortada continua com o nome inteiro
+                    no menu. No celular as etiquetas não aparecem aqui (não
+                    cabem), e o aviso fica sozinho na linha. */}
+                {((!estreito && tagsDaConversa(conversa.id).length > 0) || atendidoPorOutro(conversa.id)) && (
+                  <div data-linha-das-etiquetas
+                       style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, overflow: "hidden", minWidth: 0 }}>
+                    {!estreito && tagsDaConversa(conversa.id).length > 0 && (
+                      <div style={{ display: "flex", gap: 4, overflow: "hidden", minWidth: 0, flexShrink: 1 }}>
+                        {tagsDaConversa(conversa.id).map((t) => (
+                          <span key={t.id} style={{ fontSize: 10.5, fontWeight: 600, color: corDoTextoSobre(t.cor), background: t.cor, borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: t.nome.length > 12 ? 1 : 0 }}>{t.nome}</span>
+                        ))}
+                      </div>
+                    )}
+                    {atendidoPorOutro(conversa.id) && (
+                      <div data-tambem-esta title={`${atendidoPorOutro(conversa.id)} também está nesta conversa`}
+                           style={{ fontSize: 12, color: modo === "escuro" ? "#e0a400" : "#8a6d00", fontWeight: 600, display: "flex", alignItems: "center", gap: 4, minWidth: 0, flexShrink: 0, maxWidth: "100%", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                        <AlertCircle size={13} style={{ flexShrink: 0 }} />
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{atendidoPorOutro(conversa.id)} também está nesta conversa</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
