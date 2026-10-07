@@ -71,12 +71,16 @@ jobs:
     # E o corte é o pior desfecho possível: a conta paga os 30 minutos
     # INTEIROS e não responde nada. Não é economia, é gastar sem comprar.
     #
-    # 45 dá ~15 min de folga sobre os ~30 de hoje, e continua derrubando em
-    # menos de uma hora a prova que travar. O teto NÃO muda o que a rodada
+    # 45 dava ~15 min de folga sobre os ~30 de então, e continua derrubando
+    # em menos de uma hora a prova que travar.
+    #
+    # E a suíte cresceu: em 07/10 a rodada verde do relatório do funil levou
+    # ~43 min, a DOIS do teto, e a auditoria acrescentou mais uma prova. Subiu
+    # para 60, autorizado pelo Rodrigo: a mesma folga de ~15 min de 28/09. O teto NÃO muda o que a rodada
     # consome: ela custa o tempo que a suíte leva. Ao acrescentar prova,
     # olhe este número — uma suíte que encosta no teto reprova por relógio,
     # e "vermelho por relógio" se parece com defeito de código.
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Baixar o código

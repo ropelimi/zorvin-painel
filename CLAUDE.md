@@ -3203,8 +3203,10 @@ inteiros e não responde nada. Não é economia — é gastar sem comprar. Pior,
 X vermelho por relógio é igual ao X vermelho por defeito de código, que é
 exatamente o sintoma de 25/09 outra vez.
 
-Hoje o teto é **45** e a rodada seguinte fechou em ~30 min; o comentário
-diz o número medido em vez de um adjetivo. **O teto não muda o que a rodada consome** — ela custa o tempo que a
+O teto foi para **45** e a rodada seguinte fechou em ~30 min; o comentário
+diz o número medido em vez de um adjetivo. **Em 07/10 subiu para 60**: a
+rodada do relatório do funil levou ~43 min, a dois do teto, e a auditoria
+trouxe mais uma prova. **O teto não muda o que a rodada consome** — ela custa o tempo que a
 suíte leva; ele só decide quando uma prova TRAVADA é derrubada. **Ao
 acrescentar prova, olhe quanto a suíte já leva.**
 
