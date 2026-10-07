@@ -61,6 +61,24 @@ console.log("\nQuando outra pessoa entra, o aviso aparece");
   ok("o aviso aparece sem recarregar nada", await aviso().count() === 1);
   const texto = (await page.locator("[data-topo-conversa]").innerText()).replace(/\s+/g, " ");
   ok("dizendo quem é", /Isabela Guedes/.test(texto), `dizia: "${texto}"`);
+  // PEDIDO DE 07/10, com foto: o aviso tomava a linha do número e dos selos
+  // (responsável, etapa, lembrete) — o que se confere antes de responder. Ele
+  // desceu para a linha das etiquetas. Mede-se o que se VÊ: a linha do número
+  // continua visível, e o aviso fica ABAIXO dela.
+  const linhaNum = page.locator("[data-topo-conversa] [data-linha-do-numero]");
+  ok("com o aviso na tela, o número do cliente continua à vista",
+     (await linhaNum.count()) === 1 && await linhaNum.isVisible());
+  const pos = await page.evaluate(() => {
+    const n = document.querySelector("[data-topo-conversa] [data-linha-do-numero]");
+    const a = document.querySelector("[data-topo-conversa] [data-tambem-esta]");
+    if (!n || !a) return null;
+    const rn = n.getBoundingClientRect(), ra = a.getBoundingClientRect();
+    return { numFim: rn.bottom, avisoTopo: ra.top, avisoLargura: ra.width,
+             naLinhaDasEtiquetas: !!a.closest("[data-linha-das-etiquetas]") };
+  });
+  ok("e o aviso fica na linha de baixo, a das etiquetas",
+     pos && pos.naLinhaDasEtiquetas && pos.avisoTopo >= pos.numFim - 1, JSON.stringify(pos));
+  ok("escrito, e não espremido a nada", pos && pos.avisoLargura > 150, JSON.stringify(pos));
 }
 
 console.log("\nE quando ela sai, o aviso some — sem esperar nada acontecer");
