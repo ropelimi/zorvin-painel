@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "./supabase.js";
-import { naoGravouNada } from "./gravar.js";
+import { naoGravouNada, semATabela, comOCodigo } from "./gravar.js";
+import { palavrasMudaram } from "./vocabulario.js";
 import { Type, Loader2 } from "lucide-react";
 
 // ============================================================
@@ -51,9 +52,9 @@ export function PalavrasDaCasa({ cx, C, aoAvisar }) {
         if (!vivo) return;
         if (error) {
           // 42P01 = a tabela não existe. É o único caso em que sumir é o certo.
-          if (error.code === "42P01") { setExiste(false); return; }
+          if (semATabela(error)) { setExiste(false); return; }
           setExiste(false);
-          aoAvisar(`Não consegui ler as palavras da casa (${error.message}).`);
+          aoAvisar(comOCodigo("Não consegui ler as palavras da casa.", error, "palavras da casa"));
           return;
         }
         // SEM LINHA, A TABELA NÃO ESTÁ PRONTA. É o script 003 que insere a
@@ -86,13 +87,14 @@ export function PalavrasDaCasa({ cx, C, aoAvisar }) {
       .eq("id", true).select("id");
     const { error } = r;
     setSalvando(false);
-    if (error) { aoAvisar(`Não consegui salvar (${error.message}).`); return; }
+    if (error) { aoAvisar(comOCodigo("Não consegui salvar as palavras.", error, "palavras da casa")); return; }
     if (naoGravouNada(r)) {
       aoAvisar("Não salvou: o banco não deixou. Só quem administra o Zorvin pode trocar as palavras.");
       return;
     }
     setSalvo(true);
     setP({ singular, plural, genero: p.genero });
+    palavrasMudaram();
   }
 
   if (existe !== true) return null;

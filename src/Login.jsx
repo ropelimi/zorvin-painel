@@ -150,6 +150,14 @@ export default function Login({ authMudo = false } = {}) {
     const relogio = new AbortController();
     const avisar = setTimeout(() => setDemorando(true), 4000);
     const estourou = setTimeout(() => relogio.abort(), LIMITE_MS);
+    // O PRAZO VALE TAMBÉM PARA O AUTH (auditoria de 07/10). Só o `fetch` da
+    // ponte recebia o sinal; `signInWithPassword` e `verifyOtp` não, e com o
+    // Auth pendurado o botão ficava em "Entrando…" para sempre.
+    const comPrazo = (promessa) => Promise.race([promessa, new Promise((_, rejeitar) => {
+      relogio.signal.addEventListener("abort", () => {
+        const e = new Error("tempo esgotado"); e.name = "AbortError"; rejeitar(e);
+      }, { once: true });
+    })]);
     try {
       // ---- O CAMINHO SEM VANTORO: quem confere a senha é o Auth do Supabase.
       //
@@ -160,9 +168,9 @@ export default function Login({ authMudo = false } = {}) {
       // As contas nascem em Authentication → Users, no painel do Supabase, por
       // quem administra. É o desenho original deste painel.
       if (!COM_VANTORO) {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { error } = await comPrazo(supabase.auth.signInWithPassword({
           email: email.trim(), password: senha,
-        });
+        }));
         if (error) {
           // "Invalid login credentials" é o que o Auth responde para e-mail que
           // não existe E para senha errada — de propósito, para não contar a
@@ -220,9 +228,9 @@ export default function Login({ authMudo = false } = {}) {
       let entrou = false;
 
       if (corpo.token_hash) {
-        const { error } = await supabase.auth.verifyOtp({
+        const { error } = await comPrazo(supabase.auth.verifyOtp({
           token_hash: corpo.token_hash, type: "email",
-        });
+        }));
         entrou = !error;
       }
 
@@ -247,8 +255,10 @@ export default function Login({ authMudo = false } = {}) {
       // TRÊS FALHAS DIFERENTES, TRÊS FRASES DIFERENTES. Antes as três caíam na
       // mensagem que o navegador tivesse dado — em inglês, e igual para todas.
       const segundos = Math.round((Date.now() - comecou) / 1000);
+      // SEM VANTORO quem não respondeu foi o Auth do Supabase, e não a ponte.
       const ondeFalhou = (() => {
-        try { return new URL(BRIDGE_URL).host; } catch (_) { return BRIDGE_URL || "(sem endereço)"; }
+        const endereco = COM_VANTORO ? BRIDGE_URL : (import.meta.env.VITE_SUPABASE_URL || "");
+        try { return new URL(endereco).host; } catch (_) { return endereco || "(sem endereço)"; }
       })();
       if (err && err.name === "AbortError") {
         setErro("O servidor demorou demais para responder. Tente de novo — e, "

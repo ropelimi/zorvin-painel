@@ -43,7 +43,7 @@ import { ListChecks, Loader2, X } from "lucide-react";
 // descobriria o teto no erro do banco, depois de apertar Confirmar.
 const TETO_DA_DESCRICAO = 500;
 
-export function JaTratei({ C, estreito, nome, dias, esperando = true, assuntos, ocupado, erro, aoConfirmar, aoFechar }) {
+export function JaTratei({ C, estreito, nome, dias, esperando = true, assuntos, erroDosAssuntos = "", ocupado, erro, aoConfirmar, aoFechar }) {
   const [escolhidos, setEscolhidos] = useState([]);
   const [descricao, setDescricao] = useState("");
 
@@ -99,7 +99,12 @@ export function JaTratei({ C, estreito, nome, dias, esperando = true, assuntos, 
         </div>
 
         <div style={{ overflowY: "auto", padding: "0 16px 4px" }}>
-          {ativos.length === 0 && (
+          {ativos.length === 0 && !!erroDosAssuntos && (
+            <div data-erro-dos-assuntos style={{ fontSize: 13, color: "#c0392b", paddingBottom: 12 }}>
+              {erroDosAssuntos}
+            </div>
+          )}
+          {ativos.length === 0 && !erroDosAssuntos && (
             <div style={{ fontSize: 13, color: C.textSecondary, paddingBottom: 12 }}>
               Nenhum assunto cadastrado. Quem administra o Zorvin cria a lista em
               Configurações → Estrutura → “Assuntos do Já tratei”.

@@ -29,7 +29,7 @@ import { PRAZO_DA_BUSCA, foiAbortada, funcaoNaoExiste,
          condicoesDeNome, recadoDaBusca } from "./busca.js";
 import { comoPrever, nomeDoTipo, tamanhoLegivel, tipoServido, oQuadroDesenha,
          comecoDoTexto } from "./arquivos.js";
-import { gravarSemAsQueFaltam, naoGravouNada, comOCodigo } from "./gravar.js";
+import { gravarSemAsQueFaltam, naoGravouNada, comOCodigo, semATabela } from "./gravar.js";
 
 // O que este banco já disse que não tem, para não perguntar de novo a cada nota.
 // Vale só nesta sessão: rodar o SQL que falta e apertar F5 devolve a coluna.
@@ -162,6 +162,44 @@ function diasEsperando(conversa) {
 //  navegador decide sozinho a ordem de quem não espera — que muda a cada
 //  reordenação, e é outra forma de a lista "mexer sozinha".
 // ============================================================
+/** O contato casa com o que foi digitado? PELOS MESMOS CAMPOS QUE O BANCO
+ *  PROCUROU (nome do WhatsApp, nome do cadastro, nome dado no Zorvin) e pelo
+ *  número. A tela refiltrava só pelo nome do WhatsApp (auditoria de 07/10): o
+ *  banco achava a "ANDREIA" pelo cadastro, a tela a escondia por ela se chamar
+ *  "Deus" no WhatsApp, e dizia "Nenhum contato salvo com esse nome" — e o
+ *  bloco do Vantoro logo abaixo oferecia criar o mesmo número de novo. */
+function contatoCasaComABusca(c, q, chaveQ) {
+  return [c.nome, c.vantoro_nome, c.nome_zorvin].some((n) => String(n || "").toLowerCase().includes(q))
+    || (chaveQ.length >= 4 && chaveDoNumero(c.numero).includes(chaveQ));
+}
+
+/** A BOLHA VERMELHA de um item da fila que não saiu — uma escrita só, para a
+ *  abertura da conversa e para o aviso de tempo real (a agendada que falha na
+ *  hora, auditoria de 07/10). */
+function bolhaDaFilaQueFalhou(f, convId) {
+  return ({
+    id: "fila-" + f.id,
+    conversa_id: convId,
+    origem: "advogado",
+    tipo: f.tipo || "texto",
+    texto: f.texto || null,
+    midia_url: f.midia_url || null,
+    midia_mime: f.midia_mime || null,
+    enviado_por: f.enviado_por || null,
+    // O ID VEM JUNTO. Sem ele a mensagem que não saiu era a única da
+    // conversa que continuava assinada com o nome de antes — e é logo ela
+    // que a pessoa vai reler para decidir se reenvia.
+    enviado_por_id: f.enviado_por_id || null,
+    enviado_por_foto: f.enviado_por_foto || null,
+    criado_em: f.criado_em,
+    _status: "erro",
+    _filaId: f.id,
+    _motivo: f.erro_motivo || null,
+    _detalhe: f.erro_detalhe || null,
+    _midiaUrlFinal: f.midia_url || null,
+  });
+}
+
 function compararConversas(ordem, pelaEspera) {
   const sinal = ordem === "antigas" ? -1 : 1;
   const quando = (c) => {
@@ -1044,6 +1082,21 @@ function parseWhatsAppTxt(conteudo) {
   // Android: 12/03/2024 14:05 - Nome: msg   |   iPhone: [12/03/2024, 14:05:07] Nome: msg
   const reAndroid = /^‎?\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4}),?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([APap]\.?[Mm]\.?)?\s*-\s*(.*)$/;
   const reIOS = /^‎?\s*\[(\d{1,2})\/(\d{1,2})\/(\d{2,4}),?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([APap]\.?[Mm]\.?)?\]\s*(.*)$/;
+  // DIA/MÊS OU MÊS/DIA? (auditoria de 07/10) O celular em inglês dos EUA
+  // exporta "1/22/24, 3:45 PM": lido como dia/mês, virava 1º de outubro de
+  // 2025, sem erro nenhum — o histórico entrava com as datas e a ordem
+  // erradas. A decisão é do ARQUIVO INTEIRO, e não de cada linha: um número
+  // maior que 12 na primeira posição prova dia/mês, na segunda prova mês/dia;
+  // sem prova, o AM/PM aponta o formato americano, e sem ele vale o de sempre.
+  let provaDiaMes = false, provaMesDia = false, temAmPm = false;
+  for (const linha of linhas) {
+    const m = reAndroid.exec(linha) || reIOS.exec(linha);
+    if (!m) continue;
+    if (+m[1] > 12) provaDiaMes = true;
+    if (+m[2] > 12) provaMesDia = true;
+    if (m[7]) temAmPm = true;
+  }
+  const mesPrimeiro = !provaDiaMes && (provaMesDia || temAmPm);
   const out = [];
   let atual = null;
   const fechar = () => { if (atual) { out.push(atual); atual = null; } };
@@ -1051,7 +1104,7 @@ function parseWhatsAppTxt(conteudo) {
     const m = reAndroid.exec(linha) || reIOS.exec(linha);
     if (m) {
       fechar();
-      const dd = +m[1], MM = +m[2]; let ano = +m[3];
+      const dd = mesPrimeiro ? +m[2] : +m[1], MM = mesPrimeiro ? +m[1] : +m[2]; let ano = +m[3];
       if (ano < 100) ano += 2000;
       let hora = +m[4]; const min = +m[5], seg = +(m[6] || 0);
       if (m[7]) { const pm = /p/i.test(m[7]); if (pm && hora < 12) hora += 12; if (!pm && hora === 12) hora = 0; }
@@ -2602,6 +2655,10 @@ export default function Painel({ sessao }) {
   const [menuParaCima, setMenuParaCima] = useState(false); // o menu da bolha abre para cima?
   const [encaminhar, setEncaminhar] = useState(null);      // mensagem sendo encaminhada
   const [editando, setEditando] = useState(null);          // mensagem sendo editada
+  // O ESPELHO, para o efeito da troca de conversa saber — sem entrar nas
+  // dependências dele — que a caixa guarda uma EDIÇÃO, e não um rascunho.
+  const editandoRef = useRef(null);
+  editandoRef.current = editando;
   // Nota que está prestes a ser apagada (mostra a confirmação). Apagar sem
   // perguntar seria irreversível num clique — e a lixeira fica ao lado do
   // lápis, a três milímetros dele.
@@ -2730,6 +2787,11 @@ export default function Painel({ sessao }) {
   const [seletorAberto, setSeletorAberto] = useState(false);
   const [verArquivadas, setVerArquivadas] = useState(false); // exibindo a lista de arquivadas
   const [contatosLista, setContatosLista] = useState([]); // todos os contatos (agenda)
+  // A LEITURA DA AGENDA QUE FALHOU não é "nenhum contato salvo" (armadilha nº 2).
+  const [erroContatos, setErroContatos] = useState("");
+  // A RESPOSTA MAIS NOVA VENCE: digitando, uma busca lenta de "and" chegava
+  // depois da de "andreia" e a sobrescrevia.
+  const pedidoContatosRef = useRef(0);
   const [buscaContato, setBuscaContato] = useState(""); // busca na agenda de contatos
   const [contatoForm, setContatoForm] = useState(null); // { nome, numero } ao criar um contato
   const [novaConversaAberta, setNovaConversaAberta] = useState(false); // tela "Nova conversa" (⊞)
@@ -2842,6 +2904,10 @@ export default function Painel({ sessao }) {
   const [menuResponsavel, setMenuResponsavel] = useState(false);
   const responsavelRef = useRef(null);
   const [assuntos, setAssuntos] = useState([]);
+  // A LEITURA DOS ASSUNTOS QUE FALHOU (auditoria de 07/10). Sem isto a janela
+  // dizia "Nenhum assunto cadastrado — quem administra cria a lista", mandando
+  // o administrador criar o que já existe, e o botão nunca ligava.
+  const [erroAssuntos, setErroAssuntos] = useState("");
   const [temAssuntos, setTemAssuntos] = useState(null);
   // ---- O FUNIL DE ETAPAS (script 017 da ponte) ----
   //
@@ -3074,6 +3140,7 @@ export default function Painel({ sessao }) {
   const mensagensRef = useRef([]);
   const temMaisAntigasRef = useRef(false);
   const [buscandoAntigas, setBuscandoAntigas] = useState(false);
+  const buscandoAntigasRef = useRef(false);
   const [importando, setImportando] = useState(false); // gravando no banco
   const [impAdvId, setImpAdvId] = useState(""); // advogado dono das conversas importadas
   const [impMeuNome, setImpMeuNome] = useState(""); // nome do advogado como aparece nos .txt
@@ -3778,8 +3845,13 @@ export default function Painel({ sessao }) {
     const { data, error } = await supabase
       .from("conversas")
       .select("id, atendendo_por, atendendo_em")
-      .eq("advogado_id", advId);
+      .eq("advogado_id", advId)
+      // SÓ AS QUE TÊM ALGUÉM DENTRO (auditoria de 07/10): pedindo todas, um
+      // telefone com mais de mil conversas era cortado pela API em 1000, sem
+      // ordem — e o "Fulana também está nesta conversa" podia não vir.
+      .not("atendendo_por", "is", null);
     if (error) { desligarRecurso("atendendo", error); return; }
+    if (advogadoIdRef.current !== advId) return;
     const mapa = {};
     (data || []).forEach((r) => {
       if (r.atendendo_por) mapa[r.id] = { por: r.atendendo_por, em: r.atendendo_em };
@@ -3793,8 +3865,10 @@ export default function Painel({ sessao }) {
     const { data, error } = await supabase
       .from("conversas")
       .select("id, digitando_ate")
-      .eq("advogado_id", advId);
+      .eq("advogado_id", advId)
+      .gt("digitando_ate", new Date().toISOString());
     if (error) { desligarRecurso("digitando", error); return; }
+    if (advogadoIdRef.current !== advId) return;
     const mapa = {};
     // Só o que ainda VALE. Guardando o vencido, o mapa nunca esvaziava e o
     // relógio de 2 segundos passava a re-renderizar o painel inteiro para
@@ -3882,8 +3956,15 @@ export default function Painel({ sessao }) {
       // é ao contrário: nulo na frente), e porque trocar por `true` enche a
       // primeira página com as conversas em que ninguém está esperando nada —
       // é essa a sabotagem que a prova pega hoje.
+      // E O DESEMPATE VAI AO BANCO (auditoria de 07/10): quase todas as
+      // linhas têm `esperando_desde` nulo, e entre elas a ordem do Postgres é
+      // indefinida — a página trazia "50 quaisquer" das que não esperam, e a
+      // paginação por OFFSET sobre uma ordem indefinida pula ou repete
+      // conversas. A régua é a de `compararConversas`: a mais recente primeiro,
+      // e o id para que dois horários iguais não troquem de lugar.
       ? q.order("esperando_desde", { ascending: true, nullsFirst: false })
-      : q.order("ultima_atividade", { ascending: ordem === "antigas" }));
+          .order("ultima_atividade", { ascending: false }).order("id")
+      : q.order("ultima_atividade", { ascending: ordem === "antigas" }).order("id"));
     /** As fixadas: mesma consulta, filtro próprio. Separada em função porque a
      *  base sem o SQL das frentes precisa repeti-la sem as colunas novas. */
     const buscarFixadas = () => porOrdem(supabase
@@ -3954,16 +4035,14 @@ export default function Painel({ sessao }) {
       // montadas depois, já com a bandeira baixada; sair na frente tem este
       // preço, e ele é pago aqui.
       const refeitos = await Promise.all([
-        supabase.from("conversas")
+        porOrdem(supabase.from("conversas")
           .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")}), mensagens(id)`)
-          .eq("advogado_id", advId)
+          .eq("advogado_id", advId))
           // `porOrdem` AQUI TAMBÉM: esta é a mesma página, refeita sem a
           // coluna do cadastro. Deixá-la com a ordem de sempre faria a fila de
           // espera virar do avesso só nas bases antigas — e sem nada na tela
-          // dizendo por quê.
-          .order(...( ordenarPelaEspera
-            ? ["esperando_desde", { ascending: true, nullsFirst: false }]
-            : ["ultima_atividade", { ascending: ordem === "antigas" }] ))
+          // dizendo por quê. E é a MESMA função, com o mesmo desempate: duas
+          // escritas da ordem divergiriam no primeiro conserto.
           .range(de, de + PAGINA_BANCO - 1)
           .limit(1, { referencedTable: "mensagens" }),
         pagina === 0 ? buscarFixadas() : Promise.resolve({ data: [], error: null }),
@@ -3973,12 +4052,35 @@ export default function Painel({ sessao }) {
     }
     // Queda de rede não pode esvaziar a lista: sem resposta, fica o que já
     // estava na tela em vez de "Nenhuma conversa ainda".
-    if (error) return;
+    //
+    // E A FALHA É DITA (auditoria de 07/10). Era `if (error) return;` puro: na
+    // abertura ou na troca de telefone a tela ficava em "Carregando as
+    // conversas…" PARA SEMPRE — o dono da lista nunca chegava a este telefone
+    // —, sem faixa e sem código. É a armadilha nº 2 com a roupa do "ainda
+    // estou vindo".
+    if (error) {
+      if (advogadoIdRef.current !== advId || error.name === "AbortError") return;
+      anotarFalhaDeLeitura("conversas", "a lista de conversas", error);
+      setConversasDe((dono) => {
+        // A LISTA NA TELA É DE OUTRO TELEFONE: não pode passar por deste. Ela
+        // sai, e o recado da lista diz que a leitura falhou.
+        if (dono !== advId) setConversas([]);
+        return advId;
+      });
+      return;
+    }
+    limparFalhaDeLeitura("conversas");
     // Troquei de telefone enquanto esta resposta vinha? Ela é de outro telefone
     // agora: descarta. Sem isto, clicar rápido em dois telefones deixava a
     // lista do PRIMEIRO na tela do segundo (a resposta lenta chega por último
     // e sobrescreve), e o atendente atendia a conversa errada.
+    //
+    // E TROQUEI DE ORDEM? (auditoria de 07/10) Uma releitura pedida em
+    // "Recentes" que chega depois da troca para "Esperando" substituía a lista
+    // e a reordenava pela régua velha — a pílula dizendo "Esperando" sobre uma
+    // lista em outra ordem.
     if (advogadoIdRef.current !== advId) return;
+    if (ordemRef.current !== ordem || ordenarPelaEsperaRef.current !== ordenarPelaEspera) return;
     // As FIXADAS sobem, e entre elas continua valendo a ordem de sempre. A
     // ordenação é feita aqui e não no banco porque a coluna pode ainda não
     // existir: pedi-la no `order` faria a consulta inteira falhar, e a lista de
@@ -4061,12 +4163,20 @@ export default function Painel({ sessao }) {
     //  falha e sobra a lista sem fixadas — como era antes do recurso existir.
     //  Nada some por causa disso.
     let fixadas = [];
+    let fixadasFalharam = false;
     if (pedidoDasFixadas) {
       // ESPERA o que já foi pedido lá em cima, em vez de pedir agora. É esta
       // linha, e não a de cima, que era a segunda rodada de rede.
       const { data: fix, error: erroFix } = fixadasRefeitas || await pedidoDasFixadas;
-      if (!erroFix) fixadas = fix || [];
       if (advogadoIdRef.current !== advId) return;
+      // AS FIXADAS QUE NÃO VIERAM FICAM COMO ESTAVAM (auditoria de 07/10). A
+      // primeira página SUBSTITUI a lista, e com `fixadas = []` a fixada parada
+      // há meses — que não mora na página — sumia sem uma palavra.
+      if (!erroFix) { fixadas = fix || []; limparFalhaDeLeitura("conversas-fixadas"); }
+      else {
+        fixadasFalharam = true;
+        if (!faltaColuna(erroFix)) anotarFalhaDeLeitura("conversas-fixadas", "as conversas fixadas", erroFix);
+      }
     }
 
     // A conversa aberta mantém o contador dela: abrir não é responder.
@@ -4077,7 +4187,10 @@ export default function Painel({ sessao }) {
       const base = pagina === 0 ? [] : antes;
       const vistos = new Set(base.map((c) => String(c.id)));
       const juntas = [...base];
-      for (const c of [...fixadas, ...veio]) {
+      const fixadasDeAgora = fixadasFalharam
+        ? antes.filter((c) => c.fixada && String(c.advogado_id) === String(advId))
+        : fixadas;
+      for (const c of [...fixadasDeAgora, ...veio]) {
         if (vistos.has(String(c.id))) continue;
         vistos.add(String(c.id));
         juntas.push(c);
@@ -4129,7 +4242,8 @@ export default function Painel({ sessao }) {
     // esta função é outra e o efeito recarrega. Uma ida a mais, só para quem
     // escolheu essa ordem, e só uma vez por sessão — que é o que o comentário
     // anterior PROMETIA e o código não cumpria.
-  }, [ordem, ordenarPelaEspera, carregarAtendimentos, carregarUltimasMidias, carregarDigitando]);
+  }, [ordem, ordenarPelaEspera, carregarAtendimentos, carregarUltimasMidias, carregarDigitando,
+      anotarFalhaDeLeitura, limparFalhaDeLeitura]);
 
   useEffect(() => { carregarConversas(advogadoId); }, [advogadoId, carregarConversas]);
 
@@ -4479,6 +4593,13 @@ export default function Painel({ sessao }) {
   // justamente o cliente mais esquecido.
   const [extrasMinhas, setExtrasMinhas] = useState([]);
   const [idsQuem, setIdsQuem] = useState(null);            // null = sem filtro
+  // "carregando" | "falhou" | "ok" — o filtro de atendentes ESCOLHIDO e ainda
+  // sem resposta não pode deixar tudo passar (auditoria de 07/10): a pílula
+  // dizia "Jenifer" e a lista mostrava o telefone inteiro, como se fossem as
+  // conversas dela — e assim ficava para sempre se o banco recusasse.
+  const [estadoQuem, setEstadoQuem] = useState("ok");
+  const [tentativaQuem, setTentativaQuem] = useState(0);
+  const chaveQuemRef = useRef("");
   const quemRef = useRef(null);
   // A lista de quem participou DESTA conversa (o grupinho de rostos do topo).
   // Não confundir com o filtro acima: aquele escolhe conversas por pessoa, este
@@ -4526,15 +4647,30 @@ export default function Painel({ sessao }) {
   useEffect(() => {
     let vivo = true;
     setExtrasQuem([]);
-    if (!quemFiltra.length || !advogadoId) { setIdsQuem(null); return; }
+    if (!quemFiltra.length || !advogadoId) { setIdsQuem(null); setEstadoQuem("ok"); limparFalhaDeLeitura("filtro-quem"); return; }
     const advId = advogadoId;
+    // SÓ ESVAZIA QUANDO A ESCOLHA MUDA. Este efeito também roda quando a lista
+    // cresce (`conversas.length`), e esvaziar ali faria a lista filtrada piscar
+    // vazia a cada conversa nova que chega.
+    const chave = JSON.stringify([quemFiltra, modoQuem, advId, tentativaQuem]);
+    if (chaveQuemRef.current !== chave) {
+      chaveQuemRef.current = chave;
+      setIdsQuem(new Set());
+      setEstadoQuem("carregando");
+    }
     (async () => {
       const { data, error } = await supabase.rpc("conversas_por_atendente", {
         p_advogado: advId, p_usuarios: quemFiltra,
         p_todos: modoQuem === "todos", p_limite: 500,
       });
       if (!vivo || advogadoIdRef.current !== advId) return;
-      if (error) { setIdsQuem(null); return; }
+      if (error) {
+        setEstadoQuem("falhou");
+        anotarFalhaDeLeitura("filtro-quem", "o filtro de atendentes", error);
+        return;
+      }
+      limparFalhaDeLeitura("filtro-quem");
+      setEstadoQuem("ok");
       const ids = (data || []).map((r) => String(r.id));
       setIdsQuem(new Set(ids));
 
@@ -4554,7 +4690,7 @@ export default function Painel({ sessao }) {
     })();
     return () => { vivo = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quemFiltra, modoQuem, advogadoId, conversas.length]);
+  }, [quemFiltra, modoQuem, advogadoId, conversas.length, tentativaQuem]);
 
   // ------------------------------------------------------------
   //  OS GRUPOS, PERGUNTADOS AO BANCO
@@ -4624,7 +4760,7 @@ export default function Painel({ sessao }) {
     let cancelado = false;
     const tagId = filtro.startsWith("tag:") ? filtro.slice(4) : null;
     setExtrasEtiqueta([]); setIdsEtiqueta(null);
-    if (!tagId || !advogadoId) return;
+    if (!tagId || !advogadoId) { limparFalhaDeLeitura("filtro-etiqueta"); return; }
     const advId = advogadoId;
     (async () => {
       try {
@@ -4633,7 +4769,10 @@ export default function Painel({ sessao }) {
           const { data, error } = await supabase.from("conversa_tags")
             .select("conversa_id").eq("tag_id", tagId)
             .order("conversa_id").range(pagina * 1000, (pagina + 1) * 1000 - 1);
-          if (error) return;
+          // A FALHA É DITA (auditoria de 07/10): calada, a tela mostrava só as
+          // conversas com a etiqueta que já estavam carregadas, com cara de
+          // "todas" — três quando havia trinta.
+          if (error) { if (!cancelado) anotarFalhaDeLeitura("filtro-etiqueta", "as conversas desta etiqueta", error); return; }
           ids.push(...(data || []).map((r) => r.conversa_id));
           if (!data || data.length < 1000) break;
         }
@@ -4648,15 +4787,18 @@ export default function Painel({ sessao }) {
             .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
             .eq("advogado_id", advId)
             .in("id", ids.slice(i, i + 150));
-          if (error) return;
+          if (error) { if (!cancelado) anotarFalhaDeLeitura("filtro-etiqueta", "as conversas desta etiqueta", error); return; }
           achadas.push(...(data || []));
         }
         // Troquei de telefone ou de etiqueta enquanto isto vinha? É resposta de
         // outra pergunta: descarta.
         if (cancelado || advogadoIdRef.current !== advId) return;
+        limparFalhaDeLeitura("filtro-etiqueta");
         setExtrasEtiqueta(achadas);
         setIdsEtiqueta(new Set(ids.map(String)));
-      } catch (_) { /* tabela ainda não criada */ }
+      } catch (e) {
+        if (!cancelado) anotarFalhaDeLeitura("filtro-etiqueta", "as conversas desta etiqueta", e);
+      }
     })();
     return () => { cancelado = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4677,18 +4819,20 @@ export default function Painel({ sessao }) {
       const { data, error } = await supabase.from("zorvin_assuntos")
         .select("*").order("ordem");
       if (error) {
-        // 42P01 = a tabela não existe: o script 005 ainda não rodou, e aí o
-        // botão não deve mesmo aparecer. Qualquer OUTRO erro mantém o botão e
-        // deixa a frase para a janela — ver o comentário em `temAssuntos`.
-        setTemAssuntos(error.code === "42P01" ? false : true);
-        if (error.code !== "42P01") console.error("Zorvin — assuntos do Já tratei:", error);
+        // 42P01/PGRST205 = a tabela não existe: o script 005 ainda não rodou,
+        // e aí o botão não deve mesmo aparecer. Qualquer OUTRO erro mantém o
+        // botão e LEVA A FRASE PARA A JANELA — ver `temAssuntos`.
+        const falta = semATabela(error);
+        setTemAssuntos(!falta);
+        if (!falta) setErroAssuntos(comOCodigo("Não consegui ler a lista de assuntos.", error, "assuntos do Já tratei"));
         return;
       }
       setAssuntos(data || []);
       setTemAssuntos(true);
+      setErroAssuntos("");
     } catch (e) {
-      console.error("Zorvin — assuntos do Já tratei:", e);
       setTemAssuntos(true);
+      setErroAssuntos(comOCodigo("Não consegui ler a lista de assuntos.", e, "assuntos do Já tratei"));
     }
   }, []);
   useEffect(() => { carregarAssuntos(); }, [carregarAssuntos]);
@@ -4704,8 +4848,8 @@ export default function Painel({ sessao }) {
       try {
         const { error } = await supabase.from("zorvin_etapas").select("id").limit(1);
         if (!vivo) return;
-        if (error && error.code !== "42P01") console.error("Zorvin — funil:", error);
-        setTemFunil(error ? error.code !== "42P01" : true);
+        if (error && !semATabela(error)) console.error("Zorvin — funil:", error);
+        setTemFunil(error ? !semATabela(error) : true);
       } catch (e) {
         console.error("Zorvin — funil:", e);
         if (vivo) setTemFunil(true);
@@ -5013,7 +5157,17 @@ export default function Painel({ sessao }) {
           body: JSON.stringify({ contato_id: contatoId, tag_id: tagId, aplicar: !tem }),
         });
         return;
-      } catch (_e) { /* a ponte dorme; cai para o caminho de sempre */ }
+      } catch (e) {
+        // A PONTE RECUSOU (4xx): é resposta, e não silêncio. Cair no caminho
+        // direto contornaria a recusa e diria "a ponte não respondeu", que é
+        // falso (auditoria de 07/10). Só a ponte calada ou caída (sem código,
+        // ou 5xx) cai para o caminho de sempre.
+        if (e && e.status && e.status < 500) {
+          mostrarAviso(`Não consegui ${tem ? "tirar" : "aplicar"} a etiqueta: ${e.message}`, 7000);
+          carregarTagsConversas();
+          return;
+        }
+      }
     }
     if (tem) {
       // O DELETE FALHA CALADO: zero linhas apagadas, sem erro. Sem perguntar, a
@@ -5120,8 +5274,9 @@ export default function Painel({ sessao }) {
         ? { ...e, porId: { ...e.porId, [meuId]: { ...e.porId[meuId], foto: url } } }
         : e));
       mostrarAviso("Foto atualizada!");
-    } catch (_) {
-      mostrarAviso("Não consegui atualizar a foto.");
+    } catch (e) {
+      // O CÓDIGO VAI JUNTO — a régua de `comOCodigo` (auditoria de 07/10).
+      mostrarAviso(comOCodigo("Não consegui atualizar a foto.", e, "foto do perfil"), 7000);
     }
   }
 
@@ -5169,6 +5324,7 @@ export default function Painel({ sessao }) {
 
   // ---- Agenda de contatos (ver todos / criar novo) ----
   const carregarContatos = useCallback(async (termo) => {
+    const meu = ++pedidoContatosRef.current;
     try {
       // O TERMO VAI PARA O BANCO, e a agenda deixa de ser uma lista inteira
       // baixada e filtrada aqui.
@@ -5213,8 +5369,13 @@ export default function Painel({ sessao }) {
       }
       // Grupos (numero "grupo:...") não entram na agenda de contatos — não são
       // números para iniciar conversa; aparecem só na lista de conversas.
-      if (!error) setContatosLista((data || []).filter((c) => !String(c.numero || "").startsWith("grupo:")));
-    } catch (_) { /* ignora */ }
+      if (meu !== pedidoContatosRef.current) return;
+      if (error) { setErroContatos(comOCodigo("Não consegui ler a agenda de contatos.", error, "agenda")); return; }
+      setErroContatos("");
+      setContatosLista((data || []).filter((c) => !String(c.numero || "").startsWith("grupo:")));
+    } catch (e) {
+      if (meu === pedidoContatosRef.current) setErroContatos(comOCodigo("Não consegui ler a agenda de contatos.", e, "agenda"));
+    }
   }, []);
 
   // A agenda recarrega quando a caixa de busca dela muda — com uma pausa, para
@@ -5393,9 +5554,12 @@ export default function Painel({ sessao }) {
       mostrarAviso("O banco não deixou salvar este contato. Nada foi gravado.");
       return;
     }
-    if (jaExiste) { mostrarAviso(`Este número já estava salvo; atualizei o nome.`); }
+
     setContatoForm(null);
-    mostrarAviso("Contato salvo!");
+    // UMA FRASE SÓ (auditoria de 07/10): a do "já estava salvo" era apagada
+    // pela de baixo no mesmo instante, e a pessoa não sabia que tinha
+    // sobrescrito o nome de um contato que já existia.
+    mostrarAviso(jaExiste ? "Este número já estava salvo; atualizei o nome." : "Contato salvo!");
     carregarContatos();
   }
 
@@ -5543,9 +5707,14 @@ export default function Painel({ sessao }) {
       // vê onde está o histórico e desde quando. Sem contato no banco não há o
       // que consultar — todas as opções começam do zero.
       let ondeTem = [];
+      let naoConferi = "";
       if (cont) {
-        const { data } = await supabase.from("conversas")
+        const { data, error } = await supabase.from("conversas")
           .select("advogado_id, ultima_atividade").eq("contato_id", cont.id);
+        // FALHANDO, A JANELA DIZ QUE NÃO CONFERIU (auditoria de 07/10), em vez
+        // de mostrar todas as opções como "sem conversa ainda" — que mandaria
+        // escolher um telefone novo para quem já tem histórico noutro.
+        if (error) naoConferi = comOCodigo("Não consegui conferir onde já existe conversa com esta pessoa.", error, "conversas do link");
         ondeTem = data || [];
       }
       const opcoes = advogadosPermitidos.map((adv) => {
@@ -5559,7 +5728,7 @@ export default function Painel({ sessao }) {
         if (a.ultima && b.ultima) return new Date(b.ultima) - new Date(a.ultima);
         return String(a.adv.nome || "").localeCompare(String(b.adv.nome || ""));
       });
-      setEscolhaTelefone({ contato: cont, numero, nome, opcoes });
+      setEscolhaTelefone({ contato: cont, numero, nome, opcoes, naoConferi });
     })();
     // `advogadoId` é a única dependência de verdade: é ele que decide de QUAL
     // telefone do escritório a conversa é, e ele chega depois da primeira
@@ -5606,8 +5775,18 @@ export default function Painel({ sessao }) {
       .order("criado_em", { ascending: false })
       .limit(80)
       .then(({ data, error }) => {
-        if (error) return;
-        setHistorico((h) => (h ? { ...h, alteracoes: data || [] } : h));
+        // SÓ A TABELA QUE FALTA SE CALA (o SQL não rodado); qualquer outro erro
+        // é dito, senão a seção some e "ninguém mexeu" vira a leitura.
+        if (error) {
+          const falta = semATabela(error);
+          if (!falta) {
+            console.error("[zorvin] falha ao carregar as alterações do contato", error);
+            setHistorico((h) => (h && h.contatoId === contatoId
+              ? { ...h, erroAlteracoes: comOCodigo("Não consegui ler as alterações deste cadastro.", error, "leitura das alterações") } : h));
+          }
+          return;
+        }
+        setHistorico((h) => (h && h.contatoId === contatoId ? { ...h, alteracoes: data || [] } : h));
       });
 
     // PELA PONTE, e não direto do banco.
@@ -5635,7 +5814,11 @@ export default function Painel({ sessao }) {
       linhas.sort((a, b) => new Date(b.ultima?.criado_em || 0) - new Date(a.ultima?.criado_em || 0));
       // Forma funcional: as alterações chegam por outra promessa, e trocar o
       // objeto inteiro aqui apagaria as que já tivessem chegado.
-      setHistorico((h) => ({ ...(h || {}), carregando: false, linhas, erro: "", parcial: false }));
+      // SÓ PINTA SE AINDA É ESTE O HISTÓRICO ABERTO (auditoria de 07/10): a
+      // ponte hiberna e demora segundos, e a resposta atrasada reabria a
+      // coluna fechada — ou pintava o cliente anterior ao lado do novo.
+      setHistorico((h) => (h && h.contatoId === contatoId
+        ? { ...h, carregando: false, linhas, erro: "", parcial: false } : h));
       carregarTratadosDoHistorico(contatoId, linhas.map((l) => l.conversaId));
       return;
     } catch (_e) {
@@ -5648,9 +5831,9 @@ export default function Painel({ sessao }) {
     const { data: convs, error } = await supabase.from("conversas")
       .select("id, advogado_id").eq("contato_id", contatoId);
     if (error) {
-      setHistorico((h) => ({ ...(h || {}), carregando: false, linhas: [], parcial: false,
-                             erro: "Não consegui ler o histórico.",
-                             tratados: { grupos: [], erro: "Sem a lista de conversas deste cliente, não há onde procurar o que foi tratado." } }));
+      setHistorico((h) => (h && h.contatoId === contatoId ? { ...h, carregando: false, linhas: [], parcial: false,
+                             erro: comOCodigo("Não consegui ler o histórico.", error, "leitura do histórico"),
+                             tratados: { grupos: [], erro: "Sem a lista de conversas deste cliente, não há onde procurar o que foi tratado." } } : h));
       return;
     }
     const pontas = (v, crescente) => supabase.from("mensagens")
@@ -5671,7 +5854,7 @@ export default function Painel({ sessao }) {
     // O telefone com movimento mais recente primeiro: é onde a conversa está
     // viva, e é a linha que quase sempre se procura.
     linhas.sort((a, b) => new Date(b.ultima?.criado_em || 0) - new Date(a.ultima?.criado_em || 0));
-    setHistorico((h) => ({ ...(h || {}), carregando: false, linhas, erro: "", parcial: true }));
+    setHistorico((h) => (h && h.contatoId === contatoId ? { ...h, carregando: false, linhas, erro: "", parcial: true } : h));
     carregarTratadosDoHistorico(contatoId, linhas.map((l) => l.conversaId));
   }
 
@@ -5995,7 +6178,7 @@ export default function Painel({ sessao }) {
           .upsert(registroContato, { onConflict: "numero" }).select("id").single();
         if (e1) throw e1;
         const { data: conv, error: e2 } = await supabase.from("conversas")
-          .upsert({ advogado_id: impAdvId, contato_id: cont.id }, { onConflict: "advogado_id,contato_id" }).select("id").single();
+          .upsert({ advogado_id: impAdvId, contato_id: cont.id }, { onConflict: "advogado_id,contato_id" }).select("id, ultima_atividade").single();
         if (e2) throw e2;
         const linhas = it.msgs.map((m) => {
           const origem = m.autor === meu ? "advogado" : "contato";
@@ -6028,16 +6211,30 @@ export default function Painel({ sessao }) {
         // importada nasce no fundo de mil outras e quem acabou de importar
         // conclui que não importou. Falhar aqui sobe (`throw`), como nas outras
         // três gravações deste laço.
-        const rConv = await supabase.from("conversas").update({
-          ultima_mensagem: (rotularMidiaExport(ult.texto) || ult.texto || "").slice(0, 200),
-          ultima_atividade: ult.data.toISOString(),
-          nao_lidas: 0,
-        }).eq("id", conv.id).select("id");
-        if (rConv.error) throw rConv.error;
-        if (naoGravouNada(rConv)) {
-          throw new Error("o banco não deixou atualizar a conversa importada — as mensagens "
-                        + "entraram, mas ela não vai aparecer no alto da lista");
+        // SÓ AVANÇA, NUNCA RECUA (auditoria de 07/10). Importar o arquivo
+        // exportado ontem numa conversa que recebeu mensagens hoje reescrevia
+        // a prévia e a hora com as de ontem — a conversa descia na lista — e
+        // zerava as não lidas de verdade, sumindo com o selo de um cliente
+        // esperando. Se a conversa já tem coisa mais nova, ela fica como está.
+        const jaTemMaisNovo = conv.ultima_atividade
+          && new Date(conv.ultima_atividade).getTime() >= ult.data.getTime();
+        if (!jaTemMaisNovo) {
+          const rConv = await supabase.from("conversas").update({
+            ultima_mensagem: (rotularMidiaExport(ult.texto) || ult.texto || "").slice(0, 200),
+            ultima_atividade: ult.data.toISOString(),
+            nao_lidas: 0,
+          }).eq("id", conv.id).select("id");
+          if (rConv.error) throw rConv.error;
+          if (naoGravouNada(rConv)) {
+            throw new Error("o banco não deixou atualizar a conversa importada — as mensagens "
+                          + "entraram, mas ela não vai aparecer no alto da lista");
+          }
         }
+        // A ESPERA É RECONTADA DO ZERO depois do lote: a importação chega fora
+        // da ordem do tempo, e o gatilho incremental não tem como acertar
+        // sozinho (ver o CLAUDE.md da ponte). Sem a função (script 004), segue.
+        const { error: erroEspera } = await supabase.rpc("zorvin_recontar_espera", { p_conversa: conv.id });
+        if (erroEspera) console.error("Zorvin — recontar a espera depois da importação:", erroEspera);
         nConversas++; nMsgs += linhas.length;
       }
       mostrarAviso(`Pronto! ${nConversas} conversa(s) e ${nMsgs} mensagens importadas.`);
@@ -6163,6 +6360,10 @@ export default function Painel({ sessao }) {
     // lista e do título da aba, e ninguém mais sabia que existiam. O
     // zeramento é o "eu li": ele só pode acontecer depois de uma leitura que
     // deu certo.
+    // A RESPOSTA É DESTA CONVERSA? A guarda de baixo vale para o erro também
+    // (auditoria de 07/10): a falha atrasada da conversa ANTERIOR pintava o
+    // cartão de erro e o aviso por cima da conversa nova, que tinha carregado.
+    if (erro && conversaIdRef.current !== convId) return;
     if (erro) {
       // A LISTA JÁ FOI ESVAZIADA lá em cima, e é o que salva este caminho: antes
       // o `return` deixava na tela as mensagens da conversa ANTERIOR, embaixo do
@@ -6230,27 +6431,8 @@ export default function Painel({ sessao }) {
       // novo a cada abertura da conversa — que é exatamente o "nada aconteceu"
       // que o escritório viu.
       const dispensados = lerDispensados();
-      naoSairam = (falhas || []).filter((f) => !dispensados.has(String(f.id))).map((f) => ({
-        id: "fila-" + f.id,
-        conversa_id: convId,
-        origem: "advogado",
-        tipo: f.tipo || "texto",
-        texto: f.texto || null,
-        midia_url: f.midia_url || null,
-        midia_mime: f.midia_mime || null,
-        enviado_por: f.enviado_por || null,
-        // O ID VEM JUNTO. Sem ele a mensagem que não saiu era a única da
-        // conversa que continuava assinada com o nome de antes — e é logo ela
-        // que a pessoa vai reler para decidir se reenvia.
-        enviado_por_id: f.enviado_por_id || null,
-        enviado_por_foto: f.enviado_por_foto || null,
-        criado_em: f.criado_em,
-        _status: "erro",
-        _filaId: f.id,
-        _motivo: f.erro_motivo || null,
-        _detalhe: f.erro_detalhe || null,
-        _midiaUrlFinal: f.midia_url || null,
-      }));
+      naoSairam = (falhas || []).filter((f) => !dispensados.has(String(f.id)))
+        .map((f) => bolhaDaFilaQueFalhou(f, convId));
     } catch (_) { /* fila sem as colunas novas: a conversa abre sem elas */ }
 
     const juntas = [...recentes, ...notas, ...naoSairam].sort(
@@ -6408,8 +6590,15 @@ export default function Painel({ sessao }) {
       mostrarAviso(r.motivo || comOCodigo("Não consegui agendar a mensagem.", r.error, "agendar mensagem"), 7000);
       return;
     }
-    setRascunho("");
-    setRespondendo(null);
+    // O RASCUNHO LIMPO É O DESTA CONVERSA (auditoria de 07/10): trocando de
+    // conversa durante a gravação, o `setRascunho("")` apagava o rascunho da
+    // conversa NOVA, e o texto agendado ficava guardado como rascunho desta —
+    // ao voltar, o Enter o mandaria na hora, em dobro com a agendada.
+    delete rascunhosRef.current[convId];
+    if (conversaIdRef.current === convId) {
+      setRascunho("");
+      setRespondendo(null);
+    }
     mostrarAviso(`Mensagem agendada para ${rotuloDaHora(quando)}.`);
     carregarAgendadas(convId);
   }
@@ -6470,7 +6659,7 @@ export default function Painel({ sessao }) {
   // SOBE MAIS UM LOTE de histórico, a partir da mensagem mais antiga que já
   // está na tela. É o "carregar anteriores" do WhatsApp Web — e é ele que
   // permite que a abertura da conversa traga só as últimas, que é o barato.
-  async function carregarAntigas() {
+  async function carregarAntigas(antesDe = null) {
     // ELA DEVOLVE O QUE TROUXE, e não só mexe no estado.
     //
     // `irParaCitada` a chama e procura a citada logo em seguida. Esperar o
@@ -6481,11 +6670,20 @@ export default function Painel({ sessao }) {
     //
     // Com o lote na mão, quem chamou procura no que chegou, sem depender de
     // quando o desenho acontece.
-    if (buscandoAntigas || !conversaId) return [];
-    const maisAntiga = mensagens.find((m) => m.origem !== "nota");
+    // A TRAVA E O PONTO DE PARTIDA NÃO VÊM DO FECHO (auditoria de 07/10).
+    // `irParaCitada` chama esta função três vezes seguidas pelo espelho, e o
+    // espelho é trocado a cada desenho: a segunda chamada era a versão desenhada
+    // DURANTE a primeira ida, com `buscandoAntigas === true` — e devolvia vazio
+    // na hora. As "três rodadas, 360 mensagens" eram uma só, de 120. Agora a
+    // trava é um ref, a conversa é a do ref, e quem chama pode dizer de onde
+    // partir (`antesDe`), porque o espelho da lista ainda é o de antes.
+    const convId = conversaIdRef.current;
+    if (buscandoAntigasRef.current || !convId) return [];
+    const maisAntiga = antesDe ? { criado_em: antesDe }
+      : mensagensRef.current.find((m) => m.origem !== "nota");
     if (!maisAntiga) return [];
+    buscandoAntigasRef.current = true;
     setBuscandoAntigas(true);
-    const convId = conversaId;
     const { data, error } = await supabase
       .from("mensagens")
       .select("*")
@@ -6493,8 +6691,9 @@ export default function Painel({ sessao }) {
       .lt("criado_em", maisAntiga.criado_em)
       .order("criado_em", { ascending: false })
       .limit(TETO_MENSAGENS);
+    buscandoAntigasRef.current = false;
     setBuscandoAntigas(false);
-    if (error) { mostrarAviso("Não consegui trazer as mensagens anteriores."); return []; }
+    if (error) { mostrarAviso(comOCodigo("Não consegui trazer as mensagens anteriores.", error, "mensagens anteriores")); return []; }
     // Troquei de conversa enquanto isto vinha: joga fora, senão o histórico de
     // uma pessoa aparece na conversa de outra.
     if (conversaIdRef.current !== convId) return [];
@@ -6943,7 +7142,7 @@ export default function Painel({ sessao }) {
         // cliente recebia "ok" duplicado.
         setMensagens((prev) => {
           let marcado = false;
-          return prev.map((m) => {
+          const proximo = prev.map((m) => {
             if (marcado) return m;
             const casa = String(m.id).startsWith("temp-") && m._status === "enviando" &&
               ((row.texto && m.texto === row.texto) || (row.midia_url && m._midiaUrlFinal === row.midia_url));
@@ -6956,6 +7155,13 @@ export default function Painel({ sessao }) {
             return { ...m, _status: "erro", _filaId: row.id,
                      _motivo: row.erro_motivo || null, _detalhe: row.erro_detalhe || null };
           });
+          // A AGENDADA QUE FALHOU NA HORA não tem bolha provisória para pintar
+          // (agendar não cria bolha — nada foi ao cliente). Sem esta, ela saía
+          // da faixa das agendadas e sumia da conversa aberta como se tivesse
+          // sido enviada; o vermelho só aparecia ao reabrir (auditoria de 07/10).
+          if (marcado || !row.agendada_para || lerDispensados().has(String(row.id))
+              || prev.some((m) => m.id === "fila-" + row.id)) return proximo;
+          return [...proximo, bolhaDaFilaQueFalhou(row, row.conversa_id)];
         });
       })
       // Nota interna nova (de outro atendente): aparece na conversa aberta.
@@ -7197,7 +7403,17 @@ export default function Painel({ sessao }) {
   useEffect(() => { setProcessoDaNota(""); }, [conversaId]);
   useEffect(() => {
     const antes = conversaAnteriorRef.current;
-    if (antes && antes !== conversaId) {
+    // UMA EDIÇÃO EM CURSO NÃO ATRAVESSA A TROCA (auditoria de 07/10). Ela
+    // ficava armada: na conversa nova, o Enter "salvava a edição" — mandava a
+    // correção da mensagem de A com o id de A na fila de B, ou reescrevia a
+    // nota de A com o texto digitado para B. E o texto da edição NÃO vira
+    // rascunho de A: voltando lá, o Enter mandaria a mensagem antiga de novo.
+    const estavaEditando = !!editandoRef.current;
+    if (estavaEditando) { setEditando(null); setProcessoDaNota(""); }
+    // E O "RENOMEAR" TAMBÉM: aberto em A e confirmado em B, gravava em B o
+    // nome digitado para A.
+    setRenomeando(null);
+    if (antes && antes !== conversaId && !estavaEditando) {
       const texto = rascunhoRef.current;
       if (texto.trim()) rascunhosRef.current[antes] = { texto, nota: modoNotaRef.current };
       else delete rascunhosRef.current[antes];
@@ -7304,9 +7520,11 @@ export default function Painel({ sessao }) {
       // o que valia no desenho anterior, e numa conversa recém-aberta isso é
       // "ainda não sei". Quem sabe é a própria `carregarAntigas`, que devolve
       // lista vazia quando não há mais nada — e o laço para nela.
+      let antesDe = null;
       for (let i = 0; i < 3 && !alvo; i++) {
         if (i > 0 && !temMaisAntigasRef.current) break;
-        const lote = await carregarAntigasRef.current();
+        const lote = await carregarAntigasRef.current(antesDe);
+        if (lote && lote.length) antesDe = lote[0].criado_em;
         // NO LOTE QUE CHEGOU, e não só no espelho: o `await` volta antes de o
         // React redesenhar, então o espelho ainda é o de antes de carregar.
         alvo = (lote || []).find((x) => x.id_uazapi === idCitada) || achar();
@@ -7444,11 +7662,19 @@ export default function Painel({ sessao }) {
   // Libera as prévias locais (blob:) do áudio gravado e do anexo pendente quando
   // elas mudam ou ao sair, para não vazar memória.
   useEffect(() => () => { if (audioPronto && String(audioPronto.url).startsWith("blob:")) URL.revokeObjectURL(audioPronto.url); }, [audioPronto]);
-  useEffect(() => () => {
-    for (const a of anexosPendentes) {
-      if (a.url && String(a.url).startsWith("blob:")) URL.revokeObjectURL(a.url);
-    }
+  // SÓ AS QUE SAÍRAM DA LISTA (auditoria de 07/10). A limpeza rodava a cada
+  // mudança com a lista ANTERIOR inteira: cada tecla na legenda, cada arquivo a
+  // mais e cada um tirado invalidavam as prévias que continuavam na tela — com
+  // dois arquivos, trocar para o outro mostrava a prévia quebrada.
+  const blobsDosAnexosRef = useRef(new Set());
+  useEffect(() => {
+    const agora = new Set(anexosPendentes.map((a) => a.url).filter((u) => u && String(u).startsWith("blob:")));
+    for (const u of blobsDosAnexosRef.current) if (!agora.has(u)) URL.revokeObjectURL(u);
+    blobsDosAnexosRef.current = agora;
   }, [anexosPendentes]);
+  useEffect(() => () => {
+    for (const u of blobsDosAnexosRef.current) URL.revokeObjectURL(u);
+  }, []);
 
   // ---- A GALERIA DA CONVERSA ----
   //
@@ -7709,19 +7935,33 @@ export default function Painel({ sessao }) {
   const [midiaAba, setMidiaAba] = useState("midias");   // 'midias' | 'documentos' | 'links'
   const [acervo, setAcervo] = useState({ carregando: false, itens: [] });
 
-  const abrirMidias = useCallback(async () => {
+  const pedidoMidiasRef = useRef(0);
+  const abrirMidias = useCallback(async (aba = "midias") => {
     setMidiasAberta(true);
-    setAcervo((a) => ({ ...a, carregando: true }));
-    const { data, error } = await supabase
+    const meu = ++pedidoMidiasRef.current;
+    setAcervo((a) => ({ ...a, carregando: true, erro: "" }));
+    // O TIPO VAI PARA O BANCO, e cada aba pergunta o seu (auditoria de 07/10).
+    // Antes vinham as 500 mensagens mais recentes de QUALQUER tipo e a aba
+    // filtrava aqui: num escritório movimentado, 500 são poucas horas de
+    // texto, e "Nenhum documento ainda" se lia como completo.
+    let q = supabase
       .from("mensagens")
-      .select("id, conversa_id, tipo, texto, midia_url, midia_mime, criado_em")
-      // Teto de 500: é acervo para OLHAR, não para auditar. Sem teto, um ano de
-      // conversa desenharia milhares de miniaturas de uma vez e a tela travaria
-      // justamente em quem mais usa.
-      .order("criado_em", { ascending: false })
-      .limit(500);
-    if (error) { setAcervo({ carregando: false, itens: [] }); mostrarAviso("Não consegui abrir as mídias."); return; }
-    setAcervo({ carregando: false, itens: data || [] });
+      .select("id, conversa_id, tipo, texto, midia_url, midia_mime, criado_em");
+    if (aba === "midias") q = q.in("tipo", ["imagem", "video"]).not("midia_url", "is", null);
+    else if (aba === "documentos") q = q.eq("tipo", "documento").not("midia_url", "is", null);
+    else q = q.ilike("texto", "%http%");
+    // Teto de 500: é acervo para OLHAR, não para auditar. Sem teto, um ano de
+    // conversa desenharia milhares de miniaturas de uma vez e a tela travaria
+    // justamente em quem mais usa.
+    const { data, error } = await q.order("criado_em", { ascending: false }).limit(500);
+    if (meu !== pedidoMidiasRef.current) return;
+    // A FALHA FICA NA JANELA, e não vira "Nenhuma foto ainda" depois que o
+    // aviso de quatro segundos some (armadilha nº 2).
+    if (error) {
+      setAcervo({ carregando: false, itens: [], erro: comOCodigo("Não consegui abrir as mídias.", error, "mídias") });
+      return;
+    }
+    setAcervo({ carregando: false, itens: data || [], erro: "", cheio: (data || []).length >= 500 });
   }, []);
 
   // De qual conversa é cada item, para a etiqueta embaixo da miniatura. Só o que
@@ -7762,6 +8002,10 @@ export default function Painel({ sessao }) {
       // prévia dos anexos: Esc fecha ELA, e não o lote que a pessoa montou.
       if (escolhendoHora) { setEscolhendoHora(null); return; }
       if (editandoAgendada) { setEditandoAgendada(null); return; }
+      // AS DUAS JANELAS QUE FALTAVAM NA ESCADA (auditoria de 07/10): com elas
+      // abertas o Esc descia até o fim e FECHAVA A CONVERSA lá atrás.
+      if (jaTratei) { if (!trateiOcupado) { setJaTratei(null); setTrateiErro(""); } return; }
+      if (escolhaTelefone) { setEscolhaTelefone(null); return; }
       if (imagemAberta) { setImagemAberta(null); setRetratoAberto(false); }
       else if (anexosPendentes.length) fecharAnexoPendente();
       else if (audioPronto) descartarAudioPronto();
@@ -7815,7 +8059,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, telaFunil, menuEtapa, telaTarefas, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada]);
+  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, telaFunil, menuEtapa, telaTarefas, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada, jaTratei, trateiOcupado, escolhaTelefone]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -7827,7 +8071,11 @@ export default function Painel({ sessao }) {
       // "dentro", o próprio clique que abre a listinha já a fechava.
       const dentroDoMenu = acoesRef.current && acoesRef.current.contains(e.target);
       if (menuDaConversa && !dentroDoMenu) setMenuDaConversa(false);
-      if (quemParticipou && !dentroDoMenu && quemParticipouRef.current && !quemParticipouRef.current.contains(e.target)) setQuemParticipou(false);
+      // SEM O REF, A LISTINHA ESTÁ PENDURADA NO ⋮ (o cabeçalho recolhido não
+      // monta o botão de origem): aí "fora" é fora do ⋮. Antes a condição
+      // exigia o ref e nunca era verdadeira — a listinha ficava flutuando sobre
+      // a conversa até alguém apertar Esc (auditoria de 07/10).
+      if (quemParticipou && !dentroDoMenu && !(quemParticipouRef.current && quemParticipouRef.current.contains(e.target))) setQuemParticipou(false);
       // O MENU DA BOLHA fecha ao clicar em qualquer lugar fora dele.
       // Não dá para usar um ref como os outros: existe um menu por mensagem, e
       // guardar um ref por bolha seria um mapa que envelhece a cada rolagem. A
@@ -7838,7 +8086,7 @@ export default function Painel({ sessao }) {
       }
       if (emojiAberto && emojiRef.current && !emojiRef.current.contains(e.target)) setEmojiAberto(false);
       if (seletorAberto && seletorRef.current && !seletorRef.current.contains(e.target)) setSeletorAberto(false);
-      if (tagMenuAberto && !dentroDoMenu && tagMenuRef.current && !tagMenuRef.current.contains(e.target)) setTagMenuAberto(false);
+      if (tagMenuAberto && !dentroDoMenu && !(tagMenuRef.current && tagMenuRef.current.contains(e.target))) setTagMenuAberto(false);
       // O MENU DO RESPONSÁVEL tem dois endereços (ver `listaDeResponsaveis`),
       // e "dentro" é o do endereço de onde ele foi aberto.
       if (menuResponsavel) {
@@ -8101,10 +8349,18 @@ export default function Painel({ sessao }) {
   // na escala, e a figurinha que a Joana guardou precisa estar à mão da
   // Beatriz.
   const carregarFigurinhas = useCallback(async () => {
-    const { data } = await supabase.from("figurinhas_favoritas")
+    const { data, error } = await supabase.from("figurinhas_favoritas")
       .select("midia_url").order("criado_em", { ascending: false }).limit(60);
+    // A LEITURA QUE FALHA É DITA, e a lista que estava fica (auditoria de
+    // 07/10): calada, a galeria abria vazia e todo menu de figurinha oferecia
+    // "Adicionar" — inclusive as que já estavam guardadas.
+    if (error) {
+      if (!semATabela(error)) anotarFalhaDeLeitura("figurinhas", "as figurinhas guardadas", error);
+      return;
+    }
+    limparFalhaDeLeitura("figurinhas");
     setFigurinhas((data || []).map((r) => r.midia_url).filter(Boolean));
-  }, []);
+  }, [anotarFalhaDeLeitura, limparFalhaDeLeitura]);
 
   // Carregada já na abertura, e não só quando a galeria abre: é ela que diz ao
   // menu da mensagem se a figurinha já está guardada — ou seja, se o item deve
@@ -8204,12 +8460,27 @@ export default function Painel({ sessao }) {
     setSelecao(null);
     if (!alvos.length) return;
 
-    const antes = alvos.slice();
-    setMensagens((prev) => prev.map((x) => (ids.includes(x.id)
+    // SÓ SE MARCA COMO APAGADA A BOLHA QUE VAI MESMO SER APAGADA (auditoria de
+    // 07/10). Antes todas as escolhidas viravam "Esta mensagem foi apagada" na
+    // hora — inclusive a que ainda estava saindo (`temp-…`) ou a que falhou
+    // (`fila-…`): elas não têm linha em `mensagens` nem id do WhatsApp, nada
+    // as apagava, e a que estava saindo CHEGAVA ao cliente com a tela dizendo
+    // o contrário.
+    const ehLinhaDoBanco = (m) => !/^(temp|fila)-/.test(String(m.id));
+    const vaoSair = paraTodos ? alvos.filter((m) => m.id_uazapi) : alvos.filter(ehLinhaDoBanco);
+    const deFora = alvos.length - vaoSair.length;
+    if (!vaoSair.length) {
+      mostrarAviso("Essas mensagens ainda não foram confirmadas pelo WhatsApp — espere chegar para apagar.");
+      return;
+    }
+    const idsQueSaem = new Set(vaoSair.map((m) => m.id));
+    setMensagens((prev) => prev.map((x) => (idsQueSaem.has(x.id)
       ? { ...x, apagada: true, texto: null, midia_url: null } : x)));
 
-    const voltarAtras = () => setMensagens((prev) => prev.map((x) => {
-      const orig = antes.find((a) => a.id === x.id);
+    // DESFAZ SÓ AS QUE NÃO FORAM: no meio do laço, as anteriores já estão na
+    // fila de exclusão e vão ser apagadas no WhatsApp.
+    const voltarAtras = (quais) => setMensagens((prev) => prev.map((x) => {
+      const orig = quais.find((a) => a.id === x.id);
       return orig ? orig : x;
     }));
 
@@ -8218,34 +8489,36 @@ export default function Painel({ sessao }) {
       // Uazapi não entra na história.
       const { data, error } = await supabase.from("mensagens")
         .update({ apagada: true, texto: null, midia_url: null })
-        .in("id", alvos.map((m) => m.id)).select("id");
+        .in("id", vaoSair.map((m) => m.id)).select("id");
       const naoMexeu = naoGravouNada({ data, error });
       if (error || naoMexeu) {
-        voltarAtras();
+        voltarAtras(vaoSair);
         mostrarAviso(naoMexeu
           ? "Falta rodar o SQL 2026-08-fixar-favoritar-mensagem.sql no Supabase."
-          : `Não consegui apagar: ${error?.message || "erro desconhecido"}`);
+          : comOCodigo("Não consegui apagar.", error, "apagar mensagem"), 7000);
+        return;
       }
+      if (deFora) mostrarAviso(`${deFora} mensagem(ns) ainda saindo ficaram de fora — espere chegar para apagar.`);
       return;
     }
 
     // `texto: ""` e não ausente: a coluna da fila não aceita nulo, e sem ele o
     // insert falha — era esse o "Não consegui apagar. Tente de novo".
-    const semId = alvos.filter((m) => !m.id_uazapi);
-    const podem = alvos.filter((m) => m.id_uazapi);
-    for (const m of podem) {
+    for (let i = 0; i < vaoSair.length; i++) {
+      const m = vaoSair[i];
       const { error } = await inserirNaFila({
         conversa_id: conversaId, tipo: "exclusao", texto: "",
         responder_id_uazapi: m.id_uazapi, status: "pendente", enviado_por: meuNome, enviado_por_id: meuId,
       });
       if (error) {
-        voltarAtras();
-        mostrarAviso(`Não consegui apagar: ${error.message || "erro desconhecido"}`);
+        voltarAtras(vaoSair.slice(i));
+        mostrarAviso(comOCodigo(i ? `Apaguei ${i}, mas não consegui apagar as outras.` : "Não consegui apagar.",
+                                error, "apagar mensagem"), 7000);
         return;
       }
     }
-    if (semId.length) {
-      mostrarAviso(`${semId.length} mensagem(ns) ainda não confirmada(s) pelo WhatsApp ficaram de fora.`);
+    if (deFora) {
+      mostrarAviso(`${deFora} mensagem(ns) ainda não confirmada(s) pelo WhatsApp ficaram de fora.`);
     }
   }
 
@@ -8428,7 +8701,10 @@ export default function Painel({ sessao }) {
   // confirmadas (que têm id_uazapi) — não as que ainda estão sendo enviadas.
   function iniciarResposta(m) {
     if (!m.id_uazapi) return;
-    setRespondendo({ id_uazapi: m.id_uazapi, previa: previaDe(m), autor: m.origem });
+    setRespondendo({ id_uazapi: m.id_uazapi, previa: previaDe(m), autor: m.origem,
+                     // QUEM ESCREVEU, para a faixa dizer o nome do colega em vez
+                     // de "você mesmo" (auditoria de 07/10).
+                     porId: m.enviado_por_id || null, por: m.enviado_por || null });
     inputRef.current?.focus();
   }
 
@@ -8636,18 +8912,39 @@ export default function Painel({ sessao }) {
     const { error: erroConta } = await supabase.rpc("zorvin_recontar_espera", { p_conversa: conv.id });
     if (erroConta) console.error("Zorvin — recontar espera:", erroConta);
 
-    await supabase.from("zorvin_tratamentos")
-      .update({ desfeito_em: new Date().toISOString(), desfeito_por: meuId })
-      .eq("conversa_id", conv.id).is("desfeito_em", null);
+    // SÓ O ÚLTIMO CLIQUE É DESFEITO, e a gravação é CONFERIDA (auditoria de
+    // 07/10). Antes o `update` marcava como desfeitos TODOS os registros da
+    // conversa ainda não desfeitos — inclusive "Já tratei" legítimos de outras
+    // rodadas, que sumiam do relatório e do histórico do cliente —, e não
+    // olhava a resposta: com a gravação recusada, a tela dizia "Voltou para a
+    // fila" e o relatório continuava contando o clique como tratado.
+    //
+    // Um clique são as linhas de um mesmo `insert`, com o mesmo `quando` (é por
+    // ele que o relatório os junta — script 010).
+    let marcaDoDesfeito = null;
+    const ult = await supabase.from("zorvin_tratamentos").select("quando")
+      .eq("conversa_id", conv.id).is("desfeito_em", null)
+      .order("quando", { ascending: false }).limit(1);
+    if (ult.error) marcaDoDesfeito = comOCodigo("o registro do “Já tratei” não foi marcado como desfeito.", ult.error, "desfazer tratamento");
+    else if (ult.data && ult.data.length) {
+      const d = await supabase.from("zorvin_tratamentos")
+        .update({ desfeito_em: new Date().toISOString(), desfeito_por: meuId })
+        .eq("conversa_id", conv.id).eq("quando", ult.data[0].quando).is("desfeito_em", null)
+        .select("id");
+      if (d.error) marcaDoDesfeito = comOCodigo("o registro do “Já tratei” não foi marcado como desfeito.", d.error, "desfazer tratamento");
+      else if (naoGravouNada(d)) marcaDoDesfeito = "o banco não deixou marcar o registro do “Já tratei” como desfeito.";
+    }
 
     // RELÊ A LISTA em vez de adivinhar a data: a espera que volta é calculada
     // pelo banco, e escrevê-la aqui de cabeça seria uma segunda conta para
     // divergir da primeira.
     carregarConversas(advogadoId);
     releTratadosDoHistorico(conv.id);
-    mostrarAviso(erroConta
+    mostrarAviso(marcaDoDesfeito
+      ? `Voltou para a fila, mas ${marcaDoDesfeito} O relatório ainda o conta.`
+      : erroConta
       ? "Voltou para a fila, mas não consegui recalcular a espera. Atualize a página."
-      : "Voltou para a fila de espera.");
+      : "Voltou para a fila de espera.", marcaDoDesfeito ? 8000 : undefined);
   }
 
   // Marca a conversa como não lida (mostra o selo verde) ou como lida.
@@ -8861,6 +9158,7 @@ export default function Painel({ sessao }) {
     const novo = (texto || "").trim();
     const ct = conversa?.contato;
     if (!ct) return;
+    const convDoNome = conversaId;
     const antes = ct.nome_zorvin || "";
     if (novo === antes) { setRenomeando(null); return; }
     setRenomeando(null);
@@ -8890,17 +9188,23 @@ export default function Painel({ sessao }) {
         7000);
       return;
     }
-    registrarAlteracao({ tipo: "contato_renomeado", alvo: ct.numero,
-                         antes: antes || (ct.nome || ""), depois: novo });
+    registrarAlteracao({ tipo: "contato_renomeado", alvo: ct.numero, contato_id: ct.id || null,
+                         antes: antes || (ct.nome || ""), depois: novo }, convDoNome);
   }
 
   /** Guarda uma linha no histórico de alterações. Nunca derruba a ação que a
       gerou: histórico perdido é ruim, atendente travado é pior. */
-  async function registrarAlteracao(linha) {
+  // A CONVERSA DO REGISTRO VEM DE QUEM CHAMA (auditoria de 07/10). Ela é
+  // chamada depois de um `await`, e ler a conversa aberta ali gravava
+  // "contato_renomeado" ou "nota_editada" no cliente para onde a pessoa tinha
+  // acabado de ir — o histórico de alterações de um cliente com a ação feita
+  // em outro.
+  async function registrarAlteracao(linha, convId) {
+    const c = conversasRef.current.find((x) => String(x.id) === String(convId));
     try {
       const { error } = await supabase.from("alteracoes").insert({
-        contato_id: conversa?.contato_id || conversa?.contato?.id || null,
-        conversa_id: conversaId,
+        contato_id: (c && (c.contato_id || c.contato?.id)) || null,
+        conversa_id: convId || null,
         autor: meuNome, autor_id: meuId,
         ...linha,
       });
@@ -8924,6 +9228,7 @@ export default function Painel({ sessao }) {
   }
 
   async function salvarEdicaoDeNota(m, novoTexto) {
+    const convDaNota = conversaId;
     const antes = m.texto || "";
     // O PROCESSO TAMBÉM SE CORRIGE. Vincular ao processo errado é tão fácil
     // quanto escrever a palavra errada, e até aqui a única saída era apagar a
@@ -9000,10 +9305,11 @@ export default function Painel({ sessao }) {
     if (mudouProcesso && (perdidas || []).some((c) => c.startsWith("processo"))) {
       mostrarAviso("Salvei o texto, mas este banco ainda não guarda o processo da nota.");
     }
-    registrarAlteracao({ tipo: "nota_editada", alvo: idReal, antes, depois: novoTexto });
+    registrarAlteracao({ tipo: "nota_editada", alvo: idReal, antes, depois: novoTexto }, m.conversa_id || convDaNota);
   }
 
   async function apagarNota(m) {
+    const convDaNota = conversaId;
     const idReal = String(m.id).replace(/^nota-/, "");
     const agora = new Date().toISOString();
     setMensagens((prev) => prev.map((x) => (
@@ -9024,7 +9330,7 @@ export default function Painel({ sessao }) {
         : comOCodigo("Não consegui apagar a nota.", r.error, "apagar nota"), 7000);
       return;
     }
-    registrarAlteracao({ tipo: "nota_apagada", alvo: idReal, antes: m.texto || "", depois: null });
+    registrarAlteracao({ tipo: "nota_apagada", alvo: idReal, antes: m.texto || "", depois: null }, m.conversa_id || convDaNota);
   }
 
   // Salva uma NOTA INTERNA (comentário da equipe). Não vai para o WhatsApp:
@@ -10245,15 +10551,21 @@ export default function Painel({ sessao }) {
             } else porNome[a.id] = termo;
           }
           const encontradas = [];
+          // AS CONVERSAS ACHADAS QUE NÃO VIERAM SÃO DITAS (auditoria de 07/10):
+          // o erro desta leitura era jogado fora, e a tela podia dizer "Nada
+          // encontrado" sobre o que o banco tinha acabado de achar.
+          let faltouTrazer = false;
           for (let i = 0; i < ids.length; i += 150) {
-            const { data } = await supabase.from("conversas")
+            const { data, error: erroLote } = await supabase.from("conversas")
               .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
               .eq("advogado_id", advId)
               .abortSignal(sinal)
               .in("id", ids.slice(i, i + 150));
+            if (erroLote && !sinal.aborted) { faltouTrazer = true; console.error("[zorvin] busca: conversas achadas", erroLote); }
             encontradas.push(...(data || []));
           }
           if (!meu()) return;
+          if (faltouTrazer) setErroBusca((antes) => antes || recadoDaBusca({ falhouMensagem: true }));
           // O QUE A CONSULTA BARATA ACHOU ENTRA JUNTO, e não é substituído por
           // isto. Dois motivos: ela pode ter achado alguém que não coube nas
           // oitenta linhas desta, e — o que importa mais — se o relógio tivesse
@@ -10380,11 +10692,12 @@ export default function Painel({ sessao }) {
         .filter((id) => !conversas.some((c) => String(c.id) === String(id))
                      && !encontradas.some((c) => String(c.id) === String(id)));
       for (let i = 0; i < faltando.length; i += 150) {
-        const { data } = await supabase.from("conversas")
+        const { data, error: erroLote } = await supabase.from("conversas")
           .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
           .eq("advogado_id", advId)
           .abortSignal(sinal)
           .in("id", faltando.slice(i, i + 150));
+        if (erroLote && !sinal.aborted) { falhouMensagem = true; contarFalha("conversas achadas no texto", erroLote); }
         (data || []).forEach((c) => encontradas.push(c));
       }
 
@@ -10703,7 +11016,15 @@ export default function Painel({ sessao }) {
   //  frase. A tela diz o que já sabe — nas conversas não há — e o que falta.
   // ------------------------------------------------------------------
   const recadoDaListaVazia =
-    trocandoDeTelefone ? ["trocando", "Carregando as conversas…"]
+    // A LEITURA QUE FALHOU NÃO É "NENHUMA CONVERSA AINDA" (armadilha nº 2).
+    quemFiltra.length && estadoQuem === "carregando" ? ["procurando-quem", "Procurando as conversas de quem você marcou…"]
+    : quemFiltra.length && estadoQuem === "falhou"
+      ? ["falhou-quem", `Não consegui filtrar pelas pessoas marcadas${falhasDeLeitura["filtro-quem"]?.codigo
+          ? ` (código ${falhasDeLeitura["filtro-quem"].codigo})` : ""}. Use "Tentar de novo", no alto.`]
+    : falhasDeLeitura.conversas && !conversas.length
+      ? ["falhou", `Não consegui carregar as conversas deste telefone${falhasDeLeitura.conversas.codigo
+          ? ` (código ${falhasDeLeitura.conversas.codigo})` : ""}. Use "Tentar de novo", no alto.`]
+    : trocandoDeTelefone ? ["trocando", "Carregando as conversas…"]
     : buscando ? ["procurando", "Procurando…"]
     : vendoNoCadastro && busca.trim()
       ? ["cadastro", "Nas conversas, nada. Vendo no cadastro do Vantoro…"]
@@ -11392,7 +11713,11 @@ export default function Painel({ sessao }) {
     const Icone = podeTratar ? ListChecks : Undo2;
     const cor = podeTratar ? C.textSecondary : C.green;
     const clique = () => {
-      if (podeTratar) { setTrateiErro(""); setJaTratei(conversa); setMenuDaConversa(false); }
+      if (podeTratar) {
+        setTrateiErro(""); setJaTratei(conversa); setMenuDaConversa(false);
+        // A LISTA QUE NÃO VEIO É PEDIDA DE NOVO AO ABRIR A JANELA.
+        if (erroAssuntos) carregarAssuntos();
+      }
       else desfazerJaTratei(conversa);
     };
     if (escrito) {
@@ -11913,6 +12238,12 @@ export default function Painel({ sessao }) {
           </span>
           <button data-tentar-leituras
                   onClick={() => {
+                    // A LISTA DE CONVERSAS E AS AGENDADAS TAMBÉM (auditoria de
+                    // 07/10): as duas acendem esta faixa, e o botão não as
+                    // relia — apertar não fazia nada por elas.
+                    if (advogadoId) carregarConversas(advogadoId);
+                    if (conversaId) carregarAgendadas(conversaId);
+                    if (falhasDeLeitura["filtro-quem"]) setTentativaQuem((n) => n + 1);
                     carregarTags();
                     carregarTagsConversas();
                     carregarRapidas();
@@ -12152,7 +12483,7 @@ export default function Painel({ sessao }) {
           </button>
         )}
         {/* MÍDIAS de todas as conversas — o mesmo lugar do WhatsApp Web. */}
-        <div onClick={() => abrirMidias()} title="Mídias, documentos e links"
+        <div onClick={() => abrirMidias(midiaAba)} title="Mídias, documentos e links"
              style={{ width: 40, height: 40, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: midiasAberta ? "#fff" : "#aebac1", background: midiasAberta ? "rgba(255,255,255,.12)" : "transparent", cursor: "pointer" }}>
           <Images size={22} />
         </div>
@@ -12236,8 +12567,7 @@ export default function Painel({ sessao }) {
                     // a pessoa digitou algum dígito — senão "inclui vazio" daria
                     // verdadeiro para todos e a busca por nome nunca filtrava.
                     const chaveQ = chaveDoNumero(qDig);
-                    const lista = contatosLista.filter((c) => (c.nome || "").toLowerCase().includes(q)
-                      || (chaveQ.length >= 4 && chaveDoNumero(c.numero).includes(chaveQ)));
+                    const lista = contatosLista.filter((c) => contatoCasaComABusca(c, q, chaveQ));
                     const doVantoro = linhasDoVantoro(lista);
                     // Houve consulta ao Vantoro e ela voltou sem nada. Dizer
                     // isso importa: sem a frase, "não achei no Vantoro" e "nem
@@ -12272,7 +12602,7 @@ export default function Painel({ sessao }) {
                             </div>
                           </div>
                         )) : (
-                          <div style={RECADO}>{contatosLista.length ? "Nenhum contato salvo com esse nome." : "Nenhum contato salvo ainda."}</div>
+                          <div style={erroContatos ? { ...RECADO, color: "#c0392b" } : RECADO}>{erroContatos || (contatosLista.length ? "Nenhum contato salvo com esse nome." : "Nenhum contato salvo ainda.")}</div>
                         )}
                         {/* O CADASTRO DO VANTORO. Só aparece quando há o que
                             mostrar: uma seção vazia em toda busca ensinaria a
@@ -12429,8 +12759,12 @@ export default function Painel({ sessao }) {
               <button onClick={() => setMenuTopoAberto((v) => !v)} aria-label="Menu" title="Menu" style={{ ...BOTAO_ICONE, ...ICONE_DO_TOPO, color: C.textSecondary }}>
                 <MoreVertical size={20} />
               </button>
+              {/* ABAIXO DO BOTÃO, e não por cima dele (auditoria de 07/10): em
+                  `top: 26` o menu cobria a metade de baixo do ⋮ (34px no
+                  computador, 40 no celular), e o segundo toque para fechar
+                  caía em "Marcar todas como lidas" — que não pergunta nada. */}
               {menuTopoAberto && (
-                <div style={{ position: "absolute", top: 26, right: 0, width: 230, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.28)", zIndex: 50, overflow: "hidden" }}>
+                <div style={{ position: "absolute", top: estreito ? 44 : 38, right: 0, width: 230, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.28)", zIndex: 50, overflow: "hidden" }}>
                   <button onClick={marcarTodasLidas} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><CheckCheck size={17} color={C.textSecondary} /> Marcar todas como lidas</button>
                   <button onClick={() => { setMenuTopoAberto(false); abrirConfig(); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><Settings size={17} color={C.textSecondary} /> Configurações</button>
                   {/* O PAINEL É DE TODO MUNDO.
@@ -14037,7 +14371,7 @@ export default function Painel({ sessao }) {
                   gesto de quem só quer reler o que acabou de acontecer, e
                   carregar sozinho puxaria a tela debaixo do dedo dessa pessoa. */}
               {temMaisAntigas && (
-                <button onClick={carregarAntigas} disabled={buscandoAntigas}
+                <button onClick={() => carregarAntigas()} disabled={buscandoAntigas}
                         style={{ alignSelf: "center", marginBottom: 6, border: `1px solid ${C.divider}`, background: C.panel, color: C.textSecondary, borderRadius: 20, padding: "7px 16px", fontSize: 12.5, fontWeight: 600, cursor: buscandoAntigas ? "default" : "pointer" }}>
                   {buscandoAntigas ? "Buscando…" : "↑ Carregar mensagens anteriores"}
                 </button>
@@ -14190,7 +14524,9 @@ export default function Painel({ sessao }) {
               <div style={{ background: C.headerBar, padding: "8px 16px 0" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.searchBg, borderLeft: `4px solid ${C.green}`, borderRadius: 6, padding: "6px 10px" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ color: C.verdeTexto, fontWeight: 600, fontSize: 12 }}>Respondendo {respondendo.autor === "advogado" ? "você mesmo" : (conversa.contato?.nome || "o contato")}</div>
+                    <div style={{ color: C.verdeTexto, fontWeight: 600, fontSize: 12 }}>Respondendo {respondendo.autor === "advogado"
+                      ? (!respondendo.porId || String(respondendo.porId) === String(meuId) ? "você mesmo" : (respondendo.por || "um colega"))
+                      : (nomeDoContato(conversa.contato) || "o contato")}</div>
                     <div style={{ color: C.textSecondary, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{respondendo.previa}</div>
                   </div>
                   <button onClick={() => setRespondendo(null)} title="Cancelar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
@@ -14341,6 +14677,13 @@ export default function Painel({ sessao }) {
           nenhuma. */}
       {fichaVisivel && conversa && temVantoro === true && (
         <FichaVantoro
+          // REMONTADA A CADA CONVERSA (auditoria de 07/10). Fixa, ela deixou de
+          // ser desmontada na troca — e a resposta atrasada do Vantoro para a
+          // conversa ANTERIOR (a ponte hiberna, demora segundos) pintava o
+          // cliente de lá na conversa nova; "Salvar" então ligava o contato
+          // novo ao cadastro do outro. Remontar faz toda resposta velha cair
+          // num componente que não existe mais, em todos os caminhos de uma vez.
+          key={conversa.contato?.numero || conversa.id}
           numero={conversa.contato?.numero}
           // O NOME QUE ESTÁ NA TELA, e não o cru do WhatsApp. É daqui que sai o
           // nome do pré-cadastro quando a equipe decide transformar o lead em
@@ -14401,6 +14744,9 @@ export default function Painel({ sessao }) {
           <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
             {historico.carregando && <div style={{ fontSize: 13, color: C.textSecondary }}>Levantando…</div>}
             {!!historico.erro && <div style={{ fontSize: 13, color: C.textSecondary }}>{historico.erro}</div>}
+            {!!historico.erroAlteracoes && (
+              <div data-erro-das-alteracoes style={{ fontSize: 13, color: "#c0392b", marginBottom: 12 }}>{historico.erroAlteracoes}</div>
+            )}
             {/* ALTERAÇÕES — quem mexeu no quê.
                 Vem ANTES da lista de telefones e FORA do bloco dela, de
                 propósito: pode haver alteração de cadastro num cliente com
@@ -14968,9 +15314,8 @@ export default function Painel({ sessao }) {
                         {(() => {
                           const q = buscaContato.trim().toLowerCase();
                           const chaveQ = chaveDoNumero(q);
-                          const lista = contatosLista.filter((c) => (c.nome || "").toLowerCase().includes(q)
-                            || (chaveQ.length >= 4 && chaveDoNumero(c.numero).includes(chaveQ)));
-                          if (!lista.length) return <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>{contatosLista.length ? "Nenhum contato encontrado." : "Nenhum contato ainda. Toque em Novo para criar."}</div>;
+                          const lista = contatosLista.filter((c) => contatoCasaComABusca(c, q, chaveQ));
+                          if (!lista.length) return <div style={{ padding: 24, textAlign: "center", color: erroContatos ? "#c0392b" : C.textSecondary, fontSize: 13.5 }}>{erroContatos || (contatosLista.length ? "Nenhum contato encontrado." : "Nenhum contato ainda. Toque em Novo para criar.")}</div>;
                           return lista.map((c) => (
                             <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderBottom: `1px solid ${C.divider}` }}>
                               <Avatar nome={c.nome || c.numero} foto={c.foto_url} size={40} />
@@ -15581,9 +15926,13 @@ export default function Painel({ sessao }) {
             <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
               {(() => {
                 const q = buscaEncaminhar.trim().toLowerCase();
+                // OS DÍGITOS SÓ CONTAM SE HOUVER DÍGITOS (auditoria de 07/10):
+                // "maria" sem dígito nenhum virava `includes("")`, que é sempre
+                // verdade — a busca por nome devolvia a lista inteira.
+                const digitos = q.replace(/\D/g, "");
                 const lista = conversas.filter((c) => c.id !== conversaId && !c.arquivada
                   && (!q || (nomeDoContato(c.contato) || "").toLowerCase().includes(q)
-                          || (c.contato?.numero || "").includes(q.replace(/\D/g, ""))));
+                          || (digitos.length >= 3 && (c.contato?.numero || "").includes(digitos))));
                 if (!lista.length) return <div style={{ padding: 22, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>Nenhuma conversa encontrada.</div>;
                 return lista.map((c) => (
                   <button key={c.id} onClick={() => enviarEncaminhada(c)}
@@ -15628,6 +15977,11 @@ export default function Painel({ sessao }) {
                 ? ` · ${numeroBonito(escolhaTelefone.numero)}` : ""}.
               {" "}É por este número que a mensagem vai chegar para o cliente.
             </div>
+            {!!escolhaTelefone.naoConferi && (
+              <div data-escolha-nao-conferi style={{ fontSize: 12.5, color: "#c0392b", lineHeight: 1.45, marginBottom: 12 }}>
+                {escolhaTelefone.naoConferi}
+              </div>
+            )}
             <div style={{ display: "flex", flexDirection: "column", gap: 7, maxHeight: "52vh", overflowY: "auto" }}>
               {escolhaTelefone.opcoes.map(({ adv, temConversa, ultima }) => (
                 <button key={adv.id}
@@ -15651,7 +16005,7 @@ export default function Painel({ sessao }) {
                           é onde está o histórico, e quase sempre a resposta. */}
                       {temConversa
                         ? ` · já tem conversa${ultima ? ` · ${horaDe(ultima)}` : ""}`
-                        : " · conversa nova"}
+                        : escolhaTelefone.naoConferi ? "" : " · conversa nova"}
                     </span>
                   </span>
                 </button>
@@ -15682,7 +16036,7 @@ export default function Painel({ sessao }) {
               </div>
               <div className="sem-scrollbar fita" style={{ flex: 1, minWidth: 0, display: "flex", gap: 4, justifyContent: estreito ? "flex-end" : "center", "--fita-fundo": C.panel }}>
                 {[["midias", "Mídias"], ["documentos", "Documentos"], ["links", "Links"]].map(([k, r]) => (
-                  <button key={k} onClick={() => setMidiaAba(k)}
+                  <button key={k} onClick={() => { setMidiaAba(k); abrirMidias(k); }}
                           style={{ flexShrink: 0, border: "none", background: "transparent", cursor: "pointer", padding: estreito ? "8px 8px" : "8px 14px", fontSize: 14, fontWeight: 600, color: midiaAba === k ? C.textPrimary : C.textSecondary, borderBottom: `2px solid ${midiaAba === k ? C.green : "transparent"}` }}>{r}</button>
                 ))}
                 <span aria-hidden className="fita-borda" />
@@ -15695,7 +16049,13 @@ export default function Painel({ sessao }) {
 
             <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
               {acervo.carregando && <div style={{ color: C.textSecondary, fontSize: 14 }}>Carregando…</div>}
-              {!acervo.carregando && acervoFiltrado.length === 0 && (
+              {!acervo.carregando && !!acervo.erro && (
+                <div data-erro-das-midias style={{ color: "#c0392b", fontSize: 14 }}>{acervo.erro}</div>
+              )}
+              {!acervo.carregando && !acervo.erro && acervo.cheio && (
+                <div style={{ color: C.textSecondary, fontSize: 12.5, marginBottom: 10 }}>Mostrando os 500 mais recentes.</div>
+              )}
+              {!acervo.carregando && !acervo.erro && acervoFiltrado.length === 0 && (
                 <div style={{ color: C.textSecondary, fontSize: 14 }}>
                   {midiaAba === "midias" ? "Nenhuma foto ou vídeo ainda."
                     : midiaAba === "documentos" ? "Nenhum documento ainda."
@@ -15751,13 +16111,23 @@ export default function Painel({ sessao }) {
       {telaAdmin && (
         <Departamentos C={C} aoFechar={() => {
           setTelaAdmin(false);
+          // O QUE A ADMINISTRAÇÃO MEXE É RELIDO: os assuntos do "Já tratei" e
+          // as etapas do funil eram lidos uma vez por sessão, e a mudança só
+          // aparecia depois de um F5 (auditoria de 07/10).
+          carregarAssuntos();
+          etapasPorDep.current.clear();
           Promise.all([
             supabase.from("departamentos").select("id, nome, slug, cor, ordem").eq("ativo", true).order("ordem"),
             supabase.from("advogados").select("id, nome, numero, foto_url, departamento_id, ativo").order("nome"),
           ]).then(([d, t]) => {
-            setDepartamentos(d.data || []);
-            setAdvogados(t.data || []);
-          });
+            // SÓ SE GRAVA O QUE VEIO — a regra da abertura. Era `d.data || []`:
+            // uma piscada de rede ao fechar esta tela esvaziava a barra de
+            // telefones e dizia "nenhum número liberado" a quem administra.
+            if (!d.error) setDepartamentos(d.data || []);
+            else anotarFalhaDeLeitura("departamentos", "os departamentos", d.error);
+            if (!t.error) setAdvogados(t.data || []);
+            else anotarFalhaDeLeitura("telefones", "os telefones", t.error);
+          }).catch((e) => anotarFalhaDeLeitura("telefones", "os telefones", e));
         }} />
       )}
 
@@ -15826,6 +16196,7 @@ export default function Painel({ sessao }) {
                   dias={diasEsperando(jaTratei)}
                   esperando={Boolean(jaTratei.esperando_desde)}
                   assuntos={assuntos}
+                  erroDosAssuntos={erroAssuntos}
                   ocupado={trateiOcupado}
                   erro={trateiErro}
                   aoConfirmar={confirmarJaTratei}

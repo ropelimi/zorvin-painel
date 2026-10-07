@@ -76,6 +76,13 @@ export async function chamarPonte(caminho, opcoes = {}) {
     clearTimeout(estourou);
   }
   const corpo = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(corpo.erro || "Não consegui falar com o servidor.");
+  // A RECUSA LEVA O CÓDIGO HTTP (auditoria de 07/10): quem chama precisa
+  // separar "a ponte disse não" (4xx — insistir não muda nada, e cair num
+  // caminho alternativo seria contornar a recusa) de "a ponte não respondeu".
+  if (!r.ok) {
+    const erro = new Error(corpo.erro || "Não consegui falar com o servidor.");
+    erro.status = r.status;
+    throw erro;
+  }
   return corpo;
 }

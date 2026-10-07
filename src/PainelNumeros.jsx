@@ -137,7 +137,10 @@ function mesDe(ano, mes) {
 }
 function ultimosDias(n) {
   const ate = new Date();
-  const de = new Date(); de.setDate(de.getDate() - n); de.setHours(0, 0, 0, 0);
+  // N DIAS CONTANDO HOJE (auditoria de 07/10): voltar `n` dias inteiros e
+  // somar o de hoje dava n + 1 — o atalho "7 dias" mostrava "· 8 dias", e a
+  // comparação com o período anterior media oito contra oito.
+  const de = new Date(); de.setDate(de.getDate() - (n - 1)); de.setHours(0, 0, 0, 0);
   return { de, ate, tipo: "dias" };
 }
 
@@ -241,7 +244,8 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
         // navegador é justamente o que dava número errado.
         const m = (error.message || "") + (error.code || "");
         if (/painel_dashboard|PGRST202|does not exist|Could not find/i.test(m)) setFaltaSql(true);
-        else setErro(error.message || "Erro desconhecido");
+        // O CÓDIGO VAI JUNTO, a régua das duas seções de baixo.
+        else setErro(`${error.message || "Erro desconhecido"}${error.code ? ` (código ${error.code})` : ""}`);
         setCarregando(false);
         return;
       }

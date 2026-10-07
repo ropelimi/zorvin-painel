@@ -207,8 +207,22 @@ function guardarFicha(numero, resposta) {
   if (numero) fichasGuardadas.set(numero, { quando: Date.now(), resposta });
 }
 function esquecerFicha(numero) {
-  if (numero) fichasGuardadas.delete(numero);
+  if (numero) { fichasGuardadas.delete(numero); fichasEmVoo.delete(numero); }
 }
+// A PERGUNTA EM VOO TAMBÉM É GUARDADA: duas montagens da ficha para o mesmo
+// número antes de a primeira resposta chegar (o React monta duas vezes em
+// desenvolvimento, e a ficha é remontada a cada conversa) virariam duas idas
+// ao Vantoro — que fica atrás da ponte, e demora. A segunda espera a primeira.
+const fichasEmVoo = new Map();
+function perguntarFicha(numero, perguntar) {
+  if (fichasEmVoo.has(numero)) return fichasEmVoo.get(numero);
+  const promessa = perguntar().finally(() => fichasEmVoo.delete(numero));
+  fichasEmVoo.set(numero, promessa);
+  return promessa;
+}
+
+// Quais seções a pessoa deixou abertas, enquanto a página estiver aberta.
+let secoesAbertas = null;
 
 export default function FichaVantoro({ numero, nomeContato, C, estreito, onFechar, onAviso, aoLigarCadastro, aoConversarPor }) {
   const [carregando, setCarregando] = useState(true);
@@ -277,14 +291,18 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   const [criarTarefa, setCriarTarefa] = useState(false);
   const [buscandoCep, setBuscandoCep] = useState(false);
   const [opcoes, setOpcoes] = useState({ estado_civil: ESTADO_CIVIL_RESERVA });
+  // AS SEÇÕES ABERTAS SOBREVIVEM À TROCA DE CONVERSA. A ficha é remontada a
+  // cada conversa (ver o `key` no Painel), e sem isto quem abriu "Endereço"
+  // o veria fechar a cada clique na lista.
   const [abertas, setAbertas] = useState(
-    () => new Set(SECOES.filter((s) => s.aberta).map((s) => s.id))
+    () => new Set(secoesAbertas || SECOES.filter((s) => s.aberta).map((s) => s.id))
   );
 
   function alternar(id) {
     setAbertas((atual) => {
       const nova = new Set(atual);
       if (nova.has(id)) nova.delete(id); else nova.add(id);
+      secoesAbertas = [...nova];
       return nova;
     });
   }
@@ -602,7 +620,9 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       // também o que qualquer conserto futuro deve usar depois de gravar.
       let r = forcar ? null : fichaGuardada(numero);
       if (!r) {
-        r = await chamarPonte(`/vantoro/cliente?telefone=${encodeURIComponent(numero || "")}`);
+        r = await (forcar
+          ? chamarPonte(`/vantoro/cliente?telefone=${encodeURIComponent(numero || "")}`)
+          : perguntarFicha(numero, () => chamarPonte(`/vantoro/cliente?telefone=${encodeURIComponent(numero || "")}`)));
         // SÓ GUARDA O QUE DEU CERTO: um erro cai no `catch` e não chega aqui,
         // senão uma oscilação de rede ficaria grudada por cinco minutos.
         guardarFicha(numero, r);
@@ -644,8 +664,8 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   // TROCOU DE NÚMERO, A ESCOLHA DE PAPEL VOLTA AO PADRÃO.
   //
   // HOJE ISTO NUNCA DISPARA, e está aqui de propósito. Quem garante a escolha
-  // limpa é o painel, que fecha a ficha a cada troca de conversa e portanto a
-  // desmonta inteira — um detalhe de OUTRO arquivo, a 6.000 linhas daqui.
+  // limpa é o painel, que REMONTA a ficha a cada troca de conversa (`key` pelo
+  // número) — um detalhe de OUTRO arquivo, a 6.000 linhas daqui.
   //
   // O que não pode acontecer é a marca "parte contrária" sobrar para o próximo
   // atendimento: o lead seguinte nasceria como réu, sem ordem de serviço, sem
@@ -958,7 +978,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     if (igual) {
       const jaEsta = telefoneLegivel(igual.digitos || igual.numero);
       const novo = telefoneLegivel(numero);
-      avisar(novo === jaEsta
+      onAviso && onAviso(novo === jaEsta
         ? `${jaEsta} já está nesta ficha.`
         // A FRASE DIZ O PORQUÊ, e não só "não dá". Sem o motivo, quem lê
         // conclui que o programa recusou por implicância e tenta de novo

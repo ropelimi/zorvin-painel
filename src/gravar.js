@@ -215,3 +215,15 @@ export function comOCodigo(frase, erro, onde) {
   // NÃO CHEGOU AO BANCO. Ver o cabeçalho: é outra ação para quem lê.
   return `${frase} Não consegui falar com o banco — confira a conexão.`;
 }
+
+/** A TABELA AINDA NÃO EXISTE NESTE BANCO (o script dela não rodou)? É o único
+ *  erro de leitura que pode virar "o recurso não aparece" em vez de uma frase.
+ *  DOIS CÓDIGOS, e não um (auditoria de 07/10): o Postgres diz `42P01`, mas o
+ *  PostgREST do Supabase de hoje responde `PGRST205` ("Could not find the
+ *  table … in the schema cache") antes de chegar ao Postgres. Quatro telas só
+ *  conheciam o primeiro — num banco sem o script elas mostravam erro vermelho
+ *  em vez de sumir, e a bancada (que responde 42P01) não via a diferença. */
+export function semATabela(erro) {
+  const codigo = String((erro && erro.code) || "");
+  return codigo === "42P01" || codigo === "PGRST205";
+}

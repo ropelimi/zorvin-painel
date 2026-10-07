@@ -2752,6 +2752,70 @@ recorte, e esse é pego pelo número da barra.
 sozinha de uma etapa do funil — as duas ficam para quando o Rodrigo usar
 esta.
 
+## A auditoria de 07/10 — o que uma varredura inteira achou
+
+Pedido do Rodrigo: *"faz um diagnóstico geral em todos os arquivos e todas
+as telas … uma auditoria completa"*. Seis leituras em paralelo (o
+`Painel.jsx` em três pedaços, os componentes, a ponte e os scripts SQL), e
+**cada achado conferido no código antes de mexer** — os que não se
+sustentaram ficaram de fora. A lista inteira, com o que foi e o que não foi
+feito, está na PR.
+
+**A forma que mais se repetiu é a de sempre:** a armadilha nº 2 (falha
+desenhada como ausência) e a corrida da troca de conversa (uma resposta ou
+um estado da conversa ANTERIOR pintado na nova). Os consertos principais:
+
+| o que acontecia | agora |
+|---|---|
+| a lista de conversas que não carregava ficava em "Carregando…" para sempre | o recado diz que falhou, com o código, e a faixa âmbar acende; "Tentar de novo" relê a lista (e as agendadas) |
+| uma **edição** armada numa conversa ia, no Enter, para a conversa seguinte (a correção da mensagem de A na fila de B, ou a nota de A reescrita) | a troca de conversa desarma a edição, e o texto dela não vira rascunho |
+| o **renomear** aberto em A gravava o nome em B | a troca fecha o renomear |
+| a **ficha** fixa pintava o cliente da conversa anterior quando a resposta do Vantoro chegava atrasada, e "Salvar" ligava o contato ao cadastro errado | a ficha é remontada a cada conversa (`key`), e as seções abertas sobrevivem; a pergunta em voo é compartilhada (`perguntarFicha`) |
+| `avisar(...)` não existia na ficha — acrescentar um número repetido estourava calado | `onAviso` |
+| Esc com o "Já tratei" ou o "Falar por qual telefone" abertos fechava a conversa atrás | os dois entraram na escada do Esc |
+| o menu ⋮ do alto abria por cima do próprio botão, e o segundo toque caía em "Marcar todas como lidas" | abre abaixo |
+| assuntos do "Já tratei" que não carregavam viravam "Nenhum assunto cadastrado — crie a lista" | a janela diz que não carregou, e relê ao abrir |
+| fechar "Departamentos e acessos" com a releitura falhando esvaziava a barra de telefones | só se grava o que veio |
+| filtro de atendente e de etiqueta: escolhido e sem resposta, mostravam **tudo** | três estados, e a falha é dita |
+| a agenda achava a pessoa pelo nome do cadastro e a tela a escondia por o WhatsApp chamá-la de outro jeito | `contatoCasaComABusca`, pelos mesmos campos do banco |
+| "Voltar para a fila" desfazia TODOS os "Já tratei" da conversa e não conferia a gravação | só o último clique (o mesmo `quando`), e a falha é dita |
+| "Apagar para todos" marcava como apagada a bolha que ainda estava saindo | só as que vão mesmo ser apagadas |
+| a agendada que falhava na hora sumia da conversa aberta | ganha a bolha vermelha na hora (`bolhaDaFilaQueFalhou`, uma escrita só) |
+| "esperando" sem desempate no banco: a paginação pulava ou repetia conversas | desempate por `ultima_atividade` e `id`, numa função só (`porOrdem`) |
+| a citação procurava 120 mensagens para trás, e não 360 | a trava é um ref e o ponto de partida vem do lote |
+| cada tecla na legenda de um anexo invalidava as prévias dos outros | só se libera a prévia que saiu da lista |
+| importar um `.txt` antigo puxava a conversa para baixo e zerava as não lidas | só avança, e reconta a espera |
+| exportação de celular em inglês (mês/dia) entrava com as datas trocadas | a ordem é decidida pelo arquivo inteiro |
+| tabela que falta só era reconhecida por `42P01` — o Supabase de hoje responde `PGRST205` | `semATabela`, em `gravar.js` |
+| "7 dias" cobria 8 | `ultimosDias` conta hoje |
+| tarefa atrasada não se editava sem trocar a hora | a hora de sempre serve, e vai até o segundo (o lembrete não toca de novo) |
+| a palavra da casa só mudava na barra depois de F5 | `palavrasMudaram` |
+| entrada sem Vantoro podia girar para sempre | o prazo vale também para o Auth |
+
+**A bancada aprendeu a ordenar por várias colunas.** `.order(a).order(b)`
+reordenava pela segunda — o desempate virava a ordem principal. Sem isto o
+desempate da fila de espera não teria como ser medido.
+
+**O que não foi feito, e por quê:**
+- a reação em grupo e o envio para grupo com `@g.us` (ponte) — depende de
+  como a Uazapi responde, e a regra é não supor; fica para medir com um
+  grupo de verdade;
+- a conversa nova que some da lista se a pessoa troca antes de a ponte
+  mandar a primeira mensagem — raro e com saída (a busca);
+- a transcrição gravável por quem já edita a mensagem — fechar a coluna
+  exigiria refazer as permissões da tabela inteira.
+
+**Duas lições de processo:**
+- **o Esc não passa pelo botão de fechar.** Escrevi a cena de "fechar
+  Departamentos com a releitura falhando" com Esc, e ela passava sem medir
+  nada: quem relê é o botão da tela. Hoje a cena clica no X;
+- **a suíte inteira pegou a remontagem da ficha**: no desenvolvimento o
+  React monta duas vezes, e as duas perguntavam ao Vantoro antes de a
+  primeira resposta ficar guardada — "ir e voltar não consulta de novo"
+  reprovou. Daí `perguntarFicha`.
+
+Prova: `a-auditoria-de-07-10`, 27 conferências, **11 sabotagens e 11 pegas**.
+
 ## Banco de dados (tabelas que o painel lê/escreve)
 
 - `advogados` — lê (id, nome, numero, foto_url) onde `ativo = true`

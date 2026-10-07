@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "./supabase.js";
-import { naoGravouNada, comOCodigo } from "./gravar.js";
+import { naoGravouNada, comOCodigo, semATabela } from "./gravar.js";
 import { ListChecks, Plus, Loader2, Check, EyeOff, Eye, PenLine } from "lucide-react";
 
 // ============================================================
@@ -65,7 +65,7 @@ export function AssuntosDoJaTratei({ cx, C, aoAvisar }) {
       .select("*").order("ativo", { ascending: false }).order("ordem");
     if (error) {
       // 42P01 = a tabela não existe. É o único caso em que sumir é o certo.
-      if (error.code === "42P01") { setExiste(false); return; }
+      if (semATabela(error)) { setExiste(false); return; }
       // NA PRIMEIRA LEITURA a seção some E avisa; nas seguintes ela FICA, com
       // a lista que já estava na tela. Apagar uma lista carregada por causa de
       // uma oscilação de rede seria trocar um aviso por um sumiço.

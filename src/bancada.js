@@ -1616,6 +1616,10 @@ function consulta(tabela) {
   // cortava a lista de CONVERSAS em uma. Uma consulta que o painel usa desde a
   // prévia do áudio nunca foi exercitada aqui de verdade.
   let embutidas = [], limitesEmbutidos = {}, ordensEmbutidas = {};
+  // AS ORDENS SE ACUMULAM, como no PostgREST: `.order(a).order(b)` é "por a,
+  // e no empate por b". A bancada reordenava a cada chamada, e a segunda
+  // ordem passava a mandar — um desempate virava a ordem principal.
+  const ordensDaConsulta = [];
   let gravacao = null;   // insert/upsert pendente, aplicado depois do atraso
   const eu = {
     // `select("id", { count: "exact", head: true })` — o jeito de pedir só a
@@ -1708,13 +1712,19 @@ function consulta(tabela) {
       const nulosPrimeiro = (opc && typeof opc.nullsFirst === "boolean")
         ? opc.nullsFirst : !cres;
       const vazio = (v) => v === null || v === undefined;
+      ordensDaConsulta.push({ col, cres, nulosPrimeiro });
       linhas = linhas.slice().sort((a, b) => {
-        const va = a[col], vb = b[col];
-        if (vazio(va) || vazio(vb)) {
-          if (vazio(va) && vazio(vb)) return 0;
-          return (vazio(va) ? 1 : -1) * (nulosPrimeiro ? -1 : 1);
+        for (const o of ordensDaConsulta) {
+          const va = a[o.col], vb = b[o.col];
+          let r;
+          if (vazio(va) || vazio(vb)) {
+            r = vazio(va) && vazio(vb) ? 0 : (vazio(va) ? 1 : -1) * (o.nulosPrimeiro ? -1 : 1);
+          } else {
+            r = (o.cres ? 1 : -1) * comparar(va, vb);
+          }
+          if (r) return r;
         }
-        return (cres ? 1 : -1) * comparar(va, vb);
+        return 0;
       });
       return eu;
     },

@@ -125,7 +125,9 @@ export default function Departamentos({ C, aoFechar }) {
     // com um erro claro, a tela ficava muda. Era isso que fazia esta tela
     // "não funcionar sem dizer nada".
     await recarregar();
-    if (error) setErro(traduzir(error.message));
+    // O CÓDIGO VAI JUNTO da frase traduzida (auditoria de 07/10): é ele que
+    // separa uma recusa de permissão de uma coluna que falta.
+    if (error) setErro(`${traduzir(error.message)}${error.code ? ` (código ${error.code})` : ""}`);
     // A pergunta é a mesma das outras telas, e agora é a MESMA FUNÇÃO: escrita
     // à mão em cinco lugares, a primeira cópia a divergir seria a que ninguém
     // provou.
@@ -425,6 +427,7 @@ function Atendentes({ cx, C, departamentos, telefones, aoAvisar }) {
   const [busca, setBusca] = useState("");
   const [quem, setQuem] = useState(null);
   const [salvando, setSalvando] = useState(false);
+  const salvandoRef = useRef(false);
   // ============================================================
   //  EM QUAL DOS DOIS MUNDOS ESTA TELA ESTÁ — e quem responde é a PONTE.
   //
@@ -472,8 +475,15 @@ function Atendentes({ cx, C, departamentos, telefones, aoAvisar }) {
   // Uma gravação por clique, mandando SÓ o que mudou. O estado local muda antes
   // da resposta para a chave não "pular" — mas o que vale é o que o Vantoro
   // devolve, e é ele que fica no fim.
+  // UMA GRAVAÇÃO POR VEZ (auditoria de 07/10). Cada clique monta a lista a
+  // partir do que a tela tem; dois cliques rápidos (telefone A, telefone B)
+  // mandavam `[A]` e `[B]` — o servidor ficava só com o último, e se as
+  // respostas voltassem fora de ordem a tela mostrava o contrário do banco.
+  // Enquanto uma grava, o clique seguinte é recusado e DITO.
   async function mudar(campos) {
     if (!pessoa) return;
+    if (salvandoRef.current) { aoAvisar("Espere salvar a mudança anterior."); return; }
+    salvandoRef.current = true;
     setSalvando(true); aoAvisar("");
     try {
       const r = await chamarPonte("/permissoes/atendente", {
@@ -494,6 +504,7 @@ function Atendentes({ cx, C, departamentos, telefones, aoAvisar }) {
       aoAvisar(e.message || "Não consegui salvar.");
       carregar();   // devolve a tela ao que o servidor tem
     }
+    salvandoRef.current = false;
     setSalvando(false);
   }
 
