@@ -1945,7 +1945,29 @@ function consulta(tabela) {
       if ((gravacao || patch || apagando) && erroNaGravacao[tabela]) {
         return resolver({ data: null, count: null, error: erroNaGravacao[tabela] });
       }
-      if (gravacao) eu.gravar(gravacao.reg, gravacao.porOnde);
+      // O HISTÓRICO DO FUNIL É DO GATILHO no banco (script 017): todo cartão
+      // que nasce, muda de etapa ou sai deixa uma linha em `zorvin_movimentos`,
+      // e mudar de etapa carimba `movido_em`. A bancada imita os dois, senão o
+      // relatório do funil só teria o que a `__SEMENTE` plantou — e a prova
+      // passaria com uma tela que nunca registra um movimento de verdade.
+      const funil = tabela === "zorvin_cartoes";
+      const etapaAntes = funil
+        ? new Map((TABELAS.zorvin_cartoes || []).map((c) => [`${c.contato_id}|${c.departamento_id}`, c.etapa_id]))
+        : null;
+      const movimento = (c, de, para) => (TABELAS.zorvin_movimentos || (TABELAS.zorvin_movimentos = [])).push({
+        id: `zorvin_movimentos-${TABELAS.zorvin_movimentos.length + 1}`, contato_id: c.contato_id,
+        departamento_id: c.departamento_id, de_etapa: de ?? null, para_etapa: para ?? null,
+        quem: (TABELAS.usuarios[0] || {}).id || null, quando: new Date().toISOString(),
+      });
+      if (gravacao) {
+        eu.gravar(gravacao.reg, gravacao.porOnde);
+        if (funil) {
+          for (const n of linhas) {
+            const de = etapaAntes.get(`${n.contato_id}|${n.departamento_id}`);
+            if (de !== n.etapa_id) movimento(n, de, n.etapa_id);
+          }
+        }
+      }
       // A COLUNA COM LISTA FECHADA DE VALORES (`CHECK`).
       //
       // `__RECUSAR_STATUS = ["descartada"]` faz a bancada responder como um
@@ -1981,7 +2003,17 @@ function consulta(tabela) {
       if (apagando && semEfeito.includes(tabela)) {
         return resolver({ data: [], count: 0, error: null });
       }
-      if (patch) linhas.forEach((l) => Object.assign(l, patch));
+      if (patch) {
+        linhas.forEach((l) => {
+          const de = l.etapa_id;
+          Object.assign(l, patch);
+          if (funil && "etapa_id" in patch && de !== l.etapa_id) {
+            l.movido_em = new Date().toISOString();
+            movimento(l, de, l.etapa_id);
+          }
+        });
+      }
+      if (apagando && funil) linhas.forEach((l) => movimento(l, l.etapa_id, null));
       if (apagando) {
         const tab = TABELAS[tabela] || [];
         for (const l of linhas) { const i = tab.indexOf(l); if (i >= 0) tab.splice(i, 1); }
@@ -2764,6 +2796,79 @@ export const supabase = {
         n++;
       }
       return { data: n, error: null };
+    }
+
+    // O RELATÓRIO DO FUNIL (script 019). A conta de verdade foi provada num
+    // Postgres no repo da ponte; aqui ela é refeita sobre os cartões e os
+    // MOVIMENTOS da bancada — que o arraste da tela escreve, como o gatilho
+    // do 017 —, para a prova cobrar o caminho inteiro: mover na tela e ver o
+    // número mudar no relatório.
+    if (nome === "zorvin_relatorio_funil") {
+      if (globalThis.__SEM_RELATORIO_FUNIL) {
+        return { data: null, error: { code: "PGRST202", message: "Could not find the function public.zorvin_relatorio_funil" } };
+      }
+      if (globalThis.__RELATORIO_FUNIL_FALHA) {
+        return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } };
+      }
+      await espera(40);
+      if (globalThis.__SEM_FUNIL) return { data: { falta: "017" }, error: null };
+      const desde = new Date((args && args.p_desde) || Date.now() - 30 * 86400000).getTime();
+      const ate = new Date((args && args.p_ate) || Date.now()).getTime();
+      const dep = args && args.p_departamento != null ? String(args.p_departamento) : null;
+      const tel = (args && args.p_telefone) || null;
+      const advs = TABELAS.advogados || ADVOGADOS;
+      const depDoTel = tel ? String((advs.find((a) => String(a.id) === String(tel)) || {}).departamento_id) : null;
+      const etapas = TABELAS.zorvin_etapas || [];
+      const conversas = TABELAS.conversas || [];
+      const depDaConversa = (c) => String((advs.find((a) => String(a.id) === String(c.advogado_id)) || {}).departamento_id);
+      const doTelefone = (contato) => !tel || conversas.some((c) => String(c.contato_id) === String(contato)
+                                                               && String(c.advogado_id) === String(tel));
+      const deps = DEPARTAMENTOS.filter((d) => etapas.some((e) => String(e.departamento_id) === String(d.id))
+        && (!dep || String(d.id) === dep) && (!tel || String(d.id) === depDoTel)
+        && conversas.some((c) => depDaConversa(c) === String(d.id)));
+      const agora = Date.now();
+      const mediana = (xs) => {
+        if (!xs.length) return null;
+        const o = xs.slice().sort((a, b) => a - b), m = Math.floor(o.length / 2);
+        return Math.round(o.length % 2 ? o[m] : (o[m - 1] + o[m]) / 2);
+      };
+      const todosMov = TABELAS.zorvin_movimentos || [];
+      const saida = deps.map((d) => {
+        const k = (TABELAS.zorvin_cartoes || []).filter((c) => String(c.departamento_id) === String(d.id) && doTelefone(c.contato_id));
+        const movs = todosMov.filter((m) => String(m.departamento_id) === String(d.id) && doTelefone(m.contato_id)
+          && new Date(m.quando).getTime() >= desde && new Date(m.quando).getTime() < ate);
+        const passagens = movs.filter((m) => m.de_etapa).map((s) => {
+          const chegada = todosMov.filter((c) => c.contato_id === s.contato_id && String(c.departamento_id) === String(s.departamento_id)
+            && c.para_etapa === s.de_etapa && new Date(c.quando) <= new Date(s.quando))
+            .map((c) => new Date(c.quando).getTime()).sort((a, b) => b - a)[0];
+          return { etapa: s.de_etapa, s: chegada == null ? null : (new Date(s.quando).getTime() - chegada) / 1000 };
+        }).filter((p) => p.s != null);
+        const linhas = etapas.filter((e) => String(e.departamento_id) === String(d.id))
+          .sort((a, b) => a.ordem - b.ordem || String(a.nome).localeCompare(String(b.nome)))
+          .map((e) => {
+            const aqui = k.filter((c) => c.etapa_id === e.id);
+            const tempos = passagens.filter((p) => p.etapa === e.id).map((p) => p.s);
+            const movidos = aqui.map((c) => new Date(c.movido_em || c.criado_em).getTime());
+            return {
+              id: e.id, nome: e.nome, cor: e.cor, ordem: e.ordem, ativo: e.ativo !== false,
+              agora: aqui.length,
+              agora_mediana_s: mediana(movidos.map((t) => (agora - t) / 1000)),
+              mais_antigo: movidos.length ? new Date(Math.min(...movidos)).toISOString() : null,
+              entraram: movs.filter((m) => m.para_etapa === e.id).length,
+              sairam: movs.filter((m) => m.de_etapa === e.id).length,
+              tempo_mediana_s: mediana(tempos),
+              tempo_media_s: tempos.length ? Math.round(tempos.reduce((a, b) => a + b, 0) / tempos.length) : null,
+              tempo_quantos: tempos.length,
+            };
+          })
+          .filter((e) => e.ativo || e.agora > 0 || e.entraram > 0 || e.sairam > 0);
+        return { id: d.id, nome: d.nome, agora: k.length,
+                 entraram_no_funil: movs.filter((m) => !m.de_etapa).length,
+                 sairam_do_funil: movs.filter((m) => !m.para_etapa).length,
+                 movimentos: movs.length, etapas: linhas };
+      });
+      return { data: { desde: new Date(desde).toISOString(), ate: new Date(ate).toISOString(),
+                       agora: new Date().toISOString(), departamentos: saida }, error: null };
     }
 
     if (nome === "zorvin_relatorio_tratados") {
