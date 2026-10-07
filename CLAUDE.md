@@ -2592,9 +2592,9 @@ sem o script; o "trazer" sem dizer quantos; a falha de leitura virando funil
 vazio; a conversa oferecendo etapa desativada; "parar de usar" apagando; a
 recusa calada dizendo "foi para…").
 
-**Ainda em aberto:** o histórico de movimentos do cliente na tela (o banco
-já guarda em `zorvin_movimentos`). ~~E o relatório do funil.~~ **Feito** — ver
-logo abaixo.
+~~**Ainda em aberto:** o histórico de movimentos do cliente na tela.~~
+**Feito** — ver "O caminho do cliente no funil", mais abaixo. ~~E o
+relatório do funil.~~ **Feito** — ver logo abaixo.
 
 ### O relatório do funil (07/10)
 
@@ -2640,6 +2640,59 @@ recorta; a seção sem dizer o que é de agora; a tabela de zeros). E cinco no
 SQL, num Postgres de verdade, as cinco pegas — uma vazou primeiro: tirar a
 regra "a chegada é ANTES da saída" passava, porque nenhum cliente da cena
 voltava a uma etapa onde já tinha estado. Entrou o cliente que volta.
+
+### O caminho do cliente no funil (07/10)
+
+Pedido do Rodrigo depois da auditoria: ver **por onde o cliente passou** no
+funil. O banco guardava cada passo desde o 017 (`zorvin_movimentos`: de qual
+etapa para qual, quem e quando) e a tela mostrava só **onde ele está** —
+não por onde passou, quem o moveu nem quanto tempo ficou parado em cada
+etapa, que é o que se pergunta antes de cobrar alguém por um acordo que não
+anda.
+
+**Mora no "Histórico de atendimento"**, numa seção *Caminho no funil*, entre
+o "Já tratei" e a lista de telefones — o mesmo lugar do que já se fez por
+esta pessoa. **Nenhum SQL e nenhuma rota nova**: a regra de leitura dos
+movimentos (`zorvin_ve_no_funil`) já libera os dos departamentos em que a
+pessoa vê alguma conversa do cliente.
+
+**Um caminho por departamento**, o mexido por último primeiro, com *"Agora
+em X · há N dias"* ou *"Fora do funil agora"* no alto e os passos do mais
+recente ao mais antigo. Cada passo diz quem moveu — **"O Zorvin"** quando o
+cliente entrou sozinho, ao escrever pela primeira vez (`quem` nulo no
+gatilho); **"Você"**; ou o nome do colega.
+
+**"Ficou N dias em X" é da ÚLTIMA chegada a X até a saída**, no mesmo
+departamento — a régua do relatório do funil (script 019), aplicada a um
+cliente. **Sem chegada conhecida, o tempo não é inventado**: fica fora, e a
+entrada no funil nunca diz "ficou". A conta mora em `caminhoNoFunil.js`, e
+não dentro da tela, porque a prova e a tela leem a mesma.
+
+**As etapas são lidas pelo id** do que está no caminho, e não pelo
+departamento aberto: o caminho tem etapas desativadas (que continuam tendo
+nome, e é por isso que não se apagam) e de outros departamentos.
+
+**Três estados, como o "Já tratei" do histórico:** sem o 017 a seção não
+existe; a leitura que falha — dos movimentos ou das etapas — diz que falhou,
+com o código, e **nunca** vira "ainda não passou pelo funil" (armadilha nº
+2); e o caminho vazio é dito. Quem não administra lê que o caminho é **dos
+departamentos que atende**: a regra do banco recorta, e a lista recortada não
+pode se ler como inteira.
+
+**E a seção acompanha o clique:** mudar a etapa ou tirar do funil com o
+histórico daquele cliente aberto relê o caminho.
+
+Prova: `o-caminho-no-funil`, 39 conferências, **9 sabotagens e 9 pegas** (a
+chegada que conta a PRIMEIRA passagem e não a última; a falha virando caminho
+vazio; a seção que não relê depois de mudar a etapa; a entrada sozinha
+atribuída a uma pessoa; o caminho do mais antigo ao mais recente; os passos
+de outro cliente; a seção aparecendo sem o funil; o tempo inventado sem
+chegada; a falha das etapas ignorada). **Três vazaram na primeira escrita, e
+eram minhas:** duas mexiam em linhas que o resto do código conserta sozinho
+(a régua de 25/09), e a terceira sabotava um nome que o texto da entrada não
+usa. Refeitas como defeitos de verdade, as três pegam. **E o `innerText` de
+um nome com bolinha** (bloco em linha) quebra linhas que a tela não mostra:
+a prova normaliza o espaço antes de comparar frases.
 
 ## Tarefas e lembretes (06/10)
 
