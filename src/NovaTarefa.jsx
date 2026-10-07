@@ -35,8 +35,13 @@ export default function NovaTarefa({
   const iso = lerCampo(valor);
   const agora = Date.now();
   const escolheuAlgo = Boolean(dia || hora);
+  // EDITANDO, A HORA QUE JÁ ERA DELA SERVE (auditoria de 07/10): uma tarefa
+  // atrasada não podia ser passada a um colega nem ter o texto corrigido sem
+  // ganhar uma hora nova — o botão ficava desligado por "essa hora já passou".
+  const horaDeSempre = editar && valor === inicial;
   const problemaDaHora = !escolheuAlgo ? null
-    : !dia ? "Escolha o dia." : !hora ? "Escolha a hora." : horaQueNaoServe(iso, agora);
+    : !dia ? "Escolha o dia." : !hora ? "Escolha a hora."
+    : horaDeSempre ? null : horaQueNaoServe(iso, agora);
   const textoLimpo = texto.trim();
   const pronto = Boolean(iso) && !problemaDaHora && !!textoLimpo && textoLimpo.length <= TETO_DO_TEXTO
     && !!paraQuem && !gravando;
@@ -52,7 +57,10 @@ export default function NovaTarefa({
     try {
       // `aoSalvar` devolve a frase da falha, ou nada. A falha fica AQUI, na
       // janela que continua aberta com o que foi escrito.
-      const falhou = await aoSalvar({ texto: textoLimpo, vence_em: iso, para_quem: paraQuem });
+      // A HORA QUE NÃO MUDOU VAI COMO ESTAVA, até o segundo: reescrita pelo
+      // campo (que só tem minutos) ela viraria uma hora "nova", e o lembrete
+      // já avisado tocaria de novo.
+      const falhou = await aoSalvar({ texto: textoLimpo, vence_em: horaDeSempre ? tarefa.vence_em : iso, para_quem: paraQuem });
       if (falhou) setErro(falhou);
     } catch (e) {
       console.error("Zorvin — salvar tarefa:", e);

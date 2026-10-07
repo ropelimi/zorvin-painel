@@ -86,7 +86,11 @@ export function perguntarAsPalavras() {
     .select("singular, plural, genero")
     .maybeSingle()
     .then(({ data, error }) => {
-      if (error || !data) return PADRAO;
+      // A LEITURA QUE FALHOU NÃO FICA GUARDADA para a sessão inteira: a
+      // próxima tela que perguntar tenta de novo. Sem a linha (ou sem a
+      // tabela), aí sim é a resposta, e o padrão vale.
+      if (error) { promessa = null; return PADRAO; }
+      if (!data) return PADRAO;
       // CAMPO VAZIO NÃO APAGA A PALAVRA. A tela de administração impede o
       // vazio, mas um `update` feito à mão no Supabase não — e uma frase
       // "Escolha o …" é pior do que uma que diz a profissão errada.
@@ -96,8 +100,18 @@ export function perguntarAsPalavras() {
         genero: data.genero === "f" ? "f" : "m",
       };
     })
-    .catch(() => PADRAO);
+    .catch(() => { promessa = null; return PADRAO; });
   return promessa;
+}
+
+// QUEM MOSTRA A PALAVRA É AVISADO QUANDO ELA MUDA (auditoria de 07/10). A
+// tela de administração dizia "· salvo" e a barra lateral seguia com a
+// palavra antiga até um F5 — o painel não é remontado ao fechar a
+// administração, e a resposta ficava guardada para a sessão inteira.
+const ouvintes = new Set();
+export function palavrasMudaram() {
+  promessa = null;
+  perguntarAsPalavras().then((r) => ouvintes.forEach((f) => f(r)));
 }
 
 /** Começa no padrão, e não em `null`: a palavra tem de estar escrita desde o
@@ -108,7 +122,9 @@ export function useVocabulario() {
   useEffect(() => {
     let vivo = true;
     perguntarAsPalavras().then((r) => { if (vivo) setP(r); });
-    return () => { vivo = false; };
+    const ouvir = (r) => { if (vivo) setP(r); };
+    ouvintes.add(ouvir);
+    return () => { vivo = false; ouvintes.delete(ouvir); };
   }, []);
   return comoFalar(p);
 }

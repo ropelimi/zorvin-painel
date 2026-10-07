@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "./supabase.js";
-import { naoGravouNada, comOCodigo } from "./gravar.js";
+import { naoGravouNada, comOCodigo, semATabela } from "./gravar.js";
 import { SquareKanban, Plus, Loader2, Check, EyeOff, Eye, ArrowUp, ArrowDown, Sparkles } from "lucide-react";
 
 // ============================================================
@@ -48,22 +48,35 @@ export function EtapasDoFunil({ cx, C, departamentos = [], aoAvisar }) {
     if (depId == null && departamentos.length) setDepId(departamentos[0].id);
   }, [departamentos, depId]);
 
-  const ler = useCallback(async (primeira) => {
+  // A RESPOSTA MAIS NOVA VENCE, e a lista é DO DEPARTAMENTO ESCOLHIDO
+  // (auditoria de 07/10): trocando de departamento, as etapas do anterior
+  // continuavam na tela sob o nome do novo até a leitura voltar — ou para
+  // sempre, se ela voltasse fora de ordem —, e renomear, reordenar e conferir
+  // nome repetido agiam sobre a lista errada.
+  const pedido = useRef(0);
+  const jaLeu = useRef(false);
+  const ler = useCallback(async () => {
     if (depId == null) return;
+    const meu = ++pedido.current;
     const { data, error } = await supabase.from("zorvin_etapas").select("*")
       .eq("departamento_id", depId).order("ordem");
+    if (meu !== pedido.current) return;
     if (error) {
-      // 42P01 = o script 017 não rodou. É o único caso em que sumir é o certo.
-      if (error.code === "42P01") { setExiste(false); return; }
-      if (primeira) setExiste(false);
+      // A tabela que falta (o script 017 não rodou) é o único caso em que
+      // sumir é o certo.
+      if (semATabela(error)) { setExiste(false); return; }
+      // SÓ A PRIMEIRA LEITURA ESCONDE A SEÇÃO numa falha; depois disso, um
+      // tropeço ao trocar de departamento não pode sumir com ela.
+      if (!jaLeu.current) setExiste(false);
       aoAvisar(comOCodigo("Não consegui ler as etapas do funil.", error, "etapas"));
       return;
     }
+    jaLeu.current = true;
     setExiste(true);
     setEtapas(data || []);
   }, [depId, aoAvisar]);
 
-  useEffect(() => { ler(true); }, [ler]);
+  useEffect(() => { setEtapas([]); ler(); }, [ler]);
 
   const recusado = "o banco não deixou. Só quem administra o Zorvin pode mexer nas etapas.";
 

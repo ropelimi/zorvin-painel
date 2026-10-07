@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, RefreshCw, Search, Download, X, MessageCircle } from "lucide-react";
 import { supabase } from "./supabase.js";
-import { naoGravouNada, comOCodigo } from "./gravar.js";
+import { naoGravouNada, comOCodigo, semATabela } from "./gravar.js";
 import { nomeDoContato } from "./contato.js";
 import { telefoneLegivel } from "./numeros.js";
 import { diasDesde } from "./espera.js";
@@ -136,7 +136,7 @@ export default function Funil({
         .eq("departamento_id", depId).order("ordem");
       if (minha !== leitura.current) return;
       if (re.error) {
-        if (re.error.code === "42P01") { setExiste(false); return; }
+        if (semATabela(re.error)) { setExiste(false); return; }
         setFalha(comOCodigo("Não consegui ler as etapas do funil.", re.error, "etapas do funil"));
         setExiste((v) => (v === null ? true : v));
         return;
@@ -272,6 +272,12 @@ export default function Funil({
     const antes = cartao.etapa_id;
     const destino = ativas.find((e) => String(e.id) === String(etapaId));
     movendo.current++;
+    // UMA LEITURA QUE JÁ ESTAVA EM VOO É DE ANTES DESTE MOVIMENTO (auditoria
+    // de 07/10): ela terminava depois, trazia o retrato velho e devolvia o
+    // cartão para a coluna de onde ele acabou de sair — e o tirado voltava, e
+    // o segundo "tirar" ouvia "o banco não deixou". Avançar o número da
+    // leitura faz a que está em voo ser descartada.
+    leitura.current++;
     setCartoes((l) => l.map((c) => (c.id === cartao.id
       ? { ...c, etapa_id: etapaId, movido_em: new Date().toISOString() } : c)));
     try {
@@ -287,6 +293,8 @@ export default function Funil({
       avisar(`${nomeDoContato(contatos[cartao.contato_id])} foi para “${destino ? destino.nome : "outra etapa"}”.`);
     } finally {
       movendo.current--;
+      // A leitura descartada acima não apaga o "carregando" que ela acendeu.
+      setCarregando(false);
     }
   }
 
@@ -294,6 +302,12 @@ export default function Funil({
     const nome = nomeDoContato(contatos[cartao.contato_id]);
     if (!window.confirm(`Tirar ${nome} do funil? A conversa continua; só o cartão sai.`)) return;
     movendo.current++;
+    // UMA LEITURA QUE JÁ ESTAVA EM VOO É DE ANTES DESTE MOVIMENTO (auditoria
+    // de 07/10): ela terminava depois, trazia o retrato velho e devolvia o
+    // cartão para a coluna de onde ele acabou de sair — e o tirado voltava, e
+    // o segundo "tirar" ouvia "o banco não deixou". Avançar o número da
+    // leitura faz a que está em voo ser descartada.
+    leitura.current++;
     try {
       const r = await supabase.from("zorvin_cartoes").delete().eq("id", cartao.id).select("id");
       if (r.error || naoGravouNada(r)) {
@@ -306,6 +320,8 @@ export default function Funil({
       avisar(`${nome} saiu do funil.`);
     } finally {
       movendo.current--;
+      // A leitura descartada acima não apaga o "carregando" que ela acendeu.
+      setCarregando(false);
     }
   }
 
@@ -556,7 +572,7 @@ export default function Funil({
         </div>
       ) : depId == null ? (
         <div style={{ padding: 32, color: C.textSecondary }}>Nenhum departamento à vista para mostrar o funil.</div>
-      ) : existe && !carregando && ativas.length === 0 ? (
+      ) : existe && !carregando && !falha && ativas.length === 0 ? (
         <div data-funil-sem-etapas style={{ padding: 32, maxWidth: 560, color: C.textSecondary, lineHeight: 1.5 }}>
           Este departamento ainda não tem etapas no funil.
           {souAdmin ? " Crie as etapas em Menu → Departamentos e acessos → Estrutura." : " Avise quem administra o Zorvin."}
