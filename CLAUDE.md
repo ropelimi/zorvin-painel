@@ -2586,8 +2586,53 @@ vazio; a conversa oferecendo etapa desativada; "parar de usar" apagando; a
 recusa calada dizendo "foi para…").
 
 **Ainda em aberto:** o histórico de movimentos do cliente na tela (o banco
-já guarda em `zorvin_movimentos`), e o relatório do funil (quantos em cada
-etapa, quanto tempo em cada uma).
+já guarda em `zorvin_movimentos`). ~~E o relatório do funil.~~ **Feito** — ver
+logo abaixo.
+
+### O relatório do funil (07/10)
+
+Pedido do Rodrigo logo depois do funil: *"quantos em cada etapa, quanto tempo
+em cada uma"*. **Uma seção do Painel de números**, entre o relatório por
+responsável e o "Já tratei", embaixo da mesma barra de filtros. A conta é do
+banco (`zorvin_relatorio_funil`, script 019 da ponte).
+
+**Duas perguntas na mesma tabela, e a seção diz qual é qual:**
+
+| coluna | pergunta | usa o período? |
+|---|---|---|
+| Agora · Há quanto tempo · Mais parado | o que ESTÁ em cada etapa hoje | não |
+| Entraram · Saíram · Tempo na etapa | o que ACONTECEU no período | sim |
+
+**O tempo na etapa é o de quem SAIU**, e sai dos movimentos: da última
+chegada à etapa até a saída, do mesmo cliente no mesmo funil. Quem ainda
+está lá não terminou de passar por ela — somar o "até agora" dele puxaria o
+número para baixo justamente nas etapas em que os cartões empacam; esse
+tempo aparece à parte, em "há quanto tempo". **Mediana na tela, média no
+`title`**: um cliente esquecido um mês puxa a média e não a mediana.
+
+**Só aparecem os departamentos em que a pessoa vê alguma conversa** — o
+funil de um departamento que ela não atende viria zerado, e zerado se lê
+como "ninguém". E **o departamento sem cartão nem movimento vira uma linha
+só**, e não sete linhas de zero: a primeira foto da bancada mostrava quatro
+tabelas zeradas antes da que importava.
+
+**O filtro de telefone** vira "os clientes que conversam por este telefone",
+no funil do departamento dele. **Etapa desativada** só aparece se ainda tem
+cartão ou movimento no período.
+
+**A bancada passou a imitar o gatilho do 017**: todo cartão que nasce, muda
+de etapa ou sai deixa uma linha em `zorvin_movimentos`, e mudar de etapa
+carimba `movido_em`. Sem isso o relatório só teria o que a semente plantou, e
+a cena do caminho inteiro (mudar a etapa na conversa e ver no relatório) não
+mediria nada.
+
+Prova: `o-relatorio-do-funil`, 38 conferências, **7 sabotagens e 7 pegas**
+(o tempo de quem ficou no lugar do de quem saiu; a falha virando funil vazio;
+o administrador sem o aviso do script; o período ignorado; o telefone que não
+recorta; a seção sem dizer o que é de agora; a tabela de zeros). E cinco no
+SQL, num Postgres de verdade, as cinco pegas — uma vazou primeiro: tirar a
+regra "a chegada é ANTES da saída" passava, porque nenhum cliente da cena
+voltava a uma etapa onde já tinha estado. Entrou o cliente que volta.
 
 ## Tarefas e lembretes (06/10)
 

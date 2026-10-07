@@ -68,7 +68,7 @@ import { diasDesde } from "./espera.js";
 import {
   ArrowLeft, RefreshCw, AlertCircle, Table2, BarChart3, Info, Calendar,
   ChevronLeft, ChevronRight, ChevronDown, Check, X, Users, Phone, Building2,
-  ListChecks, Download, UserCheck,
+  ListChecks, Download, UserCheck, SquareKanban,
 } from "lucide-react";
 
 const DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -513,6 +513,13 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
         <RelatorioResponsaveis C={C} estilos={estilos} cores={cores} fuso={fuso}
                                telefone={telefone} departamento={departamento}
                                souAdmin={souAdmin} meuId={meuId} />
+
+        {/* O FUNIL — função própria no banco (script 019), fora do bloco de
+            cima pela mesma razão das outras duas. Usa o período para o que
+            ACONTECEU (entradas, saídas, tempo de quem saiu) e não para o que
+            ESTÁ (quantos em cada etapa agora) — e a seção diz qual é qual. */}
+        <RelatorioFunil C={C} estilos={estilos} cores={cores} deIso={deIso} ateIso={ateIso}
+                        telefone={telefone} departamento={departamento} souAdmin={souAdmin} />
 
         {/* O "JÁ TRATEI" FICA FORA do bloco de cima, de propósito: ele tem a
             própria função no banco (script 010), e um banco sem a do Painel
@@ -1484,6 +1491,194 @@ function RelatorioResponsaveis({ C, estilos, cores, fuso, telefone, departamento
               </div>
             )}
           </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ================================================================
+   O RELATÓRIO DO FUNIL — quantos em cada etapa, e quanto tempo (07/10)
+   ================================================================
+   Pedido do Rodrigo logo depois do funil: "quantos clientes há em cada
+   etapa, e quanto tempo eles ficam em cada uma". A conta é do banco
+   (`zorvin_relatorio_funil`, script 019 da ponte), pela régua desta tela: a
+   API corta em 1000 linhas, e o histórico de movimentos passa disso.
+
+   DUAS PERGUNTAS DIFERENTES NA MESMA TABELA, e a seção separa as duas:
+     - o que ESTÁ (agora, há quanto tempo, o mais parado) — não usa o período;
+     - o que ACONTECEU no período (entraram, saíram, quanto tempo ficaram).
+   Misturar as duas sem dizer faria quem escolhe "setembro" ler a etapa de
+   hoje achando que é a de setembro — a régua do relatório por responsável.
+
+   O TEMPO NA ETAPA É O DE QUEM SAIU. Quem ainda está lá não terminou de
+   passar por ela; o tempo dele aparece em "há quanto tempo", à parte.
+
+   SEM A FUNÇÃO ou SEM O SCRIPT 017, quem administra lê qual script falta;
+   quem atende não vê nada. COM A FUNÇÃO FALHANDO, a frase vem com o código
+   — falha não é ausência (armadilha nº 2). */
+function RelatorioFunil({ C, estilos, cores, deIso, ateIso, telefone, departamento, souAdmin }) {
+  const [r, setR] = useState(null);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState("");
+  const [falta, setFalta] = useState(null);   // "019" | "017" | null
+
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      setCarregando(true); setErro(""); setFalta(null);
+      const { data, error } = await supabase.rpc("zorvin_relatorio_funil", {
+        p_desde: deIso, p_ate: ateIso, p_departamento: departamento, p_telefone: telefone,
+      });
+      if (!vivo) return;
+      setCarregando(false);
+      if (error) {
+        const m = (error.message || "") + (error.code || "");
+        if (/zorvin_relatorio_funil|PGRST202|Could not find/i.test(m)) { setFalta("019"); return; }
+        setErro(`${error.message || "erro desconhecido"}${error.code ? ` (código ${error.code})` : ""}`);
+        return;
+      }
+      if (data && data.falta) { setFalta(String(data.falta)); return; }
+      setR(data || null);
+    })();
+    return () => { vivo = false; };
+  }, [deIso, ateIso, telefone, departamento]);
+
+  if (falta && !souAdmin) return null;
+
+  const SCRIPTS = {
+    "019": "sql/automaticos/019-o-relatorio-do-funil.sql",
+    "017": "sql/automaticos/017-o-funil-de-etapas.sql",
+  };
+  const deps = (r && r.departamentos) || [];
+  const parado = (iso) => {
+    if (!iso) return "—";
+    const d = diasDesde(iso);
+    return d === 0 ? "hoje" : `há ${d} ${d === 1 ? "dia" : "dias"}`;
+  };
+
+  return (
+    <div data-relatorio-funil>
+      <Titulo C={C}><span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+        <SquareKanban size={16} /> Funil</span></Titulo>
+
+      {carregando && <div style={{ ...estilos.nota, padding: "8px 0" }}>Contando o funil…</div>}
+
+      {falta && (
+        <div style={{ ...estilos.cartao, display: "flex", gap: 12, alignItems: "flex-start" }} data-funil-falta={falta}>
+          <AlertCircle size={20} color={cores.aviso} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ ...estilos.nota, fontSize: 13.5 }}>
+            <b style={{ color: C.textPrimary }}>Falta um passo no banco.</b>{" "}
+            {falta === "017"
+              ? "O funil ainda não existe neste banco: "
+              : "A conta é feita lá dentro, e a função ainda não foi criada: "}
+            rode o script{" "}
+            <code style={{ background: C.headerBar, padding: "1px 5px", borderRadius: 4 }}>
+              {SCRIPTS[falta] || SCRIPTS["019"]}
+            </code>{" "}(repositório da ponte) no SQL Editor do Supabase.
+          </div>
+        </div>
+      )}
+
+      {!!erro && (
+        <div style={{ ...estilos.cartao, borderColor: "#e5573f", color: "#e5573f" }} data-funil-erro>
+          Não consegui contar o funil: {erro}
+        </div>
+      )}
+
+      {!carregando && !falta && !erro && r && (
+        <>
+          <div style={{ ...estilos.nota, marginBottom: 12 }} data-funil-escopo>
+            <b style={{ color: C.textPrimary }}>Agora</b> e <b style={{ color: C.textPrimary }}>há quanto tempo</b> são
+            a foto de hoje, e não usam o período. <b style={{ color: C.textPrimary }}>Entraram</b>,{" "}
+            <b style={{ color: C.textPrimary }}>saíram</b> e <b style={{ color: C.textPrimary }}>tempo na etapa</b> são
+            do período escolhido no alto — o tempo é o de quem saiu da etapa.
+            {telefone ? " Só os clientes que conversam pelo telefone escolhido." : ""}
+          </div>
+          {!deps.length && (
+            <div style={{ ...estilos.cartao, ...estilos.nota }} data-funil-sem-departamento>
+              Nenhum funil nos departamentos que você atende.
+            </div>
+          )}
+          {deps.map((d) => {
+            const etapas = d.etapas || [];
+            const maior = Math.max(1, ...etapas.map((e) => Number(e.agora || 0)));
+            // O FUNIL SEM NINGUÉM vira uma linha, e não sete linhas de zero: um
+            // escritório com quatro departamentos e um funil em uso leria três
+            // tabelas zeradas antes de achar a que importa.
+            if (!Number(d.agora) && !Number(d.movimentos)) {
+              return (
+                <div key={d.id} style={{ ...estilos.cartao, marginBottom: 12, display: "flex", flexWrap: "wrap",
+                                         alignItems: "baseline", gap: "4px 14px" }}
+                     data-funil-departamento={d.nome} data-funil-vazio>
+                  <div style={{ fontWeight: 700, fontSize: 14.5, color: C.textPrimary }}>{d.nome}</div>
+                  <div style={estilos.nota}>Nenhum cliente neste funil agora, e nenhum movimento no período.</div>
+                </div>
+              );
+            }
+            return (
+              <div key={d.id} style={{ ...estilos.cartao, overflowX: "auto", marginBottom: 12 }}
+                   data-funil-departamento={d.nome}>
+                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 14px", marginBottom: 8 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14.5, color: C.textPrimary }}>{d.nome}</div>
+                  <div style={{ ...estilos.nota }} data-funil-resumo>
+                    <b style={{ color: C.textPrimary }} data-funil-agora={d.agora}>{numero(d.agora)}</b>{" "}
+                    {Number(d.agora) === 1 ? "cliente" : "clientes"} no funil agora · no período,{" "}
+                    <span data-funil-entraram-no-funil={d.entraram_no_funil}>{numero(d.entraram_no_funil)} entraram</span>,{" "}
+                    <span data-funil-sairam-do-funil={d.sairam_do_funil}>{numero(d.sairam_do_funil)} saíram do funil</span>{" "}
+                    e {numero(d.movimentos)} {Number(d.movimentos) === 1 ? "movimento" : "movimentos"}
+                  </div>
+                </div>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
+                  <thead><tr>
+                    <th style={estilos.th}>Etapa</th>
+                    <th style={estilos.thNum}>Agora</th>
+                    <th style={estilos.thNum} title="Há quanto tempo, na mediana, os clientes de agora estão nesta etapa">Há quanto tempo</th>
+                    <th style={estilos.thNum} title="Desde quando está nela o cliente mais parado">Mais parado</th>
+                    <th style={estilos.thNum} title="Quantas vezes um cliente chegou a esta etapa no período">Entraram</th>
+                    <th style={estilos.thNum} title="Quantas vezes um cliente saiu desta etapa no período">Saíram</th>
+                    <th style={estilos.thNum} title="Quanto tempo ficaram na etapa os que saíram no período (mediana)">Tempo na etapa</th>
+                  </tr></thead>
+                  <tbody>
+                    {etapas.map((e) => (
+                      <tr key={e.id} data-funil-etapa={e.nome} style={{ opacity: e.ativo === false ? 0.7 : 1 }}>
+                        <td style={{ ...estilos.td, width: "30%" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 7, fontWeight: 600 }}>
+                            <span style={{ width: 9, height: 9, borderRadius: "50%", flexShrink: 0,
+                                           background: e.cor || cores.apagado }} />
+                            <span>{e.nome}</span>
+                            {e.ativo === false && (
+                              <span data-funil-etapa-desativada style={{ fontSize: 11, fontWeight: 600, color: C.textSecondary,
+                                                                          border: `1px solid ${C.divider}`, borderRadius: 10, padding: "0 6px" }}>
+                                desativada
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ height: 6, background: C.divider, borderRadius: 3, overflow: "hidden", marginTop: 6 }}>
+                            <div style={{ width: `${Math.round((Number(e.agora || 0) / maior) * 100)}%`, height: "100%",
+                                          background: e.cor || cores.apagado }} />
+                          </div>
+                        </td>
+                        <td style={estilos.num} data-agora={e.agora}>{numero(e.agora)}</td>
+                        <td style={estilos.num} data-agora-mediana={e.agora_mediana_s ?? ""}>
+                          {Number(e.agora) ? tempo(e.agora_mediana_s) : "—"}
+                        </td>
+                        <td style={estilos.num} data-mais-antigo={e.mais_antigo ? diasDesde(e.mais_antigo) : ""}>
+                          {parado(e.mais_antigo)}
+                        </td>
+                        <td style={estilos.num} data-entraram={e.entraram}>{numero(e.entraram)}</td>
+                        <td style={estilos.num} data-sairam={e.sairam}>{numero(e.sairam)}</td>
+                        <td style={estilos.num} data-tempo-mediana={e.tempo_mediana_s ?? ""}
+                            title={e.tempo_quantos ? `Mediana de ${numero(e.tempo_quantos)} ${Number(e.tempo_quantos) === 1 ? "passagem" : "passagens"}; média ${tempo(e.tempo_media_s)}` : "Ninguém saiu desta etapa no período"}>
+                          {e.tempo_quantos ? tempo(e.tempo_mediana_s) : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
         </>
       )}
     </div>
