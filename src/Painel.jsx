@@ -47,6 +47,7 @@ import Marca from "./Marca";
 import PainelEmoji, { guardarRecente } from "./Emojis";
 import JaTratei from "./JaTratei.jsx";
 import { nomeDoContato } from "./contato.js";
+import { preencherVariaveis, usaVariaveis, variaveisDesconhecidas, VARIAVEIS } from "./variaveis.js";
 import { diasDesde } from "./espera.js";
 import { montarCaminho, duracaoLegivel } from "./caminhoNoFunil.js";
 import EscolherHora from "./EscolherHora.jsx";
@@ -3179,6 +3180,7 @@ export default function Painel({ sessao }) {
   const [configAberta, setConfigAberta] = useState(false); // tela de Configurações aberta
   const [abaConfig, setAbaConfig] = useState("perfil"); // perfil | aparencia | rapidas
   const [rapidaForm, setRapidaForm] = useState(null); // { id?, titulo, texto } sendo criada/editada
+  const textoDaRapidaRef = useRef(null); // a caixa do texto, para pôr a variável onde está o cursor
   const [tags, setTags] = useState([]); // definições das tags (id, nome, cor)
   const [tagsPorConversa, setTagsPorConversa] = useState({}); // { conversaId: [tagId,...] }
 
@@ -5264,6 +5266,24 @@ export default function Painel({ sessao }) {
     carregarRapidas();
   }
 
+  // PÕE A VARIÁVEL ONDE ESTÁ O CURSOR, e não no fim: "Olá, !" com o cursor
+  // antes do "!" é o caso de todo dia, e a variável colada depois do "!"
+  // obrigaria a apagar e reescrever. O cursor volta para depois dela.
+  function porVariavel(chave) {
+    const campo = textoDaRapidaRef.current;
+    const texto = rapidaForm?.texto || "";
+    const marca = `{${chave}}`;
+    const ini = campo ? campo.selectionStart : texto.length;
+    const fim = campo ? campo.selectionEnd : texto.length;
+    setRapidaForm((f) => ({ ...f, texto: texto.slice(0, ini) + marca + texto.slice(fim) }));
+    setTimeout(() => {
+      const c = textoDaRapidaRef.current;
+      if (!c) return;
+      c.focus();
+      c.setSelectionRange(ini + marca.length, ini + marca.length);
+    }, 0);
+  }
+
   async function apagarRapida(id) {
     if (!window.confirm("Apagar esta mensagem rápida?")) return;
     const r = await supabase.from("mensagens_rapidas").delete().eq("id", id).select("id");
@@ -5277,9 +5297,11 @@ export default function Painel({ sessao }) {
   }
 
   // Escolhe uma rápida pelo menu do "/": substitui o texto digitado pela mensagem.
+  // AS VARIÁVEIS SÃO PREENCHIDAS AQUI, e não no envio: o texto entra na caixa
+  // já com o nome do cliente, e a pessoa lê o que vai sair antes do Enter.
   function escolherSlash(r) {
     if (!r) return;
-    setRascunho(r.texto);
+    setRascunho(rapidaPreenchida(r.texto));
     setSlashIdx(0);
     inputRef.current?.focus();
   }
@@ -10182,6 +10204,16 @@ export default function Painel({ sessao }) {
   //  onde uma regra escrita à mão começa a divergir das outras.
   const ehGrupo = (c) => String(c?.contato?.numero || "").startsWith("grupo:");
 
+  // A RÁPIDA COMO ELA VAI SAIR NESTA CONVERSA — as regras estão em
+  // `variaveis.js`. O cliente é o nome do alto da conversa. GRUPO NÃO TEM "O
+  // CLIENTE": o nome dele num "Olá, {nome}!" daria "Olá, Mutirão!", então ali
+  // a variável fica vazia e sai sem deixar rastro ("Olá!").
+  const rapidaPreenchida = (texto) => preencherVariaveis(texto, {
+    cliente: conversa && !ehGrupo(conversa) ? nomeDoContato(conversa.contato) : "",
+    atendente: meuNome,
+    agora: new Date(),
+  });
+
   // QUANTAS NÃO LIDAS ESTÃO EM GRUPO — o número do menu.
   //
   // Sai da lista que já está na tela, e não de uma ida a mais ao banco: é um
@@ -12054,10 +12086,12 @@ export default function Painel({ sessao }) {
     {slashAberto && (
       <div style={{ position: "absolute", bottom: 60, left: 12, right: 12, maxWidth: 420, maxHeight: 260, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 30 }}>
         <div style={{ padding: "8px 12px", borderBottom: `1px solid ${C.divider}`, fontSize: 11.5, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3, position: "sticky", top: 0, background: C.panel }}>MENSAGENS RÁPIDAS · use ↑ ↓ e Enter</div>
+        {/* A segunda linha já mostra o texto PREENCHIDO: é ali que se vê, antes
+            de escolher, o nome que vai entrar. */}
         {slashLista.map((r, idx) => (
-          <button key={r.id} onMouseEnter={() => setSlashIdx(idx)} onClick={() => escolherSlash(r)} style={{ width: "100%", textAlign: "left", display: "block", border: "none", background: idx === Math.min(slashIdx, slashLista.length - 1) ? C.listActive : "transparent", cursor: "pointer", color: C.textPrimary, padding: "8px 12px", borderBottom: `1px solid ${C.divider}` }}>
+          <button key={r.id} data-rapida-no-menu={r.titulo} onMouseEnter={() => setSlashIdx(idx)} onClick={() => escolherSlash(r)} style={{ width: "100%", textAlign: "left", display: "block", border: "none", background: idx === Math.min(slashIdx, slashLista.length - 1) ? C.listActive : "transparent", cursor: "pointer", color: C.textPrimary, padding: "8px 12px", borderBottom: `1px solid ${C.divider}` }}>
             <div style={{ fontSize: 13, fontWeight: 600 }}>{r.titulo}</div>
-            <div style={{ fontSize: 12, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.texto}</div>
+            <div data-texto-da-rapida style={{ fontSize: 12, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rapidaPreenchida(r.texto)}</div>
           </button>
         ))}
       </div>
@@ -15415,11 +15449,60 @@ export default function Painel({ sessao }) {
                       </div>
                       <div>
                         <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary }}>TEXTO DA MENSAGEM</label>
-                        <textarea value={rapidaForm.texto} onChange={(e) => setRapidaForm((f) => ({ ...f, texto: e.target.value }))} rows={5} placeholder="Escreva a resposta pronta…" style={{ width: "100%", boxSizing: "border-box", marginTop: 5, border: `1px solid ${C.divider}`, outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "9px 12px", fontSize: 14, resize: "vertical", fontFamily: "inherit", lineHeight: 1.4 }} />
+                        <textarea ref={textoDaRapidaRef} data-texto-da-rapida-na-config value={rapidaForm.texto} onChange={(e) => setRapidaForm((f) => ({ ...f, texto: e.target.value }))} rows={5} placeholder="Ex.: {saudacao}, {nome}! Aqui é {atendente}, do escritório." style={{ width: "100%", boxSizing: "border-box", marginTop: 5, border: `1px solid ${C.divider}`, outline: "none", background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "9px 12px", fontSize: 14, resize: "vertical", fontFamily: "inherit", lineHeight: 1.4 }} />
+                        {/* AS VARIÁVEIS À VISTA, e num clique. Escritas só numa
+                            explicação, viravam coisa que se digita de memória —
+                            e "{nome}" com um erro de digitação vai para o
+                            cliente com as chaves. */}
+                        <div data-variaveis-da-rapida style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 8 }}>
+                          <span style={{ fontSize: 12, color: C.textSecondary }}>Pôr no texto:</span>
+                          {VARIAVEIS.map((v) => (
+                            <button key={v.chave} type="button" data-variavel={v.chave} title={v.diz} aria-label={`Pôr {${v.chave}}: ${v.diz}`}
+                                    onClick={() => porVariavel(v.chave)}
+                                    style={{ border: `1px solid ${C.divider}`, background: C.listActive, color: C.textPrimary, borderRadius: 14, padding: "4px 10px", fontSize: 12.5, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", cursor: "pointer" }}>
+                              {`{${v.chave}}`}
+                            </button>
+                          ))}
+                        </div>
+                        <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 6, lineHeight: 1.45 }}>
+                          Na conversa, cada uma vira o que diz: o nome é o que aparece no alto da conversa. Cliente ainda sem nome? A variável some — “Olá, {"{nome}"}!” vira “Olá!”.
+                        </div>
+                        {/* A VARIÁVEL QUE O ZORVIN NÃO CONHECE é dita aqui, enquanto
+                            dá para corrigir. Na conversa ela iria calada para o
+                            cliente, com as chaves. Avisa e não impede: quem
+                            quiser mandar chaves de verdade, manda. */}
+                        {(() => {
+                          const estranhas = variaveisDesconhecidas(rapidaForm.texto);
+                          if (!estranhas.length) return null;
+                          const uma = estranhas.length === 1;
+                          return (
+                            <div data-variavel-desconhecida role="alert"
+                                 style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 8, padding: "8px 10px", borderRadius: 8,
+                                          background: modo === "escuro" ? "#3a2a1a" : "#fff4e5", border: "1px solid #e0a458",
+                                          fontSize: 12.5, lineHeight: 1.45, color: C.textPrimary }}>
+                              <AlertCircle size={16} color="#d97706" style={{ flexShrink: 0, marginTop: 1 }} />
+                              <span>
+                                <b>{estranhas.join(", ")}</b> {uma ? "não é uma variável" : "não são variáveis"} do Zorvin: {uma ? "vai" : "vão"} para o cliente assim, com as chaves. As que existem são {VARIAVEIS.map((v) => `{${v.chave}}`).join(", ")}.
+                              </span>
+                            </div>
+                          );
+                        })()}
+                        {/* COMO FICA, preenchido de verdade, pela mesma conta que a
+                            conversa usa. O nome de exemplo vem em maiúsculas de
+                            propósito: é como o cadastro do Vantoro escreve, e a
+                            prévia mostra que na mensagem ele não vai assim. */}
+                        {usaVariaveis(rapidaForm.texto) && (
+                          <div data-previa-da-rapida style={{ marginTop: 8, padding: "8px 10px", borderRadius: 8, background: C.listActive }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3 }}>COMO FICA — PARA A CLIENTE “MARIA APARECIDA DOS SANTOS”, AGORA</div>
+                            <div data-previa-texto style={{ fontSize: 13.5, marginTop: 4, whiteSpace: "pre-wrap", wordBreak: "break-word", color: C.textPrimary }}>
+                              {preencherVariaveis(rapidaForm.texto, { cliente: "MARIA APARECIDA DOS SANTOS", atendente: meuNome, agora: new Date() })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                         <button onClick={() => setRapidaForm(null)} style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary, borderRadius: 8, padding: "9px 16px", fontSize: 14, cursor: "pointer" }}>Cancelar</button>
-                        <button onClick={salvarRapidaForm} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Salvar</button>
+                        <button data-salvar-rapida onClick={salvarRapidaForm} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Salvar</button>
                       </div>
                     </div>
                   ) : (
