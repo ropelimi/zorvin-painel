@@ -50,6 +50,7 @@ import { nomeDoContato } from "./contato.js";
 import { diasDesde } from "./espera.js";
 import { montarCaminho, duracaoLegivel } from "./caminhoNoFunil.js";
 import EscolherHora from "./EscolherHora.jsx";
+import { perguntarOsScripts, fraseDosScriptsParaAFaixa } from "./scriptsDoBanco.js";
 import { rotuloDaHora, porQueNaoServe, semAColunaDaAgenda, aindaDaParaEditar } from "./agenda.js";
 
 // ============================================================
@@ -2629,6 +2630,13 @@ export default function Painel({ sessao }) {
   // chega e a pessoa alcança mais de um telefone do escritório.
   const [escolhaTelefone, setEscolhaTelefone] = useState(null);
   const [telaAdmin, setTelaAdmin] = useState(false);
+  // A aba em que a administração abre: a de sempre pelo menu, e a das
+  // atualizações do banco quando quem abre é a faixa vermelha.
+  const [abaDaAdmin, setAbaDaAdmin] = useState("estrutura");
+  // O QUE A PONTE FEZ COM OS SCRIPTS DO BANCO AO SUBIR (`GET /scripts/estado`),
+  // só para quem administra. `null` = ainda não se sabe, e não acende nada.
+  // Ver `scriptsDoBanco.js`.
+  const [scriptsDoBanco, setScriptsDoBanco] = useState(null);
   // O Painel de números (quanto se falou, por telefone e por atendente).
   const [telaPainel, setTelaPainel] = useState(false);
   // JUNTAR DUAS CONVERSAS SAIU DO PAINEL — a pedido de quem administra.
@@ -4491,6 +4499,36 @@ export default function Painel({ sessao }) {
     const id = setInterval(perguntar, 60 * 1000);
     return () => { vivo = false; clearInterval(id); };
   }, [anotarFalhaDeLeitura, limparFalhaDeLeitura]);
+
+  // ------------------------------------------------------------
+  //  AS ATUALIZAÇÕES DO BANCO, PERGUNTADAS À PONTE — só por quem administra
+  //
+  //  A ponte aplica os scripts de `sql/automaticos/` ao subir, e é só aí que a
+  //  resposta muda. Então pergunta-se pouco: três segundos depois de abrir
+  //  (para não disputar com a primeira leva de consultas, e com a ponte já
+  //  acordada pelo `/ping`), e depois de quinze em quinze minutos — de um em
+  //  um enquanto ela diz que está conferindo ou que vai tentar de novo, porque
+  //  aí a resposta muda logo.
+  //
+  //  NÃO CONSEGUIR PERGUNTAR NÃO MUDA NADA NA TELA: guarda-se o que já se
+  //  sabia. A faixa não acende por uma pergunta que falhou (a ponte fora do ar
+  //  tem os avisos dela), nem apaga por uma — a aba diz a falha com todas as
+  //  letras, para quem for olhar.
+  // ------------------------------------------------------------
+  useEffect(() => {
+    if (!souAdmin) { setScriptsDoBanco(null); return undefined; }
+    let vivo = true;
+    let relogio = null;
+    const perguntar = async () => {
+      const r = await perguntarOsScripts();
+      if (!vivo) return;
+      if (r.estado) setScriptsDoBanco(r.estado);
+      const logo = r.estado && (r.estado.situacao === "rodando" || r.estado.proxima_tentativa);
+      relogio = setTimeout(perguntar, logo ? 60 * 1000 : 15 * 60 * 1000);
+    };
+    relogio = setTimeout(perguntar, 3000);
+    return () => { vivo = false; clearTimeout(relogio); };
+  }, [souAdmin]);
 
   // ---- Tags (etiquetas coloridas das conversas, compartilhadas) ----
   const carregarTags = useCallback(async () => {
@@ -12336,7 +12374,10 @@ export default function Painel({ sessao }) {
           o problema passar, na pergunta seguinte. */}
       {(() => {
         const frases = frasesDaSaude(saude, souAdmin);
-        if (!frases.length) return null;
+        // A LINHA DAS ATUALIZAÇÕES DO BANCO é só de quem administra, e vem por
+        // último: as de cima mudam o que quem atende faz AGORA, e esta não.
+        const fraseDosScripts = souAdmin ? fraseDosScriptsParaAFaixa(scriptsDoBanco) : null;
+        if (!frases.length && !fraseDosScripts) return null;
         return (
           <div data-aviso-de-saude
                style={{ background: "#8e1c1c", color: "#fff", padding: "9px 14px",
@@ -12349,6 +12390,21 @@ export default function Painel({ sessao }) {
                 ninguém lê no meio de um atendimento. */}
             <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
               {frases.map((f, i) => <span key={i} data-frase-de-saude>{f}</span>)}
+              {fraseDosScripts && (
+                /* COM UM BOTÃO, e é a única linha desta faixa que tem: as
+                   outras não têm gesto que conserte, e esta tem um lugar
+                   para onde ir — a aba que diz o que aconteceu e o motivo. */
+                <span data-frase-de-saude data-frase-dos-scripts>
+                  {fraseDosScripts}{" "}
+                  <button data-ver-atualizacoes-do-banco
+                          onClick={() => { setAbaDaAdmin("banco"); setTelaAdmin(true); }}
+                          style={{ border: "1px solid rgba(255,255,255,.6)", background: "transparent",
+                                   color: "#fff", borderRadius: 8, padding: "2px 10px", marginLeft: 4,
+                                   fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    Ver o que houve
+                  </button>
+                </span>
+              )}
             </span>
           </div>
         );
@@ -12861,7 +12917,7 @@ export default function Painel({ sessao }) {
                       é cortesia, não segurança: quem não é admin esbarra nas
                       regras do banco de qualquer forma. */}
                   {souAdmin && (
-                    <button onClick={() => { setMenuTopoAberto(false); setTelaAdmin(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><ShieldCheck size={17} color={C.textSecondary} /> Departamentos e acessos</button>
+                    <button onClick={() => { setMenuTopoAberto(false); setAbaDaAdmin("estrutura"); setTelaAdmin(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><ShieldCheck size={17} color={C.textSecondary} /> Departamentos e acessos</button>
                   )}
                   <div style={{ height: 1, background: C.divider }} />
                   <button onClick={() => { setMenuTopoAberto(false); sair(); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: "#e5573f", fontSize: 14, fontWeight: 600, textAlign: "left" }}><LogOut size={17} /> Desconectar</button>
@@ -16274,7 +16330,7 @@ export default function Painel({ sessao }) {
       )}
 
       {telaAdmin && (
-        <Departamentos C={C} aoFechar={() => {
+        <Departamentos C={C} abaInicial={abaDaAdmin} aoSaberDosScripts={setScriptsDoBanco} aoFechar={() => {
           setTelaAdmin(false);
           // O QUE A ADMINISTRAÇÃO MEXE É RELIDO: os assuntos do "Já tratei" e
           // as etapas do funil eram lidos uma vez por sessão, e a mudança só

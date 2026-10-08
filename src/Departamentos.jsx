@@ -11,6 +11,7 @@ import { useTemVantoro } from "./temVantoro.js";
 import { PalavrasDaCasa } from "./PalavrasDaCasa.jsx";
 import { AssuntosDoJaTratei } from "./AssuntosDoJaTratei.jsx";
 import { EtapasDoFunil } from "./EtapasDoFunil.jsx";
+import { AtualizacoesDoBanco } from "./AtualizacoesDoBanco.jsx";
 // A CHAVE SAIU DAQUI para `Chave.jsx`: a tela de Avisos passou a precisar da
 // mesma peça, e uma segunda cópia divergiria da primeira no primeiro conserto.
 import { Chave } from "./Chave.jsx";
@@ -52,12 +53,14 @@ function paraSlug(nome) {
   return semAcento(nome).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 }
 
-export default function Departamentos({ C, aoFechar }) {
+export default function Departamentos({ C, aoFechar, abaInicial, aoSaberDosScripts }) {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [departamentos, setDepartamentos] = useState([]);
   const [telefones, setTelefones] = useState([]);
-  const [aba, setAba] = useState("estrutura"); // 'estrutura' | 'pessoas' | 'notas'
+  // A ABA DE ENTRADA pode vir de fora: a faixa vermelha abre esta tela direto
+  // em "Atualizações do banco", que é para onde a frase dela manda.
+  const [aba, setAba] = useState(abaInicial || "estrutura"); // 'estrutura' | 'pessoas' | 'notas' | 'banco'
   const temVantoro = useTemVantoro();
   const [salvando, setSalvando] = useState("");
   // O que o BANCO acha: `null` = não deu para perguntar (base antiga, sem a
@@ -193,7 +196,9 @@ export default function Departamentos({ C, aoFechar }) {
           <button onClick={aoFechar} style={{ ...cx.botaoFraco, padding: 6 }} aria-label="Fechar"><X size={16} /></button>
         </div>
 
-        <div style={{ display: "flex", gap: 8, padding: "12px 18px 0" }}>
+        {/* QUEBRA EM DUAS LINHAS no celular: com a quarta aba, a fileira não cabe
+            em 360px, e sem quebrar ela empurraria a janela para o lado. */}
+        <div style={{ display: "flex", gap: 8, padding: "12px 18px 0", flexWrap: "wrap" }}>
           <button style={cx.aba(aba === "estrutura")} onClick={() => setAba("estrutura")}>Departamentos e telefones</button>
           <button style={cx.aba(aba === "pessoas")} onClick={() => setAba("pessoas")}>Atendentes</button>
           {/* A ABA DAS NOTAS mora aqui porque aqui é a tela de quem administra,
@@ -213,6 +218,12 @@ export default function Departamentos({ C, aoFechar }) {
             <button style={cx.aba(aba === "notas")} onClick={() => setAba("notas")}
                     data-aba-notas>Notas no Vantoro</button>
           )}
+          {/* AS ATUALIZAÇÕES DO BANCO, numa aba própria e não no fim da
+              primeira: é para cá que a faixa vermelha manda quando um script
+              falha, e "lá embaixo da terceira lista" é um caminho que ninguém
+              acha com pressa. Ver `AtualizacoesDoBanco.jsx`. */}
+          <button style={cx.aba(aba === "banco")} onClick={() => setAba("banco")}
+                  data-aba-banco>Atualizações do banco</button>
         </div>
 
         <div style={cx.corpo}>
@@ -291,6 +302,10 @@ export default function Departamentos({ C, aoFechar }) {
           )}
 
           {aba === "notas" && <NotasNoVantoro cx={cx} C={C} />}
+
+          {/* Fora do `carregando` de propósito: o que esta aba mostra vem da
+              PONTE, e não espera os departamentos do banco. */}
+          {aba === "banco" && <AtualizacoesDoBanco cx={cx} C={C} aoSaber={aoSaberDosScripts} />}
         </div>
       </div>
     </div>

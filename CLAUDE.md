@@ -3182,6 +3182,62 @@ Prova: `documentos`, 42 conferências, **6 sabotagens e 6 pegas** (o painel de
 antes inteiro, nos dois navegadores; o PDF sem perguntar o tipo; o texto de
 volta no iframe; a prévia de mandar com o iframe próprio; o leitor ignorado).
 
+## As atualizações do banco — o que a ponte fez ao subir (08/10)
+
+Pedido do Rodrigo: *"pode seguir com os scripts automáticos"* — parar de colar
+SQL. Desde 08/10 a ponte aplica sozinha os scripts de `sql/automaticos/` ao
+subir (ver "Ligar no escritório" no CLAUDE.md dela). Até ali, a resposta de
+"deu certo?" era a última linha que o Rodrigo via no editor da Supabase; agora
+ninguém vê o script rodar, e **o log da ponte é o lugar onde este projeto já
+perdeu dois avisos**. Então quem administra lê aqui.
+
+**Quem responde é a PONTE** (`GET /scripts/estado`, só para `admin` E `ativo`),
+e não o banco: os defeitos mais prováveis — a senha do banco errada, o endereço
+errado — acontecem antes de a ponte alcançar o banco, e o banco não conta o que
+nunca chegou a ele. A pergunta e as frases moram em `scriptsDoBanco.js`.
+
+**Dois lugares, e o segundo só quando há o que fazer:**
+
+| onde | o quê |
+|---|---|
+| Departamentos e acessos → **Atualizações do banco** (`AtualizacoesDoBanco.jsx`) | a situação da última subida, a frase e o motivo técnico da ponte, o que entrou nesta subida, o que ficou esperando, e a **conferência de cada script** |
+| a faixa vermelha (`data-frase-dos-scripts`), **só para quem administra** | falhou, parou (script editado depois de aplicado), falta a configuração, configuração errada, não falou com o banco, scripts esperando no modo conferir — e a conferência que não fechou **num script desta subida** |
+
+**Uma aba própria, e não uma seção no fim de "Departamentos e telefones":** a
+faixa manda a pessoa para cá, e "lá embaixo da terceira lista" não se acha com
+pressa. **O botão da faixa abre a administração JÁ nessa aba** (`abaInicial`).
+Com a quarta aba, a fileira quebra em linha no celular (`flexWrap`).
+
+**"Em dia", "desligada", "conferindo" e "esperando a outra ponte" não acendem
+nada** — alarme que não pede ação se aprende a ignorar. **E a conferência que
+não fechou acende só pelo script que entrou nesta subida:** a de antes já foi
+dita na subida dela, e acender de novo a cada abertura seria a faixa que nunca
+apaga. Na aba ela continua marcada, com o valor pintado (`data-valor-preocupa`:
+`false`, "NÃO…", "rode o script…" — a convenção do LEIA-ME da ponte).
+
+**A pergunta que falha não vira "em dia" nem "desligada"** — a armadilha nº 2
+com outra roupa. A aba diz que não conseguiu perguntar, e a faixa não acende por
+isso (a ponte fora do ar tem os avisos dela). **A ponte de antes desta tela**
+(404, ou uma resposta sem `situacao`) é dita como tal, e não como erro.
+
+**Os vinte colados à mão ficam RECOLHIDOS numa linha** ("20 scripts colados à
+mão… (001 a 020)"): abertos, empurrariam para fora da vista o script de hoje,
+que é o que se veio olhar.
+
+**"Perguntar de novo" atualiza a faixa** (`aoSaber`): sem isso, quem lê "em
+dia" na aba continuaria vendo a faixa da pergunta de quinze minutos antes.
+
+**Pergunta-se pouco:** três segundos depois de abrir, depois de quinze em
+quinze minutos — e de um em um enquanto a ponte diz que está conferindo ou que
+vai tentar de novo. A resposta só muda quando a ponte sobe.
+
+Prova: `as-atualizacoes-do-banco`, 38 conferências, **13 sabotagens e 13
+pegas**, todas limpas — rodadas em CÓPIAS do repositório, cada uma com o seu
+servidor da bancada (`cacheDir` próprio, porque o `node_modules` ligado por
+atalho faria as cópias escreverem no mesmo `.vite`), e o arquivo de verdade
+nunca foi tocado. A ponte é fingida pela prova; a de verdade, com um Postgres de
+verdade, é provada no repositório dela (seção 51).
+
 ## Pendências / próximos passos
 
 - ~~Mídias em alta resolução~~ e ~~enviar anexos pelo painel~~ — **as duas foram
