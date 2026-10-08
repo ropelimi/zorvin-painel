@@ -1293,6 +1293,41 @@ conversa não vinha na lista — a consulta da página pede `mensagens(id)` junt
 e o contador de não lidas do menu ficava em zero com o grupo na tela.
 
 Prova: `o-campo-de-grupos`, 20 conferências, 5 sabotagens e 5 pegas.
+## Copiar leva só o texto (08/10)
+
+Relato do Rodrigo: *"quando eu copio uma mensagem do Zorvin e colo em um
+documento do Word, a formatação fica com o fundo verde"*.
+
+**O botão "Copiar" do menu da mensagem já copiava texto puro**
+(`navigator.clipboard.writeText`). O defeito era o caminho de todo dia:
+selecionar com o mouse e apertar Ctrl+C. **Medido na prova, antes do
+conserto:** a área de transferência recebia `text/plain` E `text/html`, e o
+HTML levava `background-color: rgb(217, 253, 211)` — o verde da bolha. O Word
+cola o HTML.
+
+**Hoje um ouvinte de `copy` no documento inteiro** põe só o `text/plain`,
+tirado da própria seleção (`String(getSelection())`, que é o texto que o
+navegador já mandava: com as quebras da mensagem e uma linha por bolha). **Na
+tela inteira**, e não só nas bolhas: a ficha, o nome do alto, o número —
+qualquer pedaço da tela levaria o fundo do mesmo jeito.
+
+**Sem seleção, não mexe em nada**, e isso não é enfeite: o Chrome dispara o
+`copy` mesmo sem nada selecionado, e sem essa guarda um Ctrl+C sem querer
+APAGAVA o que a pessoa tinha copiado antes. A mesma guarda deixa a seleção só
+de imagem como sempre foi. **A caixa de escrever continua igual**: no Chrome
+a seleção dela aparece em `getSelection()`, e é o mesmo texto que o navegador
+já copiava.
+
+**O que se perde, de propósito:** o negrito e o itálico na colagem. Foi o
+pedido — colar sem a formatação —, e o texto pega a de onde é colado.
+
+Prova: `copiar-leva-so-o-texto`, 14 conferências, com **Ctrl+C de verdade** e
+lendo a área de transferência do navegador (`clipboard-read`): um evento de
+cópia fingido provaria o ouvinte, e não o que o Word recebe. **6 sabotagens e
+6 pegas** (sem o ouvinte; sem o `preventDefault`, que faz o navegador ignorar
+o que o ouvinte pôs; o texto sem a quebra entre as bolhas; só nas bolhas; o
+HTML junto; e sem a guarda da seleção vazia).
+
 ## A citação leva até a mensagem citada
 
 Pedido do Rodrigo em 16/09: *"ao clicar na mensagem que foi respondida, ir para
