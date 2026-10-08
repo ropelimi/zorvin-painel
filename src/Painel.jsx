@@ -9839,6 +9839,31 @@ export default function Painel({ sessao }) {
     return () => document.removeEventListener("paste", aoColar);
   }, [conversaId, editando, encaminhar, imagemAberta]);
 
+  // O QUE SE COPIA DO ZORVIN SAI COMO TEXTO, sem o desenho da tela (08/10).
+  //
+  // Relato do Rodrigo: copiar uma mensagem e colar no Word levava junto o fundo
+  // verde da bolha. Com Ctrl+C (ou pelo botão direito), o navegador manda o
+  // texto E um HTML com as cores e a fonte da tela — e o Word cola o HTML. Aqui
+  // a cópia vai só como texto: colada em qualquer lugar, ela pega a formatação
+  // de lá. Vale para a tela inteira (a ficha, o nome, o número), e não só para
+  // as bolhas, porque o fundo de qualquer pedaço da tela iria junto do mesmo
+  // jeito.
+  //
+  // O texto é o da própria seleção, que é o que o navegador já mandava como
+  // texto: com as quebras de linha da mensagem, e uma linha por bolha. Na caixa
+  // de escrever nada muda — lá o navegador sempre copiou só o texto, e a
+  // seleção dela é a mesma.
+  useEffect(() => {
+    function aoCopiar(e) {
+      const texto = String(window.getSelection?.() || "");
+      if (!texto || !e.clipboardData) return;
+      e.clipboardData.setData("text/plain", texto);
+      e.preventDefault();
+    }
+    document.addEventListener("copy", aoCopiar);
+    return () => document.removeEventListener("copy", aoCopiar);
+  }, []);
+
   // ARRASTAR UM ARQUIVO PARA DENTRO DA CONVERSA.
   //
   // Não existia. Arrastar uma foto para cá fazia o NAVEGADOR abrir o arquivo
