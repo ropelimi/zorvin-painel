@@ -1002,6 +1002,89 @@ cena do erro. A régua escrita em 30/09 vale também para o commit, e não só
 para a cópia de referência: **depois de uma rodada de sabotagens
 interrompida, rode a prova inteira ANTES de fazer o commit.**
 
+## As respostas rápidas com o nome do cliente (08/10)
+
+Pedido do Rodrigo, escolhido da lista de ideias de 08/10: a resposta pronta
+que diz o nome de quem está do outro lado. Quatro variáveis, em
+`variaveis.js`:
+
+| variável | vira |
+|---|---|
+| `{saudacao}` | Bom dia (5h às 12h), Boa tarde (12h às 18h), Boa noite |
+| `{nome}` | o primeiro nome do cliente |
+| `{nome_completo}` | o nome inteiro do cliente |
+| `{atendente}` | o primeiro nome de quem está atendendo |
+
+**Preenche-se ao ESCOLHER a rápida, e não ao enviar.** O texto entra na caixa
+já preenchido, e a pessoa o lê antes do Enter: o que se vê é o que sai.
+Preencher no envio mandaria ao cliente um texto que ninguém leu — e o nome do
+WhatsApp nem sempre é nome ("Deus", "Eu", o nome da loja). **O menu do "/" já
+mostra a rápida preenchida**, e é ali que se vê o nome antes de escolher.
+
+**O cliente é o nome do ALTO da conversa** (`nomeDoContato`: a ficha, o nome
+que a equipe deu, o do WhatsApp, nessa ordem). Uma regra que se vê, em vez de
+uma segunda escolha de nome que divergiria da primeira; e quando o nome está
+errado, o conserto é o lápis de renomear, que já existe. **Grupo não tem "o
+cliente"**: ali a variável fica vazia, e não "Olá, Mutirão!".
+
+**O cadastro grita.** "ANDREIA CRISTINA MARTINS" vira "Andreia", e o nome
+inteiro "Maria das Graças de Souza". Só se refaz a palavra TODA maiúscula ou
+TODA minúscula: quem escreveu "McDonald" sabia o que escrevia. Emoji, o til de
+enfeite e o tratamento saem — "Dr. João" daria "Olá, Dr!".
+
+**O cliente sem nome não vira "Olá, !".** A variável vazia sai levando a
+vírgula e o espaço que a prendiam: "Olá!", "Oi, tudo bem?", "Seu documento
+chegou.". A limpeza mexe SÓ em volta do que foi tirado (uma marca invisível
+fica no lugar dele até a limpeza): o espaço duplo de quem escreveu continua
+duplo. **Texto sem variável volta igual, byte por byte** — a rápida de sempre
+não pode mudar só porque passou por aqui.
+
+**A saudação tem maiúscula só no começo da frase**: "{saudacao}, {nome}!" dá
+"Bom dia, Andreia!", e "Olá, {saudacao}!" dá "Olá, bom dia!". E "{saudação}"
+com acento, "{ NOME }", "{nome completo}" e "{{nome}}" (o jeito de outros
+programas) também valem: a variável que não pegasse por causa do acento iria
+para o cliente com as chaves.
+
+**Na configuração** (Configurações → Mensagens rápidas): as quatro em
+botões que põem a variável ONDE ESTÁ O CURSOR; a prévia preenchida, com uma
+cliente de exemplo escrita em maiúsculas, como o Vantoro escreve; e o aviso
+âmbar da variável que o Zorvin não conhece ("{processo}"), que avisa e não
+impede. **A rápida é guardada com a variável, nunca preenchida**: ela é da
+equipe inteira.
+
+**O rascunho com o nome não atravessa de conversa.** Os rascunhos já eram por
+conversa (`rascunhosRef`), e a prova confere assim mesmo: agora um rascunho
+esquecido carrega o nome de um cliente, e ir parar na caixa de outro seria
+mandar "Olá, Andreia!" para quem não é a Andreia.
+
+Prova: `as-variaveis-das-respostas-rapidas`, 68 conferências — a conta direto
+na função (`../src/variaveis.js`) e a tela com o relógio fixado
+(`page.clock`, no fuso de São Paulo, às 9h e às 14h: a saudação depende da
+hora, e a prova que roda às 11:59 não pode reprovar às 12:00). **17
+sabotagens e 17 pegas**, todas limpas: o texto cru na caixa; o menu mostrando
+o cru; o nome em maiúsculas; o "Olá, !"; o meio-dia ainda "bom dia"; a
+saudação sempre maiúscula; o grupo emprestando o nome; o texto sem variável
+mexido; o aviso da desconhecida calado; a variável no fim em vez do cursor;
+o acento na chave; o "Dr." virando nome; o atendente com o nome do cliente;
+a rápida guardada preenchida; o rascunho atravessando de conversa; a prévia
+sumida; a chave dobrada.
+
+**E a sabotagem que não aplicou achou caractere invisível no código.** A do
+acento procurava `/[̀-ͯ]/` e não achou: o arquivo tinha sido gravado
+com os PRÓPRIOS caracteres de acento dentro dos colchetes, e não com a
+escrita `̀`. Funcionava igual, e era invisível em qualquer editor — o
+tipo de linha que um conserto futuro apaga sem saber o que apagou. Hoje está
+escrito como no resto do código. **Sabotagem que "não aplicou" é informação:
+o código não é o que se pensa que é.**
+
+**E as cópias de sabotagem deixaram 17 servidores de pé.** O script matava só o
+`npx`, e o `vite` que ele abre ficava órfão, gastando processador — o mesmo
+tropeço que `rodar.mjs` já descreve. A `digitar` rodou em seguida e reprovou a
+régua de desempenho (1,92× mais cara na conversa longa); derrubados os 17, a
+mesma prova mediu 0,94×. **Ao subir servidor em cópia, mate o GRUPO de
+processos** (`start_new_session` e `killpg`), e confira com `ps` que nada ficou
+antes de medir tempo.
+
 ## O topo da coluna — 283px para dizer o que cabe em 188
 
 Pedido do Rodrigo em 16/09, com as duas telas lado a lado: o topo do Zorvin
