@@ -2908,6 +2908,18 @@ export const supabase = {
       return { data: horarioDe(args && args.p_semana, args && args.p_fuso, args && args.p_quando), error: null };
     }
 
+    // A JANELA DA CONVERSA EM ANDAMENTO (script 022) é a carência da fila de
+    // espera, do 006 — o banco a devolve como intervalo do Postgres. A aba a
+    // escreve na explicação, e `__CARENCIA` deixa a prova trocar o número
+    // (ou fazê-la falhar, com "falha") e ver a frase acompanhar.
+    if (nome === "zorvin_carencia_da_espera") {
+      await espera(10);
+      if (globalThis.__CARENCIA === "falha") {
+        return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } };
+      }
+      return { data: globalThis.__CARENCIA || "00:30:00", error: null };
+    }
+
     // TRAZER PARA O FUNIL o que já existia — a regra do script 017, imitada
     // porque o NÚMERO que ela devolve é o que a tela escreve ("N clientes
     // entraram"), e os cartões que ela cria são o que a tela passa a mostrar.

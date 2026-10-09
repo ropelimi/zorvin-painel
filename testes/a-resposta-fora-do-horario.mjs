@@ -11,8 +11,11 @@
 //   5. os feriados entram e saem da lista do escritório;
 //   6. na conversa, a resposta é uma bolha NOSSA, sem menu, que diz se saiu
 //      ou não saiu — e aparece sozinha quando sai com a conversa aberta;
-//   7. sem o script, a conversa abre como sempre, e calada.
+//   7. sem o script, a conversa abre como sempre, e calada;
+//   8. a explicação diz que ela NÃO INTERROMPE uma conversa (script 022), com
+//      a janela que o BANCO usa — e não um número escrito na tela.
 import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+import { minutosDaJanela, fraseDaJanela } from "../src/foraDoHorario.js";
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -37,7 +40,8 @@ async function clicar(loc) {
 }
 const texto = (loc) => loc.first().innerText().catch(() => "");
 
-async function abrir({ quando = SEXTA_19H, sem = false, semente = null, quebrar = null, largura = 1400 } = {}) {
+async function abrir({ quando = SEXTA_19H, sem = false, semente = null, quebrar = null, largura = 1400,
+                       carencia = null } = {}) {
   const ctx = await nav.newContext({ viewport: { width: largura, height: 900 }, timezoneId: "America/Sao_Paulo" });
   const page = await ctx.newPage();
   const estouros = [];
@@ -48,7 +52,8 @@ async function abrir({ quando = SEXTA_19H, sem = false, semente = null, quebrar 
     globalThis.__SEM_FORA_DO_HORARIO = b.sem;
     globalThis.__SEMENTE = b.semente;
     globalThis.__QUEBRAR = b.quebrar;
-  }, { sem, semente, quebrar });
+    globalThis.__CARENCIA = b.carencia;
+  }, { sem, semente, quebrar, carencia });
   await page.clock.setFixedTime(quando);
   await page.goto(ENDERECO);
   await page.waitForSelector("[data-conversa-nome]");
@@ -127,6 +132,49 @@ console.log("\n2. A aba, a prévia e o que impede ligar");
   ok("e o Salvar desliga", await page.locator("[data-fora-salvar]").isDisabled().catch(() => false));
   await page.locator('[data-fora-dia="seg"] [data-fecha]').fill("18:00");
   ok("a tela não estourou", !estouros.length, estouros.join(" | "));
+  await ctx.close();
+}
+
+// ==================================================================
+console.log("\n2b. Ela não interrompe uma conversa, e a janela é a do banco");
+{
+  ok("a janela se lê do intervalo do Postgres",
+     minutosDaJanela("00:30:00") === 30 && minutosDaJanela("01:00:00") === 60
+       && minutosDaJanela("1 day 02:00:00") === 1560,
+     q([minutosDaJanela("00:30:00"), minutosDaJanela("01:00:00"), minutosDaJanela("1 day 02:00:00")]));
+  ok("e o que não se lê não vira número", minutosDaJanela("lixo") === null && minutosDaJanela(null) === null
+       && minutosDaJanela("00:00:00") === null);
+  ok("a frase de cada janela",
+     fraseDaJanela(30) === "nos 30 minutos antes" && fraseDaJanela(60) === "na última hora antes"
+       && fraseDaJanela(120) === "nas 2 horas antes" && fraseDaJanela(null) === "pouco antes",
+     q([fraseDaJanela(30), fraseDaJanela(60), fraseDaJanela(120), fraseDaJanela(null)]));
+
+  const explicacao = (page) => texto(page.locator("[data-fora-nao-interrompe]"));
+  let { ctx, page, estouros } = await abrir();
+  await abrirAAba(page);
+  let e = await explicacao(page);
+  ok("a aba diz que ela não interrompe uma conversa", /não interrompe uma conversa/.test(e), q(e));
+  ok("nem depois do fechamento, nem nos 30 minutos antes de o cliente escrever",
+     /depois do\s+fechamento/.test(e) && /nos 30 minutos antes de o cliente escrever/.test(e), q(e));
+  await ctx.close();
+
+  ({ ctx, page, estouros } = await abrir({ carencia: "00:10:00" }));
+  await abrirAAba(page);
+  e = await explicacao(page);
+  ok("com a janela do banco em 10 minutos, a tela diz 10", /nos 10 minutos antes/.test(e) && !/30/.test(e), q(e));
+  await ctx.close();
+
+  ({ ctx, page, estouros } = await abrir({ carencia: "01:00:00" }));
+  await abrirAAba(page);
+  e = await explicacao(page);
+  ok("com uma hora, diz a última hora", /na última hora antes/.test(e), q(e));
+  await ctx.close();
+
+  ({ ctx, page, estouros } = await abrir({ carencia: "falha" }));
+  await abrirAAba(page);
+  e = await explicacao(page);
+  ok("sem conseguir ler a janela, não promete número nenhum", /pouco antes de o cliente escrever/.test(e) && !/\d/.test(e), q(e));
+  ok("e a tela não estourou", !estouros.length, estouros.join(" | "));
   await ctx.close();
 }
 

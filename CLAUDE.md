@@ -3005,6 +3005,30 @@ a coisa próxima.** A conferência comparava a borda DIREITA da nossa bolha com
 a ESQUERDA da do cliente; com as duas encostadas à esquerda, a direita da
 nossa continuava longe, e passava. Hoje ela confere as duas bordas.
 
+### E ela não interrompe uma conversa (script 022, 09/10)
+
+Pedido do Rodrigo no dia em que ligou e testou: *"se eu estiver conversando
+com o contato antes ou após o horário do expediente, a mensagem automática
+não pode aparecer"*. O 021 já calava a resposta quando a equipe escrevia
+DEPOIS do fechamento; faltava a conversa que vem de ANTES (nós às 17:55, o
+cliente às 18:05). A regra é do banco — o script 022 da ponte, onde estão as
+cenas e o porquê de cada escolha. **Aqui mudou só a explicação da aba**,
+porque a de antes passaria a dizer metade da regra.
+
+**A janela da frase vem do BANCO** (`zorvin_carencia_da_espera`, a carência
+da fila de espera, que é a mesma régua da regra nova), e não de um "30"
+escrito aqui: trocá-la lá é uma linha, e a tela continuaria prometendo o
+número antigo. As contas moram em `foraDoHorario.js` (`minutosDaJanela`,
+`fraseDaJanela`). **Sem conseguir ler, a frase diz "pouco antes"** — que é
+verdade com qualquer número — em vez de prometer um que talvez não seja o
+de lá.
+
+Prova: `a-resposta-fora-do-horario`, cena 2b, 9 conferências novas (77 no
+total), com a bancada devolvendo a janela que a prova escolhe
+(`__CARENCIA`: 10 minutos, uma hora, e a falha). **5 sabotagens e 5
+pegas** (a frase de antes; o 30 escrito na tela; a falha prometendo 30; a
+hora do intervalo ignorada; a hora virando minutos).
+
 ## A auditoria de 07/10 — o que uma varredura inteira achou
 
 Pedido do Rodrigo: *"faz um diagnóstico geral em todos os arquivos e todas
