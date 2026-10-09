@@ -548,6 +548,89 @@ apertar as linhas em rótulo-e-valor na mesma linha foi deixado para depois de
 o Rodrigo ver a coluna fixa na tela — em vez de eu adivinhar o que "parecido
 com o DataCrazy" quer dizer por dentro.
 
+### O que foi digitado na ficha não some na troca de conversa (09/10)
+
+Relato do Rodrigo: *"quando eu salvo algo nas observações dentro da Ficha do
+Vantoro, tudo o que eu escrevi não está ficando salvo depois que eu saio da
+ficha e entro novamente"*.
+
+**Gravar funcionava**, e isso foi conferido nos três lados antes de mexer: o
+Vantoro grava `observacoes` (`editar`, `CAMPOS_EDITAVEIS`), a ponte repassa, e
+a prova `as-observacoes-na-ficha` manda o texto inteiro. **O que se perdia era
+o que NÃO tinha chegado a ser gravado**, por dois caminhos:
+
+| o caminho | o que acontecia |
+|---|---|
+| escrever e trocar de conversa sem salvar | a ficha é REMONTADA a cada conversa (07/10), e o digitado ia junto, sem uma palavra — o "Salvar no Vantoro" fica depois de todas as seções, fora da vista de quem escreve nas observações, lá no alto |
+| salvar e trocar de conversa ANTES de a gravação terminar | a ficha nova lia o cadastro de antes da gravação, mostrava o texto velho — e o guardava no cache de cinco minutos |
+
+O segundo é exatamente *"saio e entro novamente, e não está salvo"* com o
+texto **gravado** no Vantoro — e com a ponte hibernando, a gravação leva
+segundos. **Foi a prova que o achou**, ao montar a cena da corrida.
+
+**Hoje o que não foi salvo fica guardado, POR CADASTRO** (`rascunhosDaFicha`),
+enquanto a página estiver aberta, e volta quando a ficha abre de novo — com a
+frase *"Você deixou alterações sem salvar nesta ficha"*. **O botão de salvar
+gruda no pé da coluna** (`data-salvar-ficha="pendente"`) enquanto há algo por
+salvar, com **Descartar** ao lado, que pergunta; sem nada por salvar ele volta
+a ser o botão de sempre, no lugar de sempre.
+
+**Recolher a ficha não descarta mais, e por isso não pergunta** — a frase
+antiga (*"fechar agora descarta o que foi digitado"*) passaria a mentir.
+**Atualizar continua descartando, e perguntando**: é o gesto de trocar o
+digitado pelo que está no Vantoro.
+
+**Só na memória, e não no navegador:** a ficha tem as senhas do SERASA e do
+GOV, e elas não podem ficar no disco de uma máquina do escritório. Recarregar,
+fechar a aba ou sair com algo por salvar **pergunta antes** (`beforeunload`) —
+de qualquer ficha, mesmo recolhida, porque o rascunho mora no módulo e não
+nela.
+
+**O rascunho é do cadastro, e não da conversa:** o da ANDREIA não aparece na
+ficha do JOSÉ. **E só voltam os campos que vieram** no cadastro: o que não veio
+não vira campo editável (a régua das observações de 01/10), e um rascunho não
+pode furar isso.
+
+**"Mudou" é UMA conta** (`camposMudados`): o que vai ao Vantoro ao salvar, o
+que o rascunho guarda e quando o botão avisa. Três contas discordariam na hora
+errada.
+
+**A corrida tem duas peças, e as duas são provadas:**
+
+- **o rascunho só some com a ficha montada**, quando ela vê o cadastro igual
+  ao digitado — `salvar` não o apaga por conta própria. Se a ficha nova leu o
+  cadastro de antes, é o rascunho que mantém o texto na tela, com o aviso;
+- **a resposta perguntada antes de uma gravação não vai para o cache**
+  (`geracaoDaFicha`: cada gravação conta uma, e a resposta que chega depois
+  dela é usada pela tela que perguntou, sem ser guardada). E a gravação
+  esquece o cache **ao começar e ao terminar**: só no começo, a leitura feita
+  no meio dela seria guardada.
+
+Prova: `a-ficha-guarda-o-que-nao-foi-salvo`, 44 conferências, com uma ponte de
+mentira que demora (1,2 s para gravar, 2,5 s para ler) e devolve o cadastro
+**como estava quando o pedido chegou** — o que um banco faz com uma leitura
+começada antes da gravação. **12 sabotagens e 12 pegas**, todas limpas: o
+painel de antes inteiro (23 reprovações — é o relato reproduzido); o rascunho
+que não volta; o que não é guardado; `salvar` apagando o rascunho (a
+corrida); recolher descartando; Descartar sem perguntar; o botão que não
+gruda; sair sem perguntar; o rascunho de um cadastro aparecendo noutro; o
+Atualizar que não descarta; a resposta de antes da gravação guardada; e a
+gravação que só esquece o cache ao começar.
+
+**A cena 3 da prova `ficha` foi INVERTIDA, e não apagada.** Ela exigia que
+recolher a ficha com algo digitado perguntasse antes — certo quando recolher
+descartava. Hoje ela confere que recolher NÃO pergunta e que o digitado VOLTA
+ao abrir de novo: o que ela protege continua o mesmo, o digitado não sumir
+sem aviso.
+
+**E uma armadilha de prova que este conserto criou:** com algo por salvar,
+recarregar a página pergunta antes (`beforeunload`), e o Playwright RECUSA
+essa pergunta sozinho quando ninguém está ouvindo — o `page.reload()` da cena
+seguinte esperou 30 segundos por uma página que não ia recarregar, e a prova
+estourou. **Cena que deixa a ficha com algo por salvar descarta ao terminar**
+(e tira antes o ouvinte de `dialog` que ficou sem uso, senão ele recusa a
+pergunta do Descartar primeiro).
+
 ## As palavras da casa — "advogado" não serve para todo comprador
 
 O painel dizia **"advogado" em nove frases**. Para o escritório está certo; para

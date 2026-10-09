@@ -126,6 +126,14 @@ console.log("\n3. O que foi digitado não se perde sem aviso");
 // A ficha é um formulário com CPF, endereço, nascimento, senhas. Fechar
 // descartava tudo o que tinha sido digitado, calado. Quem preencheu meia ficha
 // e tocou no X sem querer perdia o trabalho e não recebia nem um aviso.
+//
+// A CONFERÊNCIA FOI INVERTIDA EM 09/10, E NÃO APAGADA. Até ali, recolher
+// DESCARTAVA, e por isso perguntava antes. Desde o relato das observações
+// ("saio da ficha e entro novamente, e não está salvo"), o que não foi salvo
+// fica GUARDADO (`rascunhosDaFicha`) e volta quando a ficha abre de novo — e
+// a pergunta "fechar agora descarta o que foi digitado" passaria a mentir. O
+// que esta cena protege continua o mesmo: o digitado não some sem aviso. Ela
+// agora confere que ele VOLTA, e que recolher não pergunta à toa.
 {
   await page.reload();
   await page.waitForSelector("[data-conversa-nome]");
@@ -141,7 +149,8 @@ console.log("\n3. O que foi digitado não se perde sem aviso");
     await cpf.fill("999.888.777-66");
     await page.waitForTimeout(300);
     let perguntou = false;
-    page.once("dialog", (d) => { perguntou = true; d.dismiss(); });
+    const naPergunta = (d) => { perguntou = true; d.dismiss(); };
+    page.once("dialog", naPergunta);
     // POR `data-`, E NÃO PELO RÓTULO. Ele era "Fechar" e virou "Recolher a
     // ficha" em 28/09, quando a ficha passou a ser coluna fixa — e o clique
     // deixou de acontecer EM SILÊNCIO, porque morava dentro de um `if`. A cena
@@ -151,13 +160,29 @@ console.log("\n3. O que foi digitado não se perde sem aviso");
     ok("o botão de recolher a ficha existe", (await fechar.count()) > 0);
     await fechar.first().click();
     await page.waitForTimeout(900);
-    const aindaAberta = await page.getByRole("button", { name: /Salvar no Vantoro/ }).count() > 0;
-    ok("fechar a ficha com alteração não gravada pergunta antes",
-       perguntou && aindaAberta,
-       perguntou ? "perguntou, mas fechou assim mesmo"
-                 : "fechou e levou junto o que tinha sido digitado, sem perguntar nada");
+    const fechou = await page.getByRole("button", { name: /Salvar no Vantoro/ }).count() === 0;
+    ok("recolher a ficha com alteração não gravada não pergunta — não há o que perder",
+       fechou && !perguntou,
+       perguntou ? "perguntou, como se recolher descartasse" : "a ficha não recolheu");
+    await abrirFicha();
+    const devolvido = await page.locator('[data-campo="cpf"]').first().inputValue().catch(() => null);
+    ok("e o que foi digitado VOLTA ao abrir a ficha de novo", devolvido === "999.888.777-66",
+       `voltou ${JSON.stringify(devolvido)}`);
+    ok("dizendo que ainda não foi salvo",
+       (await page.locator("[data-salvar-ficha]").first().getAttribute("data-salvar-ficha").catch(() => null)) === "pendente");
+    // A CENA DEIXA A FICHA LIMPA AO SAIR. Com algo por salvar, recarregar a
+    // página PERGUNTA antes (`beforeunload`) — é o conserto funcionando —, e
+    // o navegador da prova recusa a pergunta: o `reload` da cena seguinte
+    // ficava esperando para sempre por uma página que não ia recarregar.
+    // E o ouvinte de cima, que não foi usado, sai antes: senão ele recusaria
+    // a pergunta do Descartar primeiro.
+    page.off("dialog", naPergunta);
+    page.once("dialog", (d) => d.accept());
+    const descartar = page.locator("[data-descartar-ficha]");
+    if (await descartar.count()) await descartar.first().click();
+    await page.waitForTimeout(500);
   } else {
-    ok("fechar a ficha com alteração não gravada pergunta antes", false, "campo não encontrado");
+    ok("recolher a ficha com alteração não gravada não pergunta — não há o que perder", false, "campo não encontrado");
   }
 }
 

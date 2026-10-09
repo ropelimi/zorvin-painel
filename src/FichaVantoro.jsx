@@ -207,8 +207,17 @@ function guardarFicha(numero, resposta) {
   if (numero) fichasGuardadas.set(numero, { quando: Date.now(), resposta });
 }
 function esquecerFicha(numero) {
-  if (numero) { fichasGuardadas.delete(numero); fichasEmVoo.delete(numero); }
+  if (!numero) return;
+  fichasGuardadas.delete(numero);
+  fichasEmVoo.delete(numero);
+  geracaoDaFicha.set(numero, (geracaoDaFicha.get(numero) || 0) + 1);
 }
+// QUANTAS VEZES A FICHA DESTE NÚMERO FOI ESQUECIDA — uma por gravação. A
+// resposta de uma pergunta feita ANTES de uma gravação, e que chegou DEPOIS
+// dela, é o cadastro de antes: guardá-la faria a ficha mostrar o texto velho
+// por cinco minutos. Ela é usada pela tela que perguntou, e não é guardada.
+// Com a ponte que hiberna, essa ordem de chegada é o caso comum, e não o raro.
+const geracaoDaFicha = new Map();
 // A PERGUNTA EM VOO TAMBÉM É GUARDADA: duas montagens da ficha para o mesmo
 // número antes de a primeira resposta chegar (o React monta duas vezes em
 // desenvolvimento, e a ficha é remontada a cada conversa) virariam duas idas
@@ -224,6 +233,61 @@ function perguntarFicha(numero, perguntar) {
 // Quais seções a pessoa deixou abertas, enquanto a página estiver aberta.
 let secoesAbertas = null;
 
+// ------------------------------------------------------------
+//  O QUE FOI DIGITADO E AINDA NÃO FOI SALVO SOBREVIVE À TROCA DE CONVERSA
+//
+//  Relato do Rodrigo em 09/10: "tudo o que eu escrevi nas observações não
+//  está ficando salvo depois que eu saio da ficha e entro novamente".
+//
+//  A ficha é REMONTADA a cada conversa (o `key` no Painel, auditoria de
+//  07/10), e o que estava digitado e não salvo ia junto com ela, sem uma
+//  palavra. O caminho de todo dia é exatamente esse: escrever nas
+//  observações — que ficam no alto — e clicar na conversa seguinte, com o
+//  "Salvar no Vantoro" lá embaixo, fora da vista.
+//
+//  Agora o que não foi salvo fica guardado aqui, POR CADASTRO, enquanto a
+//  página estiver aberta, e volta para a ficha quando ela é aberta de novo.
+//  O botão de salvar gruda no pé da coluna e diz que há algo por salvar.
+//
+//  SÓ NA MEMÓRIA, e não no navegador: a ficha tem as senhas do SERASA e do
+//  GOV, e elas não podem ficar gravadas no disco de uma máquina do
+//  escritório. Recarregar a página pergunta antes (`beforeunload`).
+// ------------------------------------------------------------
+const rascunhosDaFicha = new Map();   // id do cadastro → { campos: { chave: valor } }
+
+/** Os campos em que a tela difere do cadastro — a MESMA conta que decide o
+ *  que vai ao Vantoro ao salvar, o que o rascunho guarda e quando o botão
+ *  avisa. Três contas diferentes de "mudou" discordariam na hora errada. */
+function camposMudados(edicao, base) {
+  const mudou = {};
+  TODOS_CAMPOS.forEach(({ chave }) => {
+    if ((edicao[chave] || "") !== ((base || {})[chave] || "")) mudou[chave] = edicao[chave] || "";
+  });
+  return mudou;
+}
+
+/** O cadastro com o que tinha ficado por salvar nele. SÓ OS CAMPOS QUE
+ *  VIERAM: o que não veio no cadastro não vira campo editável (a régua das
+ *  observações, logo abaixo), e um rascunho não pode furar essa régua. */
+function comRascunho(c) {
+  const guardado = c && c.id != null ? rascunhosDaFicha.get(String(c.id)) : null;
+  if (!guardado) return { edicao: { ...c }, voltou: false };
+  const campos = Object.fromEntries(Object.entries(guardado.campos)
+    .filter(([chave]) => Object.prototype.hasOwnProperty.call(c, chave)));
+  const edicao = { ...c, ...campos };
+  return { edicao, voltou: Object.keys(camposMudados(edicao, c)).length > 0 };
+}
+
+// RECARREGAR, FECHAR A ABA OU SAIR DO PAINEL PERGUNTA ANTES, se há rascunho
+// de qualquer ficha — mesmo recolhida: o rascunho mora aqui, e não nela.
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", (e) => {
+    if (!rascunhosDaFicha.size) return;
+    e.preventDefault();
+    e.returnValue = "";
+  });
+}
+
 export default function FichaVantoro({ numero, nomeContato, C, estreito, onFechar, onAviso, aoLigarCadastro, aoConversarPor }) {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
@@ -237,6 +301,9 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   const [candidatos, setCandidatos] = useState([]);
   const [edicao, setEdicao] = useState({});
   const [salvando, setSalvando] = useState(false);
+  // A FICHA ABRIU COM O QUE TINHA FICADO POR SALVAR — é o que muda a frase
+  // do pé: "você deixou isto sem salvar" não é o mesmo que "está mudando".
+  const [rascunhoVoltou, setRascunhoVoltou] = useState(false);
   // O ERRO DA ÚLTIMA TENTATIVA DE LIGAR O CADASTRO AO CONTATO.
   //
   // Num espelho, e não em estado: ele é lido no mesmo passo em que é escrito
@@ -576,7 +643,9 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       setCpfDeOutro(null);
       setCpfProcura(null);
       setCliente(inteiro);
-      setEdicao({ ...inteiro });
+      const comOGuardado = comRascunho(inteiro);
+      setEdicao(comOGuardado.edicao);
+      setRascunhoVoltou(comOGuardado.voltou);
       setTelefones(novaLista);
       const ligou = await ligarContatoAoCadastro(inteiro);
       const feito = jaTinha
@@ -598,7 +667,9 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
 
   async function escolher(c) {
     setCliente(c);
-    setEdicao({ ...c });
+    const comOGuardado = comRascunho(c);
+    setEdicao(comOGuardado.edicao);
+    setRascunhoVoltou(comOGuardado.voltou);
     // A LISTA DE TELEFONES VEM JUNTO. Só `buscar` a preenchia, e escolher um
     // cadastro por outro caminho (a lista de candidatos, o CPF de outro)
     // desenhava a ficha nova com a lista de telefones da ANTERIOR — ou vazia.
@@ -620,12 +691,14 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       // também o que qualquer conserto futuro deve usar depois de gravar.
       let r = forcar ? null : fichaGuardada(numero);
       if (!r) {
+        const geracao = geracaoDaFicha.get(numero) || 0;
         r = await (forcar
           ? chamarPonte(`/vantoro/cliente?telefone=${encodeURIComponent(numero || "")}`)
           : perguntarFicha(numero, () => chamarPonte(`/vantoro/cliente?telefone=${encodeURIComponent(numero || "")}`)));
         // SÓ GUARDA O QUE DEU CERTO: um erro cai no `catch` e não chega aqui,
-        // senão uma oscilação de rede ficaria grudada por cinco minutos.
-        guardarFicha(numero, r);
+        // senão uma oscilação de rede ficaria grudada por cinco minutos. E
+        // só o que foi perguntado DEPOIS da última gravação (`geracaoDaFicha`).
+        if ((geracaoDaFicha.get(numero) || 0) === geracao) guardarFicha(numero, r);
       }
       const todos = r.clientes || [];
       if (r.opcoes?.estado_civil?.length) setOpcoes(r.opcoes);
@@ -649,7 +722,12 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
 
       setCliente(achado);
       setTelefones(listaDeTelefones(achado));
-      setEdicao(achado ? { ...achado } : {});
+      // O QUE FICOU POR SALVAR VOLTA — menos no Atualizar (`forcar`), que é
+      // justamente o gesto de trocar o digitado pelo que está no Vantoro, e
+      // que pergunta antes.
+      const comOGuardado = achado && !forcar ? comRascunho(achado) : { edicao: achado ? { ...achado } : {}, voltou: false };
+      setEdicao(comOGuardado.edicao);
+      setRascunhoVoltou(comOGuardado.voltou);
       // Só ABRIR a ficha já conserta o nome da conversa. Sem isto, os contatos
       // que ficaram para trás só se acertariam quando alguém os editasse — e
       // ninguém edita uma ficha que já está certa.
@@ -677,6 +755,21 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   // atendimento e esquecida, ela abriria ordem com tarefa no pool para o lead
   // seguinte sem ninguém ter pedido.
   useEffect(() => { setPapel("cliente"); setCriarTarefa(false); if (numero) buscar(); /* eslint-disable-next-line */ }, [numero]);
+
+  // O RASCUNHO ACOMPANHA A TELA: a cada tecla, o que difere do cadastro fica
+  // guardado; nada diferindo (salvou, descartou, desfez à mão), ele some.
+  //
+  // E SÓ AQUI, com a ficha montada, ele some. `salvar` não o apaga por conta
+  // própria, e não é descuido: se a pessoa trocou de conversa com o "Salvar"
+  // a caminho e voltou antes de ele terminar, a ficha nova pode ter lido o
+  // cadastro de ANTES da gravação — e é o rascunho que faz o texto
+  // continuar na tela, com o aviso de salvar, em vez de sumir.
+  useEffect(() => {
+    if (!cliente || cliente.id == null) return;
+    const mudou = camposMudados(edicao, cliente);
+    if (Object.keys(mudou).length) rascunhosDaFicha.set(String(cliente.id), { campos: mudou });
+    else rascunhosDaFicha.delete(String(cliente.id));
+  }, [edicao, cliente]);
 
   // A FRASE SAI DO QUE O VANTORO RESPONDEU (`tarefa_cadastro`), e não da
   // caixa: é ele quem sabe se a tarefa nasceu. Sem a resposta (um Vantoro de
@@ -750,17 +843,18 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     setSalvando(true);
     esquecerFicha(numero);   // ver `criar`
     try {
-      const mudou = {};
-      TODOS_CAMPOS.forEach(({ chave }) => {
-        if ((edicao[chave] || "") !== (cliente[chave] || "")) mudou[chave] = edicao[chave] || "";
-      });
+      const mudou = camposMudados(edicao, cliente);
       if (!Object.keys(mudou).length) { onAviso && onAviso("Nada foi alterado."); return; }
       const r = await chamarPonte(`/vantoro/cliente/${cliente.id}`, {
         method: "PATCH",
         body: JSON.stringify(mudou),
       });
+      // DE NOVO, DEPOIS: uma ficha aberta enquanto a gravação ia (a pessoa
+      // trocou de conversa e voltou) guardou o cadastro de ANTES dela.
+      esquecerFicha(numero);
       setCliente(r.cliente);
       setEdicao({ ...r.cliente });
+      setRascunhoVoltou(false);
       const ligou = await ligarContatoAoCadastro(r.cliente);
       const naoLigou = "Atualizei no Vantoro, mas não consegui ligá-lo a este contato aqui.";
       onAviso && onAviso(ligou ? "Cadastro atualizado no Vantoro."
@@ -805,16 +899,25 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   // clicar em "sim" sem ler.
   function mudouAlgumaCoisa() {
     if (!cliente) return false;
-    return TODOS_CAMPOS.some(({ chave }) => (edicao[chave] || "") !== (cliente[chave] || ""));
+    return Object.keys(camposMudados(edicao, cliente)).length > 0;
   }
 
+  // RECOLHER NÃO DESCARTA MAIS, e por isso não pergunta: o que não foi salvo
+  // fica guardado (`rascunhosDaFicha`) e volta quando a ficha é aberta de
+  // novo. A pergunta antiga dizia "fechar agora descarta o que foi digitado",
+  // e passaria a mentir.
   function tentarFechar() {
-    if (mudouAlgumaCoisa()
-        && !window.confirm("Você preencheu campos que ainda não foram salvos no Vantoro.\n\n"
-                         + "Fechar agora descarta o que foi digitado. Fechar mesmo assim?")) {
-      return;
-    }
     onFechar();
+  }
+
+  // DESCARTAR É O ÚNICO GESTO QUE APAGA O QUE FOI DIGITADO — e pergunta,
+  // porque mora ao lado do "Salvar" e um clique errado ali perderia um
+  // parágrafo de observações.
+  function descartar() {
+    if (!cliente) return;
+    if (!window.confirm("Descartar o que foi digitado nesta ficha e voltar ao que está no Vantoro?")) return;
+    setEdicao({ ...cliente });
+    setRascunhoVoltou(false);
   }
 
   const rotulo = { fontSize: 11, color: C.textSecondary, marginBottom: 3, display: "block" };
@@ -1338,6 +1441,9 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     );
   }
 
+  // HÁ ALGO POR SALVAR? É o que faz o botão grudar no pé da coluna e dizer isso.
+  const porSalvar = mudouAlgumaCoisa();
+
   return (
     // Coluna de verdade, ao lado da conversa — não uma camada por cima dela.
     // No celular não cabem as duas, então a ficha ocupa a tela inteira.
@@ -1597,10 +1703,39 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
               );
             })}
 
-            <button style={{ ...botao, width: "100%", marginTop: 12, opacity: salvando ? 0.6 : 1 }}
-                    onClick={salvar} disabled={salvando}>
-              <Save size={15} /> {salvando ? "Salvando…" : "Salvar no Vantoro"}
-            </button>
+            {/* O BOTÃO GRUDA NO PÉ DA COLUNA ENQUANTO HÁ ALGO POR SALVAR. Ele
+                fica depois de todas as seções — e quem escreve nas
+                observações, lá no alto, não o via: o texto ficava na tela
+                com cara de pronto e ia embora na troca de conversa (relato
+                de 09/10). Sem nada por salvar, ele volta a ser o botão de
+                sempre, no lugar de sempre. */}
+            <div data-salvar-ficha={porSalvar ? "pendente" : "em-dia"} style={porSalvar ? {
+                   position: "sticky", bottom: -16, zIndex: 2, background: C.panel,
+                   margin: "12px -16px -16px", padding: "10px 16px 16px",
+                   borderTop: `1px solid ${C.divider}`, boxShadow: "0 -6px 14px rgba(0,0,0,0.10)",
+                 } : { marginTop: 12 }}>
+              {porSalvar && (
+                <div data-ficha-por-salvar
+                     style={{ fontSize: 12.5, color: C.textPrimary, lineHeight: 1.45, marginBottom: 8 }}>
+                  {rascunhoVoltou
+                    ? "Você deixou alterações sem salvar nesta ficha. Elas continuam aqui."
+                    : "Há alterações que ainda não foram salvas no Vantoro."}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 8 }}>
+                <button style={{ ...botao, flex: 1, opacity: salvando ? 0.6 : 1 }}
+                        onClick={salvar} disabled={salvando}>
+                  <Save size={15} /> {salvando ? "Salvando…" : "Salvar no Vantoro"}
+                </button>
+                {porSalvar && (
+                  <button data-descartar-ficha onClick={descartar} disabled={salvando}
+                          style={{ ...botao, background: "transparent", color: C.textSecondary,
+                                   border: `1px solid ${C.divider}`, fontWeight: 500 }}>
+                    Descartar
+                  </button>
+                )}
+              </div>
+            </div>
 
             {(cliente.processos || []).length > 0 && (
               <div style={{ marginTop: 16 }}>
