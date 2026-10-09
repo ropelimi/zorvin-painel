@@ -2923,6 +2923,88 @@ recorte, e esse é pego pelo número da barra.
 sozinha de uma etapa do funil — as duas ficam para quando o Rodrigo usar
 esta.
 
+## A resposta automática fora do horário (09/10)
+
+Pedido do Rodrigo, o nº 1 da lista de ideias de 08/10: quem escreve à noite,
+no fim de semana ou no feriado recebe na hora o texto do departamento.
+Decidido com ele: **texto e horário por departamento**, **uma vez por período
+fechado**, e **a conversa continua na fila de espera**.
+
+**Quem decide e manda é a PONTE**, a cada mensagem de cliente, com a conta do
+banco (script 021 — ver o CLAUDE.md da ponte, onde estão as regras de quando
+NÃO sai). O painel faz duas coisas: configura, e mostra na conversa o que
+saiu.
+
+### A aba "Fora do horário", em Departamentos e acessos
+
+`ForaDoHorario.jsx`, com os nomes, os fusos e as frases em
+`foraDoHorario.js`. **Uma aba própria**, e não mais uma seção no fim de
+"Departamentos e telefones": são o texto, sete dias, o fuso e os feriados, e
+é para cá que se volta na véspera de cada feriado. Ela só aparece com o
+script (`temForaDoHorario`, três estados pela régua de `temVantoro.js`: a
+pergunta que falha por outro motivo MOSTRA a aba, e o erro é dito lá dentro).
+
+**Nasce desligada**, departamento por departamento. Ligar pede texto e um dia
+aberto — a tela diz antes, e o gatilho do banco recusa em português se
+passar; a frase dele (23514) vai inteira para a tela. **As variáveis das
+rápidas não funcionam aqui** (`{nome}` iria com as chaves para o cliente,
+porque ninguém lê antes de sair), e o aviso âmbar diz isso — avisa e não
+impede, como o da variável desconhecida das rápidas.
+
+**A PRÉVIA É A CONTA DO BANCO** (`zorvin_horario_de`) feita com o que está NA
+TELA, ainda não salvo: "Agora está fechado — volta terça-feira, 13/10, às
+08:00". É a mesma conta que decide se o cliente recebe a resposta, então o
+que se lê é o que vai acontecer — e é ali que se descobre a sexta esquecida.
+**A conta não tem segunda escrita aqui**: a prévia diria "volta segunda" e o
+cliente receberia a resposta pensando na terça. A hora da frase é a do FUSO
+do departamento, e não a do computador de quem olha.
+
+**E os feriados entram na prévia** — a prova pegou: tirar o de segunda não
+refazia a conta, e a frase continuava dizendo "terça".
+
+**Salvar relê do banco** (o gatilho arruma "8:00" em "08:00" e guarda as sete
+chaves da semana), e trocar de departamento com algo por salvar pergunta
+antes. Os **feriados** são do escritório inteiro, numa lista só; os nacionais
+vêm com o script, Carnaval e Corpus Christi não (ponto facultativo).
+
+### Na conversa, a resposta é uma bolha nossa — lida do registro
+
+A resposta **não está em `mensagens`** (de propósito: ali ela tiraria o
+cliente da fila de espera e trocaria a prévia da lista). O painel lê
+`zorvin_respostas_automaticas` junto das notas e das mensagens que não saíram
+— uma quarta ida, ao mesmo tempo, sem fila indiana — e mistura na linha do
+tempo como `origem: "automatica"` (`bolhaDaRespostaAutomatica`).
+
+| a bolha | por quê |
+|---|---|
+| à direita, verde, "Resposta automática · fora do horário" | é nossa, mas ninguém escreveu: não leva nome de gente |
+| **sem menu nenhum** | não está em `mensagens`: não se responde, não se edita, não se apaga daqui |
+| "saiu" (tique), "saindo" (relógio), **"Não saiu: motivo. O cliente não recebeu"** | o registro da ponte diz o que houve |
+| "a ponte não confirmou se ela saiu" depois de 5 minutos "saindo" | a ponte caiu no meio, e a tela não promete o que não sabe |
+
+**Com a conversa aberta, ela aparece sozinha**: o registro não vem pelo tempo
+real (pôr uma tabela a mais no canal é mexer no canal de todas as conversas,
+que este painel já viu morrer), então a mensagem de cliente que chega na
+conversa aberta faz o painel reler SÓ o registro, aos 3,5 e aos 12 segundos.
+
+**Sem o script, tudo como antes**, e calado: a tabela que falta não acende a
+faixa âmbar (o recurso só não existe). **A leitura que falha por outro motivo
+acende**, com "as respostas automáticas" — "nenhuma resposta saiu" no lugar
+de "não consegui ler" faria alguém achar que o cliente não foi avisado.
+
+Prova: `a-resposta-fora-do-horario`, 68 conferências, **14 sabotagens e 14
+pegas** (a prévia do que foi salvo, e não do que está na tela; a prévia sem
+os feriados; ligar sem texto; sem o aviso das chaves; salvar sem reler; a
+recusa virando "salvo"; a tabela que falta acendendo a faixa; a falha de
+leitura calada; sem a releitura do tempo real; a aba sem o script; o fuso do
+navegador no lugar do departamento; o registro não lido; a resposta virando
+bolha comum; e a bolha do lado do cliente).
+
+**A última VAZOU primeiro, e é a lição de sempre — medir a coisa certa, e não
+a coisa próxima.** A conferência comparava a borda DIREITA da nossa bolha com
+a ESQUERDA da do cliente; com as duas encostadas à esquerda, a direita da
+nossa continuava longe, e passava. Hoje ela confere as duas bordas.
+
 ## A auditoria de 07/10 — o que uma varredura inteira achou
 
 Pedido do Rodrigo: *"faz um diagnóstico geral em todos os arquivos e todas

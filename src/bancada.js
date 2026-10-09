@@ -1232,6 +1232,109 @@ NOTAS.push({
 const PALAVRAS = (typeof globalThis !== "undefined" && globalThis.__PALAVRAS)
   ? [{ id: true, ...globalThis.__PALAVRAS }] : [];
 
+// ============================================================
+//  A CONTA DO HORÁRIO DO SCRIPT 021, refeita para a bancada
+//
+//  Mesma regra do `zorvin_horario_de` do banco: a semana tem `seg`…`dom`,
+//  cada dia nulo ou ["08:00","18:00"]; feriado e faixa que não se lê contam
+//  como fechado; a hora vale no FUSO do departamento; procura até 31 dias.
+// ============================================================
+const CHAVES_DOS_DIAS = ["dom", "seg", "ter", "qua", "qui", "sex", "sab"];   // getUTCDay()
+function partesNoFuso(instante, fuso) {
+  const f = new Intl.DateTimeFormat("en-CA", { timeZone: fuso, year: "numeric", month: "2-digit",
+    day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+  const p = Object.fromEntries(f.formatToParts(instante).map((x) => [x.type, x.value]));
+  return { data: `${p.year}-${p.month}-${p.day}`,
+           minutos: Number(p.hour) * 60 + Number(p.minute) + Number(p.second) / 60 };
+}
+function instanteNoFuso(data, minutos, fuso) {
+  const [a, m, d] = data.split("-").map(Number);
+  const palpite = Date.UTC(a, m - 1, d, Math.floor(minutos / 60), minutos % 60);
+  const p = partesNoFuso(new Date(palpite), fuso);
+  const [a2, m2, d2] = p.data.split("-").map(Number);
+  const local = Date.UTC(a2, m2 - 1, d2, 0, 0) + p.minutos * 60000;
+  return new Date(palpite - (local - palpite)).toISOString();
+}
+function somarDias(data, n) {
+  const t = new Date(data + "T12:00:00Z");
+  t.setUTCDate(t.getUTCDate() + n);
+  return t.toISOString().slice(0, 10);
+}
+const minutosDe = (hhmm) => {
+  const x = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || "").trim());
+  if (!x || Number(x[1]) > 23 || Number(x[2]) > 59) return null;
+  return Number(x[1]) * 60 + Number(x[2]);
+};
+function expedienteDoDia(semana, data) {
+  if (!semana || typeof semana !== "object") return null;
+  if ((TABELAS.zorvin_feriados || []).some((f) => f.dia === data)) return null;
+  const faixa = semana[CHAVES_DOS_DIAS[new Date(data + "T12:00:00Z").getUTCDay()]];
+  if (!Array.isArray(faixa) || faixa.length !== 2) return null;
+  const abre = minutosDe(faixa[0]), fecha = minutosDe(faixa[1]);
+  if (abre == null || fecha == null || abre >= fecha) return null;
+  return { abre, fecha };
+}
+function horarioDe(semana, fuso, quando) {
+  const z = String(fuso || "").trim() || "America/Sao_Paulo";
+  const { data: hoje, minutos } = partesNoFuso(quando ? new Date(quando) : new Date(), z);
+  const f = expedienteDoDia(semana, hoje);
+  if (f && minutos >= f.abre && minutos < f.fecha) {
+    return { aberto: true, fecha_em: instanteNoFuso(hoje, f.fecha, z), abre_em: null, fechou_em: null };
+  }
+  let abre_em = null, fechou_em = null;
+  for (let i = 0; i <= 31 && !abre_em; i++) {
+    const d = somarDias(hoje, i), g = expedienteDoDia(semana, d);
+    if (g && (i > 0 || minutos < g.abre)) abre_em = instanteNoFuso(d, g.abre, z);
+  }
+  for (let i = 0; i <= 31 && !fechou_em; i++) {
+    const d = somarDias(hoje, -i), g = expedienteDoDia(semana, d);
+    if (g && (i > 0 || minutos >= g.fecha)) fechou_em = instanteNoFuso(d, g.fecha, z);
+  }
+  return { aberto: false, fecha_em: null, abre_em, fechou_em };
+}
+/** O gatilho `zorvin_fora_do_horario_confere`: devolve o erro, ou arruma a
+ *  linha (as sete chaves, a hora escrita "08:00") e devolve nulo. */
+function conferirForaDoHorario(r) {
+  const recusa = (message) => ({ code: "23514", message });
+  const NOMES = { seg: "segunda", ter: "terça", qua: "quarta", qui: "quinta", sex: "sexta", sab: "sábado", dom: "domingo" };
+  if ("semana" in r) {
+    const semana = r.semana;
+    if (!semana || typeof semana !== "object" || Array.isArray(semana)) {
+      return recusa("O horário da semana precisa dizer, dia a dia, quando abre e quando fecha.");
+    }
+    const desconhecido = Object.keys(semana).find((k) => !(k in NOMES));
+    if (desconhecido) return recusa(`Dia da semana desconhecido no horário: ${desconhecido}.`);
+    const limpa = {};
+    for (const k of Object.keys(NOMES)) {
+      const faixa = semana[k];
+      if (faixa == null) { limpa[k] = null; continue; }
+      const abre = Array.isArray(faixa) && faixa.length === 2 ? minutosDe(faixa[0]) : null;
+      const fecha = Array.isArray(faixa) && faixa.length === 2 ? minutosDe(faixa[1]) : null;
+      if (abre == null || fecha == null) {
+        return recusa(`O horário de ${NOMES[k]} não se lê: escreva a hora de abrir e a de fechar.`);
+      }
+      if (abre >= fecha) return recusa(`Em ${NOMES[k]} a hora de fechar precisa ser depois da de abrir.`);
+      const hh = (n) => `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
+      limpa[k] = [hh(abre), hh(fecha)];
+    }
+    r.semana = limpa;
+  }
+  const atual = (TABELAS.zorvin_fora_do_horario || [])
+    .find((l) => String(l.departamento_id) === String(r.departamento_id)) || {};
+  const ligada = "ligada" in r ? r.ligada : atual.ligada;
+  const texto = "texto" in r ? r.texto : atual.texto;
+  const semana = r.semana || atual.semana || {};
+  if (ligada && !String(texto || "").trim()) {
+    return recusa("Para ligar a resposta automática, escreva o texto que o cliente vai receber.");
+  }
+  if (ligada && !Object.values(semana).some((f) => Array.isArray(f))) {
+    return recusa("Para ligar a resposta automática, abra pelo menos um dia da semana.");
+  }
+  r.atualizada_em = new Date().toISOString();
+  r.atualizada_por = (TABELAS.usuarios[0] || {}).id || null;
+  return null;
+}
+
 const TABELAS = {
   zorvin_palavras: PALAVRAS,
   advogados: ADVOGADOS,
@@ -1331,6 +1434,18 @@ const TABELAS = {
   // AS TAREFAS (script 018 da ponte) começam VAZIAS, pela mesma régua: nascem
   // do que se faz na tela ou da `__SEMENTE` de cada prova.
   zorvin_tarefas: [],
+  // A RESPOSTA FORA DO HORÁRIO (script 021 da ponte). A configuração começa
+  // VAZIA — nenhum departamento ligado, que é como o script a entrega — e o
+  // registro também: as linhas dele são da ponte, e cada prova planta as
+  // suas pela `__SEMENTE`. Os FERIADOS vêm como o script os semeia (os de
+  // 2026 em diante).
+  zorvin_fora_do_horario: [],
+  zorvin_respostas_automaticas: [],
+  zorvin_feriados: [
+    ["2026-10-12", "Nossa Senhora Aparecida"], ["2026-11-02", "Finados"],
+    ["2026-11-15", "Proclamação da República"], ["2026-11-20", "Consciência Negra"],
+    ["2026-12-25", "Natal"], ["2027-01-01", "Confraternização Universal"],
+  ].map(([dia, nome]) => ({ dia, nome, criado_em: "2026-10-09T12:00:00Z" })),
   // O histórico de alterações começa VAZIO: as linhas nascem do que se faz na
   // tela, e semear alguma aqui esconderia uma tela que não grava nada.
   alteracoes: [],
@@ -1591,7 +1706,12 @@ function consulta(tabela) {
         || (/^zorvin_(etapas|cartoes|movimentos)$/.test(tabela) && globalThis.__SEM_FUNIL)
         // AS TAREFAS (script 018) QUE AINDA NÃO RODARAM: "não existe", e não
         // lista vazia — vazia é o estado em que a tela aparece e diz que não há.
-        || (tabela === "zorvin_tarefas" && globalThis.__SEM_TAREFAS));
+        || (tabela === "zorvin_tarefas" && globalThis.__SEM_TAREFAS)
+        // A RESPOSTA FORA DO HORÁRIO (script 021) que ainda não rodou: as três
+        // tabelas respondem "não existe" — vazia é o banco com o script e
+        // nenhum departamento configurado, e a tela aparece nesse caso.
+        || (/^zorvin_(fora_do_horario|feriados|respostas_automaticas)$/.test(tabela)
+            && globalThis.__SEM_FORA_DO_HORARIO));
   let linhas = faltando ? [] : (TABELAS[tabela] || []).slice();
   // O QUE FOI PEDIDO, e não só o resultado. É por isto que dá para saber se a
   // consulta varreu a tabela inteira ou entrou por um recorte — a diferença
@@ -1969,6 +2089,17 @@ function consulta(tabela) {
         departamento_id: c.departamento_id, de_etapa: de ?? null, para_etapa: para ?? null,
         quem: (TABELAS.usuarios[0] || {}).id || null, quando: new Date().toISOString(),
       });
+      // A CONFIGURAÇÃO FORA DO HORÁRIO PASSA PELO GATILHO do script 021: ele
+      // recusa em português (ligar sem texto, sem dia aberto, fechar antes de
+      // abrir) e grava a semana com as sete chaves. A bancada imita os dois,
+      // senão a tela seria provada contra um banco que aceita qualquer coisa.
+      if (tabela === "zorvin_fora_do_horario" && (gravacao || patch)) {
+        const regs = gravacao ? (Array.isArray(gravacao.reg) ? gravacao.reg : [gravacao.reg]) : [patch];
+        for (const r of regs) {
+          const recusa = conferirForaDoHorario(r);
+          if (recusa) return resolver({ data: null, count: null, error: recusa });
+        }
+      }
       if (gravacao) {
         eu.gravar(gravacao.reg, gravacao.porOnde);
         if (funil) {
@@ -2765,6 +2896,18 @@ export const supabase = {
     // linhas que a TELA gravou, para a prova poder cobrar da tela o que ela
     // mostra depois de marcar um "Já tratei" de verdade, e não um número que
     // a bancada inventou.
+    // A CONTA DO HORÁRIO (script 021). A de verdade é do banco e foi provada
+    // num Postgres no repo da ponte (seção 59); esta a refaz sobre os
+    // feriados da bancada, porque é ela que escreve a prévia da tela ("volta
+    // terça às 08:00") e a prova precisa vê-la mudar com o que se digita.
+    if (nome === "zorvin_horario_de") {
+      if (globalThis.__SEM_FORA_DO_HORARIO) {
+        return { data: null, error: { code: "PGRST202", message: "Could not find the function public.zorvin_horario_de" } };
+      }
+      await espera(20);
+      return { data: horarioDe(args && args.p_semana, args && args.p_fuso, args && args.p_quando), error: null };
+    }
+
     // TRAZER PARA O FUNIL o que já existia — a regra do script 017, imitada
     // porque o NÚMERO que ela devolve é o que a tela escreve ("N clientes
     // entraram"), e os cartões que ela cria são o que a tela passa a mostrar.

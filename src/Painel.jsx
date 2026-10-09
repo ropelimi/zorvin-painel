@@ -206,6 +206,39 @@ function bolhaDaFilaQueFalhou(f, convId) {
   });
 }
 
+/** A RESPOSTA AUTOMÁTICA FORA DO HORÁRIO (script 021 da ponte) vira uma bolha
+ *  nossa na conversa — lida do REGISTRO da ponte, e não de `mensagens`: lá ela
+ *  tiraria o cliente da fila de espera e trocaria a prévia da lista, e ele
+ *  ainda não foi atendido por ninguém. A hora é a de quando saiu; enquanto
+ *  não saiu, a de quando a ponte decidiu mandar. */
+function bolhaDaRespostaAutomatica(r, convId) {
+  return ({
+    id: "auto-" + r.id,
+    conversa_id: convId,
+    origem: "automatica",
+    tipo: "texto",
+    texto: r.texto || "",
+    criado_em: r.enviada_em || r.criada_em,
+    _status: r.status || "enviando",
+    _erro: r.erro || null,
+    _criadaEm: r.criada_em,
+  });
+}
+
+// O BANCO SEM O SCRIPT 021: perguntado uma vez por sessão, e não a cada
+// conversa aberta — a mesma régua de `TEM_NOME_DO_CADASTRO`.
+let SEM_RESPOSTAS_AUTOMATICAS = false;
+
+/** O que a bolha diz do envio. "Enviando" que passa de cinco minutos não é
+ *  mais "enviando": a ponte caiu no meio, e a tela não pode prometer o que
+ *  não sabe. */
+function estadoDaAutomatica(m) {
+  if (m._status === "enviada") return "enviada";
+  if (m._status === "erro") return "erro";
+  const desde = new Date(m._criadaEm || m.criado_em).getTime();
+  return Number.isFinite(desde) && Date.now() - desde > 5 * 60 * 1000 ? "sem-confirmacao" : "enviando";
+}
+
 function compararConversas(ordem, pelaEspera) {
   const sinal = ordem === "antigas" ? -1 : 1;
   const quando = (c) => {
@@ -2123,7 +2156,44 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
             MENSAGENS NÃO LIDAS
           </div>
         )}
-        {m.origem === "nota" ? (
+        {m.origem === "automatica" ? (
+          // A RESPOSTA AUTOMÁTICA FORA DO HORÁRIO — nossa, à direita, e sem
+          // assinatura de gente: ninguém escreveu. SEM MENU NENHUM: ela não
+          // está em `mensagens`, então não se responde, não se edita e não se
+          // apaga para todos daqui — e o que ela mostra é o que o cliente
+          // recebeu, palavra por palavra.
+          <div data-msg-id={m.id} data-resposta-automatica={estadoDaAutomatica(m)}
+               style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+            <div style={{ maxWidth: estreito ? "84%" : "65%", background: C.bubbleOut, color: C.textPrimary,
+                          borderRadius: 8, padding: "5px 9px 6px", boxShadow: "0 1px 0.5px rgba(0,0,0,.15)",
+                          outline: casa ? "2px solid #f4c430" : "none" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600,
+                            color: C.textSecondary, marginBottom: 2 }}>
+                <Clock size={12} /> Resposta automática · fora do horário
+              </div>
+              <div style={{ fontSize: 14.2, lineHeight: 1.4, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                {m.texto}
+              </div>
+              {estadoDaAutomatica(m) === "erro" && (
+                <div data-automatica-erro style={{ fontSize: 12, color: "#e5573f", marginTop: 4, lineHeight: 1.4 }}>
+                  Não saiu{m._erro ? `: ${String(m._erro).replace(/[.\s]+$/, "")}.` : "."} O cliente não recebeu esta resposta.
+                </div>
+              )}
+              {estadoDaAutomatica(m) === "sem-confirmacao" && (
+                <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 4, lineHeight: 1.4 }}>
+                  A ponte não confirmou se ela saiu.
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4,
+                            fontSize: 11, color: C.textSecondary, marginTop: 2 }}>
+                {horaCurta(m.criado_em)}
+                {estadoDaAutomatica(m) === "enviada" && <Check size={14} aria-label="saiu" />}
+                {estadoDaAutomatica(m) === "enviando" && <Clock size={12} aria-label="saindo" />}
+                {estadoDaAutomatica(m) === "erro" && <AlertCircle size={13} color="#e5573f" aria-label="não saiu" />}
+              </div>
+            </div>
+          </div>
+        ) : m.origem === "nota" ? (
           // NOTA INTERNA — comentário da equipe (não vai ao WhatsApp).
           // Alinhada à direita, com cabeçalho (autor • hora) + avatar,
           // bolha laranja e rodapé "Mensagem interna".
@@ -6450,6 +6520,11 @@ export default function Painel({ sessao }) {
     const pedidoDaFila = supabase.from("fila_envio")
       .select("*").eq("conversa_id", convId).eq("status", "erro")
       .order("criado_em", { ascending: true }).limit(50).then((r) => r);
+    // AS RESPOSTAS AUTOMÁTICAS FORA DO HORÁRIO (script 021), junto das outras:
+    // é uma quarta ida, e ela sai ao mesmo tempo, sem fila indiana.
+    const pedidoDasAutomaticas = SEM_RESPOSTAS_AUTOMATICAS ? null
+      : supabase.from("zorvin_respostas_automaticas").select("*").eq("conversa_id", convId)
+          .order("criada_em", { ascending: true }).limit(50).then((r) => r);
 
     let recentes = [], erro = null, maisAntigas = false;
     if (alvo && alvo.em) {
@@ -6559,7 +6634,25 @@ export default function Painel({ sessao }) {
         .map((f) => bolhaDaFilaQueFalhou(f, convId));
     } catch (_) { /* fila sem as colunas novas: a conversa abre sem elas */ }
 
-    const juntas = [...recentes, ...notas, ...naoSairam].sort(
+    // O QUE A RESPOSTA AUTOMÁTICA DISSE AO CLIENTE. A tabela que falta (o
+    // script 021 não rodou) é o único caso que cala; o resto da falha vai
+    // para a faixa âmbar, como as notas — "nenhuma resposta saiu" no lugar de
+    // "não consegui ler" faria alguém achar que o cliente não foi avisado.
+    let automaticas = [];
+    if (pedidoDasAutomaticas) {
+      try {
+        const { data: autos, error: erroAutos } = await pedidoDasAutomaticas;
+        if (erroAutos) {
+          if (semATabela(erroAutos)) SEM_RESPOSTAS_AUTOMATICAS = true;
+          else anotarFalhaDeLeitura("automaticas", "as respostas automáticas", erroAutos);
+        } else {
+          limparFalhaDeLeitura("automaticas");
+          automaticas = (autos || []).map((r) => bolhaDaRespostaAutomatica(r, convId));
+        }
+      } catch (e) { anotarFalhaDeLeitura("automaticas", "as respostas automáticas", e); }
+    }
+
+    const juntas = [...recentes, ...notas, ...naoSairam, ...automaticas].sort(
       (a, b) => new Date(a.criado_em) - new Date(b.criado_em)
     );
     // Se troquei de conversa enquanto esta busca estava em andamento, descarta o
@@ -6619,6 +6712,47 @@ export default function Painel({ sessao }) {
   }, [meuNome]);
 
   useEffect(() => { carregarMensagens(conversaId); }, [conversaId, carregarMensagens]);
+
+  // ------------------------------------------------------------
+  //  A RESPOSTA AUTOMÁTICA QUE SAI COM A CONVERSA ABERTA
+  //
+  //  A ponte decide e manda segundos DEPOIS de gravar a mensagem do cliente,
+  //  e o registro dela não vem pelo tempo real: pôr uma tabela a mais no canal
+  //  é mexer no canal de todas as conversas, que este painel já viu morrer
+  //  ("mismatch between server and client bindings"). Então, quando chega
+  //  mensagem do cliente na conversa aberta, só o REGISTRO é relido — e não a
+  //  conversa inteira.
+  //
+  //  DUAS OLHADAS: a ponte decide em menos de um segundo, mas o WhatsApp pode
+  //  demorar a confirmar, e uma bolha "saindo" que nunca vira "saiu" seria a
+  //  tela dizendo menos do que sabe.
+  // ------------------------------------------------------------
+  const relerAutomaticas = useCallback(async (convId) => {
+    if (SEM_RESPOSTAS_AUTOMATICAS || !convId) return;
+    const { data, error } = await supabase.from("zorvin_respostas_automaticas").select("*")
+      .eq("conversa_id", convId).order("criada_em", { ascending: true }).limit(50);
+    if (error) {
+      if (semATabela(error)) SEM_RESPOSTAS_AUTOMATICAS = true;
+      return;
+    }
+    if (conversaIdRef.current !== convId) return;
+    const bolhas = (data || []).map((r) => bolhaDaRespostaAutomatica(r, convId));
+    setMensagens((prev) => [...prev.filter((m) => m.origem !== "automatica"), ...bolhas]
+      .sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em)));
+  }, []);
+  const relogiosDasAutomaticas = useRef([]);
+  const agendarReleituraDasAutomaticas = useCallback((convId) => {
+    if (SEM_RESPOSTAS_AUTOMATICAS) return;
+    relogiosDasAutomaticas.current.forEach(clearTimeout);
+    relogiosDasAutomaticas.current = [
+      setTimeout(() => relerAutomaticas(convId), 3500),
+      setTimeout(() => relerAutomaticas(convId), 12000),
+    ];
+  }, [relerAutomaticas]);
+  // O TRATADOR DO TEMPO REAL É REGISTRADO UMA VEZ, e lê pelo espelho.
+  const agendarReleituraDasAutomaticasRef = useRef(agendarReleituraDasAutomaticas);
+  agendarReleituraDasAutomaticasRef.current = agendarReleituraDasAutomaticas;
+  useEffect(() => () => relogiosDasAutomaticas.current.forEach(clearTimeout), []);
 
   // ------------------------------------------------------------
   //  O QUE ESTÁ AGENDADO NESTA CONVERSA
@@ -7041,6 +7175,10 @@ export default function Painel({ sessao }) {
           // não lida. Estar com a tela aberta não é ter respondido — e é
           // justamente com a conversa aberta que chega a mensagem que a pessoa
           // ainda vai ler e responder depois.
+          //
+          // E A RESPOSTA AUTOMÁTICA, SE HOUVER, VEM LOGO ATRÁS — ver
+          // `relerAutomaticas`.
+          if (nova.origem === "contato") agendarReleituraDasAutomaticasRef.current(nova.conversa_id);
         }
         // A PRÉVIA DA LISTA APRENDE COM A MENSAGEM QUE ACABOU DE CHEGAR.
         //

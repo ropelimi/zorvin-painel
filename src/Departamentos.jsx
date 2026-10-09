@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "./supabase.js";
-import { naoGravouNada } from "./gravar.js";
+import { naoGravouNada, semATabela } from "./gravar.js";
 import { chamarPonte } from "./ponte.js";
 // A ETIQUETA do telefone do escritório — a mesma que a ponte lê para aplicar a
 // permissão. Estava escrita aqui dentro; agora tem nome e um só lugar, com o
@@ -12,6 +12,7 @@ import { PalavrasDaCasa } from "./PalavrasDaCasa.jsx";
 import { AssuntosDoJaTratei } from "./AssuntosDoJaTratei.jsx";
 import { EtapasDoFunil } from "./EtapasDoFunil.jsx";
 import { AtualizacoesDoBanco } from "./AtualizacoesDoBanco.jsx";
+import { ForaDoHorario } from "./ForaDoHorario.jsx";
 // A CHAVE SAIU DAQUI para `Chave.jsx`: a tela de Avisos passou a precisar da
 // mesma peça, e uma segunda cópia divergiria da primeira no primeiro conserto.
 import { Chave } from "./Chave.jsx";
@@ -60,8 +61,20 @@ export default function Departamentos({ C, aoFechar, abaInicial, aoSaberDosScrip
   const [telefones, setTelefones] = useState([]);
   // A ABA DE ENTRADA pode vir de fora: a faixa vermelha abre esta tela direto
   // em "Atualizações do banco", que é para onde a frase dela manda.
-  const [aba, setAba] = useState(abaInicial || "estrutura"); // 'estrutura' | 'pessoas' | 'notas' | 'banco'
+  const [aba, setAba] = useState(abaInicial || "estrutura"); // 'estrutura' | 'pessoas' | 'fora' | 'notas' | 'banco'
   const temVantoro = useTemVantoro();
+  // A RESPOSTA FORA DO HORÁRIO (script 021) — a aba só aparece com o script.
+  // Três estados, pela régua de `temVantoro.js`: `null` ainda não perguntou
+  // (esconde), `false` o banco não tem a tabela (esconde), `true` tem — OU A
+  // PERGUNTA FALHOU por outro motivo, e aí a aba aparece e diz o erro lá
+  // dentro, em vez de sumir com a configuração por causa de um tropeço.
+  const [temForaDoHorario, setTemForaDoHorario] = useState(null);
+  useEffect(() => {
+    let valeu = true;
+    supabase.from("zorvin_fora_do_horario").select("departamento_id").limit(1)
+      .then(({ error }) => { if (valeu) setTemForaDoHorario(!(error && semATabela(error))); });
+    return () => { valeu = false; };
+  }, []);
   const [salvando, setSalvando] = useState("");
   // O que o BANCO acha: `null` = não deu para perguntar (base antiga, sem a
   // função), `true`/`false` = a resposta dele.
@@ -201,6 +214,14 @@ export default function Departamentos({ C, aoFechar, abaInicial, aoSaberDosScrip
         <div style={{ display: "flex", gap: 8, padding: "12px 18px 0", flexWrap: "wrap" }}>
           <button style={cx.aba(aba === "estrutura")} onClick={() => setAba("estrutura")}>Departamentos e telefones</button>
           <button style={cx.aba(aba === "pessoas")} onClick={() => setAba("pessoas")}>Atendentes</button>
+          {/* UMA ABA PRÓPRIA, e não mais uma seção no fim de "Departamentos e
+              telefones": são o texto, sete dias, o fuso e os feriados — uma
+              tela, e não três campos. E é para cá que se volta na véspera de
+              cada feriado. */}
+          {temForaDoHorario === true && (
+            <button style={cx.aba(aba === "fora")} onClick={() => setAba("fora")}
+                    data-aba-fora-do-horario>Fora do horário</button>
+          )}
           {/* A ABA DAS NOTAS mora aqui porque aqui é a tela de quem administra,
               e o retroativo é coisa de administrador — ele mexe no histórico de
               todos os clientes de uma vez. Antes ele só existia como um POST
@@ -299,6 +320,10 @@ export default function Departamentos({ C, aoFechar, abaInicial, aoSaberDosScrip
           {!carregando && aba === "pessoas" && (
             <Atendentes cx={cx} C={C} departamentos={departamentos} telefones={telefones}
                         aoAvisar={setErro} />
+          )}
+
+          {!carregando && aba === "fora" && (
+            <ForaDoHorario cx={cx} C={C} departamentos={departamentos} aoAvisar={setErro} />
           )}
 
           {aba === "notas" && <NotasNoVantoro cx={cx} C={C} />}
