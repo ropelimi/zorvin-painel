@@ -116,6 +116,30 @@ export function quandoPorExtenso(instante, fuso = FUSO_PADRAO, agora = new Date(
   return `${DIAS_POR_EXTENSO[alvo.semana]}, ${alvo.dia}/${alvo.mes}, às ${alvo.hora}`;
 }
 
+/** A janela da CONVERSA EM ANDAMENTO (script 022), em minutos, a partir do
+ *  intervalo que o banco devolve ("00:30:00", "01:00:00", "1 day 02:00:00").
+ *  É a carência da fila de espera (`zorvin_carencia_da_espera`, do 006): a
+ *  mesma régua decide quando o cliente "ainda está respondendo àquela
+ *  conversa", nos dois lugares. Não se lê → `null`, e a frase não promete
+ *  número nenhum. */
+export function minutosDaJanela(intervalo) {
+  const x = /^(?:(\d+) days? )?(\d+):(\d{2}):(\d{2})$/.exec(String(intervalo || "").trim());
+  if (!x) return null;
+  const minutos = Number(x[1] || 0) * 1440 + Number(x[2]) * 60 + Number(x[3]);
+  return minutos > 0 ? minutos : null;
+}
+
+/** "nos 30 minutos antes", "na última hora antes", "nas 2 horas antes" — e, sem
+ *  o número, "pouco antes", que é verdade em qualquer caso. */
+export function fraseDaJanela(minutos) {
+  if (!minutos) return "pouco antes";
+  if (minutos % 60 === 0) {
+    const h = minutos / 60;
+    return h === 1 ? "na última hora antes" : `nas ${h} horas antes`;
+  }
+  return minutos === 1 ? "no minuto antes" : `nos ${minutos} minutos antes`;
+}
+
 /** A prévia da tela, a partir do que o banco respondeu. */
 export function fraseDoHorario(h, fuso = FUSO_PADRAO, agora = new Date()) {
   if (!h) return "";

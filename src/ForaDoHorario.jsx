@@ -6,6 +6,7 @@ import { Clock, CalendarX2, Plus, Trash2, Check } from "lucide-react";
 import {
   DIAS, SEMANA_PADRAO, FUSO_PADRAO, FUSOS, TEXTO_SUGERIDO, TETO_DO_TEXTO,
   semanaCompleta, diasAbertos, problemasDaSemana, temChaves, fraseDoHorario,
+  minutosDaJanela, fraseDaJanela,
 } from "./foraDoHorario.js";
 
 // ============================================================
@@ -25,6 +26,12 @@ import {
 //  SALVAR RELÊ DO BANCO, e não encaixa o que foi digitado: o gatilho do banco
 //  arruma a semana ("8:00" vira "08:00") e pode recusar, e a tela tem de
 //  mostrar o que ficou gravado de verdade.
+//
+//  ELA NÃO INTERROMPE UMA CONVERSA (script 022, pedido do Rodrigo no dia em
+//  que ligou): não sai se a equipe escreveu na conversa depois do fechamento,
+//  ou na janela antes de o cliente escrever. A explicação diz a janela com o
+//  número do BANCO (a carência da fila de espera), e não com um "30" escrito
+//  aqui: trocá-la lá é uma linha, e a tela continuaria prometendo o antigo.
 // ============================================================
 
 const vazio = () => ({ ligada: false, texto: "", semana: semanaCompleta(SEMANA_PADRAO), fuso: FUSO_PADRAO });
@@ -55,6 +62,7 @@ export function ForaDoHorario({ cx, C, departamentos = [], aoAvisar }) {
   const [salvo, setSalvo] = useState(false);
   const [novoDia, setNovoDia] = useState("");
   const [novoNome, setNovoNome] = useState("");
+  const [janela, setJanela] = useState(null);     // minutos; null = sem número
 
   useEffect(() => {
     if (depId == null && departamentos.length) setDepId(departamentos[0].id);
@@ -83,6 +91,18 @@ export function ForaDoHorario({ cx, C, departamentos = [], aoAvisar }) {
   }, [aoAvisar]);
 
   useEffect(() => { ler(); }, [ler]);
+
+  // A JANELA DA CONVERSA EM ANDAMENTO, lida do banco. Falhando, a frase diz
+  // "pouco antes" — que é verdade com qualquer número — em vez de prometer
+  // um que talvez não seja o de lá.
+  useEffect(() => {
+    if (existe !== true) return undefined;
+    let vivo = true;
+    supabase.rpc("zorvin_carencia_da_espera").then(({ data, error }) => {
+      if (vivo) setJanela(error ? null : minutosDaJanela(data));
+    });
+    return () => { vivo = false; };
+  }, [existe]);
 
   // A LINHA GUARDADA DO DEPARTAMENTO ESCOLHIDO — é contra ela que se mede o
   // "mudou", e é dela que a tela volta ao trocar de departamento.
@@ -203,9 +223,12 @@ export function ForaDoHorario({ cx, C, departamentos = [], aoAvisar }) {
         <div style={cx.titulo}><Clock size={16} /> Resposta fora do horário</div>
         <div style={cx.dica}>
           Quem escreve à noite, no fim de semana ou no feriado recebe na hora o texto abaixo —
-          <b> uma vez</b> por período fechado, e não a cada mensagem. Se alguém da equipe já
-          escreveu na conversa depois do fechamento, ela não sai. A conversa continua na fila de
-          espera: o cliente ainda não foi atendido.
+          <b> uma vez</b> por período fechado, e não a cada mensagem.{" "}
+          <span data-fora-nao-interrompe>
+            Ela <b>não interrompe uma conversa</b>: se alguém da equipe escreveu nela depois do
+            fechamento, ou {fraseDaJanela(janela)} de o cliente escrever, ela não sai.
+          </span>{" "}
+          A conversa continua na fila de espera: o cliente ainda não foi atendido.
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
