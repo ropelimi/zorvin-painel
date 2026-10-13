@@ -271,6 +271,38 @@ console.log("\n6. O nome copiado vira nome de arquivo no Windows");
     ok("selecionar só a quebra entre dois blocos não esvazia a área de transferência", soQuebra === selecionado,
        `${q(soQuebra)} (selecionado: ${q(selecionado)})`);
   }
+  // O CURSOR NA CAIXA DE ESCREVER, E O NOME SELECIONADO NA TELA. Quem decide
+  // se a cópia é "de campo" é onde está a SELEÇÃO, e não o foco: ao abrir a
+  // conversa a caixa fica com o cursor piscando, e a seleção feita na tela não
+  // é dela. A seleção daqui é a dos três cliques, escrita à mão: do começo do
+  // nome até o começo do bloco seguinte.
+  const caixaDeEscrever = page.locator(CAMPO);
+  if ((await caixaDeEscrever.count()) && (await alto.count())) {
+    let comoFicou = {};
+    const comFoco = await copiarComGesto(async () => {
+      await caixaDeEscrever.focus();
+      comoFicou = await page.evaluate(() => {
+        const nome = document.querySelector("[data-nome-do-contato]");
+        const ida = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        let a = null, b = null;
+        for (let n = ida.nextNode(); n; n = ida.nextNode()) {
+          if (!a && nome.contains(n)) { a = n; continue; }
+          if (a && n.data.trim()) { b = n; break; }
+        }
+        if (!a || !b) return {};
+        const r = document.createRange();
+        r.setStart(a, 0);
+        r.setEnd(b, 0);
+        getSelection().removeAllRanges();
+        getSelection().addRange(r);
+        return { foco: document.activeElement?.tagName, selecionado: String(getSelection()) };
+      });
+    });
+    ok("(a cena tem o cursor na caixa e o nome com as quebras selecionado)",
+       comoFicou.foco === "TEXTAREA" && /^Cliente da Cópia\n+$/.test(comoFicou.selecionado || ""), q(comoFicou));
+    ok("com o cursor na caixa de escrever, o nome selecionado na tela sai sem as quebras do fim",
+       comFoco === "Cliente da Cópia", q(comFoco));
+  }
   // AS QUEBRAS DO MEIO FICAM: arrastar do nome até a linha do número é pedir
   // as duas coisas, e elas chegam em duas linhas.
   if (await alto.count()) {

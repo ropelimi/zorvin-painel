@@ -10139,8 +10139,16 @@ export default function Painel({ sessao }) {
     function aoCopiar(e) {
       const texto = String(window.getSelection?.() || "");
       if (!texto || !e.clipboardData) return;
+      // A SELEÇÃO ESTÁ NUM CAMPO quando há texto marcado DENTRO dele — e não
+      // quando ele só tem o foco. Ao abrir uma conversa a caixa de escrever
+      // fica com o cursor piscando, e a seleção feita na tela seria tratada
+      // como dela. Foi uma sabotagem que mostrou: tirar as quebras do meio
+      // passava nas cenas das mensagens, porque com a caixa em foco elas nem
+      // chegavam até aqui.
       const el = document.activeElement;
-      const emCampo = Boolean(el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT" || el.isContentEditable));
+      const emCampo = el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT")
+        ? el.selectionStart != null && el.selectionStart !== el.selectionEnd
+        : Boolean(el && el.isContentEditable);
       const semOFim = emCampo ? texto : texto.replace(/\s+$/, "");
       // SÓ ESPAÇO SELECIONADO não vira área de transferência vazia: vai o que
       // estava selecionado, como antes.
