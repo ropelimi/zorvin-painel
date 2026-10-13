@@ -1394,8 +1394,12 @@ function Avatar({ nome, size = 40, foto }) {
       />
     );
   }
+  // AS INICIAIS NÃO SE SELECIONAM (13/10). Elas são desenho, mas eram texto: o
+  // nome copiado arrastando a partir do avatar saía "AE\nANDRE EUGENIO" — as
+  // iniciais e uma quebra de linha na frente do nome, que o Windows recusa num
+  // nome de arquivo (ver "Copiar leva só o texto" no CLAUDE.md).
   return (
-    <div style={{ width: size, height: size, borderRadius: "50%", background: corDe(nome), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, fontSize: size * (inicial.length > 1 ? 0.36 : 0.42), letterSpacing: inicial.length > 1 ? "-.02em" : 0, flexShrink: 0 }}>
+    <div style={{ width: size, height: size, borderRadius: "50%", background: corDe(nome), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, fontSize: size * (inicial.length > 1 ? 0.36 : 0.42), letterSpacing: inicial.length > 1 ? "-.02em" : 0, flexShrink: 0, userSelect: "none", WebkitUserSelect: "none" }}>
       {inicial}
     </div>
   );
@@ -10113,11 +10117,42 @@ export default function Painel({ sessao }) {
   // texto: com as quebras de linha da mensagem, e uma linha por bolha. Na caixa
   // de escrever nada muda — lá o navegador sempre copiou só o texto, e a
   // seleção dela é a mesma.
+  //
+  // E SEM AS QUEBRAS DE LINHA DO FIM (13/10). Relato do Rodrigo: copiar o nome
+  // do contato e colar como nome de um arquivo .pdf dava erro no Windows, por
+  // "caracteres especiais". MEDIDO: três cliques no nome do alto copiavam
+  // "Deus\n\n"; arrastar um pouco além do fim do nome, o mesmo; três cliques
+  // na linha da lista, "Deus\n". A seleção que encosta na borda de um bloco
+  // leva a quebra de linha dele — e quebra de linha é proibida em nome de
+  // arquivo no Windows (é o tropeço conhecido de copiar uma célula do Excel).
+  // As quebras do MEIO ficam: são as linhas de uma mensagem, e uma por bolha.
+  //
+  // SÓ O FIM, e não o começo: nenhum gesto medido pôs quebra no começo, e lá a
+  // tabulação pode ser dado — arrastar sobre uma tabela cuja primeira célula
+  // está vazia copia "\tb\tc", e tirar aquela tabulação colaria a linha
+  // deslocada no Excel. No fim sai todo espaço, a tabulação inclusive: lá ela
+  // não separa nada.
+  //
+  // NA CAIXA DE ESCREVER E NOS CAMPOS, a cópia é a de sempre, letra por letra:
+  // lá a pessoa marcou exatamente o que quis, e a seleção não atravessa bloco.
   useEffect(() => {
     function aoCopiar(e) {
       const texto = String(window.getSelection?.() || "");
       if (!texto || !e.clipboardData) return;
-      e.clipboardData.setData("text/plain", texto);
+      // A SELEÇÃO ESTÁ NUM CAMPO quando há texto marcado DENTRO dele — e não
+      // quando ele só tem o foco. Ao abrir uma conversa a caixa de escrever
+      // fica com o cursor piscando, e a seleção feita na tela seria tratada
+      // como dela. Foi uma sabotagem que mostrou: tirar as quebras do meio
+      // passava nas cenas das mensagens, porque com a caixa em foco elas nem
+      // chegavam até aqui.
+      const el = document.activeElement;
+      const emCampo = el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT")
+        ? el.selectionStart != null && el.selectionStart !== el.selectionEnd
+        : Boolean(el && el.isContentEditable);
+      const semOFim = emCampo ? texto : texto.replace(/\s+$/, "");
+      // SÓ ESPAÇO SELECIONADO não vira área de transferência vazia: vai o que
+      // estava selecionado, como antes.
+      e.clipboardData.setData("text/plain", semOFim || texto);
       e.preventDefault();
     }
     document.addEventListener("copy", aoCopiar);

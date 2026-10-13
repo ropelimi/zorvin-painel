@@ -17,6 +17,15 @@
 //   4. vale para a tela inteira, e não só para as bolhas (o nome no alto da
 //      conversa);
 //   5. copiar de dentro da caixa de escrever continua funcionando.
+//
+// E O NOME QUE NÃO VIRA NOME DE ARQUIVO (13/10) — relato do Rodrigo: copiar o
+// nome do contato e colar como nome de um .pdf dava erro no Windows, por
+// "caracteres especiais". Três cliques no nome copiavam "Deus\n\n": a seleção
+// que encosta na borda de um bloco leva a quebra de linha dele. As cenas 6 e 7
+// usam os GESTOS de verdade (três cliques, arrastar além do fim, varrer até o
+// avatar), porque uma seleção montada por código, letra por letra, nunca tem
+// quebra no fim — e foi assim que a cena 3 passou a vida inteira sem ver o
+// defeito.
 import { abrirNavegador, ENDERECO } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
@@ -148,7 +157,9 @@ console.log("\n3. Fora das bolhas: o nome no alto da conversa");
   ok("selecionei o nome do alto", await selecionar("Cliente da Cópia", "Cliente da Cópia"));
   const c = await copiarELer();
   ok("sem HTML fora das bolhas também", !c.tipos.includes("text/html"), q(c.tipos));
-  ok("e o texto é o nome", c.texto.trim() === "Cliente da Cópia", q(c.texto));
+  // SEM `.trim()` NA COMPARAÇÃO: ele apagava as pontas antes de comparar, e
+  // eram justamente elas o defeito de 13/10.
+  ok("e o texto é o nome", c.texto === "Cliente da Cópia", q(c.texto));
 }
 
 console.log("\n4. A caixa de escrever continua copiando");
@@ -161,6 +172,16 @@ console.log("\n4. A caixa de escrever continua copiando");
   }
   const c = await copiarELer();
   ok("Ctrl+C na caixa copia o que foi selecionado nela", c.texto === "texto", q(c.texto));
+  // NA CAIXA, A CÓPIA É LETRA POR LETRA: a quebra que a pessoa marcou no fim
+  // vai junto. Tirar as pontas é para a seleção que atravessa bloco, na tela.
+  if (await caixa.count()) {
+    await caixa.fill("linha um\n");
+    await caixa.evaluate((el) => { el.focus(); el.setSelectionRange(0, el.value.length); });
+  }
+  const comQuebra = await copiarELer();
+  ok("e a quebra de linha marcada no fim, dentro da caixa, vai junto", comQuebra.texto === "linha um\n",
+     q(comQuebra.texto));
+  if (await caixa.count()) await caixa.fill("");
 }
 
 console.log("\n5. Ctrl+C sem nada selecionado");
@@ -174,6 +195,155 @@ console.log("\n5. Ctrl+C sem nada selecionado");
   await page.waitForTimeout(300);
   const depois = await page.evaluate(() => navigator.clipboard.readText());
   ok("não apaga o que estava copiado", depois === "o que estava copiado antes", q(depois));
+}
+
+/** O que o Windows recusa num nome de arquivo: \ / : * ? " < > | e os
+ *  caracteres de controle, entre eles a quebra de linha e a tabulação. */
+const proibidosNoWindows = (t) => [...t].filter((ch) => /[\\/:*?"<>|]/.test(ch) || ch.charCodeAt(0) < 32);
+
+/** Copia com um GESTO de verdade e devolve o texto. */
+async function copiarComGesto(gesto) {
+  await page.evaluate(() => { getSelection().removeAllRanges(); document.activeElement?.blur?.(); });
+  await gesto();
+  return (await copiarELer()).texto;
+}
+const arrastar = async (caixa, alemDoFim) => {
+  await page.mouse.move(caixa.x + 1, caixa.y + caixa.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(caixa.x + caixa.width + alemDoFim, caixa.y + caixa.height / 2, { steps: 8 });
+  await page.mouse.up();
+};
+
+console.log("\n6. O nome copiado vira nome de arquivo no Windows");
+{
+  const alto = page.locator("[data-nome-do-contato]").first();
+  ok("achei o nome no alto da conversa", (await alto.count()) === 1);
+  if (await alto.count()) {
+    const tres = await copiarComGesto(() => alto.click({ clickCount: 3 }));
+    ok("três cliques no nome do alto copiam o nome, e só ele", tres === "Cliente da Cópia", q(tres));
+    ok("sem nada que o Windows recuse num nome de arquivo", proibidosNoWindows(tres).length === 0,
+       q(proibidosNoWindows(tres)));
+    const caixaDoNome = await alto.boundingBox();
+    const alem = await copiarComGesto(() => arrastar(caixaDoNome, 60));
+    ok("arrastar passando do fim do nome também copia só o nome", alem === "Cliente da Cópia", q(alem));
+    // VARRENDO DO FIM DO NOME PARA A ESQUERDA, passando do começo até o
+    // avatar: as iniciais ("CC") eram texto, e iam junto, com uma quebra de
+    // linha na frente do nome — "CC\nCliente da Cópia".
+    const ateOAvatar = await copiarComGesto(async () => {
+      await page.mouse.move(caixaDoNome.x + caixaDoNome.width - 1, caixaDoNome.y + caixaDoNome.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(caixaDoNome.x - 50, caixaDoNome.y + caixaDoNome.height / 2, { steps: 8 });
+      await page.mouse.up();
+    });
+    ok("varrer do fim do nome até o avatar copia só o nome, sem as iniciais", ateOAvatar === "Cliente da Cópia",
+       q(ateOAvatar));
+  }
+  const naLista = page.locator('[data-conversa-id="cv-copia"]').getByText("Cliente da Cópia", { exact: true }).first();
+  ok("achei o nome na linha da lista", (await naLista.count()) === 1);
+  if (await naLista.count()) {
+    const daLista = await copiarComGesto(() => naLista.click({ clickCount: 3 }));
+    ok("três cliques no nome da lista copiam só o nome", daLista === "Cliente da Cópia", q(daLista));
+  }
+  // SÓ A QUEBRA ENTRE DOIS BLOCOS selecionada: tirar o fim não deixa nada, e
+  // nada no lugar do que estava copiado seria APAGAR sem querer (a régua da
+  // cena 5). Vai o que estava selecionado.
+  if (await alto.count()) {
+    let selecionado = "";
+    const soQuebra = await copiarComGesto(async () => {
+      selecionado = await page.evaluate(() => {
+        const nome = document.querySelector("[data-nome-do-contato]");
+        const ida = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        let a = null, b = null;
+        for (let n = ida.nextNode(); n; n = ida.nextNode()) {
+          if (!a && nome.contains(n)) { a = n; continue; }
+          if (a && n.data.trim()) { b = n; break; }
+        }
+        if (!a || !b) return "";
+        const r = document.createRange();
+        r.setStart(a, a.length);
+        r.setEnd(b, 0);
+        getSelection().removeAllRanges();
+        getSelection().addRange(r);
+        return String(getSelection());
+      });
+    });
+    ok("(a seleção da cena é só quebra de linha, como diz o nome dela)", /^\s+$/.test(selecionado), q(selecionado));
+    ok("selecionar só a quebra entre dois blocos não esvazia a área de transferência", soQuebra === selecionado,
+       `${q(soQuebra)} (selecionado: ${q(selecionado)})`);
+  }
+  // O CURSOR NA CAIXA DE ESCREVER, E O NOME SELECIONADO NA TELA. Quem decide
+  // se a cópia é "de campo" é onde está a SELEÇÃO, e não o foco: ao abrir a
+  // conversa a caixa fica com o cursor piscando, e a seleção feita na tela não
+  // é dela. A seleção daqui é a dos três cliques, escrita à mão: do começo do
+  // nome até o começo do bloco seguinte.
+  const caixaDeEscrever = page.locator(CAMPO);
+  // CONFERIDA ANTES DO `if`: sem a caixa na tela, a cena inteira passaria sem
+  // medir nada (o vigia `provas-que-reprovam` pegou).
+  ok("(a caixa de escrever está na tela para a cena do cursor)", (await caixaDeEscrever.count()) === 1);
+  if ((await caixaDeEscrever.count()) && (await alto.count())) {
+    let comoFicou = {};
+    const comFoco = await copiarComGesto(async () => {
+      await caixaDeEscrever.focus();
+      comoFicou = await page.evaluate(() => {
+        const nome = document.querySelector("[data-nome-do-contato]");
+        const ida = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        let a = null, b = null;
+        for (let n = ida.nextNode(); n; n = ida.nextNode()) {
+          if (!a && nome.contains(n)) { a = n; continue; }
+          if (a && n.data.trim()) { b = n; break; }
+        }
+        if (!a || !b) return {};
+        const r = document.createRange();
+        r.setStart(a, 0);
+        r.setEnd(b, 0);
+        getSelection().removeAllRanges();
+        getSelection().addRange(r);
+        return { foco: document.activeElement?.tagName, selecionado: String(getSelection()) };
+      });
+    });
+    ok("(a cena tem o cursor na caixa e o nome com as quebras selecionado)",
+       comoFicou.foco === "TEXTAREA" && /^Cliente da Cópia\n+$/.test(comoFicou.selecionado || ""), q(comoFicou));
+    ok("com o cursor na caixa de escrever, o nome selecionado na tela sai sem as quebras do fim",
+       comFoco === "Cliente da Cópia", q(comFoco));
+  }
+  // AS QUEBRAS DO MEIO FICAM: arrastar do nome até a linha do número é pedir
+  // as duas coisas, e elas chegam em duas linhas.
+  if (await alto.count()) {
+    const caixaDoNome = await alto.boundingBox();
+    const duas = await copiarComGesto(async () => {
+      await page.mouse.move(caixaDoNome.x + 1, caixaDoNome.y + caixaDoNome.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(caixaDoNome.x + 40, caixaDoNome.y + caixaDoNome.height + 12, { steps: 8 });
+      await page.mouse.up();
+    });
+    ok("do nome até o número, as duas linhas chegam separadas (a quebra do meio fica)",
+       /^Cliente da Cópia\n+\S/.test(duas), q(duas));
+  }
+}
+
+console.log("\n7. Uma tabela com a primeira célula vazia");
+{
+  // MEDIDO: arrastar sobre uma tabela cuja primeira célula está vazia copia
+  // "\tb\tc…". A tabulação do começo É a célula vazia — tirá-la colaria a
+  // linha deslocada no Excel. Tabela de mentira, posta na página só para isto:
+  // é o ouvinte da tela inteira que está sendo provado.
+  await page.evaluate(() => {
+    const d = document.createElement("div");
+    d.id = "prova-tabela";
+    d.innerHTML = "<table><tr><td></td><td>b</td><td>c</td></tr><tr><td>d</td><td>e</td><td></td></tr></table>";
+    d.style.cssText = "position:fixed;top:300px;left:500px;background:#fff;z-index:9999";
+    document.body.appendChild(d);
+  });
+  const tabela = await page.locator("#prova-tabela table").boundingBox();
+  const t = await copiarComGesto(async () => {
+    await page.mouse.move(tabela.x + 1, tabela.y + 2);
+    await page.mouse.down();
+    await page.mouse.move(tabela.x + tabela.width - 1, tabela.y + tabela.height - 2, { steps: 8 });
+    await page.mouse.up();
+  });
+  ok("a tabulação do começo (a célula vazia) continua lá", t.startsWith("\tb\tc"), q(t));
+  ok("e a do fim sai: lá ela não separa nada", t === "\tb\tc\nd\te", q(t));
+  await page.evaluate(() => document.getElementById("prova-tabela")?.remove());
 }
 
 console.log(`\nerros de página: ${erros.length}`);

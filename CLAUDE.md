@@ -1524,6 +1524,89 @@ cópia fingido provaria o ouvinte, e não o que o Word recebe. **6 sabotagens e
 o que o ouvinte pôs; o texto sem a quebra entre as bolhas; só nas bolhas; o
 HTML junto; e sem a guarda da seleção vazia).
 
+### O nome copiado não virava nome de arquivo (13/10)
+
+Relato do Rodrigo: *"quando eu copio o nome do contato no Zorvin e vou colar
+esse nome como nome de um arquivo .pdf, dá um erro no Windows que não permite
+eu salvar o nome do arquivo por conter 'caracteres especiais'"*.
+
+**Medido na bancada, com Ctrl+C de verdade:**
+
+| o gesto | ia para a área de transferência |
+|---|---|
+| três cliques no nome do alto da conversa | `"Deus\n\n"` |
+| arrastar um pouco além do fim do nome | `"Deus\n\n"` |
+| três cliques no nome da lista | `"Deus\n"` |
+| varrer do fim do nome até o avatar | `"AE\nANDRE EUGENIO"` |
+| dois cliques, ou arrastar certinho | `"Deus"` |
+
+A seleção que encosta na borda de um bloco leva a quebra de linha dele. E
+**quebra de linha é proibida em nome de arquivo no Windows**: é o tropeço
+conhecido de copiar uma célula do Excel e colar como nome de arquivo. Nome de
+uma palavra só se copia com dois cliques. Nome de cliente tem três ou quatro, e
+aí vêm os três cliques.
+
+**O conserto tira o que sobra no FIM** (quebras, espaços, tabulação) e deixa o
+resto como a pessoa selecionou:
+
+- **as quebras do meio ficam**: são as linhas de uma mensagem, e uma por bolha;
+- **o começo fica**: nenhum gesto medido pôs quebra ali, e lá a tabulação pode
+  ser dado. Arrastar sobre uma tabela cuja primeira célula está vazia copia
+  `"\tb\tc"`, e tirar essa tabulação colaria a linha deslocada no Excel;
+- **na caixa de escrever e nos campos, nada muda**: lá a seleção é letra por
+  letra, e a quebra que a pessoa marcou é dela;
+- **seleção só de espaço vai como está**: tirar o fim deixaria nada, e nada no
+  lugar do que estava copiado é apagar sem querer (a régua de 08/10).
+
+**E as iniciais do avatar deixaram de ser selecionáveis.** Elas eram texto:
+varrer do fim do nome para a esquerda até o avatar copiava
+`"AE\nANDRE EUGENIO"`. Agora sai só o nome. Arrastar *começando* em cima do
+avatar não seleciona nada, porque a seleção nem começa ali. É melhor do que
+copiar as iniciais.
+
+**O que NÃO muda, e é decisão:** se o nome tiver de verdade um caractere que o
+Windows recusa (`\ / : * ? " < > |`), ele continua lá. É parte do nome, e
+tirá-lo mudaria também o que se cola no Vantoro, num e-mail ou numa planilha.
+
+**A prova de 08/10 passou a vida inteira sem ver isto, por duas razões que são
+uma só:**
+
+- a cena do nome selecionava por código, letra por letra, e uma seleção assim
+  nunca tem quebra no fim;
+- ela comparava com `.trim()`, que apagava as pontas antes de comparar.
+
+Hoje as cenas usam os gestos de verdade (três cliques, arrastar além do fim,
+varrer até o avatar), e a comparação é exata.
+
+Prova: `copiar-leva-so-o-texto`, agora 30 conferências, **9 sabotagens e
+9 pegas**, todas limpas:
+
+- o painel de antes inteiro (7 reprovações: é o relato reproduzido);
+- sem tirar o fim;
+- as iniciais selecionáveis de novo;
+- tirando também o começo (a célula vazia some);
+- mexendo na caixa de escrever;
+- tirando as quebras do meio;
+- tirando só uma quebra do fim;
+- esvaziando a área de transferência quando a seleção é só espaço;
+- decidindo "é campo" pelo foco, e não pela seleção.
+
+**A última nasceu de uma sabotagem que pegou pela metade.** Na primeira
+escrita, "é campo" era decidido pelo foco. Ao abrir a conversa, a caixa de
+escrever fica com o cursor piscando. Por isso a sabotagem que tirava as
+quebras do MEIO passava nas cenas das mensagens: com a caixa em foco, elas nem
+chegavam ao conserto. Hoje conta como campo só quando há texto marcado DENTRO
+dele, e uma cena põe o cursor na caixa com o nome selecionado na tela.
+**Sabotagem pega por menos conferências do que devia é informação: o código
+não é o que se pensa que é.**
+
+**E o vigia `provas-que-reprovam` pegou essa mesma cena antes do empurrão:** ela
+conferia dentro de um `if` que perguntava se a caixa de escrever existia, sem
+antes conferir que ela existe. Sem a caixa, a cena passaria sem medir nada. Eu
+tinha rodado o vigia na entrega anterior e não depois de escrever as cenas
+desta. **Escreveu cena de prova, rode o vigia antes do commit**, e não só a
+prova.
+
 ## A citação leva até a mensagem citada
 
 Pedido do Rodrigo em 16/09: *"ao clicar na mensagem que foi respondida, ir para
