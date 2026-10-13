@@ -165,7 +165,7 @@ export function Distribuicao({ cx, C, departamentos = [], telefones = [], aoAvis
                   {!temTelefone ? "Nenhum telefone ativo neste departamento — não há o que distribuir."
                     : erroPessoas ? "Não consegui ler quem está no rodízio (veja abaixo)."
                     : pessoas === null ? "Lendo quem está no rodízio…"
-                    : quem.length ? `${ligada ? "As conversas novas vão para" : "Ligando, vão para"}: ${quem.map((p) => p.nome).join(", ")}.`
+                    : quem.length ? `${ligada ? "As conversas novas vão para" : "Ligando, vão para"}: ${quem.map((p) => p.nome || "Sem nome").join(", ")}.`
                     : "Ninguém do rodízio vê os telefones deste departamento."}
                 </span>
                 {/* LIGADA E SEM NINGUÉM é o único caso que pede ação: as

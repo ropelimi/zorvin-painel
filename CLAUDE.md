@@ -3193,8 +3193,21 @@ ela queria guardar e que existem: a conversa que a própria pessoa assumiu
 (`responsavel_por` = o dono) e a conversa sem dono (`responsavel_por` também
 nulo — é o DONO que separa um caso do outro).
 
-Prova: `a-distribuicao-das-conversas-novas`, 79 conferências.
-**SABOTAGENS_AQUI**
+Prova: `a-distribuicao-das-conversas-novas`, 79 conferências, **15
+sabotagens e 15 pegas**, todas limpas, rodadas em cópias (a aba sem o script;
+a falha escondendo a aba; quem administra contando como dentro; a vez de quem
+não vê o telefone; a falha das pessoas virando "ninguém"; a falha das chaves
+virando "desligada"; o clique encaixado em vez de relido; a recusa calada; sem
+o aviso de ligada sem ninguém; o aviso acendendo com a lista falhando; sem
+linha valendo ligado; o menu sem a frase; o nulo sem dono virando
+distribuição; passar adiante virando distribuição; e a chave voltando a ser o
+próprio botão).
+
+**E uma lição de processo, a mesma de sempre com outra roupa:** mexi na chave
+NO MEIO de uma rodada de sabotagens — e cada sabotagem copia o repositório na
+hora em que começa. Metade da rodada teria provado um código e metade outro.
+Ela foi parada, os servidores órfãos derrubados pelo grupo, e a rodada refeita
+inteira sobre a versão final. **Rodada de sabotagens não convive com edição.**
 
 ## A auditoria de 07/10 — o que uma varredura inteira achou
 
