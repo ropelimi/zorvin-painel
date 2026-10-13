@@ -517,10 +517,11 @@ antes de mexer: `Cliente.observacoes` já saía na ficha (`_resumo`) e já
 estava em `CAMPOS_EDITAVEIS`; a ponte só repassa. O Zorvin simplesmente não
 desenhava o campo.
 
-**Uma seção própria, ABERTA, logo depois da identificação.** É onde o
-escritório escreve o que não cabe em campo nenhum, e observação que ninguém
-vê não serve de aviso — uma seção fechada no fim da ficha seria o mesmo que
-não ter trazido o campo.
+**Uma seção própria, ABERTA**, que nasceu logo depois da identificação e
+**subiu para o alto da ficha em 13/10**, a pedido do Rodrigo (ver "A ordem da
+ficha", mais abaixo). É onde o escritório escreve o que não cabe em campo
+nenhum, e observação que ninguém vê não serve de aviso — uma seção fechada
+no fim da ficha seria o mesmo que não ter trazido o campo.
 
 **Caixa de várias linhas** (`multilinha`), e não um campo de uma linha: as
 observações vêm do Vantoro em parágrafos, e um `<input>` as juntaria numa
@@ -543,7 +544,8 @@ a guarda da chave ausente; gravar mandando tudo; as quebras de linha
 sumindo).
 
 **Ainda em aberto, e é decisão:** o visual POR DENTRO da ficha não mudou. Ela
-já é sanfonada como a do DataCrazy (Identificação, Endereço, Acessos, Origem);
+já é sanfonada como a do DataCrazy (hoje Observações, Identificação, Endereço
+e Origem — a seção Acessos saiu em 13/10);
 apertar as linhas em rótulo-e-valor na mesma linha foi deixado para depois de
 o Rodrigo ver a coluna fixa na tela — em vez de eu adivinhar o que "parecido
 com o DataCrazy" quer dizer por dentro.
@@ -630,6 +632,60 @@ seguinte esperou 30 segundos por uma página que não ia recarregar, e a prova
 estourou. **Cena que deixa a ficha com algo por salvar descarta ao terminar**
 (e tira antes o ouvinte de `dialog` que ficou sem uso, senão ele recusa a
 pergunta do Descartar primeiro).
+
+### A ordem da ficha: as senhas embaixo do nome, as observações no alto (13/10)
+
+Pedido do Rodrigo: *"em 'Ficha no Vantoro', os acessos preciso colocar
+embaixo do Nome completo do cliente, antes do E-mail. As Observações podem
+ficar mais acima, antes da Identificação."*
+
+**A ordem agora:** Observações → Identificação (… CPF, Nome completo,
+**Senha SERASA, Senha GOV**, E-mail …) → Endereço → Origem. **A seção
+"Acessos" saiu**: as duas senhas eram tudo o que ela tinha.
+
+**O que muda para quem olha a tela:** para quem o Vantoro manda as senhas,
+elas ficam à vista em toda ficha aberta. Antes era preciso abrir a seção.
+
+**À vista, as senhas precisaram da guarda do campo que não veio.** O Vantoro
+não manda as senhas a quem não pode vê-las (a régua de 01/10), e a ficha, no
+lugar delas, desenhava uma caixa VAZIA e editável — escondida, até aqui,
+numa seção fechada no fim da ficha. No alto, ela convidaria a digitar por
+cima da senha que está lá, e o que se digitasse ia ao Vantoro ao salvar. Se
+o Vantoro aceita essa gravação de quem não pode ver a senha, não conferi: o
+código dele não estava ao alcance desta sessão. A guarda vale do mesmo
+jeito.
+
+**A senha que não veio é uma caixa cinza** escrita "Não veio do Vantoro", no
+desenho do "WhatsApp desta conversa", que é o jeito da ficha de dizer "isto
+não se edita aqui". O porquê vai no `title`. Uma frase de três linhas por
+senha, no alto de toda ficha de quem não pode vê-las, seria ruído que se
+aprende a pular.
+
+**A conta da seção não conta o que não veio**: "3/7", e não "3/9". Contar
+diria "falta preencher" sobre uma senha que talvez esteja lá. Seção sem nada
+que se edite daqui não mostra conta.
+
+**Só as senhas e as observações têm a guarda** (`naoVeio`). Estendê-la a
+todo campo mudaria a ficha de quem recebe um cadastro sem alguma chave — e,
+sem ler o Vantoro, não dá para saber quais chaves ele deixa de mandar.
+
+Prova: `a-ordem-da-ficha`, 29 conferências, **11 sabotagens e 11 pegas**,
+todas limpas, rodadas em cópias:
+
+- a ficha de antes inteira (21 reprovações — é o pedido reproduzido);
+- as senhas de volta numa seção fechada;
+- as senhas depois do e-mail;
+- as senhas antes do nome;
+- as observações de volta para depois da identificação;
+- sem a guarda das senhas;
+- a conta contando o que não veio;
+- a identificação nascendo fechada;
+- a caixa cinza sem o porquê;
+- salvar mandando tudo;
+- a senha que não veio com a frase longa das observações.
+
+A conferência de `as-observacoes-na-ficha` que pedia a seção logo depois da
+identificação foi **INVERTIDA, e não apagada**.
 
 ## As palavras da casa — "advogado" não serve para todo comprador
 

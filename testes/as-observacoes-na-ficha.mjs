@@ -7,8 +7,9 @@
 // ------------------------------------------------------------
 // O QUE ESTA PROVA GUARDA
 //
-//   1. as observações aparecem, À VISTA (seção aberta, logo depois da
-//      identificação) e INTEIRAS — com as quebras de linha;
+//   1. as observações aparecem, À VISTA (seção aberta, no alto da ficha,
+//      antes da identificação — pedido de 13/10) e INTEIRAS — com as
+//      quebras de linha;
 //   2. editar e salvar manda SÓ o campo mudado, com as quebras de linha;
 //   3. salvar outro campo NÃO mexe nas observações;
 //   4. o cadastro que chega SEM a chave não vira caixa vazia — porque o que
@@ -98,7 +99,9 @@ console.log("\nAs observações aparecem, à vista e inteiras");
   ok("é uma caixa de várias linhas, e não um campo de uma linha",
      (await caixa(page).evaluate((n) => n.tagName).catch(() => "")) === "TEXTAREA");
   const secoes = await page.$$eval("[data-secao]", (ns) => ns.map((n) => n.getAttribute("data-secao")));
-  ok("a seção vem logo depois da identificação", secoes[0] === "identificacao" && secoes[1] === "observacoes",
+  // INVERTIDA EM 13/10, e não apagada: ela nasceu pedindo a seção logo
+  // depois da identificação, e o Rodrigo pediu que ela subisse para o alto.
+  ok("a seção vem no alto da ficha, antes da identificação", secoes[0] === "observacoes" && secoes[1] === "identificacao",
      secoes.join(","));
   ok("e diz que está preenchida (1/1)",
      /1\/1/.test(await page.locator('[data-secao="observacoes"]').innerText().catch(() => "")));

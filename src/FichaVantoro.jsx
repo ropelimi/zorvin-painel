@@ -62,7 +62,27 @@ const ESTADO_CIVIL_RESERVA = [
 //   cep       → máscara 00000-000 e busca o endereço sozinho
 //   opcoes    → vira lista de escolha em vez de texto livre
 //   multilinha → caixa de várias linhas, para texto corrido
+//   senha     → só vira campo se veio no cadastro (ver `naoVeio`)
 const SECOES = [
+  // AS OBSERVAÇÕES DO CADASTRO — pedido do Rodrigo em 30/09.
+  //
+  // É o campo "Observações" da ficha do Vantoro, o mesmo texto: o Vantoro já
+  // mandava o campo na ficha e já aceitava gravá-lo (`CAMPOS_EDITAVEIS`), e o
+  // Zorvin simplesmente não o desenhava. É onde o escritório escreve o que
+  // não cabe em campo nenhum — e quem atende pelo WhatsApp era quem menos o
+  // via.
+  //
+  // ABERTA, e NO ALTO DA FICHA, antes da identificação — pedido dele em
+  // 13/10 (nasceu logo depois dela). Observação que ninguém vê não serve de
+  // aviso.
+  {
+    id: "observacoes",
+    titulo: "Observações",
+    aberta: true,
+    campos: [
+      { chave: "observacoes", rotulo: "Observações do cadastro", multilinha: true },
+    ],
+  },
   {
     id: "identificacao",
     titulo: "Identificação",
@@ -76,29 +96,19 @@ const SECOES = [
         dica: "se a pessoa trocou de número" },
       { chave: "cpf", rotulo: "CPF" },
       { chave: "nome", rotulo: "Nome completo" },
+      // AS SENHAS, LOGO DEPOIS DO NOME — pedido do Rodrigo em 13/10. Elas
+      // moravam numa seção própria, "Acessos", fechada e no fim da ficha.
+      //
+      // À VISTA, elas precisam da guarda do campo que não veio (`naoVeio`):
+      // o Vantoro não manda as senhas a quem não pode vê-las, e no lugar
+      // delas a ficha desenhava uma caixa VAZIA — que agora estaria no alto
+      // da ficha, convidando a digitar por cima da senha que estiver lá.
+      { chave: "senha_serasa", rotulo: "Senha SERASA", senha: true },
+      { chave: "senha_gov", rotulo: "Senha GOV", senha: true },
       { chave: "email", rotulo: "E-mail", minusculo: true },
       { chave: "nascimento", rotulo: "Nascimento", dica: "DD/MM/AAAA", data: true },
       { chave: "estado_civil", rotulo: "Estado civil", opcoes: "estado_civil" },
       { chave: "ocupacao", rotulo: "Profissão" },
-    ],
-  },
-  // AS OBSERVAÇÕES DO CADASTRO — pedido do Rodrigo em 30/09.
-  //
-  // É o campo "Observações" da ficha do Vantoro, o mesmo texto: o Vantoro já
-  // mandava o campo na ficha e já aceitava gravá-lo (`CAMPOS_EDITAVEIS`), e o
-  // Zorvin simplesmente não o desenhava. É onde o escritório escreve o que
-  // não cabe em campo nenhum — e quem atende pelo WhatsApp era quem menos o
-  // via.
-  //
-  // ABERTA, e logo depois da identificação: observação que ninguém vê não
-  // serve de aviso. Uma seção fechada no fim da ficha seria o mesmo que não
-  // ter trazido o campo.
-  {
-    id: "observacoes",
-    titulo: "Observações",
-    aberta: true,
-    campos: [
-      { chave: "observacoes", rotulo: "Observações do cadastro", multilinha: true },
     ],
   },
   {
@@ -110,14 +120,6 @@ const SECOES = [
       { chave: "bairro", rotulo: "Bairro" },
       { chave: "cidade", rotulo: "Cidade" },
       { chave: "estado", rotulo: "UF" },
-    ],
-  },
-  {
-    id: "acessos",
-    titulo: "Acessos",
-    campos: [
-      { chave: "senha_serasa", rotulo: "Senha SERASA" },
-      { chave: "senha_gov", rotulo: "Senha GOV" },
     ],
   },
   {
@@ -936,17 +938,38 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     padding: "9px 0", fontSize: 12.5, fontWeight: 600, textAlign: "left",
   };
 
+  // O CAMPO QUE NÃO VEIO NÃO VIRA CAMPO VAZIO. Um cadastro aberto sem a
+  // chave desenharia a caixa em branco — e o que se digitasse ali
+  // SOBRESCREVERIA no Vantoro o que existe e não chegou. Vale para as
+  // observações (um Vantoro mais antigo, um resumo curto) e para as senhas,
+  // que o Vantoro não manda a quem não pode vê-las: elas não vêm vazias,
+  // não vêm. Os outros campos ficam como sempre foram.
+  function naoVeio(c) {
+    return Boolean((c.multilinha || c.senha) && cliente
+      && !Object.prototype.hasOwnProperty.call(cliente, c.chave));
+  }
+
   function desenharCampo(c) {
     // O CAMPO "OUTRO WHATSAPP" VIRA A LISTA num cadastro que já existe. Deixar
     // os dois na tela mostraria o mesmo número em dois lugares, com regras
     // diferentes — e a pessoa não teria como saber qual dos dois vale.
     if (c.chave === "telefone2" && cliente) return desenharTelefones();
-    // O CAMPO QUE NÃO VEIO NÃO VIRA CAMPO VAZIO. Um cadastro aberto sem a
-    // chave (um Vantoro mais antigo, um resumo curto) desenharia a caixa em
-    // branco — e o que se digitasse ali SOBRESCREVERIA no Vantoro as
-    // observações que existem e não chegaram. É a régua das senhas, que não
-    // vêm vazias para quem não pode vê-las: elas não vêm.
-    if (c.multilinha && cliente && !Object.prototype.hasOwnProperty.call(cliente, c.chave)) {
+    // A SENHA QUE NÃO VEIO É UMA CAIXA CINZA, no desenho do "WhatsApp desta
+    // conversa", que é o jeito desta ficha de dizer "isto não se edita
+    // aqui". Uma frase de três linhas por senha, no alto da ficha de toda
+    // conversa de quem não pode vê-las, seria ruído que se aprende a pular.
+    if (c.senha && naoVeio(c)) {
+      return (
+        <div key={c.chave} data-campo-ausente={c.chave} style={{ marginBottom: 10 }}>
+          <label style={rotulo}>{c.rotulo}</label>
+          <div style={{ ...campo, background: C.headerBar, color: C.textSecondary }}
+               title="O Vantoro só manda as senhas a quem pode vê-las. Para não apagar a senha que estiver lá, ela não pode ser editada daqui.">
+            Não veio do Vantoro
+          </div>
+        </div>
+      );
+    }
+    if (naoVeio(c)) {
       return (
         <div key={c.chave} data-campo-ausente={c.chave} style={{ marginBottom: 10 }}>
           <label style={rotulo}>{c.rotulo}</label>
@@ -1682,8 +1705,11 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
             {SECOES.map((secao) => {
               const aberta = abertas.has(secao.id);
               // Quantos campos da seção já têm conteúdo — dá para saber o que
-              // falta preencher sem abrir uma por uma.
-              const preenchidos = secao.campos.filter((c) => (edicao[c.chave] || "").trim()).length;
+              // falta preencher sem abrir uma por uma. O campo que NÃO VEIO
+              // fica fora da conta: ele não se preenche daqui, e contá-lo
+              // diria "falta" sobre uma senha que talvez esteja lá.
+              const daqui = secao.campos.filter((c) => !naoVeio(c));
+              const preenchidos = daqui.filter((c) => (edicao[c.chave] || "").trim()).length;
               return (
                 <div key={secao.id} style={{ borderTop: `1px solid ${C.divider}` }}>
                   {/* O `id` da seção sai no HTML para a prova poder abrir uma
@@ -1694,9 +1720,11 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
                     {aberta ? <ChevronDown size={15} color={C.textSecondary} />
                             : <ChevronRight size={15} color={C.textSecondary} />}
                     <span style={{ flex: 1 }}>{secao.titulo}</span>
-                    <span style={{ fontSize: 11, color: C.textSecondary, fontWeight: 400 }}>
-                      {preenchidos}/{secao.campos.length}
-                    </span>
+                    {daqui.length > 0 && (
+                      <span style={{ fontSize: 11, color: C.textSecondary, fontWeight: 400 }}>
+                        {preenchidos}/{daqui.length}
+                      </span>
+                    )}
                   </button>
                   {aberta && <div style={{ paddingBottom: 6 }}>{secao.campos.map(desenharCampo)}</div>}
                 </div>
