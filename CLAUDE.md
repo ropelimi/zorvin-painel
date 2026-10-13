@@ -1578,7 +1578,7 @@ uma só:**
 Hoje as cenas usam os gestos de verdade (três cliques, arrastar além do fim,
 varrer até o avatar), e a comparação é exata.
 
-Prova: `copiar-leva-so-o-texto`, agora 29 conferências, **9 sabotagens e
+Prova: `copiar-leva-so-o-texto`, agora 30 conferências, **9 sabotagens e
 9 pegas**, todas limpas:
 
 - o painel de antes inteiro (7 reprovações: é o relato reproduzido);
@@ -1598,7 +1598,14 @@ quebras do MEIO passava nas cenas das mensagens: com a caixa em foco, elas nem
 chegavam ao conserto. Hoje conta como campo só quando há texto marcado DENTRO
 dele, e uma cena põe o cursor na caixa com o nome selecionado na tela.
 **Sabotagem pega por menos conferências do que devia é informação: o código
-não é o que se pensa que é.**.
+não é o que se pensa que é.**
+
+**E o vigia `provas-que-reprovam` pegou essa mesma cena antes do empurrão:** ela
+conferia dentro de um `if` que perguntava se a caixa de escrever existia, sem
+antes conferir que ela existe. Sem a caixa, a cena passaria sem medir nada. Eu
+tinha rodado o vigia na entrega anterior e não depois de escrever as cenas
+desta. **Escreveu cena de prova, rode o vigia antes do commit**, e não só a
+prova.
 
 ## A citação leva até a mensagem citada
 

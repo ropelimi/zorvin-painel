@@ -277,6 +277,9 @@ console.log("\n6. O nome copiado vira nome de arquivo no Windows");
   // é dela. A seleção daqui é a dos três cliques, escrita à mão: do começo do
   // nome até o começo do bloco seguinte.
   const caixaDeEscrever = page.locator(CAMPO);
+  // CONFERIDA ANTES DO `if`: sem a caixa na tela, a cena inteira passaria sem
+  // medir nada (o vigia `provas-que-reprovam` pegou).
+  ok("(a caixa de escrever está na tela para a cena do cursor)", (await caixaDeEscrever.count()) === 1);
   if ((await caixaDeEscrever.count()) && (await alto.count())) {
     let comoFicou = {};
     const comFoco = await copiarComGesto(async () => {
