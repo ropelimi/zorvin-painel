@@ -11908,6 +11908,12 @@ export default function Painel({ sessao }) {
     const souDono = !!dono && dono === String(meuId);
     const porOutro = dono && conversa.responsavel_por
       && String(conversa.responsavel_por) !== dono ? nomeDaPessoa(conversa.responsavel_por) : "";
+    // QUEM PÔS O DONO FOI O ZORVIN — a distribuição das conversas novas
+    // (script 023) grava `responsavel_por` NULO, porque ninguém da equipe
+    // escolheu; assumir e passar adiante gravam sempre quem foi. Quem recebe
+    // precisa saber que foi a vez dela, e não um colega passando — e quem
+    // olha a conversa depois, que ninguém a pegou por conta própria.
+    const pelaDistribuicao = !!dono && conversa.responsavel_por === null;
     const quando = conversa.responsavel_em
       ? new Date(conversa.responsavel_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
       : "";
@@ -11926,9 +11932,10 @@ export default function Painel({ sessao }) {
                     boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
         <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.divider}`, position: "sticky", top: 0, background: C.panel }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3 }}>RESPONSÁVEL PELA CONVERSA</div>
-          <div data-responsavel-origem style={{ fontSize: 12, color: C.textSecondary, marginTop: 3, lineHeight: 1.4 }}>
+          <div data-responsavel-origem data-pela-distribuicao={pelaDistribuicao ? "sim" : undefined}
+               style={{ fontSize: 12, color: C.textSecondary, marginTop: 3, lineHeight: 1.4 }}>
             {!dono ? "Ninguém ainda. Quem responder primeiro assume."
-              : `${souDono ? "Você" : nomeDaPessoa(dono)}${quando ? ` desde ${quando}` : ""}${porOutro ? ` — passada por ${nomeDaPessoa(conversa.responsavel_por)}` : ""}.`}
+              : `${souDono ? "Você" : nomeDaPessoa(dono)}${quando ? ` desde ${quando}` : ""}${porOutro ? ` — passada por ${nomeDaPessoa(conversa.responsavel_por)}` : ""}${pelaDistribuicao ? " — pela distribuição automática" : ""}.`}
           </div>
         </div>
         {!souDono && (

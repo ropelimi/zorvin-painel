@@ -13,6 +13,7 @@ import { AssuntosDoJaTratei } from "./AssuntosDoJaTratei.jsx";
 import { EtapasDoFunil } from "./EtapasDoFunil.jsx";
 import { AtualizacoesDoBanco } from "./AtualizacoesDoBanco.jsx";
 import { ForaDoHorario } from "./ForaDoHorario.jsx";
+import { Distribuicao } from "./Distribuicao.jsx";
 // A CHAVE SAIU DAQUI para `Chave.jsx`: a tela de Avisos passou a precisar da
 // mesma peça, e uma segunda cópia divergiria da primeira no primeiro conserto.
 import { Chave } from "./Chave.jsx";
@@ -61,7 +62,7 @@ export default function Departamentos({ C, aoFechar, abaInicial, aoSaberDosScrip
   const [telefones, setTelefones] = useState([]);
   // A ABA DE ENTRADA pode vir de fora: a faixa vermelha abre esta tela direto
   // em "Atualizações do banco", que é para onde a frase dela manda.
-  const [aba, setAba] = useState(abaInicial || "estrutura"); // 'estrutura' | 'pessoas' | 'fora' | 'notas' | 'banco'
+  const [aba, setAba] = useState(abaInicial || "estrutura"); // 'estrutura' | 'pessoas' | 'distribuicao' | 'fora' | 'notas' | 'banco'
   const temVantoro = useTemVantoro();
   // A RESPOSTA FORA DO HORÁRIO (script 021) — a aba só aparece com o script.
   // Três estados, pela régua de `temVantoro.js`: `null` ainda não perguntou
@@ -73,6 +74,16 @@ export default function Departamentos({ C, aoFechar, abaInicial, aoSaberDosScrip
     let valeu = true;
     supabase.from("zorvin_fora_do_horario").select("departamento_id").limit(1)
       .then(({ error }) => { if (valeu) setTemForaDoHorario(!(error && semATabela(error))); });
+    return () => { valeu = false; };
+  }, []);
+  // A DISTRIBUIÇÃO DAS CONVERSAS NOVAS (script 023) — a mesma régua de três
+  // estados: sem a tabela a aba não aparece; a pergunta que falha por outro
+  // motivo MOSTRA a aba, e o erro é dito lá dentro.
+  const [temDistribuicao, setTemDistribuicao] = useState(null);
+  useEffect(() => {
+    let valeu = true;
+    supabase.from("zorvin_distribuicao").select("departamento_id").limit(1)
+      .then(({ error }) => { if (valeu) setTemDistribuicao(!(error && semATabela(error))); });
     return () => { valeu = false; };
   }, []);
   const [salvando, setSalvando] = useState("");
@@ -214,6 +225,13 @@ export default function Departamentos({ C, aoFechar, abaInicial, aoSaberDosScrip
         <div style={{ display: "flex", gap: 8, padding: "12px 18px 0", flexWrap: "wrap" }}>
           <button style={cx.aba(aba === "estrutura")} onClick={() => setAba("estrutura")}>Departamentos e telefones</button>
           <button style={cx.aba(aba === "pessoas")} onClick={() => setAba("pessoas")}>Atendentes</button>
+          {/* LOGO DEPOIS DE ATENDENTES, porque é sobre as mesmas pessoas: quem
+              recebe as conversas novas, e de quais telefones — que é o que a
+              aba ao lado libera. */}
+          {temDistribuicao === true && (
+            <button style={cx.aba(aba === "distribuicao")} onClick={() => setAba("distribuicao")}
+                    data-aba-distribuicao>Distribuição</button>
+          )}
           {/* UMA ABA PRÓPRIA, e não mais uma seção no fim de "Departamentos e
               telefones": são o texto, sete dias, o fuso e os feriados — uma
               tela, e não três campos. E é para cá que se volta na véspera de
@@ -320,6 +338,11 @@ export default function Departamentos({ C, aoFechar, abaInicial, aoSaberDosScrip
           {!carregando && aba === "pessoas" && (
             <Atendentes cx={cx} C={C} departamentos={departamentos} telefones={telefones}
                         aoAvisar={setErro} />
+          )}
+
+          {!carregando && aba === "distribuicao" && (
+            <Distribuicao cx={cx} C={C} departamentos={departamentos} telefones={telefones}
+                          aoAvisar={setErro} />
           )}
 
           {!carregando && aba === "fora" && (
