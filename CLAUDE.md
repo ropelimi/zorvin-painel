@@ -3112,6 +3112,103 @@ total), com a bancada devolvendo a janela que a prova escolhe
 pegas** (a frase de antes; o 30 escrito na tela; a falha prometendo 30; a
 hora do intervalo ignorada; a hora virando minutos).
 
+## A distribuição das conversas novas (13/10)
+
+Pedido do Rodrigo, o nº 3 da lista de ideias de 08/10: o cliente novo já
+chega com um responsável, em rodízio entre quem atende o departamento.
+Decidido com ele: entra quem atende o departamento, com a chave *"recebe
+conversas novas"* para férias e folga; rodízio simples (cada um na sua vez);
+e só a conversa de cliente novo — as antigas sem responsável ficam como estão.
+
+**Quem decide é o BANCO** (script 023 da ponte), chamado pela ponte a cada
+mensagem de cliente — ver o CLAUDE.md dela, onde estão o que é "cliente
+novo", de quem é a vez e a trava contra duas escolhas ao mesmo tempo. O painel
+faz duas coisas: configura, e diz na conversa que o dono veio da distribuição.
+
+### A aba "Distribuição", em Departamentos e acessos
+
+`Distribuicao.jsx`, logo depois de "Atendentes" — é sobre as mesmas pessoas, e
+a aba ao lado é onde se libera o telefone que decide quem recebe o quê. Só
+aparece com o script (`temDistribuicao`, três estados pela régua de
+`temVantoro.js`: a pergunta que falha por outro motivo MOSTRA a aba).
+
+| | a linha mostra |
+|---|---|
+| cada departamento | a chave (**nasce desligada**) e para quem as conversas novas vão |
+| cada pessoa | a chave "recebe conversas novas", o que ela vê, a última que recebeu e quantas hoje |
+
+**O padrão de cada pessoa vem do BANCO** (`zorvin_rodizio_pessoas` devolve
+`recebe` e `escolhido`): quem atende começa dentro, quem administra começa
+fora, e a linha diz por quê. Refazer aqui "recebe, a não ser que administre"
+seria uma segunda escrita da regra — e divergir é a tela dizer que alguém está
+no rodízio e as conversas irem para outra pessoa.
+
+**"Para quem vão" sai da mesma lista**: quem recebe e vê algum telefone
+daquele departamento. **Ligado e sem ninguém acende um aviso âmbar** — é o
+único caso que pede ação: as conversas continuam chegando sem dono, e quem
+ligou acha que estão sendo entregues. **A ordem da vez não aparece**: ela é
+do banco ("quem recebeu há mais tempo"), e escrevê-la aqui seria uma segunda
+conta.
+
+**Falha de leitura é dita, e nunca vira "desligada" nem "ninguém"** — a
+armadilha nº 2. As chaves que não carregam não são desenhadas (desligadas por
+falha fariam alguém ligar de novo); a lista que não carrega diz que não
+carregou, com o código e "Tentar de novo"; e com a lista falhando o aviso de
+"ninguém vai receber" não acende — não se sabe.
+
+**Gravar relê do banco**, como em Fora do horário: a recusa é dita com o
+código, e a chave recusada volta sozinha.
+
+### Na conversa
+
+O menu do responsável diz *"JENIFER ALMEIDA desde 13/10, 09:12 — pela
+distribuição automática."* quando quem pôs o dono foi o Zorvin
+(`responsavel_por` nulo COM dono; assumir e passar adiante sempre gravam quem
+foi). Fora isso, nada novo para quem atende: a conversa chega com o rosto da
+pessoa na lista e entra em "Minhas conversas" dela pelo caminho que já existia
+— o tempo real traz o dono pela presença da chave.
+
+**O aviso de mensagem nova NÃO mudou**: enquanto ninguém responde, todo mundo
+continua sendo avisado (a regra de 15/09 — "participei" sai das mensagens).
+Avisar só o dono quando a distribuição está ligada é outra decisão, e não foi
+tomada.
+
+### A chave liga-desliga virava um círculo no celular
+
+A foto do celular mostrou: a regra que põe todo botão em 40px de altura (alvo
+de dedo, abaixo de 768px) alcançava `Chave.jsx`, que ERA o próprio botão de
+40×22 — e ela virava um círculo de 40×40 com a bolinha solta no alto. Não se
+via se estava ligada. **Acontecia em toda tela com chave** (Fora do horário,
+Avisos, a equipe sem Vantoro); nenhuma prova media a forma dela. Hoje o botão
+é a área de toque e a pílula é um desenho dentro dele (`data-pilula-da-chave`):
+o dedo ganha os 40, o olho continua vendo uma chave.
+
+### Uma conferência minha media um caso que o banco não produz
+
+Escrevi *"a conversa sem a chave `responsavel_por` não é atribuída à
+distribuição"* — e ela reprovou contra a própria bancada. Com razão: o banco
+devolve a coluna em TODA linha (`select *`), e a bancada imita isso de
+propósito, então "falta a chave" nunca acontece. Trocada pelos dois casos que
+ela queria guardar e que existem: a conversa que a própria pessoa assumiu
+(`responsavel_por` = o dono) e a conversa sem dono (`responsavel_por` também
+nulo — é o DONO que separa um caso do outro).
+
+Prova: `a-distribuicao-das-conversas-novas`, 79 conferências, **15
+sabotagens e 15 pegas**, todas limpas, rodadas em cópias (a aba sem o script;
+a falha escondendo a aba; quem administra contando como dentro; a vez de quem
+não vê o telefone; a falha das pessoas virando "ninguém"; a falha das chaves
+virando "desligada"; o clique encaixado em vez de relido; a recusa calada; sem
+o aviso de ligada sem ninguém; o aviso acendendo com a lista falhando; sem
+linha valendo ligado; o menu sem a frase; o nulo sem dono virando
+distribuição; passar adiante virando distribuição; e a chave voltando a ser o
+próprio botão).
+
+**E uma lição de processo, a mesma de sempre com outra roupa:** mexi na chave
+NO MEIO de uma rodada de sabotagens — e cada sabotagem copia o repositório na
+hora em que começa. Metade da rodada teria provado um código e metade outro.
+Ela foi parada, os servidores órfãos derrubados pelo grupo, e a rodada refeita
+inteira sobre a versão final. **Rodada de sabotagens não convive com edição.**
+
 ## A auditoria de 07/10 — o que uma varredura inteira achou
 
 Pedido do Rodrigo: *"faz um diagnóstico geral em todos os arquivos e todas

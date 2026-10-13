@@ -1441,6 +1441,14 @@ const TABELAS = {
   // 2026 em diante).
   zorvin_fora_do_horario: [],
   zorvin_respostas_automaticas: [],
+  // A DISTRIBUIÇÃO DAS CONVERSAS NOVAS (script 023 da ponte). As três
+  // começam VAZIAS, que é como o script as entrega: nenhum departamento
+  // ligado, ninguém com a chave mexida (vale o padrão — quem atende recebe,
+  // quem administra não) e nenhuma conversa distribuída. Quem distribui é o
+  // banco, chamado pela ponte; cada prova planta o registro pela `__SEMENTE`.
+  zorvin_distribuicao: [],
+  zorvin_rodizio: [],
+  zorvin_distribuicoes: [],
   zorvin_feriados: [
     ["2026-10-12", "Nossa Senhora Aparecida"], ["2026-11-02", "Finados"],
     ["2026-11-15", "Proclamação da República"], ["2026-11-20", "Consciência Negra"],
@@ -1711,7 +1719,12 @@ function consulta(tabela) {
         // tabelas respondem "não existe" — vazia é o banco com o script e
         // nenhum departamento configurado, e a tela aparece nesse caso.
         || (/^zorvin_(fora_do_horario|feriados|respostas_automaticas)$/.test(tabela)
-            && globalThis.__SEM_FORA_DO_HORARIO));
+            && globalThis.__SEM_FORA_DO_HORARIO)
+        // A DISTRIBUIÇÃO (script 023) que ainda não rodou: as três tabelas
+        // respondem "não existe". Vazia é o banco com o script e nada ligado,
+        // e a aba aparece nesse caso.
+        || (/^zorvin_(distribuicao|rodizio|distribuicoes)$/.test(tabela)
+            && globalThis.__SEM_DISTRIBUICAO));
   let linhas = faltando ? [] : (TABELAS[tabela] || []).slice();
   // O QUE FOI PEDIDO, e não só o resultado. É por isto que dá para saber se a
   // consulta varreu a tabela inteira ou entrou por um recorte — a diferença
@@ -2906,6 +2919,54 @@ export const supabase = {
       }
       await espera(20);
       return { data: horarioDe(args && args.p_semana, args && args.p_fuso, args && args.p_quando), error: null };
+    }
+
+    // A LISTA DO RODÍZIO (script 023): quem recebe as conversas novas. A conta
+    // de verdade é do banco e foi provada num Postgres no repo da ponte; esta
+    // a refaz sobre as linhas da bancada porque a tela ESCREVE o que ela
+    // devolve, e a prova precisa ver a chave de uma pessoa mudar a lista.
+    //
+    // As mesmas regras: só quem está ativo e vê pelo menos um telefone ativo
+    // com departamento; `recebe` é a escolha gravada ou, sem ela, "não
+    // administra"; e só quem administra pergunta (42501 para os outros).
+    if (nome === "zorvin_rodizio_pessoas") {
+      if (globalThis.__SEM_DISTRIBUICAO) {
+        return { data: null, error: { code: "PGRST202", message: "Could not find the function public.zorvin_rodizio_pessoas without parameters in the schema cache" } };
+      }
+      await espera(30);
+      if (globalThis.__RODIZIO_FALHA) {
+        return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } };
+      }
+      const euAqui = TABELAS.usuarios[0] || {};
+      if (!euAqui.admin || euAqui.ativo === false) {
+        return { data: null, error: { code: "42501", message: "Só quem administra o Zorvin vê quem recebe as conversas novas." } };
+      }
+      const ve = (u, a) => (u.admin && u.ativo !== false) || (TABELAS.permissoes || []).some((x) =>
+        String(x.usuario_id) === String(u.id)
+        && (x.departamento_id == null || String(x.departamento_id) === String(a.departamento_id))
+        && (x.telefone_id == null || String(x.telefone_id) === String(a.id)));
+      // A MEIA-NOITE DE BRASÍLIA, que é o "hoje" do banco (sem horário de
+      // verão desde 2019: o deslocamento é sempre -03:00).
+      const hojeLa = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric",
+        month: "2-digit", day: "2-digit" }).format(new Date());
+      const meiaNoite = new Date(`${hojeLa}T00:00:00-03:00`).getTime();
+      const linhas = (TABELAS.usuarios || []).filter((u) => u.ativo !== false).map((u) => {
+        const escolha = (TABELAS.zorvin_rodizio || []).find((r) => String(r.usuario_id) === String(u.id));
+        const deps = [...new Set((TABELAS.advogados || [])
+          .filter((a) => a.departamento_id != null && a.ativo !== false && ve(u, a))
+          .map((a) => a.departamento_id))].sort((x, y) => x - y);
+        const minhas = (TABELAS.zorvin_distribuicoes || []).filter((d) => String(d.usuario_id) === String(u.id));
+        const ultima = minhas.map((d) => d.quando).filter(Boolean).sort().pop() || null;
+        return {
+          usuario_id: u.id, nome: u.nome ?? null, foto_url: u.foto_url ?? null, administra: Boolean(u.admin),
+          recebe: escolha ? Boolean(escolha.recebe) : !u.admin, escolhido: Boolean(escolha),
+          departamentos: deps, ultima_em: ultima,
+          hoje: minhas.filter((d) => new Date(d.quando).getTime() >= meiaNoite).length,
+        };
+      }).filter((l) => l.departamentos.length)
+        .sort((a, b) => String(a.nome || "").toLowerCase().localeCompare(String(b.nome || "").toLowerCase())
+                        || String(a.usuario_id).localeCompare(String(b.usuario_id)));
+      return { data: linhas, error: null };
     }
 
     // A JANELA DA CONVERSA EM ANDAMENTO (script 022) é a carência da fila de
