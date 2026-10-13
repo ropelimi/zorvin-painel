@@ -80,7 +80,14 @@ jobs:
     # consome: ela custa o tempo que a suíte leva. Ao acrescentar prova,
     # olhe este número — uma suíte que encosta no teto reprova por relógio,
     # e "vermelho por relógio" se parece com defeito de código.
-    timeout-minutes: 60
+    #
+    # E em 13/10 subiu para 75, autorizado pelo Rodrigo. MEDIDO: a rodada
+    # verde da PR do aviso do responsável levou 50min59s no passo das provas
+    # — ~9 min de folga, menos do que os ~15 que o teto vinha guardando, e
+    # cada entrega acrescenta prova. 75 devolve essa folga com sobra para as
+    # próximas, e continua derrubando em pouco mais de uma hora a prova que
+    # travar.
+    timeout-minutes: 75
 
     steps:
       - name: Baixar o código

@@ -3926,6 +3926,12 @@ passo das provas. A prova do aviso do responsável acrescenta ~1 min (68 s aqui,
 com o servidor), e a folga cai para **~9 min**, menos do que os ~15 que o teto
 vinha guardando. Subir de novo é decisão do Rodrigo, como foi a de 07/10.
 
+**E ele decidiu no mesmo dia: o teto foi para 75.** A rodada da PR do aviso
+fechou em **50min59s** no passo das provas, confirmando a conta. Numa PR
+própria, e não junto com a da cópia que estava rodando: cada pedido vai numa
+PR nova, e empurrar ali teria cancelado a rodada em andamento
+(`cancel-in-progress`).
+
 ## Fluxo de trabalho — PRs (REGRA IMPORTANTE do Rodrigo)
 
 - **Cada entrega/pedido deve ir numa PR NOVA.** Nunca reutilizar nem estender uma PR já mesclada.
