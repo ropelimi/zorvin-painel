@@ -1126,7 +1126,25 @@ de linha colada a um `<b>` some, e "numa conversa" + quebra + `<b>sem
 responsável</b>` virava **"numa conversasem responsável"**. Uma busca pela
 palavra "responsável" passava; a prova confere a frase.
 
-Prova: `o-aviso-vai-para-o-responsavel`, {{CONF}} conferências, **{{SAB}}**.
+Prova: `o-aviso-vai-para-o-responsavel`, 25 conferências, **12 sabotagens e 12
+pegas**, todas limpas, rodadas em cópias junto com `o-aviso-de-mensagem-nova`:
+
+- o dono ignorado;
+- sem a espera;
+- a espera sempre;
+- a decisão esperada no tratador;
+- a decisão depois da consulta do telefone;
+- a falha do dono calando o aviso;
+- sem reler depois da espera;
+- o dono perguntado antes da participação;
+- o dono guardado;
+- sem conferir a conversa aberta;
+- o texto antigo da aba;
+- a rajada sem junção.
+
+**A decisão depois da consulta do telefone só a prova de 15/09 pega**, com
+quatro reprovações. É o defeito da primeira escrita: o aviso chega atrasado e
+cai na cena seguinte dela.
 
 ## O áudio em 2x (02/10)
 
@@ -3819,6 +3837,11 @@ rodada do relatório do funil levou ~43 min, a dois do teto, e a auditoria
 trouxe mais uma prova. **O teto não muda o que a rodada consome** — ela custa o tempo que a
 suíte leva; ele só decide quando uma prova TRAVADA é derrubada. **Ao
 acrescentar prova, olhe quanto a suíte já leva.**
+
+**Medido em 13/10:** a rodada verde da PR da distribuição levou **49min41s** no
+passo das provas. A prova do aviso do responsável acrescenta ~1 min (68 s aqui,
+com o servidor), e a folga cai para **~9 min**, menos do que os ~15 que o teto
+vinha guardando. Subir de novo é decisão do Rodrigo, como foi a de 07/10.
 
 ## Fluxo de trabalho — PRs (REGRA IMPORTANTE do Rodrigo)
 
