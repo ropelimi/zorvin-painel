@@ -343,6 +343,14 @@ let contaDeNomesDoCanal = 0;
 const CADENCIA_DA_PESCA_MS =
   (typeof globalThis !== "undefined" && globalThis.__CADENCIA_DA_PESCA) || 20000;
 
+// QUANTO O AVISO DO CLIENTE NOVO ESPERA PELA DISTRIBUIÇÃO (13/10). A ponte
+// grava a mensagem e SÓ DEPOIS pergunta ao banco quem a recebe: no meio há
+// duas idas ao banco (desarquivar e distribuir), de ~100 a 300 ms cada —
+// ESTIMADO, e não medido em produção. Dois segundos e meio cobrem uma ponte
+// lenta com folga; passando disso o aviso sai para todo mundo, que é o erro
+// barato (um som a mais), e não o caro (ninguém avisado).
+const ESPERA_DA_DISTRIBUICAO_MS = 2500;
+
 const CARENCIA_TEMPO_REAL_MS =
   (typeof globalThis !== "undefined" && globalThis.__CARENCIA_TEMPO_REAL) || 10000;
 
@@ -2680,6 +2688,11 @@ export default function Painel({ sessao }) {
     aplicarAparencia(modo === "escuro", TEMAS[modo].headerBar);
   }, [modo]);
   const [advogados, setAdvogados] = useState([]);
+  // O ESPELHO DOS TELEFONES, para o aviso de mensagem nova: ele mora num
+  // tratador registrado uma vez, e precisa do departamento de cada telefone
+  // (a distribuição é ligada por departamento).
+  const advogadosRef = useRef([]);
+  useEffect(() => { advogadosRef.current = advogados; }, [advogados]);
   // Os departamentos saem do BANCO, não de uma lista escrita aqui: é isso que
   // permite criar um departamento novo sem mexer em código.
   const [departamentos, setDepartamentos] = useState([]);
@@ -3578,40 +3591,137 @@ export default function Painel({ sessao }) {
   // ------------------------------------------------------------
   //  ESTE AVISO ME INTERESSA?  (ver o bloco `deQuemEhAConversa`)
   //
-  //  Devolve `true` quando eu participei da conversa, ou quando NINGUÉM
-  //  participou — a primeira mensagem de um cliente novo não tem dono, e
-  //  deixá-la sem aviso é o lead ficar sem resposta.
+  //  QUATRO PERGUNTAS, nesta ordem:
+  //
+  //    1. eu participei da conversa?       -> avisa (o pedido de 15/09)
+  //    2. ela tem responsável?             -> avisa só se o responsável for eu
+  //    3. alguém da equipe já participou?  -> não avisa: a conversa é de alguém
+  //    4. ninguém participou, e sem dono   -> avisa todo mundo: é o cliente novo
+  //
+  //  A SEGUNDA É DE 13/10, pedido do Rodrigo depois da distribuição: o cliente
+  //  novo já chega com responsável, e avisar a equipe inteira de uma conversa
+  //  que tem dono é o aviso que não pede ação de quem lê — o que se aprende a
+  //  ignorar. Vale para TODO responsável, e não só o da distribuição: quem
+  //  recebe uma conversa passada adiante também é avisado, e antes ficava
+  //  calado porque outra pessoa tinha respondido nela.
+  //
+  //  O RESPONSÁVEL É PERGUNTADO A CADA AVISO, e não guardado como a
+  //  participação: ele muda (passar adiante, assumir, a distribuição), e um
+  //  dono guardado e velho calaria a pessoa errada.
+  //
+  //  E A DISTRIBUIÇÃO CHEGA UM INSTANTE DEPOIS DA MENSAGEM: a ponte grava a
+  //  mensagem e SÓ ENTÃO pergunta ao banco quem a recebe, então a primeira
+  //  mensagem de um cliente novo chega aqui antes do dono. Num departamento
+  //  com a distribuição ligada, a conversa órfã e sem dono espera
+  //  `ESPERA_DA_DISTRIBUICAO_MS` e pergunta de novo; sem dono ainda (ninguém
+  //  no rodízio, a ponte lenta), avisa todo mundo.
   //
   //  A LEITURA QUE FALHA AVISA ASSIM MESMO. Sem saber de quem é a conversa, o
   //  erro barato é tocar um som a mais; o caro é calar a mensagem de um cliente
   //  por causa de uma oscilação de rede. É a armadilha nº 2 do CLAUDE.md
   //  aplicada a um aviso: não desenhar ausência onde houve falha.
   // ------------------------------------------------------------
-  const esteAvisoMeInteressa = useCallback(async (convId) => {
-    const guardado = deQuemEhAConversa.current.get(convId);
-    if (guardado) return guardado.minha || guardado.orfa;
-    const eu = meuIdRef.current;
-    if (!eu) return true;
+  const donoDaConversa = useCallback(async (convId) => {
+    // SEM A COLUNA (o script 008 não rodou) não há responsável, e vale a
+    // regra de antes — e sem ela também não há distribuição.
+    if (temResponsavelRef.current === false) return { dono: null, telefone: null };
+    try {
+      const { data, error } = await supabase.from("conversas")
+        .select("responsavel_id, advogado_id").eq("id", convId).maybeSingle();
+      if (error) {
+        if (String(error.code) === "42703") return { dono: null, telefone: null };
+        return { falhou: true };
+      }
+      return { dono: (data && data.responsavel_id) || null, telefone: (data && data.advogado_id) || null };
+    } catch (_) {
+      return { falhou: true };
+    }
+  }, []);
+
+  const distribuicaoLigadaNoTelefone = useCallback(async (telefone) => {
+    const tel = (advogadosRef.current || []).find((a) => String(a.id) === String(telefone));
+    if (!tel || tel.departamento_id == null) return false;
+    try {
+      const { data, error } = await supabase.from("zorvin_distribuicao")
+        .select("ligada").eq("departamento_id", tel.departamento_id).maybeSingle();
+      // SEM A TABELA (o 023 não rodou), ou com a leitura falhando, não se
+      // espera: o aviso sai na hora, para todo mundo — o som a mais é o erro
+      // barato.
+      if (error) return false;
+      return Boolean(data && data.ligada);
+    } catch (_) {
+      return false;
+    }
+  }, []);
+
+  // A PARTICIPAÇÃO, guardada por conversa (ver `deQuemEhAConversa`). Devolve
+  // `null` quando a leitura falha — e aí quem chamou avisa.
+  const lerParticipacao = useCallback(async (convId, eu) => {
     try {
       const { data: minhas, error: e1 } = await supabase.from("mensagens")
         .select("id").eq("conversa_id", convId).eq("enviado_por_id", eu).limit(1);
-      if (e1) return true;
+      if (e1) return null;
+      let part;
       if (minhas && minhas.length) {
-        deQuemEhAConversa.current.set(convId, { minha: true, orfa: false });
-        return true;
+        part = { minha: true, orfa: false };
+      } else {
+        // SÓ AGORA A SEGUNDA PERGUNTA, e não sempre: para quem participou —
+        // que é o caso comum de quem atende — uma ida à rede basta.
+        const { data: deOutro, error: e2 } = await supabase.from("mensagens")
+          .select("id").eq("conversa_id", convId).not("enviado_por_id", "is", null).limit(1);
+        if (e2) return null;
+        part = { minha: false, orfa: !deOutro || !deOutro.length };
       }
-      // SÓ AGORA A SEGUNDA PERGUNTA, e não sempre: para quem participou — que
-      // é o caso comum de quem atende — uma ida à rede basta.
-      const { data: deOutro, error: e2 } = await supabase.from("mensagens")
-        .select("id").eq("conversa_id", convId).not("enviado_por_id", "is", null).limit(1);
-      if (e2) return true;
-      const orfa = !deOutro || !deOutro.length;
-      deQuemEhAConversa.current.set(convId, { minha: false, orfa });
-      return orfa;
+      deQuemEhAConversa.current.set(convId, part);
+      return part;
     } catch (_) {
-      return true;
+      return null;
     }
   }, []);
+
+  const decidirOAviso = useCallback(async (convId) => {
+    const eu = meuIdRef.current;
+    if (!eu) return true;
+    const guardada = deQuemEhAConversa.current.get(convId);
+    if (guardada && guardada.minha) return true;
+    // AS DUAS PERGUNTAS AO MESMO TEMPO, e não uma depois da outra: a do
+    // responsável vale para quase todo aviso, e em fila ela somaria o tempo
+    // dela ao das outras antes de o som tocar.
+    const [part, quem] = await Promise.all([
+      guardada ? Promise.resolve(guardada) : lerParticipacao(convId, eu),
+      donoDaConversa(convId),
+    ]);
+    if (!part) return true;
+    if (part.minha) return true;
+    if (quem.falhou) return true;
+    if (quem.dono) return String(quem.dono) === String(eu);
+    if (!part.orfa) return false;
+    if (quem.telefone && await distribuicaoLigadaNoTelefone(quem.telefone)) {
+      await new Promise((r) => setTimeout(r, ESPERA_DA_DISTRIBUICAO_MS));
+      const depois = await donoDaConversa(convId);
+      if (!depois.falhou && depois.dono) return String(depois.dono) === String(eu);
+    }
+    return true;
+  }, [lerParticipacao, donoDaConversa, distribuicaoLigadaNoTelefone]);
+
+  // UMA PERGUNTA POR CONVERSA DE CADA VEZ. O responsável é perguntado a cada
+  // aviso, e um cliente que manda vinte fotos seguidas seriam vinte perguntas
+  // iguais, feitas no mesmo instante, por cada pessoa da equipe — a conta que
+  // a prova `selos-em-rajada` existe para impedir ("antes eram 620 idas, 31
+  // por mensagem"). Enquanto a pergunta de uma conversa está em voo — e ela
+  // inclui a espera da distribuição —, as mensagens seguintes dela usam a
+  // mesma resposta. Terminada, a próxima mensagem pergunta de novo: o dono
+  // pode ter mudado.
+  const decisoesEmVoo = useRef(new Map());
+  const esteAvisoMeInteressa = useCallback((convId) => {
+    const emVoo = decisoesEmVoo.current.get(convId);
+    if (emVoo) return emVoo;
+    const decisao = decidirOAviso(convId).finally(() => {
+      if (decisoesEmVoo.current.get(convId) === decisao) decisoesEmVoo.current.delete(convId);
+    });
+    decisoesEmVoo.current.set(convId, decisao);
+    return decisao;
+  }, [decidirOAviso]);
 
   // ------------------------------------------------------------
   //  O NOME E A FOTO DE HOJE
@@ -7202,6 +7312,52 @@ export default function Painel({ sessao }) {
           return novo;
         });
 
+        // ------------------------------------------------------------
+        //  A QUEM ESTE AVISO INTERESSA — as quatro perguntas estão em
+        //  `esteAvisoMeInteressa`:
+        //
+        //    1. participei da conversa      -> avisa, esteja eu olhando o
+        //       telefone que for. É o pedido da equipe (15/09).
+        //    2. ela tem responsável         -> avisa só o responsável (13/10,
+        //       pedido do Rodrigo com a distribuição ligada).
+        //    3. participou outra pessoa     -> NÃO avisa. Um aviso que não pede
+        //       ação de quem lê se aprende a ignorar — aí o próximo, que
+        //       pedia, passa batido junto.
+        //    4. ninguém participou, sem dono -> avisa TODO MUNDO que a enxerga.
+        //       É a primeira mensagem de um cliente novo, e deixá-la sem aviso
+        //       é o lead ficar sem resposta, o pior desfecho deste sistema.
+        //
+        //  O TELEFONE ABERTO SAIU DA CONTA, e era ele o defeito: quem enxerga a
+        //  mensagem já passou pela regra de acesso do banco — se ela chegou
+        //  aqui, esta pessoa pode vê-la.
+        //
+        //  E A RESPOSTA NÃO É ESPERADA AQUI. Ela pode levar alguns segundos (a
+        //  espera da distribuição), e o resto deste tratador — trazer para a
+        //  lista a conversa nova — não pode esperar junto: o cliente novo
+        //  apareceria na tela atrasado justamente para quem vai atendê-lo. Pela
+        //  mesma razão ela SAI ANTES da consulta do telefone logo abaixo, e não
+        //  depois: em fila, as duas idas ao banco somariam os seus tempos antes
+        //  de o som tocar.
+        // ------------------------------------------------------------
+        if (nova.origem === "contato"
+            && (document.hidden || nova.conversa_id !== conversaIdRef.current)) {
+          esteAvisoMeInteressa(nova.conversa_id).then((paraMim) => {
+            if (!paraMim) return;
+            // ABERTA NESSE MEIO-TEMPO, a conversa não avisa: a pessoa já está
+            // vendo a mensagem.
+            if (!document.hidden && nova.conversa_id === conversaIdRef.current) return;
+            tocarAviso();
+            // O NOME DE QUEM ESCREVEU, e não "Nova mensagem". Com a etiqueta
+            // por conversa, dois clientes escrevendo viram dois avisos — e dois
+            // avisos dizendo "Nova mensagem" não dizem a qual conversa ir.
+            const quem = conversasRef.current.find((c) => c.id === nova.conversa_id);
+            notificarDesktop(
+              (quem && nomeDoContato(quem.contato)) || "Nova mensagem",
+              nova.texto || "Mídia recebida",
+              nova.conversa_id);
+          }).catch((e) => console.error("Zorvin — o aviso de mensagem nova falhou:", e));
+        }
+
         // Esta mensagem é do advogado atualmente aberto? Se a conversa já está
         // na lista, sim. Se não está (pode ser uma conversa NOVA — lead novo),
         // confirmamos com uma consulta rápida do advogado_id.
@@ -7232,40 +7388,6 @@ export default function Painel({ sessao }) {
           });
         }
 
-        // ------------------------------------------------------------
-        //  A QUEM ESTE AVISO INTERESSA
-        //
-        //  Três casos, e o terceiro é o que o Rodrigo decidiu em 15/09:
-        //
-        //    1. participei da conversa  -> avisa, esteja eu olhando o telefone
-        //       que for. É o pedido da equipe.
-        //    2. participou outra pessoa -> NÃO avisa. A conversa tem dono, e
-        //       um aviso que não pede ação de quem lê se aprende a ignorar —
-        //       aí o próximo, que pedia, passa batido junto.
-        //    3. ninguém participou      -> avisa TODO MUNDO que a enxerga. É a
-        //       primeira mensagem de um cliente novo: ela não tem dono ainda, e
-        //       deixá-la sem aviso é o lead ficar sem resposta, que é o pior
-        //       desfecho deste sistema.
-        //
-        //  O TELEFONE ABERTO SAIU DA CONTA, e era ele o defeito: quem enxerga a
-        //  mensagem já passou pela regra de acesso do banco — se ela chegou
-        //  aqui, esta pessoa pode vê-la.
-        // ------------------------------------------------------------
-        if (nova.origem === "contato"
-            && (document.hidden || nova.conversa_id !== conversaIdRef.current)) {
-          const paraMim = await esteAvisoMeInteressa(nova.conversa_id);
-          if (paraMim) {
-            tocarAviso();
-            // O NOME DE QUEM ESCREVEU, e não "Nova mensagem". Com a etiqueta
-            // por conversa, dois clientes escrevendo viram dois avisos — e dois
-            // avisos dizendo "Nova mensagem" não dizem a qual conversa ir.
-            const quem = conversasRef.current.find((c) => c.id === nova.conversa_id);
-            notificarDesktop(
-              (quem && nomeDoContato(quem.contato)) || "Nova mensagem",
-              nova.texto || "Mídia recebida",
-              nova.conversa_id);
-          }
-        }
         // Só re-busca a lista inteira quando é uma conversa NOVA (que ainda não
         // está na lista). Conversas que já estão na lista são atualizadas no
         // lugar pelo handler de UPDATE de conversas — sem re-buscar tudo, que
@@ -15498,9 +15620,11 @@ export default function Painel({ sessao }) {
                   <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Avisos</div>
                   <div style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20, lineHeight: 1.5 }}>
                     O som toca quando chega mensagem numa conversa <b>sua</b> — em que
-                    você já respondeu — ou numa conversa que <b>ninguém</b> atendeu
-                    ainda, que é o cliente novo. Vale para todos os telefones, e não
-                    só o que está aberto.
+                    você é o responsável, ou em que já respondeu — ou numa conversa sem
+                    responsável que <b>ninguém</b> atendeu ainda, que é o cliente novo.
+                    Com a distribuição automática ligada, o cliente novo já chega com
+                    responsável, e só quem o recebeu é avisado. Vale para todos os
+                    telefones, e não só o que está aberto.
                   </div>
 
                   <div style={{ fontSize: 12, fontWeight: 700, color: C.textSecondary,

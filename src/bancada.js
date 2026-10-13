@@ -1798,7 +1798,22 @@ function consulta(tabela) {
     gte(col, val) { linhas = linhas.filter((l) => comparar(l[col], val) >= 0); return eu; },
     lt(col, val) { linhas = linhas.filter((l) => comparar(l[col], val) < 0); return eu; },
     lte(col, val) { linhas = linhas.filter((l) => comparar(l[col], val) <= 0); return eu; },
-    not() { return eu; }, contains() { return eu; },
+    // `not` ERA CANO VAZIO, e mentia contra o aviso de mensagem nova (13/10).
+    // O painel pergunta "alguém da EQUIPE já escreveu aqui?" com
+    // `.not("enviado_por_id", "is", null)`; devolvendo tudo, a mensagem do
+    // próprio cliente contava como resposta da equipe, e o cliente novo —
+    // que é quem mais precisa do aviso — deixava de avisar. O painel estava
+    // certo. Só `is` é usado pelo painel; o resto continua passando, e quem
+    // usar outro terá de ensinar a bancada primeiro.
+    not(col, op, val) {
+      if (op === "is") {
+        linhas = val === null
+          ? linhas.filter((l) => l[col] !== null && l[col] !== undefined)
+          : linhas.filter((l) => l[col] !== val);
+      }
+      return eu;
+    },
+    contains() { return eu; },
     // `ilike` E `or` ERAM CANO VAZIO, e é por isso que o defeito da busca
     // atravessou todos os testes: a bancada devolvia TUDO para qualquer termo,
     // então a tela parecia achar o que na verdade ela nunca procurou.

@@ -693,15 +693,16 @@ do Dr. B não era avisada quando ele voltava a escrever — bastava ela estar
 olhando a linha do Dr. A. O aviso chegava a quem estava **à vista**, e não a
 quem estava **atendendo**.
 
-### As três regras
+### As regras (eram três; a do responsável entrou em 13/10)
 
 | Situação | Avisa? | Por quê |
 |---|---|---|
 | Eu já respondi nessa conversa | **sim**, em qualquer telefone | é o pedido |
+| **A conversa tem responsável** | **só o responsável** | é dele; ver "O aviso vai para o responsável (13/10)", mais abaixo |
 | Outra pessoa atende | não | aviso que não pede ação de quem lê se aprende a ignorar, e aí o próximo passa batido junto |
-| **Ninguém atendeu ainda** | **sim, todo mundo** | é a primeira mensagem de um lead: sem dono, e sem aviso ela fica sem resposta |
+| **Ninguém atendeu ainda, e sem responsável** | **sim, todo mundo** | é a primeira mensagem de um lead: sem dono, e sem aviso ela fica sem resposta |
 
-A terceira é o **contrapeso**, decidida pelo Rodrigo: "só as minhas" ao pé da
+A última é o **contrapeso**, decidida pelo Rodrigo: "só as minhas" ao pé da
 letra calaria justamente a mensagem que ninguém pode perder.
 
 **"Participei" sai das próprias mensagens** (`enviado_por_id`), e não de uma
@@ -1032,6 +1033,100 @@ primeiro reaproveitando uma conversa da bancada, e ela reprovou: aquela já tinh
 histórico com autor, então era de alguém. A conferência dizia medir "cliente
 novo" e media outra coisa — e o cenário de verdade é este mesmo, porque cliente
 novo escrevendo cria uma conversa que nenhum painel conhece.
+
+### O aviso vai para o responsável (13/10)
+
+Pedido do Rodrigo logo depois de a distribuição entrar: *"pode fazer o aviso
+só para quem recebeu"*. Com a distribuição ligada o cliente novo já chega com
+dono, e avisar a equipe inteira de uma conversa que tem dono é o aviso que
+não pede ação de quem lê.
+
+**Uma pergunta nova entre as de 15/09, e é a ORDEM que decide**
+(`esteAvisoMeInteressa`): participei → avisa; tem responsável → só ele;
+outra pessoa participou → não; ninguém e sem dono → todo mundo. **Participar
+vem primeiro**, porque é o pedido de 15/09: quem respondeu numa conversa da
+colega continua sendo avisado nela.
+
+**Vale para TODO responsável**, e não só o que a distribuição pôs — e isso
+fechou um buraco que ninguém tinha relatado: quem recebia uma conversa
+**passada adiante** ficava calado, porque outra pessoa tinha respondido nela.
+
+**O dono é perguntado a cada aviso, e não guardado** como a participação: ele
+muda (passar adiante, assumir, a distribuição), e um dono guardado e velho
+calaria a pessoa errada.
+
+#### A corrida, e a espera de 2,5 segundos
+
+A ponte grava a mensagem e **só depois** pergunta ao banco quem a recebe
+(antes disso ela ainda desarquiva a conversa). A primeira mensagem de um
+cliente novo chega aos painéis **antes do dono** — e sem cuidado ela avisaria
+todo mundo, que é exatamente o que o pedido quer calar.
+
+Então, **num departamento com a distribuição ligada**, a conversa órfã e sem
+dono espera `ESPERA_DA_DISTRIBUICAO_MS` e pergunta de novo. Chegou o dono, vale
+ele; não chegou (ninguém no rodízio, a ponte lenta), **avisa todo mundo** —
+o lead sem aviso é o pior desfecho. **A espera é SÓ onde a distribuição está
+ligada**: sem ela o dono não vem, e esperar atrasaria à toa o aviso de todo
+cliente novo.
+
+**Os 2,5 s são estimados, e não medidos em produção**: entre a mensagem e o
+dono a ponte faz duas idas ao banco (desarquivar e distribuir), de ~100 a
+300 ms cada. Errando para menos, o custo é um som a mais para a equipe — o
+comportamento de antes —, e não um aviso calado.
+
+**A decisão corre POR FORA do tratador do tempo real**, e sai **antes** da
+consulta do telefone. Esperada no tratador, ela seguraria pelos segundos da
+espera a entrada da conversa nova na lista — o cliente novo apareceria
+atrasado justamente para quem vai atendê-lo. E depois da consulta do telefone,
+as duas idas ao banco somariam os seus tempos antes do som: foi a prova de
+15/09 (`o-aviso-de-mensagem-nova`) que pegou, na primeira escrita.
+
+**Uma pergunta por conversa de cada vez** (`decisoesEmVoo`). Perguntar o dono
+a cada aviso tem um custo: um cliente que manda vinte fotos seguidas seriam
+vinte perguntas iguais no mesmo instante, por cada pessoa da equipe. Enquanto
+a pergunta de uma conversa está em voo — e ela inclui a espera —, as
+mensagens seguintes dela usam a mesma resposta; terminada, a próxima pergunta
+de novo. **Juntar não é guardar.** Medido na cena "sem a função" de
+`selos-em-rajada` (a que vem depois de recarregar a página): **56 idas** ao
+banco para 20 mensagens sem a junção, **18** com ela.
+
+**E a cena principal da `selos-em-rajada` NÃO vê isto**, o que eu supus ao
+contrário: a conversa que ela acompanha é uma em que a sessão já respondeu, e
+a participação guardada responde sem ir ao banco — 20 mensagens, **2 idas**,
+com ou sem a junção. Quem cobra a junção é a cena 9 da prova nova, numa
+conversa da colega.
+
+**Aberta durante a espera, a conversa não avisa** — a pessoa já está vendo a
+mensagem. **E a leitura que falha avisa**, nas três perguntas: a do dono, a da
+participação e a da distribuição (esta não espera: avisa na hora). É a
+armadilha nº 2 aplicada a um aviso. **Sem a coluna do 008, a regra de antes.**
+
+**O limite, dito ao Rodrigo:** a conversa de quem está de férias só avisa essa
+pessoa. A chave *"recebe conversas novas"* para as NOVAS; as que já são dela
+continuam sendo dela — o caminho é passar adiante.
+
+#### Duas mentiras da bancada, e uma minha
+
+**`not()` era cano vazio.** O painel pergunta *"alguém da EQUIPE já escreveu
+aqui?"* com `.not("enviado_por_id", "is", null)`; devolvendo tudo, a mensagem
+do próprio cliente contava como resposta da equipe, e **o cliente novo deixava
+de avisar**. O painel estava certo. A prova de 15/09 nunca viu isso porque o
+cliente novo dela nasce sem mensagem nenhuma na tabela.
+
+**A bancada lê a linha ao RESPONDER, e não ao perguntar** — o atraso vem antes
+da leitura. Com os 700 ms das conversas, a primeira pergunta pelo dono já
+voltava com o dono gravado 400 ms depois da mensagem, e a cena da corrida
+passava **sem a espera existir**. Hoje ela roda com `__ATRASO_UNIFORME = 60`
+e a ponte de mentira leva 1 s para gravar o dono: só a espera separa o certo
+do errado. **Uma corrida só é medida se o evento cair DEPOIS da resposta da
+primeira pergunta.**
+
+**E o texto da aba Avisos saiu grudado na primeira escrita**: no JSX a quebra
+de linha colada a um `<b>` some, e "numa conversa" + quebra + `<b>sem
+responsável</b>` virava **"numa conversasem responsável"**. Uma busca pela
+palavra "responsável" passava; a prova confere a frase.
+
+Prova: `o-aviso-vai-para-o-responsavel`, {{CONF}} conferências, **{{SAB}}**.
 
 ## O áudio em 2x (02/10)
 
@@ -3168,10 +3263,12 @@ foi). Fora isso, nada novo para quem atende: a conversa chega com o rosto da
 pessoa na lista e entra em "Minhas conversas" dela pelo caminho que já existia
 — o tempo real traz o dono pela presença da chave.
 
-**O aviso de mensagem nova NÃO mudou**: enquanto ninguém responde, todo mundo
+~~**O aviso de mensagem nova NÃO mudou**: enquanto ninguém responde, todo mundo
 continua sendo avisado (a regra de 15/09 — "participei" sai das mensagens).
 Avisar só o dono quando a distribuição está ligada é outra decisão, e não foi
-tomada.
+tomada.~~ **Feito no mesmo dia, a pedido do Rodrigo** ("pode fazer o aviso só
+para quem recebeu") — ver "O aviso vai para o responsável (13/10)", em "O aviso
+de mensagem nova".
 
 ### A chave liga-desliga virava um círculo no celular
 
