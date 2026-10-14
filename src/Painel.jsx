@@ -12,7 +12,8 @@ import {
   History, BarChart3, Users, Smartphone,
   Image as ImageIcon, Video,
   Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote, Volume2,
-  ListChecks, Undo2, UserCheck, SquareKanban, BellRing, BellPlus, CircleCheck, RotateCcw
+  ListChecks, Undo2, UserCheck, SquareKanban, BellRing, BellPlus, CircleCheck, RotateCcw,
+  Sparkles, Loader2
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
@@ -53,6 +54,7 @@ import { montarCaminho, duracaoLegivel } from "./caminhoNoFunil.js";
 import EscolherHora from "./EscolherHora.jsx";
 import { perguntarOsScripts, fraseDosScriptsParaAFaixa } from "./scriptsDoBanco.js";
 import { rotuloDaHora, porQueNaoServe, semAColunaDaAgenda, aindaDaParaEditar } from "./agenda.js";
+import { useEstadoDoCopiloto, copilotoAparece, pedirSugestao } from "./copiloto.js";
 
 // ============================================================
 //  ZORVIN by Ropelimi — Painel real (conectado ao Supabase)
@@ -3192,6 +3194,17 @@ export default function Painel({ sessao }) {
   // ============================================================
   const [temAgenda, setTemAgenda] = useState(null);
   const [agendadas, setAgendadas] = useState([]);
+  // ============================================================
+  //  O COPILOTO (13/10) — "Sugerir resposta". Ver `copiloto.js`.
+  //
+  //  `copiloto` é POR CONVERSA: { [conversaId]: { fase, erro?, sugestao? } },
+  //  com fase "pensando", "erro" ou "atrasada". Por conversa, e não um estado
+  //  só, porque a resposta demora segundos e a atendente pode trocar de
+  //  conversa nesse meio — a sugestão de A não pode ir parar na caixa de B, e
+  //  voltando para A ela tem de ver que o pedido ainda está andando.
+  // ============================================================
+  const estadoDoCopiloto = useEstadoDoCopiloto();
+  const [copiloto, setCopiloto] = useState({});
   const [escolhendoHora, setEscolhendoHora] = useState(null);
   // A AGENDADA SENDO EDITADA (pedido de 05/10): o item da fila, ou nulo.
   const [editandoAgendada, setEditandoAgendada] = useState(null);
@@ -10534,6 +10547,87 @@ export default function Painel({ sessao }) {
     agora: new Date(),
   });
 
+  // ------------------------------------------------------------
+  //  "SUGERIR RESPOSTA" — o copiloto (13/10)
+  //
+  //  SÓ COM A CAIXA VAZIA. O botão mora onde o relógio de agendar aparece
+  //  quando há texto, então a barra nunca ganha um botão a mais; e uma
+  //  sugestão nunca apaga o que a atendente começou a escrever.
+  //
+  //  OS MARCADORES SÃO PREENCHIDOS AQUI, pelas regras das mensagens rápidas
+  //  (`variaveis.js`): a ponte manda a IA escrever {saudacao}, {nome} e
+  //  {atendente}, e o painel troca pela saudação da hora, pelo nome do alto da
+  //  conversa e pelo de quem atende — "Deus", o nome do WhatsApp de alguém,
+  //  vira o que a equipe já corrigiu no lápis, e o grupo não ganha "Olá,
+  //  Mutirão!". E com o nome DA CONVERSA EM QUE SE CLICOU, guardado no
+  //  clique: a resposta chega segundos depois, e a aberta pode ser outra.
+  // ------------------------------------------------------------
+  const copilotoDisponivel = copilotoAparece(estadoDoCopiloto);
+  const copilotoAqui = conversaId ? copiloto[conversaId] || null : null;
+  const copilotoPensando = Boolean(copilotoAqui && copilotoAqui.fase === "pensando");
+  const podeSugerir = copilotoDisponivel && Boolean(conversa) && !linhaDesativada && !modoNota
+    && !editando && !rascunho.trim() && !copilotoPensando;
+
+  function mudarCopiloto(id, valor) {
+    setCopiloto((atual) => {
+      const novo = { ...atual };
+      if (valor) novo[id] = valor; else delete novo[id];
+      return novo;
+    });
+  }
+
+  function colocarNaCaixa(texto) {
+    setRascunho(texto);
+    requestAnimationFrame(() => {
+      const c = inputRef.current;
+      if (!c) return;
+      c.focus();
+      c.selectionStart = c.selectionEnd = c.value.length;
+    });
+  }
+
+  async function sugerirComCopiloto() {
+    if (!conversa || !conversaId) return;
+    const id = conversaId;
+    if (copiloto[id] && copiloto[id].fase === "pensando") return;
+    const contexto = { cliente: !ehGrupo(conversa) ? nomeDoContato(conversa.contato) : "", atendente: meuNome };
+    mudarCopiloto(id, { fase: "pensando" });
+    let texto;
+    try {
+      texto = preencherVariaveis(await pedirSugestao(id), { ...contexto, agora: new Date() });
+    } catch (e) {
+      mudarCopiloto(id, { fase: "erro", erro: String((e && e.message) || e) });
+      return;
+    }
+    // A CONVERSA DO PEDIDO ESTÁ ABERTA, com a caixa vazia e de mensagem: a
+    // sugestão entra. Aberta, mas com texto, virada para nota ou numa edição:
+    // não entra, e a faixa oferece trocar. Fechada: vira o rascunho dela, se
+    // ele estiver vazio — é o que a pessoa encontra ao voltar.
+    if (conversaIdRef.current === id) {
+      if (!rascunhoRef.current.trim() && !modoNotaRef.current && !editandoRef.current) {
+        mudarCopiloto(id, null);
+        colocarNaCaixa(texto);
+      } else {
+        mudarCopiloto(id, { fase: "atrasada", sugestao: texto });
+      }
+      return;
+    }
+    const guardado = rascunhosRef.current[id];
+    if (!guardado || !String(guardado.texto || "").trim()) {
+      rascunhosRef.current[id] = { texto, nota: false };
+      mudarCopiloto(id, null);
+    } else {
+      mudarCopiloto(id, { fase: "atrasada", sugestao: texto });
+    }
+  }
+
+  function usarSugestaoAtrasada() {
+    const s = conversaId && copiloto[conversaId];
+    if (!s || s.fase !== "atrasada" || modoNota || editando) return;
+    mudarCopiloto(conversaId, null);
+    colocarNaCaixa(s.sugestao);
+  }
+
   // QUANTAS NÃO LIDAS ESTÃO EM GRUPO — o número do menu.
   //
   // Sai da lista que já está na tela, e não de uma ida a mais ao banco: é um
@@ -12567,6 +12661,21 @@ export default function Painel({ sessao }) {
                       aoEscolher={agendarTexto} aoFechar={() => setEscolhendoHora(null)} />
       </div>
     )}
+    {/* O COPILOTO, NO COMPUTADOR: só com a caixa vazia, no lugar em que o
+        relógio de agendar aparece quando há texto — a barra nunca ganha um
+        botão a mais. No celular ele mora no ⋮ da conversa: ali a caixa já
+        divide 390px (360, num Android) com quatro botões, e "Digite uma
+        mensagem" deixaria de caber numa linha. */}
+    {!estreito && copilotoDisponivel && !modoNota && !editando && !rascunho.trim() && (
+      <button data-copiloto-botao onClick={sugerirComCopiloto} disabled={copilotoPensando}
+              title={copilotoPensando ? "O copiloto está escrevendo a sugestão…" : "Sugerir resposta (copiloto)"}
+              aria-label="Sugerir resposta com o copiloto"
+              style={{ border: "none", background: "transparent", cursor: copilotoPensando ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0, alignSelf: "flex-end" }}>
+        {copilotoPensando
+          ? <Loader2 size={21} color={C.green} style={{ animation: "zv-copiloto-gira 1s linear infinite" }} />
+          : <Sparkles size={21} color={C.textSecondary} />}
+      </button>
+    )}
     {(rascunho.trim() || modoNota) ? (
       <button onClick={enviar} title={modoNota ? "Salvar nota" : "Enviar"} style={{ border: "none", background: modoNota ? "#d4a017" : C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, alignSelf: "flex-end" }}>{modoNota ? <StickyNote size={19} color="#fff" /> : <Send size={20} color="#fff" />}</button>
     ) : (
@@ -14520,6 +14629,16 @@ export default function Painel({ sessao }) {
                           este menu é o único caminho, e a fila de espera é o
                           motivo de a pessoa ter aberto a conversa. */}
                       {acaoJaTratei && acaoJaTratei(true)}
+                      {/* O COPILOTO, pela outra porta — no celular, a única: lá a
+                          caixa de escrever não comporta mais um botão. Some com
+                          texto na caixa, pela mesma regra do botão. */}
+                      {podeSugerir && (
+                        <button onClick={() => { setMenuDaConversa(false); sugerirComCopiloto(); }}
+                                data-copiloto-item
+                                style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
+                          <Sparkles size={17} color={C.green} /> Sugerir resposta
+                        </button>
+                      )}
                       {/* O RESPONSÁVEL, escrito — no celular este é o único
                           caminho para assumir ou passar a conversa. */}
                       {temResponsavel === true && (
@@ -15015,6 +15134,49 @@ export default function Painel({ sessao }) {
                   <button onClick={() => setRespondendo(null)} title="Cancelar" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
                     <X size={18} color={C.textSecondary} />
                   </button>
+                </div>
+              </div>
+            )}
+
+            {/* A FAIXA DO COPILOTO, logo acima da caixa: enquanto ele lê a
+                conversa, quando falha (com a frase da ponte, que diz o que
+                fazer) e quando a sugestão chegou depois de a atendente começar
+                a escrever. O sucesso não tem faixa: a sugestão na caixa é a
+                resposta, e quem clicou está olhando para ela. */}
+            {copilotoAqui && (
+              <div data-copiloto-situacao={copilotoAqui.fase}
+                   style={{ background: C.headerBar, padding: estreito ? "6px 8px 0" : "8px 16px 0" }}>
+                <style>{"@keyframes zv-copiloto-gira { to { transform: rotate(360deg); } }"}</style>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.searchBg,
+                              borderLeft: `4px solid ${copilotoAqui.fase === "erro" ? "#e53935" : C.green}`,
+                              borderRadius: 6, padding: "6px 10px" }}>
+                  {copilotoAqui.fase === "pensando"
+                    ? <Loader2 size={16} color={C.green} style={{ flexShrink: 0, animation: "zv-copiloto-gira 1s linear infinite" }} />
+                    : copilotoAqui.fase === "erro"
+                      ? <AlertCircle size={16} color="#e53935" style={{ flexShrink: 0 }} />
+                      : <Sparkles size={16} color={C.green} style={{ flexShrink: 0 }} />}
+                  <div data-copiloto-frase style={{ flex: 1, minWidth: 0, fontSize: 13, color: C.textPrimary }}>
+                    <b style={{ color: copilotoAqui.fase === "erro" ? "#e53935" : C.verdeTexto }}>Copiloto</b>
+                    {" · "}
+                    {copilotoAqui.fase === "pensando" ? "lendo a conversa para sugerir a resposta…"
+                      : copilotoAqui.fase === "erro" ? copilotoAqui.erro
+                      : "a sugestão chegou depois que você começou a escrever, e não entrou na caixa."}
+                  </div>
+                  {copilotoAqui.fase === "atrasada" && !modoNota && !editando && (
+                    <button data-copiloto-usar onClick={usarSugestaoAtrasada}
+                            title="Trocar o que está na caixa pela sugestão do copiloto"
+                            style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.verdeTexto || C.green,
+                                     borderRadius: 14, padding: "4px 10px", fontSize: 12.5, cursor: "pointer", flexShrink: 0 }}>
+                      Usar a sugestão
+                    </button>
+                  )}
+                  {copilotoAqui.fase !== "pensando" && (
+                    <button data-copiloto-fechar onClick={() => mudarCopiloto(conversaId, null)}
+                            title="Fechar" aria-label="Fechar o aviso do copiloto"
+                            style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", flexShrink: 0 }}>
+                      <X size={18} color={C.textSecondary} />
+                    </button>
+                  )}
                 </div>
               </div>
             )}

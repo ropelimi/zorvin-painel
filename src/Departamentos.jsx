@@ -14,6 +14,7 @@ import { EtapasDoFunil } from "./EtapasDoFunil.jsx";
 import { AtualizacoesDoBanco } from "./AtualizacoesDoBanco.jsx";
 import { ForaDoHorario } from "./ForaDoHorario.jsx";
 import { Distribuicao } from "./Distribuicao.jsx";
+import { ManualDoCopiloto } from "./ManualDoCopiloto.jsx";
 // A CHAVE SAIU DAQUI para `Chave.jsx`: a tela de Avisos passou a precisar da
 // mesma peça, e uma segunda cópia divergiria da primeira no primeiro conserto.
 import { Chave } from "./Chave.jsx";
@@ -62,7 +63,7 @@ export default function Departamentos({ C, aoFechar, abaInicial, aoSaberDosScrip
   const [telefones, setTelefones] = useState([]);
   // A ABA DE ENTRADA pode vir de fora: a faixa vermelha abre esta tela direto
   // em "Atualizações do banco", que é para onde a frase dela manda.
-  const [aba, setAba] = useState(abaInicial || "estrutura"); // 'estrutura' | 'pessoas' | 'distribuicao' | 'fora' | 'notas' | 'banco'
+  const [aba, setAba] = useState(abaInicial || "estrutura"); // 'estrutura' | 'pessoas' | 'distribuicao' | 'fora' | 'copiloto' | 'notas' | 'banco'
   const temVantoro = useTemVantoro();
   // A RESPOSTA FORA DO HORÁRIO (script 021) — a aba só aparece com o script.
   // Três estados, pela régua de `temVantoro.js`: `null` ainda não perguntou
@@ -84,6 +85,16 @@ export default function Departamentos({ C, aoFechar, abaInicial, aoSaberDosScrip
     let valeu = true;
     supabase.from("zorvin_distribuicao").select("departamento_id").limit(1)
       .then(({ error }) => { if (valeu) setTemDistribuicao(!(error && semATabela(error))); });
+    return () => { valeu = false; };
+  }, []);
+  // O MANUAL DO COPILOTO (script 024) — a mesma régua de três estados: sem a
+  // tabela a aba não aparece; a pergunta que falha por outro motivo MOSTRA a
+  // aba, e o erro é dito lá dentro.
+  const [temCopiloto, setTemCopiloto] = useState(null);
+  useEffect(() => {
+    let valeu = true;
+    supabase.from("zorvin_copiloto").select("id").limit(1)
+      .then(({ error }) => { if (valeu) setTemCopiloto(!(error && semATabela(error))); });
     return () => { valeu = false; };
   }, []);
   const [salvando, setSalvando] = useState("");
@@ -240,6 +251,12 @@ export default function Departamentos({ C, aoFechar, abaInicial, aoSaberDosScrip
             <button style={cx.aba(aba === "fora")} onClick={() => setAba("fora")}
                     data-aba-fora-do-horario>Fora do horário</button>
           )}
+          {/* O MANUAL DO COPILOTO: é para cá que se volta quando as sugestões
+              saem do jeito errado. Ver `ManualDoCopiloto.jsx`. */}
+          {temCopiloto === true && (
+            <button style={cx.aba(aba === "copiloto")} onClick={() => setAba("copiloto")}
+                    data-aba-copiloto>Copiloto</button>
+          )}
           {/* A ABA DAS NOTAS mora aqui porque aqui é a tela de quem administra,
               e o retroativo é coisa de administrador — ele mexe no histórico de
               todos os clientes de uma vez. Antes ele só existia como um POST
@@ -348,6 +365,9 @@ export default function Departamentos({ C, aoFechar, abaInicial, aoSaberDosScrip
           {!carregando && aba === "fora" && (
             <ForaDoHorario cx={cx} C={C} departamentos={departamentos} aoAvisar={setErro} />
           )}
+
+          {/* Fora do `carregando`: o manual não depende dos departamentos. */}
+          {aba === "copiloto" && <ManualDoCopiloto cx={cx} C={C} />}
 
           {aba === "notas" && <NotasNoVantoro cx={cx} C={C} />}
 
