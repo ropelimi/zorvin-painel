@@ -3463,6 +3463,105 @@ hora em que começa. Metade da rodada teria provado um código e metade outro.
 Ela foi parada, os servidores órfãos derrubados pelo grupo, e a rodada refeita
 inteira sobre a versão final. **Rodada de sabotagens não convive com edição.**
 
+## O copiloto — "Sugerir resposta" (13/10)
+
+Pedido do Rodrigo: *"dá para pegar uma amostragem para a IA aprender como
+funciona o nosso trabalho e criarmos um agente de IA?"* — e, depois, *"pode
+começar pelo copiloto, o escritório autoriza"*. A IA é o **Claude Haiku
+5.5**, escolhido por ele entre o Claude e o Groq; quem fala com ela é a
+**ponte** (`POST /copiloto/sugerir`, script 024 — ver o CLAUDE.md dela), onde
+mora a chave.
+
+**Nenhuma conversa de cliente foi usada para "ensinar" nada.** A amostra
+anonimizada era o plano; a verificação de segurança do ambiente recusou
+prepará-la, e o caminho que ficou dá menos trabalho a ele: a cada clique, a
+ponte lê a conversa aberta, as mensagens rápidas da equipe e o **manual** que o
+escritório escreve na aba nova. As notas internas não vão.
+
+### Onde ele mora na tela
+
+| | |
+|---|---|
+| computador | um ✨ dentro da caixa de escrever, **só com a caixa vazia** — no lugar em que o relógio de agendar aparece quando há texto |
+| celular | "Sugerir resposta" no ⋮ da conversa, pela mesma regra |
+| administração | aba **Copiloto** em Departamentos e acessos (`ManualDoCopiloto.jsx`) |
+
+**Só com a caixa vazia, e é a decisão que segura o resto.** A barra nunca
+ganha um botão a mais (o ✨ some quando o relógio aparece), e uma sugestão
+nunca apaga o que a atendente começou a escrever — então não existe a
+pergunta "trocar o que você escreveu?". **No celular, só no ⋮**: a caixa já
+divide 390px com quatro botões, e mais um faria "Digite uma mensagem" deixar
+de caber numa linha.
+
+**A sugestão entra na caixa e NÃO sai sozinha.** O cursor fica no fim,
+pronto para ajustar; quem envia é a atendente. O sucesso não tem faixa — a
+resposta é a caixa, e quem clicou está olhando para ela.
+
+### Os marcadores, e de qual conversa
+
+A ponte manda a IA escrever `{saudacao}`, `{nome}` e `{atendente}`, e o painel
+os preenche com `preencherVariaveis` — **a conta das mensagens rápidas**: a
+saudação pela hora, o primeiro nome do alto da conversa ("ANDREIA CRISTINA
+MARTINS" vira "Andreia", e "Deus", o nome do WhatsApp, fica para trás), e o
+grupo sem nome ("Bom dia!", e não "Bom dia, Mutirão!").
+
+**O contexto é guardado NO CLIQUE**, e não na chegada: a resposta demora
+segundos, e a conversa aberta pode ser outra. Ler o nome na chegada poria
+"Olá, José!" na conversa da Andreia.
+
+### A corrida da troca de conversa — três desfechos
+
+O estado do copiloto é **por conversa** (`copiloto`, um objeto por id), pela
+lição de sempre: uma resposta da conversa anterior pintada na nova.
+
+| quando a sugestão chega | o que acontece |
+|---|---|
+| a conversa do pedido está aberta, com a caixa vazia | entra na caixa |
+| aberta, mas com texto, na nota interna ou numa edição | **não entra**: a faixa diz que chegou depois, com "Usar a sugestão" |
+| fechada | vira o **rascunho dela**, se ele estiver vazio — é o que a pessoa encontra ao voltar |
+
+**A faixa do copiloto** fica logo acima da caixa, como a do "respondendo":
+"lendo a conversa…" enquanto pensa (e o botão fica desligado — um segundo
+clique não manda outro pedido), a frase da ponte quando falha, e a da
+sugestão que chegou depois.
+
+### Está ligado? Quem responde é a ponte
+
+`copiloto.js` pergunta `GET /copiloto/estado` **uma vez por abertura**, com os
+três estados de `temVantoro.js`: só `ligado: false` esconde o botão; a ponte
+que não responde **mostra**, e o clique diz o que houver. Uma variável do
+painel poderia discordar da chave que mora na Render.
+
+### A aba "Copiloto"
+
+Diz se a ponte tem a chave (e qual variável falta, quando não tem), o que o
+copiloto lê, e o **manual** numa caixa grande. Só aparece com o script 024
+(três estados, pela régua das outras abas). **A leitura que falha é dita com
+o código, e não vira caixa vazia** — salvar uma caixa vazia por cima apagaria
+o manual que existe e não chegou. **Salvar relê do banco** (a "última
+alteração" vem do gatilho do 024), a recusa calada da RLS é dita como recusa,
+a recusa com erro leva o código, e acima de 8000 caracteres o botão não liga.
+
+**A bancada** tem `zorvin_copiloto` com o começo do modelo, `__SEM_COPILOTO`
+para o banco sem o 024, e imita o gatilho (quem mudou e quando) — sem isso,
+"a tela relê depois de salvar" não teria o que medir.
+
+Prova: `o-copiloto-sugere-a-resposta`, 62 conferências, com a ponte fingida
+pela prova e o relógio fixado às 9h de Brasília. **27 sabotagens e 27 pegas**,
+todas limpas, rodadas em cópias, cada pega lida e não só contada. As que
+importam mais:
+
+- a sugestão saindo sozinha para a fila de envio;
+- o nome da conversa ABERTA na chegada ("Bom dia, José!" na conversa da
+  Andreia);
+- a entrega na conversa aberta, e não na do pedido;
+- a sugestão por cima do que a atendente escreveu;
+- a dúvida da ponte escondendo o botão, e o "desligado" mostrando;
+- os marcadores sem preencher;
+- a aba sumindo na falha de leitura, e a falha virando caixa vazia;
+- a recusa calada virando "salvo";
+- salvar sem reler.
+
 ## A auditoria de 07/10 — o que uma varredura inteira achou
 
 Pedido do Rodrigo: *"faz um diagnóstico geral em todos os arquivos e todas

@@ -1449,6 +1449,12 @@ const TABELAS = {
   zorvin_distribuicao: [],
   zorvin_rodizio: [],
   zorvin_distribuicoes: [],
+  // O MANUAL DO COPILOTO (script 024 da ponte): uma linha só, com o começo
+  // do modelo que o script semeia. Quem sugere é a PONTE — cada prova finge a
+  // resposta dela por `page.route`; aqui mora só o que a aba de administração
+  // lê e grava.
+  zorvin_copiloto: [{ id: true, atualizado_em: "2026-10-01T12:00:00Z", atualizado_por: null,
+    instrucoes: "QUEM SOMOS\nSomos a equipe de atendimento de um escritório de advocacia." }],
   zorvin_feriados: [
     ["2026-10-12", "Nossa Senhora Aparecida"], ["2026-11-02", "Finados"],
     ["2026-11-15", "Proclamação da República"], ["2026-11-20", "Consciência Negra"],
@@ -1724,7 +1730,11 @@ function consulta(tabela) {
         // respondem "não existe". Vazia é o banco com o script e nada ligado,
         // e a aba aparece nesse caso.
         || (/^zorvin_(distribuicao|rodizio|distribuicoes)$/.test(tabela)
-            && globalThis.__SEM_DISTRIBUICAO));
+            && globalThis.__SEM_DISTRIBUICAO)
+        // O MANUAL DO COPILOTO (script 024) que ainda não rodou: "não existe",
+        // e a aba de administração some — o botão continua, porque quem decide
+        // se ele aparece é a ponte, e ela sugere sem o manual.
+        || (tabela === "zorvin_copiloto" && globalThis.__SEM_COPILOTO));
   let linhas = faltando ? [] : (TABELAS[tabela] || []).slice();
   // O QUE FOI PEDIDO, e não só o resultado. É por isto que dá para saber se a
   // consulta varreu a tabela inteira ou entrou por um recorte — a diferença
@@ -2179,6 +2189,13 @@ function consulta(tabela) {
           if (funil && "etapa_id" in patch && de !== l.etapa_id) {
             l.movido_em = new Date().toISOString();
             movimento(l, de, l.etapa_id);
+          }
+          // O GATILHO DO 024: quem mudou o manual do copiloto e quando são do
+          // banco, e não da tela — a tela não manda nenhum dos dois. Sem
+          // imitá-lo, "a tela relê depois de salvar" não teria o que medir.
+          if (tabela === "zorvin_copiloto") {
+            l.atualizado_em = new Date().toISOString();
+            l.atualizado_por = (TABELAS.usuarios[0] || {}).id || null;
           }
         });
       }
