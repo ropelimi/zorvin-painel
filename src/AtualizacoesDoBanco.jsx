@@ -180,7 +180,7 @@ function blocoDaVersao(estado, C) {
           Ponte no ar: versão{" "}
           {link
             ? <a data-link-da-versao href={link} target="_blank" rel="noopener noreferrer"
-                 style={{ fontFamily: "monospace", fontWeight: 700 }}>{curto}</a>
+                 style={{ fontFamily: "monospace", fontWeight: 700, color: C.link }}>{curto}</a>
             : <b style={{ fontFamily: "monospace" }}>{curto}</b>}
           {noAr && noAr.quando ? `, de ${quandoLegivel(noAr.quando)}` : ""}
         </span>
@@ -241,7 +241,8 @@ function blocoDaVersao(estado, C) {
               <div key={n.sha} data-versao-que-falta={n.sha} style={{ fontSize: 12.5 }}>
                 <span style={{ color: C.textSecondary }}>{quandoLegivel(n.quando)} — </span>
                 {endereco
-                  ? <a href={endereco} target="_blank" rel="noopener noreferrer">{n.titulo || n.sha.slice(0, 7)}</a>
+                  ? <a href={endereco} target="_blank" rel="noopener noreferrer"
+                       style={{ color: C.link }}>{n.titulo || n.sha.slice(0, 7)}</a>
                   : (n.titulo || n.sha.slice(0, 7))}
               </div>
             );
@@ -330,6 +331,17 @@ export function AtualizacoesDoBanco({ cx, C, aoSaber }) {
             {estado.mensagem && (
               <div data-mensagem-dos-scripts style={{ fontSize: 13, lineHeight: 1.5, marginTop: 4 }}>
                 {estado.mensagem}
+              </div>
+            )}
+            {/* "EM DIA" COM QUEM? Era a confusão de 15/10: a ponte velha dizia
+                "em dia", e estava certa para o que ela conhecia. Com versão
+                nova esperando, a frase ganha o complemento — "publicando"
+                incluído, porque a versão nova pode trazer script também. */}
+            {estado.situacao === "em_dia" && estado.noGitHub
+              && (estado.noGitHub.situacao === "atras" || estado.noGitHub.situacao === "fora_da_lista") && (
+              <div data-em-dia-com-esta-ponte style={{ fontSize: 12.5, color: C.textSecondary, marginTop: 4 }}>
+                Em dia com o que esta ponte conhece. As versões que ainda não estão no ar podem trazer
+                atualizações novas do banco, que entram quando a ponte for publicada.
               </div>
             )}
             {estado.detalhe && (

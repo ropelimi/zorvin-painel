@@ -52,6 +52,13 @@ Dito por ele em 25/09, depois de quatro entregas seguidas terminarem com esse
 recado. Mesclou, está no ar; o que resta a pedir, quando faz diferença, é o
 **Ctrl+Shift+R** — o navegador pode estar com a versão velha em cache.
 
+**Com uma exceção medida em 14/10:** naquele dia a Render não publicou três
+PRs da PONTE, e ninguém soube até a manhã seguinte. A regra continua — não
+mande o Rodrigo fazer o Manual Deploy por rotina —, mas agora há onde
+conferir: a aba **Atualizações do banco** diz qual versão da ponte está no ar,
+e a faixa vermelha avisa quem administra quando a Render não publicou. O
+Manual Deploy é o conserto quando ELA diz isso. Ver "Qual ponte está no ar".
+
 ## Como o painel funciona
 
 - **Autenticação**: Supabase Auth (e-mail/senha). Usuários criados manualmente em Authentication → Users. "Confirm email" está desligado.
@@ -3994,6 +4001,88 @@ servidor da bancada (`cacheDir` próprio, porque o `node_modules` ligado por
 atalho faria as cópias escreverem no mesmo `.vite`), e o arquivo de verdade
 nunca foi tocado. A ponte é fingida pela prova; a de verdade, com um Postgres de
 verdade, é provada no repositório dela (seção 51).
+
+### Qual ponte está no ar (15/10)
+
+Em 14/10 três PRs da ponte (os scripts 025, 026 e 027) foram mesclados à tarde,
+e a Render **não publicou nenhum**: o serviço não tem um único evento naquele
+dia. Na manhã seguinte o Rodrigo viu a lista do "Já tratei" na ordem antiga, e
+esta aba dizia **"Em dia"**. Ela estava certa para a ponte que estava no ar,
+que não conhecia script nenhum depois do 024 — e nada na tela dizia qual ponte
+era essa. **Já tinha acontecido em 20/08.** Resolveu com o Manual Deploy.
+
+**A ponte diz qual versão é** (`versao`, em `GET /scripts/estado`: o commit
+inteiro, o ramo, o repositório, o nome do serviço na Render e o último script
+da pasta), e **o painel pergunta ao GitHub** quais são as versões mais novas do
+ramo dela. Os dois repositórios são públicos. Quem pergunta é o navegador de
+quem administra, e não a ponte: o GitHub limita as perguntas sem senha **por
+endereço** (60 por hora), e a Render sai para a internet por endereços que
+muitos serviços dividem. Do escritório são umas quatro por hora por pessoa que
+administra.
+
+**Uma pergunta só, e pequena** (`/repos/{repo}/commits?sha={ramo}&per_page=20`,
+sem os arquivos). É nela que se acha a versão no ar, o que veio depois dela, e
+quando. A conta mora em `scriptsDoBanco.js` (`conferirNoGitHub`).
+
+**No alto da aba, antes da situação dos scripts**, porque é ela que dá sentido
+ao resto: "em dia", embaixo, quer dizer em dia com ESTA ponte. E com versão
+nova esperando, a caixa do "Em dia" passa a dizê-lo com todas as letras
+(`data-em-dia-com-esta-ponte`) — era a confusão de 15/10, e a foto da primeira
+escrita a mostrava de novo: "desatualizada" e, logo abaixo, "Em dia".
+
+| o que se sabe | a aba diz | a faixa |
+|---|---|---|
+| é a mais nova do ramo | a versão, a data, o título e o selo **a mais nova** | nada |
+| há mais nova, mesclada há menos de 20 min | **publicando** — pergunte de novo daqui a pouco | nada |
+| há mais nova há mais de 20 min | **desatualizada**, as que faltam e como publicar | acende, para quem administra |
+| mais velha que as 20 olhadas | **desatualizada** | acende |
+| o GitHub não respondeu | a versão no ar e "não consegui conferir", **sem selo** | nada |
+| a ponte não diz a versão | "é de antes desta linha existir" | nada |
+| a ponte fora da Render | até qual atualização ela conhece | nada |
+
+**Os 20 minutos contam da PRIMEIRA versão que falta**, e não da mais nova. Com
+duas entregas seguidas, a segunda recém-mesclada esconderia a primeira, que já
+devia estar no ar. E antes dos 20 minutos, estar atrás do GitHub é o normal de
+toda entrega: acender ali seria o alarme que se aprende a ignorar.
+
+**A hora é a do merge** (`committer`), e não a de quem escreveu (`author`), que
+pode ser dias antes.
+
+**O GitHub que não responde não vira "a mais nova"** — a armadilha nº 2 com
+outra roupa. E não apaga o que já se sabia (`manterOQueSeSabia`): a faixa que
+acendeu por uma ponte desatualizada continua acesa se a pergunta seguinte ao
+GitHub falhar, **desde que seja a mesma ponte**. Trocou o commit, publicou, e o
+que se sabia era da outra.
+
+**A frase de publicar diz o nome do serviço** (`RENDER_SERVICE_NAME`), e o link
+de cada versão usa o repositório que a ponte disse: escrito aqui, um comprador
+com o repositório dele cairia no do escritório.
+
+**A função que desce para a aba é estável** (`saberDosScripts`, num
+`useCallback`). A aba pergunta de novo sempre que ela muda; feita de novo a
+cada desenho, cada resposta redesenharia o painel e puxaria a pergunta
+seguinte — à ponte e ao GitHub, sem parar. A prova tem uma conferência para
+isso, e ela conta **três** perguntas ao abrir, e não duas: no desenvolvimento o
+React monta a aba duas vezes. **Medido na sabotagem que a desfaz: 131
+perguntas à ponte e 131 ao GitHub em poucos segundos**, e subindo.
+
+**E a prova envelheceu a própria cena, na primeira escrita.** As horas dos
+commits de mentira saíam do relógio do começo da prova; a cena do "mesclada há
+cinco minutos" roda minutos depois, e leu "há 7 minutos". Hoje cada commit de
+mentira marca a hora no relógio de quando é criado.
+
+**Fica de fora, e é decisão:** a versão do próprio PAINEL. Ela separaria "a
+Render não publicou o painel" de "o navegador está com o painel velho
+guardado" (o Ctrl+Shift+R), mas são dois diagnósticos diferentes, e o de 14/10
+foi na ponte.
+
+Prova: `as-atualizacoes-do-banco`, agora com 86 conferências — o GitHub também
+é fingido pela prova. **23 sabotagens e 23 pegas**, todas limpas, rodadas em
+cópias, cada uma lida, e não só contada. Entre elas: o GitHub que falha virando
+"a mais nova"; a conta pela versão mais nova, e não pela primeira que falta; a
+hora do autor; o painel perguntando sem a versão da ponte; o aviso guardado de
+uma ponte que já foi trocada; a função que desce para a aba refeita a cada
+desenho; e o "Em dia" sem dizer com quem. A ponte que diz a versão é provada no repositório dela (seção 20).
 
 ## Pendências / próximos passos
 

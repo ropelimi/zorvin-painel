@@ -403,6 +403,8 @@ console.log("\nA ponte no ar é a mais nova");
        return Boolean(v && s && (v.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_FOLLOWING));
      }));
   ok("sem instrução de publicar quando não há o que publicar", (await page.locator("[data-como-publicar]").count()) === 0);
+  ok("e o \"em dia\" sem complemento — a ponte no ar é a mais nova",
+     (await page.locator("[data-em-dia-com-esta-ponte]").count()) === 0);
   // A ABA PERGUNTA AO ABRIR, e não a cada desenho do painel. Ela pergunta de
   // novo sempre que a função `aoSaber` muda; feita de novo a cada desenho,
   // cada resposta redesenharia o painel e puxaria a pergunta seguinte — à
@@ -444,6 +446,11 @@ console.log("\n14/10: três versões que a Render não publicou");
   const faltam = await page.locator("[data-versao-que-falta]").allInnerTexts().catch(() => []);
   ok("e as que faltam, da mais nova para a mais velha",
      faltam.length === 3 && /#192/.test(faltam[0]) && /#191/.test(faltam[1]) && /#190/.test(faltam[2]), JSON.stringify(faltam));
+  // A CONFUSÃO DE 15/10: "Em dia", logo abaixo, dito sem dizer com quem.
+  const emDia = await texto(page, "[data-em-dia-com-esta-ponte]");
+  ok("e o \"em dia\" dos scripts diz que é em dia com ESTA ponte",
+     (await page.locator('[data-situacao-dos-scripts="em_dia"]').count()) === 1
+       && /Em dia com o que esta ponte conhece/.test(emDia), emDia || "(sem o complemento)");
   ok("cada uma levando ao GitHub",
      (await page.locator("[data-versao-que-falta] a").first().getAttribute("href").catch(() => null))
        === `https://github.com/ropelimi/zorvin-bridge/commit/${SHA.v192}`);
