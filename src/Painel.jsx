@@ -52,7 +52,7 @@ import { preencherVariaveis, usaVariaveis, variaveisDesconhecidas, VARIAVEIS } f
 import { diasDesde } from "./espera.js";
 import { montarCaminho, duracaoLegivel } from "./caminhoNoFunil.js";
 import EscolherHora from "./EscolherHora.jsx";
-import { perguntarOsScripts, fraseDosScriptsParaAFaixa } from "./scriptsDoBanco.js";
+import { perguntarOsScripts, fraseDosScriptsParaAFaixa, manterOQueSeSabia } from "./scriptsDoBanco.js";
 import { rotuloDaHora, porQueNaoServe, semAColunaDaAgenda, aindaDaParaEditar } from "./agenda.js";
 import { useEstadoDoCopiloto, copilotoAparece, pedirSugestao } from "./copiloto.js";
 
@@ -2727,6 +2727,14 @@ export default function Painel({ sessao }) {
   // só para quem administra. `null` = ainda não se sabe, e não acende nada.
   // Ver `scriptsDoBanco.js`.
   const [scriptsDoBanco, setScriptsDoBanco] = useState(null);
+  // A RESPOSTA NOVA, sem apagar o que o GitHub já tinha dito da MESMA ponte
+  // quando a pergunta a ele falha agora (`manterOQueSeSabia`). Estável de
+  // propósito: ela desce para a aba das atualizações, que pergunta de novo
+  // sempre que a função muda — uma função nova a cada desenho seria uma
+  // pergunta à ponte e outra ao GitHub a cada desenho.
+  const saberDosScripts = useCallback((estado) => {
+    setScriptsDoBanco((antes) => manterOQueSeSabia(antes, estado));
+  }, []);
   // O Painel de números (quanto se falou, por telefone e por atendente).
   const [telaPainel, setTelaPainel] = useState(false);
   // JUNTAR DUAS CONVERSAS SAIU DO PAINEL — a pedido de quem administra.
@@ -4721,13 +4729,13 @@ export default function Painel({ sessao }) {
     const perguntar = async () => {
       const r = await perguntarOsScripts();
       if (!vivo) return;
-      if (r.estado) setScriptsDoBanco(r.estado);
+      if (r.estado) saberDosScripts(r.estado);
       const logo = r.estado && (r.estado.situacao === "rodando" || r.estado.proxima_tentativa);
       relogio = setTimeout(perguntar, logo ? 60 * 1000 : 15 * 60 * 1000);
     };
     relogio = setTimeout(perguntar, 3000);
     return () => { vivo = false; clearTimeout(relogio); };
-  }, [souAdmin]);
+  }, [souAdmin, saberDosScripts]);
 
   // ---- Tags (etiquetas coloridas das conversas, compartilhadas) ----
   const carregarTags = useCallback(async () => {
@@ -16904,7 +16912,7 @@ export default function Painel({ sessao }) {
       )}
 
       {telaAdmin && (
-        <Departamentos C={C} abaInicial={abaDaAdmin} aoSaberDosScripts={setScriptsDoBanco} aoFechar={() => {
+        <Departamentos C={C} abaInicial={abaDaAdmin} aoSaberDosScripts={saberDosScripts} aoFechar={() => {
           setTelaAdmin(false);
           // O QUE A ADMINISTRAÇÃO MEXE É RELIDO: os assuntos do "Já tratei" e
           // as etapas do funil eram lidos uma vez por sessão, e a mudança só

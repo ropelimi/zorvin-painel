@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { perguntarOsScripts, comoDizerASituacao, valorPreocupa, numeroDe } from "./scriptsDoBanco.js";
+import { perguntarOsScripts, comoDizerASituacao, valorPreocupa, numeroDe, quandoLegivel,
+         publicacaoAtrasada, primeiraQueFalta } from "./scriptsDoBanco.js";
 import { Database, Loader2, RefreshCw, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
 
 // ============================================================
@@ -21,16 +22,6 @@ import { Database, Loader2, RefreshCw, ChevronDown, ChevronRight, AlertTriangle 
 // ============================================================
 
 const TONS = { bom: "#2e9e6b", atencao: "#d99a1e", ruim: "#e5573f" };
-
-// "08/10 às 14:32", no relógio de quem lê. A ponte manda a hora em ISO de
-// propósito: escrita lá, sairia no fuso da Render.
-function quandoLegivel(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (isNaN(d)) return "";
-  const dois = (n) => String(n).padStart(2, "0");
-  return `${dois(d.getDate())}/${dois(d.getMonth() + 1)} às ${dois(d.getHours())}:${dois(d.getMinutes())}`;
-}
 
 // Uma linha da conferência. A forma de quase todas é (o que, resposta) — e
 // essa se lê como "o que: resposta". As outras vão como "coluna = valor".
@@ -102,6 +93,171 @@ function scriptDaPonte(a, C, nestaSubida) {
   );
 }
 
+// "há 1 minuto", "há 12 minutos", "há 3 horas", "há 2 dias".
+function haQuanto(iso, agora = Date.now()) {
+  const t = Date.parse(iso);
+  if (isNaN(t)) return "";
+  const min = Math.max(0, Math.round((agora - t) / 60000));
+  if (min < 60) return min === 1 ? "há 1 minuto" : `há ${min} minutos`;
+  const h = Math.round(min / 60);
+  if (h < 48) return h === 1 ? "há 1 hora" : `há ${h} horas`;
+  return `há ${Math.round(h / 24)} dias`;
+}
+
+// O endereço de uma versão no GitHub. Só com o repositório que a ponte disse:
+// escrito aqui, um comprador com o repositório dele cairia no do escritório.
+function enderecoDaVersao(versao, sha) {
+  return versao && versao.repositorio && sha
+    ? `https://github.com/${versao.repositorio}/commit/${sha}` : null;
+}
+
+// ============================================================
+//  A PONTE NO AR — a primeira coisa da aba (15/10)
+//
+//  Em 14/10 esta aba dizia "Em dia" com três PRs da ponte mesclados e nenhum
+//  publicado: estava em dia com a ponte que estava no ar, e ninguém tinha
+//  como saber qual era. Agora ela começa dizendo qual é, e o que o GitHub
+//  tem de mais novo. Ver "QUAL PONTE ESTÁ NO AR" em `scriptsDoBanco.js`.
+//
+//  NO ALTO, e não depois da lista: é ela que dá sentido ao resto. "Em dia",
+//  embaixo, quer dizer em dia com ESTA ponte.
+// ============================================================
+function blocoDaVersao(estado, C) {
+  const v = estado.versao;
+  const caixa = (tipo, cor, filhos) => (
+    <div data-versao-da-ponte={tipo}
+         style={{ borderLeft: `4px solid ${cor || C.divider}`, background: C.panel, padding: "9px 12px",
+                  borderRadius: 8, marginBottom: 10, fontSize: 13, lineHeight: 1.5 }}>
+      {filhos}
+    </div>
+  );
+  const fraco = { fontSize: 12.5, color: C.textSecondary };
+
+  // A PONTE DE ANTES DESTA LINHA, que não diz a versão — numa publicação no
+  // meio do caminho, ou numa que a Render não fez. Dita, e não escondida:
+  // sumir com a linha seria a ausência no lugar do que se sabe.
+  if (!v) {
+    return caixa("sem_versao", null, (
+      <span style={fraco}>
+        A ponte no ar não diz qual versão é — ela é de antes desta linha existir. Depois da próxima
+        publicação dela, a versão aparece aqui.
+      </span>
+    ));
+  }
+  const ate = v.ultimo_script
+    ? <>conhece as atualizações do banco até a <b data-ultimo-script>{numeroDe(v.ultimo_script)}</b></>
+    : null;
+  if (!v.commit) {
+    return caixa("sem_commit", null, (
+      <>
+        <div>Ponte no ar{ate ? <>: {ate}</> : ""}.</div>
+        <div style={fraco}>Fora da Render, ela não sabe dizer de qual versão do código é.</div>
+      </>
+    ));
+  }
+
+  const g = estado.noGitHub;
+  const atrasada = publicacaoAtrasada(g);
+  const tipo = !g || g.situacao === "erro" ? "sem_github"
+    : g.situacao === "a_mais_nova" ? "a_mais_nova"
+    : atrasada ? "desatualizada" : "publicando";
+  const SELOS = {
+    a_mais_nova: { texto: "a mais nova", cor: TONS.bom },
+    publicando: { texto: "publicando", cor: TONS.atencao },
+    desatualizada: { texto: "desatualizada", cor: TONS.ruim },
+  };
+  const selo = SELOS[tipo];
+  const noAr = g && g.no_ar;
+  const novas = (g && g.novas) || [];
+  const primeira = primeiraQueFalta(g);
+  const link = enderecoDaVersao(v, v.commit);
+  const curto = v.commit.slice(0, 7);
+
+  return caixa(tipo, selo && tipo !== "a_mais_nova" ? selo.cor : null, (
+    <>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <span>
+          Ponte no ar: versão{" "}
+          {link
+            ? <a data-link-da-versao href={link} target="_blank" rel="noopener noreferrer"
+                 style={{ fontFamily: "monospace", fontWeight: 700, color: C.link }}>{curto}</a>
+            : <b style={{ fontFamily: "monospace" }}>{curto}</b>}
+          {noAr && noAr.quando ? `, de ${quandoLegivel(noAr.quando)}` : ""}
+        </span>
+        {selo && (
+          <span data-selo-da-versao style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: selo.cor,
+                                             borderRadius: 10, padding: "1px 8px" }}>{selo.texto}</span>
+        )}
+      </div>
+      {(noAr && noAr.titulo) || ate ? (
+        <div style={fraco}>
+          {noAr && noAr.titulo ? <span data-titulo-da-versao>“{noAr.titulo}”</span> : null}
+          {noAr && noAr.titulo && ate ? " · " : ""}
+          {ate}
+        </div>
+      ) : null}
+
+      {tipo === "sem_github" && g && (
+        <div data-github-nao-respondeu style={{ ...fraco, marginTop: 4 }}>
+          Não consegui conferir no GitHub se há versão mais nova: {g.erro}.
+        </div>
+      )}
+
+      {tipo === "publicando" && primeira && (
+        <div data-publicando style={{ marginTop: 4 }}>
+          {novas.length === 1 ? "Há 1 versão mais nova" : `Há ${novas.length} versões mais novas`} no GitHub,
+          {" "}{novas.length === 1 ? "mesclada" : "a primeira mesclada"} {haQuanto(primeira.quando)}. A Render
+          costuma levar alguns minutos para publicar — pergunte de novo daqui a pouco.
+        </div>
+      )}
+
+      {tipo === "desatualizada" && (
+        <div data-como-publicar style={{ marginTop: 6 }}>
+          <div style={{ display: "flex", gap: 6, color: TONS.ruim, fontWeight: 600 }}>
+            <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 2 }} />
+            <span>
+              {g.situacao === "fora_da_lista"
+                ? `A versão no ar é mais antiga que as ${novas.length} últimas do GitHub`
+                : novas.length === 1
+                  ? "1 versão mais nova, que está no GitHub, não está no ar"
+                  : `${novas.length} versões mais novas, que estão no GitHub, não estão no ar`}
+              {primeira && g.situacao !== "fora_da_lista"
+                ? ` — a primeira foi mesclada em ${quandoLegivel(primeira.quando)}` : ""}.
+              {" "}A Render não publicou.
+            </span>
+          </div>
+          <div style={{ marginTop: 4 }}>
+            Para publicar: na Render, abra o serviço {v.servico ? <b>{v.servico}</b> : "da ponte"} e
+            use <b>Manual Deploy → Deploy latest commit</b>. Em alguns minutos a versão muda aqui.
+          </div>
+        </div>
+      )}
+
+      {(tipo === "desatualizada" || tipo === "publicando") && novas.length > 0 && (
+        <div data-versoes-que-faltam style={{ marginTop: 6, paddingLeft: 10, borderLeft: `2px solid ${C.divider}` }}>
+          {novas.slice(0, 5).map((n) => {
+            const endereco = enderecoDaVersao(v, n.sha);
+            return (
+              <div key={n.sha} data-versao-que-falta={n.sha} style={{ fontSize: 12.5 }}>
+                <span style={{ color: C.textSecondary }}>{quandoLegivel(n.quando)} — </span>
+                {endereco
+                  ? <a href={endereco} target="_blank" rel="noopener noreferrer"
+                       style={{ color: C.link }}>{n.titulo || n.sha.slice(0, 7)}</a>
+                  : (n.titulo || n.sha.slice(0, 7))}
+              </div>
+            );
+          })}
+          {novas.length > 5 && (
+            <div style={{ fontSize: 12.5, color: C.textSecondary }}>
+              {novas.length - 5 === 1 ? "e mais 1" : `e mais ${novas.length - 5}`}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  ));
+}
+
 export function AtualizacoesDoBanco({ cx, C, aoSaber }) {
   const [resposta, setResposta] = useState(null);   // null = perguntando pela primeira vez
   const [perguntando, setPerguntando] = useState(false);
@@ -158,6 +314,8 @@ export function AtualizacoesDoBanco({ cx, C, aoSaber }) {
 
       {estado && (
         <>
+          {blocoDaVersao(estado, C)}
+
           <div data-situacao-dos-scripts={estado.situacao}
                style={{ borderLeft: `4px solid ${tom || C.divider}`, background: C.panel, padding: "10px 12px",
                         borderRadius: 8, marginBottom: 10 }}>
@@ -173,6 +331,17 @@ export function AtualizacoesDoBanco({ cx, C, aoSaber }) {
             {estado.mensagem && (
               <div data-mensagem-dos-scripts style={{ fontSize: 13, lineHeight: 1.5, marginTop: 4 }}>
                 {estado.mensagem}
+              </div>
+            )}
+            {/* "EM DIA" COM QUEM? Era a confusão de 15/10: a ponte velha dizia
+                "em dia", e estava certa para o que ela conhecia. Com versão
+                nova esperando, a frase ganha o complemento — "publicando"
+                incluído, porque a versão nova pode trazer script também. */}
+            {estado.situacao === "em_dia" && estado.noGitHub
+              && (estado.noGitHub.situacao === "atras" || estado.noGitHub.situacao === "fora_da_lista") && (
+              <div data-em-dia-com-esta-ponte style={{ fontSize: 12.5, color: C.textSecondary, marginTop: 4 }}>
+                Em dia com o que esta ponte conhece. As versões que ainda não estão no ar podem trazer
+                atualizações novas do banco, que entram quando a ponte for publicada.
               </div>
             )}
             {estado.detalhe && (
