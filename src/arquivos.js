@@ -199,3 +199,165 @@ export function tamanhoLegivel(bytes) {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1).replace(".", ",")} MB`;
 }
+
+// ============================================================
+//  O ARQUIVO BAIXA COM O NOME QUE TEM (16/10)
+//
+//  Relato do Rodrigo: ele mandou "0001.01 - Procuração" para o cliente
+//  assinar, o cliente devolveu assinado e, ao baixar, o arquivo veio com
+//  "letras e números aleatórios".
+//
+//  OS "NÚMEROS ALEATÓRIOS" SÃO O ENDEREÇO DO DEPÓSITO. O que chega mora em
+//  `recebidos/{messageid}.pdf`, e o navegador salva com o fim do endereço.
+//  O link da bolha tinha o atributo `download`, e o navegador o IGNORA
+//  quando o arquivo é de outro domínio — que é o caso do depósito. O nome
+//  certo estava gravado (`midia_nome`) e escrito na bolha; só não ia junto.
+//
+//  O JEITO É O DE `baixarImagem`, que já existia: buscar o arquivo, e salvar
+//  de um endereço local (`blob:`), onde o `download` vale. E o NOME é o
+//  daqui, e não o do endereço.
+
+// A extensão de cada tipo, só dos que aparecem numa banca. Fora daqui não se
+// acrescenta extensão nenhuma: na dúvida, não inventa (a regra do arquivo).
+const EXTENSAO_DO_TIPO = {
+  "application/pdf": "pdf",
+  "image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp",
+  "image/heic": "heic",
+  "video/mp4": "mp4", "video/quicktime": "mov", "video/3gpp": "3gp",
+  "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/aac": "aac",
+  "audio/wav": "wav",
+  "application/msword": "doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "application/vnd.ms-excel": "xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "application/vnd.ms-powerpoint": "ppt",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+  "application/vnd.oasis.opendocument.text": "odt",
+  "application/vnd.oasis.opendocument.spreadsheet": "ods",
+  "application/rtf": "rtf", "text/rtf": "rtf",
+  "application/zip": "zip", "application/vnd.rar": "rar", "application/x-rar-compressed": "rar",
+  "application/x-7z-compressed": "7z",
+  "text/plain": "txt", "text/csv": "csv", "application/json": "json",
+  "application/xml": "xml", "text/xml": "xml",
+};
+
+// AS EXTENSÕES QUE SE RECONHECEM. Quando o nome termina numa delas, ele fica
+// como está, mesmo que o tipo diga outra coisa: "dados.csv" chega do Windows
+// como `application/vnd.ms-excel`, e virar "dados.csv.xls" seria estragar um
+// nome que estava certo. É o nome da pessoa que vence.
+const EXTENSOES_CONHECIDAS = new Set([
+  ...Object.values(EXTENSAO_DO_TIPO), ...Object.keys(NOMES),
+  "jpeg", "bmp", "tif", "tiff", "heif", "svg", "opus", "webm", "htm", "html", "md",
+  "log", "tsv", "yml", "yaml", "eml", "msg", "xps", "odp", "vcf", "ics", "epub",
+  // A assinatura digital da ICP-Brasil, que numa banca chega todo dia.
+  "p7s", "p7m",
+]);
+
+function extensaoDoTipo(mime) {
+  return EXTENSAO_DO_TIPO[String(mime || "").split(";")[0].trim().toLowerCase()] || "";
+}
+
+// A extensão do fim do ENDEREÇO, quando ele é de rede. "bin" é o depósito
+// dizendo que não sabia, e não uma extensão.
+function extensaoDoEndereco(url) {
+  const s = String(url || "");
+  if (!/^https?:/i.test(s)) return "";
+  const ext = extensaoDe(s.split(/[?#]/)[0]);
+  return ext === "bin" ? "" : ext;
+}
+
+// O que o Windows recusa num nome de arquivo, e os caracteres de controle.
+const PROIBIDOS_NO_WINDOWS = /[\\/:*?"<>|\u0000-\u001f\u007f]/g;
+
+const dois = (n) => String(n).padStart(2, "0");
+
+/** "16-10-2026 09h15", na hora de quem baixa. Sem barra nem dois-pontos: o
+ *  Windows recusa os dois num nome. */
+function dataParaONome(quando) {
+  const d = quando ? new Date(quando) : new Date();
+  if (Number.isNaN(d.getTime())) return "";
+  return `${dois(d.getDate())}-${dois(d.getMonth() + 1)}-${d.getFullYear()} ` +
+         `${dois(d.getHours())}h${dois(d.getMinutes())}`;
+}
+
+// Cabe com folga no limite do Windows (260 para o caminho INTEIRO), mesmo
+// dentro de "C:\Users\<nome>\Downloads\". A ponte já corta o nome que chega em
+// 200; este teto é para o que sai daqui.
+const LIMITE_DO_NOME = 180;
+
+function cortar(texto, cabe) {
+  const letras = Array.from(texto);   // por letra, e não por unidade de UTF-16
+  return letras.length <= cabe ? texto : letras.slice(0, cabe).join("").replace(/[\s.]+$/, "");
+}
+
+/** O nome com que o arquivo é SALVO no computador de quem baixa.
+ *
+ *  - o nome gravado (`midia_nome`), como veio — só sai o que o Windows recusa
+ *    (vira "_", como o próprio Chrome faria), e o espaço e o ponto das pontas;
+ *  - SEM EXTENSÃO, ganha a do tipo: o exemplo do relato, "0001.01 -
+ *    Procuração", é um nome que o Windows mostra sem o ".pdf". Salvo assim,
+ *    ninguém abre o arquivo com dois cliques. O tipo vem da mensagem, depois
+ *    do que o depósito serviu, depois do fim do endereço;
+ *  - SEM NOME (mensagem antiga, foto do WhatsApp), "Documento 16-10-2026
+ *    09h15.pdf" — a data da mensagem, e não um carimbo de milissegundos, que
+ *    seria outro "número aleatório". */
+export function nomeParaBaixar({ nome, mime, servido, url, quando, padrao = "Documento" } = {}) {
+  let base = String(nome || "").split(/[\\/]/).pop()
+    .replace(PROIBIDOS_NO_WINDOWS, "_")
+    .replace(/^[\s.]+|[\s.]+$/g, "");
+  if (!base) base = `${padrao} ${dataParaONome(quando)}`.trim();
+  const doNome = extensaoDe(base);
+  const esperada = extensaoDoTipo(mime) || extensaoDoTipo(servido) || extensaoDoEndereco(url);
+  const acrescenta = esperada && doNome !== esperada && !EXTENSOES_CONHECIDAS.has(doNome);
+  if (acrescenta) return `${cortar(base, LIMITE_DO_NOME - esperada.length - 1)}.${esperada}`;
+  // O corte guarda a extensão do nome: "…assinada.pdf" cortado no meio do
+  // ".pdf" perderia justamente o que diz como abrir o arquivo.
+  if (Array.from(base).length <= LIMITE_DO_NOME) return base;
+  const fim = doNome ? `.${doNome}` : "";
+  return cortar(fim ? base.slice(0, -fim.length) : base, LIMITE_DO_NOME - fim.length) + fim;
+}
+
+/** O endereço que o próprio DEPÓSITO serve como "baixar com este nome".
+ *
+ *  O Storage do Supabase entende `?download=<nome>` e responde com
+ *  `Content-Disposition: attachment; filename*=UTF-8''…`, com acento e tudo.
+ *  É o que fica no `href` do link: "Salvar link como…" e o clique com Ctrl,
+ *  que não passam pelo clique desta tela, também salvam com o nome certo.
+ *  Endereço que não é do depósito volta como veio. */
+export function enderecoParaBaixar(url, nome) {
+  const s = String(url || "");
+  if (!nome || !/^https?:\/\/[^?#]+\/storage\/v1\/object\/public\//i.test(s)) return url;
+  return `${s}${s.includes("?") ? "&" : "?"}download=${encodeURIComponent(nome)}`;
+}
+
+/** Baixa o arquivo com o nome dado, e devolve o nome usado.
+ *
+ *  `nomear` pode ser o nome, ou uma função que o faz a partir do tipo que o
+ *  depósito serviu — é ela que acerta a extensão do arquivo antigo que ficou
+ *  gravado sem tipo.
+ *
+ *  O endereço local é solto um minuto depois, e não na hora: o navegador o lê
+ *  enquanto salva, e um arquivo grande num disco lento ainda não terminou.
+ *
+ *  A resposta que não é 200 SOBE, com o número: "o arquivo não está mais no
+ *  depósito" não pode virar um arquivo salvo com a página de erro dentro. */
+export async function baixarComONome(url, nomear) {
+  const resposta = await fetch(url);
+  if (!resposta.ok) {
+    const erro = new Error(`o depósito respondeu ${resposta.status}`);
+    erro.status = resposta.status;
+    throw erro;
+  }
+  const blob = await resposta.blob();
+  const nome = typeof nomear === "function" ? nomear(blob.type) : nomear;
+  const local = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = local;
+  a.download = nome;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(local), 60000);
+  return nome;
+}

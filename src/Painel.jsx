@@ -29,7 +29,7 @@ import { useVelocidadeDoAudio, proximaVelocidade, rotuloDaVelocidade } from "./v
 import { PRAZO_DA_BUSCA, foiAbortada, funcaoNaoExiste,
          condicoesDeNome, recadoDaBusca } from "./busca.js";
 import { comoPrever, nomeDoTipo, tamanhoLegivel, tipoServido, oQuadroDesenha,
-         comecoDoTexto } from "./arquivos.js";
+         comecoDoTexto, nomeParaBaixar, enderecoParaBaixar, baixarComONome } from "./arquivos.js";
 import { gravarSemAsQueFaltam, naoGravouNada, comOCodigo, semATabela } from "./gravar.js";
 
 // O que este banco já disse que não tem, para não perguntar de novo a cada nota.
@@ -1723,7 +1723,7 @@ function RostoReagir({ C, saida, visivel, aberto, aoAbrir, aoReagir, aoVerTudo, 
 // favoritar e apagar mensagem ainda não existem no Zorvin, e um item de menu
 // que não funciona é pior que a ausência dele: ensina a equipe a desconfiar do
 // menu inteiro.
-function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoResponder, aoCopiar, aoEncaminhar, aoEditar, aoFixar, aoFavoritar, aoApagar, temTexto, podeEditar, fixada, favorita, ehFigurinha, figurinhaGuardada, aoGuardarFigurinha }) {
+function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoResponder, aoCopiar, aoEncaminhar, aoEditar, aoFixar, aoFavoritar, aoApagar, temTexto, podeEditar, fixada, favorita, ehFigurinha, figurinhaGuardada, aoGuardarFigurinha, aoAbrirArquivo }) {
   // PARA CIMA OU PARA BAIXO. Na metade de baixo da tela o menu abre para cima,
   // senão o da última mensagem sai pela borda e fica inalcançável.
   //
@@ -1776,6 +1776,14 @@ function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoRespond
             {temTexto && (
               <button onClick={aoCopiar} style={ITEM}>
                 <Copy size={17} color={C.textSecondary} /> Copiar
+              </button>
+            )}
+            {/* LER SEM BAIXAR. O clique no cartão do documento BAIXA, com o
+                nome que o arquivo tem (16/10); quem só quer ler o PDF abre
+                por aqui, que era o que o clique fazia antes. */}
+            {aoAbrirArquivo && (
+              <button onClick={aoAbrirArquivo} style={ITEM} data-abrir-numa-aba>
+                <ExternalLink size={17} color={C.textSecondary} /> Abrir numa aba nova
               </button>
             )}
             <button onClick={aoVerTudo} style={ITEM}>
@@ -1838,6 +1846,72 @@ function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoRespond
         </>
       )}
     </div>
+  );
+}
+
+// O CARTÃO DO DOCUMENTO NA CONVERSA — e o clique BAIXA, com o nome que o
+// arquivo tem (16/10).
+//
+// Relato do Rodrigo: a procuração "0001.01 - Procuração" voltou assinada e,
+// baixada, veio com "letras e números aleatórios" — o endereço do depósito,
+// `recebidos/{messageid}.pdf`. O link tinha `download`, e o navegador ignora
+// esse atributo quando o arquivo é de outro domínio: o clique ABRIA o PDF numa
+// aba, e o botão de baixar dali salvava com o fim do endereço.
+//
+// Agora o clique busca o arquivo e o salva com `nomeParaBaixar` — o mesmo
+// nome escrito no cartão, e é ele que a conferência lê. Os cliques que não são
+// o comum (Ctrl, Shift, ⌘, o do meio) ficam com o navegador, e o `href` já é
+// o endereço que o depósito serve com o nome (`enderecoParaBaixar`): até
+// "Salvar link como…" salva certo. Ler sem baixar mora no menu da mensagem,
+// "Abrir numa aba nova".
+//
+// "BAIXANDO…" ENQUANTO BAIXA: um PDF de 20 MB leva segundos, e um clique
+// que não responde é repetido — e cada repetição seria mais um arquivo na
+// pasta. O segundo clique, durante, não faz nada.
+//
+// NO MODO DE SELEÇÃO o clique é da seleção: quem está marcando o que apagar
+// não quer um arquivo baixado a cada bolha que toca.
+function CartaoDoDocumento({ C, m, saida, emSelecao, aoBaixar }) {
+  const [baixando, setBaixando] = useState(false);
+  const nome = nomeParaBaixar({ nome: m.midia_nome, mime: m.midia_mime, url: m.midia_url,
+                                quando: m.criado_em });
+  const tipo = nomeDoTipo(m.midia_mime, m.midia_nome);
+  async function clicar(e) {
+    if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    if (emSelecao || baixando) return;
+    setBaixando(true);
+    try { await aoBaixar(m); } finally { setBaixando(false); }
+  }
+  return (
+    <a href={enderecoParaBaixar(m.midia_url, nome)} target="_blank" rel="noopener noreferrer"
+       onClick={clicar} title={`Baixar “${nome}”`} aria-busy={baixando || undefined}
+       data-documento-da-conversa={baixando ? "baixando" : "pronto"} data-nome-ao-baixar={nome}
+       style={{ display: "block", textDecoration: "none", color: C.textPrimary, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 6, overflow: "hidden", minWidth: 180 }}>
+      {/* A PRIMEIRA PÁGINA, quando o navegador sabe desenhar o arquivo.
+          Numa banca o que chega o dia inteiro é PDF — procuração,
+          contrato, extrato, intimação — e "Documento" não distingue a
+          procuração que se esperava do panfleto que alguém encaminhou.
+          Ver `src/arquivos.js` para o que dá e o que não dá para prever,
+          e por quê. */}
+      <PreviaDeArquivo C={C} url={m.midia_url} mime={m.midia_mime} nome={m.midia_nome} />
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px" }}>
+        <FileText size={22} color={C.textSecondary} />
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: "block", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>{m.midia_nome || "Documento"}</span>
+          {/* O TIPO POR EXTENSO, embaixo do nome. "Planilha do Excel"
+              responde sozinho a pergunta que faz alguém abrir o arquivo só
+              para descobrir. Baixando, a mesma linha diz isso. */}
+          <span style={{ display: "block", fontSize: 11, color: C.textSecondary }} data-doc-tipo={tipo}>
+            {baixando ? "Baixando…" : tipo}
+          </span>
+        </span>
+        {baixando
+          ? <><style>{"@keyframes zv-baixando-gira { to { transform: rotate(360deg); } }"}</style>
+              <Loader2 size={16} color={C.textSecondary} style={{ flexShrink: 0, animation: "zv-baixando-gira 1s linear infinite" }} /></>
+          : <Download size={16} color={C.textSecondary} />}
+      </div>
+    </a>
   );
 }
 
@@ -1938,8 +2012,9 @@ function PreviaDeArquivo({ C, url, mime, nome, altura = 150, inteira = false }) 
   if (!oQuadroDesenha(como, achado, leitor)) return null;
 
   // `#toolbar=0…` esconde os controles do leitor: numa miniatura de 150px eles
-  // ocupariam metade da altura e não servem para nada — o arquivo abre inteiro
-  // com um clique. São ignorados por quem não os entende, sem quebrar nada.
+  // ocupariam metade da altura e não servem para nada — o arquivo baixa com um
+  // clique, e abre inteiro pelo menu da mensagem ("Abrir numa aba nova"). São
+  // ignorados por quem não os entende, sem quebrar nada.
   const endereco = inteira ? `${url}#view=FitH` : `${url}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`;
 
   return (
@@ -2106,7 +2181,7 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
   reagindo, setReagindo, reagindoTudo, setReagindoTudo, reagir,
   rostoAberto, setRostoAberto, menuParaCima,
   iniciarEdicao, iniciarResposta, copiarMensagem, marcarMensagem,
-  reenviar, dispensarFalha,
+  reenviar, dispensarFalha, baixarDocumento,
   figurinhaEhFavorita, alternarFigurinhaFavorita, figurinhas,
   // Os `set...` e os `ref` são estáveis por natureza — o React garante que não
   // mudam de identidade —, então passá-los não estraga o `memo`. `pertoDoFim`
@@ -2424,7 +2499,10 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
                 aoVerTudo={() => setReagindoTudo(true)}
                 aoReagir={(e) => reagir(m, e)}
                 aoResponder={() => { setReagindo(null); setReagindoTudo(false); iniciarResposta(m); }}
-                aoCopiar={() => { setReagindo(null); setReagindoTudo(false); copiarMensagem(m); }} />
+                aoCopiar={() => { setReagindo(null); setReagindoTudo(false); copiarMensagem(m); }}
+                aoAbrirArquivo={m.tipo === "documento" && m.midia_url
+                  ? () => { setReagindo(null); setReagindoTudo(false); window.open(m.midia_url, "_blank", "noopener"); }
+                  : null} />
             )}
             {m.resposta_previa && (() => {
               // ------------------------------------------------------------
@@ -2544,31 +2622,8 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
             )}
             {m.tipo === "documento" && (
               m.midia_url ? (
-                <a href={m.midia_url} target="_blank" rel="noopener noreferrer" download style={{ display: "block", textDecoration: "none", color: C.textPrimary, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 6, overflow: "hidden", minWidth: 180 }}>
-                  {/* A PRIMEIRA PÁGINA, quando o navegador sabe
-                      desenhar o arquivo. Numa banca o que chega o dia
-                      inteiro é PDF — procuração, contrato, extrato,
-                      intimação — e "Documento" não distingue a
-                      procuração que se esperava do panfleto que
-                      alguém encaminhou. Ver `src/arquivos.js` para o
-                      que dá e o que não dá para prever, e por quê. */}
-                  <PreviaDeArquivo C={C} url={m.midia_url}
-                                   mime={m.midia_mime} nome={m.midia_nome} />
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px" }}>
-                    <FileText size={22} color={C.textSecondary} />
-                    <span style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ display: "block", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>{m.midia_nome || "Documento"}</span>
-                      {/* O TIPO POR EXTENSO, embaixo do nome. "Planilha
-                          do Excel" responde sozinho a pergunta que faz
-                          alguém abrir o arquivo só para descobrir. */}
-                      <span style={{ display: "block", fontSize: 11, color: C.textSecondary }}
-                            data-doc-tipo={nomeDoTipo(m.midia_mime, m.midia_nome)}>
-                        {nomeDoTipo(m.midia_mime, m.midia_nome)}
-                      </span>
-                    </span>
-                    <Download size={16} color={C.textSecondary} />
-                  </div>
-                </a>
+                <CartaoDoDocumento C={C} m={m} saida={saida} emSelecao={Boolean(selecao)}
+                                   aoBaixar={baixarDocumento} />
               ) : (
                 <div style={{ display: "flex", alignItems: "center", gap: 8, color: C.textPrimary, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 6, padding: "8px 10px", minWidth: 180 }}>
                   <FileText size={22} color={C.textSecondary} />
@@ -8343,6 +8398,8 @@ export default function Painel({ sessao }) {
   const [midiasAberta, setMidiasAberta] = useState(false);
   const [midiaAba, setMidiaAba] = useState("midias");   // 'midias' | 'documentos' | 'links'
   const [acervo, setAcervo] = useState({ carregando: false, itens: [] });
+  // O documento do acervo que está baixando agora — "Baixando…" na linha dele.
+  const [baixandoDoAcervo, setBaixandoDoAcervo] = useState(null);
 
   const pedidoMidiasRef = useRef(0);
   const abrirMidias = useCallback(async (aba = "midias") => {
@@ -8353,16 +8410,29 @@ export default function Painel({ sessao }) {
     // Antes vinham as 500 mensagens mais recentes de QUALQUER tipo e a aba
     // filtrava aqui: num escritório movimentado, 500 são poucas horas de
     // texto, e "Nenhum documento ainda" se lia como completo.
-    let q = supabase
-      .from("mensagens")
-      .select("id, conversa_id, tipo, texto, midia_url, midia_mime, criado_em");
-    if (aba === "midias") q = q.in("tipo", ["imagem", "video"]).not("midia_url", "is", null);
-    else if (aba === "documentos") q = q.eq("tipo", "documento").not("midia_url", "is", null);
-    else q = q.ilike("texto", "%http%");
-    // Teto de 500: é acervo para OLHAR, não para auditar. Sem teto, um ano de
-    // conversa desenharia milhares de miniaturas de uma vez e a tela travaria
-    // justamente em quem mais usa.
-    const { data, error } = await q.order("criado_em", { ascending: false }).limit(500);
+    // O NOME DO ARQUIVO VEM JUNTO (16/10): a aba Documentos escrevia a
+    // legenda, ou "Documento", e não o nome — a procuração assinada e o
+    // panfleto se liam igual. É também o nome com que ele baixa.
+    const montar = (colunas) => {
+      let q = supabase.from("mensagens").select(colunas);
+      if (aba === "midias") q = q.in("tipo", ["imagem", "video"]).not("midia_url", "is", null);
+      else if (aba === "documentos") q = q.eq("tipo", "documento").not("midia_url", "is", null);
+      else q = q.ilike("texto", "%http%");
+      // Teto de 500: é acervo para OLHAR, não para auditar. Sem teto, um ano de
+      // conversa desenharia milhares de miniaturas de uma vez e a tela travaria
+      // justamente em quem mais usa.
+      return q.order("criado_em", { ascending: false }).limit(500);
+    };
+    let { data, error } = await montar("id, conversa_id, tipo, texto, midia_url, midia_mime, midia_nome, criado_em");
+    // A coluna do nome nasceu à mão, e a ponte a trata como opcional ("numa
+    // base sem a coluna"). Num banco sem ela, o acervo abre como abria — sem o
+    // nome —, em vez de não abrir por causa dele. Na LEITURA o PostgREST diz
+    // "column mensagens.midia_nome does not exist", sem aspas: é pelo código e
+    // pelo nome, como em `semAColunaDaAgenda`.
+    if (error && ["42703", "PGRST204"].includes(String(error.code || ""))
+        && /midia_nome/.test(String(error.message || ""))) {
+      ({ data, error } = await montar("id, conversa_id, tipo, texto, midia_url, midia_mime, criado_em"));
+    }
     if (meu !== pedidoMidiasRef.current) return;
     // A FALHA FICA NA JANELA, e não vira "Nenhuma foto ainda" depois que o
     // aviso de quatro segundos some (armadilha nº 2).
@@ -8734,6 +8804,11 @@ export default function Painel({ sessao }) {
       texto: m.texto || null,
       midia_url: m.midia_url || null,
       midia_mime: m.midia_mime || null,
+      // O NOME DO ARQUIVO VAI JUNTO (16/10). Sem ele a ponte não tem
+      // `docName` para mandar, e o documento chegava do outro lado com o fim
+      // do endereço do depósito — `recebidos/{messageid}.pdf`, os "números
+      // aleatórios" do relato.
+      ...(m.midia_nome ? { midia_nome: m.midia_nome } : {}),
       status: "pendente",
       enviado_por: meuNome, enviado_por_id: meuId,
     });
@@ -10311,6 +10386,12 @@ export default function Painel({ sessao }) {
       _file: file, _legenda: legenda, // guardados para poder reenviar se falhar
     }]);
     try {
+      // O NOME VAI COMO É, e o higienizado fica só no ENDEREÇO (16/10). O
+      // depósito recusa acento e espaço numa chave, então "0001.01 -
+      // Procuração.pdf" vira "0001.01_-_Procura_o.pdf" no caminho — e era
+      // esse que ia como `midia_nome`, que é o `docName` que a ponte manda ao
+      // WhatsApp. O cliente recebia o nome estropiado; e o arquivo que ele
+      // assinava e devolvia, voltava com ele.
       const nome = (file.name || "arquivo").replace(/[^\w.\-]+/g, "_");
       const caminho = `${convId}/${Date.now()}-${nome}`;
       const { error: upErr } = await supabase.storage.from("anexos").upload(caminho, file, { contentType: file.type });
@@ -10323,7 +10404,7 @@ export default function Painel({ sessao }) {
       setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _midiaUrlFinal: url } : m)));
       const { error: filaErr } = await inserirNaFila({
         conversa_id: convId, texto: legenda || "", tipo, status: "pendente",
-        midia_url: url, midia_mime: file.type, midia_nome: nome, enviado_por: meuNome, enviado_por_id: meuId, enviado_por_foto: minhaFoto,
+        midia_url: url, midia_mime: file.type, midia_nome: file.name || nome, enviado_por: meuNome, enviado_por_id: meuId, enviado_por_foto: minhaFoto,
       });
       if (filaErr) throw new Error("Falha ao colocar na fila (banco): " + (filaErr.message || filaErr));
       // Anexo também é resposta ao contato: a conversa deixa de estar pendente.
@@ -10351,8 +10432,9 @@ export default function Painel({ sessao }) {
       const { data: pub } = supabase.storage.from("anexos").getPublicUrl(caminho);
       const url = pub?.publicUrl;
       if (!url) throw new Error("sem URL pública do arquivo");
+      // O nome como é, e o higienizado só no endereço — ver `enviarArquivo`.
       const r = await gravarAgendada({ conversa_id: convId, texto: legenda || "", tipo,
-        midia_url: url, midia_mime: file.type, midia_nome: nome }, quando);
+        midia_url: url, midia_mime: file.type, midia_nome: file.name || nome }, quando);
       if (r.error) throw new Error(r.motivo || comOCodigo("Falha ao agendar (banco).", r.error, "agendar anexo"));
       return true;
     } catch (err) {
@@ -10361,25 +10443,53 @@ export default function Painel({ sessao }) {
     }
   }
 
-  // Baixa uma imagem de verdade (não só abre em nova aba). Como a imagem fica
-  // em outro domínio (Storage), o atributo download é ignorado; então buscamos
-  // o arquivo e forçamos o download por um link temporário.
-  async function baixarImagem(url) {
+  // BAIXAR COM O NOME QUE O ARQUIVO TEM (16/10). Como o arquivo fica em outro
+  // domínio (o depósito), o atributo `download` é ignorado; então buscamos o
+  // arquivo e salvamos de um endereço local — ver "O arquivo baixa com o nome
+  // que tem", em `src/arquivos.js`.
+  //
+  // A MENSAGEM DÁ O NOME. A imagem era salva como `imagem-1760612345678`: um
+  // carimbo de milissegundos, que é outro "número aleatório". Agora vai o nome
+  // que veio com ela e, sem nome, o dia e a hora da mensagem. Ela é procurada
+  // na conversa aberta e no acervo de mídias, que também abre imagens aqui.
+  function mensagemDoArquivo(url) {
+    return mensagens.find((x) => x.midia_url === url)
+      || (acervo.itens || []).find((x) => x.midia_url === url) || null;
+  }
+
+  async function baixarComAviso(url, nomear) {
     try {
-      const resp = await fetch(url);
-      const blob = await resp.blob();
-      const objUrl = URL.createObjectURL(blob);
-      const ext = (blob.type.split("/")[1] || "jpg").split(";")[0];
-      const a = document.createElement("a");
-      a.href = objUrl;
-      a.download = `imagem-${Date.now()}.${ext}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(objUrl), 2000);
-    } catch (_) {
-      window.open(url, "_blank"); // se não der, abre em nova aba
+      await baixarComONome(url, nomear);
+    } catch (err) {
+      // O DEPÓSITO RESPONDEU, E NÃO COM O ARQUIVO: diz-se, com o número. Abrir
+      // uma aba aqui mostraria a página de erro dele, e salvar o que veio
+      // daria um arquivo com o erro dentro e o nome certo — o pior dos dois.
+      if (err && err.status) {
+        mostrarAviso(`Não consegui baixar “${nomear(null)}” — ${err.message}.`, 8000);
+        return;
+      }
+      // A BUSCA NEM SAIU (a rede, ou um endereço antigo que não deixa ler
+      // daqui). Uma aba nova ainda alcança o arquivo — e, se for do depósito,
+      // pelo endereço que ele mesmo serve com o nome.
+      window.open(enderecoParaBaixar(url, nomear(null)), "_blank", "noopener");
     }
+  }
+
+  async function baixarImagem(url) {
+    const m = retratoAberto ? null : mensagemDoArquivo(url);
+    const nomear = (servido) => nomeParaBaixar({
+      nome: m?.midia_nome, mime: m?.midia_mime, servido, url, quando: m?.criado_em,
+      padrao: retratoAberto ? "Foto de perfil" : "Imagem" });
+    await baixarComAviso(url, nomear);
+  }
+
+  // O documento da conversa e o do acervo de mídias: os dois baixam pelo mesmo
+  // caminho, e com o mesmo nome que o cartão escreve.
+  async function baixarDocumento(m) {
+    if (!m?.midia_url) return;
+    const nomear = (servido) => nomeParaBaixar({
+      nome: m.midia_nome, mime: m.midia_mime, servido, url: m.midia_url, quando: m.criado_em });
+    await baixarComAviso(m.midia_url, nomear);
   }
 
   // ---- Gravação de áudio pelo microfone (mensagem de voz) ----
@@ -12344,7 +12454,7 @@ export default function Painel({ sessao }) {
   acoesDaBolhaRef.current = {
     alternarSelecao, podeSerApagada, quemFalou, nomeDeHoje, podeMexerNaNota,
     dentroDoPrazoDeEdicao, reagir, iniciarEdicao, iniciarResposta, copiarMensagem,
-    marcarMensagem, reenviar, dispensarFalha, figurinhaEhFavorita,
+    marcarMensagem, reenviar, dispensarFalha, baixarDocumento, figurinhaEhFavorita,
     alternarFigurinhaFavorita,
   };
   //  Lista de dependências vazia: os embrulhos são criados na primeira vez e
@@ -16738,7 +16848,7 @@ export default function Painel({ sessao }) {
                           || (digitos.length >= 3 && (c.contato?.numero || "").includes(digitos))));
                 if (!lista.length) return <div style={{ padding: 22, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>Nenhuma conversa encontrada.</div>;
                 return lista.map((c) => (
-                  <button key={c.id} onClick={() => enviarEncaminhada(c)}
+                  <button key={c.id} onClick={() => enviarEncaminhada(c)} data-encaminhar-para={c.id}
                     style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "10px 16px",
                              border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary,
                              textAlign: "left", borderBottom: `1px solid ${C.divider}` }}>
@@ -16839,7 +16949,7 @@ export default function Painel({ sessao }) {
               </div>
               <div className="sem-scrollbar fita" style={{ flex: 1, minWidth: 0, display: "flex", gap: 4, justifyContent: estreito ? "flex-end" : "center", "--fita-fundo": C.panel }}>
                 {[["midias", "Mídias"], ["documentos", "Documentos"], ["links", "Links"]].map(([k, r]) => (
-                  <button key={k} onClick={() => { setMidiaAba(k); abrirMidias(k); }}
+                  <button key={k} onClick={() => { setMidiaAba(k); abrirMidias(k); }} data-aba-das-midias={k}
                           style={{ flexShrink: 0, border: "none", background: "transparent", cursor: "pointer", padding: estreito ? "8px 8px" : "8px 14px", fontSize: 14, fontWeight: 600, color: midiaAba === k ? C.textPrimary : C.textSecondary, borderBottom: `2px solid ${midiaAba === k ? C.green : "transparent"}` }}>{r}</button>
                 ))}
                 <span aria-hidden className="fita-borda" />
@@ -16888,22 +16998,44 @@ export default function Painel({ sessao }) {
 
               {/* DOCUMENTOS e LINKS em lista: aqui o que identifica é o TEXTO, e
                   texto em grade de quadradinhos não se lê. */}
+              {/* O DOCUMENTO DIZ O NOME, e o clique o baixa COM ele (16/10) —
+                  o mesmo caminho do cartão da conversa. Antes a linha escrevia
+                  a legenda ou "Documento", e o clique abria o arquivo numa aba
+                  que salvava com o fim do endereço do depósito. */}
               {!acervo.carregando && midiaAba !== "midias" && (
                 <div style={{ display: "flex", flexDirection: "column" }}>
-                  {acervoFiltrado.map((m) => (
-                    <a key={m.id} href={midiaAba === "links" ? m._link : m.midia_url} target="_blank" rel="noopener noreferrer"
-                       style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 8px", borderBottom: `1px solid ${C.divider}`, color: C.textPrimary, textDecoration: "none" }}>
-                      {midiaAba === "links" ? <ExternalLink size={17} color={C.textSecondary} /> : <FileText size={17} color={C.textSecondary} />}
-                      <span style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ display: "block", fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {midiaAba === "links" ? m._link : (m.texto || "Documento")}
+                  {acervoFiltrado.map((m) => {
+                    const ehLink = midiaAba === "links";
+                    const nome = ehLink ? null
+                      : nomeParaBaixar({ nome: m.midia_nome, mime: m.midia_mime, url: m.midia_url, quando: m.criado_em });
+                    const baixando = !ehLink && baixandoDoAcervo === m.id;
+                    return (
+                      <a key={m.id} href={ehLink ? m._link : enderecoParaBaixar(m.midia_url, nome)} target="_blank" rel="noopener noreferrer"
+                         onClick={ehLink ? undefined : async (e) => {
+                           if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+                           e.preventDefault();
+                           if (baixando) return;
+                           setBaixandoDoAcervo(m.id);
+                           try { await baixarDocumento(m); }
+                           finally { setBaixandoDoAcervo((x) => (x === m.id ? null : x)); }
+                         }}
+                         title={ehLink ? undefined : `Baixar “${nome}”`}
+                         data-documento-do-acervo={ehLink ? undefined : (baixando ? "baixando" : "pronto")}
+                         data-nome-ao-baixar={nome || undefined}
+                         style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 8px", borderBottom: `1px solid ${C.divider}`, color: C.textPrimary, textDecoration: "none" }}>
+                        {ehLink ? <ExternalLink size={17} color={C.textSecondary} /> : <FileText size={17} color={C.textSecondary} />}
+                        <span style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ display: "block", fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {ehLink ? m._link : (m.midia_nome || m.texto || "Documento")}
+                          </span>
+                          <span style={{ display: "block", fontSize: 11.5, color: C.textSecondary }}>
+                            {baixando ? "Baixando… · " : ""}{(nomePorConversa[m.conversa_id] || "")}{nomePorConversa[m.conversa_id] ? " · " : ""}{rotuloData(m.criado_em)}
+                          </span>
                         </span>
-                        <span style={{ display: "block", fontSize: 11.5, color: C.textSecondary }}>
-                          {(nomePorConversa[m.conversa_id] || "")}{nomePorConversa[m.conversa_id] ? " · " : ""}{rotuloData(m.criado_em)}
-                        </span>
-                      </span>
-                    </a>
-                  ))}
+                        {!ehLink && <Download size={16} color={C.textSecondary} style={{ flexShrink: 0 }} />}
+                      </a>
+                    );
+                  })}
                 </div>
               )}
             </div>

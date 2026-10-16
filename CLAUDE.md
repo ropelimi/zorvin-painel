@@ -1670,6 +1670,124 @@ tinha rodado o vigia na entrega anterior e não depois de escrever as cenas
 desta. **Escreveu cena de prova, rode o vigia antes do commit**, e não só a
 prova.
 
+## O arquivo baixa com o nome que tem (16/10)
+
+Relato do Rodrigo: *"eu envio um arquivo .pdf para o contato com o nome do
+arquivo '0001.01 - Procuração' e ele faz uma assinatura e me devolve esse
+arquivo assinado, só que quando eu vou baixar o arquivo ele não vem com o
+mesmo nome, ele vem com letras e números aleatórios."*
+
+**As "letras e números" são o endereço do depósito.** O arquivo que chega
+mora em `recebidos/{messageid}.pdf`, e o navegador salva com o fim do
+endereço. O cartão do documento era um link com `download`, e **o navegador
+ignora esse atributo quando o arquivo é de outro domínio** — e o depósito é.
+O clique abria o PDF numa aba, e o botão de baixar dali salvava como
+`3EB0C4AB12CD….pdf`. O nome certo estava gravado (`midia_nome`) e escrito no
+cartão; só não ia junto.
+
+**E havia uma segunda metade, do lado de quem envia.** O depósito recusa
+acento e espaço numa chave, então o painel higienizava o nome para o
+endereço — e mandava o MESMO nome higienizado como `midia_nome`, que é o
+`docName` que a ponte entrega ao WhatsApp. "0001.01 - Procuração.pdf"
+chegava ao cliente como **"0001.01_-_Procura_o.pdf"**, e o arquivo assinado
+voltava com esse nome. Hoje o higienizado fica só no endereço. (O
+"Reenviar" já mandava o original — ele lê o nome da bolha provisória.)
+
+| onde | antes | agora |
+|---|---|---|
+| clicar no cartão do documento | abria numa aba (o PDF) ou baixava com o endereço | **baixa com o nome**, e diz "Baixando…" |
+| Ctrl+clique, "Salvar link como…" | o endereço | o depósito manda o nome (`?download=`) |
+| ler sem baixar | era o clique | ⋮ da mensagem → **Abrir numa aba nova** |
+| a imagem ampliada | `imagem-1760612345678.jpg` | o nome dela, ou "Imagem 14-10-2026 10h05.png" |
+| Mídia → Documentos | a legenda, ou "Documento" | o nome, e baixa com ele |
+| enviar e agendar | o nome higienizado, ao cliente | o original |
+| encaminhar | sem nome (o WhatsApp usava o fim do endereço) | o nome |
+
+**O clique agora BAIXA, e não abre — e é decisão.** É o que o WhatsApp Web
+faz, e o cartão sempre se apresentou assim: a seta de baixar, o `download`
+do link, o comentário da prévia ("a prévia mora dentro de um link que baixa
+o arquivo"). Continuar abrindo deixaria o caminho errado a um clique: quem
+baixasse pelo leitor de PDF da aba continuaria recebendo o nome do endereço.
+Ler sem baixar continua a um clique, no menu da mensagem — e só em
+documento. **No modo de seleção o clique é da seleção**: quem marca o que
+apagar não quer um arquivo baixado a cada bolha.
+
+**O jeito é o de `baixarImagem`, que já existia**: buscar o arquivo e salvar
+de um endereço local (`blob:`), onde o `download` vale
+(`baixarComONome`). O `href` do cartão já é o endereço que o Storage serve
+com o nome (`enderecoParaBaixar`, `?download=`): o Ctrl+clique e o "Salvar
+link como…", que não passam pelo clique desta tela, também salvam certo.
+
+### A conta do nome — `nomeParaBaixar`, em `src/arquivos.js`
+
+- **o nome gravado, como veio**; só sai o que o Windows recusa
+  (`\ / : * ? " < > |`, que vira `_`, como o próprio Chrome faria) e o
+  espaço e o ponto das pontas;
+- **sem extensão, ganha a do tipo**: o exemplo do relato, "0001.01 -
+  Procuração", é um nome como o Windows o mostra, sem o ".pdf" — e salvo
+  assim ninguém abre com dois cliques. O tipo vem da mensagem, depois do que
+  o depósito serviu, depois do fim do endereço;
+- **o nome da pessoa vence o tipo**: "dados.csv" chega do Windows como
+  `application/vnd.ms-excel` e continua .csv. Só ganha extensão o nome que
+  não termina numa conhecida: "0001.01" vira "0001.01.pdf", e a assinatura da
+  ICP-Brasil (".pdf.p7s") fica como está;
+- **sem nome** (mensagem antiga, foto do WhatsApp): "Documento 14-10-2026
+  10h05.pdf", com a data da MENSAGEM. O carimbo de milissegundos que a
+  imagem usava era outro "número aleatório";
+- teto de 180, e o corte guarda a extensão.
+
+**O depósito que não tem o arquivo é DITO**: a resposta que não é 200 sobe
+com o número, e a faixa diz *"Não consegui baixar “…” — o depósito respondeu
+404"*. Salvar o que veio daria um arquivo com o nome certo e a página de
+erro dentro — o pior dos dois. Só quando a busca nem sai (a rede, ou um
+endereço antigo que não deixa ler daqui) é que se abre uma aba, pelo
+endereço que já pede o nome.
+
+**A leitura do acervo pede `midia_nome`, e tem a segunda leitura sem ele**:
+a coluna nasceu à mão, e a ponte a trata como opcional. Na leitura o
+PostgREST diz `column mensagens.midia_nome does not exist`, **sem aspas** —
+`colunaQueFalta` (feita para as gravações) não reconhece esse formato. A
+pergunta é pelo código e pelo nome, como em `semAColunaDaAgenda`.
+
+### Duas armadilhas da máquina de provas, e não do painel
+
+**Num Linux com o idioma "POSIX" o Chrome joga fora o nome que não cabe em
+ASCII e salva como "download".** Medido com `a.download = "Procuração.pdf"`,
+no Chromium inteiro e no de prova; com `LANG=C.UTF-8` o nome sai inteiro.
+No Windows do escritório o nome é Unicode, e isso não acontece. A prova abre
+o navegador com o idioma UTF-8 — a primeira rodada reprovou o conserto
+falando da máquina.
+
+**E o download de uma aba aberta em segundo plano não chega ao Playwright**:
+Ctrl+clique abre a aba, o depósito responde, e nenhum evento sai — medido,
+nem no Chromium inteiro, onde a aba termina em `chrome-error://`. A cena do
+endereço abre uma aba no endereço do link, que é o que o Ctrl+clique faz.
+
+**O relato reproduzido, no painel de antes**, com o depósito de mentira:
+no navegador de prova, que não tem leitor de PDF (como um Chrome posto em
+"baixar PDFs"), o clique no cartão salvou **`3EB0C4AB12CD34EF56.pdf`**; no
+Chromium inteiro, ele abriu o PDF numa aba, no endereço do depósito — e o
+leitor salva dali com o fim do endereço, que é o que o Rodrigo via.
+
+Prova: `o-arquivo-baixa-com-o-nome`, 95 conferências, com um **depósito de
+mentira noutro endereço**, como o de verdade (`ctx.route`, que responde a
+`?download=` como o Storage responde), e não `data:` — onde o atributo
+`download` valeria e a prova mediria outra coisa. **28 sabotagens, 27 pegas
+e uma que vaza com razão**, todas rodadas em cópias e lidas uma a uma — o
+painel de antes inteiro reprova 42 conferências. As duas que vazaram na
+primeira rodada ensinaram:
+
+- **o acervo sem o clique daqui passava**, porque o link já pede o nome ao
+  depósito: o navegador seguia o `href` numa aba, e o arquivo baixava certo.
+  Só a aba dizia que o clique não era o daqui, e a conferência olhava só o
+  `window.open`. Hoje ela olha as duas portas de uma aba nova, e confere o
+  "Baixando…" do acervo;
+- **soltar o endereço local na hora, e não um minuto depois, passa — com
+  razão**: o Chromium guarda o arquivo no instante do clique. O minuto é
+  para os navegadores que leem o endereço depois, e a prova não roda neles.
+  É a régua de 25/09: sabotagem que o resto do sistema conserta sozinho não
+  prova nada.
+
 ## A citação leva até a mensagem citada
 
 Pedido do Rodrigo em 16/09: *"ao clicar na mensagem que foi respondida, ir para
