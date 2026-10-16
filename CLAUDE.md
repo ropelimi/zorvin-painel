@@ -1763,10 +1763,30 @@ Ctrl+clique abre a aba, o depósito responde, e nenhum evento sai — medido,
 nem no Chromium inteiro, onde a aba termina em `chrome-error://`. A cena do
 endereço abre uma aba no endereço do link, que é o que o Ctrl+clique faz.
 
-Prova: `o-arquivo-baixa-com-o-nome`, 92 conferências, com um **depósito de
+**O relato reproduzido, no painel de antes**, com o depósito de mentira:
+no navegador de prova, que não tem leitor de PDF (como um Chrome posto em
+"baixar PDFs"), o clique no cartão salvou **`3EB0C4AB12CD34EF56.pdf`**; no
+Chromium inteiro, ele abriu o PDF numa aba, no endereço do depósito — e o
+leitor salva dali com o fim do endereço, que é o que o Rodrigo via.
+
+Prova: `o-arquivo-baixa-com-o-nome`, 95 conferências, com um **depósito de
 mentira noutro endereço**, como o de verdade (`ctx.route`, que responde a
 `?download=` como o Storage responde), e não `data:` — onde o atributo
-`download` valeria e a prova mediria outra coisa.
+`download` valeria e a prova mediria outra coisa. **28 sabotagens, 27 pegas
+e uma que vaza com razão**, todas rodadas em cópias e lidas uma a uma — o
+painel de antes inteiro reprova 42 conferências. As duas que vazaram na
+primeira rodada ensinaram:
+
+- **o acervo sem o clique daqui passava**, porque o link já pede o nome ao
+  depósito: o navegador seguia o `href` numa aba, e o arquivo baixava certo.
+  Só a aba dizia que o clique não era o daqui, e a conferência olhava só o
+  `window.open`. Hoje ela olha as duas portas de uma aba nova, e confere o
+  "Baixando…" do acervo;
+- **soltar o endereço local na hora, e não um minuto depois, passa — com
+  razão**: o Chromium guarda o arquivo no instante do clique. O minuto é
+  para os navegadores que leem o endereço depois, e a prova não roda neles.
+  É a régua de 25/09: sabotagem que o resto do sistema conserta sozinho não
+  prova nada.
 
 ## A citação leva até a mensagem citada
 

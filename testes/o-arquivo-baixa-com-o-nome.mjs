@@ -404,6 +404,7 @@ console.log("\n10. O acervo de mídias diz o nome, e baixa com ele");
 {
   baixados.length = 0;
   const jaAbertas = (await abertas(page)).length;
+  const abasAntes = abas.length;
   ok("abri o acervo", await clicar(page, '[title="Mídias, documentos e links"]'));
   ok("e a aba Documentos", await clicar(page, '[data-aba-das-midias="documentos"]'));
   await page.waitForTimeout(800);
@@ -414,7 +415,21 @@ console.log("\n10. O acervo de mídias diz o nome, e baixa com ele");
   ok("cliquei na linha", await clicar(page, '[data-documento-do-acervo][data-nome-ao-baixar="0001.01 - Procuração.pdf"]'));
   await esperarDownloads(baixados, 1);
   ok("baixou com o nome", baixados[0]?.nome === "0001.01 - Procuração.pdf", `veio "${baixados[0]?.nome}"`);
-  ok("sem aba nova", (await abertas(page)).length === jaAbertas);
+  // AS DUAS PORTAS DE UMA ABA NOVA: o `window.open` e o próprio link. Sem o
+  // clique desta tela, o navegador segue o `href` numa aba — e, como o
+  // endereço já pede o nome, o arquivo baixaria certo, e só a aba diria que
+  // o clique não é o daqui. Foi uma sabotagem que vazou que ensinou isto.
+  ok("sem aba nova — nem pelo `window.open`, nem pelo link",
+     (await abertas(page)).length === jaAbertas && abas.length === abasAntes,
+     `abertas: ${(await abertas(page)).length - jaAbertas}, abas: ${abas.length - abasAntes}`);
+  ok("cliquei no extrato que demora",
+     await clicar(page, '[data-documento-do-acervo][data-nome-ao-baixar="Extrato demorado 7788.pdf"]'));
+  const linhaLenta = page.locator('[data-documento-do-acervo][data-nome-ao-baixar="Extrato demorado 7788.pdf"]');
+  ok("a linha dele diz que está baixando",
+     (await linhaLenta.getAttribute("data-documento-do-acervo").catch(() => null)) === "baixando"
+       && /Baixando…/.test(await linhaLenta.innerText().catch(() => "")));
+  await esperarDownloads(baixados, 2, 6000);
+  ok("e baixou com o nome dele", baixados[1]?.nome === "Extrato demorado 7788.pdf", `veio "${baixados[1]?.nome}"`);
   await page.keyboard.press("Escape");
   await page.waitForTimeout(300);
 }
