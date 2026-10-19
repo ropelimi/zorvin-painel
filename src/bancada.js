@@ -1606,6 +1606,11 @@ function abertaOuAguardando(conversaId) {
 const conversaDe = (id) => (TABELAS.conversas || []).find((c) => String(c.id) === String(id));
 /** O clique do "Já tratei" que entra — `zorvin_situacao_do_clique`. */
 function situacaoDoClique(t) {
+  // O GATILHO QUE DESISTE CALADO (`__CLIQUE_NAO_FINALIZA`): no banco, o corpo
+  // dele vive num `exception when others`, e o registro entra mesmo quando a
+  // finalização tropeça. A tela tem de dizer o que o banco fez — e só uma
+  // bancada que sabe fazer isto prova que ela relê a linha em vez de supor.
+  if (typeof globalThis !== "undefined" && globalThis.__CLIQUE_NAO_FINALIZA) return;
   const c = conversaDe(t.conversa_id);
   if (!c || !Object.prototype.hasOwnProperty.call(c, "situacao") || t.desfeito_em) return;
   const quando = t.quando || new Date().toISOString();

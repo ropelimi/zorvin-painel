@@ -125,7 +125,7 @@ function semente() {
 /** TODAS AS BANDEIRAS EM TODA ABERTURA — `addInitScript` acumula, e uma
  *  ligada num cenário continuaria valendo nos seguintes. */
 async function abrirPainel({ semSituacao = false, erro = {}, semEfeito = [], atraso = {}, largura = 1400,
-                             altura = 900, extra = null } = {}) {
+                             altura = 900, extra = null, cliqueNaoFinaliza = false } = {}) {
   const ctx = await nav.newContext({ viewport: { width: largura, height: altura } });
   const page = await ctx.newPage();
   const estouros = [];
@@ -142,7 +142,8 @@ async function abrirPainel({ semSituacao = false, erro = {}, semEfeito = [], atr
     globalThis.__CONTAGEM_DAS_ABAS_FALHA = false;
     globalThis.__SEM_TRATADA = false;
     globalThis.__SEM_ASSUNTOS = false;
-  }, { semente: s, semSituacao, erro, semEfeito, atraso });
+    globalThis.__CLIQUE_NAO_FINALIZA = d.cliqueNaoFinaliza;
+  }, { semente: s, semSituacao, erro, semEfeito, atraso, cliqueNaoFinaliza });
   await page.goto(ENDERECO);
   await page.waitForSelector("[data-conversa-nome]", { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(1500);
@@ -392,6 +393,14 @@ console.log("\nO cliente que escreve depois de finalizado volta para “Em abert
   let m = await marcos(page);
   ok("e com o marco de quem finalizou — a Jenifer, com o nome de hoje",
      m.some((x) => x.p === P.fz && x.tipo === "finalizado" && x.texto.includes("finalizado por JENIFER ALMEIDA")), JSON.stringify(m));
+  // O MARCO VEM NA FRENTE DA MENSAGEM QUE ABRIU O PROTOCOLO: eles têm a mesma
+  // hora, e a ordenação estável põe na frente quem entra primeiro na lista.
+  const ordem = () => page.evaluate(() => [...document.querySelectorAll("[data-msg-id], [data-marco-do-atendimento]")]
+    .map((e) => e.getAttribute("data-marco") ? `${e.getAttribute("data-marco")}:${e.getAttribute("data-marco-do-atendimento")}`
+                                              : e.getAttribute("data-msg-id")));
+  const aoAbrir = await ordem();
+  ok("ao abrir, o marco do protocolo vem logo antes da mensagem que o abriu",
+     aoAbrir.indexOf(`aberto:${P.fz}`) >= 0 && aoAbrir[aoAbrir.indexOf(`aberto:${P.fz}`) + 1] === "fz1", JSON.stringify(aoAbrir));
   await page.evaluate(() => globalThis.__MENSAGEM_PELA_PONTE("cv-fz", "contato", "voltei, preciso de outra guia"));
   await page.waitForTimeout(3000);
   const b = await banco(page, "cv-fz");
@@ -405,6 +414,10 @@ console.log("\nO cliente que escreve depois de finalizado volta para “Em abert
   ok("a conversa mostra os dois: o protocolo finalizado E o novo, aberto pelo cliente",
      m.some((x) => x.p === P.fz && x.tipo === "finalizado")
      && m.some((x) => x.p === novo && x.tipo === "aberto" && x.texto.includes("o cliente escreveu")), JSON.stringify(m));
+  const aoReler = await ordem();
+  const posNovo = aoReler.indexOf(`aberto:${novo}`);
+  ok("e, relidos, o marco do protocolo novo vem logo antes da mensagem que o abriu",
+     posNovo >= 0 && String(aoReler[posNovo + 1] || "").startsWith("m-ponte-"), JSON.stringify(aoReler.slice(-4)));
   await irParaAba(page, "aberto");
   ok("e em “Em aberto” ela está", (await nomesNaLista(page)).includes(FLAVIA));
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
@@ -662,6 +675,28 @@ console.log("\nO banco que recusa é dito, e a tela não finge ter mudado de aba
   ok("o desfazer recusado é dito", erro.includes("O banco não deixou desfazer"), erro);
   const b = await banco(page, "cv-fz");
   ok("e ela continua finalizada", b.situacao === "finalizado" && !b.tratamentos[0]?.desfeito, JSON.stringify(b));
+  await ctx.close();
+}
+
+{
+  // O GATILHO QUE DESISTE CALADO: o registro entra, e a conversa NÃO é
+  // finalizada. A tela relê a linha, e diz o que o banco fez — e não o que se
+  // esperava que ele fizesse.
+  const { ctx, page } = await abrirPainel({ cliqueNaoFinaliza: true });
+  await abrirConversa(page, BRUNO);
+  await clicar(page, '[data-ja-tratei="tratar"]');
+  await page.waitForTimeout(400);
+  await page.locator("[data-assunto-do-ja-tratei] input").first().check().catch(() => {});
+  await gravarFilme(page);
+  await clicar(page, "[data-ja-tratei-confirmar]");
+  await page.waitForTimeout(2000);
+  const b = await banco(page, "cv-ab");
+  ok("(o registro entrou, e o banco não finalizou)", b.tratamentos.length === 1 && b.situacao === "aberto", JSON.stringify(b));
+  ok("a faixa diz que o banco não finalizou, e não “Finalizada”",
+     (await filme(page)).some((x) => x.startsWith("Registrei o que foi tratado, mas o banco não finalizou"))
+     && !(await filme(page)).some((x) => x.startsWith("Finalizada")), JSON.stringify(await filme(page)));
+  ok("e ela continua em “Em aberto”, com “Finalizar”", (await nomesNaLista(page)).includes(BRUNO)
+     && (await page.locator('[data-ja-tratei="tratar"]').count()) > 0);
   await ctx.close();
 }
 
