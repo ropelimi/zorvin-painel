@@ -9653,6 +9653,10 @@ export default function Painel({ sessao }) {
       carregarConversas(advogadoId);
       return false;
     }
+    // A PÍLULA "NÃO LIDAS" CONTA A ABA (script 028): marcar como lida ou não
+    // lida muda o número dela, e o tempo real não vai dizer — a lista desta
+    // tela já foi mudada antes, e ele não vê diferença nenhuma.
+    if (Object.prototype.hasOwnProperty.call(patch, "nao_lidas")) agendarContagemDasAbas();
     mostrarAviso(frases.certo);
     return true;
   }
@@ -9940,7 +9944,7 @@ export default function Painel({ sessao }) {
       setReabrirOcupado(false); setReabrindo(null);
       releTratadosDoHistorico(conv.id);
       relerMarcosRef.current(conv.id);
-      mostrarAviso("Desfiz o seu registro, mas a conversa continua finalizada por outro registro do mesmo protocolo.", 8000);
+      mostrarAviso("Desfiz o último registro, mas a conversa continua finalizada por outro registro do mesmo protocolo.", 8000);
       return;
     }
 
@@ -10061,6 +10065,7 @@ export default function Painel({ sessao }) {
     const r = await supabase.from("conversas")
       .update({ nao_lidas: 0 }).eq("advogado_id", advId).gt("nao_lidas", 0).select("id");
     carregarNaoLidasPorAdv();
+    agendarContagemDasAbas();
     if (r.error) {
       mostrarAviso(comOCodigo("Não consegui marcar todas.", r.error, "marcar todas como lidas"), 7000);
       carregarConversas(advId); return;
@@ -10106,8 +10111,8 @@ export default function Painel({ sessao }) {
         : comOCodigo("Não consegui marcar como lida.", r.error, "marcar como lida"), 7000);
       carregarConversas(advogadoIdRef.current);
     }
-    else carregarNaoLidasPorAdv();
-  }, [carregarConversas, carregarNaoLidasPorAdv]);
+    else { carregarNaoLidasPorAdv(); agendarContagemDasAbas(); }
+  }, [carregarConversas, carregarNaoLidasPorAdv, agendarContagemDasAbas]);
 
   async function enviar() {
     // CORRIGIR VEM ANTES DE CRIAR, e a ordem aqui é o conserto.

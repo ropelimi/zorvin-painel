@@ -1907,6 +1907,13 @@ function consulta(tabela) {
         // não lista vazia — vazia é a conversa que ainda não tem protocolo.
         || (tabela === "zorvin_atendimentos" && globalThis.__SEM_SITUACAO));
   let linhas = faltando ? [] : (TABELAS[tabela] || []).slice();
+  // A SITUAÇÃO DA CONVERSA (script 028) TEM PADRÃO NO BANCO: 'aberto'. A
+  // linha que uma prova planta direto na tabela, sem passar pela gravação,
+  // não tem a chave — e no Postgres a coluna existiria com o padrão. Sem isto
+  // o filtro da aba não acharia a conversa nova de prova nenhuma, e a lista
+  // de "Em aberto" a esconderia por um motivo que o banco de verdade não tem.
+  const valorDaColuna = (l, col) => (tabela === "conversas" && col === "situacao" && l[col] === undefined
+    && !(typeof globalThis !== "undefined" && globalThis.__SEM_SITUACAO) ? "aberto" : l[col]);
   // O QUE FOI PEDIDO, e não só o resultado. É por isto que dá para saber se a
   // consulta varreu a tabela inteira ou entrou por um recorte — a diferença
   // entre uma busca que responde e uma que estoura o tempo.
@@ -1950,7 +1957,7 @@ function consulta(tabela) {
       embutidas = tabelasEmbutidas(colunas);
       return eu;
     },
-    eq(col, val) { pedidos.push(col); linhas = linhas.filter((l) => String(l[col]) === String(val)); return eu; },
+    eq(col, val) { pedidos.push(col); linhas = linhas.filter((l) => String(valorDaColuna(l, col)) === String(val)); return eu; },
     in(col, vals) { pedidos.push(col); linhas = linhas.filter((l) => vals.map(String).includes(String(l[col]))); return eu; },
     // COLUNA NUNCA ESCRITA É NULA, e não ausente.
     //
@@ -2177,6 +2184,10 @@ function consulta(tabela) {
       // que separa "três idas em fila indiana" de "três idas juntas".
       const marca = anotarNoDiario(tabela);
       if (marca) marca.colunas = colunas.replace(/\s+/g, " ").slice(0, 90);
+      // E POR ONDE ELA FILTROU: a mesma tabela é lida para coisas diferentes,
+      // e as colunas do filtro são o que separa a releitura da lista (a das
+      // fixadas) da pergunta de um aviso sobre uma conversa só.
+      if (marca) marca.pedidos = pedidos.slice();
       // O ORIGINAL FICA GUARDADO ANTES DE TROCAR. Reatribuir `resolver` a uma
       // função que chama `resolver` é a função chamando a si mesma — pilha
       // estourada na primeira consulta.
@@ -2312,6 +2323,14 @@ function consulta(tabela) {
       if (gravacao) {
         eu.gravar(gravacao.reg, gravacao.porOnde);
         if (tabela === "zorvin_tratamentos") for (const n of linhas) situacaoDoClique(n);
+        // A CONVERSA QUE NASCE pela tela ("Nova conversa", a busca que oferece)
+        // ganha o padrão da coluna, como no banco.
+        if (tabela === "conversas" && !(typeof globalThis !== "undefined" && globalThis.__SEM_SITUACAO)) {
+          for (const n of linhas) {
+            if (n.situacao === undefined) n.situacao = "aberto";
+            if (n.protocolo === undefined) n.protocolo = null;
+          }
+        }
         if (funil) {
           for (const n of linhas) {
             const de = etapaAntes.get(`${n.contato_id}|${n.departamento_id}`);
@@ -2917,10 +2936,12 @@ export const supabase = {
       for (const c of TABELAS.conversas || []) {
         if (String(c.advogado_id) !== String(args && args.p_telefone) || c.arquivada) continue;
         if (!(TABELAS.mensagens || []).some((m) => String(m.conversa_id) === String(c.id))) continue;
-        if (!(c.situacao in r.nao_lidas)) continue;
-        r[c.situacao] += 1;
+        // A LINHA SEM A CHAVE conta como o padrão da coluna — ver `valorDaColuna`.
+        const sit = c.situacao === undefined ? "aberto" : c.situacao;
+        if (!(sit in r.nao_lidas)) continue;
+        r[sit] += 1;
         // AS NÃO LIDAS DE CADA ABA, na mesma passada — como no 028.
-        if ((c.nao_lidas || 0) > 0) r.nao_lidas[c.situacao] += 1;
+        if ((c.nao_lidas || 0) > 0) r.nao_lidas[sit] += 1;
       }
       return { data: r, error: null };
     }
