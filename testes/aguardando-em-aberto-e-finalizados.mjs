@@ -780,14 +780,25 @@ console.log("\nO tempo real: o que um colega finaliza sai da aba, e o que ele re
   // lista de propósito — a lista vem do banco recortada pela aba —, e reler a
   // página a cada mensagem de qualquer conversa das outras duas abas seria a
   // tela "recarregando sozinha", que esta casa já consertou uma vez.
+  //
+  // A MARCA DA RELEITURA É A CONSULTA DAS FIXADAS, que toda leitura da
+  // primeira página faz — e nada mais faz. Contar as idas a `conversas` não
+  // serve: o aviso de mensagem nova já pergunta pelo dono e pela conversa, e
+  // eu escrevi "no máximo 2" sem medir, e a primeira rodada mediu 4 sem
+  // releitura nenhuma.
   const { ctx, page } = await abrirPainel();
   await page.waitForTimeout(800);
   await page.evaluate(() => { globalThis.__DIARIO = []; });
   await page.evaluate(() => globalThis.__MENSAGEM_PELA_PONTE("cv-ag", "contato", "ainda estou esperando"));
   await page.waitForTimeout(3500);
-  const idas = await page.evaluate(() => (globalThis.__DIARIO || []).filter((x) => x.tabela === "conversas").length);
+  const releituras = await page.evaluate(() => (globalThis.__DIARIO || [])
+    .filter((x) => x.tabela === "conversas" && (x.pedidos || []).includes("fixada")).length);
+  const pediuAConversa = await page.evaluate(() => (globalThis.__DIARIO || [])
+    .some((x) => x.tabela === "conversas" && /situacao/.test(x.colunas || "")));
   await page.evaluate(() => { globalThis.__DIARIO = null; });
-  ok("a mensagem nova numa conversa “Aguardando” não relê a lista de “Em aberto”", idas <= 2, `${idas} idas a conversas`);
+  ok("(o aviso perguntou ao banco de quem é a conversa, e em qual aba ela está)", pediuAConversa);
+  ok("a mensagem nova numa conversa “Aguardando” não relê a lista de “Em aberto”", releituras === 0,
+     `${releituras} releitura(s) da lista`);
   ok("(e ela continua fora de “Em aberto”)", !(await nomesNaLista(page)).includes(ALICE));
   await ctx.close();
 }
