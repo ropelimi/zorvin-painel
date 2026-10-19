@@ -18,6 +18,17 @@
 //      conversa que nunca esteve nela;
 //   4. o contraste: na conversa que ESPERA, tudo continua como antes — a
 //      janela promete tirar da fila, tira, e oferece desfazer.
+// ------------------------------------------------------------
+// ESTA PROVA RODA NO BANCO SEM O SCRIPT 028 (19/10)
+//
+// Com o 028, o "Já tratei" virou o "Finalizar": toda conversa finaliza e muda
+// de aba, e o "Voltar para a fila" virou o "Reabrir". O que esta prova mede é
+// o caminho de quem NÃO tem o 028 — que continua existindo, e tem de
+// continuar igual: "sem o script, tudo como antes". O caminho com o 028 é
+// provado em `aguardando-em-aberto-e-finalizados`, com as mesmas réguas que
+// importam aqui (a marcação obrigatória, o desfazer do último clique, a espera
+// ORIGINAL que volta, o banco que recusa).
+// ------------------------------------------------------------
 import { abrirNavegador, ENDERECO } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
@@ -101,6 +112,7 @@ async function abrirPainel(largura = 1400) {
     globalThis.__ERRO_NA_GRAVACAO = {};
     globalThis.__ESCRITA_SEM_EFEITO = [];
     globalThis.__SEM_ESPERA = false;
+    globalThis.__SEM_SITUACAO = true;   // o banco sem o 028 — ver a nota no alto
     globalThis.__AVISOS_VISTOS = [];
     setInterval(() => {
       const el = document.querySelector("[data-aviso]");

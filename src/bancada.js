@@ -1418,6 +1418,11 @@ const TABELAS = {
   // COMEÇA VAZIA: as linhas nascem do que se faz na tela. Semear uma aqui
   // esconderia uma tela que não grava nada — a mesma razão de `alteracoes`.
   zorvin_tratamentos: [],
+  // OS ATENDIMENTOS (script 028 da ponte), um por protocolo. Começam VAZIOS,
+  // pela régua de `zorvin_tratamentos`: as conversas de sempre não têm
+  // protocolo (ver a nota em `situacao`, mais abaixo), e os que nascem são dos
+  // gatilhos imitados aqui ou da `__SEMENTE` de cada prova.
+  zorvin_atendimentos: [],
   // O FUNIL DE ETAPAS (script 017 da ponte). As ETAPAS nascem como o script
   // as semeia — as sete sugeridas, em cada departamento. Os CARTÕES e os
   // MOVIMENTOS começam vazios, pela régua de `zorvin_tratamentos`: as linhas
@@ -1555,6 +1560,169 @@ for (const c of TABELAS.conversas || []) {
   for (const k of ["responsavel_id", "responsavel_em", "responsavel_por"]) {
     if (!Object.prototype.hasOwnProperty.call(c, k)) c[k] = null;
   }
+  // A SITUAÇÃO (script 028 da ponte), pela mesma razão. As conversas de
+  // sempre nascem EM ABERTO e sem protocolo, e é decisão: com elas em
+  // "aguardando" a lista de toda prova antiga perderia as conversas que nunca
+  // tiveram resposta, que a aba de abertura não mostra — e cada prova passaria
+  // a medir a aba, e não o que ela foi escrita para medir. O que o 028 faz com
+  // cada conversa é provado nas cenas plantadas de `aguardando-em-aberto-e-
+  // finalizados`, com os gatilhos imitados logo abaixo.
+  if (!Object.prototype.hasOwnProperty.call(c, "situacao")) c.situacao = "aberto";
+  if (!Object.prototype.hasOwnProperty.call(c, "protocolo")) c.protocolo = null;
+}
+
+// ============================================================
+//  OS GATILHOS DO SCRIPT 028, imitados
+//
+//  A situação da conversa e o protocolo são do BANCO: a tela nunca os grava,
+//  fora o Reabrir. Uma bancada que deixasse a tela gravar qualquer coisa
+//  aprovaria um painel que finaliza "por fora" do "Já tratei", e uma que não
+//  finalizasse nada no clique deixaria as cenas das abas sem o que medir. As
+//  regras são as do script (ver o CLAUDE.md da ponte), e cada uma tem a sua
+//  conferência num Postgres de verdade, na seção 67 da prova da ponte.
+// ============================================================
+let PROXIMO_PROTOCOLO = 1;
+const ANO_EM_SAO_PAULO = (quando) => new Intl.DateTimeFormat("en",
+  { timeZone: "America/Sao_Paulo", year: "numeric" }).format(new Date(quando));
+/** Um atendimento novo — `zorvin_atendimento_abre`. Não mexe na conversa. */
+function abrirAtendimento(conversaId, quando, origem, por = null, resposta = null) {
+  const a = {
+    id: `zorvin_atendimentos-${(TABELAS.zorvin_atendimentos || []).length + 1}-${PROXIMO_PROTOCOLO}`,
+    protocolo: `${ANO_EM_SAO_PAULO(quando)}-${String(PROXIMO_PROTOCOLO++).padStart(6, "0")}`,
+    conversa_id: conversaId, aberto_em: quando, origem, aberto_por: por,
+    primeira_resposta_em: resposta, finalizado_em: null, finalizado_por: null,
+  };
+  (TABELAS.zorvin_atendimentos || (TABELAS.zorvin_atendimentos = [])).push(a);
+  return a;
+}
+const atendimentoDe = (c) => (c && c.protocolo
+  ? (TABELAS.zorvin_atendimentos || []).find((a) => a.protocolo === c.protocolo) : null) || null;
+/** "aberto" se a equipe já agiu na conversa, "aguardando" se nunca. */
+function abertaOuAguardando(conversaId) {
+  const agiu = (TABELAS.mensagens || []).some((m) => String(m.conversa_id) === String(conversaId) && m.origem === "advogado")
+    || (TABELAS.zorvin_tratamentos || []).some((t) => String(t.conversa_id) === String(conversaId) && !t.desfeito_em);
+  return agiu ? "aberto" : "aguardando";
+}
+const conversaDe = (id) => (TABELAS.conversas || []).find((c) => String(c.id) === String(id));
+/** O clique do "Já tratei" que entra — `zorvin_situacao_do_clique`. */
+function situacaoDoClique(t) {
+  const c = conversaDe(t.conversa_id);
+  if (!c || !Object.prototype.hasOwnProperty.call(c, "situacao") || t.desfeito_em) return;
+  const quando = t.quando || new Date().toISOString();
+  let a = atendimentoDe(c);
+  if (!a) { a = abrirAtendimento(c.id, quando, "equipe"); c.protocolo = a.protocolo; }
+  t.atendimento_id = a.id;
+  if (!a.finalizado_em) {
+    a.finalizado_em = new Date(Math.max(new Date(quando).getTime(), new Date(a.aberto_em).getTime())).toISOString();
+    a.finalizado_por = t.quem || (TABELAS.usuarios[0] || {}).id || null;
+    c.situacao = "finalizado";
+    c.tratada_em = new Date().toISOString();
+    c.esperando_desde = null;
+  }
+}
+/** O clique desfeito — `zorvin_situacao_desfeita`: o MESMO atendimento reabre. */
+function situacaoDoDesfeito(t) {
+  const c = conversaDe(t.conversa_id);
+  const a = atendimentoDe(c);
+  if (!a || !a.finalizado_em || t.atendimento_id !== a.id) return;
+  const sobrou = (TABELAS.zorvin_tratamentos || [])
+    .filter((x) => x.atendimento_id === a.id && !x.desfeito_em)
+    .sort((x, y) => new Date(x.quando) - new Date(y.quando))[0];
+  if (sobrou) { a.finalizado_em = sobrou.quando; a.finalizado_por = sobrou.quem || null; return; }
+  a.finalizado_em = null; a.finalizado_por = null;
+  c.situacao = abertaOuAguardando(c.id);
+}
+/** A guarda — `zorvin_situacao_guardada`. Da tela, só o Reabrir: devolve o
+ *  erro do banco (42501) ou, para cada linha reaberta, o protocolo novo. */
+function guardaDaSituacao(linhas, patch) {
+  const novos = new Map();
+  for (const l of linhas) {
+    const sit = "situacao" in patch ? patch.situacao : l.situacao;
+    const prot = "protocolo" in patch ? patch.protocolo : l.protocolo;
+    if (sit === l.situacao && prot === l.protocolo) continue;
+    if (l.situacao === "finalizado" && sit === "aberto" && prot === l.protocolo) {
+      novos.set(l, abrirAtendimento(l.id, new Date().toISOString(), "reabertura",
+                                    (TABELAS.usuarios[0] || {}).id || null).protocolo);
+      continue;
+    }
+    return { erro: { code: "42501",
+      message: "A situação da conversa é do banco: ela muda com as mensagens, com o “Já tratei” e com o Reabrir." } };
+  }
+  return { novos };
+}
+/** A mensagem que entra — `zorvin_situacao_da_mensagem`. */
+function situacaoDaMensagem(m) {
+  const c = conversaDe(m.conversa_id);
+  if (!c || !Object.prototype.hasOwnProperty.call(c, "situacao")) return;
+  if (m.origem !== "contato" && m.origem !== "advogado") return;
+  const a = atendimentoDe(c);
+  if (m.origem === "contato") {
+    if (!a) {
+      const novo = abrirAtendimento(c.id, m.criado_em, "cliente");
+      c.protocolo = novo.protocolo;
+      c.situacao = abertaOuAguardando(c.id);
+    } else if (a.finalizado_em && new Date(m.criado_em) > new Date(a.finalizado_em)) {
+      c.protocolo = abrirAtendimento(c.id, m.criado_em, "cliente").protocolo;
+      c.situacao = "aberto";
+    }
+    return;
+  }
+  if (!a) {
+    c.protocolo = abrirAtendimento(c.id, m.criado_em, "equipe", null, m.criado_em).protocolo;
+    c.situacao = "aberto";
+  } else if (!a.finalizado_em) {
+    if (!a.primeira_resposta_em && new Date(m.criado_em) >= new Date(a.aberto_em)) a.primeira_resposta_em = m.criado_em;
+    c.situacao = "aberto";
+  }
+}
+// A NUMERAÇÃO CONTINUA DEPOIS DO QUE A SEMENTE PLANTOU, como a sequência do
+// banco continua depois da montagem.
+for (const a of TABELAS.zorvin_atendimentos || []) {
+  const n = Number(String(a.protocolo || "").split("-")[1]);
+  if (Number.isFinite(n) && n >= PROXIMO_PROTOCOLO) PROXIMO_PROTOCOLO = n + 1;
+}
+// A MENSAGEM QUE A PONTE GRAVA, com o que os gatilhos do banco fazem junto
+// (a prévia e a ordem, a espera, a situação) e os dois avisos do tempo real
+// que o Supabase mandaria. É o caminho de "o cliente escreveu" nas provas das
+// abas — e não um `__EMITIR` solto, que avisaria de uma mensagem que o banco
+// não tem e de uma conversa que não mudou.
+if (typeof globalThis !== "undefined") {
+  let n = 0;
+  globalThis.__MENSAGEM_PELA_PONTE = (conversaId, origem, texto = "", criado_em = new Date().toISOString(), extra = {}) => {
+    const m = { id: `m-ponte-${Date.now()}-${++n}`, conversa_id: conversaId, origem, tipo: "texto", texto,
+                id_uazapi: `PONTE-${Date.now()}-${n}`, criado_em, ...extra };
+    (TABELAS.mensagens || (TABELAS.mensagens = [])).push(m);
+    const c = conversaDe(conversaId);
+    if (c) {
+      if (!c.ultima_atividade || new Date(criado_em) >= new Date(c.ultima_atividade)) {
+        c.ultima_mensagem = texto; c.ultima_atividade = criado_em;
+      }
+      if (origem === "contato") {
+        c.nao_lidas = (c.nao_lidas || 0) + 1;
+        const coberta = (c.tratada_em && new Date(c.tratada_em) >= new Date(criado_em))
+          || (TABELAS.mensagens || []).some((x) => String(x.conversa_id) === String(conversaId)
+               && x.origem === "advogado" && new Date(x.criado_em) >= new Date(criado_em));
+        if (!coberta && !c.esperando_desde) c.esperando_desde = criado_em;
+      } else if (origem === "advogado") {
+        c.esperando_desde = null; c.tratada_em = null;
+      }
+      situacaoDaMensagem(m);
+    }
+    if (typeof globalThis.__EMITIR === "function") {
+      globalThis.__EMITIR("INSERT", "mensagens", { ...m });
+      if (c) { const { contato, ...linha } = c; globalThis.__EMITIR("UPDATE", "conversas", { ...linha }); }
+    }
+    return m;
+  };
+}
+
+// O BANCO SEM O SCRIPT 028. As duas colunas TIRADAS das conversas, e pedidas
+// pelo nome — num filtro, numa leitura ou numa gravação — respondem 42703,
+// como no Postgres; a tabela dos atendimentos responde "não existe".
+if (typeof globalThis !== "undefined" && globalThis.__SEM_SITUACAO) {
+  for (const c of TABELAS.conversas || []) { delete c.situacao; delete c.protocolo; }
+  const sem = globalThis.__SEM_COLUNAS || (globalThis.__SEM_COLUNAS = {});
+  sem.conversas = [...new Set([...(sem.conversas || []), "situacao", "protocolo"])];
 }
 
 // DEPOIS DA SEMENTE, e a ordem é o conserto. Tirando a coluna antes, as
@@ -1734,7 +1902,10 @@ function consulta(tabela) {
         // O MANUAL DO COPILOTO (script 024) que ainda não rodou: "não existe",
         // e a aba de administração some — o botão continua, porque quem decide
         // se ele aparece é a ponte, e ela sugere sem o manual.
-        || (tabela === "zorvin_copiloto" && globalThis.__SEM_COPILOTO));
+        || (tabela === "zorvin_copiloto" && globalThis.__SEM_COPILOTO)
+        // OS ATENDIMENTOS (script 028) que ainda não rodaram: "não existe", e
+        // não lista vazia — vazia é a conversa que ainda não tem protocolo.
+        || (tabela === "zorvin_atendimentos" && globalThis.__SEM_SITUACAO));
   let linhas = faltando ? [] : (TABELAS[tabela] || []).slice();
   // O QUE FOI PEDIDO, e não só o resultado. É por isto que dá para saber se a
   // consulta varreu a tabela inteira ou entrou por um recorte — a diferença
@@ -2140,6 +2311,7 @@ function consulta(tabela) {
       }
       if (gravacao) {
         eu.gravar(gravacao.reg, gravacao.porOnde);
+        if (tabela === "zorvin_tratamentos") for (const n of linhas) situacaoDoClique(n);
         if (funil) {
           for (const n of linhas) {
             const de = etapaAntes.get(`${n.contato_id}|${n.departamento_id}`);
@@ -2182,10 +2354,23 @@ function consulta(tabela) {
       if (apagando && semEfeito.includes(tabela)) {
         return resolver({ data: [], count: 0, error: null });
       }
+      // A GUARDA DA SITUAÇÃO (o gatilho `before update` do 028), DEPOIS das
+      // recusas acima e ANTES de gravar. Depois da recusa calada porque, no
+      // banco, a regra de acesso esconde a linha antes de qualquer gatilho
+      // rodar: um Reabrir recusado não pode deixar um protocolo órfão. E antes
+      // de gravar porque um banco que recusa não grava metade.
+      let reabertas = null;
+      if (tabela === "conversas" && patch && ("situacao" in patch || "protocolo" in patch)) {
+        const g = guardaDaSituacao(linhas, patch);
+        if (g.erro) return resolver({ data: null, count: null, error: g.erro });
+        reabertas = g.novos;
+      }
       if (patch) {
+        const desfeitoAntes = tabela === "zorvin_tratamentos" ? new Map(linhas.map((l) => [l, l.desfeito_em])) : null;
         linhas.forEach((l) => {
           const de = l.etapa_id;
           Object.assign(l, patch);
+          if (reabertas && reabertas.has(l)) l.protocolo = reabertas.get(l);
           if (funil && "etapa_id" in patch && de !== l.etapa_id) {
             l.movido_em = new Date().toISOString();
             movimento(l, de, l.etapa_id);
@@ -2198,6 +2383,11 @@ function consulta(tabela) {
             l.atualizado_por = (TABELAS.usuarios[0] || {}).id || null;
           }
         });
+        // O CLIQUE DESFEITO, depois de TODAS as linhas da gravação: o gatilho
+        // de verdade roda no fim do comando, e vê o clique inteiro desfeito.
+        if (desfeitoAntes && "desfeito_em" in patch && patch.desfeito_em) {
+          for (const l of linhas) if (!desfeitoAntes.get(l)) situacaoDoDesfeito(l);
+        }
       }
       if (apagando && funil) linhas.forEach((l) => movimento(l, l.etapa_id, null));
       if (apagando) {
@@ -2227,6 +2417,19 @@ function consulta(tabela) {
       if (semColunas.length && !gravacao && !patch && !apagando && colunas && colunas.trim() !== "*") {
         const nomes = colunas.split(",").map((c) => c.trim());
         const falta = semColunas.find((c) => nomes.includes(c));
+        if (falta) {
+          return resolver({ data: null, count: null, error: { code: "42703",
+            message: `column ${tabela}.${falta} does not exist` } });
+        }
+      }
+      // E O FILTRO POR UMA COLUNA QUE ESTA BASE NÃO TEM, também. É assim que o
+      // painel descobre se a lista pode ser pedida por aba (script 028): o
+      // PostgREST recusa `situacao=eq.aberto` com 42703. Sem isto a bancada
+      // filtraria linhas sem a chave e devolveria uma LISTA VAZIA — a tela
+      // sem o script mostraria "nenhuma conversa" em vez de cair na lista de
+      // sempre, e a prova aprovaria o pior dos dois.
+      if (semColunas.length && !gravacao && !patch && !apagando) {
+        const falta = semColunas.find((c) => pedidos.includes(c));
         if (falta) {
           return resolver({ data: null, count: null, error: { code: "42703",
             message: `column ${tabela}.${falta} does not exist` } });
@@ -2697,6 +2900,29 @@ export const supabase = {
         if ((c.esperando_desde || null) !== novo) { c.esperando_desde = novo; mudaram += 1; }
       }
       return { data: mudaram, error: null };
+    }
+
+    // QUANTAS EM CADA ABA (script 028) — o que a lista mostra: sem as
+    // arquivadas e sem as conversas que nunca tiveram mensagem.
+    if (nome === "zorvin_contar_situacoes") {
+      if (globalThis.__SEM_SITUACAO) {
+        return { data: null, error: { code: "PGRST202", message: "Could not find the function public.zorvin_contar_situacoes" } };
+      }
+      if (globalThis.__CONTAGEM_DAS_ABAS_FALHA) {
+        return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } };
+      }
+      await espera(40);
+      globalThis.__CONTAGENS_DAS_ABAS = (globalThis.__CONTAGENS_DAS_ABAS || 0) + 1;
+      const r = { aguardando: 0, aberto: 0, finalizado: 0, nao_lidas: { aguardando: 0, aberto: 0, finalizado: 0 } };
+      for (const c of TABELAS.conversas || []) {
+        if (String(c.advogado_id) !== String(args && args.p_telefone) || c.arquivada) continue;
+        if (!(TABELAS.mensagens || []).some((m) => String(m.conversa_id) === String(c.id))) continue;
+        if (!(c.situacao in r.nao_lidas)) continue;
+        r[c.situacao] += 1;
+        // AS NÃO LIDAS DE CADA ABA, na mesma passada — como no 028.
+        if ((c.nao_lidas || 0) > 0) r.nao_lidas[c.situacao] += 1;
+      }
+      return { data: r, error: null };
     }
 
     if (nome === "salvar_minha_foto") {

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ListChecks, Loader2, X } from "lucide-react";
+import { CircleCheck, ListChecks, Loader2, X } from "lucide-react";
 
 // ============================================================
 //  A CHECKLIST DO "JÁ TRATEI"
@@ -36,6 +36,15 @@ import { ListChecks, Loader2, X } from "lucide-react";
 //  preenchido. Quem decide qual assunto pede é a MARCA do banco, e não o nome
 //  "OUTROS" escrito aqui — quem compra o programa pode chamá-lo de outra
 //  coisa, ou querer descrição em mais de um.
+//
+//  ------------------------------------------------------------
+//  NO SCRIPT 028 ELA É A JANELA DO "FINALIZAR" (19/10)
+//
+//  A mesma checklist, com outro título e outra promessa: o registro do que
+//  foi tratado FINALIZA o atendimento, e a conversa vai para "Finalizados".
+//  A janela diz o protocolo que está sendo fechado e o que acontece se o
+//  cliente escrever de novo — sem isso, "finalizar" se leria como "arquivar",
+//  e a pessoa hesitaria em fechar uma conversa que talvez volte.
 // ============================================================
 
 // O TETO DO TEXTO, o mesmo do banco (check de 500 no script 009). Aqui ele
@@ -43,7 +52,8 @@ import { ListChecks, Loader2, X } from "lucide-react";
 // descobriria o teto no erro do banco, depois de apertar Confirmar.
 const TETO_DA_DESCRICAO = 500;
 
-export function JaTratei({ C, estreito, nome, dias, esperando = true, assuntos, erroDosAssuntos = "", ocupado, erro, aoConfirmar, aoFechar }) {
+export function JaTratei({ C, estreito, nome, dias, esperando = true, finalizar = false, protocolo = null,
+                           assuntos, erroDosAssuntos = "", ocupado, erro, aoConfirmar, aoFechar }) {
   const [escolhidos, setEscolhidos] = useState([]);
   const [descricao, setDescricao] = useState("");
 
@@ -60,7 +70,7 @@ export function JaTratei({ C, estreito, nome, dias, esperando = true, assuntos, 
   }
 
   return (
-    <div onClick={aoFechar} data-ja-tratei-janela
+    <div onClick={aoFechar} data-ja-tratei-janela data-ja-tratei-modo={finalizar ? "finalizar" : "tratar"}
          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 200,
                   display: "flex", alignItems: "center", justifyContent: "center", padding: estreito ? 12 : 24 }}>
       <div onClick={(e) => e.stopPropagation()}
@@ -70,12 +80,15 @@ export function JaTratei({ C, estreito, nome, dias, esperando = true, assuntos, 
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 16px",
                       borderBottom: `1px solid ${C.divider}` }}>
-          <ListChecks size={18} color={C.green} />
+          {finalizar ? <CircleCheck size={18} color={C.green} /> : <ListChecks size={18} color={C.green} />}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 700 }}>Já tratei</div>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>{finalizar ? "Finalizar" : "Já tratei"}</div>
             <div style={{ fontSize: 12.5, color: C.textSecondary, overflow: "hidden",
                           textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {nome}
+              {finalizar && protocolo && (
+                <span data-ja-tratei-protocolo={protocolo}>{" · "}protocolo {protocolo}</span>
+              )}
               {dias >= 1 && (
                 <span data-ja-tratei-dias={dias} style={{ color: dias >= 3 ? "#e5573f" : C.textSecondary, fontWeight: 600 }}>
                   {" · "}esperando há {dias} {dias === 1 ? "dia" : "dias"}
@@ -93,7 +106,10 @@ export function JaTratei({ C, estreito, nome, dias, esperando = true, assuntos, 
         <div style={{ padding: "12px 16px", fontSize: 12.5, color: C.textSecondary, lineHeight: 1.5 }}>
           {/* SÓ PROMETE TIRAR DA FILA QUEM ESTÁ NELA. Na conversa respondida
               o "Já tratei" só registra, e a frase diz isso. */}
-          {esperando
+          {finalizar
+            ? <>Finaliza o atendimento <b>sem mandar mensagem</b>: a conversa vai para “Finalizados”. Marque
+                o que foi tratado. Se o cliente escrever de novo, ela volta para “Em aberto” com um protocolo novo.</>
+            : esperando
             ? <>Tira esta conversa da fila de espera <b>sem mandar mensagem</b>. Marque o que foi tratado.</>
             : <>Esta conversa não está esperando resposta: o “Já tratei” só <b>registra</b> o que foi tratado.</>}
         </div>
@@ -173,7 +189,8 @@ export function JaTratei({ C, estreito, nome, dias, esperando = true, assuntos, 
           <button onClick={() => aoConfirmar(escolhidos, descricao)} disabled={bloqueado || ocupado}
                   data-ja-tratei-confirmar
                   title={nenhum ? "Marque pelo menos um assunto"
-                       : faltaTexto ? "Escreva o que foi tratado" : esperando ? "Tirar da fila de espera" : "Registrar"}
+                       : faltaTexto ? "Escreva o que foi tratado"
+                       : finalizar ? "Finalizar o atendimento" : esperando ? "Tirar da fila de espera" : "Registrar"}
                   style={{ border: "none", background: bloqueado || ocupado ? C.divider : C.green,
                            color: bloqueado || ocupado ? C.textSecondary : "#fff", borderRadius: 8,
                            padding: "8px 16px", fontSize: 13, fontWeight: 600,
@@ -181,19 +198,20 @@ export function JaTratei({ C, estreito, nome, dias, esperando = true, assuntos, 
                            display: "inline-flex", alignItems: "center", gap: 6,
                            minHeight: estreito ? 40 : undefined }}>
             {ocupado ? <Loader2 size={14} className="zv-girando" /> : null}
-            {ocupado ? (esperando ? "Tirando da fila…" : "Registrando…") : "Confirmar"}
+            {ocupado ? (finalizar ? "Finalizando…" : esperando ? "Tirando da fila…" : "Registrando…")
+              : finalizar ? "Finalizar" : "Confirmar"}
           </button>
         </div>
         {nenhum && ativos.length > 0 && (
           <div data-ja-tratei-falta-marcar
                style={{ fontSize: 12, color: C.textSecondary, padding: "0 16px 12px", textAlign: "right" }}>
-            Marque pelo menos um assunto para confirmar.
+            Marque pelo menos um assunto para {finalizar ? "finalizar" : "confirmar"}.
           </div>
         )}
         {!nenhum && faltaTexto && (
           <div data-ja-tratei-falta-texto
                style={{ fontSize: 12, color: C.textSecondary, padding: "0 16px 12px", textAlign: "right" }}>
-            Escreva o que foi tratado para confirmar.
+            Escreva o que foi tratado para {finalizar ? "finalizar" : "confirmar"}.
           </div>
         )}
       </div>

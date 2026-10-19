@@ -94,7 +94,7 @@ const SEMENTE = {
   ],
 };
 
-async function abrir({ recusarLeitura = [], largura = 1400 } = {}) {
+async function abrir({ recusarLeitura = [], largura = 1400, semSituacao = false } = {}) {
   const ctx = await nav.newContext({ viewport: { width: largura, height: 900 } });
   const page = await ctx.newPage();
   const estouros = [];
@@ -108,7 +108,8 @@ async function abrir({ recusarLeitura = [], largura = 1400 } = {}) {
     globalThis.__TEM_FUNCAO_PAINEL = true;
     globalThis.__ESCRITA_SEM_EFEITO = [];
     globalThis.__ERRO_NA_GRAVACAO = {};
-  }, { semente: SEMENTE, recusarLeitura });
+    globalThis.__SEM_SITUACAO = d.semSituacao;
+  }, { semente: SEMENTE, recusarLeitura, semSituacao });
   await page.goto(ENDERECO);
   return { ctx, page, estouros };
 }
@@ -255,7 +256,11 @@ console.log("\n7. A agenda acha o contato pelo nome do cadastro");
 // ==================================================================
 console.log("\n8. “Voltar para a fila” desfaz só o último “Já tratei”");
 {
-  const { ctx, page } = await abrir();
+  // NO BANCO SEM O SCRIPT 028 (19/10): com ele, o "Voltar para a fila" virou
+  // o "Desfazer a finalização", dentro do "Reabrir", e a mesma régua — só o
+  // último clique — é provada em `aguardando-em-aberto-e-finalizados`. Esta
+  // cena fica com o caminho de quem não tem o 028, que continua existindo.
+  const { ctx, page } = await abrir({ semSituacao: true });
   await pronto(page);
   await abrirConversa(page, "a3");
   const tipo = await page.locator("[data-ja-tratei]").first().getAttribute("data-ja-tratei").catch(() => null);

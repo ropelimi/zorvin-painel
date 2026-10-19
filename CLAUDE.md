@@ -3687,6 +3687,165 @@ importam mais:
 - a recusa calada virando "salvo";
 - salvar sem reler.
 
+## Aguardando, em aberto e finalizados (19/10)
+
+Pedido do Rodrigo, com a descrição do DataCrazy ao lado: *"para facilitar a
+organização"*. A lista ganha **três abas que a separam** — o cliente que a
+equipe ainda não atendeu, o que já foi atendido e não foi finalizado, e o
+finalizado —, com **um protocolo por atendimento**. Decidido com ele:
+
+- **o "Já tratei" vira o "Finalizar"**: um botão só, com a mesma checklist. O
+  registro do que foi tratado É a finalização, e o relatório continua contando
+  como sempre contou;
+- **nada muda de sentido**, nas palavras dele: *"o que está aguardando
+  continua aguardando, o que estiver como Já tratei fica como finalizado. Caso
+  o cliente tenha enviado mensagem após já ter sido finalizado, então a
+  conversa deve ficar aberta novamente, porém já com a tratativa
+  (finalizado)"*;
+- **Aguardando e Em aberto são abas separadas**;
+- **o protocolo é só da equipe**: não vai para o cliente.
+
+**Quem decide em qual aba cada conversa mora é o BANCO** (script 028 da ponte,
+com as regras no CLAUDE.md dela). A tela lê `conversas.situacao` e
+`conversas.protocolo`, e a única mudança de situação que ela pede é o Reabrir.
+Uma tela que gravasse a situação por conta própria faria a aba e o protocolo
+discordarem — e o banco recusa (42501).
+
+### As abas
+
+Entre a busca e a fita de filtros (`data-abas-da-situacao`). **Abas, e não
+pílulas**: as pílulas da fita FILTRAM a lista da tela; as abas a SEPARAM, e
+cada conversa mora em uma só. Duas fileiras de pílulas iguais fariam pensar
+que fazem a mesma coisa.
+
+| | |
+|---|---|
+| **o número** | do banco (`zorvin_contar_situacoes`), e não das linhas carregadas |
+| **Finalizados** | **sem número**: só cresce, e um número que nunca zera se aprende a não ler |
+| **Aguardando** | âmbar com qualquer conversa dentro — é o cliente que ninguém atendeu |
+| **ao abrir** | sempre "Em aberto", e **não é guardado** no navegador: quem deixou "Finalizados" aberto ontem abriria hoje a lista de quem já foi atendido |
+| **na pasta de arquivadas** | não há aba: lá moram as arquivadas das três |
+
+**A aba vai ao BANCO** (`situacao=eq.aberto` na consulta), e não só à lista
+carregada: a página de 200 viria com as três abas misturadas, e "Finalizados"
+mostraria as finalizadas ENTRE as 200 mais recentes com cara de "as
+finalizadas". É a armadilha do filtro de grupos, e a prova tem a cena: a
+finalizada parada há 1300 horas no telefone de 1200 conversas.
+
+**O que entra nas dependências de `carregarConversas` é a PERGUNTA**
+(`abaDaLista`), e não `temSituacao` — a lição de 25/09 (`ordenarPelaEspera`).
+A descoberta de que a coluna existe mora no módulo (`SITUACAO_NO_BANCO`): sem
+o 028, o filtro derruba a consulta com 42703, a bandeira baixa e a lista é
+refeita sem aba, **uma vez por sessão**.
+
+**Trocar de aba não afirma uma ausência que ainda não apurou.** Entre o clique
+e a resposta, a lista ainda é a da aba de antes, e o recorte da tela a esconde
+inteira: sem `abaDasConversas` (a régua de `conversasDe`), "Finalizados" diria
+"nenhuma conversa finalizada" durante a ida ao banco. Hoje diz "Carregando as
+conversas…".
+
+**A pílula "Não lidas" conta a aba**, e não o telefone. O banco devolve as
+não lidas de cada aba junto com o número delas. Com o do telefone inteiro, ela
+diria 10 numa aba em que o filtro mostra 6, e as outras 4 pareceriam ter
+sumido. O selo da barra lateral continua sendo o do telefone: lá a pergunta é
+outra. Enquanto a conta da aba não chega, a pílula fica sem número.
+
+**A busca atravessa as abas** (`naAba` deixa passar tudo com busca escrita),
+e a linha da outra aba ganha um selo (`data-selo-da-situacao`: "aguardando",
+"em aberto", "finalizada"), pela régua do selo de arquivada. Procurar um
+cliente e não achá-lo porque ele mora noutra aba seria o "nada encontrado" que
+faz a pessoa concluir que ele não está no Zorvin.
+
+**O tempo real muda a conversa de aba na tela de todo mundo**: o tratador de
+`conversas` traz `situacao` e `protocolo` pela presença da chave. A conta das
+abas é pedida de novo **só quando a situação, o protocolo ou o "tem não lida"
+mudam**, com uma espera de 2,5 s e uma conta por vez — quase todo aviso dali é
+outra coisa (a prévia, o "digitando…", o "estou atendendo" de minuto em
+minuto). E **a conversa de fora da lista que entra na aba aberta** (um colega
+finalizou com "Finalizados" na tela, ou reabriu) relê a página
+(`agendarReleituraPelaAba`), pulando a vez se o aviso da mensagem já releu.
+
+### Finalizar
+
+A mesma checklist (`JaTratei.jsx`, `finalizar`), com o título "Finalizar", o
+protocolo que vai ser fechado e o que acontece se o cliente escrever de novo.
+**Quem finaliza é o gatilho do banco, na mesma gravação do registro**: a tela
+NÃO grava `tratada_em` nem `situacao` — seria uma segunda escrita da mesma
+regra. **A tela relê a linha** em vez de supor (o gatilho desiste calado se
+tropeçar, de propósito), e a frase diz o que o banco fez: *"Finalizada —
+protocolo 2026-000123"*, ou *"o banco não finalizou"*.
+
+**Larguras medidas** (`LARGURA_DO_JA_TRATEI`, a 1920): "Já tratei" deu os 90
+de sempre, o que confere a régua; "Finalizar" 92,7 e "Reabrir" 85,8.
+
+### Reabrir — dois sentidos, e os dois existem
+
+| | o que acontece | o registro |
+|---|---|---|
+| **Reabrir para continuar** | volta para "Em aberto" com um **protocolo novo** | fica — a finalização aconteceu |
+| **Desfazer (foi engano)** | o **mesmo** protocolo volta a ficar aberto | é marcado como desfeito |
+
+`Reabrir.jsx`. Um botão só teria de escolher por quem clica, e os dois erros
+são caros. **"Continuar" vem primeiro**: o engano se percebe na hora.
+
+- **Continuar** grava `situacao = 'aberto'` com `.eq("situacao",
+  "finalizado")` — entre abrir a janela e apertar, o cliente pode ter escrito
+  e a conversa já ter outro protocolo. **Zero linhas tem duas causas**, e a
+  linha relida diz qual: o banco não deixou, ou ela já não estava finalizada.
+- **Desfazer** marca o ÚLTIMO clique como desfeito (é o que reabre, pelo
+  gatilho), relê a conversa e só então devolve a fila de espera
+  (`tratada_em` nulo e `zorvin_recontar_espera`) — **a espera ORIGINAL**, a
+  conferência mais cara do "Já tratei". A ordem se inverte em relação ao
+  "Voltar para a fila" de sempre, pela mesma régua: primeiro o que se vê, e
+  aqui o que se vê é a aba. Sobrou outro clique no mesmo protocolo (duas
+  pessoas finalizaram juntas)? A conversa continua finalizada, e a frase diz.
+
+### Os marcos dos protocolos na conversa
+
+Cada atendimento vira até dois marcos na linha do tempo
+(`data-marco-do-atendimento`): *"Protocolo 2026-000100 aberto — o cliente
+escreveu"*, *"… finalizado por Jenifer"*, *"… reaberto por Rodrigo"*. É assim
+que "o cliente em si já foi tratado" aparece para quem abre a conversa depois.
+
+- **Lidos de `zorvin_atendimentos`**, numa quinta ida junto das notas; sem a
+  tabela, calados; com a leitura falhando, a faixa âmbar.
+- **Só os do trecho que está na tela**: com mensagens mais antigas por
+  carregar, um protocolo de três meses atrás no alto da conversa diria que ele
+  começou logo antes das mensagens desta semana. Entram junto das mensagens
+  antigas.
+- **Na frente da mensagem que abriu o protocolo**: a ordenação é estável, e o
+  marco tem a mesma hora dela.
+- **Relidos pelo tempo real da conversa**, quando a situação ou o protocolo
+  dela mudam — e não a cada aviso.
+
+**E dois defeitos de antes saíram junto.** O ponto de partida das "mensagens
+anteriores" era o primeiro item que não fosse nota — e a **resposta
+automática** (lida inteira, 50 de uma vez) mais velha que a janela fazia pular
+tudo o que ficava entre ela e a janela. Hoje é a mais antiga de `mensagens`
+(`ehDeMensagens`). E as anteriores eram **emendadas na frente**, sem
+reordenar: a nota mais velha que a janela ficava acima delas, fora da ordem do
+tempo. Hoje a lista é reordenada.
+
+### A bancada
+
+Imita os gatilhos do 028 (o clique que finaliza, o desfeito que reabre, a
+mensagem do cliente que reabre com protocolo novo, a guarda que recusa a
+situação gravada pela tela). **As conversas de sempre nascem "em aberto" e sem
+protocolo**, e é decisão: em "aguardando", a lista de toda prova antiga
+perderia as conversas que nunca tiveram resposta, e cada prova passaria a
+medir a aba. `__MENSAGEM_PELA_PONTE` é "o cliente escreveu", com os dois
+avisos do tempo real; `__SEM_SITUACAO` é o banco sem o 028, e o filtro por uma
+coluna que a base não tem responde 42703, como no PostgREST — sem isso a
+bancada devolveria lista vazia, e a prova aprovaria o pior dos dois.
+
+### O que fica para depois
+
+A **contabilização** do DataCrazy (relatório por protocolo, tempo até a
+primeira resposta, tempo até finalizar): os campos nascem no 028, a tela não.
+E a **busca por protocolo**.
+
+Prova: `aguardando-em-aberto-e-finalizados`.
+
 ## A auditoria de 07/10 — o que uma varredura inteira achou
 
 Pedido do Rodrigo: *"faz um diagnóstico geral em todos os arquivos e todas

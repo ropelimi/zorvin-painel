@@ -47,6 +47,7 @@ import { situacao, ordenarAbertas, rotuloDaTarefa, fimDeHoje, semATabelaDeTarefa
 import Marca from "./Marca";
 import PainelEmoji, { guardarRecente } from "./Emojis";
 import JaTratei from "./JaTratei.jsx";
+import Reabrir from "./Reabrir.jsx";
 import { nomeDoContato } from "./contato.js";
 import { preencherVariaveis, usaVariaveis, variaveisDesconhecidas, VARIAVEIS } from "./variaveis.js";
 import { diasDesde } from "./espera.js";
@@ -231,6 +232,67 @@ function bolhaDaRespostaAutomatica(r, convId) {
 // conversa aberta — a mesma régua de `TEM_NOME_DO_CADASTRO`.
 let SEM_RESPOSTAS_AUTOMATICAS = false;
 
+// ============================================================
+//  OS MARCOS DOS PROTOCOLOS (script 028 da ponte)
+//
+//  Cada atendimento da conversa vira até dois marcos na linha do tempo: onde
+//  ele começou e onde foi finalizado. É assim que "o cliente em si já foi
+//  tratado" aparece para quem abre a conversa depois: a finalização de antes
+//  continua lá, no meio das mensagens, e o protocolo novo começa logo abaixo.
+//
+//  Moram em `zorvin_atendimentos`, e não em `mensagens`: são da equipe, não
+//  saíram para o cliente, e lá dentro mudariam a prévia, a espera e as não
+//  lidas. São lidos como as respostas automáticas e as notas — à parte, e
+//  misturados na hora de desenhar.
+// ============================================================
+let SEM_ATENDIMENTOS = false;
+const COLUNAS_DOS_ATENDIMENTOS = "id, protocolo, aberto_em, origem, aberto_por, finalizado_em, finalizado_por";
+function marcosDosAtendimentos(ats, convId) {
+  const marcos = [];
+  for (const a of ats || []) {
+    if (!a || !a.protocolo || !a.aberto_em) continue;
+    marcos.push({ id: `marco-abriu-${a.id}`, conversa_id: convId, origem: "marco", tipo: "marco", texto: "",
+                  criado_em: a.aberto_em, _marco: "aberto", _protocolo: a.protocolo,
+                  _comoAbriu: a.origem || null, _porId: a.aberto_por || null });
+    if (a.finalizado_em) {
+      marcos.push({ id: `marco-fechou-${a.id}`, conversa_id: convId, origem: "marco", tipo: "marco", texto: "",
+                    criado_em: a.finalizado_em, _marco: "finalizado", _protocolo: a.protocolo,
+                    _porId: a.finalizado_por || null });
+    }
+  }
+  return marcos;
+}
+/** SÓ OS MARCOS DO TRECHO QUE ESTÁ NA TELA. Com mensagens mais antigas por
+ *  carregar, um protocolo de três meses atrás desenhado no alto da conversa
+ *  diria que ele começou logo antes das mensagens desta semana. Os de antes
+ *  entram junto das mensagens antigas, quando elas forem trazidas. */
+function marcosNaJanela(marcos, desde) {
+  if (!desde) return marcos || [];
+  const t = new Date(desde).getTime();
+  return (marcos || []).filter((m) => new Date(m.criado_em).getTime() >= t);
+}
+/** O que veio de `mensagens` — e não nota, resposta automática, marco ou bolha
+ *  da fila. É daqui que sai "a mais antiga carregada", o ponto de partida das
+ *  mensagens anteriores: começar de uma nota, de uma resposta automática ou de
+ *  um marco mais velhos que a janela pularia tudo o que fica entre eles. */
+function ehDeMensagens(m) {
+  return Boolean(m) && m.origem !== "nota" && m.origem !== "automatica" && m.origem !== "marco"
+    && !m._filaId && !String(m.id || "").startsWith("temp-") && !String(m.id || "").startsWith("fila-");
+}
+const porHora = (a, b) => new Date(a.criado_em) - new Date(b.criado_em);
+/** A frase do marco. Quem abriu só existe no Reabrir: o atendimento que
+ *  começa com a mensagem do cliente, ou com a da equipe, não foi aberto por
+ *  ninguém de propósito — foi a mensagem. */
+function textoDoMarco(m, nomeDeHoje) {
+  const quem = m._porId ? (nomeDeHoje(m._porId, null) || "alguém da equipe") : null;
+  const p = `Protocolo ${m._protocolo}`;
+  if (m._marco === "finalizado") return `${p} finalizado${quem ? ` por ${quem}` : ""}`;
+  if (m._comoAbriu === "reabertura") return `${p} reaberto${quem ? ` por ${quem}` : ""}`;
+  if (m._comoAbriu === "cliente") return `${p} aberto — o cliente escreveu`;
+  if (m._comoAbriu === "equipe") return `${p} aberto pela equipe`;
+  return `${p} aberto`;
+}
+
 /** O que a bolha diz do envio. "Enviando" que passa de cinco minutos não é
  *  mais "enviando": a ponte caiu no meio, e a tela não pode prometer o que
  *  não sabe. */
@@ -277,6 +339,19 @@ let TEM_ARQUIVADA = true;
 // A contagem dos selos numa ida só (`nao_lidas_por_telefone`) é outro SQL. Onde
 // ele não foi rodado, o painel conta telefone a telefone como sempre contou.
 let TEM_CONTAGEM_NO_BANCO = true;
+// A SITUAÇÃO DA CONVERSA (script 028 da ponte) — a coluna existe? `null`
+// enquanto não se sabe. A lista é pedida POR ABA (`situacao=eq.aberto`), e
+// num banco sem o script esse filtro derruba a consulta inteira: no primeiro
+// "não existe" ela é refeita sem a aba, e não se pergunta de novo nesta
+// sessão — a régua de `TEM_NOME_DO_CADASTRO`. Fica no módulo, e não num
+// estado, para a descoberta não mudar a função que lê a lista e pedir uma
+// segunda leitura (a lição de 25/09, em `ordenarPelaEspera`).
+let SITUACAO_NO_BANCO = null;
+// AS TRÊS ABAS, na ordem do DataCrazy — e na do caminho de uma conversa: o
+// cliente chega, alguém atende, alguém finaliza.
+const ABAS_DA_SITUACAO = [["aguardando", "Aguardando"], ["aberto", "Em aberto"], ["finalizado", "Finalizados"]];
+// O SELO DA LINHA, durante a busca — ver `naAba`.
+const SITUACAO_NA_LINHA = { aguardando: "aguardando", aberto: "em aberto", finalizado: "finalizada" };
 
 // AVISOS DE FALHA JÁ DISPENSADOS, GUARDADOS AQUI NO APARELHO.
 //
@@ -2245,7 +2320,27 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
             MENSAGENS NÃO LIDAS
           </div>
         )}
-        {m.origem === "automatica" ? (
+        {m.origem === "marco" ? (
+          // O MARCO DE UM PROTOCOLO (script 028) — no meio da conversa, como a
+          // data do dia: não é mensagem de ninguém e não tem menu. Só a equipe
+          // vê: o protocolo não vai para o cliente. É ele que diz, a quem abre
+          // a conversa depois, que o cliente já foi atendido antes e por quem.
+          <div data-marco-do-atendimento={m._protocolo} data-marco={m._marco}
+               title={m._marco === "finalizado"
+                 ? "O atendimento deste protocolo foi finalizado. Se o cliente escrever de novo, começa outro."
+                 : "Começo de um atendimento. O protocolo é só da equipe: não vai para o cliente."}
+               style={{ alignSelf: "center", display: "inline-flex", alignItems: "center", gap: 6,
+                        maxWidth: "92%", boxSizing: "border-box", background: C.bubbleIn,
+                        color: C.textSecondary, fontSize: 12, fontWeight: 500, padding: "5px 12px",
+                        borderRadius: 8, boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", margin: "8px 0",
+                        border: `1px solid ${m._marco === "finalizado" ? C.green : "transparent"}` }}>
+            {m._marco === "finalizado" ? <CircleCheck size={13} color={C.green} style={{ flexShrink: 0 }} />
+              : m._comoAbriu === "reabertura" ? <RotateCcw size={13} style={{ flexShrink: 0 }} />
+              : <ClipboardList size={13} style={{ flexShrink: 0 }} />}
+            <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{textoDoMarco(m, nomeDeHoje)}</span>
+            <span style={{ flexShrink: 0, opacity: 0.85 }}>· {horaCurta(m.criado_em)}</span>
+          </div>
+        ) : m.origem === "automatica" ? (
           // A RESPOSTA AUTOMÁTICA FORA DO HORÁRIO — nossa, à direita, e sem
           // assinatura de gente: ninguém escreveu. SEM MENU NENHUM: ela não
           // está em `mensagens`, então não se responde, não se edita e não se
@@ -3047,6 +3142,47 @@ export default function Painel({ sessao }) {
   // ============================================================
   const [temTratada, setTemTratada] = useState(null);
   // ============================================================
+  //  AGUARDANDO, EM ABERTO E FINALIZADOS (19/10) — o que o DataCrazy faz
+  //
+  //  A lista ganha três abas que a SEPARAM: a conversa que a equipe nunca
+  //  atendeu, a que já foi atendida e não foi finalizada, e a finalizada.
+  //  Quem decide em qual aba cada conversa mora é o BANCO (script 028 da
+  //  ponte, com as regras no CLAUDE.md dela): a tela lê `conversas.situacao`,
+  //  e a única mudança que ela pede é o Reabrir.
+  //
+  //  `temSituacao` tem três estados, pela régua de `temTratada`: sem o
+  //  script não há aba, e tudo fica como antes.
+  //
+  //  A ABA VAI AO BANCO, e não só à lista carregada: a página de 200 viria
+  //  com as conversas das três abas misturadas, e "Finalizados" mostraria as
+  //  finalizadas ENTRE as 200 mais recentes com cara de "as finalizadas" — a
+  //  lista curta lida como completa, a mesma armadilha do filtro de grupos.
+  //
+  //  E ELA NÃO É GUARDADA NO NAVEGADOR, de propósito: quem abre o painel cai
+  //  sempre em "Em aberto", a lista de trabalho. Guardada, quem deixou
+  //  "Finalizados" aberto ontem abriria hoje a lista de quem já foi atendido,
+  //  e concluiria que não há nada a fazer.
+  // ============================================================
+  const [temSituacao, setTemSituacao] = useState(null);
+  const [abaSituacao, setAbaSituacao] = useState("aberto");
+  const abaSituacaoRef = useRef("aberto");
+  useEffect(() => { abaSituacaoRef.current = abaSituacao; }, [abaSituacao]);
+  // O NÚMERO DE CADA ABA, do banco: `{ de, aguardando, aberto, finalizado }`.
+  const [contagemDasAbas, setContagemDasAbas] = useState(null);
+  // A ABA QUE A LISTA PEDE AO BANCO. Na pasta de arquivadas, nenhuma: lá
+  // dentro moram as arquivadas das três abas, e a aba não recorta. É esta
+  // PERGUNTA, e não `temSituacao`, que entra nas dependências de quem lê a
+  // lista — ver `SITUACAO_NO_BANCO`.
+  const abaDaLista = verArquivadas ? null : abaSituacao;
+  const abaDaListaRef = useRef(abaDaLista);
+  useEffect(() => { abaDaListaRef.current = abaDaLista; }, [abaDaLista]);
+  // DE QUAL ABA É A LISTA que está em `conversas` — a régua de `conversasDe`.
+  // Entre o clique na aba e a resposta do banco, a lista ainda é a da aba de
+  // antes, e o recorte da tela a esconde inteira: sem isto, "Finalizados"
+  // diria "nenhuma conversa finalizada" durante a ida ao banco, que é a tela
+  // afirmando uma ausência que ainda não apurou.
+  const [abaDasConversas, setAbaDasConversas] = useState(null);
+  // ============================================================
   //  O RESPONSÁVEL PELA CONVERSA (30/09) — o primeiro passo do CRM
   //
   //  Até aqui o painel sabia quem ESCREVEU numa conversa e quem está com ela
@@ -3119,6 +3255,12 @@ export default function Painel({ sessao }) {
   const [jaTratei, setJaTratei] = useState(null);      // a conversa com a janela aberta
   const [trateiOcupado, setTrateiOcupado] = useState(false);
   const [trateiErro, setTrateiErro] = useState("");
+  // A JANELA DO "REABRIR" (script 028), pela régua do "Já tratei": a conversa
+  // vai no estado da janela, e não na aberta — fechar a conversa no meio não
+  // pode trocar a conversa que vai ser reaberta.
+  const [reabrindo, setReabrindo] = useState(null);
+  const [reabrirOcupado, setReabrirOcupado] = useState(false);
+  const [reabrirErro, setReabrirErro] = useState("");
   const ordemRef = useRef(ordem);
   useEffect(() => {
     ordemRef.current = ordem;
@@ -3448,6 +3590,74 @@ export default function Painel({ sessao }) {
       return novo;
     });
   }, []);
+  // O NÚMERO DE CADA ABA vem do banco, numa ida só (`zorvin_contar_situacoes`,
+  // script 028): a lista é paginada, e contar o que está carregado diria "as
+  // em aberto entre as 200 que vieram". Pedido ao abrir o telefone, depois de
+  // cada gesto desta tela que muda uma conversa de aba e, a cada aviso do
+  // tempo real deste telefone, com uma espera de 2,5 s — os avisos chegam em
+  // rajada (vinte fotos são vinte), e cada um pedindo a conta seriam vinte
+  // contas iguais.
+  const contarAbas = useCallback(async (advId) => {
+    if (!advId || SITUACAO_NO_BANCO === false) return;
+    let resposta;
+    try {
+      resposta = await supabase.rpc("zorvin_contar_situacoes", { p_telefone: advId });
+    } catch (e) { resposta = { error: e }; }
+    const { data, error } = resposta || {};
+    if (advogadoIdRef.current !== advId) return;
+    if (error) {
+      // SEM A FUNÇÃO, as abas ficam sem número — e não com um número
+      // inventado. A falha de verdade vai para a faixa âmbar: um número
+      // velho na aba se lê como a conta de agora.
+      if (faltaAFuncao(error)) { setContagemDasAbas(null); return; }
+      setContagemDasAbas(null);
+      anotarFalhaDeLeitura("contagem-das-abas", "o número de cada aba", error);
+      return;
+    }
+    limparFalhaDeLeitura("contagem-das-abas");
+    setContagemDasAbas({ de: advId, ...(data || {}) });
+  }, [anotarFalhaDeLeitura, limparFalhaDeLeitura]);
+  const contarAbasRef = useRef(contarAbas);
+  useEffect(() => { contarAbasRef.current = contarAbas; }, [contarAbas]);
+  // UMA CONTA POR VEZ: com uma já marcada, o aviso seguinte não a empurra para
+  // depois. Empurrando, uma rajada que não para (gente digitando o dia
+  // inteiro) adiaria o número para sempre.
+  const contagemAgendadaRef = useRef(null);
+  const agendarContagemDasAbas = useCallback(() => {
+    if (SITUACAO_NO_BANCO !== true || contagemAgendadaRef.current) return;
+    contagemAgendadaRef.current = setTimeout(() => {
+      contagemAgendadaRef.current = null;
+      contarAbasRef.current(advogadoIdRef.current);
+    }, 2500);
+  }, []);
+  // A SITUAÇÃO DAS CONVERSAS QUE NÃO ESTÃO NA LISTA, vista no último aviso do
+  // tempo real — ver o tratador das conversas.
+  const situacoesVistasRef = useRef(new Map());
+  // A CONVERSA DE FORA DA LISTA QUE ENTROU NA ABA ABERTA — finalizada por um
+  // colega com "Finalizados" na tela, reaberta, desfeita. A lista vem do banco
+  // recortada pela aba, então ela só aparece relendo a página. A releitura é
+  // AGENDADA e pula a vez se outra começou há pouco: quando o cliente escreve
+  // numa conversa finalizada, o aviso da mensagem já relê a lista, e o da
+  // conversa chega junto — duas releituras iguais seguidas, para nada.
+  const ultimaReleituraDaListaRef = useRef(0);
+  const carregarConversasRef = useRef(() => {});
+  const releituraPelaAbaRef = useRef(null);
+  const agendarReleituraPelaAba = useCallback(() => {
+    if (releituraPelaAbaRef.current) return;
+    const pedidaEm = Date.now();
+    releituraPelaAbaRef.current = setTimeout(() => {
+      releituraPelaAbaRef.current = null;
+      if (ultimaReleituraDaListaRef.current >= pedidaEm - 300) return;
+      carregarConversasRef.current(advogadoIdRef.current);
+    }, 1200);
+  }, []);
+  useEffect(() => () => clearTimeout(releituraPelaAbaRef.current), []);
+  // OS MARCOS DOS PROTOCOLOS da conversa aberta, todos — e não só os que
+  // estão na tela: os de trechos ainda não carregados entram quando as
+  // mensagens antigas chegarem. Ver `marcosDosAtendimentos`.
+  const marcosRef = useRef({ convId: null, lista: [] });
+  // RELER OS MARCOS — preenchido logo depois de `carregarMensagens`.
+  const relerMarcosRef = useRef(() => {});
   const [filtro, setFiltro] = useState("tudo"); // aba/filtro da lista: 'tudo' | 'naolidas' | 'favoritas' | 'tag:<id>' | 'frente:<FRENTE>'
   // O filtro de agora, para quem é chamado fora do desenho (a releitura das
   // tarefas depois de um clique).
@@ -3568,12 +3778,24 @@ export default function Painel({ sessao }) {
   //  ícone, 35. Ele aparece em toda conversa desde 02/10 (antes só na que
   //  esperava), e sem esta parcela a 1366 o nome caía a 205px — o defeito da
   //  "ELANE GO…", que já acontecia calado em toda conversa da fila.
-  const fichaDoJaTratei = temTratada === true && temAssuntos === true && conversaId != null;
-  const abertaFoiTratada = fichaDoJaTratei && (() => {
-    const c = conversas.find((x) => x.id === conversaId);
-    return Boolean(c && !c.esperando_desde && c.tratada_em);
-  })();
-  const JA_TRATEI_ESCRITO = !fichaDoJaTratei ? 0 : (abertaFoiTratada ? 139 : 90) + 12;
+  //
+  //  E NO SCRIPT 028 O BOTÃO É OUTRO: "Finalizar" na conversa aberta e
+  //  "Reabrir" na finalizada — ver `acaoJaTratei`. Cada rótulo tem a sua
+  //  largura, medida na mesma régua (com o ícone, o recheio e a borda) em
+  //  19/10, a 1920: "Já tratei" deu os 90 de sempre, o que confere a régua;
+  //  "Finalizar" 92,7 e "Reabrir" 85,8.
+  const LARGURA_DO_JA_TRATEI = { "Já tratei": 90, "Voltar para a fila": 139, "Finalizar": 93, "Reabrir": 86 };
+  const aConversaDoCabecalho = conversaId != null ? conversas.find((x) => x.id === conversaId) : null;
+  const situacaoDoCabecalho = temSituacao === true && aConversaDoCabecalho
+    && Object.prototype.hasOwnProperty.call(aConversaDoCabecalho, "situacao") ? aConversaDoCabecalho.situacao : null;
+  const fichaDoJaTratei = situacaoDoCabecalho === "finalizado"
+    || (temTratada === true && temAssuntos === true && conversaId != null);
+  const abertaFoiTratada = fichaDoJaTratei
+    && Boolean(aConversaDoCabecalho && !aConversaDoCabecalho.esperando_desde && aConversaDoCabecalho.tratada_em);
+  const rotuloDoJaTratei = situacaoDoCabecalho
+    ? (situacaoDoCabecalho === "finalizado" ? "Reabrir" : "Finalizar")
+    : (abertaFoiTratada ? "Voltar para a fila" : "Já tratei");
+  const JA_TRATEI_ESCRITO = !fichaDoJaTratei ? 0 : LARGURA_DO_JA_TRATEI[rotuloDoJaTratei] + 12;
   const JA_TRATEI_EM_ICONE = !fichaDoJaTratei ? 0 : 35 + 12;
   const cabecalhoApertado  = !estreito && larguraDaConversa - FILA_ESCRITA - JA_TRATEI_ESCRITO < NOME_MINIMO;
   const cabecalhoRecolhido = !estreito && larguraDaConversa - FILA_EM_ICONES - JA_TRATEI_EM_ICONE < NOME_MINIMO;
@@ -4208,6 +4430,7 @@ export default function Painel({ sessao }) {
   // 1000.
   const carregarConversas = useCallback(async (advId, pagina = 0, manterAberta = null) => {
     if (!advId) return;
+    if (pagina === 0) ultimaReleituraDaListaRef.current = Date.now();
     const de = pagina * PAGINA_BANCO;
     /** A ordem vai para o BANCO, e não para a lista já carregada.
      *
@@ -4218,6 +4441,11 @@ export default function Painel({ sessao }) {
      *  `temEspera === true` é exigido mesmo com `ordem === "esperando"`: a
      *  escolha fica guardada no navegador, e num banco onde o SQL foi desfeito
      *  ela pediria uma coluna que não existe — e a consulta inteira falharia. */
+    // A ABA, NO BANCO — ver `temSituacao`. Sem o script 028 o filtro derruba
+    // a consulta: a primeira resposta "não existe" baixa a bandeira, e a
+    // leitura é refeita sem ele logo abaixo.
+    const filtroDaAba = SITUACAO_NO_BANCO !== false ? abaDaLista : null;
+    const daAba = (q) => (filtroDaAba ? q.eq("situacao", filtroDaAba) : q);
     const porOrdem = (q) => (ordenarPelaEspera
       // QUEM NÃO ESPERA VAI PARA O FIM.
       //
@@ -4241,19 +4469,19 @@ export default function Painel({ sessao }) {
       : q.order("ultima_atividade", { ascending: ordem === "antigas" }).order("id"));
     /** As fixadas: mesma consulta, filtro próprio. Separada em função porque a
      *  base sem o SQL das frentes precisa repeti-la sem as colunas novas. */
-    const buscarFixadas = () => porOrdem(supabase
+    const buscarFixadas = () => porOrdem(daAba(supabase
       .from("conversas")
       .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
       .eq("advogado_id", advId)
-      .eq("fixada", true))
+      .eq("fixada", true)))
       .limit(200)
       .then((r) => r);
-    const pedidoDaPagina = porOrdem(supabase
+    const pedidoDaPagina = porOrdem(daAba(supabase
       .from("conversas")
       // `mensagens(id)` COM TETO DE UMA: a pergunta é "existe alguma?", e não
       // "quantas são". Uma linha por conversa responde isso e não traz peso.
       .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")}), mensagens(id)`)
-      .eq("advogado_id", advId))
+      .eq("advogado_id", advId)))
       // A ORDEM É DAQUI, e não de uma reordenação depois. Ver o comentário em
       // `ordem`: virar a lista já carregada mostraria "a mais antiga das 200
       // que vieram", que não é a mais antiga de nada.
@@ -4297,6 +4525,13 @@ export default function Painel({ sessao }) {
     carregarDigitando(advId);
 
     let { data, error } = await pedidoDaPagina;
+    // BASE SEM O SCRIPT 028: o filtro da aba derrubou a consulta. Baixa a
+    // bandeira e lê de novo, sem aba — uma vez só nesta sessão.
+    if (error && filtroDaAba && faltaColuna(error) && /situacao/i.test(String(error.message || ""))) {
+      SITUACAO_NO_BANCO = false;
+      setTemSituacao(false);
+      return carregarConversas(advId, pagina, manterAberta);
+    }
     // Base sem o SQL das frentes: tira `vantoro_nome` do pedido e repete. Uma
     // vez só — depois disso a coluna já não é pedida.
     let fixadasRefeitas = null;
@@ -4309,9 +4544,9 @@ export default function Painel({ sessao }) {
       // montadas depois, já com a bandeira baixada; sair na frente tem este
       // preço, e ele é pago aqui.
       const refeitos = await Promise.all([
-        porOrdem(supabase.from("conversas")
+        porOrdem(daAba(supabase.from("conversas")
           .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")}), mensagens(id)`)
-          .eq("advogado_id", advId))
+          .eq("advogado_id", advId)))
           // `porOrdem` AQUI TAMBÉM: esta é a mesma página, refeita sem a
           // coluna do cadastro. Deixá-la com a ordem de sempre faria a fila de
           // espera virar do avesso só nas bases antigas — e sem nada na tela
@@ -4355,6 +4590,9 @@ export default function Painel({ sessao }) {
     // lista em outra ordem.
     if (advogadoIdRef.current !== advId) return;
     if (ordemRef.current !== ordem || ordenarPelaEsperaRef.current !== ordenarPelaEspera) return;
+    // E TROQUEI DE ABA? A resposta da aba de antes não pode encher a de agora:
+    // a pessoa clicaria em "Finalizados" e veria as conversas em aberto.
+    if (abaDaListaRef.current !== abaDaLista) return;
     // As FIXADAS sobem, e entre elas continua valendo a ordem de sempre. A
     // ordenação é feita aqui e não no banco porque a coluna pode ainda não
     // existir: pedi-la no `order` faria a consulta inteira falhar, e a lista de
@@ -4383,6 +4621,16 @@ export default function Painel({ sessao }) {
       // dependências da função.
       setTemResponsavel(Object.prototype.hasOwnProperty.call(bruto[0], "responsavel_id"));
     }
+    // A SITUAÇÃO: o filtro da aba que PASSOU já responde que a coluna existe,
+    // mesmo com a aba vazia; sem filtro (a pasta de arquivadas), quem responde
+    // é a linha, como nas outras sondas.
+    if (filtroDaAba) { SITUACAO_NO_BANCO = true; setTemSituacao(true); }
+    else if (bruto.length) {
+      const tem = Object.prototype.hasOwnProperty.call(bruto[0], "situacao");
+      if (SITUACAO_NO_BANCO !== false) SITUACAO_NO_BANCO = tem;
+      setTemSituacao(tem);
+    }
+    if (pagina === 0 && SITUACAO_NO_BANCO) contarAbasRef.current(advId);
     // Página cheia = provavelmente há mais. Página curta = acabou. Conta só a
     // PÁGINA — as fixadas que vêm à parte, logo abaixo, não dizem nada sobre
     // quanto ainda falta. E conta o BRUTO, antes do corte abaixo: o que foi
@@ -4506,6 +4754,8 @@ export default function Painel({ sessao }) {
     // A lista e o dono dela mudam JUNTOS — é o que garante que ninguém leia
     // esta lista como sendo de outro telefone.
     setConversasDe(advId);
+    // E a aba dela, pela mesma razão.
+    setAbaDasConversas(filtroDaAba);
     // As três que ficavam aqui saíram na frente, lá em cima: elas precisam só
     // do `advId`, e esperar a lista para pedi-las era o que fazia a terceira
     // rodada de rede.
@@ -4516,10 +4766,11 @@ export default function Painel({ sessao }) {
     // esta função é outra e o efeito recarrega. Uma ida a mais, só para quem
     // escolheu essa ordem, e só uma vez por sessão — que é o que o comentário
     // anterior PROMETIA e o código não cumpria.
-  }, [ordem, ordenarPelaEspera, carregarAtendimentos, carregarUltimasMidias, carregarDigitando,
+  }, [ordem, ordenarPelaEspera, abaDaLista, carregarAtendimentos, carregarUltimasMidias, carregarDigitando,
       anotarFalhaDeLeitura, limparFalhaDeLeitura]);
 
   useEffect(() => { carregarConversas(advogadoId); }, [advogadoId, carregarConversas]);
+  useEffect(() => { carregarConversasRef.current = carregarConversas; }, [carregarConversas]);
 
   // ---- Total de não lidas de CADA advogado (para o selo na barra lateral) ----
   //
@@ -6715,6 +6966,11 @@ export default function Painel({ sessao }) {
     const pedidoDasAutomaticas = SEM_RESPOSTAS_AUTOMATICAS ? null
       : supabase.from("zorvin_respostas_automaticas").select("*").eq("conversa_id", convId)
           .order("criada_em", { ascending: true }).limit(50).then((r) => r);
+    // OS PROTOCOLOS DA CONVERSA (script 028), uma quinta ida, ao mesmo tempo.
+    // Sem a coluna da situação na lista, nem se pergunta.
+    const pedidoDosMarcos = SEM_ATENDIMENTOS || SITUACAO_NO_BANCO === false ? null
+      : supabase.from("zorvin_atendimentos").select(COLUNAS_DOS_ATENDIMENTOS).eq("conversa_id", convId)
+          .order("aberto_em", { ascending: true }).limit(500).then((r) => r);
 
     let recentes = [], erro = null, maisAntigas = false;
     if (alvo && alvo.em) {
@@ -6842,12 +7098,34 @@ export default function Painel({ sessao }) {
       } catch (e) { anotarFalhaDeLeitura("automaticas", "as respostas automáticas", e); }
     }
 
-    const juntas = [...recentes, ...notas, ...naoSairam, ...automaticas].sort(
-      (a, b) => new Date(a.criado_em) - new Date(b.criado_em)
-    );
+    // OS MARCOS DOS PROTOCOLOS. A tabela que falta (o 028 não rodou) cala; a
+    // leitura que falha por outro motivo vai para a faixa âmbar, como as notas
+    // — "nenhum protocolo" no lugar de "não consegui ler" apagaria da tela a
+    // finalização de antes, que é o que diz que o cliente já foi tratado.
+    let marcos = [];
+    if (pedidoDosMarcos) {
+      try {
+        const { data: ats, error: erroAts } = await pedidoDosMarcos;
+        if (erroAts) {
+          if (semATabela(erroAts)) SEM_ATENDIMENTOS = true;
+          else anotarFalhaDeLeitura("atendimentos", "os protocolos desta conversa", erroAts);
+        } else {
+          limparFalhaDeLeitura("atendimentos");
+          marcos = marcosDosAtendimentos(ats, convId);
+        }
+      } catch (e) { anotarFalhaDeLeitura("atendimentos", "os protocolos desta conversa", e); }
+    }
+
+    // OS MARCOS VÊM NA FRENTE, e a ordenação é estável: o protocolo que abriu
+    // com a mensagem do cliente tem a MESMA hora dela, e o marco tem de ficar
+    // em cima da mensagem que o abriu, e não embaixo.
+    const desdeDaJanela = maisAntigas && recentes.length ? recentes[0].criado_em : null;
+    const juntas = [...marcosNaJanela(marcos, desdeDaJanela), ...recentes, ...notas, ...naoSairam, ...automaticas]
+      .sort(porHora);
     // Se troquei de conversa enquanto esta busca estava em andamento, descarta o
     // resultado — senão as mensagens da conversa antiga sobrescreveriam a atual.
     if (conversaIdRef.current !== convId) return;
+    marcosRef.current = { convId, lista: marcos };
     setEstadoMensagens("pronto");
     // Antes de trocar a lista, libera prévias locais (blob:) da lista anterior
     // que não foram revogadas (ex.: troquei de conversa antes do eco chegar),
@@ -6930,6 +7208,39 @@ export default function Painel({ sessao }) {
     setMensagens((prev) => [...prev.filter((m) => m.origem !== "automatica"), ...bolhas]
       .sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em)));
   }, []);
+  // ------------------------------------------------------------
+  //  OS MARCOS DOS PROTOCOLOS, RELIDOS
+  //
+  //  O protocolo muda sem mensagem nenhuma: o "Finalizar", o "Reabrir", o
+  //  desfazer — daqui ou de um colega. Quem avisa é o tempo real da CONVERSA
+  //  (a situação e o protocolo dela mudaram), e só então se relê. Reler a
+  //  cada aviso da conversa seria uma ida ao banco a cada "digitando…".
+  // ------------------------------------------------------------
+  const relerMarcos = useCallback(async (convId) => {
+    if (SEM_ATENDIMENTOS || SITUACAO_NO_BANCO === false || !convId) return;
+    let resposta;
+    try {
+      resposta = await supabase.from("zorvin_atendimentos").select(COLUNAS_DOS_ATENDIMENTOS)
+        .eq("conversa_id", convId).order("aberto_em", { ascending: true }).limit(500);
+    } catch (e) { resposta = { error: e }; }
+    const { data, error } = resposta || {};
+    if (error) {
+      if (semATabela(error)) SEM_ATENDIMENTOS = true;
+      else anotarFalhaDeLeitura("atendimentos", "os protocolos desta conversa", error);
+      return;
+    }
+    if (conversaIdRef.current !== convId) return;
+    limparFalhaDeLeitura("atendimentos");
+    const marcos = marcosDosAtendimentos(data, convId);
+    marcosRef.current = { convId, lista: marcos };
+    setMensagens((prev) => {
+      const sem = prev.filter((m) => m.origem !== "marco");
+      const maisAntiga = sem.find(ehDeMensagens);
+      const desde = temMaisAntigasRef.current && maisAntiga ? maisAntiga.criado_em : null;
+      return [...marcosNaJanela(marcos, desde), ...sem].sort(porHora);
+    });
+  }, [anotarFalhaDeLeitura, limparFalhaDeLeitura]);
+  useEffect(() => { relerMarcosRef.current = relerMarcos; }, [relerMarcos]);
   const relogiosDasAutomaticas = useRef([]);
   const agendarReleituraDasAutomaticas = useCallback((convId) => {
     if (SEM_RESPOSTAS_AUTOMATICAS) return;
@@ -7127,8 +7438,11 @@ export default function Painel({ sessao }) {
     // partir (`antesDe`), porque o espelho da lista ainda é o de antes.
     const convId = conversaIdRef.current;
     if (buscandoAntigasRef.current || !convId) return [];
+    // A MAIS ANTIGA DE `mensagens`, e não o primeiro item da tela: as notas, as
+    // respostas automáticas e os marcos dos protocolos são lidos inteiros, e um
+    // deles mais velho que a janela faria pular tudo o que fica no meio.
     const maisAntiga = antesDe ? { criado_em: antesDe }
-      : mensagensRef.current.find((m) => m.origem !== "nota");
+      : mensagensRef.current.find(ehDeMensagens);
     if (!maisAntiga) return [];
     buscandoAntigasRef.current = true;
     setBuscandoAntigas(true);
@@ -7150,7 +7464,14 @@ export default function Painel({ sessao }) {
     if (!lote.length) return [];
     setMensagens((prev) => {
       const jaTem = new Set(prev.map((m) => m.id));
-      return [...lote.filter((m) => !jaTem.has(m.id)), ...prev];
+      // OS MARCOS DO TRECHO QUE ACABOU DE CHEGAR entram junto. E a lista é
+      // REORDENADA inteira, e não só emendada na frente: as notas são lidas
+      // todas na abertura, e a nota mais velha que a janela ficava ACIMA das
+      // mensagens antigas que chegavam depois — fora da ordem do tempo.
+      const mk = marcosRef.current.convId === convId ? marcosRef.current.lista : [];
+      const desde = lote.length >= TETO_MENSAGENS ? lote[0].criado_em : null;
+      const marcosNovos = marcosNaJanela(mk, desde).filter((m) => !jaTem.has(m.id));
+      return [...marcosNovos, ...lote.filter((m) => !jaTem.has(m.id)), ...prev].sort(porHora);
     });
     return lote;
   }
@@ -7443,6 +7764,7 @@ export default function Painel({ sessao }) {
         // confirmamos com uma consulta rápida do advogado_id.
         const jaNaLista = conversasRef.current.some((c) => c.id === nova.conversa_id);
         let doAdvogadoAtual = jaNaLista;
+        let deOutraAba = false;
         // A CONFIRMAÇÃO VALE PARA OS DOIS SENTIDOS.
         //
         // Ela era só para mensagem RECEBIDA. Com isso, a primeira mensagem que
@@ -7454,8 +7776,19 @@ export default function Painel({ sessao }) {
         // exatamente por aqui que ela volta quando alguém fala pela primeira
         // vez — e "alguém" inclui o escritório, não só o cliente.
         if (!doAdvogadoAtual && advogadoIdRef.current) {
-          const { data } = await supabase.from("conversas").select("advogado_id").eq("id", nova.conversa_id).maybeSingle();
+          const { data } = await supabase.from("conversas")
+            .select(SITUACAO_NO_BANCO ? "advogado_id, situacao" : "advogado_id")
+            .eq("id", nova.conversa_id).maybeSingle();
           doAdvogadoAtual = !!data && data.advogado_id === advogadoIdRef.current;
+          // DE OUTRA ABA? Ela não está na lista DE PROPÓSITO (a lista vem do
+          // banco recortada pela aba), e reler a página por causa dela seria
+          // reler a cada mensagem de qualquer conversa das outras duas abas —
+          // a tela "recarregando sozinha", que esta casa já consertou uma vez.
+          // A situação que volta é a de DEPOIS da mensagem: o gatilho do 028
+          // roda na mesma gravação.
+          deOutraAba = doAdvogadoAtual && Boolean(abaDaListaRef.current)
+            && Object.prototype.hasOwnProperty.call(data, "situacao")
+            && data.situacao !== abaDaListaRef.current;
         }
         // A MENSAGEM DO ESCRITÓRIO ATUALIZA O GUARDADO. Um colega respondendo
         // faz a conversa deixar de ser órfã — e isso chega aqui pelo tempo
@@ -7472,7 +7805,7 @@ export default function Painel({ sessao }) {
         // está na lista). Conversas que já estão na lista são atualizadas no
         // lugar pelo handler de UPDATE de conversas — sem re-buscar tudo, que
         // era o que fazia a tela "recarregar sozinha".
-        if (doAdvogadoAtual && !jaNaLista) carregarConversas(advogadoIdRef.current);
+        if (doAdvogadoAtual && !jaNaLista && !deOutraAba) carregarConversas(advogadoIdRef.current);
         carregarNaoLidasPorAdv(); // selos do rail de todos os advogados
       })
       // Uma mensagem MUDOU: o tiquinho de lida, ou as reações presas nela.
@@ -7505,6 +7838,31 @@ export default function Painel({ sessao }) {
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversas" }, (payload) => {
         const cv = payload.new;
         if (!cv) return;
+        // A CONVERSA MUDOU DE ABA, OU DE PROTOCOLO? Só então o número das abas
+        // é pedido de novo, e os marcos da conversa aberta são relidos. Quase
+        // todo aviso daqui é outra coisa — a prévia, o "digitando…", o "estou
+        // atendendo" de minuto em minuto —, e cada um pedindo a conta seria uma
+        // ida ao banco por tecla. O "antes" é o da lista; da conversa que não
+        // está nela, o do último aviso que passou por aqui.
+        if (Object.prototype.hasOwnProperty.call(cv, "situacao")) {
+          const agora = `${cv.situacao}|${cv.protocolo || ""}`;
+          const velha = conversasRef.current.find((c) => c.id === cv.id);
+          const antes = velha && Object.prototype.hasOwnProperty.call(velha, "situacao")
+            ? `${velha.situacao}|${velha.protocolo || ""}` : situacoesVistasRef.current.get(cv.id);
+          situacoesVistasRef.current.set(cv.id, agora);
+          // E A CONVERSA QUE PASSOU A TER (ou deixou de ter) NÃO LIDA muda o
+          // número da pílula da aba. Só a passagem, e não cada mensagem: a
+          // quinta mensagem por ler não muda a conta de conversas.
+          const lidaMudou = velha && Object.prototype.hasOwnProperty.call(cv, "nao_lidas")
+            && ((velha.nao_lidas || 0) > 0) !== ((cv.nao_lidas || 0) > 0);
+          if (lidaMudou && cv.advogado_id === advogadoIdRef.current) agendarContagemDasAbas();
+          if (antes !== agora) {
+            if (cv.advogado_id === advogadoIdRef.current) agendarContagemDasAbas();
+            if (cv.id === conversaIdRef.current) relerMarcosRef.current(cv.id);
+            if (!velha && cv.advogado_id === advogadoIdRef.current && abaDaListaRef.current
+                && cv.situacao === abaDaListaRef.current) agendarReleituraPelaAba();
+          }
+        }
         // Atualiza "digitando…" e "quem está atendendo" localmente (leve).
         setDigitandos((prev) => {
           const novo = { ...prev };
@@ -7554,6 +7912,11 @@ export default function Painel({ sessao }) {
               responsavel_em: cv.responsavel_em,
               responsavel_por: cv.responsavel_por,
             } : {}),
+            // A SITUAÇÃO E O PROTOCOLO (script 028), pela presença da chave —
+            // é por aqui que a conversa muda de aba na tela de todo mundo:
+            // finalizada por um colega, reaberta pelo cliente.
+            ...(Object.prototype.hasOwnProperty.call(cv, "situacao")
+              ? { situacao: cv.situacao, protocolo: cv.protocolo } : {}),
           } : c);
           // Fixadas no alto; entre iguais, a ordem que a pessoa escolheu —
           // INCLUSIVE a da espera. Era aqui que a fila virava "Recentes" a
@@ -8484,6 +8847,8 @@ export default function Painel({ sessao }) {
       // AS DUAS JANELAS QUE FALTAVAM NA ESCADA (auditoria de 07/10): com elas
       // abertas o Esc descia até o fim e FECHAVA A CONVERSA lá atrás.
       if (jaTratei) { if (!trateiOcupado) { setJaTratei(null); setTrateiErro(""); } return; }
+      // E A DO "REABRIR" (script 028), pela mesma razão.
+      if (reabrindo) { if (!reabrirOcupado) { setReabrindo(null); setReabrirErro(""); } return; }
       if (escolhaTelefone) { setEscolhaTelefone(null); return; }
       if (imagemAberta) { setImagemAberta(null); setRetratoAberto(false); }
       else if (anexosPendentes.length) fecharAnexoPendente();
@@ -8538,7 +8903,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, telaFunil, menuEtapa, telaTarefas, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada, jaTratei, trateiOcupado, escolhaTelefone]);
+  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, telaFunil, menuEtapa, telaTarefas, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada, jaTratei, trateiOcupado, reabrindo, reabrirOcupado, escolhaTelefone]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -9330,13 +9695,49 @@ export default function Painel({ sessao }) {
       esperava_desde: conv.esperando_desde || null,
       ...(texto && pedeTexto.has(assunto_id) ? { observacao: texto } : {}),
     }));
+    // NO 028 O CLIQUE É A FINALIZAÇÃO, e a frase da falha diz isso.
+    const finalizando = temSituacao === true && Object.prototype.hasOwnProperty.call(conv, "situacao");
     const reg = await supabase.from("zorvin_tratamentos").insert(linhas).select("id");
     if (reg.error || naoGravouNada(reg)) {
       setTrateiOcupado(false);
       setTrateiErro(naoGravouNada(reg)
-        ? "O banco não deixou registrar. Nada foi tirado da fila."
-        : comOCodigo("Não consegui registrar o que foi tratado. Nada foi tirado da fila.",
+        ? (finalizando ? "O banco não deixou registrar. A conversa não foi finalizada."
+                       : "O banco não deixou registrar. Nada foi tirado da fila.")
+        : comOCodigo(finalizando ? "Não consegui registrar o que foi tratado. A conversa não foi finalizada."
+                                 : "Não consegui registrar o que foi tratado. Nada foi tirado da fila.",
                      reg.error, "registrar tratamento"));
+      return;
+    }
+
+    // ------------------------------------------------------------
+    //  NO SCRIPT 028, O BANCO FINALIZA NA MESMA GRAVAÇÃO
+    //
+    //  O gatilho do registro fecha o atendimento, muda a conversa para
+    //  "finalizado", tira da fila de espera e carimba `tratada_em` — tudo
+    //  dentro do `insert` acima. Gravar aqui de novo seria uma segunda escrita
+    //  da mesma regra, para discordar da primeira.
+    //
+    //  A TELA RELÊ A LINHA em vez de supor: o gatilho desiste em silêncio se
+    //  algo der errado lá dentro (de propósito — o registro não pode se
+    //  perder por causa da aba), e a frase tem de dizer o que o banco fez,
+    //  e não o que se esperava que ele fizesse.
+    // ------------------------------------------------------------
+    if (finalizando) {
+      const agora = await lerSituacao(conv.id);
+      setTrateiOcupado(false);
+      setJaTratei(null);
+      releTratadosDoHistorico(conv.id);
+      if (!agora) {
+        mostrarAviso("Registrei o que foi tratado, mas não consegui conferir se a conversa foi finalizada. Atualize a página.", 8000);
+        return;
+      }
+      aplicarSituacao(conv.id, agora);
+      contarAbas(conv.advogado_id || advogadoId);
+      relerMarcosRef.current(conv.id);
+      mostrarAviso(agora.situacao === "finalizado"
+        ? `Finalizada${agora.protocolo ? ` — protocolo ${agora.protocolo}` : ""}. Ela foi para “Finalizados”.`
+        : "Registrei o que foi tratado, mas o banco não finalizou a conversa. Ela continua onde estava.",
+        agora.situacao === "finalizado" ? undefined : 8000);
       return;
     }
 
@@ -9429,6 +9830,138 @@ export default function Painel({ sessao }) {
       : erroConta
       ? "Voltou para a fila, mas não consegui recalcular a espera. Atualize a página."
       : "Voltou para a fila de espera.", marcaDoDesfeito ? 8000 : undefined);
+  }
+
+  // ============================================================
+  //  A SITUAÇÃO DE UMA CONVERSA, relida do banco (script 028)
+  //
+  //  Quem muda a situação é o banco, e a tela só fica sabendo depois. Relida
+  //  a linha, ela entra na lista na hora — o tempo real traria o mesmo, mas
+  //  segundos depois, e nesse intervalo a conversa estaria na aba errada.
+  // ============================================================
+  async function lerSituacao(convId) {
+    try {
+      const { data, error } = await supabase.from("conversas")
+        .select("id, situacao, protocolo, esperando_desde, tratada_em").eq("id", convId).maybeSingle();
+      if (error || !data) return null;
+      return data;
+    } catch (_) { return null; }
+  }
+  function aplicarSituacao(convId, linha) {
+    const campos = {};
+    for (const k of ["situacao", "protocolo", "esperando_desde", "tratada_em"]) {
+      if (linha && Object.prototype.hasOwnProperty.call(linha, k)) campos[k] = linha[k];
+    }
+    setConversas((prev) => prev.map((x) => (x.id === convId ? { ...x, ...campos } : x)));
+    if ("situacao" in campos) situacoesVistasRef.current.set(convId, `${campos.situacao}|${campos.protocolo || ""}`);
+  }
+
+  // ============================================================
+  //  REABRIR (script 028) — os dois sentidos, e os dois existem
+  //
+  //  REABRIR PARA CONTINUAR é o pedido do DataCrazy: a conversa volta para
+  //  "Em aberto" com um PROTOCOLO NOVO, e a finalização de antes continua
+  //  registrada — ela aconteceu. A tela pede isto gravando `situacao =
+  //  'aberto'`, e quem abre o atendimento novo é o gatilho do banco; é a
+  //  única mudança de situação que a tela pode pedir.
+  //
+  //  DESFAZER, PORQUE FOI ENGANO, é o "Voltar para a fila" de sempre: o
+  //  clique é marcado como desfeito, o MESMO protocolo volta a ficar aberto,
+  //  e o relatório deixa de contá-lo.
+  //
+  //  E O REABRIR NÃO DESFAZ O REGISTRO DE NINGUÉM: um "Reabrir" que apagasse
+  //  do relatório o "Finalizar" de verdade de uma colega, só porque alguém
+  //  quis voltar a falar com o cliente, seria trabalho sumindo calado.
+  // ============================================================
+  async function reabrirConversa(conv) {
+    setReabrirOcupado(true); setReabrirErro("");
+    // `situacao = 'finalizado'` NA GRAVAÇÃO: entre abrir a janela e apertar o
+    // botão o cliente pode ter escrito, e a conversa já ter sido reaberta com
+    // um protocolo novo. Reabrir de novo não pode abrir um terceiro.
+    const r = await supabase.from("conversas").update({ situacao: "aberto" })
+      .eq("id", conv.id).eq("situacao", "finalizado").select("id, situacao, protocolo");
+    if (r.error) {
+      setReabrirOcupado(false);
+      setReabrirErro(comOCodigo("Não consegui reabrir. A conversa continua finalizada.", r.error, "reabrir"));
+      return;
+    }
+    if (naoGravouNada(r)) {
+      // ZERO LINHAS TEM DUAS CAUSAS, e a linha relida diz qual: o banco não
+      // deixou, ou ela já não estava finalizada.
+      const agora = await lerSituacao(conv.id);
+      setReabrirOcupado(false);
+      if (agora && agora.situacao !== "finalizado") {
+        aplicarSituacao(conv.id, agora);
+        setReabrindo(null);
+        contarAbas(conv.advogado_id || advogadoId);
+        relerMarcosRef.current(conv.id);
+        mostrarAviso("Ela já não estava finalizada: o cliente escreveu, ou alguém reabriu antes de você.", 7000);
+        return;
+      }
+      setReabrirErro("O banco não deixou reabrir. A conversa continua finalizada.");
+      return;
+    }
+    const linha = r.data[0];
+    aplicarSituacao(conv.id, linha);
+    setReabrirOcupado(false);
+    setReabrindo(null);
+    contarAbas(conv.advogado_id || advogadoId);
+    relerMarcosRef.current(conv.id);
+    mostrarAviso(`Reaberta${linha.protocolo ? `, com o protocolo ${linha.protocolo}` : ""}. Ela está em “Em aberto”.`);
+  }
+
+  //  O DESFAZER NO 028. A ORDEM SE INVERTE em relação ao "Voltar para a fila"
+  //  sem o script, pela mesma régua — primeiro o que se vê: aqui o que se vê
+  //  é a ABA, e quem a muda é o clique desfeito. A fila de espera vem depois.
+  async function desfazerFinalizacao(conv) {
+    setReabrirOcupado(true); setReabrirErro("");
+    const falhar = (frase) => { setReabrirOcupado(false); setReabrirErro(frase); };
+    // SÓ O ÚLTIMO CLIQUE, como no desfazer de sempre (auditoria de 07/10).
+    const ult = await supabase.from("zorvin_tratamentos").select("quando")
+      .eq("conversa_id", conv.id).is("desfeito_em", null)
+      .order("quando", { ascending: false }).limit(1);
+    if (ult.error) { falhar(comOCodigo("Não consegui desfazer. A conversa continua finalizada.", ult.error, "desfazer a finalização")); return; }
+    if (!ult.data || !ult.data.length) {
+      falhar("Não achei o registro desta finalização para desfazer. Use “Reabrir para continuar”.");
+      return;
+    }
+    const d = await supabase.from("zorvin_tratamentos")
+      .update({ desfeito_em: new Date().toISOString(), desfeito_por: meuId })
+      .eq("conversa_id", conv.id).eq("quando", ult.data[0].quando).is("desfeito_em", null)
+      .select("id");
+    if (d.error) { falhar(comOCodigo("Não consegui desfazer. A conversa continua finalizada.", d.error, "desfazer a finalização")); return; }
+    if (naoGravouNada(d)) { falhar("O banco não deixou desfazer. A conversa continua finalizada."); return; }
+
+    // O GATILHO DECIDIU: sobrou outro registro no mesmo atendimento (duas
+    // pessoas finalizaram juntas), ou ele voltou a ficar aberto.
+    let agora = await lerSituacao(conv.id);
+    if (agora && agora.situacao === "finalizado") {
+      aplicarSituacao(conv.id, agora);
+      setReabrirOcupado(false); setReabrindo(null);
+      releTratadosDoHistorico(conv.id);
+      relerMarcosRef.current(conv.id);
+      mostrarAviso("Desfiz o seu registro, mas a conversa continua finalizada por outro registro do mesmo protocolo.", 8000);
+      return;
+    }
+
+    // A FILA DE ESPERA VOLTA JUNTO, como no "Voltar para a fila": quem sabe a
+    // espera original é o banco (`zorvin_recontar_espera`).
+    const r = await supabase.from("conversas").update({ tratada_em: null }).eq("id", conv.id).select("id");
+    let semFila = r.error || naoGravouNada(r);
+    if (!semFila) {
+      const { error: erroConta } = await supabase.rpc("zorvin_recontar_espera", { p_conversa: conv.id });
+      if (erroConta) { console.error("Zorvin — recontar espera:", erroConta); semFila = true; }
+    }
+    agora = (await lerSituacao(conv.id)) || agora;
+    if (agora) aplicarSituacao(conv.id, agora);
+    setReabrirOcupado(false); setReabrindo(null);
+    contarAbas(conv.advogado_id || advogadoId);
+    releTratadosDoHistorico(conv.id);
+    relerMarcosRef.current(conv.id);
+    const aba = agora && agora.situacao === "aguardando" ? "Aguardando" : "Em aberto";
+    mostrarAviso(semFila
+      ? `Desfeito: a conversa voltou para “${aba}”, com o mesmo protocolo — mas não consegui devolvê-la à fila de espera. Atualize a página.`
+      : `Desfeito: a conversa voltou para “${aba}”, com o mesmo protocolo.`, semFila ? 9000 : undefined);
   }
 
   // Marca a conversa como não lida (mostra o selo verde) ou como lida.
@@ -10605,7 +11138,21 @@ export default function Painel({ sessao }) {
   // telefone cuja consulta não respondeu, de propósito — zero é uma afirmação
   // que a consulta não fez. Cair para a contagem da lista aqui seria trocar
   // "não sei" por um número sabidamente menor.
-  const totalNaoLidasLista = naoLidasPorAdv[advogadoId];
+  //
+  // E COM AS ABAS (script 028) A PERGUNTA MUDOU: a pílula filtra a lista DA
+  // ABA, e o número dela é o da aba — o banco conta as não lidas de cada uma
+  // junto com o número das abas (`contarAbas`). Com o do telefone inteiro ela
+  // diria 10 numa aba em que o filtro mostra 6, e as outras 4 pareceriam ter
+  // sumido, quando estão na aba ao lado. O selo da barra lateral continua
+  // sendo o do telefone: lá a pergunta é outra.
+  //
+  // E SEM NÚMERO enquanto a conta da aba não veio: o do telefone no lugar
+  // dela seria um número que se sabe maior.
+  const contagemDaAbaAberta = temSituacao === true && !verArquivadas ? (contagemDasAbas
+    && contagemDasAbas.de === advogadoId && contagemDasAbas.nao_lidas ? contagemDasAbas : null) : undefined;
+  const totalNaoLidasLista = contagemDaAbaAberta === undefined ? naoLidasPorAdv[advogadoId]
+    : contagemDaAbaAberta && Number.isFinite(Number(contagemDaAbaAberta.nao_lidas[abaSituacao]))
+      ? Number(contagemDaAbaAberta.nao_lidas[abaSituacao]) : null;
   // Quantas estão arquivadas (para o contador da linha "Arquivadas").
   //
   // DO BANCO, e não da lista — e aqui o estrago era maior do que um número
@@ -11557,10 +12104,20 @@ export default function Painel({ sessao }) {
   //  busca, some quando a busca é apagada, e parece defeito.
   const buscandoTexto = busca.trim().length > 0;
   const naPasta = (c) => buscandoTexto || (!!c.arquivada === verArquivadas);
+  // A ABA RECORTA COMO A PASTA, e pela mesma régua: com busca escrita, não.
+  // Procurar um cliente e não achá-lo porque ele mora noutra aba seria o
+  // "nada encontrado" que faz a pessoa concluir que ele não está no Zorvin —
+  // e a linha diz em qual aba ele está (o selo da situação). A lista já vem
+  // do banco recortada pela aba; isto vale para o que chega por fora dela:
+  // as conversas que o tempo real muda de aba, e as que os filtros e a busca
+  // trazem do banco.
+  const naAba = (c) => buscandoTexto || verArquivadas || temSituacao !== true
+    || !Object.prototype.hasOwnProperty.call(c, "situacao") || c.situacao === abaSituacao;
 
   const conversasFiltradas = (() => {
     const daLista = conversasNaTela.filter((c) =>
       naPasta(c) &&
+      naAba(c) &&
       casaNaBusca(c) &&
       passaNoFiltro(c)
     );
@@ -11575,7 +12132,7 @@ export default function Painel({ sessao }) {
     const jaTem = new Set(daLista.map((c) => String(c.id)));
     const doBanco = busca.trim()
       ? extras.filter((c) => !jaTem.has(String(c.id))
-          && naPasta(c) && passaNoFiltro(c))
+          && naPasta(c) && naAba(c) && passaNoFiltro(c))
       // As da etiqueta não passam por `passaNoFiltro`: elas vieram do banco
       // JUSTAMENTE por carregarem a etiqueta escolhida, e `tagsPorConversa` só
       // conhece as conversas da lista — perguntar a ele por uma conversa que a
@@ -11584,7 +12141,7 @@ export default function Painel({ sessao }) {
       // (sem `casaNaBusca`: este ramo só existe quando a caixa de busca está
       // vazia — o de cima é que trata a busca.)
       : [...extrasEtiqueta, ...extrasQuem, ...extrasGrupo, ...extrasMinhas, ...extrasTarefas].filter((c) => !jaTem.has(String(c.id))
-          && naPasta(c) && passaNoFiltro(c));
+          && naPasta(c) && naAba(c) && passaNoFiltro(c));
     if (!doBanco.length) return daLista;
     return [...daLista, ...doBanco].sort(compararConversas(ordem, ordenarPelaEspera));
   })();
@@ -11681,6 +12238,16 @@ export default function Painel({ sessao }) {
   //  CALAR NÃO SERVE: uma lista vazia sem uma palavra é a mesma dúvida sem a
   //  frase. A tela diz o que já sabe — nas conversas não há — e o que falta.
   // ------------------------------------------------------------------
+  // A ABA ESCOLHIDA AINDA NÃO VOLTOU DO BANCO — ver `abaDasConversas`.
+  const trocandoDeAba = temSituacao === true && listaEhDoTelefoneAberto && abaDasConversas !== abaDaLista;
+  // A FRASE DA ABA VAZIA diz qual é a aba, e o que mora nela: "nenhuma
+  // conversa ainda" em "Finalizados" se leria como "o telefone não tem
+  // conversa nenhuma", com a lista cheia na aba ao lado.
+  const ABA_VAZIA = {
+    aguardando: "Nenhuma conversa aguardando. Aqui ficam os clientes que a equipe ainda não atendeu.",
+    aberto: "Nenhuma conversa em aberto. Aqui ficam as conversas já atendidas que ainda não foram finalizadas.",
+    finalizado: "Nenhuma conversa finalizada. Uma conversa vem para cá quando alguém aperta “Finalizar” nela.",
+  };
   const recadoDaListaVazia =
     // A LEITURA QUE FALHOU NÃO É "NENHUMA CONVERSA AINDA" (armadilha nº 2).
     quemFiltra.length && estadoQuem === "carregando" ? ["procurando-quem", "Procurando as conversas de quem você marcou…"]
@@ -11691,6 +12258,7 @@ export default function Painel({ sessao }) {
       ? ["falhou", `Não consegui carregar as conversas deste telefone${falhasDeLeitura.conversas.codigo
           ? ` (código ${falhasDeLeitura.conversas.codigo})` : ""}. Use "Tentar de novo", no alto.`]
     : trocandoDeTelefone ? ["trocando", "Carregando as conversas…"]
+    : trocandoDeAba && !busca.trim() ? ["trocando-de-aba", "Carregando as conversas…"]
     : buscando ? ["procurando", "Procurando…"]
     : vendoNoCadastro && busca.trim()
       ? ["cadastro", "Nas conversas, nada. Vendo no cadastro do Vantoro…"]
@@ -11706,6 +12274,8 @@ export default function Painel({ sessao }) {
         ? "Nenhuma conversa deste telefone com tarefa para hoje ou atrasada."
         : "Procurando as conversas com tarefa para hoje…"]
     : filtro === "minhas" ? ["sem-minhas", "Nenhuma conversa sua neste telefone. Uma conversa vira sua quando você responde primeiro, ou pelo responsável no alto dela."]
+    : temSituacao === true && filtro === "tudo" && ABA_VAZIA[abaSituacao]
+      ? [`sem-conversa-${abaSituacao}`, ABA_VAZIA[abaSituacao]]
     : ["sem-conversa", "Nenhuma conversa ainda."];
 
   // O "+" no rodapé quer dizer "o banco tem mais do que isto". Com uma busca
@@ -12376,28 +12946,47 @@ export default function Painel({ sessao }) {
   //  Na conversa que NÃO espera, ele só registra: não há fila de onde tirar,
   //  e a janela diz isso em vez de prometer "tirar da fila". A conta de
   //  largura do cabeçalho soma a parcela dele (`JA_TRATEI_ESCRITO`).
+  //
+  //  NO SCRIPT 028 ELE VIRA "FINALIZAR" — o pedido do Rodrigo de 19/10, "como
+  //  no DataCrazy". É o mesmo botão e a mesma checklist: o registro do que foi
+  //  tratado É a finalização, e quem muda a conversa de aba é o banco, na
+  //  mesma gravação do registro. Na finalizada ele vira "Reabrir", que abre
+  //  uma janela com os dois sentidos do desfazer (ver `Reabrir.jsx`).
   // ------------------------------------------------------------------
   const esperaDaAberta = conversa ? diasEsperando(conversa) : 0;
   const trateiDisponivel = temTratada === true && temAssuntos === true && Boolean(conversa);
+  const situacaoDaAberta = temSituacao === true && conversa
+    && Object.prototype.hasOwnProperty.call(conversa, "situacao") ? conversa.situacao : null;
   const estaEsperando = trateiDisponivel && Boolean(conversa.esperando_desde);
-  const estaTratada = trateiDisponivel && !conversa.esperando_desde && Boolean(conversa.tratada_em);
+  const estaTratada = situacaoDaAberta ? situacaoDaAberta === "finalizado"
+    : trateiDisponivel && !conversa.esperando_desde && Boolean(conversa.tratada_em);
   const podeTratar = trateiDisponivel && !estaTratada;
 
   const acaoJaTratei = !podeTratar && !estaTratada ? null : (escrito) => {
-    const rotulo = podeTratar ? "Já tratei" : "Voltar para a fila";
-    const Icone = podeTratar ? ListChecks : Undo2;
+    const rotulo = situacaoDaAberta ? (podeTratar ? "Finalizar" : "Reabrir")
+      : (podeTratar ? "Já tratei" : "Voltar para a fila");
+    const Icone = situacaoDaAberta ? (podeTratar ? CircleCheck : RotateCcw) : (podeTratar ? ListChecks : Undo2);
     const cor = podeTratar ? C.textSecondary : C.green;
+    const marca = podeTratar ? "tratar" : situacaoDaAberta ? "reabrir" : "desfazer";
     const clique = () => {
       if (podeTratar) {
         setTrateiErro(""); setJaTratei(conversa); setMenuDaConversa(false);
         // A LISTA QUE NÃO VEIO É PEDIDA DE NOVO AO ABRIR A JANELA.
         if (erroAssuntos) carregarAssuntos();
       }
+      else if (situacaoDaAberta) { setMenuDaConversa(false); setReabrirErro(""); setReabrindo(conversa); }
       else desfazerJaTratei(conversa);
     };
+    const dica = situacaoDaAberta
+      ? (podeTratar
+        ? `Finalizar o atendimento${conversa.protocolo ? ` ${conversa.protocolo}` : ""}, sem mandar mensagem`
+        : `Reabrir esta conversa — o atendimento${conversa.protocolo ? ` ${conversa.protocolo}` : ""} foi finalizado`)
+      : estaEsperando ? "Tirar da fila de espera sem mandar mensagem"
+      : podeTratar ? "Registrar o que foi tratado nesta conversa"
+      : "Devolver esta conversa à fila de espera";
     if (escrito) {
       return (
-        <button onClick={clique} data-ja-tratei={podeTratar ? "tratar" : "desfazer"}
+        <button onClick={clique} data-ja-tratei={marca}
                 style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
           <Icone size={17} color={cor} /> {rotulo}
           {estaEsperando && esperaDaAberta >= 1 && (
@@ -12409,11 +12998,8 @@ export default function Painel({ sessao }) {
       );
     }
     return (
-      <button onClick={clique} aria-label={rotulo} title={estaEsperando
-                ? "Tirar da fila de espera sem mandar mensagem"
-                : podeTratar ? "Registrar o que foi tratado nesta conversa"
-                : "Devolver esta conversa à fila de espera"}
-              data-ja-tratei={podeTratar ? "tratar" : "desfazer"}
+      <button onClick={clique} aria-label={rotulo} title={dica}
+              data-ja-tratei={marca}
               style={{ display: "inline-flex", alignItems: "center", gap: 5, border: `1px solid ${C.divider}`,
                        background: "transparent", color: C.textSecondary, borderRadius: 8,
                        padding: cabecalhoApertado ? "7px 9px" : "6px 10px",
@@ -13645,6 +14231,60 @@ export default function Painel({ sessao }) {
           </div>
         </div>
 
+        {/* AGUARDANDO, EM ABERTO E FINALIZADOS (script 028 da ponte).
+            Abas, e não mais três pílulas: as pílulas da fita logo abaixo
+            FILTRAM a lista que está na tela; estas a SEPARAM em três, e cada
+            conversa mora em uma só. Duas fileiras de pílulas iguais fariam a
+            pessoa achar que as duas fazem a mesma coisa.
+
+            O NÚMERO É DO BANCO (`contarAbas`), e não das linhas carregadas.
+            "Finalizados" não tem número, de propósito: ele só cresce, e um
+            número que nunca zera se aprende a não ler — o mesmo motivo de o
+            sino das tarefas não contar as de amanhã. "Aguardando" fica âmbar
+            com qualquer conversa dentro: é o cliente que ninguém atendeu.
+
+            NA PASTA DE ARQUIVADAS NÃO HÁ ABA: lá moram as arquivadas das três,
+            e a aba não recorta. */}
+        {temSituacao === true && !verArquivadas && (() => {
+          const contagem = contagemDasAbas && contagemDasAbas.de === advogadoId ? contagemDasAbas : null;
+          return (
+            <div data-abas-da-situacao role="tablist" aria-label="Situação das conversas"
+                 style={{ display: "flex", gap: 4, padding: "0 12px", margin: "0 0 7px",
+                          background: C.panel, borderBottom: `1px solid ${C.divider}` }}>
+              {ABAS_DA_SITUACAO.map(([k, rotulo]) => {
+                const ativa = abaSituacao === k;
+                const n = contagem && k !== "finalizado" && Number.isFinite(Number(contagem[k])) ? Number(contagem[k]) : null;
+                const alerta = k === "aguardando" && n > 0;
+                return (
+                  <button key={k} role="tab" aria-selected={ativa} data-aba-da-situacao={k}
+                          data-aba-ativa={ativa ? "sim" : undefined}
+                          onClick={() => { if (!ativa) setAbaSituacao(k); }}
+                          title={k === "aguardando" ? "Clientes que a equipe ainda não atendeu"
+                               : k === "aberto" ? "Conversas já atendidas que ainda não foram finalizadas"
+                               : "Conversas finalizadas. Se o cliente escrever de novo, ela volta para Em aberto"}
+                          style={{ flex: 1, minWidth: 0, display: "inline-flex", alignItems: "center",
+                                   justifyContent: "center", gap: 5, border: "none",
+                                   borderBottom: `2px solid ${ativa ? C.green : "transparent"}`,
+                                   background: "transparent", color: ativa ? C.verdeTexto : C.textSecondary,
+                                   fontSize: 13, fontWeight: ativa ? 700 : 600, padding: "5px 2px 5px",
+                                   marginBottom: -1, cursor: ativa ? "default" : "pointer", whiteSpace: "nowrap" }}>
+                    {rotulo}
+                    {n != null && (
+                      <span data-numero-da-aba={n} data-numero-em-alerta={alerta ? "sim" : undefined}
+                            style={{ minWidth: 18, height: 18, padding: "0 5px", boxSizing: "border-box",
+                                     borderRadius: 9, fontSize: 11, fontWeight: 700, lineHeight: "18px",
+                                     textAlign: "center", background: alerta ? "#d97706" : C.divider,
+                                     color: alerta ? "#fff" : C.textSecondary }}>
+                        {n}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })()}
+
         {/* AS ABAS DE FILTRO.
             As etiquetas saíram da fita e viraram um menu. A fita rolava de
             lado e cortava a última pílula NO MEIO — e uma cápsula de contorno
@@ -14067,6 +14707,21 @@ export default function Painel({ sessao }) {
                                        color: C.textSecondary, border: `1px solid ${C.divider}`,
                                        borderRadius: 5, padding: "1px 5px", lineHeight: 1.5 }}>
                           arquivada
+                        </span>
+                      )}
+                      {/* EM QUAL ABA ELA MORA, e a linha diz — pela régua do
+                          selo de arquivada logo acima: só durante a busca, que
+                          é quando a lista mostra as três abas juntas, e só nas
+                          de outra aba. Sem ele, a conversa achada some ao
+                          apagar a busca, e parece defeito. */}
+                      {buscandoTexto && temSituacao === true && !verArquivadas
+                        && SITUACAO_NA_LINHA[c.situacao] && c.situacao !== abaSituacao && (
+                        <span data-selo-da-situacao={c.situacao}
+                              title={`Esta conversa está na aba “${(ABAS_DA_SITUACAO.find(([k]) => k === c.situacao) || [])[1]}”`}
+                              style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 600,
+                                       color: C.textSecondary, border: `1px solid ${C.divider}`,
+                                       borderRadius: 5, padding: "1px 5px", lineHeight: 1.5 }}>
+                          {SITUACAO_NA_LINHA[c.situacao]}
                         </span>
                       )}
                     </span>
@@ -15060,7 +15715,7 @@ export default function Painel({ sessao }) {
               //
               // Custa zero: `mensagens` já está carregada na tela.
               const jaFuncionou = mensagens.some((m) =>
-                m.origem !== "nota" && m._status !== "erro" && m._status !== "enviando"
+                m.origem !== "nota" && m.origem !== "marco" && m._status !== "erro" && m._status !== "enviando"
                 && !String(m.id).startsWith("temp-") && !String(m.id).startsWith("fila-"));
               const oQueHa = jaFuncionou ? null : porQueNaoRecebeWhatsApp(conversa.contato?.numero);
               if (!oQueHa) return null;
@@ -17130,6 +17785,8 @@ export default function Painel({ sessao }) {
                   nome={nomeDoContato(jaTratei.contato)}
                   dias={diasEsperando(jaTratei)}
                   esperando={Boolean(jaTratei.esperando_desde)}
+                  finalizar={temSituacao === true && Object.prototype.hasOwnProperty.call(jaTratei, "situacao")}
+                  protocolo={jaTratei.protocolo || null}
                   assuntos={assuntos}
                   erroDosAssuntos={erroAssuntos}
                   ocupado={trateiOcupado}
@@ -17137,6 +17794,29 @@ export default function Painel({ sessao }) {
                   aoConfirmar={confirmarJaTratei}
                   aoFechar={() => { if (!trateiOcupado) { setJaTratei(null); setTrateiErro(""); } }} />
       )}
+
+      {/* A JANELA DO "REABRIR" (script 028). Quem finalizou e quando sai do
+          marco do protocolo, que já está na conversa aberta — sem ida ao
+          banco. Sem o marco (a leitura falhou), a janela abre sem a frase. */}
+      {reabrindo && (() => {
+        const mk = marcosRef.current.convId === reabrindo.id ? marcosRef.current.lista : [];
+        const fim = mk.find((m) => m._marco === "finalizado" && m._protocolo === reabrindo.protocolo);
+        const finalizacao = fim
+          ? `Finalizada${fim._porId ? ` por ${nomeDeHoje(fim._porId, null) || "alguém da equipe"}` : ""} em ${
+              new Date(fim.criado_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}.`
+          : "";
+        return (
+          <Reabrir C={C} estreito={estreito}
+                   nome={nomeDoContato(reabrindo.contato)}
+                   protocolo={reabrindo.protocolo || null}
+                   finalizacao={finalizacao}
+                   ocupado={reabrirOcupado}
+                   erro={reabrirErro}
+                   aoReabrir={() => reabrirConversa(reabrindo)}
+                   aoDesfazer={() => desfazerFinalizacao(reabrindo)}
+                   aoFechar={() => { if (!reabrirOcupado) { setReabrindo(null); setReabrirErro(""); } }} />
+        );
+      })()}
     </div>
   );
 }

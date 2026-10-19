@@ -22,6 +22,17 @@
 //   8. sem a ponte, a seção lê o que alcança e DIZ que é parcial;
 //   9. e o caminho inteiro: marcar "Já tratei" com o histórico aberto ao lado,
 //      e a seção acompanhar sem reabrir.
+// ------------------------------------------------------------
+// ESTA PROVA RODA NO BANCO SEM O SCRIPT 028 (19/10)
+//
+// Com o 028, o "Já tratei" virou o "Finalizar": toda conversa finaliza e muda
+// de aba, e o "Voltar para a fila" virou o "Reabrir". O que esta prova mede é
+// o caminho de quem NÃO tem o 028 — que continua existindo, e tem de
+// continuar igual: "sem o script, tudo como antes". O caminho com o 028 é
+// provado em `aguardando-em-aberto-e-finalizados`, com as mesmas réguas que
+// importam aqui (a marcação obrigatória, o desfazer do último clique, a espera
+// ORIGINAL que volta, o banco que recusa).
+// ------------------------------------------------------------
 import { abrirNavegador, ENDERECO } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
@@ -135,6 +146,7 @@ async function abrirPainel({ ponte = true, recusar = [], semTabela = false } = {
     globalThis.__RECUSAR_LEITURA = d.recusar;
     globalThis.__ESCRITA_SEM_EFEITO = [];
     globalThis.__ERRO_NA_GRAVACAO = {};
+    globalThis.__SEM_SITUACAO = true;   // o banco sem o 028 — ver a nota no alto
   }, { semente: SEMENTE, recusar, semTabela });
   await page.route("**/ponte-de-mentira/**", async (rota) => {
     const url = new URL(rota.request().url());
