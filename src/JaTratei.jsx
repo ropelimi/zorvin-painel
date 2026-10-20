@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { CircleCheck, ListChecks, Loader2, X } from "lucide-react";
+import { NOME_DA_SITUACAO } from "./abasDaSituacao.js";
 
 // ============================================================
 //  A CHECKLIST DO "JÁ TRATEI"
@@ -107,8 +108,8 @@ export function JaTratei({ C, estreito, nome, dias, esperando = true, finalizar 
           {/* SÓ PROMETE TIRAR DA FILA QUEM ESTÁ NELA. Na conversa respondida
               o "Já tratei" só registra, e a frase diz isso. */}
           {finalizar
-            ? <>Finaliza o atendimento <b>sem mandar mensagem</b>: a conversa vai para “Finalizados”. Marque
-                o que foi tratado. Se o cliente escrever de novo, ela volta para “Em aberto” com um protocolo novo.</>
+            ? <>Finaliza o atendimento <b>sem mandar mensagem</b>: a conversa vai para “{NOME_DA_SITUACAO.finalizado}”. Marque
+                o que foi tratado. Se o cliente escrever de novo, ela volta para “{NOME_DA_SITUACAO.aberto}” com um protocolo novo.</>
             : esperando
             ? <>Tira esta conversa da fila de espera <b>sem mandar mensagem</b>. Marque o que foi tratado.</>
             : <>Esta conversa não está esperando resposta: o “Já tratei” só <b>registra</b> o que foi tratado.</>}

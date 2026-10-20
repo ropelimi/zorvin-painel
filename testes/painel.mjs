@@ -349,12 +349,12 @@ const navegador = await abrirNavegador();
   const texto = await page.locator('[data-tela="painel"]').innerText();
   ok("diz o que falta rodar", /Falta um passo no banco/i.test(texto));
   ok("diz o nome do arquivo", /2026-08-painel-completo\.sql/.test(texto));
-  // O relatório do "Já tratei" mora na mesma tela e tem função PRÓPRIA no
-  // banco (script 010): os números dele continuam certos sem esta função, e
-  // escondê-los por causa dela seria ausência no lugar de dado. Quem esta
-  // conferência guarda são os cartões DESTA função.
+  // O relatório do "Já tratei" e o dos protocolos moram na mesma tela e têm
+  // função PRÓPRIA no banco (scripts 010 e 029): os números deles continuam
+  // certos sem esta função, e escondê-los por causa dela seria ausência no
+  // lugar de dado. Quem esta conferência guarda são os cartões DESTA função.
   const cartoes = await page.locator("[data-cartao]").count();
-  const doRelatorio = await page.locator("[data-relatorio-ja-tratei] [data-cartao]").count();
+  const doRelatorio = await page.locator("[data-relatorio-ja-tratei] [data-cartao], [data-relatorio-protocolos] [data-cartao]").count();
   ok("não mostra cartão de número nenhum",
      cartoes - doRelatorio === 0, `${cartoes - doRelatorio} cartões fora do relatório`);
   await ctx.close();

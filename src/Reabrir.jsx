@@ -1,5 +1,6 @@
 import React from "react";
 import { Loader2, RotateCcw, Undo2, X } from "lucide-react";
+import { NOME_DA_SITUACAO } from "./abasDaSituacao.js";
 
 // ============================================================
 //  A JANELA DO "REABRIR" (script 028 da ponte, 19/10)
@@ -11,7 +12,7 @@ import { Loader2, RotateCcw, Undo2, X } from "lucide-react";
 //  ------------------------------------------------------------
 //  DOIS BOTÕES, PORQUE "REABRIR" TEM DOIS SENTIDOS
 //
-//  - PARA CONTINUAR o atendimento: a conversa volta para "Em aberto" com um
+//  - PARA CONTINUAR o atendimento: a conversa volta para "Em Atendimento" com um
 //    PROTOCOLO NOVO, e a finalização de antes continua registrada — ela
 //    aconteceu, e o relatório continua contando. É o "Reabrir" do DataCrazy.
 //  - PORQUE FOI ENGANO: o "Voltar para a fila" de sempre. O MESMO protocolo
@@ -75,7 +76,7 @@ export function Reabrir({ C, estreito, nome, protocolo, finalizacao = "", ocupad
             </div>
           )}
           {opcao("continuar", RotateCcw, "Reabrir para continuar o atendimento",
-                 "A conversa volta para “Em aberto” com um protocolo novo. A finalização de antes continua registrada.",
+                 `A conversa volta para “${NOME_DA_SITUACAO.aberto}” com um protocolo novo. A finalização de antes continua registrada.`,
                  aoReabrir)}
           {opcao("desfazer", Undo2, "Desfazer a finalização (foi engano)",
                  "O mesmo protocolo volta a ficar aberto, e o registro do “Finalizar” deixa de contar no relatório.",
