@@ -3725,7 +3725,7 @@ que fazem a mesma coisa.
 | | |
 |---|---|
 | **o número** | do banco (`zorvin_contar_situacoes`), e não das linhas carregadas |
-| **Finalizados** | **sem número**: só cresce, e um número que nunca zera se aprende a não ler |
+| **Finalizados** | ~~**sem número**: só cresce, e um número que nunca zera se aprende a não ler~~ **com número desde 20/10**, cinza como o de "Em aberto", a pedido do Rodrigo — ver "O número de "Finalizados" (20/10)", mais abaixo |
 | **Aguardando** | âmbar com qualquer conversa dentro — é o cliente que ninguém atendeu |
 | **ao abrir** | sempre "Em aberto", e **não é guardado** no navegador: quem deixou "Finalizados" aberto ontem abriria hoje a lista de quem já foi atendido |
 | **na pasta de arquivadas** | não há aba: lá moram as arquivadas das três |
@@ -3919,13 +3919,16 @@ rolar de lado. A bancada, com os poucos números dela, nunca mostraria isso.
 | | o que faz |
 |---|---|
 | a largura sai do nome (`flex: 1 1 0` e `min-width: max-content`) | cada aba começa no tamanho do que escreve, e as que sobram dividem o resto por igual |
-| no celular, letra de 12 e menos folga | sobra espaço a 360, com os números de mil |
+| ~~no celular, letra de 12 e menos folga~~ | ~~sobra espaço a 360, com os números de mil~~ — **superado no mesmo dia**: com o número de "Finalizados" não sobrava, e no celular o número desceu para baixo do nome (ver "O número de "Finalizados"", logo abaixo) |
 | a largura do negrito, guardada | a aba escolhida fica em negrito; sem uma cópia escondida do nome em negrito, ela engordaria ao ser clicada e empurraria as vizinhas |
 
-**Dois limites, escritos:** a 320px a fileira ainda não cabe (a régua desta
-casa é o Android de 360); e a reserva do negrito **não se mede aqui** — a
-fonte da máquina das provas (DejaVu Sans) não tem o peso 600 e o desenha
-igual ao 700. No Windows do escritório (Segoe UI) os dois diferem.
+**Dois limites, escritos:** ~~a 320px a fileira ainda não cabe (a régua desta
+casa é o Android de 360)~~ — **cabe desde o mesmo dia**, com o número embaixo
+do nome no celular; e a reserva do negrito **não se mede aqui** — a fonte das
+provas não tem o peso 600 e o desenha igual ao 700. No Windows do escritório
+(Segoe UI) os dois diferem. ~~(DejaVu Sans)~~ **A fonte das provas é a
+Liberation Sans**, que desenha a Arial dos botões — este parágrafo dizia DejaVu
+Sans, e estava errado (ver "A fonte que se mede aqui", logo abaixo).
 
 **O selo da busca virou o NOME DA ABA** ("Finalizados", "Novos"), e não um
 adjetivo da conversa: "nova", sozinho numa linha, se leria como mensagem
@@ -3941,6 +3944,89 @@ todas limpas, rodadas em cópias e lidas uma a uma: os nomes antigos de volta;
 um terço para cada aba; o celular sem o aperto (a página rolando de lado a
 360); o Reabrir, o Finalizar e o Desfazer dizendo "Em aberto"; o selo da busca
 com o adjetivo de antes; e a aba vazia com a frase velha.
+
+## O número de "Finalizados" (20/10)
+
+Pedido do Rodrigo, com foto, no mesmo dia dos nomes novos: *"Onde está escrito
+'Finalizados' precisa ter o número da quantidade também."*
+
+**O banco já devolvia a conta** (`zorvin_contar_situacoes.finalizado`, desde o
+028): era a tela que a escondia, por uma decisão de 19/10 — *"só cresce, e um
+número que nunca zera se aprende a não ler"*. A decisão era minha, e não dele;
+ele viu a tela e pediu o número. **A conferência que exigia a aba sem número
+foi INVERTIDA, e não apagada**: escrita ao contrário, é ela que impede o número
+de sumir de novo numa limpeza futura.
+
+**Cinza, como o de "Em Atendimento".** Âmbar continua sendo só o de "Novos",
+com qualquer conversa dentro: é o único dos três que pede ação de quem lê.
+
+### A conta da fileira, medida — e o celular mudou de forma
+
+Com três números a fileira não cabia, e o celular **já não cabia com os
+números de hoje**. Medido a 360px, onde ela tem 283 por dentro:
+
+| os números | ao lado do nome | embaixo do nome |
+|---|---|---|
+| 18 · 507 · 612 (os de hoje, da foto) | ~298 — **não cabe** | 229 |
+| 214 · 1523 · 4812 | 316 — **não cabe** | 229 |
+
+**No celular, o número desceu para baixo do nome.** Embaixo, cada aba tem a
+largura do NOME, e a fileira cabe com qualquer número, até num celular de 320.
+**E a aba não cresce:** ela já tinha 40px no celular, pelo alvo de dedo, e
+nome e número somam 38. Espremer letra e vão até caber ao lado deixaria as três
+abas grudadas umas nas outras, e só até o próximo dígito.
+
+**No computador, continua ao lado**, como no WhatsApp Web. A fileira tem 336px
+por dentro, e "Novos 214 · Em Atendimento 1523 · Finalizados 4812" pedia 346.
+Com 2px entre as abas (eram 4), 4 entre o nome e o número (eram 5) e a pílula
+mais justa (letra de 10,5 e folga de 4 de cada lado), pede 330. **O limite,
+escrito:** com quatro dígitos nas três abas, ou cinco em "Finalizados", sobra
+meio pixel; um dígito a mais e a última aba entra na folga da fileira — sem
+cortar nada, e sem a página rolar de lado.
+
+**O lugar do número fica guardado no celular** enquanto a conta não chega (ou
+quando ela falha): sem isso, o nome ficaria no meio da aba e subiria quando o
+número chegasse — um pulo a cada telefone escolhido. A pílula e o lugar
+guardado têm uma escrita só (`pilulaDoNumero`), porque têm de ter o mesmo
+tamanho.
+
+### A fonte que se mede aqui — e um engano meu que ficou escrito
+
+**Botão não herda a fonte da página.** As abas saem na fonte de botão do
+navegador: aqui ele pede Arial, e quem a desenha é a Liberation Sans, com a
+mesma largura — perguntado ao próprio navegador
+(`CSS.getPlatformFontsForNode`). A entrada anterior dizia que a fonte das
+provas era a DejaVu Sans, e estava errada. **E pôr outra fonte na fileira não
+mede nada**: foi o que eu fiz para conferir "uma fonte mais larga", e os
+números saíram idênticos — quem tem a fonte são as abas, que são botões, e não
+a fileira.
+
+**A conta vale para o escritório e para o celular.** Pelas métricas publicadas
+das fontes (o pacote `@capsizecss/metrics`), a largura média das letras é
+Arial 0,4458 em, **Segoe UI 0,4434** e Roboto 0,4448 — meio por cento de
+diferença.
+
+### Arquivar tira a conversa do número da aba
+
+O número de "Finalizados" deixou à vista uma lacuna que já valia para os outros
+dois: a conta do banco deixa de fora as arquivadas, como a lista, mas só era
+pedida de novo quando uma conversa **mudava de aba** — e arquivar não muda a
+aba. Arquivar uma finalizada a tirava da lista e deixava o número contando com
+ela.
+
+- **o gesto desta tela** (`gravarMarcaDaConversa`): arquivar e desarquivar
+  pedem a conta, como marcar como lida já pedia;
+- **a colega que arquiva** (o tempo real): a mudança de `arquivada` pede a
+  conta. O "antes" é o da lista; da conversa que não está nela, o do último
+  aviso (`arquivadasVistasRef`, ao lado de `situacoesVistasRef`). A que nunca
+  passou por aqui já pedia a conta, por ser nova para esta tela.
+
+Prova: `aguardando-em-aberto-e-finalizados`, agora com 165 conferências: a de
+"Finalizados" invertida; os três números a 1360, 390, 360 e 320px, com quatro
+dígitos em "Finalizados" — no computador ao lado do nome e sem entrar na folga
+da fileira, no celular embaixo do nome e com a aba nos 40px; o nome que não
+pula quando a conta falha; e o arquivar pelos três caminhos (esta tela, a
+colega com a conversa na lista, a colega com ela fora). <<SABOTAGENS>>
 
 ## A contabilização dos atendimentos (20/10)
 

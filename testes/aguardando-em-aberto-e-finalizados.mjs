@@ -8,7 +8,9 @@
 // dele, e cada regra tem a sua conferência num Postgres de verdade, na seção
 // 67 da prova da ponte. Aqui se prova a TELA:
 //
-//   1. as abas separam a lista, com o número de cada uma vindo do banco;
+//   1. as abas separam a lista, com o número de cada uma vindo do banco — as
+//      três, desde 20/10: "Finalizados" nasceu sem número e ganhou o seu a
+//      pedido do Rodrigo;
 //   2. a aba vai ao BANCO — a conversa finalizada a mil páginas de distância
 //      aparece em "Finalizados", e não só as que estão carregadas;
 //   3. "Finalizar" é o "Já tratei": a mesma checklist, e quem finaliza é o
@@ -20,7 +22,9 @@
 //      espera ORIGINAL volta);
 //   6. o banco que recusa é DITO, e a tela não finge ter mudado de aba;
 //   7. a busca atravessa as abas e diz em qual cada conversa mora;
-//   8. sem o script, tudo como antes.
+//   8. sem o script, tudo como antes;
+//   9. os três números cabem, no computador (ao lado do nome) e no celular
+//      (embaixo dele), e arquivar tira a conversa do número da aba.
 import { abrirNavegador, ENDERECO } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
@@ -126,7 +130,7 @@ function semente() {
  *  ligada num cenário continuaria valendo nos seguintes. */
 async function abrirPainel({ semSituacao = false, erro = {}, semEfeito = [], atraso = {}, largura = 1400,
                              altura = 900, extra = null, cliqueNaoFinaliza = false, contagem = null,
-                             ajustar = null } = {}) {
+                             ajustar = null, contagemFalha = false } = {}) {
   const ctx = await nav.newContext({ viewport: { width: largura, height: altura } });
   const page = await ctx.newPage();
   const estouros = [];
@@ -141,12 +145,12 @@ async function abrirPainel({ semSituacao = false, erro = {}, semEfeito = [], atr
     globalThis.__ERRO_NA_GRAVACAO = d.erro || {};
     globalThis.__ESCRITA_SEM_EFEITO = d.semEfeito || [];
     globalThis.__ATRASO_POR_TABELA = d.atraso || {};
-    globalThis.__CONTAGEM_DAS_ABAS_FALHA = false;
+    globalThis.__CONTAGEM_DAS_ABAS_FALHA = d.contagemFalha;
     globalThis.__CONTAGEM_DAS_ABAS_FIXA = d.contagem;
     globalThis.__SEM_TRATADA = false;
     globalThis.__SEM_ASSUNTOS = false;
     globalThis.__CLIQUE_NAO_FINALIZA = d.cliqueNaoFinaliza;
-  }, { semente: s, semSituacao, erro, semEfeito, atraso, cliqueNaoFinaliza, contagem });
+  }, { semente: s, semSituacao, erro, semEfeito, atraso, cliqueNaoFinaliza, contagem, contagemFalha });
   await page.goto(ENDERECO);
   await page.waitForSelector("[data-conversa-nome]", { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(1500);
@@ -244,7 +248,13 @@ console.log("\nAs três abas separam a lista, e o número de cada uma vem do ban
   ok("o número de “Novos” é o do banco, e fica em alerta", nAg && nAg.n === conta.aguardando && nAg.n > 0 && nAg.alerta,
      JSON.stringify([nAg, conta.aguardando]));
   ok("o de “Em Atendimento” é o do banco, e sem alerta", nAb && nAb.n === conta.aberto && !nAb.alerta, JSON.stringify([nAb, conta.aberto]));
-  ok("“Finalizados” não tem número — só cresce", (await numeroDaAba(page, "finalizado")) === null);
+  // INVERTIDA EM 20/10, e não apagada: "Finalizados" nasceu sem número (só
+  // cresce, e um número que nunca zera se aprende a não ler), e o Rodrigo
+  // pediu o número. Escrita ao contrário, ela é o que impede o número de sumir
+  // de novo numa limpeza futura.
+  const nFz = await numeroDaAba(page, "finalizado");
+  ok("o de “Finalizados” também é o do banco, e sem alerta",
+     nFz && nFz.n === conta.finalizado && nFz.n > 0 && !nFz.alerta, JSON.stringify([nFz, conta.finalizado]));
   const pilula = await page.evaluate(() => document.querySelector('[data-aba="naolidas"]')?.textContent || "");
   ok("a pílula “Não lidas” conta as não lidas DA ABA, e não as do telefone",
      pilula === `Não lidas ${conta.nl.aberto}` || (conta.nl.aberto === 0 && pilula === "Não lidas"),
@@ -889,34 +899,179 @@ console.log("\nA aba vazia diz o que mora nela, pelo nome de hoje");
 }
 
 // ==================================================================
-//  12b. OS NOMES CABEM — com os números do escritório
+//  12b. OS NOMES E OS TRÊS NÚMEROS CABEM — com os números do escritório
 //
 //  "Em Atendimento" é o nome mais comprido das três, e com o número das
 //  conversas que ninguém finalizou (passa de mil no escritório) ele não cabe
-//  num terço da fileira: 118px contra 109 no computador, 107 contra 89 num
-//  Android de 360. Com os poucos números da bancada a conta não aparece, e é
-//  por isso que esta cena força os de verdade.
+//  num terço da fileira: 118px contra 109 no computador. Com os poucos números
+//  da bancada a conta não aparece, e é por isso que esta cena força os de
+//  verdade — e, desde 20/10, também o de "Finalizados", que só cresce: com
+//  quatro dígitos nele.
+//
+//  NO COMPUTADOR o número fica ao lado do nome, e nenhuma aba entra na folga
+//  da fileira: encostar na borda da coluna é o primeiro passo de ser cortada
+//  por ela. NO CELULAR o número fica EMBAIXO do nome — ao lado, os três não
+//  cabiam num Android de 360 nem com os números de hoje —, e a aba não cresce:
+//  ela já tem os 40px do alvo de dedo.
 // ==================================================================
-console.log("\nOs nomes cabem inteiros, com os números do escritório (mil e tantas em atendimento)");
+console.log("\nOs nomes e os três números cabem inteiros, com os números do escritório");
 {
-  const GRANDE = { aguardando: 214, aberto: 1523, finalizado: 900, nao_lidas: { aguardando: 12, aberto: 181, finalizado: 3 } };
-  for (const [largura, altura] of [[1360, 900], [390, 844], [360, 740]]) {
+  const GRANDE = { aguardando: 214, aberto: 1523, finalizado: 4812, nao_lidas: { aguardando: 12, aberto: 181, finalizado: 3 } };
+  for (const [largura, altura] of [[1360, 900], [390, 844], [360, 740], [320, 640]]) {
+    const celular = largura < 768;
     const { ctx, page, estouros } = await abrirPainel({ largura, altura, contagem: GRANDE });
     const m = await page.evaluate(() => {
       const f = document.querySelector("[data-abas-da-situacao]");
+      if (!f) return null;
+      const fr = f.getBoundingClientRect(), fs = getComputedStyle(f);
       const abas = [...document.querySelectorAll("[data-aba-da-situacao]")];
-      return f ? { fileiraCabe: f.scrollWidth <= f.clientWidth + 1,
-                   abasCabem: abas.every((b) => b.scrollWidth <= b.clientWidth + 1),
-                   rotulos: abas.map((b) => (b.innerText || "").replace(/\s+/g, " ").trim()),
-                   paginaDeLado: document.documentElement.scrollWidth > innerWidth + 1 } : null;
+      const caixa = (el) => { if (!el) return null; const r = el.getBoundingClientRect();
+        return { l: r.left, r: r.right, t: r.top, b: r.bottom }; };
+      return { fileiraCabe: f.scrollWidth <= f.clientWidth + 1,
+               abasCabem: abas.every((b) => b.scrollWidth <= b.clientWidth + 1),
+               rotulos: abas.map((b) => (b.innerText || "").replace(/\s+/g, " ").trim()),
+               paginaDeLado: document.documentElement.scrollWidth > innerWidth + 1,
+               dentro: { l: fr.left + parseFloat(fs.paddingLeft), r: fr.right - parseFloat(fs.paddingRight) },
+               abas: abas.map((b) => ({ aba: caixa(b), nome: caixa(b.querySelector("[data-nome-da-aba]")),
+                                        numero: caixa(b.querySelector("[data-numero-da-aba]")) })) };
     });
-    ok(`a ${largura}px, os três nomes inteiros, com os números`,
-       Boolean(m) && JSON.stringify(m.rotulos) === JSON.stringify(["Novos 214", "Em Atendimento 1523", "Finalizados"]), JSON.stringify(m));
+    ok(`a ${largura}px, os três nomes inteiros, com os três números`,
+       Boolean(m) && JSON.stringify(m.rotulos) === JSON.stringify(["Novos 214", "Em Atendimento 1523", "Finalizados 4812"]),
+       JSON.stringify(m && m.rotulos));
     ok(`a ${largura}px, nenhuma aba corta o nome, e a fileira cabe na coluna`, Boolean(m) && m.abasCabem && m.fileiraCabe, JSON.stringify(m));
     ok(`a ${largura}px, a página não rola de lado`, Boolean(m) && !m.paginaDeLado, JSON.stringify(m));
+    const abas = (m && m.abas) || [];
+    const completas = abas.length === 3 && abas.every((a) => a.aba && a.nome && a.numero);
+    ok(`a ${largura}px, nenhuma aba entra na folga da fileira`,
+       completas && abas[0].aba.l >= m.dentro.l - 0.5 && abas[2].aba.r <= m.dentro.r + 0.5,
+       JSON.stringify([m && m.dentro, abas.map((a) => a.aba)]));
+    if (celular) {
+      ok(`a ${largura}px (celular), o número fica embaixo do nome, no meio dele`,
+         completas && abas.every((a) => a.numero.t >= a.nome.b - 0.5
+           && Math.abs((a.numero.l + a.numero.r) / 2 - (a.nome.l + a.nome.r) / 2) < 1.5),
+         JSON.stringify(abas.map((a) => [a.nome, a.numero])));
+      ok(`a ${largura}px (celular), a aba não cresce: continua nos 40px do alvo de dedo`,
+         completas && abas.every((a) => a.aba.b - a.aba.t <= 40.5),
+         JSON.stringify(abas.map((a) => a.aba && a.aba.b - a.aba.t)));
+    } else {
+      ok(`a ${largura}px (computador), o número fica ao lado do nome, na mesma linha`,
+         completas && abas.every((a) => a.numero.l >= a.nome.r - 0.5 && a.numero.t < a.nome.b && a.numero.b > a.nome.t),
+         JSON.stringify(abas.map((a) => [a.nome, a.numero])));
+    }
     ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
     await ctx.close();
   }
+}
+
+// ==================================================================
+//  12c. NO CELULAR, O NOME NÃO PULA QUANDO O NÚMERO CHEGA
+//
+//  O número desce para baixo do nome no celular. Sem o lugar dele guardado,
+//  o nome ficaria no meio da aba enquanto a conta não chega — ou quando ela
+//  falha — e subiria quando ela chegasse: um pulo a cada telefone escolhido.
+// ==================================================================
+console.log("\nNo celular, o nome da aba não pula quando o número chega");
+{
+  const posicoes = async (contagemFalha) => {
+    const { ctx, page, estouros } = await abrirPainel({ largura: 360, altura: 740, contagemFalha });
+    const r = await page.evaluate(() => {
+      const f = document.querySelector("[data-abas-da-situacao]");
+      if (!f) return null;
+      const t = f.getBoundingClientRect().top;
+      return { numeros: f.querySelectorAll("[data-numero-da-aba]").length,
+               nomes: [...f.querySelectorAll("[data-nome-da-aba]")].map((n) => Math.round((n.getBoundingClientRect().top - t) * 10) / 10),
+               altura: Math.round(f.getBoundingClientRect().height * 10) / 10 };
+    });
+    await ctx.close();
+    return { r, estouros };
+  };
+  const sem = await posicoes(true), com = await posicoes(false);
+  ok("com a conta falhando, as abas ficam sem número", Boolean(sem.r) && sem.r.numeros === 0, JSON.stringify(sem.r));
+  ok("com a conta, os três números", Boolean(com.r) && com.r.numeros === 3, JSON.stringify(com.r));
+  ok("e o nome fica na mesma altura nos dois casos — o lugar do número é guardado",
+     Boolean(sem.r && com.r) && sem.r.nomes.length === 3 && JSON.stringify(sem.r.nomes) === JSON.stringify(com.r.nomes),
+     JSON.stringify([sem.r && sem.r.nomes, com.r && com.r.nomes]));
+  ok("e a fileira, na mesma altura", Boolean(sem.r && com.r) && sem.r.altura === com.r.altura,
+     JSON.stringify([sem.r && sem.r.altura, com.r && com.r.altura]));
+  ok("sem erro de JavaScript", sem.estouros.length + com.estouros.length === 0, [...sem.estouros, ...com.estouros].join(" | "));
+}
+
+// ==================================================================
+//  12d. ARQUIVAR TIRA A CONVERSA DO NÚMERO DA ABA
+//
+//  A conta do banco deixa de fora as arquivadas, como a lista. Arquivar não
+//  muda a aba da conversa, e a conta só era pedida de novo quando a aba
+//  mudava: arquivar uma finalizada a tirava da lista e deixava "Finalizados"
+//  contando com ela. Três caminhos: o gesto desta tela; a colega que arquiva
+//  uma conversa que está na lista; e a que desarquiva uma que está fora dela
+//  (a tela a viu num aviso antes, e é dessa memória que sai o "antes").
+// ==================================================================
+console.log("\nArquivar tira a conversa do número da aba — o gesto desta tela e o da colega");
+{
+  // DUAS FINALIZADAS: a da FLAVIA e a do BRUNO, que aqui também foi finalizado.
+  const { ctx, page, estouros } = await abrirPainel({ ajustar: (s) => {
+    const b = s.conversas.find((c) => c.id === "cv-ab");
+    b.situacao = "finalizado"; b.esperando_desde = null; b.tratada_em = H(2); b.nao_lidas = 0;
+    const a = s.zorvin_atendimentos.find((x) => x.id === "at-ab");
+    a.finalizado_em = H(2); a.finalizado_por = "u-jenifer";
+  } });
+  const daColega = (id, arquivada) => page.evaluate(({ id, arquivada }) => {
+    const c = (globalThis.__TABELAS.conversas || []).find((x) => x.id === id);
+    if (!c || typeof globalThis.__EMITIR !== "function") return 0;
+    c.arquivada = arquivada;
+    const { contato, ...linha } = c;
+    return globalThis.__EMITIR("UPDATE", "conversas", { ...linha });
+  }, { id, arquivada });
+
+  await irParaAba(page, "finalizado");
+  let conta = await contaNoBanco(page, ADV);
+  let n = await numeroDaAba(page, "finalizado");
+  ok("“Finalizados” começa com as duas", Boolean(n) && n.n === 2 && conta.finalizado === 2, JSON.stringify([n, conta.finalizado]));
+
+  // 1. O GESTO DESTA TELA: o ⋮ da linha → Arquivar. O ⋮ é achado a partir da
+  //    linha da FLAVIA, e não pelo papel: a linha também é um botão, e o nome
+  //    dela engole o texto de tudo o que está dentro (a lição de 24/09).
+  const abriu = await page.evaluate((nome) => {
+    let p = document.querySelector(`[data-conversa-nome="${nome}"]`);
+    while (p && !p.querySelector('[aria-label="Opções da conversa"]')) p = p.parentElement;
+    const b = p && p.querySelector('[aria-label="Opções da conversa"]');
+    if (!b) return false;
+    b.click();
+    return true;
+  }, FLAVIA);
+  await page.waitForTimeout(300);
+  const item = page.getByRole("button", { name: "Arquivar", exact: true });
+  const tinha = abriu && (await item.count()) > 0;
+  if (tinha) await item.first().click({ timeout: 5000 }).catch(() => {});
+  ok("o ⋮ da linha oferece “Arquivar”", tinha);
+  await page.waitForTimeout(3500);
+  conta = await contaNoBanco(page, ADV);
+  n = await numeroDaAba(page, "finalizado");
+  ok("arquivada por esta tela, ela sai da lista", !(await nomesNaLista(page)).includes(FLAVIA));
+  ok("e sai do número de “Finalizados”", Boolean(n) && n.n === 1 && conta.finalizado === 1, JSON.stringify([n, conta.finalizado]));
+
+  // 2. A COLEGA ARQUIVA UMA QUE ESTÁ NA LISTA desta tela.
+  const ouvintes = await daColega("cv-ab", true);
+  ok("o aviso da colega chegou ao painel", ouvintes > 0, String(ouvintes));
+  await page.waitForTimeout(3500);
+  conta = await contaNoBanco(page, ADV);
+  n = await numeroDaAba(page, "finalizado");
+  ok("arquivada pela colega, ela sai da lista", !(await nomesNaLista(page)).includes(BRUNO));
+  ok("e sai do número de “Finalizados”", Boolean(n) && n.n === 0 && conta.finalizado === 0, JSON.stringify([n, conta.finalizado]));
+
+  // 3. A COLEGA DESARQUIVA UMA QUE ESTÁ FORA DA LISTA: em "Em Atendimento", a
+  //    do BRUNO (finalizada) não está na lista. A tela a viu no aviso de
+  //    antes, e a aba dela não muda: só a memória do arquivar diz que mudou.
+  await irParaAba(page, "aberto");
+  ok("em “Em Atendimento”, a do BRUNO não está na lista", !(await nomesNaLista(page)).includes(BRUNO));
+  await daColega("cv-ab", false);
+  await page.waitForTimeout(3500);
+  conta = await contaNoBanco(page, ADV);
+  n = await numeroDaAba(page, "finalizado");
+  ok("desarquivada pela colega, ela volta ao número de “Finalizados”, mesmo fora da lista",
+     Boolean(n) && n.n === 1 && conta.finalizado === 1, JSON.stringify([n, conta.finalizado]));
+  ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
+  await ctx.close();
 }
 
 // ==================================================================
