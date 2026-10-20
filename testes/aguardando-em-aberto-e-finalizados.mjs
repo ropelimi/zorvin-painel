@@ -13,7 +13,7 @@
 //      aparece em "Finalizados", e não só as que estão carregadas;
 //   3. "Finalizar" é o "Já tratei": a mesma checklist, e quem finaliza é o
 //      banco, na mesma gravação do registro;
-//   4. o cliente que escreve depois de finalizado volta para "Em aberto" com
+//   4. o cliente que escreve depois de finalizado volta para "Em Atendimento" com
 //      um protocolo NOVO, e a finalização de antes continua à vista;
 //   5. "Reabrir" tem dois sentidos — continuar (protocolo novo, o registro
 //      fica) e desfazer (o mesmo protocolo, o registro deixa de contar, e a
@@ -125,13 +125,15 @@ function semente() {
 /** TODAS AS BANDEIRAS EM TODA ABERTURA — `addInitScript` acumula, e uma
  *  ligada num cenário continuaria valendo nos seguintes. */
 async function abrirPainel({ semSituacao = false, erro = {}, semEfeito = [], atraso = {}, largura = 1400,
-                             altura = 900, extra = null, cliqueNaoFinaliza = false } = {}) {
+                             altura = 900, extra = null, cliqueNaoFinaliza = false, contagem = null,
+                             ajustar = null } = {}) {
   const ctx = await nav.newContext({ viewport: { width: largura, height: altura } });
   const page = await ctx.newPage();
   const estouros = [];
   page.on("pageerror", (e) => estouros.push(e.message));
   const s = semente();
   if (extra) for (const [k, v] of Object.entries(extra)) s[k] = [...(s[k] || []), ...v];
+  if (ajustar) ajustar(s);
   // O assunto do registro plantado é o primeiro ativo da bancada.
   await page.addInitScript((d) => {
     globalThis.__SEMENTE = d.semente;
@@ -140,10 +142,11 @@ async function abrirPainel({ semSituacao = false, erro = {}, semEfeito = [], atr
     globalThis.__ESCRITA_SEM_EFEITO = d.semEfeito || [];
     globalThis.__ATRASO_POR_TABELA = d.atraso || {};
     globalThis.__CONTAGEM_DAS_ABAS_FALHA = false;
+    globalThis.__CONTAGEM_DAS_ABAS_FIXA = d.contagem;
     globalThis.__SEM_TRATADA = false;
     globalThis.__SEM_ASSUNTOS = false;
     globalThis.__CLIQUE_NAO_FINALIZA = d.cliqueNaoFinaliza;
-  }, { semente: s, semSituacao, erro, semEfeito, atraso, cliqueNaoFinaliza });
+  }, { semente: s, semSituacao, erro, semEfeito, atraso, cliqueNaoFinaliza, contagem });
   await page.goto(ENDERECO);
   await page.waitForSelector("[data-conversa-nome]", { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(1500);
@@ -228,19 +231,19 @@ console.log("\nAs três abas separam a lista, e o número de cada uma vem do ban
   const abas = await page.evaluate(() => [...document.querySelectorAll("[data-aba-da-situacao]")]
     .map((b) => [b.getAttribute("data-aba-da-situacao"), (b.innerText || "").replace(/\d+/g, "").trim()]));
   ok("há as três abas, na ordem do DataCrazy",
-     JSON.stringify(abas) === JSON.stringify([["aguardando", "Aguardando"], ["aberto", "Em aberto"], ["finalizado", "Finalizados"]]),
+     JSON.stringify(abas) === JSON.stringify([["aguardando", "Novos"], ["aberto", "Em Atendimento"], ["finalizado", "Finalizados"]]),
      JSON.stringify(abas));
-  ok("o painel abre em “Em aberto”, a lista de trabalho", (await abaAtiva(page)) === "aberto", await abaAtiva(page));
+  ok("o painel abre em “Em Atendimento”, a lista de trabalho", (await abaAtiva(page)) === "aberto", await abaAtiva(page));
   let nomes = await nomesNaLista(page);
-  ok("em “Em aberto” está quem foi atendido e não finalizado", nomes.includes(BRUNO), JSON.stringify(nomes.slice(0, 6)));
+  ok("em “Em Atendimento” está quem foi atendido e não finalizado", nomes.includes(BRUNO), JSON.stringify(nomes.slice(0, 6)));
   ok("e não está quem ninguém atendeu, nem quem foi finalizado", !nomes.includes(ALICE) && !nomes.includes(FLAVIA));
 
   await page.waitForTimeout(800);
   const conta = await contaNoBanco(page, ADV);
   const nAg = await numeroDaAba(page, "aguardando"), nAb = await numeroDaAba(page, "aberto");
-  ok("o número de “Aguardando” é o do banco, e fica em alerta", nAg && nAg.n === conta.aguardando && nAg.n > 0 && nAg.alerta,
+  ok("o número de “Novos” é o do banco, e fica em alerta", nAg && nAg.n === conta.aguardando && nAg.n > 0 && nAg.alerta,
      JSON.stringify([nAg, conta.aguardando]));
-  ok("o de “Em aberto” é o do banco, e sem alerta", nAb && nAb.n === conta.aberto && !nAb.alerta, JSON.stringify([nAb, conta.aberto]));
+  ok("o de “Em Atendimento” é o do banco, e sem alerta", nAb && nAb.n === conta.aberto && !nAb.alerta, JSON.stringify([nAb, conta.aberto]));
   ok("“Finalizados” não tem número — só cresce", (await numeroDaAba(page, "finalizado")) === null);
   const pilula = await page.evaluate(() => document.querySelector('[data-aba="naolidas"]')?.textContent || "");
   ok("a pílula “Não lidas” conta as não lidas DA ABA, e não as do telefone",
@@ -249,7 +252,7 @@ console.log("\nAs três abas separam a lista, e o número de cada uma vem do ban
 
   await irParaAba(page, "aguardando");
   nomes = await nomesNaLista(page);
-  ok("“Aguardando” mostra quem ninguém atendeu", nomes.includes(ALICE) && !nomes.includes(BRUNO), JSON.stringify(nomes.slice(0, 6)));
+  ok("“Novos” mostra quem ninguém atendeu", nomes.includes(ALICE) && !nomes.includes(BRUNO), JSON.stringify(nomes.slice(0, 6)));
   const pilulaAg = await page.evaluate(() => document.querySelector('[data-aba="naolidas"]')?.textContent || "");
   ok("e a pílula passa a contar as dela", pilulaAg === `Não lidas ${conta.nl.aguardando}`, `${pilulaAg} / ${conta.nl.aguardando}`);
   await irParaAba(page, "finalizado");
@@ -307,7 +310,7 @@ console.log("\nA aba vai ao banco: a finalizada parada há 1300 horas aparece em
   const achou = await clicar(page, '[data-telefone="Arquivo"]');
   ok("achei o telefone de 1200 conversas", achou);
   await page.waitForTimeout(2500);
-  ok("em “Em aberto”, ele não está (está finalizado)", !(await nomesNaLista(page)).includes(ZE));
+  ok("em “Em Atendimento”, ele não está (está finalizado)", !(await nomesNaLista(page)).includes(ZE));
   await irParaAba(page, "finalizado");
   const nomes = await nomesNaLista(page);
   ok("e em “Finalizados” ele aparece — a lista veio do banco recortada pela aba",
@@ -342,7 +345,7 @@ console.log("\n“Finalizar” é a checklist do “Já tratei”, e o banco fin
   });
   ok("a janela é a do “Finalizar”", janela && janela.modo === "finalizar" && /^\s*Finalizar/m.test(janela.texto), JSON.stringify(janela && janela.modo));
   ok("e diz o protocolo", janela && janela.protocolo === P.ab, JSON.stringify(janela && janela.protocolo));
-  ok("e o que acontece se o cliente escrever de novo", janela && /volta para “Em aberto” com um protocolo novo/.test(janela.texto));
+  ok("e o que acontece se o cliente escrever de novo", janela && /volta para “Em Atendimento” com um protocolo novo/.test(janela.texto));
   const desligado = await page.locator("[data-ja-tratei-confirmar]").isDisabled().catch(() => null);
   ok("a marcação continua obrigatória: sem assunto, o botão fica desligado", desligado === true);
   await page.locator("[data-assunto-do-ja-tratei] input").first().check().catch(() => {});
@@ -363,7 +366,7 @@ console.log("\n“Finalizar” é a checklist do “Já tratei”, e o banco fin
   ok("e saiu da fila de espera", b.esperando_desde === null && Boolean(b.tratada_em), JSON.stringify(b));
   const f = await filme(page);
   ok("a faixa diz que finalizou, com o protocolo", f.some((x) => x.startsWith(`Finalizada — protocolo ${P.ab}`)), JSON.stringify(f));
-  ok("a conversa saiu de “Em aberto”", !(await nomesNaLista(page)).includes(BRUNO));
+  ok("a conversa saiu de “Em Atendimento”", !(await nomesNaLista(page)).includes(BRUNO));
   ok("e continua aberta à direita, agora com “Reabrir”", (await page.locator('[data-ja-tratei="reabrir"]').count()) > 0
      && (await page.locator('[data-ja-tratei="reabrir"]').first().getAttribute("aria-label").catch(() => "")) === "Reabrir");
   const m = await marcos(page);
@@ -373,7 +376,7 @@ console.log("\n“Finalizar” é a checklist do “Já tratei”, e o banco fin
   ok("o número das abas foi pedido de novo ao banco",
      (await page.evaluate(() => globalThis.__CONTAGENS_DAS_ABAS || 0)) > antesDaConta);
   const conta = await contaNoBanco(page, ADV);
-  ok("e “Em aberto” diz o número de agora", (await numeroDaAba(page, "aberto"))?.n === conta.aberto,
+  ok("e “Em Atendimento” diz o número de agora", (await numeroDaAba(page, "aberto"))?.n === conta.aberto,
      JSON.stringify([await numeroDaAba(page, "aberto"), conta.aberto]));
   await irParaAba(page, "finalizado");
   ok("em “Finalizados” ela está", (await nomesNaLista(page)).includes(BRUNO));
@@ -384,7 +387,7 @@ console.log("\n“Finalizar” é a checklist do “Já tratei”, e o banco fin
 // ==================================================================
 //  4. O CLIENTE ESCREVE DEPOIS DE FINALIZADO
 // ==================================================================
-console.log("\nO cliente que escreve depois de finalizado volta para “Em aberto”, com protocolo novo");
+console.log("\nO cliente que escreve depois de finalizado volta para “Em Atendimento”, com protocolo novo");
 {
   const { ctx, page, estouros } = await abrirPainel();
   await irParaAba(page, "finalizado");
@@ -419,18 +422,18 @@ console.log("\nO cliente que escreve depois de finalizado volta para “Em abert
   ok("e, relidos, o marco do protocolo novo vem logo antes da mensagem que o abriu",
      posNovo >= 0 && String(aoReler[posNovo + 1] || "").startsWith("m-ponte-"), JSON.stringify(aoReler.slice(-4)));
   await irParaAba(page, "aberto");
-  ok("e em “Em aberto” ela está", (await nomesNaLista(page)).includes(FLAVIA));
+  ok("e em “Em Atendimento” ela está", (await nomesNaLista(page)).includes(FLAVIA));
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
 {
-  // FORA DA LISTA: quem está em "Em aberto" não tem a finalizada carregada, e
+  // FORA DA LISTA: quem está em "Em Atendimento" não tem a finalizada carregada, e
   // ela tem de aparecer quando o cliente escreve.
   const { ctx, page } = await abrirPainel();
-  ok("(em “Em aberto”, a finalizada não está)", !(await nomesNaLista(page)).includes(FLAVIA));
+  ok("(em “Em Atendimento”, a finalizada não está)", !(await nomesNaLista(page)).includes(FLAVIA));
   await page.evaluate(() => globalThis.__MENSAGEM_PELA_PONTE("cv-fz", "contato", "oi de novo"));
   await page.waitForTimeout(3500);
-  ok("o cliente escreveu: ela aparece em “Em aberto” sem ninguém recarregar", (await nomesNaLista(page)).includes(FLAVIA),
+  ok("o cliente escreveu: ela aparece em “Em Atendimento” sem ninguém recarregar", (await nomesNaLista(page)).includes(FLAVIA),
      JSON.stringify((await nomesNaLista(page)).slice(0, 5)));
   await ctx.close();
 }
@@ -449,12 +452,15 @@ console.log("\n“Reabrir para continuar” abre um protocolo novo e não apaga 
     const j = document.querySelector("[data-reabrir-janela]");
     return j ? { opcoes: [...j.querySelectorAll("[data-reabrir-opcao]")].map((o) => o.getAttribute("data-reabrir-opcao")),
                  protocolo: j.querySelector("[data-reabrir-protocolo]")?.getAttribute("data-reabrir-protocolo"),
-                 finalizacao: j.querySelector("[data-reabrir-finalizacao]")?.innerText || "" } : null;
+                 finalizacao: j.querySelector("[data-reabrir-finalizacao]")?.innerText || "",
+                 continuar: j.querySelector('[data-reabrir-opcao="continuar"]')?.innerText || "" } : null;
   });
   ok("a janela tem os dois caminhos, e “continuar” vem primeiro",
      janela && JSON.stringify(janela.opcoes) === JSON.stringify(["continuar", "desfazer"]), JSON.stringify(janela));
   ok("e diz o protocolo, e quem finalizou", janela && janela.protocolo === P.fz && janela.finalizacao.includes("JENIFER ALMEIDA"),
      JSON.stringify(janela));
+  ok("e para qual aba a conversa volta, pelo nome de hoje", janela && /volta para “Em Atendimento” com um protocolo novo/.test(janela.continuar),
+     JSON.stringify(janela && janela.continuar));
   await gravarFilme(page);
   await clicar(page, '[data-reabrir-opcao="continuar"]');
   await page.waitForTimeout(1800);
@@ -478,7 +484,7 @@ console.log("\n“Reabrir para continuar” abre um protocolo novo e não apaga 
 
 {
   // A CORRIDA: a janela do Reabrir está aberta, e o cliente escreve antes do
-  // clique. A conversa já voltou para "Em aberto" com um protocolo novo, e o
+  // clique. A conversa já voltou para "Em Atendimento" com um protocolo novo, e o
   // Reabrir não pode dizer que reabriu — nem abrir um terceiro.
   const { ctx, page } = await abrirPainel();
   await irParaAba(page, "finalizado");
@@ -529,7 +535,7 @@ console.log("\n“Desfazer a finalização” reabre o MESMO protocolo e devolve
      b.esperando_desde && Math.abs(new Date(b.esperando_desde).getTime() - new Date(H(28)).getTime()) < 1000 && b.tratada_em === null,
      JSON.stringify([b.esperando_desde, H(28), b.tratada_em]));
   ok("a faixa diz que voltou com o mesmo protocolo",
-     (await filme(page)).some((x) => x.startsWith("Desfeito: a conversa voltou para “Em aberto”, com o mesmo protocolo.")),
+     (await filme(page)).some((x) => x.startsWith("Desfeito: a conversa voltou para “Em Atendimento”, com o mesmo protocolo.")),
      JSON.stringify(await filme(page)));
   const m = await marcos(page);
   ok("o marco da finalização sumiu da conversa, e o da abertura ficou",
@@ -572,7 +578,7 @@ console.log("\n“Desfazer a finalização” reabre o MESMO protocolo e devolve
   const porId = await page.evaluate(() => Object.fromEntries((globalThis.__TABELAS.zorvin_tratamentos || [])
     .filter((t) => t.conversa_id === "cv-gb").map((t) => [t.id, Boolean(t.desfeito_em)])));
   ok("dois protocolos: só o clique do último foi desfeito", porId["tr-gb2"] === true && porId["tr-gb1"] === false, JSON.stringify(porId));
-  ok("e a conversa voltou para “Em aberto” com o protocolo do último", b.situacao === "aberto" && b.protocolo === "2026-000981",
+  ok("e a conversa voltou para “Em Atendimento” com o protocolo do último", b.situacao === "aberto" && b.protocolo === "2026-000981",
      JSON.stringify(b));
   await ctx.close();
 }
@@ -695,7 +701,7 @@ console.log("\nO banco que recusa é dito, e a tela não finge ter mudado de aba
   ok("a faixa diz que o banco não finalizou, e não “Finalizada”",
      (await filme(page)).some((x) => x.startsWith("Registrei o que foi tratado, mas o banco não finalizou"))
      && !(await filme(page)).some((x) => x.startsWith("Finalizada")), JSON.stringify(await filme(page)));
-  ok("e ela continua em “Em aberto”, com “Finalizar”", (await nomesNaLista(page)).includes(BRUNO)
+  ok("e ela continua em “Em Atendimento”, com “Finalizar”", (await nomesNaLista(page)).includes(BRUNO)
      && (await page.locator('[data-ja-tratei="tratar"]').count()) > 0);
   await ctx.close();
 }
@@ -706,7 +712,7 @@ console.log("\nO banco que recusa é dito, e a tela não finge ter mudado de aba
 console.log("\nA busca procura nas três abas, e a linha diz em qual cada conversa mora");
 {
   const { ctx, page } = await abrirPainel();
-  ok("(em “Em aberto”, a finalizada não está)", !(await nomesNaLista(page)).includes(FLAVIA));
+  ok("(em “Em Atendimento”, a finalizada não está)", !(await nomesNaLista(page)).includes(FLAVIA));
   await page.locator('input[placeholder^="Buscar por nome"]').fill("FLAVIA DA");
   await page.waitForTimeout(2500);
   const linha = await page.evaluate((n) => {
@@ -714,7 +720,7 @@ console.log("\nA busca procura nas três abas, e a linha diz em qual cada conver
     return l ? { selo: l.querySelector("[data-selo-da-situacao]")?.textContent || null } : null;
   }, FLAVIA);
   ok("buscando, a finalizada aparece", Boolean(linha), JSON.stringify(await nomesNaLista(page)));
-  ok("e a linha diz que ela está finalizada", linha && linha.selo === "finalizada", JSON.stringify(linha));
+  ok("e a linha diz em qual aba ela mora — pelo nome da aba", linha && linha.selo === "Finalizados", JSON.stringify(linha));
   await page.locator('input[placeholder^="Buscar por nome"]').fill("BRUNO DO");
   await page.waitForTimeout(2500);
   const doBruno = await page.evaluate((n) => {
@@ -766,7 +772,7 @@ console.log("\nNa pasta de arquivadas não há aba: lá moram as arquivadas das 
   ok("(há o atalho das arquivadas)", (await atalho.count()) > 0);
   if (await atalho.count()) { await atalho.first().click().catch(() => {}); await page.waitForTimeout(2000); }
   ok("dentro da pasta, as abas somem", !(await page.locator("[data-abas-da-situacao]").count()));
-  ok("e a arquivada finalizada está lá, mesmo com “Em aberto” escolhido antes",
+  ok("e a arquivada finalizada está lá, mesmo com “Em Atendimento” escolhido antes",
      (await nomesNaLista(page)).includes("ARMANDO ARQUIVADO"), JSON.stringify(await nomesNaLista(page)));
   await ctx.close();
 }
@@ -777,7 +783,7 @@ console.log("\nNa pasta de arquivadas não há aba: lá moram as arquivadas das 
 console.log("\nO tempo real: o que um colega finaliza sai da aba, e o que ele reabre entra");
 {
   const { ctx, page } = await abrirPainel();
-  ok("(o Bruno está em “Em aberto”)", (await nomesNaLista(page)).includes(BRUNO));
+  ok("(o Bruno está em “Em Atendimento”)", (await nomesNaLista(page)).includes(BRUNO));
   const antes = await page.evaluate(() => globalThis.__CONTAGENS_DAS_ABAS || 0);
   // A JENIFER FINALIZA, noutro painel: o banco muda e o aviso chega.
   await page.evaluate((p) => {
@@ -790,11 +796,11 @@ console.log("\nO tempo real: o que um colega finaliza sai da aba, e o que ele re
     globalThis.__EMITIR("UPDATE", "conversas", { ...linha });
   }, P.ab);
   await page.waitForTimeout(3500);
-  ok("o que a colega finalizou sai de “Em aberto” na hora", !(await nomesNaLista(page)).includes(BRUNO));
+  ok("o que a colega finalizou sai de “Em Atendimento” na hora", !(await nomesNaLista(page)).includes(BRUNO));
   ok("e o número das abas é pedido de novo", (await page.evaluate(() => globalThis.__CONTAGENS_DAS_ABAS || 0)) > antes);
 
   // E A JENIFER REABRE A FLAVIA, que não está nesta lista.
-  ok("(a Flavia não está em “Em aberto”)", !(await nomesNaLista(page)).includes(FLAVIA));
+  ok("(a Flavia não está em “Em Atendimento”)", !(await nomesNaLista(page)).includes(FLAVIA));
   await page.evaluate(() => {
     const T = globalThis.__TABELAS;
     const c = T.conversas.find((x) => x.id === "cv-fz");
@@ -805,7 +811,7 @@ console.log("\nO tempo real: o que um colega finaliza sai da aba, e o que ele re
     globalThis.__EMITIR("UPDATE", "conversas", { ...linha });
   });
   await page.waitForTimeout(3500);
-  ok("o que a colega reabriu entra em “Em aberto” sem ninguém recarregar", (await nomesNaLista(page)).includes(FLAVIA),
+  ok("o que a colega reabriu entra em “Em Atendimento” sem ninguém recarregar", (await nomesNaLista(page)).includes(FLAVIA),
      JSON.stringify((await nomesNaLista(page)).slice(0, 5)));
   await ctx.close();
 }
@@ -832,9 +838,9 @@ console.log("\nO tempo real: o que um colega finaliza sai da aba, e o que ele re
     .some((x) => x.tabela === "conversas" && /situacao/.test(x.colunas || "")));
   await page.evaluate(() => { globalThis.__DIARIO = null; });
   ok("(o aviso perguntou ao banco de quem é a conversa, e em qual aba ela está)", pediuAConversa);
-  ok("a mensagem nova numa conversa “Aguardando” não relê a lista de “Em aberto”", releituras === 0,
+  ok("a mensagem nova numa conversa de “Novos” não relê a lista de “Em Atendimento”", releituras === 0,
      `${releituras} releitura(s) da lista`);
-  ok("(e ela continua fora de “Em aberto”)", !(await nomesNaLista(page)).includes(ALICE));
+  ok("(e ela continua fora de “Em Atendimento”)", !(await nomesNaLista(page)).includes(ALICE));
   await ctx.close();
 }
 
@@ -858,6 +864,59 @@ console.log("\nNo celular: as abas cabem, com alvo de dedo, e o “Finalizar” 
      await item.first().textContent().catch(() => null));
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
+}
+
+// ==================================================================
+//  12a. A ABA VAZIA DIZ QUAL É A ABA, E O QUE MORA NELA
+// ==================================================================
+console.log("\nA aba vazia diz o que mora nela, pelo nome de hoje");
+{
+  // A ALICE, a única que ninguém atendeu, passa a ter sido atendida: "Novos"
+  // fica vazia.
+  const { ctx, page, estouros } = await abrirPainel({ ajustar: (s) => {
+    s.conversas.find((c) => c.id === "cv-ag").situacao = "aberto";
+  } });
+  await irParaAba(page, "aguardando");
+  const recado = await page.evaluate(() => {
+    const r = document.querySelector("[data-recado-da-lista]");
+    return r ? { tipo: r.getAttribute("data-recado-da-lista"), texto: (r.innerText || "").trim() } : null;
+  });
+  ok("“Novos” vazia diz que não há cliente novo, e o que mora ali",
+     recado && recado.tipo === "sem-conversa-aguardando"
+     && recado.texto === "Nenhum cliente novo. Aqui ficam os clientes que a equipe ainda não atendeu.", JSON.stringify(recado));
+  ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
+  await ctx.close();
+}
+
+// ==================================================================
+//  12b. OS NOMES CABEM — com os números do escritório
+//
+//  "Em Atendimento" é o nome mais comprido das três, e com o número das
+//  conversas que ninguém finalizou (passa de mil no escritório) ele não cabe
+//  num terço da fileira: 118px contra 109 no computador, 107 contra 89 num
+//  Android de 360. Com os poucos números da bancada a conta não aparece, e é
+//  por isso que esta cena força os de verdade.
+// ==================================================================
+console.log("\nOs nomes cabem inteiros, com os números do escritório (mil e tantas em atendimento)");
+{
+  const GRANDE = { aguardando: 214, aberto: 1523, finalizado: 900, nao_lidas: { aguardando: 12, aberto: 181, finalizado: 3 } };
+  for (const [largura, altura] of [[1360, 900], [390, 844], [360, 740]]) {
+    const { ctx, page, estouros } = await abrirPainel({ largura, altura, contagem: GRANDE });
+    const m = await page.evaluate(() => {
+      const f = document.querySelector("[data-abas-da-situacao]");
+      const abas = [...document.querySelectorAll("[data-aba-da-situacao]")];
+      return f ? { fileiraCabe: f.scrollWidth <= f.clientWidth + 1,
+                   abasCabem: abas.every((b) => b.scrollWidth <= b.clientWidth + 1),
+                   rotulos: abas.map((b) => (b.innerText || "").replace(/\s+/g, " ").trim()),
+                   paginaDeLado: document.documentElement.scrollWidth > innerWidth + 1 } : null;
+    });
+    ok(`a ${largura}px, os três nomes inteiros, com os números`,
+       Boolean(m) && JSON.stringify(m.rotulos) === JSON.stringify(["Novos 214", "Em Atendimento 1523", "Finalizados"]), JSON.stringify(m));
+    ok(`a ${largura}px, nenhuma aba corta o nome, e a fileira cabe na coluna`, Boolean(m) && m.abasCabem && m.fileiraCabe, JSON.stringify(m));
+    ok(`a ${largura}px, a página não rola de lado`, Boolean(m) && !m.paginaDeLado, JSON.stringify(m));
+    ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
+    await ctx.close();
+  }
 }
 
 // ==================================================================

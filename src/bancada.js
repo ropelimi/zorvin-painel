@@ -2935,6 +2935,13 @@ export const supabase = {
       if (globalThis.__CONTAGEM_DAS_ABAS_FALHA) {
         return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } };
       }
+      // OS NÚMEROS DO ESCRITÓRIO, e não os da semente: a largura das abas é
+      // medida com "Em Atendimento" passando de mil, que é o que o banco de
+      // verdade tem — com os poucos da bancada, um nome cortado passaria.
+      if (globalThis.__CONTAGEM_DAS_ABAS_FIXA) {
+        await espera(40);
+        return { data: globalThis.__CONTAGEM_DAS_ABAS_FIXA, error: null };
+      }
       await espera(40);
       globalThis.__CONTAGENS_DAS_ABAS = (globalThis.__CONTAGENS_DAS_ABAS || 0) + 1;
       const r = { aguardando: 0, aberto: 0, finalizado: 0, nao_lidas: { aguardando: 0, aberto: 0, finalizado: 0 } };
@@ -3379,6 +3386,126 @@ export const supabase = {
       });
       return { data: { desde: new Date(desde).toISOString(), ate: new Date(ate).toISOString(),
                        agora: new Date().toISOString(), departamentos: saida }, error: null };
+    }
+
+    // A CONTABILIZAÇÃO POR PROTOCOLO (script 029) — as regras da função do
+    // banco, que tem as suas conferências num Postgres de verdade (seção 68 da
+    // prova da ponte): só entra no total o protocolo em que a equipe começou;
+    // o período é o da abertura; quem não administra recebe os de que
+    // participou, e os tempos são de quem fez.
+    if (nome === "zorvin_relatorio_atendimentos") {
+      if (globalThis.__SEM_CONTABILIZACAO) {
+        return { data: null, error: { code: "PGRST202", message: "Could not find the function public.zorvin_relatorio_atendimentos" } };
+      }
+      if (globalThis.__CONTABILIZACAO_FALHA) {
+        return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } };
+      }
+      await espera(40);
+      if (globalThis.__SEM_SITUACAO) return { data: { falta: "028" }, error: null };
+      const eu = TABELAS.usuarios[0] || {};
+      const soMeu = !eu.admin || Boolean(args && args.p_quem);
+      const quem = String((eu.admin ? args && args.p_quem : eu.id) || "");
+      let t1 = args && args.p_ate ? new Date(args.p_ate).getTime() : Date.now();
+      let t0 = args && args.p_desde ? new Date(args.p_desde).getTime() : -Infinity;
+      if (t0 > t1) [t0, t1] = [t1, t0];
+      const tAntes = Number.isFinite(t0) ? t0 - (t1 - t0) : t0;
+      const tel = (args && args.p_telefone) || null, dep = (args && args.p_departamento) || null;
+      const conv = new Map((TABELAS.conversas || []).map((c) => [String(c.id), c]));
+      const adv = new Map(ADVOGADOS.map((a) => [String(a.id), a]));
+      const nomeDe = new Map([...(TABELAS.usuarios || []), ...(TABELAS.equipe || [])].map((u) => [String(u.id), u.nome]));
+      const ms = (x) => new Date(x).getTime();
+      const seg = (de, ate) => Math.max(0, (ms(ate) - ms(de)) / 1000);
+      const base = (TABELAS.zorvin_atendimentos || []).map((a) => {
+        const c = conv.get(String(a.conversa_id));
+        const q = ms(a.aberto_em);
+        if (!c || q < tAntes || q > t1) return null;
+        if (tel && String(c.advogado_id) !== String(tel)) return null;
+        if (dep && String((adv.get(String(c.advogado_id)) || {}).departamento_id) !== String(dep)) return null;
+        // QUEM DEU A PRIMEIRA RESPOSTA: a mensagem da equipe na hora anotada.
+        const m = a.primeira_resposta_em ? (TABELAS.mensagens || [])
+          .filter((x) => String(x.conversa_id) === String(a.conversa_id) && x.origem === "advogado"
+                         && ms(x.criado_em) === ms(a.primeira_resposta_em))
+          .sort((x, y) => String(x.id).localeCompare(String(y.id)))[0] : null;
+        return { ...a, advogado_id: c.advogado_id, contato_id: c.contato_id, contato: c.contato,
+                 iniciado: Boolean(a.primeira_resposta_em || a.finalizado_em || a.origem !== "cliente"),
+                 noPeriodo: q >= t0,
+                 porId: m && m.enviado_por_id ? String(m.enviado_por_id) : null,
+                 rotulo: m && m.enviado_por ? String(m.enviado_por).trim() || null : null };
+      }).filter(Boolean);
+      const participou = (g) => !soMeu || (Boolean(quem) && (g.porId === quem || String(g.finalizado_por) === quem
+                                                             || String(g.aberto_por) === quem));
+      const meus = base.filter(participou);
+      const agora = meus.filter((g) => g.noPeriodo);
+      const tempo = (v) => ({ mediana: mediana(v), media: media(v), quantos: v.length });
+      const pessoas = new Map();
+      const linha = (k, id, tipo, rotulo) => {
+        if (!pessoas.has(k)) pessoas.set(k, { id, tipo, rotulo, p: [], f: [] });
+        return pessoas.get(k);
+      };
+      for (const g of base.filter((x) => x.noPeriodo)) {
+        if (g.origem === "cliente" && g.primeira_resposta_em) {
+          const s = seg(g.aberto_em, g.primeira_resposta_em);
+          if (g.porId) linha(g.porId, g.porId, "pessoa", null).p.push(s);
+          else if (g.rotulo === "WhatsApp") linha("celular", null, "celular", "Pelo celular").p.push(s);
+          else if (g.rotulo) linha(`rotulo:${g.rotulo.toLowerCase()}`, null, "rotulo", g.rotulo).p.push(s);
+          else linha("desconhecido", null, "desconhecido", null).p.push(s);
+        }
+        if (g.finalizado_em) {
+          const id = g.finalizado_por ? String(g.finalizado_por) : null;
+          linha(id || "desconhecido", id, id ? "pessoa" : "desconhecido", null).f.push(seg(g.aberto_em, g.finalizado_em));
+        }
+      }
+      const porPessoa = [...pessoas.values()]
+        .map((x) => ({ id: x.id, tipo: x.tipo, nome: (x.id && nomeDe.get(x.id)) || x.rotulo || "(sem nome)",
+                       primeiras: x.p.length, primeira_mediana: mediana(x.p),
+                       finalizou: x.f.length, finalizar_mediana: mediana(x.f) }))
+        .sort((a, b) => (b.primeiras + b.finalizou) - (a.primeiras + a.finalizou) || a.nome.localeCompare(b.nome));
+      const dias = new Map();
+      for (const g of agora) {
+        const k = iso(soDia(g.aberto_em));
+        const d = dias.get(k) || { quando: k, atendimentos: 0, sem_resposta: 0 };
+        if (g.iniciado) d.atendimentos += 1; else d.sem_resposta += 1;
+        dias.set(k, d);
+      }
+      const registros = agora.slice().sort((a, b) => ms(b.aberto_em) - ms(a.aberto_em) || String(b.protocolo).localeCompare(String(a.protocolo)))
+        .slice(0, Math.min(Math.max(Number((args && args.p_limite) || 500), 1), 2000))
+        .map((g) => {
+          const ct = (TABELAS.contatos || []).find((x) => String(x.id) === String(g.contato_id)) || g.contato || {};
+          return {
+            protocolo: g.protocolo, conversa_id: g.conversa_id, advogado_id: g.advogado_id,
+            contato: { nome: ct.nome, numero: ct.numero, nome_zorvin: ct.nome_zorvin || null, vantoro_nome: ct.vantoro_nome || null },
+            origem: g.origem, aberto_em: g.aberto_em,
+            aberto_por: g.aberto_por || null, aberto_por_nome: g.aberto_por ? nomeDe.get(String(g.aberto_por)) || null : null,
+            primeira_resposta_em: g.primeira_resposta_em || null, respondeu_por: g.porId,
+            respondeu_nome: !g.primeira_resposta_em ? null
+              : g.porId ? nomeDe.get(g.porId) || "(sem nome)" : g.rotulo === "WhatsApp" ? "Pelo celular" : g.rotulo,
+            pelo_celular: !g.porId && g.rotulo === "WhatsApp",
+            finalizado_em: g.finalizado_em || null, finalizado_por: g.finalizado_por || null,
+            finalizado_nome: g.finalizado_por ? nomeDe.get(String(g.finalizado_por)) || null : null,
+            estado: g.finalizado_em ? "finalizado" : g.iniciado ? "em_atendimento" : "sem_resposta",
+          };
+        });
+      return { data: {
+        so_meu: soMeu,
+        desde: Number.isFinite(t0) ? new Date(t0).toISOString() : null, ate: new Date(t1).toISOString(),
+        total: {
+          atendimentos: agora.filter((g) => g.iniciado).length,
+          em_atendimento: agora.filter((g) => g.iniciado && !g.finalizado_em).length,
+          finalizados: agora.filter((g) => g.finalizado_em).length,
+          sem_resposta: soMeu ? null : agora.filter((g) => !g.iniciado).length,
+        },
+        tempos: {
+          primeira_resposta: tempo(agora.filter((g) => g.origem === "cliente" && g.primeira_resposta_em
+                                                       && (!soMeu || g.porId === quem))
+                                        .map((g) => seg(g.aberto_em, g.primeira_resposta_em))),
+          finalizar: tempo(agora.filter((g) => g.finalizado_em && (!soMeu || String(g.finalizado_por) === quem))
+                                .map((g) => seg(g.aberto_em, g.finalizado_em))),
+        },
+        antes: { existe: Number.isFinite(t0), atendimentos: meus.filter((g) => !g.noPeriodo && g.iniciado).length },
+        por_pessoa: porPessoa,
+        por_dia: [...dias.values()].sort((a, b) => a.quando.localeCompare(b.quando)),
+        total_registros: agora.length, registros,
+      }, error: null };
     }
 
     if (nome === "zorvin_relatorio_tratados") {

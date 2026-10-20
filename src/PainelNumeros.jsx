@@ -68,7 +68,7 @@ import { diasDesde } from "./espera.js";
 import {
   ArrowLeft, RefreshCw, AlertCircle, Table2, BarChart3, Info, Calendar,
   ChevronLeft, ChevronRight, ChevronDown, Check, X, Users, Phone, Building2,
-  ListChecks, Download, UserCheck, SquareKanban,
+  ListChecks, Download, UserCheck, SquareKanban, Ticket,
 } from "lucide-react";
 
 const DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -384,6 +384,16 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
       </div>
 
       <div style={{ padding: "20px 18px 40px", maxWidth: 1180, margin: "0 auto" }}>
+        {/* OS PROTOCOLOS VÊM PRIMEIRO: é a contabilização do DataCrazy, que o
+            Rodrigo pediu, e o resumo de mensagens de baixo é uma conta mais
+            antiga com outro sentido de "atendimento". Função própria no banco
+            (script 029), fora do bloco de baixo pela régua das outras seções:
+            a falta de uma função não esconde a outra. */}
+        <RelatorioProtocolos C={C} estilos={estilos} cores={cores} deIso={deIso} ateIso={ateIso} fuso={fuso}
+                             quem={quem} telefone={telefone} departamento={departamento}
+                             souAdmin={souAdmin} meuId={meuId} advogados={advogados}
+                             aoEscolherPessoa={(id) => souAdmin && setQuem((v) => (String(v) === String(id) ? null : id))} />
+
         {carregando && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, color: C.textSecondary, padding: 24 }}>
             <RefreshCw size={16} /> Somando os atendimentos…
@@ -736,9 +746,9 @@ function Escolha({ C, sombra, icone: Icone, opcoes, valor, definir, grupo }) {
 /* ================================================================
    TÍTULO DE SEÇÃO
    ================================================================ */
-function Titulo({ C, children }) {
+function Titulo({ C, children, primeiro = false }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "28px 0 10px" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, margin: primeiro ? "2px 0 10px" : "28px 0 10px" }}>
       <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0, letterSpacing: -0.2 }}>{children}</h3>
       <div style={{ flex: 1, height: 1, background: C.divider }} />
     </div>
@@ -1337,6 +1347,324 @@ function Ressalvas({ d, t, C, estilos }) {
    AUSÊNCIA: qualquer outro erro vira frase, com o código (armadilha nº 2).
    ================================================================ */
 const POR_PAGINA = 50;
+
+/* ================================================================
+   OS PROTOCOLOS DE ATENDIMENTO — a contabilização do DataCrazy
+   ================================================================
+   Pedido do Rodrigo em 20/10, depois das abas: quantos atendimentos houve,
+   quanto o cliente esperou pela primeira resposta e quanto levou até
+   finalizar. A conta é do banco (`zorvin_relatorio_atendimentos`, script 029
+   da ponte), pela régua da tela inteira: a API corta em 1000 linhas sem
+   avisar.
+
+   UM ATENDIMENTO É UM PROTOCOLO, e ele só entra no total QUANDO A EQUIPE
+   COMEÇA — a regra que o Rodrigo copiou do DataCrazy: o que "permanece com o
+   status de Aguardando não soma no volume de Quantidade Total até que a
+   interação humana de fato comece". O protocolo que o cliente abriu e em que
+   ninguém mexeu aparece à parte, em "Esperando resposta". Vale também para o
+   cliente que voltou a escrever numa conversa finalizada: a conversa está em
+   "Em Atendimento", e o protocolo novo dela só conta quando alguém responder.
+
+   TUDO AQUI É DO PERÍODO DA ABERTURA, e as contas fecham: o total é a soma
+   dos em atendimento com os finalizados. A comparação com o período anterior
+   é SÓ DO TOTAL — comparar quantos ainda estão em atendimento mediria só que
+   o mês velho teve mais tempo para ser finalizado.
+
+   QUEM NÃO ADMINISTRA vê os atendimentos de que participou (respondeu
+   primeiro, finalizou ou reabriu), e os tempos são os dela; o recorte é feito
+   no banco. O "por pessoa" mostra todo mundo, para comparar.
+
+   SEM A FUNÇÃO ou SEM O 028, quem administra lê qual atualização falta; quem
+   atende não vê nada. COM A FUNÇÃO FALHANDO, a frase vem com o código — falha
+   não é ausência (armadilha nº 2). */
+function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, fuso, quem, telefone, departamento,
+                              souAdmin, meuId, advogados, aoEscolherPessoa }) {
+  const [r, setR] = useState(null);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState("");
+  const [falta, setFalta] = useState(null);   // "029" | "028" | null
+  const [quantos, setQuantos] = useState(POR_PAGINA);
+
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      setCarregando(true); setErro(""); setFalta(null); setQuantos(POR_PAGINA);
+      const { data, error } = await supabase.rpc("zorvin_relatorio_atendimentos", {
+        p_desde: deIso, p_ate: ateIso, p_quem: quem, p_fuso: fuso,
+        p_telefone: telefone, p_departamento: departamento, p_limite: 1000,
+      });
+      if (!vivo) return;
+      setCarregando(false);
+      if (error) {
+        const m = (error.message || "") + (error.code || "");
+        if (/zorvin_relatorio_atendimentos|PGRST202|Could not find/i.test(m)) { setFalta("029"); return; }
+        setErro(`${error.message || "erro desconhecido"}${error.code ? ` (código ${error.code})` : ""}`);
+        return;
+      }
+      if (data && data.falta) { setFalta(String(data.falta)); return; }
+      setR(data || null);
+    })();
+    return () => { vivo = false; };
+  }, [deIso, ateIso, quem, telefone, departamento, fuso]);
+
+  const nomeDoTelefone = (id) => {
+    const a = advogados.find((x) => String(x.id) === String(id));
+    return a ? (a.nome || a.numero) : "";
+  };
+  const quandoCurto = (iso) => new Date(iso).toLocaleString("pt-BR",
+    { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const ESTADO = {
+    finalizado: { texto: "finalizado", cor: C.textSecondary },
+    em_atendimento: { texto: "em atendimento", cor: cores.saiu },
+    sem_resposta: { texto: "esperando resposta", cor: cores.aviso },
+  };
+  const quemAbriu = (x) => x.origem === "cliente" ? "o cliente escreveu"
+    : x.origem === "reabertura" ? `reaberto por ${x.aberto_por_nome || "alguém da equipe"}`
+    : "a equipe começou a conversa";
+  const minutos = (de, ate) => (de && ate ? String(Math.max(0, Math.round((new Date(ate) - new Date(de)) / 60000))) : "");
+
+  // A PLANILHA, com o que veio. `;` e BOM, porque é o que o Excel em português
+  // abre direto, com acento e sem juntar as colunas numa só. Os tempos vão em
+  // MINUTOS inteiros, que se somam e se ordenam — "2 h 10 min" não.
+  function baixarPlanilha() {
+    const regs = (r && r.registros) || [];
+    const campo = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const linhas = [
+      ["Protocolo", "Aberto em", "Como começou", "Cliente", "Número", "Telefone do escritório",
+       "Primeira resposta em", "Quem respondeu", "Minutos até a primeira resposta",
+       "Finalizado em", "Quem finalizou", "Minutos até finalizar", "Situação"],
+      ...regs.map((x) => [
+        x.protocolo,
+        new Date(x.aberto_em).toLocaleString("pt-BR"),
+        quemAbriu(x),
+        nomeDoContato(x.contato),
+        telefoneLegivel(x.contato && x.contato.numero),
+        nomeDoTelefone(x.advogado_id),
+        x.primeira_resposta_em ? new Date(x.primeira_resposta_em).toLocaleString("pt-BR") : "",
+        x.respondeu_nome || "",
+        x.origem === "cliente" ? minutos(x.aberto_em, x.primeira_resposta_em) : "",
+        x.finalizado_em ? new Date(x.finalizado_em).toLocaleString("pt-BR") : "",
+        x.finalizado_nome || "",
+        minutos(x.aberto_em, x.finalizado_em),
+        (ESTADO[x.estado] || {}).texto || "",
+      ]),
+    ];
+    const texto = "\ufeff" + linhas.map((l) => l.map(campo).join(";")).join("\r\n");
+    const url = URL.createObjectURL(new Blob([texto], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = `protocolos-${deIso.slice(0, 10)}-a-${ateIso.slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  if (falta && !souAdmin) return null;
+
+  return (
+    <div data-relatorio-protocolos>
+      <Titulo C={C} primeiro><span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+        <Ticket size={16} /> Protocolos de atendimento</span></Titulo>
+
+      {carregando && <div style={{ ...estilos.nota, padding: "8px 0" }}>Somando os protocolos…</div>}
+
+      {falta && (
+        <div style={{ ...estilos.cartao, display: "flex", gap: 12, alignItems: "flex-start" }} data-protocolos-falta={falta}>
+          <AlertCircle size={20} color={cores.aviso} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ ...estilos.nota, fontSize: 13.5 }}>
+            <b style={{ color: C.textPrimary }}>Falta um passo no banco.</b>{" "}
+            {falta === "028"
+              ? "Os protocolos ainda não existem neste banco: falta a atualização 028."
+              : "A conta dos protocolos é feita lá dentro, e a atualização 029 ainda não chegou a ele."}
+            {" "}Elas entram sozinhas quando a ponte é publicada — confira em <b style={{ color: C.textPrimary }}>Departamentos
+            e acessos → Atualizações do banco</b>.
+          </div>
+        </div>
+      )}
+
+      {!!erro && (
+        <div style={{ ...estilos.cartao, borderColor: "#e5573f", color: "#e5573f" }} data-protocolos-erro>
+          Não consegui somar os protocolos: {erro}
+        </div>
+      )}
+
+      {!carregando && !falta && !erro && r && (() => {
+        const t = r.total || {};
+        const tempos = r.tempos || {};
+        const pr = tempos.primeira_resposta || {}, fi = tempos.finalizar || {};
+        const regs = r.registros || [];
+        const pessoas = r.por_pessoa || [];
+        // OS DIAS SEM NADA ENTRAM COMO ZERO, como no relatório do "Já tratei":
+        // o banco só devolve os dias que tiveram protocolo. Completar não é
+        // contar — o número de cada dia continua vindo do banco.
+        const serie = (() => {
+          const tem = new Map((r.por_dia || []).map((x) => [String(x.quando).slice(0, 10), x]));
+          const dias = [];
+          const d0 = new Date(deIso), d1 = new Date(ateIso);
+          d0.setHours(0, 0, 0, 0);
+          for (let d = d0; d <= d1 && dias.length < 400; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+            const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+            const x = tem.get(k) || {};
+            dias.push({ quando: k, atendimentos: Number(x.atendimentos || 0), sem_resposta: Number(x.sem_resposta || 0) });
+          }
+          return dias;
+        })();
+        const series = [{ campo: "atendimentos", cor: cores.saiu, nome: "Com atendimento" },
+                        ...(r.so_meu ? [] : [{ campo: "sem_resposta", cor: cores.aviso, nome: "Esperando resposta" }])];
+        return (
+          <>
+            <div style={{ ...estilos.nota, marginBottom: 12 }} data-protocolos-escopo>
+              {r.so_meu
+                ? <>Os atendimentos de que <b style={{ color: C.textPrimary }}>{souAdmin ? "a pessoa escolhida" : "você"}</b> participou
+                    — deu a primeira resposta, finalizou ou reabriu —, abertos no período. Os tempos são os {souAdmin ? "dela" : "seus"}.
+                    A comparação por pessoa, mais abaixo, mostra todo mundo.</>
+                : <>Os protocolos abertos no período, nos telefones que você alcança. Cada atendimento é um protocolo: começa
+                    quando o cliente escreve (ou quando a equipe começa a conversa) e termina no “Finalizar”.{" "}
+                    <b style={{ color: C.textPrimary }}>Só entra no total o que a equipe começou</b>, como no DataCrazy — o
+                    que ninguém respondeu nem finalizou fica à parte, em “Esperando resposta”.</>}
+              {" "}O cartão “Atendimentos” mais abaixo é outra conta, mais antiga: um trecho de conversa entre silêncios
+              de 6 horas.
+            </div>
+
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))" }}>
+              <Numero destaque C={C} estilos={estilos} antes={r.antes || {}} etiqueta="Total de atendimentos"
+                      v={t.atendimentos} comparar="atendimentos"
+                      ajuda="Protocolos abertos no período em que a equipe começou o atendimento: respondeu, finalizou, ou foi ela que abriu a conversa. O que o cliente abriu e ninguém tocou não entra — fica em “Esperando resposta”." />
+              <Numero C={C} estilos={estilos} antes={{}} etiqueta="Em atendimento" v={t.em_atendimento}
+                      ajuda="Começados e ainda não finalizados. Somados aos finalizados, dão o total." />
+              <Numero C={C} estilos={estilos} antes={{}} etiqueta="Finalizados" v={t.finalizados}
+                      ajuda="Fechados com o “Finalizar”. O que foi finalizado e reaberto conta as duas vezes: são dois protocolos." />
+              {!r.so_meu && (
+                <Numero C={C} estilos={estilos} antes={{}} etiqueta="Esperando resposta" v={t.sem_resposta}
+                        ajuda="Abertos pelo cliente no período, e que ninguém da equipe respondeu nem finalizou ainda. Ficam fora do total até alguém começar — inclusive o do cliente que voltou a escrever numa conversa finalizada." />
+              )}
+            </div>
+
+            <div style={{ display: "grid", gap: 12, marginTop: 12, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
+              <Tempo C={C} estilos={estilos} etiqueta="Até a primeira resposta"
+                     mediana={pr.mediana} media={pr.media} quantos={pr.quantos}
+                     ajuda={`Do momento em que o cliente abriu o protocolo até a primeira resposta da equipe. Só nos protocolos que o cliente abriu: na conversa começada por nós e no Reabrir não houve cliente esperando.${r.so_meu ? " Aqui, só as primeiras respostas da pessoa." : ""}`} />
+              <Tempo C={C} estilos={estilos} etiqueta="Até finalizar"
+                     mediana={fi.mediana} media={fi.media} quantos={fi.quantos}
+                     ajuda={`Do começo do protocolo até o “Finalizar”, em todo protocolo finalizado.${r.so_meu ? " Aqui, só os que a pessoa finalizou." : ""}`} />
+            </div>
+
+            <Titulo C={C}>Protocolos por dia</Titulo>
+            <Grafico C={C} estilos={estilos} legenda={series.length > 1 ? series.map((s) => ({ nome: s.nome, cor: s.cor })) : null}
+              colunas={["Quando", ...series.map((s) => s.nome)]}
+              linhas={serie.map((x) => [rotuloData(x.quando, "day"), ...series.map((s) => numero(x[s.campo]))])}
+              vazio={serie.every((x) => !x.atendimentos && !x.sem_resposta)}
+              rodape="Pelo dia em que o protocolo abriu."
+              desenho={() => (
+                <Colunas C={C} dados={serie} passo="day" formatar={numero} series={series} />
+              )} />
+
+            <Titulo C={C}>Por pessoa</Titulo>
+            <div style={estilos.cartao} data-protocolos-por-pessoa>
+              <div style={{ ...estilos.nota, marginBottom: 8 }}>
+                Mostra <b style={{ color: C.textPrimary }}>todo mundo</b>, mesmo com a tela recortada numa pessoa. A primeira
+                resposta conta para quem respondeu, nos protocolos que o cliente abriu; o finalizar, para quem finalizou.
+                Tempos em mediana.
+              </div>
+              {!pessoas.length && <div style={estilos.nota}>Ninguém respondeu nem finalizou protocolo neste período.</div>}
+              {pessoas.length > 0 && (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead><tr>
+                      <th style={estilos.th}>Pessoa</th>
+                      <th style={estilos.thNum}>Primeiras respostas</th>
+                      <th style={estilos.thNum}>Até responder</th>
+                      <th style={estilos.thNum}>Finalizou</th>
+                      <th style={estilos.thNum}>Até finalizar</th>
+                    </tr></thead>
+                    <tbody>
+                      {pessoas.map((p) => {
+                        const sou = meuId && p.id && String(p.id) === String(meuId);
+                        const escolhe = souAdmin && p.id;
+                        return (
+                          <tr key={`${p.tipo}-${p.id || p.nome}`} data-pessoa-nos-protocolos={p.nome}
+                              onClick={() => escolhe && aoEscolherPessoa(p.id)}
+                              title={p.tipo === "celular" ? "Respondido direto pelo WhatsApp do aparelho, fora do Zorvin: não dá para saber quem foi."
+                                   : p.tipo === "rotulo" ? "Mensagem de antes de ago/2026, que guardou só o nome de quem escreveu."
+                                   : undefined}
+                              style={{ cursor: escolhe ? "pointer" : "default",
+                                       background: quem && String(quem) === String(p.id) ? C.listActive : "transparent" }}>
+                            <td style={{ ...estilos.td, fontWeight: sou ? 800 : 600, color: p.tipo === "pessoa" ? C.textPrimary : C.textSecondary }}>
+                              {p.nome}
+                              {sou && <span style={{ marginLeft: 7, fontSize: 11, fontWeight: 700, color: "#fff",
+                                                     background: cores.saiu, borderRadius: 10, padding: "1px 7px" }}>você</span>}
+                            </td>
+                            <td style={estilos.num} data-primeiras={p.primeiras}>{numero(p.primeiras)}</td>
+                            <td style={estilos.num}>{p.primeiras ? tempo(p.primeira_mediana) : "—"}</td>
+                            <td style={estilos.num} data-finalizou={p.finalizou}>{numero(p.finalizou)}</td>
+                            <td style={estilos.num}>{p.finalizou ? tempo(p.finalizar_mediana) : "—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <Titulo C={C}>Os protocolos</Titulo>
+            <div style={estilos.cartao} data-protocolos-lista>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
+                <div style={{ ...estilos.nota, flex: "1 1 auto" }} data-protocolos-contagem>
+                  {Number(r.total_registros) > regs.length
+                    ? <>Os <b style={{ color: C.textPrimary }}>{numero(regs.length)}</b> mais recentes, de {numero(r.total_registros)} no período. Para ver o resto, encurte o período.</>
+                    : <>{numero(regs.length)} {regs.length === 1 ? "protocolo" : "protocolos"} no período, do mais recente para o mais antigo.</>}
+                </div>
+                {regs.length > 0 && (
+                  <button onClick={baixarPlanilha} data-protocolos-baixar
+                    style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 32, padding: "5px 12px",
+                             border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary,
+                             borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
+                    <Download size={14} /> Baixar planilha
+                  </button>
+                )}
+              </div>
+              {!regs.length && <div style={estilos.nota}>Nenhum protocolo aberto neste período.</div>}
+              {regs.slice(0, quantos).map((x, i) => {
+                const est = ESTADO[x.estado] || ESTADO.em_atendimento;
+                return (
+                  <div key={x.protocolo || i} data-protocolo-no-relatorio={x.protocolo} data-estado={x.estado}
+                       style={{ padding: "10px 0", borderTop: i ? `1px solid ${C.divider}` : "none" }}>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline", fontSize: 13.5 }}>
+                      <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, color: C.textSecondary, fontSize: 12.5 }}>
+                        {x.protocolo}
+                      </span>
+                      <b>{nomeDoContato(x.contato)}</b>
+                      <span style={{ color: C.textSecondary, fontSize: 12.5 }}>
+                        {telefoneLegivel(x.contato && x.contato.numero)}
+                        {nomeDoTelefone(x.advogado_id) && ` · ${nomeDoTelefone(x.advogado_id)}`}
+                      </span>
+                      <span style={{ flex: 1 }} />
+                      <span data-estado-do-protocolo style={{ fontSize: 11.5, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
+                                     color: est.cor, border: `1px solid ${C.divider}` }}>{est.texto}</span>
+                    </div>
+                    <div style={{ ...estilos.nota, marginTop: 4 }} data-protocolo-caminho>
+                      Aberto {quandoCurto(x.aberto_em)} — {quemAbriu(x)}.
+                      {x.primeira_resposta_em && (x.origem === "cliente"
+                        ? <> Respondido em {tempo((new Date(x.primeira_resposta_em) - new Date(x.aberto_em)) / 1000)}{x.respondeu_nome ? (x.pelo_celular ? ", pelo celular" : ` por ${x.respondeu_nome}`) : ""}.</>
+                        : null)}
+                      {x.finalizado_em && <> Finalizado {x.finalizado_nome ? `por ${x.finalizado_nome} ` : ""}em {tempo((new Date(x.finalizado_em) - new Date(x.aberto_em)) / 1000)}.</>}
+                    </div>
+                  </div>
+                );
+              })}
+              {regs.length > quantos && (
+                <button onClick={() => setQuantos((n) => n + POR_PAGINA)} data-protocolos-mais
+                  style={{ marginTop: 8, border: "none", background: "transparent", cursor: "pointer",
+                           color: C.verdeTexto, fontSize: 13, fontWeight: 700, padding: "6px 0" }}>
+                  Mostrar mais {Math.min(POR_PAGINA, regs.length - quantos)}
+                </button>
+              )}
+            </div>
+          </>
+        );
+      })()}
+    </div>
+  );
+}
 
 /* ================================================================
    O RELATÓRIO POR RESPONSÁVEL — a carteira de cada pessoa, AGORA

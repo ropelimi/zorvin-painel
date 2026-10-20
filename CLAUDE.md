@@ -3711,6 +3711,10 @@ com as regras no CLAUDE.md dela). A tela lê `conversas.situacao` e
 Uma tela que gravasse a situação por conta própria faria a aba e o protocolo
 discordarem — e o banco recusa (42501).
 
+**Os nomes das abas mudaram em 20/10**: "Aguardando" virou **"Novos"** e "Em
+aberto" virou **"Em Atendimento"** — ver "Os nomes das abas: Novos e Em
+Atendimento", mais abaixo. Este texto usa os nomes de quando foi escrito.
+
 ### As abas
 
 Entre a busca e a fita de filtros (`data-abas-da-situacao`). **Abas, e não
@@ -3840,9 +3844,10 @@ bancada devolveria lista vazia, e a prova aprovaria o pior dos dois.
 
 ### O que fica para depois
 
-A **contabilização** do DataCrazy (relatório por protocolo, tempo até a
-primeira resposta, tempo até finalizar): os campos nascem no 028, a tela não.
-E a **busca por protocolo**.
+~~A **contabilização** do DataCrazy (relatório por protocolo, tempo até a
+primeira resposta, tempo até finalizar): os campos nascem no 028, a tela
+não.~~ **Feita** — ver "A contabilização dos atendimentos (20/10)", mais
+abaixo. **Continua em aberto** a **busca por protocolo**.
 
 ### As provas
 
@@ -3886,6 +3891,134 @@ próprio: menos de 40px no computador e de 50 no celular.
   `o-aviso-vai-para-o-responsavel`) reprovaram: a conversa sem a coluna não
   passava pelo filtro "em aberto". A bancada lê a coluna que falta como "em
   aberto", que é o padrão dela.
+
+## Os nomes das abas: Novos e Em Atendimento (20/10)
+
+Pedido do Rodrigo, junto com a contabilização: *"altere os nomes:
+'Aguardando' para 'Novos' e 'Em aberto' para 'Em Atendimento'"*.
+
+**Só a tela muda.** Os valores do banco (`conversas.situacao`) continuam
+`aguardando`, `aberto` e `finalizado`: trocar o valor seria regravar cada
+conversa e mexer nos gatilhos do 028. Os nomes moram num lugar só,
+`src/abasDaSituacao.js` (`ABAS_DA_SITUACAO`, `NOME_DA_SITUACAO`), porque três
+telas dizem o nome da aba — a lista, a janela do "Finalizar" e a do
+"Reabrir". Com três cópias, a próxima troca deixaria uma frase mandando
+procurar uma aba que não existe mais.
+
+**`NOME_DA_ABA` já existia** no `Painel.jsx`: é o nome da aba do NAVEGADOR
+("Ropelimi Zorvin"). A primeira escrita colidiu com ele e o build reprovou —
+por isso o nome da aba da lista é `NOME_DA_SITUACAO`.
+
+**"Em Atendimento" não cabia num terço da fileira.** Medido: com o número ao
+lado, ele pede 118px, e um terço são 109 no computador e 89 num Android de
+360. E os números de verdade pioram a conta: as conversas que ninguém
+finalizou passam de mil no escritório, e "Em Atendimento 1523" com "Novos
+214" pediam 298px numa fileira que tem 275 por dentro — a página passava a
+rolar de lado. A bancada, com os poucos números dela, nunca mostraria isso.
+
+| | o que faz |
+|---|---|
+| a largura sai do nome (`flex: 1 1 0` e `min-width: max-content`) | cada aba começa no tamanho do que escreve, e as que sobram dividem o resto por igual |
+| no celular, letra de 12 e menos folga | sobra espaço a 360, com os números de mil |
+| a largura do negrito, guardada | a aba escolhida fica em negrito; sem uma cópia escondida do nome em negrito, ela engordaria ao ser clicada e empurraria as vizinhas |
+
+**Dois limites, escritos:** a 320px a fileira ainda não cabe (a régua desta
+casa é o Android de 360); e a reserva do negrito **não se mede aqui** — a
+fonte da máquina das provas (DejaVu Sans) não tem o peso 600 e o desenha
+igual ao 700. No Windows do escritório (Segoe UI) os dois diferem.
+
+**O selo da busca virou o NOME DA ABA** ("Finalizados", "Novos"), e não um
+adjetivo da conversa: "nova", sozinho numa linha, se leria como mensagem
+nova. **E a aba vazia** diz "Nenhum cliente novo. Aqui ficam os clientes que
+a equipe ainda não atendeu." — "nenhuma conversa nova" teria o mesmo
+problema.
+
+Prova: `aguardando-em-aberto-e-finalizados`, agora com 135 conferências:
+entraram a cena dos nomes inteiros a 1360, 390 e 360px **com os números do
+escritório** (`__CONTAGEM_DAS_ABAS_FIXA`, que a bancada devolve no lugar da
+conta dela), a frase do Reabrir e a aba vazia. **NSAB_R sabotagens e NPEG_R
+pegas**.
+
+## A contabilização dos atendimentos (20/10)
+
+Pedido do Rodrigo, depois das abas: *"pode seguir com a contabilização do
+DataCrazy"*. Uma seção nova, **"Protocolos de atendimento"**, no ALTO do
+Painel de números, embaixo da mesma barra de filtros. A conta é do banco
+(`zorvin_relatorio_atendimentos`, script 029 da ponte, com as regras no
+CLAUDE.md dela).
+
+**A página de ajuda do DataCrazy não abriu daqui** — o endereço não resolve,
+e o proxy recusa. As definições saíram da descrição que o Rodrigo copiou e do
+que a busca mostrou, e isso foi dito a ele.
+
+**Um atendimento é um protocolo, e só entra no total quando a equipe
+começa** — respondeu, finalizou, ou abriu ela mesma. É a regra que ele
+copiou: o que está aguardando *"não soma no volume de 'Quantidade Total' até
+que a interação humana de fato comece"*. O que ninguém tocou aparece à
+parte, em **"Esperando resposta"** — inclusive o protocolo novo do cliente
+que voltou a escrever numa conversa finalizada: a conversa está em "Em
+Atendimento", e o protocolo dela só conta quando alguém responder. **É
+decisão**, e foi dita ao Rodrigo, com a outra leitura (contar pela aba) a um
+pedido de distância.
+
+| cartão | o que é |
+|---|---|
+| Total de atendimentos | os protocolos do período em que a equipe começou, comparados com o período anterior |
+| Em atendimento | começados e ainda não finalizados |
+| Finalizados | fechados pelo "Finalizar" — somados aos de cima, dão o total |
+| Esperando resposta | o que ninguém tocou: fora do total, e só para quem administra |
+| Até a primeira resposta | só nos protocolos que o CLIENTE abriu; mediana, com a média ao lado |
+| Até finalizar | da abertura do protocolo ao "Finalizar" |
+
+E um gráfico **por dia** (verde com atendimento, âmbar esperando, os dias
+vazios como zero), uma tabela **por pessoa** (todo mundo, com "Pelo celular"
+numa linha própria; para quem administra, clicar recorta a tela) e **a lista
+dos protocolos**, com a planilha.
+
+**Tudo é do período da abertura**, e é isso que faz o total fechar com os
+dois cartões ao lado. **Só o total compara com o período anterior**: comparar
+quantos ainda estão em atendimento mediria só que o mês velho teve mais
+tempo para ser finalizado.
+
+**Vem primeiro na tela, e diz que o "Atendimentos" de baixo é outra conta.**
+O resumo de mensagens de sempre chama de "atendimento" um trecho de conversa
+entre silêncios de 6 horas, e a "Situação dos atendimentos" dele (aguardando
+resposta, em andamento, encerrados) sai da mesma conta. Juntar os dois
+sentidos é decisão do Rodrigo, e ficou oferecido.
+
+**Quem não administra** vê os protocolos de que participou — respondeu
+primeiro, finalizou ou reabriu —, e os tempos são os dela. O recorte é do
+banco: pedir "todo mundo" por fora devolve o recorte assim mesmo. O
+"Esperando resposta" não aparece para ela, porque ainda não é de ninguém.
+
+**O aviso de falta não manda colar SQL.** As seções de baixo ainda dizem
+"rode o script … no SQL Editor", que era verdade antes de 08/10. Esta diz
+que a atualização (029, ou 028) entra sozinha quando a ponte é publicada, e
+onde conferir: Departamentos e acessos → Atualizações do banco.
+
+**A planilha leva os tempos em MINUTOS inteiros**, que se somam e se ordenam
+no Excel — "2 h 10 min" não.
+
+**A prova `painel` reprovaria, e foi ajustada junto.** A cena "banco sem a
+função do Painel" exige nenhum cartão de número fora dos relatórios, e a
+seção nova tem os seus. A conferência passou a descontar também os de
+`[data-relatorio-protocolos]`; a régua dela continua valendo para os números
+que dependem do `painel_dashboard`.
+
+**E um caractere invisível entrou no código, e saiu antes do commit.** O
+começo da planilha (o BOM, que faz o Excel ler o acento) foi gravado como o
+próprio caractere, e não como `\ufeff` — a armadilha que esta casa já
+registrou com os acentos dentro de uma expressão regular. Quem achou foi a
+montagem das sabotagens: a troca procurava `\ufeff` e não achava. Hoje está
+escrito como no resto do arquivo, e a varredura de caracteres invisíveis no
+que mudou deu zero nos dois repositórios.
+
+Prova: `a-contabilizacao-dos-atendimentos`, 50 conferências, sobre dez
+protocolos com as contas feitas à mão — a bancada faz a conta do 029
+(`zorvin_relatorio_atendimentos`, com `__SEM_CONTABILIZACAO` e
+`__CONTABILIZACAO_FALHA`). Ela termina pelo caminho inteiro: finalizar na
+conversa o protocolo que esperava e vê-lo entrar no total. **NSAB_S
+sabotagens e NPEG_S pegas**.
 
 ## A auditoria de 07/10 — o que uma varredura inteira achou
 

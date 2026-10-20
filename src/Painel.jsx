@@ -56,6 +56,7 @@ import EscolherHora from "./EscolherHora.jsx";
 import { perguntarOsScripts, fraseDosScriptsParaAFaixa, manterOQueSeSabia } from "./scriptsDoBanco.js";
 import { rotuloDaHora, porQueNaoServe, semAColunaDaAgenda, aindaDaParaEditar } from "./agenda.js";
 import { useEstadoDoCopiloto, copilotoAparece, pedirSugestao } from "./copiloto.js";
+import { ABAS_DA_SITUACAO, NOME_DA_SITUACAO } from "./abasDaSituacao.js";
 
 // ============================================================
 //  ZORVIN by Ropelimi — Painel real (conectado ao Supabase)
@@ -347,11 +348,6 @@ let TEM_CONTAGEM_NO_BANCO = true;
 // estado, para a descoberta não mudar a função que lê a lista e pedir uma
 // segunda leitura (a lição de 25/09, em `ordenarPelaEspera`).
 let SITUACAO_NO_BANCO = null;
-// AS TRÊS ABAS, na ordem do DataCrazy — e na do caminho de uma conversa: o
-// cliente chega, alguém atende, alguém finaliza.
-const ABAS_DA_SITUACAO = [["aguardando", "Aguardando"], ["aberto", "Em aberto"], ["finalizado", "Finalizados"]];
-// O SELO DA LINHA, durante a busca — ver `naAba`.
-const SITUACAO_NA_LINHA = { aguardando: "aguardando", aberto: "em aberto", finalizado: "finalizada" };
 
 // AVISOS DE FALHA JÁ DISPENSADOS, GUARDADOS AQUI NO APARELHO.
 //
@@ -3159,7 +3155,7 @@ export default function Painel({ sessao }) {
   //  lista curta lida como completa, a mesma armadilha do filtro de grupos.
   //
   //  E ELA NÃO É GUARDADA NO NAVEGADOR, de propósito: quem abre o painel cai
-  //  sempre em "Em aberto", a lista de trabalho. Guardada, quem deixou
+  //  sempre em "Em Atendimento", a lista de trabalho. Guardada, quem deixou
   //  "Finalizados" aberto ontem abriria hoje a lista de quem já foi atendido,
   //  e concluiria que não há nada a fazer.
   // ============================================================
@@ -9864,7 +9860,7 @@ export default function Painel({ sessao }) {
   //  REABRIR (script 028) — os dois sentidos, e os dois existem
   //
   //  REABRIR PARA CONTINUAR é o pedido do DataCrazy: a conversa volta para
-  //  "Em aberto" com um PROTOCOLO NOVO, e a finalização de antes continua
+  //  "Em Atendimento" com um PROTOCOLO NOVO, e a finalização de antes continua
   //  registrada — ela aconteceu. A tela pede isto gravando `situacao =
   //  'aberto'`, e quem abre o atendimento novo é o gatilho do banco; é a
   //  única mudança de situação que a tela pode pedir.
@@ -9911,7 +9907,7 @@ export default function Painel({ sessao }) {
     setReabrindo(null);
     contarAbas(conv.advogado_id || advogadoId);
     relerMarcosRef.current(conv.id);
-    mostrarAviso(`Reaberta${linha.protocolo ? `, com o protocolo ${linha.protocolo}` : ""}. Ela está em “Em aberto”.`);
+    mostrarAviso(`Reaberta${linha.protocolo ? `, com o protocolo ${linha.protocolo}` : ""}. Ela está em “${NOME_DA_SITUACAO.aberto}”.`);
   }
 
   //  O DESFAZER NO 028. A ORDEM SE INVERTE em relação ao "Voltar para a fila"
@@ -9962,7 +9958,7 @@ export default function Painel({ sessao }) {
     contarAbas(conv.advogado_id || advogadoId);
     releTratadosDoHistorico(conv.id);
     relerMarcosRef.current(conv.id);
-    const aba = agora && agora.situacao === "aguardando" ? "Aguardando" : "Em aberto";
+    const aba = NOME_DA_SITUACAO[agora && agora.situacao === "aguardando" ? "aguardando" : "aberto"];
     mostrarAviso(semFila
       ? `Desfeito: a conversa voltou para “${aba}”, com o mesmo protocolo — mas não consegui devolvê-la à fila de espera. Atualize a página.`
       : `Desfeito: a conversa voltou para “${aba}”, com o mesmo protocolo.`, semFila ? 9000 : undefined);
@@ -12249,8 +12245,8 @@ export default function Painel({ sessao }) {
   // conversa ainda" em "Finalizados" se leria como "o telefone não tem
   // conversa nenhuma", com a lista cheia na aba ao lado.
   const ABA_VAZIA = {
-    aguardando: "Nenhuma conversa aguardando. Aqui ficam os clientes que a equipe ainda não atendeu.",
-    aberto: "Nenhuma conversa em aberto. Aqui ficam as conversas já atendidas que ainda não foram finalizadas.",
+    aguardando: "Nenhum cliente novo. Aqui ficam os clientes que a equipe ainda não atendeu.",
+    aberto: "Nenhuma conversa em atendimento. Aqui ficam as conversas já atendidas que ainda não foram finalizadas.",
     finalizado: "Nenhuma conversa finalizada. Uma conversa vem para cá quando alguém aperta “Finalizar” nela.",
   };
   const recadoDaListaVazia =
@@ -14245,7 +14241,7 @@ export default function Painel({ sessao }) {
             O NÚMERO É DO BANCO (`contarAbas`), e não das linhas carregadas.
             "Finalizados" não tem número, de propósito: ele só cresce, e um
             número que nunca zera se aprende a não ler — o mesmo motivo de o
-            sino das tarefas não contar as de amanhã. "Aguardando" fica âmbar
+            sino das tarefas não contar as de amanhã. "Novos" fica âmbar
             com qualquer conversa dentro: é o cliente que ninguém atendeu.
 
             NA PASTA DE ARQUIVADAS NÃO HÁ ABA: lá moram as arquivadas das três,
@@ -14253,8 +14249,13 @@ export default function Painel({ sessao }) {
         {temSituacao === true && !verArquivadas && (() => {
           const contagem = contagemDasAbas && contagemDasAbas.de === advogadoId ? contagemDasAbas : null;
           return (
+            // NO CELULAR, MAIS APERTADA. A conta é a do escritório, e não a da
+            // bancada: "Em Atendimento" com 4 dígitos (as conversas que ninguém
+            // finalizou passam de mil) e "Novos" com 3 pedem 298px, e a fileira
+            // de um Android de 360 tem 275 por dentro — a página passava a
+            // rolar de lado. Letra de 12 e menos folga dão 23px de sobra.
             <div data-abas-da-situacao role="tablist" aria-label="Situação das conversas"
-                 style={{ display: "flex", gap: 4, padding: "0 12px", margin: "0 0 7px",
+                 style={{ display: "flex", gap: estreito ? 2 : 4, padding: estreito ? "0 8px" : "0 12px", margin: "0 0 7px",
                           background: C.panel, borderBottom: `1px solid ${C.divider}` }}>
               {ABAS_DA_SITUACAO.map(([k, rotulo]) => {
                 const ativa = abaSituacao === k;
@@ -14266,17 +14267,29 @@ export default function Painel({ sessao }) {
                           onClick={() => { if (!ativa) setAbaSituacao(k); }}
                           title={k === "aguardando" ? "Clientes que a equipe ainda não atendeu"
                                : k === "aberto" ? "Conversas já atendidas que ainda não foram finalizadas"
-                               : "Conversas finalizadas. Se o cliente escrever de novo, ela volta para Em aberto"}
-                          style={{ flex: 1, minWidth: 0, display: "inline-flex", alignItems: "center",
-                                   justifyContent: "center", gap: 5, border: "none",
+                               : `Conversas finalizadas. Se o cliente escrever de novo, ela volta para ${NOME_DA_SITUACAO.aberto}`}
+                          // A LARGURA SAI DO NOME, e não um terço para cada: "Em
+                          // Atendimento" com o número pede 118px, e um terço da
+                          // fileira são 109 (89 no celular de 360). Cada aba
+                          // começa no tamanho do que escreve, e as que sobram
+                          // dividem o resto por igual.
+                          style={{ flex: "1 1 0", minWidth: "max-content", display: "inline-flex", alignItems: "center",
+                                   justifyContent: "center", gap: estreito ? 4 : 5, border: "none",
                                    borderBottom: `2px solid ${ativa ? C.green : "transparent"}`,
                                    background: "transparent", color: ativa ? C.verdeTexto : C.textSecondary,
-                                   fontSize: 13, fontWeight: ativa ? 700 : 600, padding: "5px 2px 5px",
+                                   fontSize: estreito ? 12 : 13, fontWeight: ativa ? 700 : 600, padding: "5px 2px 5px",
                                    marginBottom: -1, cursor: ativa ? "default" : "pointer", whiteSpace: "nowrap" }}>
-                    {rotulo}
+                    {/* A LARGURA DO NEGRITO, guardada: a aba escolhida fica em
+                        negrito, e sem isto o nome dela engordaria ao ser
+                        clicado e empurraria as vizinhas para o lado. A cópia
+                        escondida não é lida (nem pelo leitor de tela). */}
+                    <span style={{ display: "inline-grid" }}>
+                      <span aria-hidden="true" style={{ gridArea: "1 / 1", fontWeight: 700, visibility: "hidden" }}>{rotulo}</span>
+                      <span style={{ gridArea: "1 / 1" }}>{rotulo}</span>
+                    </span>
                     {n != null && (
                       <span data-numero-da-aba={n} data-numero-em-alerta={alerta ? "sim" : undefined}
-                            style={{ minWidth: 18, height: 18, padding: "0 5px", boxSizing: "border-box",
+                            style={{ minWidth: 18, height: 18, padding: estreito ? "0 4px" : "0 5px", boxSizing: "border-box",
                                      borderRadius: 9, fontSize: 11, fontWeight: 700, lineHeight: "18px",
                                      textAlign: "center", background: alerta ? "#d97706" : C.divider,
                                      color: alerta ? "#fff" : C.textSecondary }}>
@@ -14720,13 +14733,15 @@ export default function Painel({ sessao }) {
                           de outra aba. Sem ele, a conversa achada some ao
                           apagar a busca, e parece defeito. */}
                       {buscandoTexto && temSituacao === true && !verArquivadas
-                        && SITUACAO_NA_LINHA[c.situacao] && c.situacao !== abaSituacao && (
+                        && NOME_DA_SITUACAO[c.situacao] && c.situacao !== abaSituacao && (
+                        // O SELO É O NOME DA ABA, e não um adjetivo da conversa:
+                        // "nova", sozinho numa linha, se leria como mensagem nova.
                         <span data-selo-da-situacao={c.situacao}
-                              title={`Esta conversa está na aba “${(ABAS_DA_SITUACAO.find(([k]) => k === c.situacao) || [])[1]}”`}
+                              title={`Esta conversa está na aba “${NOME_DA_SITUACAO[c.situacao]}”`}
                               style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 600,
                                        color: C.textSecondary, border: `1px solid ${C.divider}`,
                                        borderRadius: 5, padding: "1px 5px", lineHeight: 1.5 }}>
-                          {SITUACAO_NA_LINHA[c.situacao]}
+                          {NOME_DA_SITUACAO[c.situacao]}
                         </span>
                       )}
                     </span>
