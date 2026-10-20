@@ -4026,7 +4026,27 @@ Prova: `aguardando-em-aberto-e-finalizados`, agora com 165 conferências: a de
 dígitos em "Finalizados" — no computador ao lado do nome e sem entrar na folga
 da fileira, no celular embaixo do nome e com a aba nos 40px; o nome que não
 pula quando a conta falha; e o arquivar pelos três caminhos (esta tela, a
-colega com a conversa na lista, a colega com ela fora). <<SABOTAGENS>>
+colega com a conversa na lista, a colega com ela fora). **11
+sabotagens e 11 pegas**, todas limpas, rodadas em cópias e lidas uma a uma:
+
+- "Finalizados" sem número de novo (18 reprovações);
+- o número ao lado do nome também no celular (a página rolando de lado a 360 e
+  a 320);
+- os vãos de antes no computador (a última aba entrando na folga da fileira);
+- sem o lugar guardado do número no celular (o nome pulando 8,5px);
+- o lugar guardado com outro tamanho (a fileira mudando de altura quando a
+  conta chega);
+- arquivar por esta tela sem pedir a conta;
+- a colega que arquiva sem pedir a conta;
+- a conversa de fora da lista sem a memória do arquivar;
+- o número de "Finalizados" em âmbar;
+- no celular, o número em cima do nome;
+- a aba do celular crescendo para 46px.
+
+**E o vigia `provas-que-reprovam` pegou três conferências minhas antes da PR**:
+`.every(...)` com a guarda do tamanho numa variável à parte, fora do bloco do
+`if` — uma lista vazia passaria por elas. Hoje o tamanho está escrito em cada
+uma.
 
 ## A contabilização dos atendimentos (20/10)
 
