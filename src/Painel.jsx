@@ -281,6 +281,53 @@ function ehDeMensagens(m) {
     && !m._filaId && !String(m.id || "").startsWith("temp-") && !String(m.id || "").startsWith("fila-");
 }
 const porHora = (a, b) => new Date(a.criado_em) - new Date(b.criado_em);
+/** A BOLHA PROVISÓRIA QUE ESTA MENSAGEM GRAVADA CONFIRMA — o mesmo texto, ou o
+ *  mesmo arquivo no depósito. É a regra do aviso de INSERT e a da releitura,
+ *  numa escrita só (20/10): duas escritas divergiriam, e divergir aqui é a
+ *  mensagem aparecer duas vezes numa tela e nenhuma na outra. */
+function confirmaAProvisoria(real, provisoria) {
+  return String(provisoria.id).startsWith("temp-")
+    && (provisoria._status === "enviando" || provisoria._status === "saiu")
+    && Boolean((real.texto && provisoria.texto === real.texto)
+               || (real.midia_url && provisoria._midiaUrlFinal === real.midia_url));
+}
+// Quanto tempo a bolha que ainda está saindo sobrevive às releituras sem a
+// linha de verdade aparecer. Passando disso ela não é mais "saindo": a fila
+// diz o que houve (a bolha vermelha vem dela), e a ponte parada tem o aviso
+// vermelho dela.
+const VIDA_DA_PROVISORIA_MS = 10 * 60 * 1000;
+/** AS BOLHAS QUE AINDA ESTÃO SAINDO SOBREVIVEM À RELEITURA (20/10).
+ *
+ *  Relato do Rodrigo: *"quando é enviada uma mensagem demora para aparecer,
+ *  muitas vezes parece que falhou o envio"*. A releitura troca a lista inteira
+ *  pelo que está no banco, e a mensagem que acabou de entrar na fila ainda não
+ *  está em `mensagens` — a ponte só a grava depois que o WhatsApp aceita. A
+ *  bolha SUMIA da tela e voltava segundos depois, já como mensagem de verdade.
+ *  Entre uma coisa e outra, quem enviou via a conversa sem a sua mensagem.
+ *
+ *  Fica a provisória desta conversa que nenhuma linha NOVA da releitura
+ *  confirma. NOVA, quer dizer que não estava na tela antes: o "ok" mandado há
+ *  dois minutos já estava lá, e não é o eco do "ok" de agora. E a que falhou
+ *  com a linha da fila conhecida não fica, porque a fila a devolve (a bolha
+ *  "fila-…"); a que falhou sem chegar à fila fica, com o texto e o reenviar. */
+function provisoriasQueFicam(antes, juntas, convId, agora = Date.now()) {
+  const jaNaTela = new Set(antes.map((m) => String(m.id)));
+  const novas = juntas.filter((m) => m.origem === "advogado" && ehDeMensagens(m) && !jaNaTela.has(String(m.id)));
+  const usadas = new Set();
+  const ficam = [];
+  for (const p of antes) {
+    if (!String(p.id).startsWith("temp-") || String(p.conversa_id) !== String(convId)) continue;
+    if (p._status === "erro") {
+      if (p._filaId == null || !juntas.some((m) => m.id === "fila-" + p._filaId)) ficam.push(p);
+      continue;
+    }
+    if (agora - new Date(p.criado_em).getTime() > VIDA_DA_PROVISORIA_MS) continue;
+    const real = novas.find((r) => !usadas.has(r.id) && confirmaAProvisoria(r, p));
+    if (real) { usadas.add(real.id); continue; }
+    ficam.push(p);
+  }
+  return ficam;
+}
 /** A frase do marco. Quem abriu só existe no Reabrir: o atendimento que
  *  começa com a mensagem do cliente, ou com a da equipe, não foi aberto por
  *  ninguém de propósito — foi a mensagem. */
@@ -426,6 +473,14 @@ const ESPERA_DA_DISTRIBUICAO_MS = 2500;
 
 const CARENCIA_TEMPO_REAL_MS =
   (typeof globalThis !== "undefined" && globalThis.__CARENCIA_TEMPO_REAL) || 10000;
+
+// QUANDO A CONVERSA É RELIDA SE A BOLHA ENVIADA NÃO FOR CONFIRMADA PELO TEMPO
+// REAL (20/10) — ver `agendarConferenciaDoEnvio`. A ponte manda um texto em
+// dois a quatro segundos (MEDIDO em 20/10: 90% em até 3,3 s); doze dão folga
+// a uma ponte acordando, e quarenta ao anexo que espera na fila atrás de
+// outro.
+const CONFERENCIA_DO_ENVIO_MS =
+  (typeof globalThis !== "undefined" && globalThis.__CONFERENCIA_DO_ENVIO) || [12000, 40000];
 
 // ============================================================
 //  DE QUANTO EM QUANTO O PAINEL REFAZ O CANAL QUE NÃO VOLTOU
@@ -1598,7 +1653,10 @@ function PainelFigurinhas({ C, figurinhas, figHover, aoPassarMouse, aoEnviar, ao
 // seta ocupa; no computador a folga é zero e nada muda.
 function MetaBolha({ C, m, saida, flutuante, aoReenviar }) {
   return (
-    <span style={{
+    // O ESTADO DO ENVIO VAI ESCRITO (20/10), para a prova ler o que o relógio
+    // e os tiques desenham — "enviando" é o relógio, "saiu" e "gravada" os
+    // tiques, "erro" o vermelho.
+    <span data-estado-do-envio={saida ? (m._status || "gravada") : undefined} style={{
       ...(flutuante ? { float: "right", marginLeft: 10, marginTop: 4 }
                     : { justifyContent: "flex-end", marginTop: 2 }),
       display: "flex", alignItems: "center", gap: 3, height: 15,
@@ -3632,6 +3690,9 @@ export default function Painel({ sessao }) {
   // E SE ELA ESTAVA ARQUIVADA, pelo mesmo caminho: arquivar muda o número da
   // aba sem mudar a aba.
   const arquivadasVistasRef = useRef(new Map());
+  // E O QUE OS SELOS DA BARRA CONTAM DELA, pelo mesmo caminho — ver
+  // `seloDaConversa`, no tratador das conversas.
+  const selosVistosRef = useRef(new Map());
   // A CONVERSA DE FORA DA LISTA QUE ENTROU NA ABA ABERTA — finalizada por um
   // colega com "Finalizados" na tela, reaberta, desfeita. A lista vem do banco
   // recortada pela aba, então ela só aparece relendo a página. A releitura é
@@ -5619,9 +5680,18 @@ export default function Painel({ sessao }) {
   }, [lerTarefasDaConversa, lerMinhasTarefas, lerFiltroDeTarefas]);
   // As etiquetas seguem a LISTA: quando ela troca de telefone ou chega uma
   // conversa nova, são outras conversas para etiquetar.
-  useEffect(() => { carregarTagsConversas(); },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [conversas, carregarTagsConversas]);
+  //
+  // PELOS IDS, E NÃO PELA LISTA (20/10). Com `conversas` aqui, as etiquetas
+  // da lista INTEIRA eram relidas a cada aviso do tempo real que tocasse
+  // nela: a prévia nova, o "digitando…", o "estou atendendo" de minuto em
+  // minuto de cada colega, a lista reordenada. MEDIDO no Supabase naquele
+  // dia: 190 mil leituras de `conversa_tags` numa hora, em lotes de 150, por
+  // uma tela em que quase nunca alguém tinha mexido em etiqueta. Etiqueta
+  // muda pelo seu próprio aviso (o de `conversa_tags`, no canal); daqui, só
+  // muda o CONJUNTO de conversas, e é ele que entra na conta. A ordem não
+  // entra: a lista que só mudou de ordem tem as mesmas etiquetas.
+  const idsDaLista = useMemo(() => conversas.map((c) => String(c.id)).sort().join(","), [conversas]);
+  useEffect(() => { carregarTagsConversas(); }, [idsDaLista, carregarTagsConversas]);
 
   async function salvarTagForm() {
     const nome = (tagForm?.nome || "").trim();
@@ -7129,9 +7199,17 @@ export default function Painel({ sessao }) {
     // Antes de trocar a lista, libera prévias locais (blob:) da lista anterior
     // que não foram revogadas (ex.: troquei de conversa antes do eco chegar),
     // para não vazar memória.
+    //
+    // MENOS AS DAS BOLHAS QUE AINDA ESTÃO SAINDO, que ficam (20/10) — ver
+    // `provisoriasQueFicam`. Trocar a lista inteira pelo banco apagava da tela
+    // a mensagem que acabou de entrar na fila, e ela parecia não ter saído.
     setMensagens((prev) => {
-      prev.forEach((m) => { if (m.midia_url && String(m.midia_url).startsWith("blob:")) URL.revokeObjectURL(m.midia_url); });
-      return juntas;
+      const ficam = provisoriasQueFicam(prev, juntas, convId);
+      const mantidas = new Set(ficam.map((m) => m.id));
+      prev.forEach((m) => {
+        if (!mantidas.has(m.id) && m.midia_url && String(m.midia_url).startsWith("blob:")) URL.revokeObjectURL(m.midia_url);
+      });
+      return ficam.length ? [...juntas, ...ficam].sort(porHora) : juntas;
     });
     // Divisor "mensagens não lidas": marca a 1ª não lida, contando de trás para
     // frente APENAS as mensagens do contato (ignora respostas do advogado).
@@ -7179,6 +7257,9 @@ export default function Painel({ sessao }) {
   }, [meuNome]);
 
   useEffect(() => { carregarMensagens(conversaId); }, [conversaId, carregarMensagens]);
+  // O espelho, para quem relê de fora de um desenho (a conferência do envio).
+  const carregarMensagensRef = useRef(carregarMensagens);
+  useEffect(() => { carregarMensagensRef.current = carregarMensagens; }, [carregarMensagens]);
 
   // ------------------------------------------------------------
   //  A RESPOSTA AUTOMÁTICA QUE SAI COM A CONVERSA ABERTA
@@ -7648,7 +7729,8 @@ export default function Painel({ sessao }) {
     //  Nome novo a cada tentativa não tem esse problema: a sala velha fecha no
     //  tempo dela, e a nova não espera por ninguém.
     // ============================================================
-    const montar = (nome) => supabase
+    const montar = (nome) => {
+      const esteCanal = supabase
       .channel(nome)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "mensagens" }, async (payload) => {
         const nova = payload.new;
@@ -7666,9 +7748,7 @@ export default function Painel({ sessao }) {
                 // "saiu" é a provisória que a FILA já confirmou. Ela continua
                 // sendo provisória, e a linha real tem de substituí-la do
                 // mesmo jeito — senão a mensagem apareceria duas vezes.
-                if (!removido && String(m.id).startsWith("temp-") &&
-                    (m._status === "enviando" || m._status === "saiu") &&
-                    ((nova.texto && m.texto === nova.texto) || (nova.midia_url && m._midiaUrlFinal === nova.midia_url))) {
+                if (!removido && confirmaAProvisoria(nova, m)) {
                   removido = true;
                   // Libera a prévia local (blob) para não vazar memória.
                   if (m.midia_url && String(m.midia_url).startsWith("blob:")) URL.revokeObjectURL(m.midia_url);
@@ -7804,8 +7884,11 @@ export default function Painel({ sessao }) {
         // está na lista). Conversas que já estão na lista são atualizadas no
         // lugar pelo handler de UPDATE de conversas — sem re-buscar tudo, que
         // era o que fazia a tela "recarregar sozinha".
-        if (doAdvogadoAtual && !jaNaLista && !deOutraAba) carregarConversas(advogadoIdRef.current);
-        carregarNaoLidasPorAdv(); // selos do rail de todos os advogados
+        if (doAdvogadoAtual && !jaNaLista && !deOutraAba) carregarConversasRef.current(advogadoIdRef.current);
+        // Selos do rail de todos os advogados — só pela mensagem do CLIENTE,
+        // que é a que acende "não lida" (20/10). A nossa não acende nada, e o
+        // selo que ela apaga chega pelo aviso da conversa, que conta sozinho.
+        if (nova.origem === "contato") carregarNaoLidasPorAdv();
       })
       // Uma mensagem MUDOU: o tiquinho de lida, ou as reações presas nela.
       //
@@ -7933,7 +8016,29 @@ export default function Painel({ sessao }) {
           // e ficaria preso na ordem que valia naquele instante.
           return patched.sort(compararConversas(ordemRef.current, ordenarPelaEsperaRef.current));
         });
-        carregarNaoLidasPorAdv();
+        // OS SELOS DA BARRA SÓ SÃO CONTADOS QUANDO PODEM TER MUDADO (20/10).
+        //
+        // Eram contados a cada aviso daqui, e quase todo aviso daqui não muda
+        // selo nenhum: a prévia, o "digitando…", o "estou atendendo" que cada
+        // colega grava de minuto em minuto. Em toda aba aberta do escritório,
+        // isso dava 45 mil contas por hora (MEDIDO no Supabase em 20/10). O
+        // selo conta, por telefone, as conversas com alguma não lida e não
+        // arquivadas (`nao_lidas_por_telefone`), então só três passagens o
+        // mexem: ter ou não não lida, ser ou não arquivada, e o telefone.
+        //
+        // O "antes" é o da lista; da conversa que não está nela, o do último
+        // aviso. Da que nunca passou por aqui não se sabe o antes, e aí conta
+        // — conta a mais é o erro barato. Os gestos DESTA tela que mudam a
+        // lista antes do aviso chegar pedem a conta eles mesmos (`marcarLida`,
+        // `gravarMarcaDaConversa`): para eles o aviso não vê diferença.
+        {
+          const seloDaConversa = (c) => `${(c.nao_lidas || 0) > 0}|${Boolean(c.arquivada)}|${c.advogado_id}`;
+          const naLista = conversasRef.current.find((c) => c.id === cv.id);
+          const seloAntes = naLista ? seloDaConversa(naLista) : selosVistosRef.current.get(cv.id);
+          const seloAgora = seloDaConversa(cv);
+          selosVistosRef.current.set(cv.id, seloAgora);
+          if (seloAntes !== seloAgora) carregarNaoLidasPorAdv();
+        }
       })
       // Se a ponte não conseguir enviar, a fila vira "erro" — aviso na tela.
       .on("postgres_changes", { event: "*", schema: "public", table: "fila_envio" }, (payload) => {
@@ -8019,19 +8124,55 @@ export default function Painel({ sessao }) {
       })
       // Tags criadas/editadas/removidas e tags aplicadas às conversas.
       .on("postgres_changes", { event: "*", schema: "public", table: "tags" }, () => { carregarTags(); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "conversa_tags" }, () => { carregarTagsConversas(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversa_tags" }, () => { carregarTagsConversas(); });
       // O ESTADO DO CANAL, QUE NINGUÉM ESTAVA OLHANDO.
       //
       // `.subscribe()` vinha sem retorno de chamada nenhum. O canal podia cair
       // e o painel seguia desenhando a mesma tela — e a tela de uma conversa
       // sem mensagem nova é idêntica à de uma conversa em que o cliente não
       // respondeu.
-      .subscribe(aoMudarDeEstado);
+      //
+      // E CADA CANAL FALA SÓ POR SI. O retorno de chamada leva junto o canal
+      // que o criou, e `aoMudarDeEstado` não escuta o que já não é o canal de
+      // agora — ver lá embaixo, em "O CANAL QUE JÁ SAIU NÃO FALA MAIS".
+      return esteCanal.subscribe((estado, erro) => aoMudarDeEstado(estado, erro, esteCanal));
+    };
 
     // O SEGUNDO ARGUMENTO É O MOTIVO, e ele vinha sendo descartado. Ver
     // `resumirMotivo`, lá em cima, para o que cada forma quer dizer — é a
     // única pista que existe da causa, que segue em aberto.
-    function aoMudarDeEstado(estado, erro) {
+    function aoMudarDeEstado(estado, erro, doCanal) {
+      // ------------------------------------------------------------
+      //  O CANAL QUE JÁ SAIU NÃO FALA MAIS (20/10)
+      //
+      //  Relato do Rodrigo: "quando é enviada uma mensagem demora para
+      //  aparecer, muitas vezes parece que falhou o envio". MEDIDO no Supabase
+      //  naquele dia: três abas do escritório faziam ~100 mil pedidos por
+      //  hora cada uma, relendo a lista, as etiquetas, os selos e a conversa
+      //  aberta de três a cinco vezes POR SEGUNDO. Uma aba normal faz 2 a 15
+      //  mil. E o tempo real do Supabase avisava 19 vezes no dia que o limite
+      //  de 100 avisos por segundo do plano gratuito tinha estourado.
+      //
+      //  A causa era esta função. Sair de um canal — `removeChannel`, na
+      //  limpeza deste efeito ou no vigia — faz a biblioteca chamar de volta
+      //  com `CLOSED` (`RealtimeChannel.subscribe` registra isso em
+      //  `_onClose`). Chegando DEPOIS da limpeza, esse `CLOSED` armava a
+      //  carência num efeito já morto, e dez segundos depois ela abria uma
+      //  pesca de 20 em 20 segundos que ninguém mais tinha como fechar. A
+      //  limpeza já tinha passado.
+      //
+      //  E este efeito era refeito a cada troca de aba (Novos, Em Atendimento,
+      //  Finalizados), de telefone e de ordem, porque `carregarConversas`
+      //  muda com elas. Cada troca deixava UM relógio órfão, para sempre. Com
+      //  o dia correndo eles se somavam: sessenta trocas são três releituras
+      //  por segundo.
+      //
+      //  Desde 20/10 o efeito não é refeito por troca nenhuma (a lista é lida
+      //  pelo espelho, ver o fim deste efeito). E o que já não é o canal de
+      //  agora não fala: nem o da limpeza (`vivo`), nem o velho que o vigia
+      //  acabou de tirar (`doCanal !== canal`).
+      // ------------------------------------------------------------
+      if (!vivo || doCanal !== canal) return;
       if (estado === "SUBSCRIBED") {
         // A VOLTA RELÊ. O `postgres_changes` não repete o que passou: tudo o
         // que o banco publicou durante a queda não chega nunca. Só apagar o
@@ -8109,7 +8250,12 @@ export default function Painel({ sessao }) {
       //
       // Dois canais vivos ao mesmo tempo entregariam cada mensagem DUAS vezes,
       // e as telas que somam (o selo de não lidas) contariam dobrado.
-      try { await supabase.removeChannel(canal); } catch (_e) { /* já tinha saído */ }
+      //
+      // `canal` FICA VAZIO DURANTE A SAÍDA, e é isso que cala o `CLOSED` do
+      // velho: ele chega no meio desta espera, e ali já não é o canal de agora.
+      const velho = canal;
+      canal = null;
+      try { await supabase.removeChannel(velho); } catch (_e) { /* já tinha saído */ }
       // A TELA PODE TER SIDO FECHADA NO MEIO DA ESPERA. Sem esta conferência, o
       // canal novo nasceria órfão, depois de a limpeza do efeito já ter passado
       // — e ninguém o removeria nunca.
@@ -8126,11 +8272,18 @@ export default function Painel({ sessao }) {
       clearTimeout(carencia);
       clearTimeout(vigia);
       // A PESCA MORRE COM O EFEITO. Sem isto, sair e entrar no painel deixaria
-      // um relógio de consultas rodando para sempre, invisível.
+      // um relógio de consultas rodando para sempre, invisível. (E o `CLOSED`
+      // que a saída abaixo provoca não a acende de novo: `vivo` já é falso.)
       clearInterval(pesca);
-      supabase.removeChannel(canal);
+      // Vazio só no meio de um `refazerOCanal`, que confere `vivo` na volta.
+      if (canal) supabase.removeChannel(canal);
     };
-  }, [carregarConversas, carregarNaoLidasPorAdv, carregarTags, carregarTagsConversas]);
+    // A LISTA ENTRA PELO ESPELHO, e não aqui. `carregarConversas` muda a cada
+    // troca de aba, de telefone e de ordem; nas dependências, cada troca
+    // derrubava este canal e assinava outro — com o vão de rede entre os dois,
+    // em que o que o banco publica não chega a ninguém, e com o relógio órfão
+    // de "O CANAL QUE JÁ SAIU NÃO FALA MAIS". As outras três não mudam.
+  }, [carregarNaoLidasPorAdv, carregarTags, carregarTagsConversas]);
 
   // Ao abrir uma conversa, começa no fim (mensagens mais recentes).
   // A ficha do cliente fecha junto: ela é o cadastro de QUEM está na conversa,
@@ -9091,9 +9244,52 @@ export default function Painel({ sessao }) {
     }
     return emFila(async () => {
       const r = await gravarNaFila(payload);
-      if (!r.error && payload && payload.conversa_id != null) assumirSeNinguem(payload.conversa_id);
+      if (!r.error && payload && payload.conversa_id != null) {
+        assumirSeNinguem(payload.conversa_id);
+        if (payload.conversa_id === conversaIdRef.current) agendarConferenciaDoEnvio(payload.conversa_id);
+      }
       return r;
     });
+  }
+
+  // ============================================================
+  //  A BOLHA QUE O TEMPO REAL NÃO CONFIRMOU (20/10)
+  //
+  //  Quem tira o relógio da bolha é o tempo real: a fila dizendo "enviada",
+  //  ou a mensagem gravada chegando. Quando esses avisos não chegam — o limite
+  //  de avisos do Supabase estourado, o canal caído sem a tela saber —, a
+  //  bolha ficava "enviando" até alguém sair e entrar na conversa, com cara de
+  //  envio que falhou.
+  //
+  //  Agora, doze segundos depois de a mensagem entrar na fila, se a bolha
+  //  ainda está saindo, a conversa aberta é relida — e de novo aos quarenta.
+  //  A mensagem que já saiu aparece como saiu; a que ainda está na fila
+  //  continua na tela, porque a releitura não apaga mais a bolha
+  //  (`provisoriasQueFicam`). Com o tempo real em dia, os avisos chegam antes
+  //  e nada é relido.
+  //
+  //  UMA CONFERÊNCIA DE CADA VEZ: dez mensagens seguidas são uma releitura, e
+  //  não dez.
+  // ============================================================
+  const conferenciaDoEnvioRef = useRef(null);
+  useEffect(() => () => clearTimeout(conferenciaDoEnvioRef.current), []);
+  function agendarConferenciaDoEnvio(convId, vez = 0) {
+    if (conferenciaDoEnvioRef.current) return;
+    const espera = CONFERENCIA_DO_ENVIO_MS[vez] - (vez ? CONFERENCIA_DO_ENVIO_MS[vez - 1] : 0);
+    conferenciaDoEnvioRef.current = setTimeout(() => {
+      conferenciaDoEnvioRef.current = null;
+      if (conversaIdRef.current !== convId) return;
+      // Só a que já esperou a primeira conferência inteira: a que acabou de
+      // nascer ainda tem tempo de ser confirmada pelo aviso.
+      const nasceuAte = Date.now() - CONFERENCIA_DO_ENVIO_MS[0] + 1000;
+      const aindaSaindo = mensagensRef.current.some((m) => String(m.id).startsWith("temp-")
+        && (m._status === "enviando" || m._status === "saiu")
+        && String(m.conversa_id) === String(convId)
+        && new Date(m.criado_em).getTime() <= nasceuAte);
+      if (!aindaSaindo) return;
+      carregarMensagensRef.current(convId);
+      if (vez + 1 < CONFERENCIA_DO_ENVIO_MS.length) agendarConferenciaDoEnvio(convId, vez + 1);
+    }, espera);
   }
 
   // ============================================================
@@ -9669,8 +9865,14 @@ export default function Painel({ sessao }) {
     // do banco deixa de fora as arquivadas, como a lista. Sem isto, arquivar
     // uma finalizada a tirava da lista e deixava "Finalizados" contando com
     // ela — o número dizendo uma coisa e a lista outra. Desarquivar a devolve.
+    //
+    // E OS SELOS DA BARRA, pela mesma razão: o aviso do tempo real só os
+    // conta quando vê a conversa mudar, e aqui ela mudou antes (20/10).
     if (Object.prototype.hasOwnProperty.call(patch, "nao_lidas")
-        || Object.prototype.hasOwnProperty.call(patch, "arquivada")) agendarContagemDasAbas();
+        || Object.prototype.hasOwnProperty.call(patch, "arquivada")) {
+      agendarContagemDasAbas();
+      carregarNaoLidasPorAdv();
+    }
     mostrarAviso(frases.certo);
     return true;
   }

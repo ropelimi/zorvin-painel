@@ -4142,6 +4142,166 @@ mais:
 - a espera inventada na conversa começada pela equipe;
 - o filtro de telefone ignorado.
 
+## O tempo real que entupia — e a mensagem que parecia não ter saído (20/10)
+
+Relato do Rodrigo: *"Quando é enviada uma mensagem demora para aparecer,
+muitas vezes parece que falhou o envio."* Ele ligou o conector do Supabase, e
+a medição foi feita de lá, **só lendo**: `pg_stat_user_tables`, os registros
+do tempo real (`realtime_logs`) e os do portão da API (`edge_logs`), estes
+agrupados por quem pediu.
+
+**A ponte não era a demora.** O texto saía em 2 a 4 segundos — 90% em até
+3,3 s, de `criado_em` a `enviado_em` na fila. O que demorava era a TELA saber.
+
+| o que o Supabase mostrou em 20/10 | |
+|---|---|
+| pedidos na hora mais cheia | **614 mil** (170 por segundo), para ~17 abas abertas e 67 mensagens enviadas |
+| três abas, de três pessoas | **~100 mil pedidos por hora cada uma**; uma aba normal faz de 2 a 15 mil |
+| leituras de etiquetas | 190 mil numa hora |
+| contas dos selos de não lidas | 45 mil numa hora |
+| gravações na conversa aberta | uma pessoa, 5.619 numa hora (1,5 por segundo) |
+| o tempo real | 19 avisos no dia de *"Too many postgres changes messages per second"* |
+
+O limite do plano gratuito é **100 avisos por segundo**, e cada gravação numa
+conversa vira um aviso **para cada aba aberta** do escritório. Passando do
+limite, a documentação diz que o Supabase derruba as conexões (`tenant_events`)
+— e a confirmação do envio é justamente um desses avisos.
+
+### Três defeitos, os três daqui
+
+**1. O relógio órfão — a causa do entupimento.** Sair de um canal faz a
+biblioteca chamar de volta com `CLOSED` (`RealtimeChannel.subscribe` registra
+isso em `_onClose`), e esse `CLOSED` chega DEPOIS da limpeza do efeito.
+`aoMudarDeEstado` não perguntava se o efeito ainda vivia: armava a carência
+num efeito morto, e dez segundos depois ela abria uma pesca de 20 em 20
+segundos que ninguém tinha mais como fechar. E o efeito do canal era refeito
+a cada troca de **aba** (Novos, Em Atendimento, Finalizados), de **telefone**
+e de **ordem**, porque `carregarConversas` estava nas dependências e muda com
+as três. **Cada troca deixava um relógio para sempre.** Desde as abas (19/10)
+quem atende troca de aba o dia todo — à tarde eram dezenas por aba, e a aba
+relia a lista, as etiquetas, os selos e a conversa aberta de três a cinco
+vezes por segundo. Cada releitura gravava o "estou atendendo", e cada
+gravação virava aviso para as outras dezesseis abas.
+
+Hoje:
+
+- **o canal é assinado uma vez por abertura do painel** — a lista entra pelo
+  espelho (`carregarConversasRef`), e trocar de aba, telefone ou ordem não
+  mexe nele. Sem o vão de rede entre um canal e outro, junto;
+- **cada canal fala só por si**: o retorno de chamada leva o canal que o
+  criou, e o que já não é o canal de agora não arma nada — nem o da limpeza
+  (`vivo`), nem o velho que o vigia acabou de tirar (`canal` fica vazio
+  durante a saída).
+
+**2. As etiquetas e os selos a cada aviso.** As etiquetas da lista inteira
+eram relidas a cada mudança do array `conversas` — a prévia, o "digitando…",
+o "estou atendendo" de cada colega, a lista reordenada. Agora a conta é pelos
+**ids** da lista (`idsDaLista`): só muda quando entram ou saem conversas.
+Etiqueta muda pelo aviso dela, que já relia. E os selos da barra eram
+contados a cada aviso de conversa; eles contam, por telefone, as conversas
+com não lida e não arquivadas (`nao_lidas_por_telefone`), então só três
+passagens os mexem — ter ou não não lida, ser ou não arquivada, o telefone.
+É o que o tratador confere (`selosVistosRef`, pela régua de
+`arquivadasVistasRef`). A conversa que esta tela nunca viu conta: conta a
+mais é o erro barato. E a mensagem nova só conta selos se for do cliente.
+
+**Os gestos daqui que mudam a lista antes do aviso chegar pedem a conta eles
+mesmos** — `marcarLida` já pedia, e `gravarMarcaDaConversa` passou a pedir
+quando mexe em não lida ou arquivada. Para eles o aviso não vê diferença.
+
+**3. A releitura apagava a bolha — o "parece que falhou".** Reler a conversa
+troca a lista inteira pelo banco, e a mensagem que acabou de entrar na fila
+ainda não está em `mensagens`: a ponte só a grava depois que o WhatsApp
+aceita. **A bolha sumia da tela** e voltava segundos depois, já como mensagem
+de verdade. Nas abas presas no relógio órfão isso acontecia em toda mensagem.
+
+Hoje a provisória ainda sem a linha de verdade **fica** na releitura
+(`provisoriasQueFicam`). A regra de casar é uma escrita só
+(`confirmaAProvisoria`), a mesma do aviso de INSERT. **E a linha que já
+estava na tela não confirma nada**: o "ok" de ontem não é o eco do "ok" de
+agora. Uma prova pega isso. A que falhou com a linha da fila conhecida volta
+pela fila (a bolha `fila-…`); a que falhou sem chegar à fila fica, com o
+texto e o reenviar — antes ela sumia na primeira releitura.
+
+### A conferência do envio
+
+Quem tira o relógio da bolha é o tempo real: a fila dizendo "enviada", ou a
+mensagem gravada chegando. Quando o aviso se perde, a bolha ficava "enviando"
+até alguém sair e entrar na conversa. Agora, **12 segundos** depois de a
+mensagem entrar na fila, se a bolha ainda está saindo, a conversa aberta é
+relida — e de novo aos **40** (`CONFERENCIA_DO_ENVIO_MS`). Os números saem da
+medição: 90% dos textos saem em 3,3 s, e o anexo espera na fila atrás de
+outro anexo (p90 de 13,7 s). **Uma conferência de cada vez** (dez mensagens
+seguidas são uma releitura), **e nada é relido quando o aviso chegou.**
+
+O estado do envio passou a ir escrito na bolha (`data-estado-do-envio`:
+`enviando`, `saiu`, `gravada`, `erro`), para a prova ler o que o relógio e os
+tiques desenham.
+
+### A bancada mentia por omissão — duas vezes, as duas sobre sair do canal
+
+- **`removeChannel` não chamava de volta com `CLOSED`**, e por isso nenhuma
+  prova via o relógio órfão. Hoje chama (`avisarQueFechou`), depois de a
+  saída terminar, como a biblioteca.
+- **E o canal que já tinha saído ainda respondia à entrada.** A biblioteca
+  destrói o pedido de entrada ao sair (`joinPush.destroy()`); aqui o
+  `SUBSCRIBED` atrasado de um canal removido chegava assim mesmo, e apagava
+  por acaso a carência que o `CLOSED` tinha acabado de armar. **A sabotagem
+  que tira a guarda do canal PASSOU na primeira rodada por causa disso** —
+  escondida pela própria bancada. Hoje o canal removido não responde mais
+  (`__saiu`), e a mesma sabotagem é pega por nove conferências.
+
+A guarda é medida na abertura do painel: em desenvolvimento o React monta,
+desmonta e monta de novo, de propósito, e é a mesma saída de canal de quem
+sai e entra no Zorvin sem recarregar a página.
+
+E o diário marca a conta dos selos pela função (`marca.funcao`): ela pesa em
+`conversas`, junto da lista, e sem isso a prova não separava uma da outra.
+
+### O que NÃO foi feito, e por quê
+
+- **A ponte e os gatilhos gravam a conversa sem mudar nada**, e cada gravação
+  é aviso para todas as abas: o `upsert` da conversa no webhook (o mesmo valor
+  por cima), e o gatilho da espera quando a espera já estava marcada. São
+  dois dos quatro avisos de cada mensagem de cliente. Ficou para uma rodada
+  da ponte, depois de medir o que este conserto já tirou: mexer no caminho de
+  entrada de mensagem por uma economia que talvez nem faça falta não vale o
+  risco.
+- **O plano do Supabase.** O Pro tem 500 avisos por segundo. É decisão de
+  custo do Rodrigo, e só faz sentido se, com este conserto, o limite ainda
+  estourar.
+- **A bolha de quem troca de conversa** antes de a ponte gravar continua
+  sumindo ao voltar — trocar de conversa esvazia a lista de propósito. Na
+  volta, a mensagem quase sempre já foi gravada.
+
+### Como medir de novo (só leitura, pelo conector do Supabase)
+
+- `pg_stat_user_tables` duas vezes, com um minuto entre elas: quanto
+  `conversas` é gravada por minuto. Em 20/10, sem nenhuma mensagem chegando,
+  eram 169 gravações em dois minutos — quase tudo "estou atendendo".
+- `realtime_logs` com `MessagePerSecondRateLimitReached`: quantas vezes o
+  limite estourou.
+- `edge_logs` agrupados por `request.sb.jwt.authorization.payload.subject`,
+  por hora: uma aba presa num relógio aparece como dezenas de milhares de
+  pedidos de uma pessoa só.
+
+Prova: `o-envio-nao-parece-que-falhou`, 35 conferências, **12 sabotagens e
+12 pegas**, todas limpas, rodadas em cópias e lidas uma a uma:
+
+- o painel de antes inteiro (18 reprovações — é o relato reproduzido: com a
+  bancada fiel, a bolha recém-enviada some da tela em menos de meio segundo,
+  e em menos de três segundos de tela parada há 218 leituras da tabela de
+  conversas);
+- sem a guarda do canal que saiu;
+- o canal refeito a cada troca (nove canais em vez de dois);
+- as etiquetas pela lista;
+- os selos a cada aviso, os selos nunca pelo aviso, e os selos por toda
+  mensagem;
+- a releitura apagando a bolha;
+- o "ok" de antes confirmando o de agora;
+- sem a conferência, a conferência sem perguntar se ainda há bolha saindo, e
+  uma conferência por mensagem.
+
 ## A auditoria de 07/10 — o que uma varredura inteira achou
 
 Pedido do Rodrigo: *"faz um diagnóstico geral em todos os arquivos e todas
@@ -4400,6 +4560,10 @@ para quem for consertar.
 
 Prova: `a-pesca-enquanto-o-canal-esta-fora`, 11 conferências, 4 sabotagens e
 4 pegas.
+
+**E a carência deixava relógios órfãos** — o `CLOSED` da saída do canal
+chegava depois da limpeza e abria uma pesca que ninguém fechava, uma por
+troca de aba. Ver "O tempo real que entupia" (20/10).
 
 ### A linha desativada não some
 
