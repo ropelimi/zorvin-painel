@@ -54,16 +54,30 @@ await page.waitForTimeout(1200);
 // ------------------------------------------------------------------
 console.log("\nO topo cabe na altura do WhatsApp Web, e não no dobro dela");
 {
+  // A FILEIRA DAS ABAS (Aguardando, Em aberto, Finalizados — 19/10) É
+  // DESCONTADA, e medida à parte logo abaixo. Ela é nova, foi pedida pelo
+  // Rodrigo com a tela do DataCrazy ao lado, e entra por cima do que estes
+  // 205px medem: o que eles pegam é a volta dos recheios e das faixas de
+  // antes, e isso continua sendo pego. Sem descontá-la, o teto teria de subir
+  // e deixaria de pegar justamente isso.
   const alturas = await page.evaluate(() => {
     const topo = document.querySelector("[data-topo-da-coluna]");
     const primeira = document.querySelector("[data-conversa-nome]");
     if (!topo || !primeira) return null;
+    const abas = document.querySelector("[data-abas-da-situacao]");
+    const daFileira = abas ? abas.getBoundingClientRect().height + (parseFloat(getComputedStyle(abas).marginBottom) || 0)
+                           + (parseFloat(getComputedStyle(abas).marginTop) || 0) : 0;
     return {
       doAltoAteAPrimeiraConversa:
-        Math.round(primeira.getBoundingClientRect().top - topo.getBoundingClientRect().top),
+        Math.round(primeira.getBoundingClientRect().top - topo.getBoundingClientRect().top - daFileira),
+      daFileira: Math.round(daFileira), temAbas: Boolean(abas),
     };
   });
   ok("consegui medir a coluna", !!alturas, "não achei o topo ou a primeira conversa");
+  // E A FILEIRA TEM TETO PRÓPRIO: uma linha de abas, e não duas. Medida em
+  // 19/10: 30px de abas mais 7 de vão.
+  ok("a fileira das abas existe e cabe numa linha (menos de 40px)",
+     alturas && alturas.temAbas && alturas.daFileira < 40, JSON.stringify(alturas));
 
   // O TETO É 205, e o número tem procedência: 283 era o de antes, 188 é o de
   // agora, ~147 é o do WhatsApp Web. Um teto colado em 188 reprovaria por meio
@@ -286,6 +300,11 @@ console.log("\nE no CELULAR, onde a régua é outra");
     const prim = document.querySelector("[data-conversa-nome]");
     if (!linha || !fita || !topo || !prim) return null;
     const caixa = linha.children[0];
+    // A FILEIRA DAS ABAS, descontada e medida à parte — ver a cena do
+    // computador. No celular ela tem 40px de alvo de dedo.
+    const abas = document.querySelector("[data-abas-da-situacao]");
+    const daFileira = abas ? abas.getBoundingClientRect().height + (parseFloat(getComputedStyle(abas).marginBottom) || 0)
+                           + (parseFloat(getComputedStyle(abas).marginTop) || 0) : 0;
     // O ALVO DE DEDO: o menor dos botões desta linha não pode ter encolhido.
     const botoes = [...linha.querySelectorAll("button")]
       .map((b) => Math.round(Math.min(b.getBoundingClientRect().width, b.getBoundingClientRect().height)));
@@ -295,10 +314,13 @@ console.log("\nE no CELULAR, onde a régua é outra");
       diz: caixa.innerText.replace(/\s+/g, " ").trim(),
       menorBotao: Math.min(...botoes),
       linhasDaFita: new Set([...fita.children].map((c) => Math.round(c.getBoundingClientRect().top))).size,
-      altura: Math.round(prim.getBoundingClientRect().top - topo.getBoundingClientRect().top),
+      altura: Math.round(prim.getBoundingClientRect().top - topo.getBoundingClientRect().top - daFileira),
+      daFileira: Math.round(daFileira), temAbas: Boolean(abas),
     };
   });
   ok("consegui medir o topo no celular", !!m);
+  ok("a fileira das abas existe no celular e cabe numa linha (menos de 50px)",
+     m && m.temAbas && m.daFileira < 50, m && JSON.stringify({ daFileira: m.daFileira }));
   ok("a marca cabe inteira também no celular",
      m && m.conteudo <= m.caixa + 1, JSON.stringify(m));
   ok("e continua escrevendo o nome todo",
