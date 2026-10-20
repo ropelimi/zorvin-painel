@@ -3844,7 +3844,48 @@ A **contabilização** do DataCrazy (relatório por protocolo, tempo até a
 primeira resposta, tempo até finalizar): os campos nascem no 028, a tela não.
 E a **busca por protocolo**.
 
-Prova: `aguardando-em-aberto-e-finalizados`.
+### As provas
+
+Prova: `aguardando-em-aberto-e-finalizados`, 120 conferências, **27
+sabotagens e 27 pegas**, todas limpas, rodadas em cópias e lidas uma a uma.
+As que importam mais:
+
+- a aba que não vai ao banco (a finalizada parada há 1300 horas some);
+- o "Finalizar" que segue o caminho do "Já tratei" de antes (oito
+  conferências reprovam);
+- a tela que supõe a finalização em vez de reler a linha (o banco que
+  registra e não finaliza);
+- o Reabrir que desfaz, e o Reabrir sem a trava da situação (o cliente que
+  escreveu com a janela aberta);
+- o Desfazer que desfaz todos os cliques, e o que não reconta a espera;
+- a pílula contando o telefone inteiro;
+- os marcos de fora do trecho que está na tela, e os que entram depois da
+  mensagem que abriu o protocolo;
+- a mensagem de outra aba relendo a lista.
+
+**As provas antigas do "Já tratei" rodam no banco SEM o 028**
+(`o-ja-tratei`, `o-ja-tratei-em-toda-conversa`, `o-historico-do-ja-tratei` e
+a cena 8 de `a-auditoria-de-07-10`), com o porquê escrito no alto de cada uma.
+Elas medem o caminho de quem não tem o 028, que continua existindo e tem de
+continuar igual. O caminho com o 028 tem as mesmas réguas na prova nova.
+**`o-topo-mais-baixo` mede o topo sem a fileira das abas**, que ganhou teto
+próprio: menos de 40px no computador e de 50 no celular.
+
+**Três coisas que as provas me ensinaram nesta rodada:**
+
+- **a 1400 com a ficha aberta, o botão do cabeçalho não tem texto.** Ele
+  vira ícone de propósito (`cabecalhoApertado`), e a conferência que lia o
+  `textContent` reprovava o painel certo. Hoje ela lê o `aria-label`;
+- **"releu a lista" se mede pela consulta das FIXADAS**, que só a releitura
+  da página faz, e não por um número de idas ao banco escrito no chute.
+  Escrevi "no máximo 2 idas" sem medir, e a primeira rodada mediu 4 sem
+  releitura nenhuma: o aviso de mensagem nova já pergunta ao banco pelo dono
+  e pela conversa;
+- **conversa plantada sem `situacao` não entrava na aba.** Duas provas que
+  inserem conversas na bancada (`busca-que-oferece` e
+  `o-aviso-vai-para-o-responsavel`) reprovaram: a conversa sem a coluna não
+  passava pelo filtro "em aberto". A bancada lê a coluna que falta como "em
+  aberto", que é o padrão dela.
 
 ## A auditoria de 07/10 — o que uma varredura inteira achou
 
