@@ -947,15 +947,16 @@ console.log("\nOs nomes e os três números cabem inteiros, com os números do e
        JSON.stringify([m && m.dentro, abas.map((a) => a.aba)]));
     if (celular) {
       ok(`a ${largura}px (celular), o número fica embaixo do nome, no meio dele`,
-         completas && abas.every((a) => a.numero.t >= a.nome.b - 0.5
+         abas.length === 3 && abas.every((a) => a.nome && a.numero && a.numero.t >= a.nome.b - 0.5
            && Math.abs((a.numero.l + a.numero.r) / 2 - (a.nome.l + a.nome.r) / 2) < 1.5),
          JSON.stringify(abas.map((a) => [a.nome, a.numero])));
       ok(`a ${largura}px (celular), a aba não cresce: continua nos 40px do alvo de dedo`,
-         completas && abas.every((a) => a.aba.b - a.aba.t <= 40.5),
+         abas.length === 3 && abas.every((a) => a.aba && a.aba.b - a.aba.t <= 40.5),
          JSON.stringify(abas.map((a) => a.aba && a.aba.b - a.aba.t)));
     } else {
       ok(`a ${largura}px (computador), o número fica ao lado do nome, na mesma linha`,
-         completas && abas.every((a) => a.numero.l >= a.nome.r - 0.5 && a.numero.t < a.nome.b && a.numero.b > a.nome.t),
+         abas.length === 3 && abas.every((a) => a.nome && a.numero && a.numero.l >= a.nome.r - 0.5
+           && a.numero.t < a.nome.b && a.numero.b > a.nome.t),
          JSON.stringify(abas.map((a) => [a.nome, a.numero])));
     }
     ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
