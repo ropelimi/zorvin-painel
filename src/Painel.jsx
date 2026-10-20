@@ -3629,6 +3629,9 @@ export default function Painel({ sessao }) {
   // A SITUAÇÃO DAS CONVERSAS QUE NÃO ESTÃO NA LISTA, vista no último aviso do
   // tempo real — ver o tratador das conversas.
   const situacoesVistasRef = useRef(new Map());
+  // E SE ELA ESTAVA ARQUIVADA, pelo mesmo caminho: arquivar muda o número da
+  // aba sem mudar a aba.
+  const arquivadasVistasRef = useRef(new Map());
   // A CONVERSA DE FORA DA LISTA QUE ENTROU NA ABA ABERTA — finalizada por um
   // colega com "Finalizados" na tela, reaberta, desfeita. A lista vem do banco
   // recortada pela aba, então ela só aparece relendo a página. A releitura é
@@ -7851,7 +7854,16 @@ export default function Painel({ sessao }) {
           // quinta mensagem por ler não muda a conta de conversas.
           const lidaMudou = velha && Object.prototype.hasOwnProperty.call(cv, "nao_lidas")
             && ((velha.nao_lidas || 0) > 0) !== ((cv.nao_lidas || 0) > 0);
-          if (lidaMudou && cv.advogado_id === advogadoIdRef.current) agendarContagemDasAbas();
+          // E A CONVERSA QUE UMA COLEGA ARQUIVOU (ou desarquivou) sai (ou
+          // volta) do número da aba — ver `gravarMarcaDaConversa`. O "antes" é
+          // o da lista; da conversa que não está nela, o do último aviso. Da
+          // que nunca passou por aqui não se sabe o antes, e a conta é pedida
+          // logo abaixo assim mesmo, por ela ser nova para esta tela.
+          const arquivadaAgora = Boolean(cv.arquivada);
+          const arquivadaAntes = velha ? Boolean(velha.arquivada) : arquivadasVistasRef.current.get(cv.id);
+          arquivadasVistasRef.current.set(cv.id, arquivadaAgora);
+          const arquivouOuVoltou = arquivadaAntes !== undefined && arquivadaAntes !== arquivadaAgora;
+          if ((lidaMudou || arquivouOuVoltou) && cv.advogado_id === advogadoIdRef.current) agendarContagemDasAbas();
           if (antes !== agora) {
             if (cv.advogado_id === advogadoIdRef.current) agendarContagemDasAbas();
             if (cv.id === conversaIdRef.current) relerMarcosRef.current(cv.id);
@@ -9652,7 +9664,13 @@ export default function Painel({ sessao }) {
     // A PÍLULA "NÃO LIDAS" CONTA A ABA (script 028): marcar como lida ou não
     // lida muda o número dela, e o tempo real não vai dizer — a lista desta
     // tela já foi mudada antes, e ele não vê diferença nenhuma.
-    if (Object.prototype.hasOwnProperty.call(patch, "nao_lidas")) agendarContagemDasAbas();
+    //
+    // E ARQUIVAR TIRA A CONVERSA DO NÚMERO DA ABA, pela mesma razão: a conta
+    // do banco deixa de fora as arquivadas, como a lista. Sem isto, arquivar
+    // uma finalizada a tirava da lista e deixava "Finalizados" contando com
+    // ela — o número dizendo uma coisa e a lista outra. Desarquivar a devolve.
+    if (Object.prototype.hasOwnProperty.call(patch, "nao_lidas")
+        || Object.prototype.hasOwnProperty.call(patch, "arquivada")) agendarContagemDasAbas();
     mostrarAviso(frases.certo);
     return true;
   }
@@ -14238,28 +14256,47 @@ export default function Painel({ sessao }) {
             conversa mora em uma só. Duas fileiras de pílulas iguais fariam a
             pessoa achar que as duas fazem a mesma coisa.
 
-            O NÚMERO É DO BANCO (`contarAbas`), e não das linhas carregadas.
-            "Finalizados" não tem número, de propósito: ele só cresce, e um
-            número que nunca zera se aprende a não ler — o mesmo motivo de o
-            sino das tarefas não contar as de amanhã. "Novos" fica âmbar
-            com qualquer conversa dentro: é o cliente que ninguém atendeu.
+            O NÚMERO É DO BANCO (`contarAbas`), e não das linhas carregadas. As
+            três têm número: "Finalizados" nasceu sem, em 19/10 — ele só cresce,
+            e o receio era o número que nunca zera e se aprende a não ler —, e
+            ganhou o seu em 20/10, a pedido do Rodrigo. Ele fica cinza, como o
+            de "Em Atendimento": âmbar é só o de "Novos", com qualquer conversa
+            dentro, porque é o cliente que ninguém atendeu.
 
             NA PASTA DE ARQUIVADAS NÃO HÁ ABA: lá moram as arquivadas das três,
             e a aba não recorta. */}
         {temSituacao === true && !verArquivadas && (() => {
           const contagem = contagemDasAbas && contagemDasAbas.de === advogadoId ? contagemDasAbas : null;
+          // A PÍLULA DO NÚMERO, uma escrita só: a de verdade e o lugar guardado
+          // dela no celular (ver lá embaixo) têm de ter o mesmo tamanho.
+          const pilulaDoNumero = { minWidth: estreito ? 16 : 18, height: estreito ? 16 : 18, padding: "0 4px",
+                                   boxSizing: "border-box", borderRadius: estreito ? 8 : 9,
+                                   fontSize: estreito ? 10 : 10.5, fontWeight: 700,
+                                   lineHeight: estreito ? "16px" : "18px", textAlign: "center" };
           return (
-            // NO CELULAR, MAIS APERTADA. A conta é a do escritório, e não a da
-            // bancada: "Em Atendimento" com 4 dígitos (as conversas que ninguém
-            // finalizou passam de mil) e "Novos" com 3 pedem 298px, e a fileira
-            // de um Android de 360 tem 275 por dentro — a página passava a
-            // rolar de lado. Letra de 12 e menos folga dão 23px de sobra.
+            // A CONTA É A DO ESCRITÓRIO, e não a da bancada: as conversas que
+            // ninguém finalizou passam de mil, e as finalizadas vão passar — elas
+            // só crescem. Medido em 20/10, com Arial (a largura da Segoe UI do
+            // escritório e da Roboto do Android, pelas métricas das três):
+            //
+            // NO COMPUTADOR, o número fica ao lado do nome. "Novos 214 · Em
+            // Atendimento 1523 · Finalizados 4812" pedia 346px numa fileira de
+            // 336 por dentro; com 2px entre as abas, 4 entre o nome e o número e
+            // a pílula um pouco mais justa, pede 330.
+            //
+            // NO CELULAR, O NÚMERO DESCE PARA BAIXO DO NOME. Ao lado, a fileira
+            // não cabia num Android de 360 nem com os números de hoje: "Novos 18
+            // · Em Atendimento 507 · Finalizados 612" pedia ~298px, e ela tem 283
+            // por dentro — a página passava a rolar de lado. Embaixo, cada aba
+            // tem a largura do NOME, e cabe com qualquer número, até num celular
+            // de 320. A altura não muda: no celular a aba já tem 40px (o alvo de
+            // dedo), e nome e número somam 38.
             <div data-abas-da-situacao role="tablist" aria-label="Situação das conversas"
-                 style={{ display: "flex", gap: estreito ? 2 : 4, padding: estreito ? "0 8px" : "0 12px", margin: "0 0 7px",
+                 style={{ display: "flex", gap: 2, padding: estreito ? "0 8px" : "0 12px", margin: "0 0 7px",
                           background: C.panel, borderBottom: `1px solid ${C.divider}` }}>
               {ABAS_DA_SITUACAO.map(([k, rotulo]) => {
                 const ativa = abaSituacao === k;
-                const n = contagem && k !== "finalizado" && Number.isFinite(Number(contagem[k])) ? Number(contagem[k]) : null;
+                const n = contagem && Number.isFinite(Number(contagem[k])) ? Number(contagem[k]) : null;
                 const alerta = k === "aguardando" && n > 0;
                 return (
                   <button key={k} role="tab" aria-selected={ativa} data-aba-da-situacao={k}
@@ -14268,33 +14305,38 @@ export default function Painel({ sessao }) {
                           title={k === "aguardando" ? "Clientes que a equipe ainda não atendeu"
                                : k === "aberto" ? "Conversas já atendidas que ainda não foram finalizadas"
                                : `Conversas finalizadas. Se o cliente escrever de novo, ela volta para ${NOME_DA_SITUACAO.aberto}`}
-                          // A LARGURA SAI DO NOME, e não um terço para cada: "Em
-                          // Atendimento" com o número pede 118px, e um terço da
-                          // fileira são 109 (89 no celular de 360). Cada aba
+                          // A LARGURA SAI DO QUE A ABA ESCREVE, e não um terço para
+                          // cada: "Em Atendimento" com o número pede 118px no
+                          // computador, e um terço da fileira são 109. Cada aba
                           // começa no tamanho do que escreve, e as que sobram
                           // dividem o resto por igual.
-                          style={{ flex: "1 1 0", minWidth: "max-content", display: "inline-flex", alignItems: "center",
-                                   justifyContent: "center", gap: estreito ? 4 : 5, border: "none",
+                          style={{ flex: "1 1 0", minWidth: "max-content", display: "inline-flex",
+                                   flexDirection: estreito ? "column" : "row", alignItems: "center",
+                                   justifyContent: "center", gap: estreito ? 1 : 4, border: "none",
                                    borderBottom: `2px solid ${ativa ? C.green : "transparent"}`,
                                    background: "transparent", color: ativa ? C.verdeTexto : C.textSecondary,
-                                   fontSize: estreito ? 12 : 13, fontWeight: ativa ? 700 : 600, padding: "5px 2px 5px",
+                                   fontSize: 13, fontWeight: ativa ? 700 : 600, padding: estreito ? "3px 2px" : "5px 2px 5px",
                                    marginBottom: -1, cursor: ativa ? "default" : "pointer", whiteSpace: "nowrap" }}>
                     {/* A LARGURA DO NEGRITO, guardada: a aba escolhida fica em
                         negrito, e sem isto o nome dela engordaria ao ser
                         clicado e empurraria as vizinhas para o lado. A cópia
                         escondida não é lida (nem pelo leitor de tela). */}
-                    <span style={{ display: "inline-grid" }}>
+                    <span data-nome-da-aba style={{ display: "inline-grid" }}>
                       <span aria-hidden="true" style={{ gridArea: "1 / 1", fontWeight: 700, visibility: "hidden" }}>{rotulo}</span>
                       <span style={{ gridArea: "1 / 1" }}>{rotulo}</span>
                     </span>
-                    {n != null && (
+                    {n != null ? (
                       <span data-numero-da-aba={n} data-numero-em-alerta={alerta ? "sim" : undefined}
-                            style={{ minWidth: 18, height: 18, padding: estreito ? "0 4px" : "0 5px", boxSizing: "border-box",
-                                     borderRadius: 9, fontSize: 11, fontWeight: 700, lineHeight: "18px",
-                                     textAlign: "center", background: alerta ? "#d97706" : C.divider,
+                            style={{ ...pilulaDoNumero, background: alerta ? "#d97706" : C.divider,
                                      color: alerta ? "#fff" : C.textSecondary }}>
                         {n}
                       </span>
+                    ) : estreito && (
+                      // NO CELULAR, O LUGAR DO NÚMERO FICA GUARDADO enquanto a
+                      // conta não chega (ou quando ela falha): sem isto, o nome
+                      // desceria para o meio da aba e subiria de novo quando o
+                      // número chegasse — um pulo a cada telefone escolhido.
+                      <span aria-hidden="true" style={{ ...pilulaDoNumero, visibility: "hidden" }} />
                     )}
                   </button>
                 );
