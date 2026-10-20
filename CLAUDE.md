@@ -3936,8 +3936,11 @@ problema.
 Prova: `aguardando-em-aberto-e-finalizados`, agora com 135 conferências:
 entraram a cena dos nomes inteiros a 1360, 390 e 360px **com os números do
 escritório** (`__CONTAGEM_DAS_ABAS_FIXA`, que a bancada devolve no lugar da
-conta dela), a frase do Reabrir e a aba vazia. **NSAB_R sabotagens e NPEG_R
-pegas**.
+conta dela), a frase do Reabrir e a aba vazia. **8 sabotagens e 8 pegas**,
+todas limpas, rodadas em cópias e lidas uma a uma: os nomes antigos de volta;
+um terço para cada aba; o celular sem o aperto (a página rolando de lado a
+360); o Reabrir, o Finalizar e o Desfazer dizendo "Em aberto"; o selo da busca
+com o adjetivo de antes; e a aba vazia com a frase velha.
 
 ## A contabilização dos atendimentos (20/10)
 
@@ -4017,8 +4020,21 @@ Prova: `a-contabilizacao-dos-atendimentos`, 50 conferências, sobre dez
 protocolos com as contas feitas à mão — a bancada faz a conta do 029
 (`zorvin_relatorio_atendimentos`, com `__SEM_CONTABILIZACAO` e
 `__CONTABILIZACAO_FALHA`). Ela termina pelo caminho inteiro: finalizar na
-conversa o protocolo que esperava e vê-lo entrar no total. **NSAB_S
-sabotagens e NPEG_S pegas**.
+conversa o protocolo que esperava e vê-lo entrar no total. **20 sabotagens e
+20 pegas**, todas limpas, rodadas em cópias e lidas uma a uma. As que importam
+mais:
+
+- a seção abaixo do resumo de mensagens, e a seção que some;
+- o período anterior que some do total, e o que aparece em todo cartão;
+- o "Esperando resposta" para quem atende;
+- a falha da função virando "falta uma atualização", e a falta do 028
+  ignorada (cartões zerados com cara de número);
+- os dias sem nada sumindo do gráfico;
+- a planilha sem o BOM, e com os tempos em segundos;
+- a média no lugar da mediana;
+- o "por pessoa" sem o celular, e o clique nele que não recorta;
+- a espera inventada na conversa começada pela equipe;
+- o filtro de telefone ignorado.
 
 ## A auditoria de 07/10 — o que uma varredura inteira achou
 
