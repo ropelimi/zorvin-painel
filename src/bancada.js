@@ -237,6 +237,22 @@ function tirarOuvintesDe(canal) {
     if (!canal || OUVINTES[i].dono === canal) OUVINTES.splice(i, 1);
   }
 }
+/** A SAÍDA CHAMA DE VOLTA COM `CLOSED`, como no de verdade (20/10).
+ *
+ *  `RealtimeChannel.subscribe` registra `_onClose(() => callback(CLOSED))`, e
+ *  sair do canal dispara isso — DEPOIS de a saída terminar, quando a tela que
+ *  o criou já pode ter sido desmontada. Aqui a saída não chamava nada, e foi
+ *  por isso que nenhuma prova viu o relógio órfão: o `CLOSED` da limpeza
+ *  armava, num efeito já morto, uma pesca de 20 em 20 segundos que ninguém
+ *  fechava, e cada troca de aba deixava mais uma. No escritório, três abas
+ *  chegaram a reler tudo de três a cinco vezes por segundo. É a quarta vez
+ *  que esta bancada mente por omissão sobre o canal. */
+function avisarQueFechou(canal) {
+  if (canal && typeof canal.__aoMudar === "function" && !canal.__fechouAviso) {
+    canal.__fechouAviso = true;
+    canal.__aoMudar("CLOSED");
+  }
+}
 if (typeof globalThis !== "undefined") {
   globalThis.__EMITIR = (evento, tabela, novo, velho = null) => {
     let quantos = 0;
@@ -2979,6 +2995,9 @@ export const supabase = {
         return { data: null, error: { code: "PGRST202", message: "Could not find the function public.nao_lidas_por_telefone" } };
       }
       const marca = anotarNoDiario("conversas");
+      // QUAL FUNÇÃO, para a prova separar a conta dos selos das leituras da
+      // lista — as duas pesam em `conversas` (20/10).
+      if (marca) marca.funcao = nome;
       await espera(atrasoDe("conversas"));
       // O RECORTE POR PERMISSÃO TAMBÉM É IMITADO AQUI. Uma bancada que
       // devolvesse todos os telefones deixaria passar o dia em que o painel
@@ -3782,6 +3801,9 @@ export const supabase = {
       // batida; um `SUBSCRIBED` síncrono aqui esconderia todo defeito que
       // depende de a tela existir antes de o canal estar de pé.
       subscribe: (aoMudar) => {
+        // GUARDADO NO CANAL para a saída chamar de volta com `CLOSED` — ver
+        // `removeChannel`, logo abaixo.
+        canal.__aoMudar = aoMudar;
         if (typeof aoMudar === "function") {
           // O MOTIVO VAI JUNTO, COMO NO DE VERDADE.
           //
@@ -3803,6 +3825,14 @@ export const supabase = {
           // tela carregar e o canal subir — sem isso, o primeiro `SUBSCRIBED`
           // cai junto com a carga inicial e não há janela para medir nada.
           setTimeout(() => {
+            // O CANAL QUE JÁ SAIU NÃO RESPONDE À ENTRADA (20/10). A
+            // biblioteca destrói o pedido de entrada ao sair
+            // (`joinPush.destroy()`), e a resposta que chegasse depois não
+            // chega a ninguém. Aqui ela chegava: o `SUBSCRIBED` atrasado de um
+            // canal já removido apagava, por acaso, a carência que o `CLOSED`
+            // tinha acabado de armar — e a sabotagem que tira a guarda do
+            // canal passava, escondida pela própria bancada.
+            if (canal.__saiu) return;
             if (globalThis.__TEMPO_REAL_FORA) {
               const m = globalThis.__MOTIVO_DO_CANAL;
               aoMudar("CHANNEL_ERROR", m ? new Error(m) : undefined);
@@ -3813,7 +3843,7 @@ export const supabase = {
         }
         return canal;
       },
-      unsubscribe: () => { tirarOuvintesDe(canal); },
+      unsubscribe: () => { canal.__saiu = true; tirarOuvintesDe(canal); avisarQueFechou(canal); },
     };
     return canal;
   },
@@ -3830,6 +3860,9 @@ export const supabase = {
   // `__SAIDA_DO_CANAL_MS` deixa a prova alargar essa janela para medir o que
   // acontece DENTRO dela: é ali que o canal novo não pode nascer.
   removeChannel: (canal) => {
+    // NA HORA, e não ao fim da saída: a partir daqui a resposta da entrada
+    // que ainda estava a caminho não chega mais — ver `subscribe`.
+    if (canal) canal.__saiu = true;
     const nome = (canal && canal.__nome) || "";
     globalThis.__SAINDO_DO_CANAL = (globalThis.__SAINDO_DO_CANAL || 0) + 1;
     globalThis.__SAINDO_NOMES = globalThis.__SAINDO_NOMES || [];
@@ -3844,6 +3877,7 @@ export const supabase = {
       // nova aberta antes de a anterior fechar é o defeito, e sem estes dois
       // números não há como vê-lo.
       globalThis.__SAIDAS_CONCLUIDAS = (globalThis.__SAIDAS_CONCLUIDAS || 0) + 1;
+      avisarQueFechou(canal);
       pronto();
     }, demora));
   },
