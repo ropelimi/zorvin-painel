@@ -6215,14 +6215,6 @@ export default function Painel({ sessao }) {
   async function abrirConversaContato(cont, advAlvo) {
     const advId = advAlvo || advogadoId;
     if (!advId) { mostrarAviso(`Escolha ${voc.um} ${voc.singular} na barra lateral primeiro.`); return; }
-    // Trocar de telefone é trocar de departamento junto: a barra lateral filtra
-    // os telefones pelo departamento aberto, e deixar os dois em desacordo
-    // esconderia da lista justamente a conversa que se acabou de abrir.
-    if (advId !== advogadoId) {
-      const adv = advogados.find((a) => a.id === advId);
-      if (adv && adv.departamento_id) setDepartamentoId(adv.departamento_id);
-      setAdvogadoId(advId);
-    }
     const { data: conv, error } = await supabase.from("conversas")
       .upsert({ advogado_id: advId, contato_id: cont.id }, { onConflict: "advogado_id,contato_id" })
       .select("id").single();
@@ -6234,12 +6226,23 @@ export default function Painel({ sessao }) {
                  + "falta rodar o SQL 2026-07-abrir-conversa.sql no Supabase.");
       return;
     }
+    // A LINHA ANTES DE MEXER NA TELA: a que não se consegue ler não troca o
+    // telefone nem fecha a janela — ver `lerConversaParaAbrir`.
+    const linha = await lerConversaParaAbrir(conv.id);
+    if (!linha) return;
+    // Trocar de telefone é trocar de departamento junto: a barra lateral filtra
+    // os telefones pelo departamento aberto, e deixar os dois em desacordo
+    // esconderia da lista justamente a conversa que se acabou de abrir.
+    if (advId !== advogadoId) {
+      const adv = advogados.find((a) => a.id === advId);
+      if (adv && adv.departamento_id) setDepartamentoId(adv.departamento_id);
+      setAdvogadoId(advId);
+    }
     setConfigAberta(false);
     setNovaConversaAberta(false);
     setContatoForm(null);
     setBuscaContato("");
-    setVerArquivadas(false);
-    await abrirNaAbaDela(advId, conv.id);
+    await abrirNaAbaDela(advId, linha);
   }
 
   // ------------------------------------------------------------
@@ -6268,35 +6271,67 @@ export default function Painel({ sessao }) {
   //  continuava em "Selecione uma conversa". Relatado da tela de Audiências
   //  do Vantoro, onde a conversa quase sempre está em "Finalizados" (o aviso
   //  do robô abre o atendimento, a equipe finaliza depois da confirmação).
+  //
+  //  E O MESMO RELATO PELO HISTÓRICO DE ATENDIMENTO (22/10), com o que ainda
+  //  faltava às duas portas:
+  //    - a LEITURA vem antes de mexer na tela, e quem chama a faz
+  //      (`lerConversaParaAbrir`). A que falha é DITA, com o código, e não
+  //      troca o telefone: clique mudo é indistinguível de clique quebrado;
+  //    - a PASTA DE ARQUIVADAS é um lugar, como a aba. A conversa arquivada
+  //      abria à direita com a esquerda fora da pasta, sem a linha dela;
+  //    - a busca e o filtro de antes esconderiam a linha que se acabou de
+  //      abrir — a regra de `trocarAdvogado`.
   // ------------------------------------------------------------
-  async function abrirNaAbaDela(advId, convId) {
-    const { data: linha } = await supabase.from("conversas")
+  async function lerConversaParaAbrir(id) {
+    const { data, error } = await supabase.from("conversas")
       .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")}), mensagens(id)`)
-      .eq("id", convId)
+      .eq("id", id)
       .limit(1, { referencedTable: "mensagens" })
       .maybeSingle();
-    const outraAba = Boolean(linha && NOME_DA_SITUACAO[linha.situacao]
-      && linha.situacao !== abaSituacaoRef.current);
-    if (linha) {
-      setConversas((antes) => (antes.some((c) => String(c.id) === String(convId))
-        ? antes : [linha, ...antes]));
+    if (error) {
+      mostrarAviso(comOCodigo("Não consegui abrir esta conversa.", error, "abrir a conversa"), 7000);
+      return null;
     }
+    if (!data) {
+      // Juntada a outra pela ponte, ou fora do que o banco deixa esta pessoa
+      // ler — o funil e as tarefas guardam o id de uma conversa que pode não
+      // existir mais.
+      mostrarAviso("Não achei esta conversa. Ela pode ter sido juntada a outra.", 7000);
+      return null;
+    }
+    return data;
+  }
+
+  async function abrirNaAbaDela(advId, linha) {
+    const convId = linha.id;
+    const arquivada = Boolean(linha.arquivada);
+    // A PERGUNTA QUE A LISTA VAI FAZER AO BANCO — a régua de `abaDaLista`: na
+    // pasta de arquivadas nenhuma aba; fora dela, a aba da conversa (sem o
+    // script 028 a linha não tem situação, e a aba fica a de agora).
+    const abaDela = arquivada ? null
+      : (NOME_DA_SITUACAO[linha.situacao] ? linha.situacao : abaSituacaoRef.current);
+    const listaMuda = abaDela !== abaDaListaRef.current;
+    setVerArquivadas(arquivada);
+    setBusca("");
+    setFiltro("tudo");
+    setConversas((antes) => (antes.some((c) => String(c.id) === String(convId))
+      ? antes : [linha, ...antes]));
     // ABERTA ANTES DA TROCA DE ABA. A recarga que a troca dispara mantém a
     // conversa que está aberta (`conversaIdRef`), e o efeito que atualiza o
     // ref é declarado antes do que recarrega a lista — no mesmo desenho, ele
     // roda primeiro.
     setConversaId(convId);
-    if (outraAba) {
-      // A troca de aba recarrega a lista sozinha (a aba é dependência de
-      // `carregarConversas`). Carregar aqui também seria pedir a aba ANTIGA —
-      // esta função ainda enxerga a de antes — e a resposta dela podia chegar
-      // por último e pôr a lista errada debaixo do nome da aba nova.
-      setAbaSituacao(linha.situacao);
+    if (listaMuda) {
+      // A troca de aba — ou de pasta — recarrega a lista sozinha (`abaDaLista`
+      // é dependência de `carregarConversas`). Carregar aqui também seria
+      // pedir a aba ANTIGA — esta função ainda enxerga a de antes — e a
+      // resposta dela podia chegar por último e pôr a lista errada debaixo do
+      // nome da aba nova.
+      if (abaDela) setAbaSituacao(abaDela);
       return;
     }
-    // O ID VAI EXPLÍCITO, e não pelo `conversaIdRef`: é a regra de sempre, e
-    // continua valendo para quem chega aqui sem passar pela leitura acima (a
-    // linha não veio).
+    // O ID VAI EXPLÍCITO, e não pelo `conversaIdRef`: é a regra de sempre — o
+    // ref só é atualizado no próximo desenho, e nele ainda está a anterior.
     await carregarConversas(advId, 0, convId);
   }
 
@@ -6700,13 +6735,16 @@ export default function Painel({ sessao }) {
   async function verConversaDoHistorico(l) {
     const adv = advogadosPermitidos.find((a) => String(a.id) === String(l.advogadoId));
     if (!adv) { mostrarAviso("Você não tem acesso a este telefone."); return; }
+    // A LINHA PRIMEIRO: a que não se consegue ler não troca o telefone, e a
+    // pessoa continua onde estava, com o aviso do porquê.
+    const linha = await lerConversaParaAbrir(l.conversaId);
+    if (!linha) return;
     setHistorico(null);
-    setVerArquivadas(false);
     if (adv.departamento_id) setDepartamentoId(adv.departamento_id);
     setAdvogadoId(adv.id);
-    // A MESMA PORTA DO LINK: a conversa pode morar noutra aba, ou depois da
-    // primeira página — ver `abrirNaAbaDela`.
-    await abrirNaAbaDela(adv.id, l.conversaId);
+    // A MESMA PORTA DO LINK: a conversa pode morar noutra aba, na pasta de
+    // arquivadas, ou depois da primeira página — ver `abrirNaAbaDela`.
+    await abrirNaAbaDela(adv.id, linha);
   }
 
   // Abre a conversa do link, criando o contato só se ele ainda não existir.
@@ -14921,7 +14959,7 @@ export default function Painel({ sessao }) {
           {!advogadoId ? null : <>
           {/* Cabeçalho da visão "Arquivadas" (botão de voltar) */}
           {verArquivadas && (
-            <div onClick={() => setVerArquivadas(false)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: `1px solid ${C.divider}`, cursor: "pointer", background: C.headerBar }}>
+            <div data-vendo-arquivadas onClick={() => setVerArquivadas(false)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: `1px solid ${C.divider}`, cursor: "pointer", background: C.headerBar }}>
               <ArrowLeft size={18} color={C.textSecondary} />
               <span style={{ fontSize: 15, fontWeight: 600 }}>Arquivadas</span>
             </div>
@@ -16724,16 +16762,87 @@ export default function Painel({ sessao }) {
               const ultima = comEnvio.reduce((m, l) =>
                 (!m || new Date(l.ultima.criado_em) > new Date(m.ultima.criado_em)) ? l : m, null);
 
+              // A LISTA POR TELEFONE É UMA ESCRITA SÓ, para os dois casos de
+              // baixo. Ela aparecia só quando alguém do escritório já tinha
+              // escrito para o cliente — e o cliente que ninguém respondeu
+              // ainda, cuja conversa é justamente a que precisa ser aberta,
+              // ficava sem botão nenhum (22/10).
+              const porTelefone = historico.linhas.length > 0 && (
+                <div style={{ borderTop: `1px solid ${C.divider}`, paddingTop: 14 }}>
+                  <div style={{ fontSize: 11, color: C.textSecondary, fontWeight: 700, letterSpacing: 0.3, textTransform: "uppercase", marginBottom: 8 }}>
+                    Por telefone ({historico.linhas.length})
+                  </div>
+                  {historico.linhas.map((l) => (
+                    <div key={l.conversaId} style={{ border: `1px solid ${C.divider}`, borderRadius: 10, padding: "9px 11px", marginBottom: 8 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 4 }}>
+                        {l.adv ? comNumero(l.adv) : "telefone removido"}
+                      </div>
+                      {l.ultima ? (
+                        <>
+                          <div style={{ fontSize: 12, color: C.textSecondary }}>
+                            última: <b style={{ color: C.textPrimary, fontWeight: 600 }}>{l.ultima.enviado_por || "equipe"}</b> · {dataHoraDe(l.ultima.criado_em)}
+                          </div>
+                          <div style={{ fontSize: 12, color: C.textSecondary }}>
+                            primeira: {l.primeira.enviado_por || "equipe"} · {dataHoraDe(l.primeira.criado_em)}
+                          </div>
+                        </>
+                      ) : (
+                        <div style={{ fontSize: 12, color: C.textSecondary }}>ainda não respondemos por aqui</div>
+                      )}
+                      {/* VER A CONVERSA. O caminho curto entre "descobri que
+                          falaram por outro telefone" e "quero ler o que
+                          disseram" — que sem isto era: fechar o painel,
+                          trocar de telefone na barra, procurar o cliente na
+                          lista. A conversa aberta é a MESMA linha do
+                          histórico, e não uma nova: nada é criado aqui.
+                          No telefone que a pessoa não alcança, o botão não
+                          aparece; a linha diz o motivo, em vez de abrir uma
+                          conversa vazia que pareceria defeito. */}
+                      {advogadosPermitidos.some((a) => String(a.id) === String(l.advogadoId)) ? (
+                        <button data-abrir-do-historico={l.conversaId} onClick={() => verConversaDoHistorico(l)}
+                                style={{ marginTop: 7, border: `1px solid ${C.divider}`,
+                                         background: "transparent", color: C.verdeTexto,
+                                         borderRadius: 8, padding: "5px 10px", cursor: "pointer",
+                                         font: "inherit", fontSize: 12, fontWeight: 600,
+                                         display: "inline-flex", alignItems: "center", gap: 5 }}>
+                          <MessageSquare size={13} />
+                          {String(l.advogadoId) === String(advogadoId) ? "Ver a conversa" : "Abrir neste telefone"}
+                        </button>
+                      ) : (
+                        <div style={{ marginTop: 6, fontSize: 11.5, color: C.textSecondary, fontStyle: "italic" }}>
+                          você não tem acesso a este telefone
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {/* O aviso só aparece quando a lista ESTÁ mesmo
+                      incompleta — quando a ponte não respondeu e o que se vê
+                      é o recorte deste navegador. Fixo, ele faria a tela
+                      desmentir a si mesma no caso normal, que agora é o de
+                      mostrar o escritório inteiro. */}
+                  {historico.parcial && (
+                    <div style={{ fontSize: 11.5, color: C.textSecondary, lineHeight: 1.5, marginTop: 4 }}>
+                      Lista incompleta: não consegui falar com a ponte agora, então
+                      aparecem só os telefones que você mesmo alcança. Tente de novo
+                      em alguns segundos para ver o escritório inteiro.
+                    </div>
+                  )}
+                </div>
+              );
+
               if (!comEnvio.length) {
                 return (
-                  <div style={{ fontSize: 13.5, color: C.textSecondary, lineHeight: 1.6 }}>
-                    Ninguém do escritório enviou mensagem para este cliente ainda —
-                    {historico.linhas.length
-                      ? " a conversa existe, mas só com o que ele mandou."
-                      : (historico.parcial
-                          ? " não há conversa com ele nos telefones que você alcança (e não consegui consultar os outros agora)."
-                          : " não há conversa com ele em nenhum telefone do escritório.")}
-                  </div>
+                  <>
+                    <div style={{ fontSize: 13.5, color: C.textSecondary, lineHeight: 1.6, marginBottom: porTelefone ? 14 : 0 }}>
+                      Ninguém do escritório enviou mensagem para este cliente ainda —
+                      {historico.linhas.length
+                        ? " a conversa existe, mas só com o que ele mandou."
+                        : (historico.parcial
+                            ? " não há conversa com ele nos telefones que você alcança (e não consegui consultar os outros agora)."
+                            : " não há conversa com ele em nenhum telefone do escritório.")}
+                    </div>
+                    {porTelefone}
+                  </>
                 );
               }
               const Marco = ({ rotulo, l, msg }) => {
@@ -16759,66 +16868,7 @@ export default function Painel({ sessao }) {
                 <>
                   <Marco rotulo="Primeira mensagem enviada" l={primeira} msg={primeira.primeira} />
                   <Marco rotulo="Última mensagem enviada" l={ultima} msg={ultima.ultima} />
-                  <div style={{ borderTop: `1px solid ${C.divider}`, paddingTop: 14 }}>
-                    <div style={{ fontSize: 11, color: C.textSecondary, fontWeight: 700, letterSpacing: 0.3, textTransform: "uppercase", marginBottom: 8 }}>
-                      Por telefone ({historico.linhas.length})
-                    </div>
-                    {historico.linhas.map((l) => (
-                      <div key={l.conversaId} style={{ border: `1px solid ${C.divider}`, borderRadius: 10, padding: "9px 11px", marginBottom: 8 }}>
-                        <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 4 }}>
-                          {l.adv ? comNumero(l.adv) : "telefone removido"}
-                        </div>
-                        {l.ultima ? (
-                          <>
-                            <div style={{ fontSize: 12, color: C.textSecondary }}>
-                              última: <b style={{ color: C.textPrimary, fontWeight: 600 }}>{l.ultima.enviado_por || "equipe"}</b> · {dataHoraDe(l.ultima.criado_em)}
-                            </div>
-                            <div style={{ fontSize: 12, color: C.textSecondary }}>
-                              primeira: {l.primeira.enviado_por || "equipe"} · {dataHoraDe(l.primeira.criado_em)}
-                            </div>
-                          </>
-                        ) : (
-                          <div style={{ fontSize: 12, color: C.textSecondary }}>ainda não respondemos por aqui</div>
-                        )}
-                        {/* VER A CONVERSA. O caminho curto entre "descobri que
-                            falaram por outro telefone" e "quero ler o que
-                            disseram" — que sem isto era: fechar o painel,
-                            trocar de telefone na barra, procurar o cliente na
-                            lista. A conversa aberta é a MESMA linha do
-                            histórico, e não uma nova: nada é criado aqui.
-                            No telefone que a pessoa não alcança, o botão não
-                            aparece; a linha diz o motivo, em vez de abrir uma
-                            conversa vazia que pareceria defeito. */}
-                        {advogadosPermitidos.some((a) => String(a.id) === String(l.advogadoId)) ? (
-                          <button onClick={() => verConversaDoHistorico(l)}
-                                  style={{ marginTop: 7, border: `1px solid ${C.divider}`,
-                                           background: "transparent", color: C.verdeTexto,
-                                           borderRadius: 8, padding: "5px 10px", cursor: "pointer",
-                                           font: "inherit", fontSize: 12, fontWeight: 600,
-                                           display: "inline-flex", alignItems: "center", gap: 5 }}>
-                            <MessageSquare size={13} />
-                            {String(l.advogadoId) === String(advogadoId) ? "Ver a conversa" : "Abrir neste telefone"}
-                          </button>
-                        ) : (
-                          <div style={{ marginTop: 6, fontSize: 11.5, color: C.textSecondary, fontStyle: "italic" }}>
-                            você não tem acesso a este telefone
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    {/* O aviso só aparece quando a lista ESTÁ mesmo
-                        incompleta — quando a ponte não respondeu e o que se vê
-                        é o recorte deste navegador. Fixo, ele faria a tela
-                        desmentir a si mesma no caso normal, que agora é o de
-                        mostrar o escritório inteiro. */}
-                    {historico.parcial && (
-                      <div style={{ fontSize: 11.5, color: C.textSecondary, lineHeight: 1.5, marginTop: 4 }}>
-                        Lista incompleta: não consegui falar com a ponte agora, então
-                        aparecem só os telefones que você mesmo alcança. Tente de novo
-                        em alguns segundos para ver o escritório inteiro.
-                      </div>
-                    )}
-                  </div>
+                  {porTelefone}
                 </>
               );
             })()}

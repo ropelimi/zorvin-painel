@@ -2480,6 +2480,16 @@ function consulta(tabela) {
         return resolver({ data: null, count: null,
           error: { code: "57014", message: `a consulta a ${tabela} não respondeu` } });
       }
+      // E A LEITURA QUE TROPEÇA LOGO DEPOIS DE UMA GRAVAÇÃO QUE PASSOU.
+      // `__QUEBRAR_SO_A_LEITURA = ["conversas"]` quebra só o que LÊ: a "Nova
+      // conversa" grava a conversa e depois a lê para abri-la, e é a segunda
+      // ida que precisa poder falhar sozinha — com `__QUEBRAR` a gravação
+      // falharia antes, e a cena mediria a frase de outro tropeço.
+      const soALeitura = (typeof globalThis !== "undefined" && globalThis.__QUEBRAR_SO_A_LEITURA) || [];
+      if (soALeitura.includes(tabela) && !gravacao && !patch && !apagando) {
+        return resolver({ data: null, count: null,
+          error: { code: "57014", message: `a consulta a ${tabela} não respondeu` } });
+      }
 
       // DAQUI PARA BAIXO, CÓPIAS. Até aqui `linhas` são as PRÓPRIAS linhas das
       // tabelas — tem de ser, senão `update` e `delete` mexeriam num retrato e
