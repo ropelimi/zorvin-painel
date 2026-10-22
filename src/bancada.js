@@ -2884,6 +2884,26 @@ if (typeof globalThis !== "undefined") {
       try { ouvir("SIGNED_OUT", null); } catch (_e) { /* um ouvinte ruim não derruba os outros */ }
     }
   };
+  // E A ENTRADA DE NOVO, SEM RECARREGAR — o caminho de sempre: o bilhete de
+  // uso único vira sessão e a biblioteca avisa `SIGNED_IN`. O `verifyOtp`
+  // daqui não faz isso (a prova `entrar` conta com a tela parada depois de
+  // entrar), então a prova que precisa do painel de volta, na MESMA página,
+  // chama isto. `quem` é o id da pessoa que entra.
+  globalThis.__ENTRADA_DA_BIBLIOTECA = (quem = "u1") => {
+    globalThis.__SESSAO_SUMIU = false;
+    globalThis.__SESSAO_SEM_RENOVACAO = false;
+    globalThis.__SESSAO_REDE = false;
+    saiuPeloBotao = false;
+    const sessao = {
+      access_token: "jwt-de-mentira", refresh_token: "renovacao-de-mentira",
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      user: { id: quem, email: `${quem}@ropelimi`, user_metadata: { nome: quem } },
+    };
+    try { localStorage.setItem("sb-bancada-auth-token", JSON.stringify(sessao)); } catch (_e) { /* sem armário */ }
+    for (const ouvir of ouvintesDaEntrada) {
+      try { ouvir("SIGNED_IN", sessao); } catch (_e) { /* um ouvinte ruim não derruba os outros */ }
+    }
+  };
 }
 
 export const supabase = {

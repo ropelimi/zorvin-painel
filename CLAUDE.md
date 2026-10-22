@@ -4462,6 +4462,28 @@ ninguém pediu.
 **O recado não sobrevive a uma recarga:** recarregada, a entrada é a de
 sempre.
 
+### E o que estava escrito não vai embora junto
+
+A sessão pode acabar com a pessoa no meio de uma resposta. Os rascunhos
+moravam dentro do painel (`rascunhosRef`), e só a troca de conversa os
+guardava: o painel que sai de cena levaria junto o que estava na caixa.
+
+Hoje eles moram fora do painel, em `rascunhos.js`, **por pessoa**, e o painel
+que sai guarda o que estava escrito na conversa aberta. Entrando de novo, a
+pessoa abre a conversa e encontra a resposta onde a deixou. **A nota interna
+volta como nota**: voltando como mensagem, um Enter mandaria ao cliente o que
+a equipe escreveu para não chegar a ele.
+
+- **Só na memória da aba**, como os rascunhos da ficha: recarregar ainda os
+  perde. O caminho de entrar de sempre (o bilhete de uso único) não recarrega
+  a página. O da ponte, com o Auth fora do ar, recarrega, e ali o rascunho não
+  volta.
+- **Por pessoa**: numa máquina dividida, quem entra depois na mesma aba não
+  encontra na caixa o que a outra pessoa escreveu para um cliente.
+- **A edição em curso não vira rascunho**, nas duas horas — a troca de
+  conversa e o painel que sai. A regra de 07/10 tem agora uma escrita só
+  (`guardarRascunho`).
+
 ### A bancada aprendeu a perder a sessão
 
 Ela só sabia estar entrada ou não. Agora tem:
@@ -4473,22 +4495,31 @@ Ela só sabia estar entrada ou não. Agora tem:
   `refresh_token` (a da ponte), que estoura como a de verdade;
 - `signOut` de verdade (tira do armário e avisa `SIGNED_OUT`), no lugar do
   cano vazio de antes;
-- `__SAIDA_DA_BIBLIOTECA()` — a saída que a biblioteca faz sozinha.
+- `__SAIDA_DA_BIBLIOTECA()` — a saída que a biblioteca faz sozinha;
+- `__ENTRADA_DA_BIBLIOTECA(quem)` — a entrada de novo, na mesma página. O
+  `verifyOtp` daqui não troca a tela, e a prova `entrar` conta com isso.
 
 **E duas réguas de tempo, para a prova não esperar minutos:**
 `__VIGIA_DA_SESSAO` (de quanto em quanto a conferência roda) e
 `__TOLERANCIA_DA_SESSAO` (quanto o "talvez" aguenta). Sem elas, valem os 60
 segundos e os 2 minutos.
 
-Prova: `a-sessao-que-acaba`, 47 conferências em nove cenas: a sessão da ponte
-que vence; a aba que volta à frente e a janela que volta a ter o foco; a
-leitura que falha (e a que falha com a sessão boa, que não põe ninguém para
-fora); o tropeço de rede curto e o longo; o Auth calado com o bilhete em dia;
-o "Sair"; a saída que a biblioteca faz sozinha; a abertura com a sessão já
-vencida; e a recarga.
+Prova: `a-sessao-que-acaba`, 64 conferências em onze cenas:
 
-**15 sabotagens e 15 pegas**, todas limpas, rodadas em cópias e lidas uma a
-uma:
+- a sessão da ponte que vence;
+- a aba que volta à frente e a janela que volta a ter o foco;
+- a leitura que falha, e a que falha com a sessão boa (que não põe ninguém
+  para fora);
+- o tropeço de rede curto e o longo;
+- o Auth calado com o bilhete em dia;
+- o "Sair", e a saída que a biblioteca faz sozinha;
+- a abertura com a sessão já vencida, e a recarga;
+- o que estava escrito voltando: a resposta, e a nota como nota;
+- os rascunhos por pessoa, com a conta direto na função (na bancada, quem
+  entra é sempre a mesma pessoa).
+
+**22 sabotagens e 22 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma. As da sessão:
 
 - o painel de antes inteiro (16 reprovações — é o relato reproduzido);
 - sem a conferência de depois da abertura (11);
@@ -4502,6 +4533,16 @@ uma:
 - a sessão acabada que não sai do armário, na conferência e na abertura;
 - o tropeço de rede virando "acabou";
 - o recado sempre.
+
+E as dos rascunhos:
+
+- os rascunhos de volta para dentro do painel;
+- o painel que sai sem guardar o que estava na caixa;
+- o painel que sai esquecendo que era nota, e a nota guardada como mensagem
+  (as duas devolvem a nota na caixa de mensagem ao cliente);
+- os rascunhos de todo mundo juntos;
+- a edição em curso virando rascunho;
+- a caixa vazia sem apagar o rascunho.
 
 ## A auditoria de 07/10 — o que uma varredura inteira achou
 

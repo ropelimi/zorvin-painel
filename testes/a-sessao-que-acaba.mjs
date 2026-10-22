@@ -27,7 +27,10 @@
 //   8. abrir o Zorvin com a sessão assinada já vencida dá "Sua sessão
 //      terminou", e não "a conferência demorou demais" — que mandaria esperar
 //      por um serviço que está de pé;
-//   9. o recado não sobrevive a uma recarga.
+//   9. o recado não sobrevive a uma recarga;
+//  10. o que estava escrito volta quando a pessoa entra de novo — a resposta
+//      na caixa de mensagem, e a nota interna na caixa da nota;
+//  11. os rascunhos são de cada pessoa (a conta direto na função).
 // ------------------------------------------------------------
 import { abrirNavegador, ENDERECO } from "./navegador.mjs";
 
@@ -273,6 +276,87 @@ console.log("\n8. Abrir o Zorvin com a sessão da ponte já vencida");
   ok("recarregada, a entrada abre sem o recado", depois.entrada && !depois.recado, `recado: “${depois.recado}”`);
   ok("sem erro de JavaScript", !erros.length, erros.slice(0, 2).join(" | "));
   await ctx.close();
+}
+
+// ==================================================================
+console.log("\n10. O que estava escrito volta quando a pessoa entra de novo");
+{
+  // A sessão pode acabar com a pessoa NO MEIO de uma resposta. Sem trocar de
+  // conversa: quem guardava o rascunho era só a troca, e o painel que sai de
+  // cena levava o texto junto. Entrar de novo é pelo caminho de sempre, que
+  // não recarrega a página (`__ENTRADA_DA_BIBLIOTECA`, na bancada).
+  const MENSAGEM = 'textarea[data-campo="mensagem"]';
+  const NOTA = 'textarea[data-campo="nota"]';
+  const ESCRITO = "Bom dia! Conferi o seu acordo e o próximo passo é";
+  const ANOTADO = "Cliente pediu para ligar só depois das 18h";
+  const { ctx, page, erros } = await abrir();
+  ok("o painel abre", await painelAberto(page));
+  const ids = await page.evaluate(() =>
+    [...document.querySelectorAll("[data-conversa-id]")].map((el) => el.getAttribute("data-conversa-id")));
+  const [primeira, segunda] = [...new Set(ids)];
+  ok("há duas conversas para abrir", Boolean(primeira && segunda), `achei ${ids.length}`);
+  const abrirConversa = async (id) => {
+    await page.locator(`[data-conversa-id="${id}"]`).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(900);
+  };
+  /** A sessão acaba sozinha e a pessoa entra de novo, na mesma página. */
+  const acabaEEntraDeNovo = async () => {
+    await page.evaluate(() => { globalThis.__SESSAO_SUMIU = true; window.dispatchEvent(new Event("focus")); });
+    const foi = (await esperarEntrada(page, 5000)) !== null;
+    await page.evaluate(() => globalThis.__ENTRADA_DA_BIBLIOTECA("u1"));
+    return foi && await painelAberto(page);
+  };
+  const valor = (sel) => page.locator(sel).first().inputValue({ timeout: 2000 }).catch(() => null);
+
+  // A RESPOSTA AO CLIENTE.
+  await abrirConversa(primeira);
+  await page.locator(MENSAGEM).first().fill(ESCRITO, { timeout: 5000 }).catch(() => {});
+  ok("escrevi a resposta na caixa", (await valor(MENSAGEM)) === ESCRITO);
+  ok("a sessão acaba no meio da resposta, e a pessoa entra de novo", await acabaEEntraDeNovo());
+  await abrirConversa(primeira);
+  const voltou = await valor(MENSAGEM);
+  ok("de volta à conversa, a resposta está na caixa", voltou === ESCRITO, `caixa: “${voltou}”`);
+
+  // A NOTA INTERNA VOLTA COMO NOTA. Voltando como mensagem, um Enter mandaria
+  // ao cliente o que a equipe escreveu para não chegar a ele.
+  await abrirConversa(segunda);
+  await page.locator("[data-nota-interna]").first().click({ timeout: 5000 }).catch(() => {});
+  await page.locator(NOTA).first().fill(ANOTADO, { timeout: 5000 }).catch(() => {});
+  ok("escrevi uma nota interna", (await valor(NOTA)) === ANOTADO);
+  ok("a sessão acaba de novo, e a pessoa entra de novo", await acabaEEntraDeNovo());
+  await abrirConversa(segunda);
+  const nota = await valor(NOTA);
+  const mensagem = await valor(MENSAGEM);
+  ok("a nota volta na caixa da NOTA", nota === ANOTADO, `nota: “${nota}”`);
+  ok("e não na caixa de mensagem ao cliente", !mensagem, `mensagem: “${mensagem}”`);
+  ok("e a resposta da outra conversa continua lá", await (async () => {
+    await abrirConversa(primeira);
+    return (await valor(MENSAGEM)) === ESCRITO;
+  })());
+  ok("sem erro de JavaScript", !erros.length, erros.slice(0, 2).join(" | "));
+  await ctx.close();
+}
+
+// ==================================================================
+console.log("\n11. Os rascunhos são de cada pessoa");
+{
+  // A CONTA DIRETO NA FUNÇÃO: na bancada, quem entra é sempre a mesma pessoa
+  // (a que administra), e outra pessoa entrando na mesma aba não teria
+  // conversa nenhuma para abrir. Numa máquina dividida, quem entra depois não
+  // pode encontrar na caixa o que a pessoa de antes escreveu para um cliente.
+  const { rascunhosDe, guardarRascunho } = await import("../src/rascunhos.js");
+  const meus = rascunhosDe("u-teste-a");
+  ok("a mesma pessoa encontra os mesmos rascunhos", rascunhosDe("u-teste-a") === meus);
+  guardarRascunho(meus, "c-1", { texto: "Olá, Andreia!", nota: false, editando: false });
+  ok("outra pessoa não encontra o rascunho da primeira",
+     !rascunhosDe("u-teste-b")["c-1"] && rascunhosDe("u-teste-b") !== meus);
+  ok("a primeira continua com o dela", meus["c-1"]?.texto === "Olá, Andreia!");
+  guardarRascunho(meus, "c-1", { texto: "corrigido", nota: false, editando: true });
+  ok("uma edição em curso não vira rascunho (07/10)", meus["c-1"]?.texto === "Olá, Andreia!");
+  guardarRascunho(meus, "c-1", { texto: "   ", nota: false, editando: false });
+  ok("a caixa vazia apaga o rascunho", !("c-1" in meus));
+  guardarRascunho(meus, "c-2", { texto: "só a equipe lê", nota: 1, editando: false });
+  ok("a nota é guardada como nota", meus["c-2"]?.nota === true);
 }
 
 await nav.close();

@@ -58,6 +58,7 @@ import { rotuloDaHora, porQueNaoServe, semAColunaDaAgenda, aindaDaParaEditar } f
 import { useEstadoDoCopiloto, copilotoAparece, pedirSugestao } from "./copiloto.js";
 import { ABAS_DA_SITUACAO, NOME_DA_SITUACAO } from "./abasDaSituacao.js";
 import { pareceAcessoVencido, pedirConferenciaDaSessao, marcarSaidaPedida, foiSaidaPedida } from "./vigiaDaSessao.js";
+import { rascunhosDe, guardarRascunho } from "./rascunhos.js";
 
 // ============================================================
 //  ZORVIN by Ropelimi — Painel real (conectado ao Supabase)
@@ -3386,7 +3387,10 @@ export default function Painel({ sessao }) {
   const rascunhoRef = useRef("");
   const modoNotaRef = useRef(false);
   // O que ficou escrito em cada conversa: { [conversaId]: { texto, nota } }.
-  const rascunhosRef = useRef({});
+  // Mora FORA do painel, por pessoa (`rascunhos.js`): o painel que sai de cena
+  // quando a sessão acaba não leva junto o que estava sendo escrito.
+  const rascunhosRef = useRef(null);
+  if (rascunhosRef.current === null) rascunhosRef.current = rascunhosDe(sessao?.user?.id);
   const conversaAnteriorRef = useRef(null);
   const listaRef = useRef(null);
   const figurinhaRef = useRef(null);
@@ -8401,6 +8405,15 @@ export default function Painel({ sessao }) {
   // uma conversa para a outra.
   useEffect(() => { rascunhoRef.current = rascunho; }, [rascunho]);
   useEffect(() => { modoNotaRef.current = modoNota; }, [modoNota]);
+  // E O PAINEL QUE SAI DE CENA GUARDA O QUE ESTAVA NA CAIXA (22/10). A troca
+  // de conversa já guardava; sair de cena não, e desde 22/10 o painel sai
+  // sozinho quando a sessão acaba (`vigiaDaSessao.js`) — às vezes no meio de
+  // uma resposta. Os rascunhos moram fora do painel (`rascunhos.js`), e a
+  // pessoa que entra de novo encontra na conversa o que estava escrevendo.
+  useEffect(() => () => {
+    guardarRascunho(rascunhosRef.current, conversaAnteriorRef.current,
+      { texto: rascunhoRef.current, nota: modoNotaRef.current, editando: Boolean(editandoRef.current) });
+  }, []);
 
   // ------------------------------------------------------------
   //  QUANTAS CONVERSAS ESTE CLIENTE TEM NOS OUTROS TELEFONES
@@ -8499,10 +8512,9 @@ export default function Painel({ sessao }) {
     // E O "RENOMEAR" TAMBÉM: aberto em A e confirmado em B, gravava em B o
     // nome digitado para A.
     setRenomeando(null);
-    if (antes && antes !== conversaId && !estavaEditando) {
-      const texto = rascunhoRef.current;
-      if (texto.trim()) rascunhosRef.current[antes] = { texto, nota: modoNotaRef.current };
-      else delete rascunhosRef.current[antes];
+    if (antes && antes !== conversaId) {
+      guardarRascunho(rascunhosRef.current, antes,
+        { texto: rascunhoRef.current, nota: modoNotaRef.current, editando: estavaEditando });
     }
     conversaAnteriorRef.current = conversaId;
     const guardado = conversaId ? rascunhosRef.current[conversaId] : null;
