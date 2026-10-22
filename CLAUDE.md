@@ -5155,6 +5155,16 @@ própria, e não junto com a da cópia que estava rodando: cada pedido vai numa
 PR nova, e empurrar ali teria cancelado a rodada em andamento
 (`cancel-in-progress`).
 
+**Medido em 22/10: a folga voltou a encolher.** As rodadas verdes do #281, do
+#283 e do #282 levaram **65, 66 e 67 minutos** do começo ao fim, contra 56 a
+58 entre 15 e 19/10: a suíte cresceu uns 10 minutos numa semana. A prova da
+sessão que acaba soma uns 2, e a folga para o teto de 75 cai para uns 6.
+**Subir de novo é decisão do Rodrigo**, e ficou perguntado a ele.
+
+**E a franquia de minutos deixou de ser o risco.** Os dois repositórios são
+públicos, e o GitHub não cobra os minutos de rodada em repositório público. O
+que corta uma rodada agora é só o teto.
+
 ## Fluxo de trabalho — PRs (REGRA IMPORTANTE do Rodrigo)
 
 - **Cada entrega/pedido deve ir numa PR NOVA.** Nunca reutilizar nem estender uma PR já mesclada.
