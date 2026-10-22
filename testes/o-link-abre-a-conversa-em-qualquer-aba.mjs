@@ -20,7 +20,9 @@
 //     recarrega; uma recarga que a perdesse a fecharia segundos depois);
 //   * a conversa antiga, fora da primeira página, também abre;
 //   * nada é criado de novo: é a conversa que já existe;
-//   * e a conversa aparece na lista da aba, e não só à direita.
+//   * e a conversa aparece na lista da aba, e não só à direita;
+//   * e o "Abrir neste telefone" do histórico do cliente, que é outra porta
+//     para o mesmo lugar — e tinha o mesmo defeito.
 import { abrirNavegador, ENDERECO } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
@@ -113,6 +115,83 @@ for (const chave of casos) {
   ok("a conversa antiga, longe da primeira página, também abre", e.topo.includes(CT["a13-aberto-antiga"].nome) && !e.selecione,
      JSON.stringify(e).slice(0, 300));
   ok("e não é criada de novo", e.conversasDoContato === 1, String(e.conversasDoContato));
+  await ctx.close();
+}
+
+// ---- 4. o "Abrir neste telefone" do histórico do cliente ----
+//
+// A mesma tela da direita, a mesma lista recortada pela aba, outra porta: o
+// histórico troca de telefone e abre a conversa que já existe ali. Relato de
+// 22/10, na tela de Audiências do Vantoro: a conversa de audiência quase
+// sempre está em "Finalizados" — o aviso do robô abre o atendimento, a equipe
+// finaliza depois da confirmação. Aqui o cliente fala com o "Acordos 1", e no
+// "Arquivo" a conversa dele já foi finalizada.
+{
+  const NO_ARQUIVO = "Pelo Arquivo: a audiência foi remarcada.";
+  const cliente = contato("ct-hist", "5511980099999", "CLIENTE DO HISTORICO");
+  const semente = {
+    contatos: [...Object.values(CT).map(({ adv, situacao, ...x }) => x), cliente],
+    conversas: [...conversas,
+      conversa("cv-hist-a7", "a7", cliente, { situacao: "aberto", protocolo: "P-hist-a7",
+        ultima_atividade: H(1), ultima_mensagem: "oi", esperando_desde: H(1) }),
+      conversa("cv-hist-a13", "a13", cliente, { situacao: "finalizado", protocolo: "P-hist-a13",
+        ultima_atividade: H(30), ultima_mensagem: NO_ARQUIVO })],
+    mensagens: [...mensagens,
+      msg("m-hist-a7", "cv-hist-a7", "contato", "oi", H(1)),
+      { ...msg("m-hist-a13", "cv-hist-a13", "advogado", NO_ARQUIVO, H(30)), enviado_por: "Rodrigo Sousa" }],
+  };
+  // A ponte devolve o resumo do escritório inteiro, no formato de
+  // `/historico/contato/:id`. Com `primeira`: o histórico só lista o telefone
+  // em que a equipe já escreveu.
+  const ponte = (r) => {
+    const linhas = [
+      { conversa_id: "cv-hist-a7", advogado_id: "a7", primeira: { enviado_por: "Rodrigo Sousa", criado_em: H(1) },
+        ultima: { enviado_por: "Rodrigo Sousa", criado_em: H(1) } },
+      { conversa_id: "cv-hist-a13", advogado_id: "a13", advogado_nome: "Arquivo", advogado_numero: TEL.a13,
+        primeira: { enviado_por: "Rodrigo Sousa", criado_em: H(30) },
+        ultima: { enviado_por: "Rodrigo Sousa", criado_em: H(30) } },
+    ];
+    const corpo = r.request().url().includes("/historico/contato/") ? { ok: true, linhas } : { ok: true };
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(corpo) });
+  };
+  const ctx = await nav.newContext({ viewport: { width: 1400, height: 900 } });
+  const page = await ctx.newPage();
+  const estouros = [];
+  page.on("pageerror", (e) => estouros.push(e.message));
+  await page.route("**/ponte-de-mentira/**", ponte);
+  await page.addInitScript((s) => { globalThis.__SEMENTE = s; }, semente);
+  await page.goto(ENDERECO);
+  await page.waitForSelector("[data-conversa-nome]", { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(2000);
+  const tela = () => page.evaluate(() => ({
+    topo: document.querySelector("[data-topo-conversa]")?.innerText || "",
+    aba: document.querySelector('[data-aba-da-situacao][data-aba-ativa="sim"]')?.getAttribute("data-aba-da-situacao") || null,
+    selecione: document.body.innerText.includes("Selecione uma conversa"),
+    // A BOLHA, e não o texto da página: a lista da aba também mostra a última
+    // mensagem da conversa, e o texto passaria com a direita vazia.
+    bolhaDoArquivo: Boolean(document.querySelector('[data-msg-id="m-hist-a13"]')),
+  }));
+  await page.locator('[data-conversa-nome="CLIENTE DO HISTORICO"]').first().click({ timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(1500);
+  const antes = await tela();
+  ok("histórico: a conversa do cliente abre no telefone de sempre", antes.topo.includes(cliente.nome) && !antes.selecione,
+     `topo "${antes.topo.slice(0, 60)}"`);
+  await page.locator('button[title^="Histórico de atendimento"]').first().click({ timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(2000);
+  const botao = page.locator('button:has-text("Abrir neste telefone")');
+  const botoes = await botao.count();
+  ok("histórico: oferece abrir no Arquivo", botoes === 1, `botões: ${botoes}`);
+  await botao.first().click({ timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(5000);
+  const e = await tela();
+  ok("histórico: a conversa finalizada do Arquivo abre", e.topo.includes(cliente.nome) && !e.selecione
+     && e.bolhaDoArquivo, `topo "${e.topo.slice(0, 60)}", selecione ${e.selecione}, bolha ${e.bolhaDoArquivo}`);
+  ok("histórico: na aba dela", e.aba === "finalizado", `aba ${e.aba}`);
+  await page.waitForTimeout(5000);
+  const depois = await tela();
+  ok("histórico: e continua aberta depois das recargas", depois.bolhaDoArquivo && !depois.selecione,
+     `selecione ${depois.selecione}, bolha ${depois.bolhaDoArquivo}`);
+  ok("histórico: sem erro na tela", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
 
