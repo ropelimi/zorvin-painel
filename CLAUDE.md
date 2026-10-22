@@ -4377,6 +4377,132 @@ Prova: `o-envio-nao-parece-que-falhou`, 35 conferências, **12 sabotagens e
 - sem a conferência, a conferência sem perguntar se ainda há bolha saindo, e
   uma conferência por mensagem.
 
+## A sessão que acaba volta para a tela de entrada (22/10)
+
+Um dos três pedidos do Rodrigo em 22/10: *quando o acesso de alguém expirar,
+o painel tem de ir sozinho para a tela de entrada, em vez de ficar parado sem
+carregar nada.*
+
+**Medido nos registros do Supabase, só lendo:** em 22/10 um navegador do
+escritório passou das 09:57 às 16:35 pedindo coisas ao banco SEM sessão. Foram
+152 pedidos, todos recusados (401), com o papel `anon`. A tela continuava sendo
+o painel, e nada carregava: nem a lista, nem as etiquetas, nem a conversa
+aberta.
+
+**A biblioteca do Supabase devolve "sem sessão" sem avisar** em alguns
+caminhos, e o `App` só trocava de tela quando ela avisava (`SIGNED_OUT`):
+
+- **a sessão assinada pela ponte** (o caminho de 19/08, com o Auth fora do ar)
+  dura 12 horas e não tem com o que renovar, de propósito. A biblioteca a dá
+  por vencida 90 segundos antes do fim, e aí ela ESTOURA ao tentar renovar
+  (`AuthSessionMissingError`), sem emitir saída nenhuma;
+- **a renovação que tropeça na rede** com o bilhete já vencido: a biblioteca
+  guarda a sessão para tentar de novo e, enquanto isso, responde "sem sessão";
+- **a sessão que some do armário** por outro caminho.
+
+**Os 152 pedidos saíram com a chave pública**, e isso diz qual caminho foi:
+um dos dois que respondem "sem sessão" sem estourar. Sem sessão, o
+`supabase-js` manda o pedido com a chave pública, e o banco o recusa como de
+quem não entrou: a tela recebe `42501`. Com o estouro, o pedido nem sai.
+
+**E havia um quarto caminho, na abertura, que a prova achou.** O estouro da
+sessão vencida era lido como "o Auth não respondeu", e o `App` ia buscar a
+sessão no armário. Nos 90 segundos finais o bilhete do armário ainda parecia
+em dia, e o painel abria com uma sessão que a biblioteca já dava por morta.
+Depois disso, a tela de entrada dizia *"a conferência demorou demais para
+responder"*, mandando esperar por um serviço que estava de pé.
+
+### O `App` passou a PERGUNTAR — `vigiaDaSessao.js`
+
+`conferirSessao` responde três coisas, e a terceira é a que evita pôr para
+fora quem está trabalhando por causa de um soluço:
+
+| resposta | quando | o que o `App` faz |
+|---|---|---|
+| **serve** | há bilhete em dia — da biblioteca, ou do armário quando o Auth não responde a tempo | nada |
+| **acabou** | "sem sessão" sem erro de rede, ou o estouro de "não há com o que renovar" | tira a sessão do armário e vai para a entrada **com o recado** |
+| **talvez** | o tropeço de rede, ou o Auth calado com o bilhete do armário já vencido | só vira "acabou" se durar **2 minutos** |
+
+**Quando ela roda:**
+
+- de minuto em minuto;
+- quando a aba volta à frente (`visibilitychange` e `focus`);
+- **na hora**, quando uma leitura do painel falha com cara de acesso vencido
+  (`anotarFalhaDeLeitura` → `pareceAcessoVencido`). É ali que a pessoa está
+  olhando para uma tela que não carrega.
+
+**A leitura que falha não decide nada sozinha.** `42501` também é a coluna sem
+permissão de quem entrou (a armadilha nº 3), e um "JWT expired" pode ser o
+bilhete renovado no meio do caminho. Ela só pede a conferência — quem decide é
+a biblioteca.
+
+**A régua de 19/08 continua valendo:** o Auth é necessário para NASCER uma
+sessão, e não para usá-la. Com o Auth calado e o bilhete do armário em dia,
+ninguém sai. A régua mora agora num lugar só, `conferirSessao`, para a
+abertura e para a conferência de depois.
+
+**A sessão sai do armário SEM REDE** (`esquecerSessaoGuardada`), e não por
+`signOut`. Ele pergunta a sessão à biblioteca antes de sair, e essa é
+justamente a pergunta que está estourando ou voltando vazia. Depois ainda vai
+ao Auth avisar.
+
+### O recado, e quem não o recebe
+
+A tela de entrada diz **"Sua sessão terminou. Entre de novo para continuar."**
+(`data-sessao-terminou`). Sem ele, a entrada aparece do nada no meio do
+trabalho, e a pessoa não sabe se o sistema caiu ou se foi ela.
+
+**Quem aperta "Sair" não recebe o recado.** A saída pelo botão e a renovação
+recusada de vez (a conta desativada, a credencial revogada) emitem o MESMO
+`SIGNED_OUT`. O botão marca a saída antes (`marcarSaidaPedida`), e só a outra
+leva o recado. A marca vale para UMA saída e é apagada no `finally`. Sem isso,
+um "Sair" que não chegasse a avisar calaria o recado da próxima saída que
+ninguém pediu.
+
+**O recado não sobrevive a uma recarga:** recarregada, a entrada é a de
+sempre.
+
+### A bancada aprendeu a perder a sessão
+
+Ela só sabia estar entrada ou não. Agora tem:
+
+- `__SESSAO_SUMIU` — "sem sessão", sem erro;
+- `__SESSAO_SEM_RENOVACAO` — o estouro de "Auth session missing!";
+- `__SESSAO_REDE` — "sem sessão" com erro de rede;
+- a margem de 90 segundos da biblioteca para a sessão guardada sem
+  `refresh_token` (a da ponte), que estoura como a de verdade;
+- `signOut` de verdade (tira do armário e avisa `SIGNED_OUT`), no lugar do
+  cano vazio de antes;
+- `__SAIDA_DA_BIBLIOTECA()` — a saída que a biblioteca faz sozinha.
+
+**E duas réguas de tempo, para a prova não esperar minutos:**
+`__VIGIA_DA_SESSAO` (de quanto em quanto a conferência roda) e
+`__TOLERANCIA_DA_SESSAO` (quanto o "talvez" aguenta). Sem elas, valem os 60
+segundos e os 2 minutos.
+
+Prova: `a-sessao-que-acaba`, 47 conferências em nove cenas: a sessão da ponte
+que vence; a aba que volta à frente e a janela que volta a ter o foco; a
+leitura que falha (e a que falha com a sessão boa, que não põe ninguém para
+fora); o tropeço de rede curto e o longo; o Auth calado com o bilhete em dia;
+o "Sair"; a saída que a biblioteca faz sozinha; a abertura com a sessão já
+vencida; e a recarga.
+
+**15 sabotagens e 15 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma:
+
+- o painel de antes inteiro (16 reprovações — é o relato reproduzido);
+- sem a conferência de depois da abertura (11);
+- o "talvez" pondo para fora na hora;
+- o Auth calado pondo para fora quem tem o bilhete em dia;
+- sem a conferência na hora da leitura que falha;
+- sem a aba que volta à frente, e sem o foco;
+- o recado para quem apertou "Sair", e o "Sair" sem a marca;
+- a saída da biblioteca sem o recado;
+- o estouro lido como "não respondeu" (7 — o quarto caminho, reproduzido);
+- a sessão acabada que não sai do armário, na conferência e na abertura;
+- o tropeço de rede virando "acabou";
+- o recado sempre.
+
 ## A auditoria de 07/10 — o que uma varredura inteira achou
 
 Pedido do Rodrigo: *"faz um diagnóstico geral em todos os arquivos e todas

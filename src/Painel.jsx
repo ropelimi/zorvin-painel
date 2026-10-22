@@ -57,6 +57,7 @@ import { perguntarOsScripts, fraseDosScriptsParaAFaixa, manterOQueSeSabia } from
 import { rotuloDaHora, porQueNaoServe, semAColunaDaAgenda, aindaDaParaEditar } from "./agenda.js";
 import { useEstadoDoCopiloto, copilotoAparece, pedirSugestao } from "./copiloto.js";
 import { ABAS_DA_SITUACAO, NOME_DA_SITUACAO } from "./abasDaSituacao.js";
+import { pareceAcessoVencido, pedirConferenciaDaSessao, marcarSaidaPedida, foiSaidaPedida } from "./vigiaDaSessao.js";
 
 // ============================================================
 //  ZORVIN by Ropelimi — Painel real (conectado ao Supabase)
@@ -3579,6 +3580,12 @@ export default function Painel({ sessao }) {
     // mas quem for consertar precisa dele — e sem isto a única pista era a
     // ausência na tela, que não aponta para lugar nenhum.
     console.error(`[zorvin] falha ao carregar ${oQue}`, erro);
+    // COM CARA DE ACESSO VENCIDO, a sessão é conferida NA HORA — e não no
+    // minuto seguinte —, porque é aqui que a pessoa está olhando para uma
+    // tela que não carrega. Quem decide se acabou é a conferência
+    // (`vigiaDaSessao.js`): `42501` também é a coluna sem permissão de quem
+    // entrou, e essa não pode pôr ninguém para fora.
+    if (pareceAcessoVencido(erro)) pedirConferenciaDaSessao();
     setFalhasDeLeitura((antes) => ({
       ...antes,
       [chave]: { oQue, codigo: (erro && erro.code) || "" },
@@ -11427,7 +11434,12 @@ export default function Painel({ sessao }) {
 
   async function sair() {
     if (!window.confirm("Deseja sair do Zorvin?")) return;
-    await supabase.auth.signOut();
+    // A MARCA ANTES DA SAÍDA: o aviso de saída chega ao `App` antes de a
+    // promessa voltar, e ele só dá o recado de "sessão terminou" a quem não
+    // pediu para sair. O `finally` apaga a marca se a saída não chegar a
+    // avisar — senão ela calaria o recado da próxima saída que ninguém pediu.
+    marcarSaidaPedida();
+    try { await supabase.auth.signOut(); } finally { foiSaidaPedida(); }
   }
 
   // Tags (objetos) de uma conversa, na ordem em que foram definidas.

@@ -2869,6 +2869,22 @@ if (typeof globalThis !== "undefined") globalThis.__TABELAS = TABELAS;
 // Quem está ouvindo "entrou" / "saiu". Fora do objeto porque `onAuthStateChange`
 // e `signInWithPassword` precisam do MESMO conjunto, e um deles avisa o outro.
 const ouvintesDaEntrada = new Set();
+// QUEM APERTOU "SAIR" nesta página. Antes o `signOut` daqui era um cano vazio,
+// e nenhuma prova via a tela de entrada depois de uma saída.
+let saiuPeloBotao = false;
+// A SAÍDA QUE A BIBLIOTECA FAZ SOZINHA — a renovação recusada de vez (a conta
+// desativada, a credencial revogada): ela tira a sessão do armário e avisa
+// `SIGNED_OUT`, sem ninguém ter apertado nada. A prova chama isto para ver a
+// tela de entrada chegar COM o recado, ao contrário da saída pelo botão.
+if (typeof globalThis !== "undefined") {
+  globalThis.__SAIDA_DA_BIBLIOTECA = () => {
+    globalThis.__SESSAO_SUMIU = true;
+    try { localStorage.removeItem("sb-bancada-auth-token"); } catch (_e) { /* sem armário */ }
+    for (const ouvir of ouvintesDaEntrada) {
+      try { ouvir("SIGNED_OUT", null); } catch (_e) { /* um ouvinte ruim não derruba os outros */ }
+    }
+  };
+}
 
 export const supabase = {
   from: (t) => consulta(t),
@@ -3675,16 +3691,50 @@ export const supabase = {
       if (typeof globalThis !== "undefined" && globalThis.__SESSAO_PENDURADA) {
         await new Promise(() => {});
       }
+      // A SESSÃO QUE ACABA SEM AVISO — os três jeitos da biblioteca de verdade
+      // (22/10). Nenhum deles emite saída; é por isso que o `App` passou a
+      // perguntar, e é isto que a prova `a-sessao-que-acaba` precisa imitar:
+      //
+      //   `__SESSAO_SUMIU`          — "sem sessão", sem erro (a sessão saiu
+      //                                do armário por outro caminho);
+      //   `__SESSAO_SEM_RENOVACAO`  — ESTOURA, como a biblioteca estoura com a
+      //                                sessão assinada pela ponte vencida: ela
+      //                                não tem com o que renovar;
+      //   `__SESSAO_REDE`           — "sem sessão" COM erro de rede: a
+      //                                renovação tropeçou e pode dar certo na
+      //                                próxima — o único que pode passar sozinho.
+      const g = (typeof globalThis !== "undefined") ? globalThis : {};
+      if (g.__SESSAO_SEM_RENOVACAO) {
+        throw Object.assign(new Error("Auth session missing!"), { name: "AuthSessionMissingError", status: 400 });
+      }
+      if (g.__SESSAO_SUMIU || saiuPeloBotao) return { data: { session: null }, error: null };
+      if (g.__SESSAO_REDE) {
+        return { data: { session: null },
+          error: Object.assign(new Error("Failed to fetch"), { name: "AuthRetryableFetchError", status: 0 }) };
+      }
+      // A MARGEM DE 90 SEGUNDOS da biblioteca de verdade (`EXPIRY_MARGIN_MS`):
+      // perto de vencer, ela tenta renovar — e a sessão assinada pela ponte,
+      // que vem com `refresh_token` VAZIO de propósito, faz a tentativa
+      // ESTOURAR com "Auth session missing!". É assim que essa sessão acaba em
+      // produção, e é isto que a bancada imita: sem a margem, a prova veria a
+      // sessão durar 90 segundos a mais do que dura.
+      let semComoRenovar = false;
       try {
         const guardada = (typeof localStorage !== "undefined")
           && localStorage.getItem("sb-bancada-auth-token");
         if (guardada) {
           const s = JSON.parse(guardada);
-          if (s && s.access_token && (!s.expires_at || s.expires_at * 1000 > Date.now())) {
+          const restaMs = s && s.expires_at ? s.expires_at * 1000 - Date.now() : Infinity;
+          if (s && s.access_token && "refresh_token" in s && !s.refresh_token && restaMs < 90000) {
+            semComoRenovar = true;
+          } else if (s && s.access_token && restaMs > 0) {
             return { data: { session: s } };
           }
         }
       } catch (_e) { /* armário com lixo dentro é o mesmo que armário vazio */ }
+      if (semComoRenovar) {
+        throw Object.assign(new Error("Auth session missing!"), { name: "AuthSessionMissingError", status: 400 });
+      }
       return (typeof globalThis !== "undefined" && globalThis.__DESLOGADO)
         ? { data: { session: null } }
         : { data: { session: { access_token: "jwt-de-mentira", user: { id: "u1", email: "rodrigo@ropelimi",
@@ -3728,12 +3778,24 @@ export const supabase = {
         user: { id: "u1", email: String(email), user_metadata: { nome: String(email).split("@")[0] } },
       };
       try { localStorage.setItem("sb-bancada-auth-token", JSON.stringify(sessao)); } catch (_e) { /* sem armário */ }
+      saiuPeloBotao = false;
       for (const ouvir of ouvintesDaEntrada) {
         try { ouvir("SIGNED_IN", sessao); } catch (_e) { /* um ouvinte ruim não derruba os outros */ }
       }
       return { data: { session: sessao }, error: null };
     },
-    signOut: async () => ({ error: null }),
+    // A SAÍDA DE VERDADE: tira a sessão do armário e avisa quem ouve, como a
+    // biblioteca faz. `SIGNED_OUT` chega aos ouvintes ANTES de a promessa
+    // voltar — é a mesma ordem da de verdade, e é dela que depende a marca de
+    // "saiu porque quis" (`vigiaDaSessao.js`).
+    signOut: async () => {
+      saiuPeloBotao = true;
+      try { localStorage.removeItem("sb-bancada-auth-token"); } catch (_e) { /* sem armário */ }
+      for (const ouvir of ouvintesDaEntrada) {
+        try { ouvir("SIGNED_OUT", null); } catch (_e) { /* um ouvinte ruim não derruba os outros */ }
+      }
+      return { error: null };
+    },
     updateUser: async () => ({ error: null }),
 
     // A TROCA DO BILHETE POR UMA SESSÃO. Faltava aqui — e por isso a entrada
