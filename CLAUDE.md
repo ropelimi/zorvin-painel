@@ -4048,6 +4048,81 @@ sabotagens e 11 pegas**, todas limpas, rodadas em cópias e lidas uma a uma:
 `if` — uma lista vazia passaria por elas. Hoje o tamanho está escrito em cada
 uma.
 
+## A conversa que se manda abrir abre — esteja em que aba estiver (22/10)
+
+Dois relatos do mesmo dia, sobre o mesmo defeito por duas portas: *"quando eu
+clico no ícone do Zorvin [no Controle de atendimento do Vantoro], não está
+abrindo direto na conversa"* e *"no histórico de atendimento, ao clicar para
+ver a conversa [do cliente por outro telefone] não está abrindo a conversa"*.
+
+**A tela da direita não guarda a conversa aberta: ela a PROCURA na lista da
+esquerda** (`conversas.find`) — a regra do relato de 10/09, em "a conversa
+aberta atravessa a recarga". E desde as abas (19/10) a lista vem do banco
+recortada pela aba. Quem abria trocava de telefone e relia a lista; a conversa
+que morava em "Novos", em "Finalizados" ou atrás das 200 mais recentes não
+vinha nela, e o clique terminava em "Selecione uma conversa", sem uma palavra.
+
+**O conserto da aba veio em duas PRs**, cada uma por uma porta: #281 (o link)
+e #283 (o histórico), as duas pela mesma função, `abrirNaAbaDela` — que lê a
+linha, a põe na lista e leva a lista para a aba dela. **Quatro portas passam
+por ali**: o link e a "Nova conversa" (`abrirConversaContato`), e o histórico,
+o cartão do funil e a tarefa (`verConversaDoHistorico`).
+
+### O que ainda faltava às quatro portas
+
+| | antes | agora |
+|---|---|---|
+| a leitura que falha | o clique mudo — e o telefone já trocado | a frase com o código (`lerConversaParaAbrir`), e nada muda: nem o telefone, nem a janela da "Nova conversa" |
+| a conversa arquivada | abria à direita com a esquerda fora da pasta, sem a linha dela | a lista vai para a pasta de arquivadas |
+| um filtro ou uma busca ligados antes | escondiam a linha que se acabou de abrir | voltam para "Tudo", a regra de `trocarAdvogado` |
+| o cliente que ninguém respondeu | o histórico dizia *"a conversa existe, mas só com o que ele mandou"* e **não oferecia abrir** | a lista "Por telefone" é uma escrita só (`porTelefone`), mostrada nos dois casos |
+
+**A leitura vem antes de mexer na tela, e quem chama a faz.** Lida depois de
+trocar o telefone, a falha deixava a pessoa num telefone que ela não escolheu,
+com a direita vazia. **A pasta é um lugar, como a aba:** a pergunta que a lista
+faz ao banco (`abaDaLista`) é a aba dela, ou nenhuma dentro da pasta, e quando
+essa pergunta muda quem relê é o efeito, e não uma chamada daqui com a aba de
+antes.
+
+**A frase "não achei"** diz *"ela pode ter sido juntada a outra"*: o funil e as
+tarefas guardam o id de uma conversa que a ponte pode ter juntado depois.
+
+### A prova
+
+`a-conversa-do-historico-abre`, 67 conferências: a conversa do outro telefone
+em "Em Atendimento", em "Finalizados", em "Novos", arquivada e atrás de 210
+mais recentes (e ela continua aberta quando a lista é relida), com o filtro
+"Não lidas" ligado, o cliente que ninguém respondeu, a "Nova conversa" com o
+cliente finalizado, a tarefa da tela de Tarefas, e as duas leituras que
+falham — pelo histórico e pela "Nova conversa". A bancada ganhou
+`__QUEBRAR_SO_A_LEITURA`: a "Nova conversa" GRAVA a conversa e depois a lê, e é
+a segunda ida que precisa poder falhar sozinha — com `__QUEBRAR` a gravação
+falharia antes, e a cena mediria a frase de outro tropeço.
+
+**11 sabotagens, 10 pegas e uma que vaza com razão**, todas rodadas em cópias
+e lidas uma a uma:
+
+- o painel da `main` de antes do #283 (25 reprovações — o relato reproduzido);
+- o painel do #283, sem o que esta entrega acrescenta (13);
+- sem levar a aba (9);
+- a falha calada (4);
+- a lista por telefone só com resposta (4);
+- sem a pasta de arquivadas (2);
+- sem a emenda (2: a conversa antiga não abre);
+- trocar o telefone antes de ler (1);
+- fechar a janela da "Nova conversa" antes de ler (1);
+- sem limpar o filtro (1);
+- **e a que vaza:** reler daqui com a aba de antes ao entrar na pasta. A
+  resposta chega e é jogada fora pela trava da aba em `carregarConversas` — a
+  régua de 25/09, *sabotagem que o resto do sistema conserta sozinho não prova
+  nada*. O `return` fica: é uma ida ao banco a menos, e não depende de a trava
+  existir.
+
+**Uma armadilha da prova, e era minha:** a conferência "a linha dela entra na
+lista" procurava a linha no documento, e a lista desenha só o que cabe — a
+conversa mais antiga das 211 estava na lista e não no documento. A prova rola
+até ela, como quem procura.
+
 ## A contabilização dos atendimentos (20/10)
 
 Pedido do Rodrigo, depois das abas: *"pode seguir com a contabilização do
