@@ -6239,42 +6239,53 @@ export default function Painel({ sessao }) {
     setContatoForm(null);
     setBuscaContato("");
     setVerArquivadas(false);
+    await abrirNaAbaDela(advId, conv.id);
+  }
 
-    // ------------------------------------------------------------
-    //  A CONVERSA ABRE NA ABA DELA, e fica na tela (22/10)
-    //
-    //  Relato: "quando eu clico no ícone do Zorvin [no Controle de
-    //  atendimento do Vantoro], não está abrindo direto na conversa".
-    //
-    //  A tela da direita não guarda a conversa aberta: ela a PROCURA na lista
-    //  carregada (`conversas.find`). E a lista é a da ABA de agora — o painel
-    //  abre sempre em "Em Atendimento". O link de uma conversa em "Novos" ou
-    //  em "Finalizados" (que é quase todo link vindo do Controle de
-    //  atendimento, cuja primeira aba é "Novos") trocava de telefone, criava
-    //  nada, achava a conversa certa… e a direita dizia "Selecione uma
-    //  conversa", porque ela não estava na lista daquela aba. O mesmo valia
-    //  para uma conversa da aba certa que não coubesse na primeira página.
-    //
-    //  Então: a linha inteira é lida aqui, a aba passa a ser a DELA, e ela
-    //  entra na lista antes de ser aberta — dali em diante, a regra de "a
-    //  conversa aberta atravessa a recarga" (em `carregarConversas`) a mantém.
-    // ------------------------------------------------------------
+  // ------------------------------------------------------------
+  //  A CONVERSA ABRE NA ABA DELA, e fica na tela (22/10)
+  //
+  //  Relato: "quando eu clico no ícone do Zorvin [no Controle de
+  //  atendimento do Vantoro], não está abrindo direto na conversa".
+  //
+  //  A tela da direita não guarda a conversa aberta: ela a PROCURA na lista
+  //  carregada (`conversas.find`). E a lista é a da ABA de agora — o painel
+  //  abre sempre em "Em Atendimento". O link de uma conversa em "Novos" ou
+  //  em "Finalizados" (que é quase todo link vindo do Controle de
+  //  atendimento, cuja primeira aba é "Novos") trocava de telefone, criava
+  //  nada, achava a conversa certa… e a direita dizia "Selecione uma
+  //  conversa", porque ela não estava na lista daquela aba. O mesmo valia
+  //  para uma conversa da aba certa que não coubesse na primeira página.
+  //
+  //  Então: a linha inteira é lida aqui, a aba passa a ser a DELA, e ela
+  //  entra na lista antes de ser aberta — dali em diante, a regra de "a
+  //  conversa aberta atravessa a recarga" (em `carregarConversas`) a mantém.
+  //
+  //  UMA FUNÇÃO SÓ PARA AS DUAS PORTAS (22/10, mesmo dia). O "Abrir neste
+  //  telefone" do histórico do cliente chega à mesma tela por outro caminho
+  //  — troca de telefone e abre a conversa que já existe ali — e ficou de
+  //  fora da primeira correção: a conversa finalizada noutro telefone
+  //  continuava em "Selecione uma conversa". Relatado da tela de Audiências
+  //  do Vantoro, onde a conversa quase sempre está em "Finalizados" (o aviso
+  //  do robô abre o atendimento, a equipe finaliza depois da confirmação).
+  // ------------------------------------------------------------
+  async function abrirNaAbaDela(advId, convId) {
     const { data: linha } = await supabase.from("conversas")
       .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")}), mensagens(id)`)
-      .eq("id", conv.id)
+      .eq("id", convId)
       .limit(1, { referencedTable: "mensagens" })
       .maybeSingle();
     const outraAba = Boolean(linha && NOME_DA_SITUACAO[linha.situacao]
       && linha.situacao !== abaSituacaoRef.current);
     if (linha) {
-      setConversas((antes) => (antes.some((c) => String(c.id) === String(conv.id))
+      setConversas((antes) => (antes.some((c) => String(c.id) === String(convId))
         ? antes : [linha, ...antes]));
     }
     // ABERTA ANTES DA TROCA DE ABA. A recarga que a troca dispara mantém a
     // conversa que está aberta (`conversaIdRef`), e o efeito que atualiza o
     // ref é declarado antes do que recarrega a lista — no mesmo desenho, ele
     // roda primeiro.
-    setConversaId(conv.id);
+    setConversaId(convId);
     if (outraAba) {
       // A troca de aba recarrega a lista sozinha (a aba é dependência de
       // `carregarConversas`). Carregar aqui também seria pedir a aba ANTIGA —
@@ -6286,7 +6297,7 @@ export default function Painel({ sessao }) {
     // O ID VAI EXPLÍCITO, e não pelo `conversaIdRef`: é a regra de sempre, e
     // continua valendo para quem chega aqui sem passar pela leitura acima (a
     // linha não veio).
-    await carregarConversas(advId, 0, conv.id);
+    await carregarConversas(advId, 0, convId);
   }
 
   // "Novo contato" dentro da Nova conversa: cria e já abre a conversa.
@@ -6693,9 +6704,9 @@ export default function Painel({ sessao }) {
     setVerArquivadas(false);
     if (adv.departamento_id) setDepartamentoId(adv.departamento_id);
     setAdvogadoId(adv.id);
-    // Pelo mesmo motivo de `abrirConversaContato`: o ref ainda tem a anterior.
-    await carregarConversas(adv.id, 0, l.conversaId);
-    setConversaId(l.conversaId);
+    // A MESMA PORTA DO LINK: a conversa pode morar noutra aba, ou depois da
+    // primeira página — ver `abrirNaAbaDela`.
+    await abrirNaAbaDela(adv.id, l.conversaId);
   }
 
   // Abre a conversa do link, criando o contato só se ele ainda não existir.
