@@ -2,6 +2,9 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "./supabase.js";
 import Login from "./Login.jsx";
 import Painel from "./Painel.jsx";
+import {
+  conferirSessao, esquecerSessaoGuardada, ouvirPedidosDeConferencia, foiSaidaPedida,
+} from "./vigiaDaSessao.js";
 
 // ============================================================
 //  A PRIMEIRA PERGUNTA DO PAINEL — E ELA NÃO PODE FICAR SEM RESPOSTA
@@ -52,36 +55,30 @@ import Painel from "./Painel.jsx";
 // ninguém rodaria a suíte. Em produção a variável não existe e valem os seis.
 const LIMITE_DA_SESSAO_MS = Number(import.meta.env.VITE_LIMITE_SESSAO_MS) || 6000;
 
-/** A sessão guardada no navegador, lida SEM REDE.
- *
- *  A chave e o armário são os da própria biblioteca (`storageKey` e
- *  `storage`): adivinhar o nome funcionaria hoje e quebraria calado numa
- *  atualização dela.
- *
- *  Devolve `null` para tudo que não seja uma sessão válida e dentro do prazo.
- *  Aqui não se inventa nada: sem sessão boa, o certo é a tela de Login. */
-async function sessaoGuardadaSemRede() {
-  try {
-    const armario = supabase.auth && supabase.auth.storage;
-    const chave = supabase.auth && supabase.auth.storageKey;
-    if (!armario || !chave) return null;
-    const cru = await armario.getItem(chave);
-    if (!cru) return null;
-    const guardada = typeof cru === "string" ? JSON.parse(cru) : cru;
-    if (!guardada || !guardada.access_token) return null;
-    // `expires_at` é em segundos, como o `exp` de dentro do bilhete.
-    const ate = Number(guardada.expires_at || 0);
-    if (!ate || ate * 1000 <= Date.now()) return null;
-    return guardada;
-  } catch (_e) {
-    return null;
-  }
-}
+// A sessão guardada sem rede e a corrida contra o relógio moraram aqui até
+// 22/10; foram para `vigiaDaSessao.js`, que agora também confere a sessão
+// DEPOIS da abertura — uma escrita só da régua de 19/08 para as duas horas.
 
-/** Uma promessa que se resolve sozinha depois de `ms`, com `marca`. */
-function prazo(ms, marca) {
-  return new Promise((resolve) => setTimeout(() => resolve(marca), ms));
-}
+// ------------------------------------------------------------
+//  E DEPOIS DE ABRIR, A SESSÃO CONTINUA SENDO CONFERIDA (22/10)
+//
+//  Ver o alto de `vigiaDaSessao.js`: a biblioteca devolve "sem sessão" sem
+//  avisar em alguns caminhos, e o painel ficava aberto sem nada carregar —
+//  medido, um navegador passou sete horas assim. A conferência roda:
+//
+//    - de minuto em minuto;
+//    - quando a aba volta à frente (a pessoa voltou a olhar);
+//    - na hora, quando o painel pede — uma leitura que falhou com cara de
+//      acesso vencido.
+//
+//  "Talvez" (a rede, ou o Auth calado com o bilhete já vencido) só vira
+//  saída se DURAR: um soluço de rede não pode pôr para fora quem está no
+//  meio de uma resposta.
+// ------------------------------------------------------------
+const VIGIA_DA_SESSAO_MS =
+  (typeof globalThis !== "undefined" && globalThis.__VIGIA_DA_SESSAO) || 60000;
+const TOLERANCIA_DA_SESSAO_MS =
+  (typeof globalThis !== "undefined" && globalThis.__TOLERANCIA_DA_SESSAO) || 120000;
 
 // Decide o que mostrar: se ninguém está logado, a tela de Login;
 // se há uma sessão ativa, o Painel de atendimento.
@@ -91,54 +88,62 @@ export default function App() {
   // Entramos pelo caminho de baixo, com o Auth sem responder? A tela de Login
   // usa isto para explicar em vez de só recusar.
   const [authMudo, setAuthMudo] = useState(false);
+  // A sessão ACABOU (e não foi o "Sair")? A tela de entrada diz isso, em vez
+  // de aparecer do nada no meio do trabalho como se a pessoa tivesse saído.
+  const [sessaoTerminou, setSessaoTerminou] = useState(false);
 
   useEffect(() => {
     let vivo = true;
 
     (async () => {
-      // A CORRIDA. Vence quem chegar primeiro: a biblioteca ou o relógio.
-      //
-      // O `catch` no meio não é enfeite. `getSession` pode ESTOURAR em vez de
-      // demorar, e um `.then` solto numa promessa que estoura deixa a tela
-      // exatamente onde ela estava — presa, e agora com um erro no console
-      // que ninguém no escritório vai ler.
-      const resposta = await Promise.race([
-        (async () => {
-          try {
-            const { data } = await supabase.auth.getSession();
-            return { respondeu: true, sessao: (data && data.session) || null };
-          } catch (_e) {
-            return { respondeu: false };
-          }
-        })(),
-        prazo(LIMITE_DA_SESSAO_MS, { respondeu: false }),
-      ]);
-
+      // A CORRIDA — vence quem chegar primeiro, a biblioteca ou o relógio — e
+      // a leitura do que está guardado quando o relógio vence moram em
+      // `conferirSessao`. O `catch` lá dentro não é enfeite: `getSession`
+      // pode ESTOURAR em vez de demorar, e um `.then` solto numa promessa que
+      // estoura deixaria a tela presa em "Carregando…".
+      const r = await conferirSessao(LIMITE_DA_SESSAO_MS);
       if (!vivo) return;
 
-      if (resposta.respondeu) {
-        setSessao(resposta.sessao);
+      if (r.estado === "serve") {
+        if (r.motivo === "mudo") {
+          console.log("A conferência da sessão não respondeu a tempo. "
+                    + "Seguindo com o que está guardado neste navegador.");
+        }
+        setSessao(r.sessao);
         setCarregando(false);
         return;
       }
 
-      // O Auth não respondeu a tempo. Vale o que está guardado aqui.
-      console.log("A conferência da sessão não respondeu a tempo. "
-                + "Seguindo com o que está guardado neste navegador.");
-      const guardada = await sessaoGuardadaSemRede();
-      if (!vivo) return;
-      setSessao(guardada);
-      setAuthMudo(!guardada);
+      // A SESSÃO GUARDADA QUE NÃO TEM COMO RENOVAR. Era tratada como "o Auth
+      // não respondeu", e a tela de entrada dizia que a conferência tinha
+      // demorado demais — mandando esperar por um serviço que estava de pé.
+      // A sessão é que tinha acabado.
+      if (r.estado === "acabou" && r.motivo === "sem-renovacao") {
+        await esquecerSessaoGuardada();
+        if (!vivo) return;
+        setSessaoTerminou(true);
+      }
+      // O Auth não respondeu a tempo e não havia sessão em dia aqui.
+      if (r.motivo === "mudo") {
+        console.log("A conferência da sessão não respondeu a tempo, e não há "
+                  + "sessão em dia guardada neste navegador.");
+        setAuthMudo(true);
+      }
+      setSessao(null);
       setCarregando(false);
     })();
 
     // Fica atento a login/logout para atualizar a tela.
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((evento, s) => {
       if (!vivo) return;
+      // A SAÍDA QUE NINGUÉM PEDIU — a renovação recusada de vez (a conta
+      // desativada, a credencial revogada). A do botão "Sair" é marcada antes
+      // (`marcarSaidaPedida`), e essa não leva recado.
+      if (evento === "SIGNED_OUT" && !foiSaidaPedida()) setSessaoTerminou(true);
       setSessao(s);
-      // Chegou sessão por qualquer caminho: a tela já não está no escuro, e o
-      // aviso deixaria de ser verdade.
-      if (s) setAuthMudo(false);
+      // Chegou sessão por qualquer caminho: a tela já não está no escuro, e os
+      // avisos deixariam de ser verdade.
+      if (s) { setAuthMudo(false); setSessaoTerminou(false); }
       // E se a resposta vier DEPOIS do prazo, ela ainda serve para destravar.
       setCarregando(false);
     });
@@ -148,6 +153,47 @@ export default function App() {
     };
   }, []);
 
+  const temSessao = Boolean(sessao);
+  useEffect(() => {
+    if (!temSessao) return undefined;
+    let vivo = true;
+    let emVoo = false;
+    // Desde quando a resposta é "talvez". Volta a nulo na primeira que serve.
+    let desde = null;
+    const conferir = async () => {
+      if (!vivo || emVoo) return;
+      emVoo = true;
+      try {
+        const r = await conferirSessao(LIMITE_DA_SESSAO_MS);
+        if (!vivo) return;
+        if (r.estado === "serve") { desde = null; return; }
+        if (r.estado === "talvez") {
+          if (desde === null) desde = Date.now();
+          if (Date.now() - desde < TOLERANCIA_DA_SESSAO_MS) return;
+        }
+        console.log(`A sessão acabou (${r.motivo}). Voltando para a tela de entrada.`);
+        await esquecerSessaoGuardada();
+        if (!vivo) return;
+        setSessaoTerminou(true);
+        setSessao(null);
+      } finally {
+        emVoo = false;
+      }
+    };
+    const relogio = setInterval(conferir, VIGIA_DA_SESSAO_MS);
+    const aoVoltarAFrente = () => { if (document.visibilityState === "visible") conferir(); };
+    document.addEventListener("visibilitychange", aoVoltarAFrente);
+    window.addEventListener("focus", conferir);
+    const largar = ouvirPedidosDeConferencia(conferir);
+    return () => {
+      vivo = false;
+      clearInterval(relogio);
+      document.removeEventListener("visibilitychange", aoVoltarAFrente);
+      window.removeEventListener("focus", conferir);
+      largar();
+    };
+  }, [temSessao]);
+
   if (carregando) {
     return (
       <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Segoe UI', Arial, sans-serif", color: "#667781" }}>
@@ -156,5 +202,5 @@ export default function App() {
     );
   }
 
-  return sessao ? <Painel sessao={sessao} /> : <Login authMudo={authMudo} />;
+  return sessao ? <Painel sessao={sessao} /> : <Login authMudo={authMudo} sessaoTerminou={sessaoTerminou} />;
 }

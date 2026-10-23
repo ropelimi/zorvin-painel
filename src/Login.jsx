@@ -65,7 +65,11 @@ const LIMITE_MS = Number(import.meta.env.VITE_LIMITE_LOGIN_MS) || 75000;
 // tempo E não havia sessão guardada aqui. Sem isto, a pessoa cai numa tela de
 // login comum sem saber que o serviço lá fora está fora do ar — e conclui que
 // esqueceu a senha.
-export default function Login({ authMudo = false } = {}) {
+// `sessaoTerminou` chega do `App` quando a sessão ACABOU com o painel aberto
+// (22/10) — vencida, sem como renovar, ou recusada pelo Auth —, e não pelo
+// botão "Sair". Sem o recado, a tela de entrada aparece do nada no meio do
+// trabalho, e a pessoa não sabe se o sistema caiu ou se foi ela.
+export default function Login({ authMudo = false, sessaoTerminou = false } = {}) {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [verSenha, setVerSenha] = useState(false);
@@ -402,6 +406,11 @@ export default function Login({ authMudo = false } = {}) {
               recado sobre o mundo lá fora. E ele diz para TENTAR, porque a
               entrada pela ponte funciona mesmo com o Auth calado — é
               exatamente para isso que ela existe. */}
+          {sessaoTerminou && !erro && (
+            <div role="status" data-sessao-terminou style={{ color: "#5a4a00", background: "#ffe9a8", fontSize: 13, fontWeight: 500, marginTop: 16, padding: "9px 12px", borderRadius: 10 }}>
+              Sua sessão terminou. Entre de novo para continuar.
+            </div>
+          )}
           {authMudo && !erro && (
             <div role="status" style={{ color: "#5a4a00", background: "#ffe9a8", fontSize: 13, fontWeight: 500, marginTop: 16, padding: "9px 12px", borderRadius: 10 }}>
               A conferência de quem está entrando demorou demais para responder.
