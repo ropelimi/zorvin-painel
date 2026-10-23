@@ -5169,6 +5169,110 @@ como em 13/10.
 públicos, e o GitHub não cobra os minutos de rodada em repositório público. O
 que corta uma rodada agora é só o teto.
 
+### E as provas passaram a rodar em três máquinas (23/10)
+
+Pedido do Rodrigo, logo depois do teto de 90: *"Pode dividir as provas em três
+computadores"*. Numa máquina só, a rodada do #285 levou **67min37s** no passo
+das provas. Agora são três máquinas ao mesmo tempo, cada uma com uma parte, e a
+espera é a da parte mais lenta: **uns 23 minutos pela conta** (22,5 de provas,
+mais menos de um minuto para instalar tudo).
+
+**Quem divide é `testes/rodar.mjs`**, com `PROVAS_PARTES` e `PROVAS_PARTE`.
+Sem as duas variáveis, ele roda tudo, como sempre. `PROVAS_PARTES=3 node
+testes/rodar.mjs --listar` mostra as partes sem rodar nada; com
+`PROVAS_PARTE` junto, mostra o que aquela máquina rodaria.
+
+**A divisão é pelo TEMPO de cada prova**, guardado em
+`testes/tempos-das-provas.json`. A mais demorada vai primeiro, sempre para a
+parte com menos tempo até ali. Com os tempos do #285:
+
+| como dividir | as três partes | a espera |
+|---|---|---|
+| uma a uma, pelo alfabeto | 20,6 · 19,6 · 27,3 min | 27,3 |
+| **pelo tempo** | 22,5 · 22,5 · 22,5 min | **22,5** |
+
+**A tabela não é uma lista de provas**, e é isso que a deixa fora da armadilha
+que o comentário do `rodar.mjs` conta (a prova esquecida numa lista escrita à
+mão não rodava). Quem diz o que roda continua sendo a pasta:
+
+- a prova nova, ainda sem tempo na tabela, roda com o tempo do meio (a
+  mediana);
+- a que saiu da pasta e ficou na tabela é ignorada;
+- **tabela velha só desequilibra as partes**, e nunca deixa uma prova de fora.
+
+**As máquinas não conversam.** Cada uma faz a conta inteira, sozinha, e roda a
+sua parte. A conta só depende da pasta e da tabela, que são as mesmas no mesmo
+commit, e todo empate é desfeito pelo nome. Antes de rodar, ela confere que
+toda prova caiu numa parte só.
+
+**O que não se entende, recusa** (código 2, com a frase): a parte sem o total,
+um número fora da faixa, a variável que chega VAZIA, a parte junto com nome de
+prova, a parte sem prova nenhuma, a tabela que não abre ou tem um tempo que não
+é número. Uma parte mal configurada que rodasse tudo deixaria a rodada três
+vezes mais lenta; uma que não rodasse nada ficaria verde.
+
+**No GitHub (`provas.yml`):**
+
+- **qual parte é cada máquina vem de `strategy.job-index`**, e não dos números
+  da matriz. O `job-index` é sempre 0, 1, 2, sem pular nem repetir: uma matriz
+  escrita `[1, 1, 3]` poria duas máquinas na parte 1 e nenhuma na 2. E a conta
+  só é feita depois de conferir que o número veio: no shell, `$(( + 1))` vale
+  1;
+- **`fail-fast: false`**: uma parte que reprova não cancela as outras, e a
+  rodada mostra todas as provas vermelhas de uma vez;
+- **a verificação "Provas do painel" continua existindo, com o mesmo nome**,
+  agora juntando as três partes. Uma regra do repositório que exija as provas
+  procura por este nome (daqui não dá para ver se há uma: a leitura dá 403);
+- **ela roda com `always()`, e não com `!cancelled()`**: para o GitHub, uma
+  verificação PULADA conta como aprovada, e numa rodada cancelada a PR ficaria
+  verde sem as provas terem terminado;
+- **o teto de 90 é por máquina**, e ficou. Baixá-lo é decisão do Rodrigo.
+
+**Refazer a tabela:** cada parte termina com a linha *"Tempos desta parte, em
+segundos"*, seguida de um JSON. Os três JSONs de uma rodada, juntos, são a
+tabela inteira. E eles se leem daqui: o `get_job_logs` devolve no máximo as
+**últimas 5000 linhas**, e o log de uma parte tem um terço das ~6000 de antes.
+
+**Foi esse corte que deixou dez provas sem tempo.** A rodada de uma máquina só
+tinha 5965 linhas, e as 965 do começo não vieram. Essas dez foram medidas aqui
+e escaladas para a soma que o log mostrava (7min18s, do começo do passo até a
+11ª prova). A máquina da sessão tem quase a velocidade da do GitHub: 17,9 s
+contra 17,3 na mesma prova.
+
+Prova: `as-provas-em-partes`, 40 conferências. Ela chama o próprio `rodar.mjs`,
+**sempre com `--listar`**, e confere as partes, cada máquina, as recusas, a
+tabela velha e as três linhas do GitHub. **15 sabotagens, 14 pegas e uma que
+vaza com razão**, todas rodadas em cópias e lidas uma a uma:
+
+- cada máquina rodando tudo;
+- a parte errada (uma a mais);
+- uma a uma pelo alfabeto;
+- a variável vazia valendo como não ter vindo;
+- sem conferir a parte que passa do total;
+- a prova sem tempo ficando de fora;
+- o empate decidido na sorte;
+- a máquina rodando na ordem da conta;
+- `--listar` com a parte rodando de verdade;
+- o juntador com `!cancelled()`;
+- sem `fail-fast: false`;
+- a parte tirada da matriz;
+- sem recusar a parte vazia;
+- sem conferir os valores da tabela;
+- **e a que vaza:** tirar a conferência de dentro do `rodar.mjs` (toda prova
+  numa parte só). Com a divisão certa, ela não tem o que pegar. Ela é a
+  segunda guarda, e a prova confere o resultado: tirada junto com a divisão
+  certa (a sabotagem da prova sem tempo), a prova pega.
+
+**A sabotagem do `--listar` que roda de verdade travou em vez de reprovar, e
+ensinou duas coisas.** A prova ocupa a porta da bancada quando roda sozinha,
+para uma chamada que passe do `--listar` parar ali ("Já tem alguma coisa
+respondendo…") em vez de subir servidor. Mas ela chamava com `spawnSync`, que
+para o próprio processo enquanto espera: a porta ocupada não respondia, e a
+chamada ficou esperando até o fim do prazo. Hoje a chamada é assíncrona, e a
+sabotagem é pega em segundos. E a chamada esperando deixou um processo de pé
+depois de a cópia ser apagada. **Depois de uma rodada de sabotagens, confira
+com `ps` que nada ficou rodando.**
+
 ## Fluxo de trabalho — PRs (REGRA IMPORTANTE do Rodrigo)
 
 - **Cada entrega/pedido deve ir numa PR NOVA.** Nunca reutilizar nem estender uma PR já mesclada.

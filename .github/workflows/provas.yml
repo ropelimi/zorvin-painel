@@ -54,9 +54,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  painel:
-    name: Provas do painel
+  # ------------------------------------------------------------
+  #  AS PROVAS RODAM EM TRÊS MÁQUINAS AO MESMO TEMPO (23/10)
+  #
+  #  Numa máquina só, a rodada chegou a 68 minutos. Agora cada máquina roda uma
+  #  parte, e a espera é a da parte mais lenta: ~23 minutos, pela conta feita
+  #  com os tempos da rodada do #285. Quem divide é `testes/rodar.mjs`, pelo
+  #  tempo de cada prova (`testes/tempos-das-provas.json`), e cada máquina faz
+  #  a mesma conta sozinha. Ver o comentário de lá.
+  #
+  #  Cada máquina instala tudo de novo (o Node, as dependências, o navegador, a
+  #  ponte). Isso custa menos de um minuto por máquina, e é o que deixa cada
+  #  parte independente das outras.
+  # ------------------------------------------------------------
+  partes:
+    name: Provas do painel (parte ${{ matrix.parte }} de ${{ strategy.job-total }})
     runs-on: ubuntu-latest
+    strategy:
+      # UMA PARTE QUE REPROVA NÃO DERRUBA AS OUTRAS. Com o padrão (`true`), a
+      # primeira reprovação cancelaria as outras duas máquinas no meio, e a
+      # rodada diria só "algo reprovou" — escondendo as outras provas
+      # vermelhas, que apareceriam uma a uma, uma rodada de cada vez. É a régua
+      # que `rodar.mjs` já seguia numa máquina só: roda tudo, e só então diz.
+      fail-fast: false
+      matrix:
+        # Os números são só o nome de cada máquina na tela. QUAL PARTE cada uma
+        # roda vem de `strategy.job-index`, no último passo.
+        parte: [1, 2, 3]
     # O TETO EXISTE PARA UMA PROVA PENDURADA, E NÃO PARA A SOMA DAS PROVAS —
     # e em 28/09 ele passou a matar a soma.
     #
@@ -94,6 +118,10 @@ jobs:
     # devolve uns 20, e continua derrubando em hora e meia a prova que travar.
     # Os dois repositórios são públicos, e o GitHub não cobra os minutos de
     # rodada em repositório público: o teto mais alto não custa nada.
+    #
+    # E em 23/10 as provas passaram a rodar em três máquinas, ~23 minutos cada.
+    # O teto é POR MÁQUINA, e ficou nos 90 que o Rodrigo escolheu: a folga
+    # ficou enorme, e baixá-lo é decisão dele.
     timeout-minutes: 90
 
     steps:
@@ -188,5 +216,52 @@ jobs:
       - name: Pôr a ponte ao lado do painel
         run: mv _ponte "$GITHUB_WORKSPACE/../zorvin-bridge"
 
+      # QUAL PARTE É ESTA VEM DO GITHUB, e não dos números da matriz:
+      # `job-index` é sempre 0, 1, 2…, sem pular nem repetir. Uma matriz
+      # escrita errado (`[1, 1, 3]`) poria duas máquinas na mesma parte e
+      # nenhuma na outra, e as provas dela não rodariam sem nada reprovar.
+      #
+      # E a conta é feita só depois de conferir que os dois números vieram: no
+      # shell, `$(( + 1))` vale 1, e as três máquinas rodariam a parte 1.
       - name: Rodar as provas
-        run: npm run prova
+        env:
+          INDICE_DA_PARTE: ${{ strategy.job-index }}
+          PROVAS_PARTES: ${{ strategy.job-total }}
+        run: |
+          if [ -z "$INDICE_DA_PARTE" ] || [ -z "$PROVAS_PARTES" ]; then
+            echo "::error::O GitHub não disse qual parte é esta (job-index '$INDICE_DA_PARTE', job-total '$PROVAS_PARTES'). Sem isso esta máquina não sabe quais provas rodar."
+            exit 1
+          fi
+          PROVAS_PARTE=$((INDICE_DA_PARTE + 1)) npm run prova
+
+  # ------------------------------------------------------------
+  #  "PROVAS DO PAINEL": AS TRÊS PARTES, NUMA RESPOSTA SÓ
+  #
+  #  O NOME É O DE ANTES, e é de propósito. Era o nome da única verificação da
+  #  PR, e uma regra do repositório que exija as provas (daqui não dá para ver
+  #  se há uma) procura por ESTE nome: sem ele, ela esperaria para sempre por
+  #  uma verificação que não existe mais. E fica um lugar só para olhar: verde
+  #  aqui é toda parte verde.
+  #
+  #  `always()`, E NÃO `!cancelled()`. Para o GitHub, uma verificação PULADA
+  #  conta como aprovada. Com `!cancelled()`, numa rodada cancelada esta
+  #  verificação seria pulada, e a PR ficaria verde sem as provas terem
+  #  terminado. Com `always()` ela roda sempre, e só fica verde se todas as
+  #  partes passaram.
+  # ------------------------------------------------------------
+  painel:
+    name: Provas do painel
+    needs: partes
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: As partes passaram?
+        env:
+          RESULTADO: ${{ needs.partes.result }}
+        run: |
+          if [ "$RESULTADO" != "success" ]; then
+            echo "::error::Pelo menos uma parte das provas não passou (resultado: $RESULTADO). Abra a parte vermelha, logo acima, para ver qual prova reprovou."
+            exit 1
+          fi
+          echo "As provas passaram em todas as partes."
