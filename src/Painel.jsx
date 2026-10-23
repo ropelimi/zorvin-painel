@@ -13,14 +13,14 @@ import {
   Image as ImageIcon, Video,
   Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote, Volume2,
   ListChecks, Undo2, UserCheck, SquareKanban, BellRing, BellPlus, CircleCheck, RotateCcw,
-  Sparkles, Loader2
+  Sparkles, Loader2, Headset
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
 import { numeroCanonico, chaveDoNumero, porQueNaoRecebeWhatsApp, daParaChamar,
          telefoneLegivel } from "./numeros.js";
 import { chamarPonte, ESPERA_PADRAO } from "./ponte.js";
-import { useTemVantoro } from "./temVantoro.js";
+import { useTemVantoro, enderecoNoVantoro } from "./temVantoro.js";
 import { useVocabulario } from "./vocabulario.js";
 import { SONS, tocarAviso, somEscolhido, guardarSom,
          avisoNaTelaLigado, guardarAvisoNaTela } from "./avisos.js";
@@ -14119,6 +14119,23 @@ export default function Painel({ sessao }) {
              style={{ width: 40, height: 40, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: midiasAberta ? "#fff" : "#aebac1", background: midiasAberta ? "rgba(255,255,255,.12)" : "transparent", cursor: "pointer" }}>
           <Images size={22} />
         </div>
+        {/* O CONTROLE DE ATENDIMENTO DO VANTORO (23/10), pedido do Rodrigo: a
+            tela de lá com as conversas abertas pela ordem de quem espera há
+            mais tempo. É um LINK, e não uma tela daqui: ela mora no Vantoro,
+            abre numa aba nova com o login de lá, e o Zorvin continua aberto
+            onde estava. Só com Vantoro, pela régua dos três estados de
+            `temVantoro.js`: sem ele, um ícone que leva a um sistema que a
+            instalação não tem é o programa quebrado. */}
+        {temVantoro === true && (
+          <a data-controle-de-atendimento href={enderecoNoVantoro("/cadastro/atendimento/")}
+             target="_blank" rel="noopener noreferrer"
+             title="Controle de atendimento (abre o Vantoro numa aba nova)"
+             aria-label="Controle de atendimento, no Vantoro"
+             style={{ width: 40, height: 40, borderRadius: 8, display: "flex", alignItems: "center",
+                      justifyContent: "center", color: "#aebac1", textDecoration: "none", flexShrink: 0 }}>
+            <Headset size={22} />
+          </a>
+        )}
         {/* A engrenagem saiu daqui. Ela e a foto logo abaixo faziam a MESMA
             coisa — abrir as Configurações — coladas uma na outra, e dois botões
             idênticos lado a lado não dão duas opções: dão a dúvida de qual é

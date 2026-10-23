@@ -106,3 +106,26 @@ export function useTemVantoro() {
 // com Vantoro e depois sem ele leria a primeira resposta nas duas vezes, e
 // passaria falando de outro assunto.
 export function esquecerSeTemVantoro() { promessa = null; }
+
+// ============================================================
+//  O ENDEREÇO DO VANTORO NO NAVEGADOR
+//
+//  Para os links que abrem telas de lá: a ficha completa do cliente e o
+//  Controle de atendimento (23/10). Uma escrita só, porque são dois links
+//  para o mesmo lugar, e dois endereços escritos à mão divergiriam no dia em
+//  que o Vantoro mudasse de casa.
+//
+//  `VITE_VANTORO_WEB` troca o endereço. SEM ELA, VALE O DO ESCRITÓRIO, e não
+//  "o link some", como era o da ficha: daqui não dá para ver se a variável
+//  está na Render, e um ícone pedido que não aparece porque falta uma
+//  variável que ninguém sabe que existe é o defeito mais difícil de achar.
+//  Quem não tem Vantoro não vê nenhum dos dois links (`useTemVantoro`), então
+//  o endereço do escritório só é usado onde há o Vantoro do escritório.
+// ============================================================
+const VANTORO_NA_WEB = String(import.meta.env.VITE_VANTORO_WEB || "https://app.vantoro.com.br")
+  .trim().replace(/\/+$/, "");
+
+/** O endereço de uma tela do Vantoro: `enderecoNoVantoro("/cadastro/atendimento/")`. */
+export function enderecoNoVantoro(caminho) {
+  return VANTORO_NA_WEB + caminho;
+}
