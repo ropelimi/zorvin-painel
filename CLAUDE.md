@@ -5161,6 +5161,10 @@ PR nova, e empurrar ali teria cancelado a rodada em andamento
 sessão que acaba soma uns 2, e a folga para o teto de 75 cai para uns 6.
 **Subir de novo é decisão do Rodrigo**, e ficou perguntado a ele.
 
+**E ele decidiu no mesmo dia: o teto foi para 90.** A rodada do #284, já com
+a prova da sessão, levou **68min11s**, confirmando a conta. Numa PR própria,
+como em 13/10.
+
 **E a franquia de minutos deixou de ser o risco.** Os dois repositórios são
 públicos, e o GitHub não cobra os minutos de rodada em repositório público. O
 que corta uma rodada agora é só o teto.

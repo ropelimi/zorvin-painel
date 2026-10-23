@@ -87,7 +87,14 @@ jobs:
     # cada entrega acrescenta prova. 75 devolve essa folga com sobra para as
     # próximas, e continua derrubando em pouco mais de uma hora a prova que
     # travar.
-    timeout-minutes: 75
+    #
+    # E em 22/10 subiu para 90, autorizado pelo Rodrigo. MEDIDO: as rodadas
+    # verdes do #281, do #283 e do #282 levaram 65, 66 e 67 minutos do começo
+    # ao fim, e a do #284 (a sessão que acaba) 68min11s — 7 min de folga. 90
+    # devolve uns 20, e continua derrubando em hora e meia a prova que travar.
+    # Os dois repositórios são públicos, e o GitHub não cobra os minutos de
+    # rodada em repositório público: o teto mais alto não custa nada.
+    timeout-minutes: 90
 
     steps:
       - name: Baixar o código
