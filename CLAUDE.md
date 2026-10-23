@@ -42,6 +42,10 @@ Variáveis de ambiente (Render → Static Site):
 - `VITE_SUPABASE_ANON_KEY` — chave **anon** (pública, respeita RLS)
 - `VITE_VANTORO` — `desligado` tira o Vantoro da entrada. **Opcional: sem ela,
   tudo como antes.** Ver "A entrada tem dois caminhos" abaixo.
+- `VITE_VANTORO_WEB` — o endereço do Vantoro no navegador, para os links que
+  abrem telas de lá (a ficha completa e o Controle de atendimento). **Opcional:
+  sem ela vale `https://app.vantoro.com.br`.** Ver "O Controle de atendimento do
+  Vantoro, a um clique" abaixo.
 
 Build: `npm install && npm run build` · Publish directory: `dist`
 
@@ -181,6 +185,7 @@ não é integração de outro cliente — é o programa quebrado.
 | Aba "Notas no Vantoro" | some |
 | Processos que a nota oferece, e a nota que sobe para a ficha | somem |
 | Link da Esteira ("por qual telefone falar") | nunca chega — degrada sozinho |
+| Ícone do Controle de atendimento, na barra lateral (23/10) | some |
 
 **Quem responde é a PONTE**, por `GET /vantoro/status` — que já existia, aberta
 e com CORS, e nunca tinha sido chamada. Não é uma variável do painel, pela mesma
@@ -232,6 +237,56 @@ Prova: `esconder-o-vantoro`. A cena do menu ⋮ roda numa janela **estreita** e
 confere os dois mundos — o menu só existe abaixo de 768px, então uma conferência
 numa janela larga passaria por não ter achado o menu, e não por o item ter
 sumido.
+
+## O Controle de atendimento do Vantoro, a um clique (23/10)
+
+Pedido do Rodrigo: *"Preciso de um ícone que leve para a tela de Controle de
+Atendimento, do Vantoro"* (`https://app.vantoro.com.br/cadastro/atendimento/`).
+É a tela de lá que lista as conversas abertas pela ordem de quem espera há mais
+tempo (ver `POST /vantoro/atendimento` no CLAUDE.md da ponte).
+
+**Um ícone de fone na barra lateral** (`data-controle-de-atendimento`), embaixo
+do de Mídias. É um **link**, e não uma tela daqui: abre o Vantoro numa **aba
+nova**, com o login de lá, e o Zorvin continua aberto onde estava. Leva
+`rel="noopener noreferrer"`, para a aba do Vantoro não alcançar a do Zorvin.
+
+**Só com Vantoro**, pela régua dos três estados de `temVantoro.js`: some sem
+Vantoro, espera escondido enquanto a ponte não responde, e aparece quando a
+pergunta FALHA. É a armadilha nº 2: falha não é ausência.
+
+**O endereço do Vantoro mora num lugar só** (`enderecoNoVantoro`, em
+`temVantoro.js`), e o link "Abrir ficha completa no Vantoro" passou a usá-lo.
+Antes, sem `VITE_VANTORO_WEB` esse link simplesmente não aparecia. Daqui não dá
+para ver se a variável está na Render, e o ícone pedido sumir por causa de uma
+variável que ninguém sabe que existe seria o defeito mais difícil de achar.
+**Sem a variável, vale o endereço do escritório.** Quem não tem Vantoro não vê
+nenhum dos dois links, então esse endereço só é usado onde há o Vantoro do
+escritório.
+
+**O proxy desta sessão não alcança o painel no ar** (`zorvin.ropelimi.com.br`
+dá 403), e por isso não deu para ler no arquivo publicado se a variável está
+lá. O site do painel no ar foi achado pelos registros do Supabase, só lendo
+(o `referer` dos pedidos).
+
+Prova: `o-controle-de-atendimento-do-vantoro`, 19 conferências, com o Vantoro
+de mentira respondendo a aba nova. **10 sabotagens e 10 pegas**, todas limpas,
+rodadas em cópias e lidas uma a uma:
+
+- o painel de antes inteiro (11 reprovações — é o pedido reproduzido);
+- sem a guarda do Vantoro;
+- o ícone aparecendo enquanto a ponte não respondeu;
+- o caminho errado;
+- abrindo na mesma aba (o Zorvin some);
+- sem o `noopener`;
+- sem o endereço padrão (`undefined/cadastro/…`);
+- a ficha de antes (o link some sem a variável);
+- o ícone sumindo no celular;
+- a falha da ponte virando "não tem Vantoro".
+
+**Fica de fora, e é decisão:** a troca do endereço pela variável não é
+provada. `VITE_VANTORO_WEB` é lida quando o Vite serve a página, e a bancada
+sobe sem ela; provar a troca pediria um servidor só para isso, como o do
+`entrar-sem-vantoro`.
 
 ## A ficha virou uma coluna fixa — e antes ela ESCONDIA a lista
 
