@@ -18,6 +18,7 @@ import { ManualDoCopiloto } from "./ManualDoCopiloto.jsx";
 // A CHAVE SAIU DAQUI para `Chave.jsx`: a tela de Avisos passou a precisar da
 // mesma peça, e uma segunda cópia divergiria da primeira no primeiro conserto.
 import { Chave } from "./Chave.jsx";
+import { casaComAPesquisa } from "./pesquisaNosMenus.js";
 import { X, Plus, Trash2, Loader2, Building2, Phone, ShieldCheck } from "lucide-react";
 
 // ============================================================
@@ -549,11 +550,10 @@ function Atendentes({ cx, C, departamentos, telefones, aoAvisar }) {
   useEffect(() => { carregar(); }, [carregar]);
 
   const pessoa = gente.find((u) => String(u.id) === String(quem)) || null;
-  const filtradas = gente.filter((u) => {
-    const t = busca.trim().toLowerCase();
-    if (!t) return true;
-    return `${u.nome || ""} ${u.login || ""} ${u.email || ""}`.toLowerCase().includes(t);
-  });
+  // A CONTA DOS MENUS (23/10): sem acento — "joao" acha "João" — e com as
+  // palavras em qualquer ordem. É a mesma do resto do painel, para a equipe
+  // não ter de lembrar em qual tela o acento faz diferença.
+  const filtradas = gente.filter((u) => casaComAPesquisa(busca, u.nome, u.login, u.email));
 
   // Uma gravação por clique, mandando SÓ o que mudou. O estado local muda antes
   // da resposta para a chave não "pular" — mas o que vale é o que o Vantoro

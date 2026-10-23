@@ -1607,6 +1607,107 @@ conversa não vinha na lista — a consulta da página pede `mensagens(id)` junt
 e o contador de não lidas do menu ficava em zero com o grupo na tela.
 
 Prova: `o-campo-de-grupos`, 20 conferências, 5 sabotagens e 5 pegas.
+## A pesquisa nos menus (23/10)
+
+Pedido do Rodrigo, com a foto do menu da seta: *"quando eu clico na seta e
+aparece a lista de etiquetas, precisa ter a opção de também pesquisar por nome
+para facilitar encontrar a etiqueta correta, e quando eu clico em 'Assumir' ou
+'Etiquetas' dentro da conversa, também é bom ter o campo de pesquisa. Se tiver
+mais algum local que você encontre que seja necessário ter esse campo de
+pesquisa, pode incluir também."* Medido no banco em 23/10: **32 etiquetas e 23
+pessoas**.
+
+| onde | o campo filtra |
+|---|---|
+| a seta da fita (o pedido) | as etiquetas **e** as opções fixas (Minhas, Tarefas, Grupos, Todas); "Gerenciar etiquetas" fica |
+| "Marcar tags" da conversa (o pedido) | as etiquetas |
+| "Assumir" (o pedido) | só as pessoas de "Passar para"; "Assumir esta conversa" e "Deixar sem responsável" ficam |
+| "Quem participou da conversa" | as pessoas; quem já foi marcado continua marcado |
+| Configurações → Mensagens rápidas | pelo título **e** pelo texto |
+| Configurações → Etiquetas | pelo nome |
+
+E as pesquisas que já existiam passaram a usar a mesma conta: o "/" das
+rápidas, o Encaminhar, a lista de departamentos, a do Funil e a da equipe em
+Departamentos e acessos. O campo da lista de departamentos virou o mesmo
+componente.
+
+**Uma conta só** (`src/pesquisaNosMenus.js`): sem acento, sem maiúscula, e
+cada palavra em qualquer lugar — "minuta acordo" acha "Acordo Fechado - Ag.
+Minuta". Escrita em cada menu, o "joao" que acha "João" num deixaria de achar
+no vizinho, e quem não acha conclui que a etiqueta não existe e cria outra
+igual. **Um campo só** (`src/CampoDePesquisa.jsx`), pela régua de `Chave.jsx`.
+
+**A partir de 7 itens** (`PESQUISA_A_PARTIR_DE`). A régua já estava escrita no
+menu de departamentos: *"com quatro departamentos, um campo de busca é mais
+trabalho do que correr o olho"*. Com as duas etiquetas da bancada não há campo
+nenhum, e quem compra o programa com três etiquetas não ganha um campo que não
+serve.
+
+**O comportamento, e o porquê de cada parte:**
+
+- **o cursor já vem no campo no computador, e não no celular.** Lá o teclado
+  subiria por cima da lista que a pessoa abriu para tocar;
+- **o primeiro Esc apaga o que foi escrito, e só o segundo fecha o menu.** A
+  escada do Esc ouve a janela, e o campo chega antes dela;
+- **fechado o menu, a pesquisa vai junto** (`ComPesquisa` mora dentro do
+  menu). Guardada, a pesquisa de "minuta" de dez minutos atrás reabriria o
+  menu com uma etiqueta só, e quem não lembra de ter escrito aquilo acha que as
+  outras sumiram. A lista de departamentos, que guardava, passou a apagar ao
+  fechar;
+- **nas Configurações, ao contrário, a pesquisa sobrevive ao lápis.** Editar
+  troca a lista pelo formulário, e quem pesquisou para corrigir três rápidas
+  volta do "Salvar" para a lista filtrada. Trocar de aba a apaga;
+- **marcar uma etiqueta não apaga a pesquisa**: o "Marcar tags" escolhe
+  várias;
+- **o campo fica no alto que não rola** (`sticky`), e a prova mede o que está
+  pintado (`elementFromPoint`), com a lista rolada até o fim;
+- **nada achado, o menu repete o que foi escrito** ("Nenhuma etiqueta com
+  “minta”."). É ali que se vê o erro de digitação.
+
+**E um tropeço que este arquivo já registrou:** o `\u0300-\u036f` da conta
+foi gravado com os PRÓPRIOS caracteres de acento dentro dos colchetes.
+Funciona igual, e é invisível. Quem achou foi, de novo, a montagem das
+sabotagens: a troca procurava a escrita `\u0300` e não a encontrou.
+Corrigido antes do commit.
+
+**E dois da prova:**
+
+- **marcar a etiqueta da conversa passa pela ponte** (`/etiqueta/contato`), e
+  não pela tabela. A primeira escrita conferia `conversa_tags` e reprovava o
+  painel certo. Hoje ela confere o pedido à ponte de mentira — a etiqueta
+  ACHADA, e não a que fica por baixo dela na lista inteira;
+- **`inputValue()` num campo que não está na tela espera 30 segundos.** As
+  sabotagens que tiravam o campo levavam minutos cada uma; os ajudantes passaram
+  a perguntar antes se o campo existe.
+
+Prova: `a-pesquisa-nos-menus`, 133 conferências, com 30 etiquetas, 10 colegas
+e 8 rápidas plantadas. **31 sabotagens e 31 pegas**, rodadas em cópias e
+lidas uma a uma:
+
+- a conta com acento, a frase colada (fora de ordem não acha), o campo que
+  nunca aparece e o que aparece com dois itens, a frase sem o que foi escrito;
+- o Esc que fecha de primeira, o cursor que nunca vem, o X que não limpa, a
+  pesquisa guardada entre uma abertura e outra;
+- na seta: sem o campo, só as etiquetas filtradas, sem a frase de nada achado,
+  o campo que rola junto, o cursor no celular;
+- no "Marcar tags": sem filtro, o clique marcando a etiqueta de baixo da
+  lista inteira, a pesquisa apagada ao marcar;
+- no "Assumir": o "Assumir" sumindo ao pesquisar, sem filtro;
+- em "Quem participou": sem filtro, e quem estava marcado desmarcado ao
+  pesquisar;
+- em Configurações: o lápis apagando a pesquisa, a aba herdando a da outra,
+  as rápidas só pelo título, as etiquetas sem filtro;
+- e as cinco pesquisas de antes de volta: o "/", o Encaminhar, os
+  departamentos (e eles guardando a pesquisa), o Funil e a equipe.
+
+**Duas precisaram ser refeitas, e as duas eram minhas.** A do lápis
+estourava a prova: ela citava `rapidaForm` antes de a variável existir, e o
+painel inteiro caía. Não era um defeito, era outro programa. E a da equipe
+vazou: a conta de antes juntava nome, login e e-mail numa frase só ("josé
+ribeiro jose jose@x"), e a cena pesquisava "ribeiro jose" — que aparecia ali
+colado. Hoje ela pesquisa "jose ribeiro".
+
+
 ## Copiar leva só o texto (08/10)
 
 Relato do Rodrigo: *"quando eu copio uma mensagem do Zorvin e colo em um

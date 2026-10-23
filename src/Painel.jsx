@@ -59,6 +59,8 @@ import { useEstadoDoCopiloto, copilotoAparece, pedirSugestao } from "./copiloto.
 import { ABAS_DA_SITUACAO, NOME_DA_SITUACAO } from "./abasDaSituacao.js";
 import { pareceAcessoVencido, pedirConferenciaDaSessao, marcarSaidaPedida, foiSaidaPedida } from "./vigiaDaSessao.js";
 import { rascunhosDe, guardarRascunho } from "./rascunhos.js";
+import CampoDePesquisa, { ComPesquisa } from "./CampoDePesquisa.jsx";
+import { PESQUISA_A_PARTIR_DE, casaComAPesquisa, nadaComAPesquisa } from "./pesquisaNosMenus.js";
 
 // ============================================================
 //  ZORVIN by Ropelimi — Painel real (conectado ao Supabase)
@@ -3543,6 +3545,14 @@ export default function Painel({ sessao }) {
   const [slashIdx, setSlashIdx] = useState(0); // item destacado no menu do "/"
   const [configAberta, setConfigAberta] = useState(false); // tela de Configurações aberta
   const [abaConfig, setAbaConfig] = useState("perfil"); // perfil | aparencia | rapidas
+  // A PESQUISA DAS LISTAS DE CONFIGURAÇÕES (23/10): as mensagens rápidas e as
+  // etiquetas do escritório passam de trinta cada uma. Ela mora no painel, e
+  // não dentro da lista, por causa do lápis: editar troca a lista pelo
+  // formulário, e quem pesquisou "minuta" para corrigir três rápidas volta do
+  // primeiro "Salvar" para a lista ainda filtrada. Trocar de aba ou fechar
+  // Configurações a apaga — numa aba ela não serve para a outra.
+  const [pesquisaNaConfig, setPesquisaNaConfig] = useState("");
+  useEffect(() => { setPesquisaNaConfig(""); }, [abaConfig, configAberta]);
   const [rapidaForm, setRapidaForm] = useState(null); // { id?, titulo, texto } sendo criada/editada
   const textoDaRapidaRef = useRef(null); // a caixa do texto, para pôr a variável onde está o cursor
   const [tags, setTags] = useState([]); // definições das tags (id, nome, cor)
@@ -3747,6 +3757,11 @@ export default function Painel({ sessao }) {
   const [menuEtiquetas, setMenuEtiquetas] = useState(false); // lista de etiquetas para filtrar
   const [menuDepartamentos, setMenuDepartamentos] = useState(false); // lista de departamentos
   const [buscaDepartamento, setBuscaDepartamento] = useState("");
+  // FECHADO O MENU, A PESQUISA VAI JUNTO (23/10), como nos menus que guardam a
+  // pesquisa dentro deles (`ComPesquisa`): antes ela só se apagava ao escolher
+  // um departamento, e o menu fechado com um clique fora reabria mostrando um
+  // departamento só.
+  useEffect(() => { if (!menuDepartamentos) setBuscaDepartamento(""); }, [menuDepartamentos]);
   const [largura, setLargura] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1200));
   const gravadorRef = useRef(null);
   const chunksRef = useRef([]);
@@ -4270,9 +4285,10 @@ export default function Painel({ sessao }) {
     (d) => advogadosPermitidos.some((a) => a.departamento_id === d.id));
   const departamentoAtual = departamentos.find((d) => d.id === departamentoId) || null;
   // O que a lista do seletor mostra agora (a busca só existe quando são muitos).
+  // A PESQUISA DOS DEPARTAMENTOS usa a conta dos outros menus (23/10): sem
+  // acento — "execucao" acha "Execução" — e com as palavras em qualquer ordem.
   const departamentosParaEscolher = departamentosVisiveis.filter((d) =>
-    !buscaDepartamento.trim()
-    || (d.nome || "").toLowerCase().includes(buscaDepartamento.trim().toLowerCase()));
+    casaComAPesquisa(buscaDepartamento, d.nome));
 
   // O contato está digitando nesta conversa agora? (janela curta que expira).
   function digitandoAtivo(convId) {
@@ -12718,10 +12734,13 @@ export default function Painel({ sessao }) {
     .filter(Boolean);
 
   // Menu de mensagens rápidas: aparece ao digitar "/" no começo da mensagem.
-  // O texto após a "/" filtra a lista (por atalho ou conteúdo).
+  // O texto após a "/" filtra a lista (por atalho ou conteúdo), pela conta dos
+  // menus (23/10): "/saudacao" acha "Saudação", e "/minuta envio" acha a
+  // rápida que fala de "envio da minuta". Antes era a frase colada e com
+  // acento — quem escreve depressa, sem acento, não achava a própria rápida.
   const slashQuery = (!modoNota && rascunho.startsWith("/")) ? rascunho.slice(1).toLowerCase() : null;
   const slashLista = slashQuery !== null
-    ? rapidas.filter((r) => (`${r.titulo} ${r.texto}`).toLowerCase().includes(slashQuery))
+    ? rapidas.filter((r) => casaComAPesquisa(slashQuery, r.titulo, r.texto))
     : [];
   const slashAberto = slashQuery !== null && slashLista.length > 0;
 
@@ -13195,9 +13214,17 @@ export default function Painel({ sessao }) {
     const ITEM = { width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "9px 12px",
                    border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary,
                    textAlign: "left", fontSize: 13.5, minHeight: estreito ? 44 : 36 };
+    // A PESQUISA (23/10) é só de PESSOAS: "Assumir esta conversa" e "Deixar
+    // sem responsável" são gestos, e não nomes — continuam no lugar com
+    // qualquer coisa escrita. Assumir é o gesto de todo dia; sumir com ele
+    // porque alguém escreveu "jen" seria esconder o botão mais usado do menu.
+    const comPesquisa = pessoasParaPassar.length >= PESQUISA_A_PARTIR_DE;
     return (
+      <ComPesquisa>{(pesquisa, setPesquisa) => {
+        const achadas = comPesquisa ? pessoasParaPassar.filter((p) => casaComAPesquisa(pesquisa, p.nome)) : pessoasParaPassar;
+        return (
       <div data-menu-responsavel role="listbox"
-           style={{ position: "absolute", zIndex: 61, width: 262, maxHeight: 360, overflowY: "auto",
+           style={{ position: "absolute", zIndex: 61, width: 262, maxHeight: comPesquisa ? 420 : 360, overflowY: "auto",
                     // A LINHA DE ONDE ELE PENDE é `nowrap` (é a do número do
                     // cliente), e a frase de quem passou a conversa herdaria
                     // isso — saía cortada em "Quem responder primeiro assu".
@@ -13205,13 +13232,19 @@ export default function Painel({ sessao }) {
                     ...(menuResponsavel === "menu" ? { top: 44, right: 0 } : { top: "100%", left: 0, marginTop: 4 }),
                     background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10,
                     boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
-        <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.divider}`, position: "sticky", top: 0, background: C.panel }}>
+        <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.divider}`, position: "sticky", top: 0, zIndex: 1, background: C.panel }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3 }}>RESPONSÁVEL PELA CONVERSA</div>
           <div data-responsavel-origem data-pela-distribuicao={pelaDistribuicao ? "sim" : undefined}
                style={{ fontSize: 12, color: C.textSecondary, marginTop: 3, lineHeight: 1.4 }}>
             {!dono ? "Ninguém ainda. Quem responder primeiro assume."
               : `${souDono ? "Você" : nomeDaPessoa(dono)}${quando ? ` desde ${quando}` : ""}${porOutro ? ` — passada por ${nomeDaPessoa(conversa.responsavel_por)}` : ""}${pelaDistribuicao ? " — pela distribuição automática" : ""}.`}
           </div>
+          {comPesquisa && (
+            <div style={{ marginTop: 8 }}>
+              <CampoDePesquisa C={C} valor={pesquisa} aoMudar={setPesquisa} rotulo="Pesquisar pessoa"
+                               focar={!estreito} nome="responsavel" />
+            </div>
+          )}
         </div>
         {!souDono && (
           <button data-assumir-conversa role="option" onClick={() => mudarResponsavel(conversa, meuId)}
@@ -13222,7 +13255,10 @@ export default function Painel({ sessao }) {
         {pessoasParaPassar.length > 0 && (
           <div style={{ padding: "8px 12px 2px", fontSize: 11.5, fontWeight: 600, color: C.textSecondary }}>Passar para</div>
         )}
-        {pessoasParaPassar.map((p) => (
+        {pessoasParaPassar.length > 0 && achadas.length === 0 && (
+          <div data-nada-com-a-pesquisa style={{ padding: "8px 12px 12px", fontSize: 13, color: C.textSecondary }}>{nadaComAPesquisa("Ninguém", pesquisa)}</div>
+        )}
+        {achadas.map((p) => (
           <button key={p.id} data-passar-para={p.id} role="option" aria-selected={dono === String(p.id)}
                   onClick={() => mudarResponsavel(conversa, p.id)} style={ITEM}>
             <Avatar nome={p.nome} foto={p.foto} size={24} />
@@ -13237,27 +13273,50 @@ export default function Painel({ sessao }) {
           </button>
         )}
       </div>
+        );
+      }}</ComPesquisa>
     );
   })();
 
+  // A PESQUISA DO "MARCAR TAGS" (23/10) fica no alto que não rola, junto do
+  // título: marcar é escolher várias, o menu continua aberto entre um clique e
+  // outro, e o campo tem de continuar à vista depois de a lista rolar. O que
+  // foi escrito também continua — marcar uma etiqueta não apaga a pesquisa.
   const listaDeEtiquetas = !conversa ? null : (
-    <div style={{ position: "absolute", top: estreito ? 44 : 30, right: 0, width: 240, maxHeight: 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 46 }}>
-      <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.divider}`, fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3, position: "sticky", top: 0, background: C.panel }}>MARCAR TAGS</div>
-      {tags.length === 0 && (
-        <div style={{ padding: 14, fontSize: 13, color: C.textSecondary, textAlign: "center" }}>Nenhuma tag ainda. Crie em Configurações → Tags.</div>
-      )}
-      {tags.map((t) => {
-        const marcada = (tagsPorConversa[conversa.id] || []).includes(t.id);
-        return (
-          <button key={t.id} data-tag-opcao={t.id} onClick={() => alternarTagConversa(t.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, textAlign: "left" }}>
-            <span style={{ width: 12, height: 12, borderRadius: 3, background: t.cor, flexShrink: 0 }} />
-            <span style={{ flex: 1, fontSize: 13.5 }}>{t.nome}</span>
-            {marcada && <Check size={16} color={C.green} />}
-          </button>
-        );
-      })}
-      <button onClick={() => { setTagMenuAberto(false); setAbaConfig("tags"); setTagForm(null); setConfigAberta(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 6, padding: "10px 12px", border: "none", borderTop: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.verdeTexto, fontSize: 13, fontWeight: 600 }}><Plus size={15} /> Gerenciar etiquetas</button>
-    </div>
+    <ComPesquisa>{(pesquisa, setPesquisa) => {
+      const comPesquisa = tags.length >= PESQUISA_A_PARTIR_DE;
+      const achadas = comPesquisa ? tags.filter((t) => casaComAPesquisa(pesquisa, t.nome)) : tags;
+      return (
+        <div data-menu-marcar-tags style={{ position: "absolute", top: estreito ? 44 : 30, right: 0, width: 240, maxHeight: comPesquisa ? 380 : 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 46 }}>
+          <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.divider}`, position: "sticky", top: 0, zIndex: 1, background: C.panel }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3 }}>MARCAR TAGS</div>
+            {comPesquisa && (
+              <div style={{ marginTop: 8 }}>
+                <CampoDePesquisa C={C} valor={pesquisa} aoMudar={setPesquisa} rotulo="Pesquisar etiqueta"
+                                 focar={!estreito} nome="marcar-tags" />
+              </div>
+            )}
+          </div>
+          {tags.length === 0 && (
+            <div style={{ padding: 14, fontSize: 13, color: C.textSecondary, textAlign: "center" }}>Nenhuma tag ainda. Crie em Configurações → Tags.</div>
+          )}
+          {tags.length > 0 && achadas.length === 0 && (
+            <div data-nada-com-a-pesquisa style={{ padding: 14, fontSize: 13, color: C.textSecondary, textAlign: "center" }}>{nadaComAPesquisa("Nenhuma etiqueta", pesquisa)}</div>
+          )}
+          {achadas.map((t) => {
+            const marcada = (tagsPorConversa[conversa.id] || []).includes(t.id);
+            return (
+              <button key={t.id} data-tag-opcao={t.id} onClick={() => alternarTagConversa(t.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, textAlign: "left" }}>
+                <span style={{ width: 12, height: 12, borderRadius: 3, background: t.cor, flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: 13.5 }}>{t.nome}</span>
+                {marcada && <Check size={16} color={C.green} />}
+              </button>
+            );
+          })}
+          <button onClick={() => { setTagMenuAberto(false); setAbaConfig("tags"); setTagForm(null); setConfigAberta(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 6, padding: "10px 12px", border: "none", borderTop: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.verdeTexto, fontSize: 13, fontWeight: 600 }}><Plus size={15} /> Gerenciar etiquetas</button>
+        </div>
+      );
+    }}</ComPesquisa>
   );
 
   // ------------------------------------------------------------------
@@ -14334,7 +14393,16 @@ export default function Painel({ sessao }) {
                 <Users size={19} />
               </button>
               {menuQuem && (
-                <div style={{ position: "absolute", top: 38, right: 0, zIndex: 50, width: 272, maxHeight: 380, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
+                <ComPesquisa>{(pesquisa, setPesquisa) => {
+                  // A PESQUISA (23/10): com a equipe do escritório inteira
+                  // respondendo pelo mesmo telefone, a lista passa de vinte
+                  // nomes. Ela filtra só os NOMES — a regra ("Qualquer um" ou
+                  // "Todos juntos") fica no alto, que é onde se decide antes.
+                  // E quem já está marcado continua marcado ao pesquisar outro.
+                  const comPesquisa = atendentes.length >= PESQUISA_A_PARTIR_DE;
+                  const achados = comPesquisa ? atendentes.filter((a) => casaComAPesquisa(pesquisa, a.nome)) : atendentes;
+                  return (
+                <div data-menu-quem style={{ position: "absolute", top: 38, right: 0, zIndex: 50, width: 272, maxHeight: comPesquisa ? 440 : 380, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
                   {/* O TÍTULO ficou necessário quando o botão virou só um
                       desenho: sem rótulo na tela, é aqui que o menu diz o que
                       ele é. */}
@@ -14372,7 +14440,17 @@ export default function Painel({ sessao }) {
                     </div>
                   )}
 
-                  {atendentes.map((a) => {
+                  {comPesquisa && (
+                    <div style={{ position: "sticky", top: 0, zIndex: 1, background: C.panel, padding: "8px 10px", borderBottom: `1px solid ${C.divider}` }}>
+                      <CampoDePesquisa C={C} valor={pesquisa} aoMudar={setPesquisa} rotulo="Pesquisar pessoa"
+                                       focar={!estreito} nome="quem" />
+                    </div>
+                  )}
+                  {comPesquisa && achados.length === 0 && (
+                    <div data-nada-com-a-pesquisa style={{ padding: "14px 12px", fontSize: 13, color: C.textSecondary, textAlign: "center" }}>{nadaComAPesquisa("Ninguém", pesquisa)}</div>
+                  )}
+
+                  {achados.map((a) => {
                     const marcado = quemFiltra.includes(a.id);
                     return (
                       <button key={a.id} data-quem={a.nome}
@@ -14399,6 +14477,8 @@ export default function Painel({ sessao }) {
                     </button>
                   )}
                 </div>
+                  );
+                }}</ComPesquisa>
               )}
             </span>
             )}
@@ -14490,21 +14570,19 @@ export default function Painel({ sessao }) {
                   {/* A busca só entra quando a lista fica longa. Com quatro
                       departamentos, um campo de busca é mais trabalho do que
                       correr o olho. */}
-                  {departamentosVisiveis.length > 6 && (
+                  {/* O MESMO CAMPO DOS OUTROS MENUS (23/10), e a mesma régua
+                      de quando aparecer (`PESQUISA_A_PARTIR_DE`). Antes ele
+                      punha o cursor no campo também no celular — e o teclado
+                      subia por cima da lista que a pessoa abriu para tocar. */}
+                  {departamentosVisiveis.length >= PESQUISA_A_PARTIR_DE && (
                     <div style={{ padding: "8px 10px", borderBottom: `1px solid ${C.divider}` }}>
-                      <input autoFocus value={buscaDepartamento} onChange={(e) => setBuscaDepartamento(e.target.value)}
-                             placeholder="Buscar departamento"
-                             /* `border-box` porque o recheio entra na largura:
-                                sem isto o campo ficava 100% + 20px e escapava
-                                para fora do painel. */
-                             style={{ width: "100%", boxSizing: "border-box", border: "none", outline: "none",
-                                      background: C.searchBg, color: C.textPrimary,
-                                      borderRadius: 7, padding: "7px 10px", fontSize: 13 }} />
+                      <CampoDePesquisa C={C} valor={buscaDepartamento} aoMudar={setBuscaDepartamento}
+                                       rotulo="Pesquisar departamento" focar={!estreito} nome="departamentos" />
                     </div>
                   )}
                   <div style={{ maxHeight: 300, overflowY: "auto" }}>
                     {departamentosParaEscolher.length === 0 && (
-                      <div style={{ padding: 16, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>Nenhum departamento com esse nome.</div>
+                      <div data-nada-com-a-pesquisa style={{ padding: 16, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>{nadaComAPesquisa("Nenhum departamento", buscaDepartamento)}</div>
                     )}
                     {departamentosParaEscolher.map((d) => {
                       const ativo = departamentoId === d.id;
@@ -14834,14 +14912,38 @@ export default function Painel({ sessao }) {
                  faz o clique dentro dele contar como "dentro" para
                  `etiquetasRef`, e não fechar o menu que a pessoa acabou de
                  abrir. Quem mudou foi só o ponto de referência. */
-              <div data-menu-mais-filtros role="listbox" style={{ position: "absolute", top: "100%", left: 12, zIndex: 40, width: 250, maxHeight: 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
+              <ComPesquisa>{(pesquisa, setPesquisa) => {
+                // A PESQUISA (23/10) — o pedido do Rodrigo, com a foto deste
+                // menu: 32 etiquetas numa lista que mostra oito de cada vez.
+                // O que se escreve filtra o menu INTEIRO, e não só as
+                // etiquetas: quem escreve "grupo" acha "Grupos". Só
+                // "Gerenciar etiquetas" fica sempre, porque é um gesto, e não
+                // um item da lista.
+                const comPesquisa = tags.length >= PESQUISA_A_PARTIR_DE;
+                const ve = (rotulo) => !comPesquisa || casaComAPesquisa(pesquisa, rotulo);
+                const tagsAchadas = comPesquisa ? tags.filter((t) => casaComAPesquisa(pesquisa, t.nome)) : tags;
+                const nada = comPesquisa && tagsAchadas.length === 0
+                  && !(temResponsavel === true && ve("Minhas conversas"))
+                  && !(temTarefas === true && ve("Com tarefa para hoje"))
+                  && !ve("Grupos") && !ve("Todas as conversas");
+                return (
+              <div data-menu-mais-filtros role="listbox" style={{ position: "absolute", top: "100%", left: 12, zIndex: 40, width: 250, maxHeight: comPesquisa ? 380 : 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
+                {comPesquisa && (
+                  <div style={{ position: "sticky", top: 0, zIndex: 1, background: C.panel, padding: "8px 10px", borderBottom: `1px solid ${C.divider}` }}>
+                    <CampoDePesquisa C={C} valor={pesquisa} aoMudar={setPesquisa} rotulo="Pesquisar etiqueta"
+                                     focar={!estreito} nome="mais-filtros" />
+                  </div>
+                )}
+                {nada && (
+                  <div data-nada-com-a-pesquisa style={{ padding: 14, fontSize: 13, color: C.textSecondary, textAlign: "center" }}>{nadaComAPesquisa("Nenhuma etiqueta", pesquisa)}</div>
+                )}
                 {/* GRUPOS VEM PRIMEIRO, e separado por um traço: é uma
                     pergunta de outra natureza que as etiquetas. Etiqueta é uma
                     marca que a equipe põe; grupo é o que a conversa É. */}
                 {/* AS MINHAS VÊM PRIMEIRO: é o filtro de todo dia de quem
                     atende. Só com o script 008 — sem a coluna, a lista viria
                     sempre vazia, e "nenhuma conversa sua" seria mentira. */}
-                {temResponsavel === true && (
+                {temResponsavel === true && ve("Minhas conversas") && (
                   <button data-minhas-opcao role="option" aria-selected={filtro === "minhas"}
                           onClick={() => { setFiltro(filtro === "minhas" ? "tudo" : "minhas"); setMenuEtiquetas(false); }}
                           style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "11px 12px", border: "none", borderBottom: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
@@ -14854,7 +14956,7 @@ export default function Painel({ sessao }) {
                     telefone com tarefa aberta que vence hoje ou já venceu — de
                     qualquer pessoa, porque quem vê a conversa vê as tarefas
                     dela. As MINHAS ficam na tela de Tarefas, na barra. */}
-                {temTarefas === true && (
+                {temTarefas === true && ve("Com tarefa para hoje") && (
                   <button data-tarefas-opcao role="option" aria-selected={filtro === "tarefas"}
                           onClick={() => { setFiltro(filtro === "tarefas" ? "tudo" : "tarefas"); setMenuEtiquetas(false); }}
                           style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "11px 12px", border: "none", borderBottom: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
@@ -14863,34 +14965,38 @@ export default function Painel({ sessao }) {
                     {filtro === "tarefas" && <Check size={16} color={C.green} style={{ flexShrink: 0 }} />}
                   </button>
                 )}
-                <button data-grupos-opcao role="option" aria-selected={filtro === "grupos"}
-                        onClick={() => { setFiltro(filtro === "grupos" ? "tudo" : "grupos"); setMenuEtiquetas(false); }}
-                        style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "11px 12px", border: "none", borderBottom: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
-                  <Users size={16} color={C.textSecondary} style={{ flexShrink: 0 }} />
-                  <span style={{ flex: 1 }}>Grupos</span>
-                  {/* O CONTADOR DE NÃO LIDAS, como no WhatsApp Web: responde
-                      "vale a pena entrar aqui agora?" antes do clique. */}
-                  {naoLidasDosGrupos > 0 && (
-                    <span data-nao-lidas-grupos={naoLidasDosGrupos}
-                          style={{ flexShrink: 0, minWidth: 20, height: 20, borderRadius: 10,
-                                   background: C.unread, color: "#fff", fontSize: 11, fontWeight: 700,
-                                   display: "flex", alignItems: "center", justifyContent: "center",
-                                   padding: "0 6px" }}>{naoLidasDosGrupos}</span>
-                  )}
-                  {filtro === "grupos" && <Check size={16} color={C.green} style={{ flexShrink: 0 }} />}
-                </button>
-                <button onClick={() => { setFiltro("tudo"); setMenuEtiquetas(false); }}
-                        style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", border: "none", borderBottom: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
-                  Todas as conversas
-                  {!tagFiltrada && !filtroVerde && <Check size={16} color={C.green} style={{ marginLeft: "auto" }} />}
-                </button>
+                {ve("Grupos") && (
+                  <button data-grupos-opcao role="option" aria-selected={filtro === "grupos"}
+                          onClick={() => { setFiltro(filtro === "grupos" ? "tudo" : "grupos"); setMenuEtiquetas(false); }}
+                          style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "11px 12px", border: "none", borderBottom: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
+                    <Users size={16} color={C.textSecondary} style={{ flexShrink: 0 }} />
+                    <span style={{ flex: 1 }}>Grupos</span>
+                    {/* O CONTADOR DE NÃO LIDAS, como no WhatsApp Web: responde
+                        "vale a pena entrar aqui agora?" antes do clique. */}
+                    {naoLidasDosGrupos > 0 && (
+                      <span data-nao-lidas-grupos={naoLidasDosGrupos}
+                            style={{ flexShrink: 0, minWidth: 20, height: 20, borderRadius: 10,
+                                     background: C.unread, color: "#fff", fontSize: 11, fontWeight: 700,
+                                     display: "flex", alignItems: "center", justifyContent: "center",
+                                     padding: "0 6px" }}>{naoLidasDosGrupos}</span>
+                    )}
+                    {filtro === "grupos" && <Check size={16} color={C.green} style={{ flexShrink: 0 }} />}
+                  </button>
+                )}
+                {ve("Todas as conversas") && (
+                  <button onClick={() => { setFiltro("tudo"); setMenuEtiquetas(false); }}
+                          style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", border: "none", borderBottom: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
+                    Todas as conversas
+                    {!tagFiltrada && !filtroVerde && <Check size={16} color={C.green} style={{ marginLeft: "auto" }} />}
+                  </button>
+                )}
                 {tags.length === 0 && (
                   <div style={{ padding: 14, fontSize: 13, color: C.textSecondary, textAlign: "center" }}>Nenhuma etiqueta ainda.</div>
                 )}
-                {tags.map((t) => {
+                {tagsAchadas.map((t) => {
                   const escolhida = filtro === "tag:" + t.id;
                   return (
-                    <button key={t.id} onClick={() => { setFiltro(escolhida ? "tudo" : "tag:" + t.id); setMenuEtiquetas(false); }}
+                    <button key={t.id} data-etiqueta-da-seta={t.id} onClick={() => { setFiltro(escolhida ? "tudo" : "tag:" + t.id); setMenuEtiquetas(false); }}
                             style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
                       <span style={{ width: 11, height: 11, borderRadius: 3, background: t.cor, flexShrink: 0 }} />
                       <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.nome}</span>
@@ -14903,6 +15009,8 @@ export default function Painel({ sessao }) {
                   <Plus size={15} /> Gerenciar etiquetas
                 </button>
               </div>
+                );
+              }}</ComPesquisa>
             )}
           </span>
 
@@ -17177,12 +17285,21 @@ export default function Painel({ sessao }) {
                         <button data-salvar-rapida onClick={salvarRapidaForm} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Salvar</button>
                       </div>
                     </div>
-                  ) : (
+                  ) : (<>
+                    {rapidas.length >= PESQUISA_A_PARTIR_DE && (
+                      <div style={{ marginBottom: 10 }}>
+                        <CampoDePesquisa C={C} valor={pesquisaNaConfig} aoMudar={setPesquisaNaConfig}
+                                         rotulo="Pesquisar mensagem rápida" nome="rapidas-da-config" />
+                      </div>
+                    )}
                     <div style={{ border: `1px solid ${C.divider}`, borderRadius: 10, overflow: "hidden" }}>
                       {rapidas.length === 0 && (
                         <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>Nenhuma mensagem rápida ainda. Toque em <b>Nova</b> para criar a primeira.</div>
                       )}
-                      {rapidas.map((r) => (
+                      {rapidas.length > 0 && !rapidas.some((r) => casaComAPesquisa(pesquisaNaConfig, r.titulo, r.texto)) && (
+                        <div data-nada-com-a-pesquisa style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>{nadaComAPesquisa("Nenhuma mensagem rápida", pesquisaNaConfig)}</div>
+                      )}
+                      {rapidas.filter((r) => casaComAPesquisa(pesquisaNaConfig, r.titulo, r.texto)).map((r) => (
                         <div key={r.id} data-rapida-da-config={r.titulo} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px", borderBottom: `1px solid ${C.divider}` }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 14, fontWeight: 600 }}>{r.titulo}</div>
@@ -17193,7 +17310,7 @@ export default function Painel({ sessao }) {
                         </div>
                       ))}
                     </div>
-                  )}
+                  </>)}
 
                 </div>
               )}
@@ -17234,12 +17351,21 @@ export default function Painel({ sessao }) {
                         <button data-salvar-etiqueta onClick={salvarTagForm} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Salvar</button>
                       </div>
                     </div>
-                  ) : (
+                  ) : (<>
+                    {tags.length >= PESQUISA_A_PARTIR_DE && (
+                      <div style={{ marginBottom: 10 }}>
+                        <CampoDePesquisa C={C} valor={pesquisaNaConfig} aoMudar={setPesquisaNaConfig}
+                                         rotulo="Pesquisar etiqueta" nome="etiquetas-da-config" />
+                      </div>
+                    )}
                     <div style={{ border: `1px solid ${C.divider}`, borderRadius: 10, overflow: "hidden" }}>
                       {tags.length === 0 && (
                         <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>Nenhuma tag ainda. Toque em <b>Nova</b> para criar a primeira.</div>
                       )}
-                      {tags.map((t) => (
+                      {tags.length > 0 && !tags.some((t) => casaComAPesquisa(pesquisaNaConfig, t.nome)) && (
+                        <div data-nada-com-a-pesquisa style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>{nadaComAPesquisa("Nenhuma etiqueta", pesquisaNaConfig)}</div>
+                      )}
+                      {tags.filter((t) => casaComAPesquisa(pesquisaNaConfig, t.nome)).map((t) => (
                         <div key={t.id} data-etiqueta-da-config={t.nome} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: `1px solid ${C.divider}` }}>
                           <span style={{ width: 14, height: 14, borderRadius: 4, background: t.cor, flexShrink: 0 }} />
                           <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.nome}</span>
@@ -17248,7 +17374,7 @@ export default function Painel({ sessao }) {
                         </div>
                       ))}
                     </div>
-                  )}
+                  </>)}
                 </div>
               )}
 
@@ -17901,13 +18027,16 @@ export default function Painel({ sessao }) {
             </div>
             <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
               {(() => {
-                const q = buscaEncaminhar.trim().toLowerCase();
+                const q = buscaEncaminhar.trim();
                 // OS DÍGITOS SÓ CONTAM SE HOUVER DÍGITOS (auditoria de 07/10):
                 // "maria" sem dígito nenhum virava `includes("")`, que é sempre
                 // verdade — a busca por nome devolvia a lista inteira.
                 const digitos = q.replace(/\D/g, "");
+                // O NOME PELA CONTA DOS MENUS (23/10): "joao" acha "João", e
+                // "silva maria" acha "Maria da Silva". Antes era a frase colada
+                // e com acento, e quem escrevia sem acento não achava ninguém.
                 const lista = conversas.filter((c) => c.id !== conversaId && !c.arquivada
-                  && (!q || (nomeDoContato(c.contato) || "").toLowerCase().includes(q)
+                  && (!q || casaComAPesquisa(q, nomeDoContato(c.contato))
                           || (digitos.length >= 3 && (c.contato?.numero || "").includes(digitos))));
                 if (!lista.length) return <div style={{ padding: 22, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>Nenhuma conversa encontrada.</div>;
                 return lista.map((c) => (

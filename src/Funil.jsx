@@ -6,6 +6,7 @@ import { nomeDoContato } from "./contato.js";
 import { telefoneLegivel } from "./numeros.js";
 import { diasDesde } from "./espera.js";
 import { situacao, semATabelaDeTarefas, rotuloDaTarefa, ordenarAbertas } from "./tarefas.js";
+import { casaComAPesquisa } from "./pesquisaNosMenus.js";
 
 // ============================================================
 //  O FUNIL DE ETAPAS (06/10)
@@ -249,7 +250,8 @@ export default function Funil({
     const digitos = q.replace(/\D/g, "");
     return cartoes.filter((c) => {
       const ct = contatos[c.contato_id] || {};
-      if (nomeDoContato(ct).toLowerCase().includes(q)) return true;
+      // O nome pela conta dos menus (23/10): sem acento, palavras em qualquer ordem.
+      if (casaComAPesquisa(q, nomeDoContato(ct))) return true;
       return digitos.length >= 3 && String(ct.numero || "").includes(digitos);
     });
   }, [cartoes, contatos, busca]);
