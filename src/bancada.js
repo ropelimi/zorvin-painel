@@ -3977,7 +3977,24 @@ export const supabase = {
   // provas dos anexos foram escritas sobre isso. `__DEPOSITO_COM_ENDERECO`
   // faz ele devolver um endereço de verdade, para a prova que precisa ver o
   // anexo chegar à fila (a mensagem agendada).
-  storage: { from: (balde) => ({ upload: async () => ({ error: null }),
+  //
+  // E ELE GUARDA O QUE SUBIU (23/10), em `__SUBIDAS`: a prova das rápidas com
+  // vídeo confere que usar a rápida NÃO sobe o vídeo de novo, e sem o registro
+  // não haveria como ver a diferença — as duas coisas dão a mesma linha na
+  // fila. `__SUBIDA_FALHA` faz o depósito recusar, como o de verdade recusa
+  // um arquivo grande demais (413).
+  storage: { from: (balde) => ({
+    upload: async (caminho, arquivo, opcoes = {}) => {
+      if (typeof globalThis !== "undefined") {
+        (globalThis.__SUBIDAS || (globalThis.__SUBIDAS = [])).push({ balde, caminho,
+          tipo: opcoes.contentType || (arquivo && arquivo.type) || null, cache: opcoes.cacheControl || null,
+          tamanho: arquivo && typeof arquivo.size === "number" ? arquivo.size : null });
+        if (globalThis.__SUBIDA_FALHA) {
+          return { data: null, error: { message: "The object exceeded the maximum allowed size", status: 413, statusCode: "413" } };
+        }
+      }
+      return { data: { path: caminho }, error: null };
+    },
     getPublicUrl: (caminho) => ({ data: { publicUrl: (typeof globalThis !== "undefined" && globalThis.__DEPOSITO_COM_ENDERECO)
       ? `https://deposito.bancada/${balde}/${caminho}` : "" } }) }) },
 };

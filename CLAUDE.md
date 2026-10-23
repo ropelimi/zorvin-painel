@@ -1399,6 +1399,105 @@ mesma prova mediu 0,94×. **Ao subir servidor em cópia, mate o GRUPO de
 processos** (`start_new_session` e `killpg`), e confira com `ps` que nada ficou
 antes de medir tempo.
 
+## A mensagem rápida com vídeo (23/10)
+
+Pedido do Rodrigo: *"Para as mensagens rápidas, precisa ser possível incluir
+vídeos."* O vídeo que a equipe manda a todo cliente novo era procurado no
+computador e anexado à mão, a cada vez. Agora ele mora na própria rápida:
+Configurações → Mensagens rápidas → **Anexar um vídeo (ou foto, documento,
+áudio)**. As colunas são do script 034 da ponte (`midia_url`, `midia_tipo`,
+`midia_mime`, `midia_nome`), e as contas que não precisam de tela moram em
+`src/rapidasComAnexo.js`.
+
+**O arquivo sobe UMA vez, ao salvar a rápida**, para `anexos/rapidas/…`, com
+o cache de um ano e `immutable` (a régua da ponte, `CACHE_DA_MIDIA`). Antes
+de salvar ele fica na memória: quem escolhe o vídeo errado e troca não deixa
+um arquivo a mais no depósito. **Usar a rápida manda à fila o MESMO
+endereço**, sem baixar nem subir de novo. Subir a cada cliente seria a conta
+de banda de 21/08 (a armadilha nº 6 da ponte) e deixaria quem atende
+esperando o upload de um vídeo que já está lá. `enviarArquivo` e
+`agendarArquivo` reconhecem o arquivo que já está no depósito (`doDeposito`),
+e o "Reenviar" também.
+
+**Escolher a rápida com anexo abre a PRÉVIA do anexo**, com o texto já
+preenchido como legenda. É a régua de sempre das rápidas — o que se vê é o que
+sai —, e é na prévia que se confere o vídeo e o nome do cliente antes do
+Enter. A caixa de escrever fica vazia: deixado ali, o texto sairia duas vezes.
+Numa edição de mensagem, só o texto entra.
+
+**A legenda da prévia passou a ter várias linhas**, e isso vale para qualquer
+anexo. Ela era um campo de uma linha só, e o navegador TIRA as quebras de
+linha de um campo assim. Medido no banco em 23/10: **22 das 32 rápidas têm
+parágrafos** — a do vídeo chegaria ao cliente num bloco só. Enter envia, como
+antes; Shift+Enter quebra a linha. O cursor vai para o fim da legenda: ela
+chega preenchida para ser completada.
+
+**Com anexo, o texto é opcional e o atalho não.** A rápida só com o vídeo
+grava `texto = ''` (a coluna continua `not null`).
+
+**O depósito que recusa é dito, e NADA é salvo.** O arquivo sobe antes da
+linha: ao contrário, uma gravação que passasse e um arquivo que falhasse
+deixariam uma rápida dizendo "com vídeo" sem vídeo nenhum. O 413 ganha a frase
+"o arquivo é grande demais para o depósito".
+
+**Só vai na gravação o que MUDOU**: o arquivo novo, ou o anexo tirado. Num
+banco sem o 034, a rápida de texto continua sendo gravada sem mencionar coluna
+nenhuma do anexo — mencioná-las daria 42703.
+
+**`rapidaComAnexo` tem três estados**, pela régua de `temVantoro.js`, numa
+pergunta de uma linha por abertura do painel. Só a coluna que FALTA esconde o
+anexo (`semAColunaDoAnexo`, pelo código e pelo nome). A pergunta que falha
+por outro motivo o mantém oferecido.
+
+**Tirar o anexo não apaga o arquivo.** O depósito não deixa ninguém apagar
+(armadilha nº 7 da ponte), e as mensagens já enviadas apontam para ele.
+
+**O que não foi medido, e fica dito:** o tamanho máximo de uma legenda no
+WhatsApp. A maior rápida do escritório tem 1045 caracteres. Se o WhatsApp
+cortar uma legenda longa, o caminho é mandar o texto numa mensagem à parte —
+e isso se decide depois de ver acontecer.
+
+**A bancada aprendeu duas coisas**: o depósito guarda o que subiu
+(`__SUBIDAS`), que é a única diferença visível entre "mandou o endereço
+guardado" e "subiu o vídeo de novo", já que as duas dão a mesma linha na fila;
+e `__SUBIDA_FALHA` faz ele recusar, como o de verdade recusa um arquivo
+grande demais.
+
+Prova: `as-mensagens-rapidas-com-video`, 115 conferências, com o depósito de
+mentira guardando cada subida. **24 sabotagens e 24 pegas**, todas limpas,
+rodadas em cópias e lidas uma a uma:
+
+- **no formulário:**
+  - sem o anexo (41 reprovações);
+  - o arquivo subindo ao ESCOLHER, e não ao salvar;
+  - sem o cache de um ano;
+  - fora da pasta `rapidas/`;
+  - o nome higienizado gravado no lugar do de verdade;
+  - o texto obrigatório mesmo com anexo;
+  - a rápida salva com o depósito recusando;
+- **sem o 034:**
+  - a gravação mencionando as colunas num banco sem o 034;
+  - a pergunta que falha escondendo o anexo;
+  - um 42703 de outra coluna tomado como o do anexo;
+- **no "/":**
+  - escolher pondo só o texto na caixa (17);
+  - o texto ficando também na caixa;
+  - a legenda com o `{nome}` cru;
+- **ao enviar e agendar:**
+  - o arquivo subindo de novo ao enviar, e ao agendar;
+  - a prévia tentando `createObjectURL` no arquivo do depósito;
+- **na legenda:**
+  - de uma linha só (as quebras somem);
+  - Shift+Enter enviando;
+  - o cursor no começo;
+- **editar e tirar:**
+  - editar esquecendo o anexo guardado;
+  - tirar sem limpar as colunas;
+- **o que a tela anuncia:**
+  - a lista sem dizer que há anexo;
+  - o menu do "/" sem dizer que há anexo;
+  - o vídeo gravado como documento.
+
 ## O topo da coluna — 283px para dizer o que cabe em 188
 
 Pedido do Rodrigo em 16/09, com as duas telas lado a lado: o topo do Zorvin

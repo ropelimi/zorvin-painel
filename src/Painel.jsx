@@ -61,6 +61,8 @@ import { pareceAcessoVencido, pedirConferenciaDaSessao, marcarSaidaPedida, foiSa
 import { rascunhosDe, guardarRascunho } from "./rascunhos.js";
 import CampoDePesquisa, { ComPesquisa } from "./CampoDePesquisa.jsx";
 import { PESQUISA_A_PARTIR_DE, casaComAPesquisa, nadaComAPesquisa } from "./pesquisaNosMenus.js";
+import { tipoDoAnexo, caminhoDoAnexoDaRapida, semAColunaDoAnexo, nomeDoAnexo, anexoDoDeposito,
+         CACHE_DO_ANEXO_DA_RAPIDA } from "./rapidasComAnexo.js";
 
 // ============================================================
 //  ZORVIN by Ropelimi — Painel real (conectado ao Supabase)
@@ -909,6 +911,15 @@ const TEMAS = {
 //
 // 10px de respiro em volta de um ícone de 20 dão 40px de alvo sem mudar nada
 // do que se vê: o desenho continua do mesmo tamanho, no mesmo lugar.
+/** O DESENHO DO ANEXO DE UMA RÁPIDA, pelo tipo — o mesmo na lista, no menu do
+ *  "/" e no formulário, para "isto tem vídeo" ter uma cara só. */
+function IconeDoAnexo({ tipo, size = 14, color }) {
+  if (tipo === "video") return <Video size={size} color={color} />;
+  if (tipo === "imagem") return <ImageIcon size={size} color={color} />;
+  if (tipo === "audio") return <Volume2 size={size} color={color} />;
+  return <FileText size={size} color={color} />;
+}
+
 /** Nome comparável: sem acento, sem maiúscula, sem espaço sobrando.
  *  O mesmo tratamento que o banco faz em `zorvin_sem_acento` — os dois lados
  *  precisam concordar, senão "JENIFER ALMEIDA" e "Jenifer Almeida" viram duas
@@ -3477,6 +3488,23 @@ export default function Painel({ sessao }) {
   // Qual deles está grande na prévia. A legenda é DE CADA arquivo, como no
   // WhatsApp: uma legenda só para o lote descreveria errado quatro dos cinco.
   const [anexoAtivo, setAnexoAtivo] = useState(0);
+  // A LEGENDA DA PRÉVIA CRESCE COM O TEXTO (23/10), até seis linhas, e o
+  // cursor vai para o FIM ao abrir ou trocar de anexo: a legenda que chega
+  // preenchida por uma rápida é para ser completada, e não reescrita do começo.
+  const legendaRef = useRef(null);
+  const legendaAtual = (anexosPendentes[Math.min(anexoAtivo, anexosPendentes.length - 1)] || {}).legenda || "";
+  useLayoutEffect(() => {
+    const el = legendaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+  }, [legendaAtual, anexoAtivo, anexosPendentes.length]);
+  useLayoutEffect(() => {
+    const el = legendaRef.current;
+    if (!el || document.activeElement !== el) return;
+    const fim = el.value.length;
+    el.setSelectionRange(fim, fim);
+  }, [anexoAtivo, anexosPendentes.length]);
   // Há um arquivo sendo arrastado sobre a janela? Serve só para a faixa
   // "solte aqui": sem retorno visual, quem arrasta não sabe se pode soltar.
   const [arrastandoArquivo, setArrastandoArquivo] = useState(false);
@@ -3553,8 +3581,34 @@ export default function Painel({ sessao }) {
   // Configurações a apaga — numa aba ela não serve para a outra.
   const [pesquisaNaConfig, setPesquisaNaConfig] = useState("");
   useEffect(() => { setPesquisaNaConfig(""); }, [abaConfig, configAberta]);
-  const [rapidaForm, setRapidaForm] = useState(null); // { id?, titulo, texto } sendo criada/editada
+  const [rapidaForm, setRapidaForm] = useState(null); // { id?, titulo, texto, midia_*, arquivo?, previa? } sendo criada/editada
   const textoDaRapidaRef = useRef(null); // a caixa do texto, para pôr a variável onde está o cursor
+  const arquivoDaRapidaRef = useRef(null); // o campo escondido que escolhe o anexo da rápida
+  const [salvandoRapida, setSalvandoRapida] = useState(false);
+  // A PRÉVIA DO ARQUIVO AINDA NÃO SALVO é um endereço local (`blob:`), e é
+  // solto quando troca ou quando o formulário fecha — por aqui, num lugar só,
+  // em vez de em cada botão que fecha o formulário.
+  const previaDaRapida = (rapidaForm && rapidaForm.previa) || null;
+  useEffect(() => () => { if (previaDaRapida) URL.revokeObjectURL(previaDaRapida); }, [previaDaRapida]);
+  // O ANEXO DAS RÁPIDAS (script 034 da ponte) — três estados, pela régua de
+  // `temVantoro.js`: `null` ainda não perguntei, `false` as colunas não
+  // existem (o botão de anexar não aparece), `true` existem OU não consegui
+  // saber. Esconder por uma falha de rede tiraria o anexo no dia em que a rede
+  // tossisse; mostrando, o pior caso é a gravação dizer o erro, com o código.
+  // Uma pergunta por abertura do painel, de uma linha só.
+  const [rapidaComAnexo, setRapidaComAnexo] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        const { error } = await supabase.from("mensagens_rapidas").select("id, midia_url").limit(1);
+        if (vivo) setRapidaComAnexo(!semAColunaDoAnexo(error));
+      } catch (_) {
+        if (vivo) setRapidaComAnexo(true);
+      }
+    })();
+    return () => { vivo = false; };
+  }, []);
   const [tags, setTags] = useState([]); // definições das tags (id, nome, cor)
   const [tagsPorConversa, setTagsPorConversa] = useState({}); // { conversaId: [tagId,...] }
 
@@ -5848,29 +5902,84 @@ export default function Painel({ sessao }) {
 
   // Cria (sem id) ou atualiza (com id) uma mensagem rápida, pela tela de Configurações.
   async function salvarRapidaForm() {
+    if (salvandoRapida) return;
     const titulo = (rapidaForm?.titulo || "").trim();
     const texto = (rapidaForm?.texto || "").trim();
-    if (!titulo || !texto) { mostrarAviso("Preencha o atalho e o texto."); return; }
-    // Mesma assimetria das etiquetas: a edição pode ser recusada em silêncio, a
-    // criação não. Aqui o que se perde é o TEXTO PRONTO que alguém escreveu
-    // para a equipe inteira usar — e ele volta ao que era na abertura seguinte.
-    let error, recusou = false;
-    if (rapidaForm.id) {
-      const r = await supabase.from("mensagens_rapidas")
-        .update({ titulo, texto }).eq("id", rapidaForm.id).select("id");
-      error = r.error; recusou = naoGravouNada(r);
-    } else {
-      ({ error } = await supabase.from("mensagens_rapidas").insert({ titulo, texto }));
+    // COM ANEXO, O TEXTO É OPCIONAL (23/10): a rápida pode ser só o vídeo. O
+    // atalho continua obrigatório — é por ele que a rápida é achada no "/".
+    const comAnexo = !!(rapidaForm?.arquivo || rapidaForm?.midia_url);
+    if (!titulo || (!texto && !comAnexo)) {
+      mostrarAviso(comAnexo ? "Preencha o atalho." : "Preencha o atalho e o texto."); return;
     }
-    if (error) {
-      mostrarAviso(comOCodigo("Não consegui salvar esta mensagem rápida.", error,
-                              "salvar mensagem rápida"), 7000);
-      return;
+    setSalvandoRapida(true);
+    try {
+      // O ANEXO SOBE ANTES DA LINHA, e uma vez só (23/10). Subindo depois, uma
+      // gravação que passasse e um arquivo que falhasse deixariam uma rápida
+      // dizendo "com vídeo" sem vídeo nenhum. Nesta ordem, a falha é dita e
+      // NADA é salvo — o formulário fica aberto com o que foi escrito.
+      //
+      // SÓ VAI NA GRAVAÇÃO O QUE MUDOU: arquivo novo, ou o anexo tirado. Num
+      // banco sem o script 034, a rápida de texto continua sendo gravada sem
+      // mencionar coluna nenhuma do anexo — mencioná-las daria 42703.
+      let anexo = {};
+      if (rapidaForm.arquivo) {
+        const f = rapidaForm.arquivo;
+        const caminho = caminhoDoAnexoDaRapida(f.name);
+        const { error: erroDaSubida } = await supabase.storage.from("anexos")
+          .upload(caminho, f, { contentType: f.type || undefined, ...CACHE_DO_ANEXO_DA_RAPIDA });
+        if (erroDaSubida) {
+          console.error("Zorvin — subir o anexo da rápida falhou:", erroDaSubida);
+          const codigo = erroDaSubida.status || erroDaSubida.statusCode || null;
+          mostrarAviso(codigo
+            ? `Não consegui subir o anexo desta mensagem rápida${String(codigo) === "413" ? ": o arquivo é grande demais para o depósito" : ""} (erro ${codigo}). Nada foi salvo.`
+            : "Não consegui subir o anexo desta mensagem rápida: o arquivo não chegou ao depósito — confira a conexão. Nada foi salvo.", 9000);
+          return;
+        }
+        const url = supabase.storage.from("anexos").getPublicUrl(caminho).data?.publicUrl;
+        if (!url) { mostrarAviso("O depósito não devolveu o endereço do anexo. Nada foi salvo.", 7000); return; }
+        anexo = { midia_url: url, midia_tipo: tipoDoAnexo(f.type), midia_mime: f.type || null, midia_nome: f.name || null };
+      } else if (rapidaForm.midiaOriginal && !rapidaForm.midia_url) {
+        anexo = { midia_url: null, midia_tipo: null, midia_mime: null, midia_nome: null };
+      }
+      // Mesma assimetria das etiquetas: a edição pode ser recusada em silêncio, a
+      // criação não. Aqui o que se perde é o TEXTO PRONTO que alguém escreveu
+      // para a equipe inteira usar — e ele volta ao que era na abertura seguinte.
+      let error, recusou = false;
+      if (rapidaForm.id) {
+        const r = await supabase.from("mensagens_rapidas")
+          .update({ titulo, texto, ...anexo }).eq("id", rapidaForm.id).select("id");
+        error = r.error; recusou = naoGravouNada(r);
+      } else {
+        ({ error } = await supabase.from("mensagens_rapidas").insert({ titulo, texto, ...anexo }));
+      }
+      if (error) {
+        mostrarAviso(comOCodigo("Não consegui salvar esta mensagem rápida.", error,
+                                "salvar mensagem rápida"), 7000);
+        return;
+      }
+      if (recusou) { mostrarAviso("O banco não deixou salvar esta mensagem rápida. Nada mudou."); return; }
+      setRapidaForm(null);
+      mostrarAviso("Mensagem rápida salva!");
+      carregarRapidas();
+    } finally {
+      setSalvandoRapida(false);
     }
-    if (recusou) { mostrarAviso("O banco não deixou salvar esta mensagem rápida. Nada mudou."); return; }
-    setRapidaForm(null);
-    mostrarAviso("Mensagem rápida salva!");
-    carregarRapidas();
+  }
+
+  /** O arquivo escolhido no formulário fica NA MEMÓRIA até "Salvar": quem
+   *  escolhe o vídeo errado e troca não deixa um arquivo a mais no depósito. */
+  function escolherAnexoDaRapida(arquivo) {
+    if (!arquivo) return;
+    const previa = URL.createObjectURL(arquivo);
+    setRapidaForm((f) => (f ? { ...f, arquivo, previa } : f));
+  }
+
+  /** Tirar o anexo é dizer que a rápida volta a ser só texto. O arquivo que já
+   *  estava no depósito fica lá: ninguém apaga arquivo pelo painel (o
+   *  depósito não deixa), e outras mensagens já enviadas apontam para ele. */
+  function tirarAnexoDaRapida() {
+    setRapidaForm((f) => (f ? { ...f, arquivo: null, previa: null,
+      midia_url: null, midia_tipo: null, midia_mime: null, midia_nome: null } : f));
   }
 
   // PÕE A VARIÁVEL ONDE ESTÁ O CURSOR, e não no fim: "Olá, !" com o cursor
@@ -5908,6 +6017,19 @@ export default function Painel({ sessao }) {
   // já com o nome do cliente, e a pessoa lê o que vai sair antes do Enter.
   function escolherSlash(r) {
     if (!r) return;
+    // A RÁPIDA COM ANEXO (23/10) abre a PRÉVIA do anexo, com o texto já
+    // preenchido como legenda — a régua de sempre das rápidas: o que se vê é
+    // o que sai, e é na prévia que se confere o vídeo e o nome do cliente antes
+    // do Enter. A caixa de escrever fica vazia: deixado ali, o texto sairia
+    // duas vezes, na legenda e numa mensagem.
+    //
+    // NUMA EDIÇÃO, SÓ O TEXTO: editar é trocar o texto de uma mensagem que já
+    // saiu, e um anexo não tem como entrar nela.
+    if (r.midia_url && !editando && abrirAnexoDaRapida(r)) {
+      setRascunho("");
+      setSlashIdx(0);
+      return;
+    }
     setRascunho(rapidaPreenchida(r.texto));
     setSlashIdx(0);
     inputRef.current?.focus();
@@ -10960,6 +11082,26 @@ export default function Painel({ sessao }) {
     });
   }
 
+  /** O ANEXO DA RÁPIDA NA PRÉVIA, com a legenda preenchida (23/10). Ele já
+   *  está no depósito: a prévia mostra o próprio endereço, e enviar não sobe
+   *  nada de novo (ver `enviarArquivo`). A nota interna é só texto, como para
+   *  qualquer anexo. */
+  function abrirAnexoDaRapida(r) {
+    const f = anexoDoDeposito(r);
+    if (!f) return false;
+    if (modoNotaRef.current) {
+      mostrarAviso("A nota interna é só texto. Feche a nota para enviar o anexo ao cliente.");
+      return false;
+    }
+    const item = { file: f, tipo: f.tipo, nome: f.name, mime: f.type, tamanho: null, url: f.url,
+                   legenda: r.texto ? rapidaPreenchida(r.texto) : "" };
+    setAnexosPendentes((antes) => {
+      setAnexoAtivo(antes.length);
+      return [...antes, item];
+    });
+    return true;
+  }
+
   /** Põe arquivos na prévia. Somando à fila: quem já colou dois e arrasta um
       terceiro quer os três, não o terceiro sozinho. */
   function abrirAnexos(arquivos) {
@@ -11249,7 +11391,7 @@ export default function Painel({ sessao }) {
     // `tipoForcado` existe por causa da FIGURINHA: pelo mime ela é só uma
     // imagem, e a Uazapi precisa saber que é sticker para o WhatsApp
     // desenhá-la sem moldura e sem legenda.
-    const tipo = tipoForcado || (ehImagem ? "imagem" : ehVideo ? "video" : ehAudio ? "audio" : "documento");
+    const tipo = tipoForcado || file.tipo || (ehImagem ? "imagem" : ehVideo ? "video" : ehAudio ? "audio" : "documento");
     const tempId = "temp-" + Date.now() + "-" + Math.round(Math.random() * 1e6);
     // Prévia local (o remetente vê o anexo na hora, sem depender do Storage).
     //
@@ -11258,7 +11400,9 @@ export default function Painel({ sessao }) {
     // enviado nascia SEM MÍDIA, com "indisponível" escrito nela, até o Storage
     // responder — quem acabou de mandar a procuração via um aviso de que ela
     // não estava lá.
-    const previa = URL.createObjectURL(file);
+    // O ANEXO DE UMA RÁPIDA JÁ ESTÁ NO DEPÓSITO (23/10): a prévia é o próprio
+    // endereço, e nada sobe de novo — nem aqui, nem no "Reenviar".
+    const previa = file.doDeposito ? file.url : URL.createObjectURL(file);
     setMensagens((prev) => [...prev, {
       id: tempId, conversa_id: convId, origem: "advogado", tipo, enviado_por: meuNome, enviado_por_id: meuId, enviado_por_foto: minhaFoto,
       texto: legenda || null, midia_url: previa, midia_mime: file.type, midia_nome: file.name,
@@ -11273,12 +11417,15 @@ export default function Painel({ sessao }) {
       // WhatsApp. O cliente recebia o nome estropiado; e o arquivo que ele
       // assinava e devolvia, voltava com ele.
       const nome = (file.name || "arquivo").replace(/[^\w.\-]+/g, "_");
-      const caminho = `${convId}/${Date.now()}-${nome}`;
-      const { error: upErr } = await supabase.storage.from("anexos").upload(caminho, file, { contentType: file.type });
-      if (upErr) throw new Error("Falha ao subir o arquivo (Storage): " + (upErr.message || upErr));
-      const { data: pub } = supabase.storage.from("anexos").getPublicUrl(caminho);
-      const url = pub?.publicUrl;
-      if (!url) throw new Error("sem URL pública do arquivo");
+      let url = file.doDeposito ? file.url : null;
+      if (!url) {
+        const caminho = `${convId}/${Date.now()}-${nome}`;
+        const { error: upErr } = await supabase.storage.from("anexos").upload(caminho, file, { contentType: file.type });
+        if (upErr) throw new Error("Falha ao subir o arquivo (Storage): " + (upErr.message || upErr));
+        const { data: pub } = supabase.storage.from("anexos").getPublicUrl(caminho);
+        url = pub?.publicUrl;
+        if (!url) throw new Error("sem URL pública do arquivo");
+      }
       // Mantém a prévia local na tela; guarda a URL do Storage só para casar
       // com a versão real que a ponte vai gravar (evita duplicar).
       setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _midiaUrlFinal: url } : m)));
@@ -11303,15 +11450,19 @@ export default function Painel({ sessao }) {
     const ehImagem = file.type.startsWith("image/");
     const ehVideo = file.type.startsWith("video/");
     const ehAudio = file.type.startsWith("audio/");
-    const tipo = ehImagem ? "imagem" : ehVideo ? "video" : ehAudio ? "audio" : "documento";
+    const tipo = file.tipo || (ehImagem ? "imagem" : ehVideo ? "video" : ehAudio ? "audio" : "documento");
     try {
       const nome = (file.name || "arquivo").replace(/[^\w.\-]+/g, "_");
-      const caminho = `${convId}/${Date.now()}-${nome}`;
-      const { error: upErr } = await supabase.storage.from("anexos").upload(caminho, file, { contentType: file.type });
-      if (upErr) throw new Error("Falha ao subir o arquivo (Storage): " + (upErr.message || upErr));
-      const { data: pub } = supabase.storage.from("anexos").getPublicUrl(caminho);
-      const url = pub?.publicUrl;
-      if (!url) throw new Error("sem URL pública do arquivo");
+      // O anexo de uma rápida já está no depósito — ver `enviarArquivo`.
+      let url = file.doDeposito ? file.url : null;
+      if (!url) {
+        const caminho = `${convId}/${Date.now()}-${nome}`;
+        const { error: upErr } = await supabase.storage.from("anexos").upload(caminho, file, { contentType: file.type });
+        if (upErr) throw new Error("Falha ao subir o arquivo (Storage): " + (upErr.message || upErr));
+        const { data: pub } = supabase.storage.from("anexos").getPublicUrl(caminho);
+        url = pub?.publicUrl;
+        if (!url) throw new Error("sem URL pública do arquivo");
+      }
       // O nome como é, e o higienizado só no endereço — ver `enviarArquivo`.
       const r = await gravarAgendada({ conversa_id: convId, texto: legenda || "", tipo,
         midia_url: url, midia_mime: file.type, midia_nome: file.name || nome }, quando);
@@ -13610,8 +13761,18 @@ export default function Painel({ sessao }) {
             de escolher, o nome que vai entrar. */}
         {slashLista.map((r, idx) => (
           <button key={r.id} data-rapida-no-menu={r.titulo} onMouseEnter={() => setSlashIdx(idx)} onClick={() => escolherSlash(r)} style={{ width: "100%", textAlign: "left", display: "block", border: "none", background: idx === Math.min(slashIdx, slashLista.length - 1) ? C.listActive : "transparent", cursor: "pointer", color: C.textPrimary, padding: "8px 12px", borderBottom: `1px solid ${C.divider}` }}>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>{r.titulo}</div>
-            <div data-texto-da-rapida style={{ fontSize: 12, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rapidaPreenchida(r.texto)}</div>
+            <div style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+              <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.titulo}</span>
+              {/* A RÁPIDA COM ANEXO SE ANUNCIA antes do clique: escolhê-la abre
+                  a prévia do arquivo, e não só põe texto na caixa. */}
+              {r.midia_url && (
+                <span data-rapida-com-anexo={r.midia_tipo || "documento"}
+                      style={{ display: "inline-flex", alignItems: "center", gap: 3, flexShrink: 0, fontSize: 11, fontWeight: 600, color: C.verdeTexto }}>
+                  <IconeDoAnexo tipo={r.midia_tipo} size={12} /> com {nomeDoAnexo(r.midia_tipo)}
+                </span>
+              )}
+            </div>
+            <div data-texto-da-rapida style={{ fontSize: 12, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.texto ? rapidaPreenchida(r.texto) : (r.midia_url ? `Só o ${nomeDoAnexo(r.midia_tipo)}, sem texto` : "")}</div>
           </button>
         ))}
       </div>
@@ -17280,9 +17441,60 @@ export default function Painel({ sessao }) {
                           </div>
                         )}
                       </div>
+                      {/* O ANEXO DA RÁPIDA (23/10) — o pedido do Rodrigo: "para as
+                          mensagens rápidas, precisa ser possível incluir vídeos".
+                          Só com o script 034 da ponte; sem ele, a rápida é o
+                          texto de sempre. */}
+                      {rapidaComAnexo === true && (() => {
+                        const novo = rapidaForm.arquivo || null;
+                        const tem = !!(novo || rapidaForm.midia_url);
+                        const tipo = novo ? tipoDoAnexo(novo.type) : rapidaForm.midia_tipo;
+                        const endereco = rapidaForm.previa || rapidaForm.midia_url;
+                        const nome = novo ? novo.name : (rapidaForm.midia_nome || "arquivo");
+                        const BOTAO = { border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary, borderRadius: 7,
+                                        padding: "6px 10px", fontSize: 12.5, cursor: "pointer", flexShrink: 0 };
+                        return (
+                          <div data-anexo-da-rapida>
+                            <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary }}>ANEXO (OPCIONAL)</label>
+                            <input ref={arquivoDaRapidaRef} type="file" data-arquivo-da-rapida style={{ display: "none" }}
+                                   onChange={(e) => {
+                                     // A cópia antes de limpar — a lição do clipe (`aoEscolherArquivo`).
+                                     const f = Array.from(e.target.files || [])[0];
+                                     e.target.value = "";
+                                     escolherAnexoDaRapida(f);
+                                   }} />
+                            {tem ? (
+                              <div data-anexo-escolhido={novo ? "novo" : "guardado"}
+                                   style={{ marginTop: 5, border: `1px solid ${C.divider}`, borderRadius: 8, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                                {tipo === "video" && <video src={endereco} controls preload="metadata" style={{ width: "100%", maxHeight: 220, borderRadius: 6, background: "#000" }} />}
+                                {tipo === "imagem" && <img src={endereco} alt="" style={{ maxWidth: "100%", maxHeight: 220, borderRadius: 6, objectFit: "contain", alignSelf: "flex-start" }} />}
+                                {tipo === "audio" && <audio src={endereco} controls style={{ width: "100%" }} />}
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                                  <IconeDoAnexo tipo={tipo} size={16} color={C.textSecondary} />
+                                  <span data-nome-do-anexo style={{ flex: 1, minWidth: 0, fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nome}</span>
+                                  <button type="button" data-trocar-anexo-da-rapida onClick={() => arquivoDaRapidaRef.current?.click()} style={BOTAO}>Trocar</button>
+                                  <button type="button" data-tirar-anexo-da-rapida onClick={tirarAnexoDaRapida} style={{ ...BOTAO, color: "#e5573f" }}>Tirar</button>
+                                </div>
+                                {novo && (
+                                  <div style={{ fontSize: 12, color: C.textSecondary }}>O arquivo sobe para o depósito quando você salvar.</div>
+                                )}
+                              </div>
+                            ) : (
+                              <button type="button" data-anexar-na-rapida onClick={() => arquivoDaRapidaRef.current?.click()}
+                                      style={{ marginTop: 5, width: "100%", display: "flex", alignItems: "center", gap: 7, border: `1px dashed ${C.divider}`,
+                                               background: "transparent", color: C.textPrimary, borderRadius: 8, padding: "10px 12px", fontSize: 13.5, cursor: "pointer", textAlign: "left" }}>
+                                <Paperclip size={16} color={C.textSecondary} /> Anexar um vídeo (ou foto, documento, áudio)
+                              </button>
+                            )}
+                            <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 6, lineHeight: 1.45 }}>
+                              Na conversa, a rápida com anexo abre a prévia do arquivo com o texto como legenda — é ali que se confere antes de enviar.
+                            </div>
+                          </div>
+                        );
+                      })()}
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                         <button onClick={() => setRapidaForm(null)} style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary, borderRadius: 8, padding: "9px 16px", fontSize: 14, cursor: "pointer" }}>Cancelar</button>
-                        <button data-salvar-rapida onClick={salvarRapidaForm} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Salvar</button>
+                        <button data-salvar-rapida onClick={salvarRapidaForm} disabled={salvandoRapida} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: salvandoRapida ? "default" : "pointer", opacity: salvandoRapida ? 0.7 : 1 }}>{salvandoRapida ? "Salvando…" : "Salvar"}</button>
                       </div>
                     </div>
                   ) : (<>
@@ -17304,8 +17516,18 @@ export default function Painel({ sessao }) {
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 14, fontWeight: 600 }}>{r.titulo}</div>
                             <div style={{ fontSize: 13, color: C.textSecondary, marginTop: 2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{r.texto}</div>
+                            {r.midia_url && (
+                              <div data-anexo-na-lista={r.midia_tipo || "documento"}
+                                   style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 5, maxWidth: "100%", fontSize: 12,
+                                            color: C.verdeTexto, background: C.listActive, borderRadius: 6, padding: "2px 8px" }}>
+                                <IconeDoAnexo tipo={r.midia_tipo} size={13} />
+                                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Com {nomeDoAnexo(r.midia_tipo)}: {r.midia_nome || "arquivo"}</span>
+                              </div>
+                            )}
                           </div>
-                          <button data-editar-rapida onClick={() => setRapidaForm({ id: r.id, titulo: r.titulo, texto: r.texto })} title="Editar" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex", flexShrink: 0 }}><Pencil size={16} /></button>
+                          <button data-editar-rapida onClick={() => setRapidaForm({ id: r.id, titulo: r.titulo, texto: r.texto,
+                            midia_url: r.midia_url || null, midia_tipo: r.midia_tipo || null, midia_mime: r.midia_mime || null,
+                            midia_nome: r.midia_nome || null, midiaOriginal: r.midia_url || null })} title="Editar" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex", flexShrink: 0 }}><Pencil size={16} /></button>
                           <button data-apagar-rapida onClick={() => apagarRapida(r.id)} title="Apagar" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#e5573f", display: "flex", flexShrink: 0 }}><Trash2 size={16} /></button>
                         </div>
                       ))}
@@ -17867,9 +18089,18 @@ export default function Painel({ sessao }) {
               </div>
             )}
             <div style={{ display: "flex", alignItems: "flex-end", gap: 10, width: "100%", background: C.headerBar, borderRadius: 10, padding: "8px 12px" }}>
-              <input autoFocus value={atual.legenda || ""} onChange={(e) => trocarLegenda(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); confirmarEnviarAnexo(); } }}
+              {/* A LEGENDA TEM VÁRIAS LINHAS (23/10). Era um campo de uma
+                  linha só, e o navegador TIRA as quebras de linha de um campo
+                  assim: 22 das 32 rápidas do escritório têm parágrafos (medido
+                  no banco), e a do vídeo chegaria ao cliente num bloco só.
+                  Enter envia, como antes; Shift+Enter quebra a linha, como na
+                  caixa de escrever. */}
+              <textarea data-legenda-do-anexo ref={legendaRef} autoFocus rows={1} value={atual.legenda || ""}
+                onChange={(e) => trocarLegenda(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); confirmarEnviarAnexo(); } }}
                 placeholder={anexosPendentes.length > 1 ? `Legenda de ${atual.nome}…` : "Adicione uma legenda…"}
-                style={{ flex: 1, border: "none", outline: "none", background: "transparent", color: C.textPrimary, fontSize: 14.5, padding: "8px 4px" }} />
+                style={{ flex: 1, border: "none", outline: "none", background: "transparent", color: C.textPrimary, fontSize: 14.5,
+                         padding: "8px 4px", resize: "none", fontFamily: "inherit", lineHeight: 1.4, maxHeight: 140, overflowY: "auto" }} />
               {/* AGENDAR OS ANEXOS — a mesma janela da caixa de escrever. */}
               {temAgenda === true && (
                 <span style={{ position: "relative", display: "flex", flexShrink: 0 }}>
