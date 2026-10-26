@@ -22,6 +22,7 @@ import { chaveDoNumero, outrosNumeros, telefoneLegivel } from "./numeros.js";
 // A chamada à ponte mora em `ponte.js`: duas telas precisam dela (esta e a de
 // atendentes), e duas cópias divergiriam na primeira mudança.
 import { chamarPonte, BRIDGE_URL, FALTA_PONTE } from "./ponte.js";
+import { enderecoNoVantoro } from "./temVantoro.js";
 import { naoGravouNada, comOCodigo } from "./gravar.js";
 
 // Este erro é de configuração da ponte, ou é outra coisa?
@@ -1682,14 +1683,14 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
                 olha primeiro: aqui cabe só um resumo, e quem precisa do resto
                 (processos, documentos, histórico) não deveria ter de rolar a
                 ficha inteira para descobrir que existe um caminho. */}
-            {import.meta.env.VITE_VANTORO_WEB && (
-              <a href={`${import.meta.env.VITE_VANTORO_WEB}/cadastro/clientes/${cliente.id}/`}
-                 target="_blank" rel="noopener noreferrer"
-                 style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14,
-                          fontSize: 12.5, color: C.link, textDecoration: "none" }}>
-                <ExternalLink size={13} /> Abrir ficha completa no Vantoro
-              </a>
-            )}
+            {/* O endereço vem de `enderecoNoVantoro`, o mesmo do ícone do
+                Controle de atendimento. */}
+            <a data-ficha-completa href={enderecoNoVantoro(`/cadastro/clientes/${cliente.id}/`)}
+               target="_blank" rel="noopener noreferrer"
+               style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14,
+                        fontSize: 12.5, color: C.link, textDecoration: "none" }}>
+              <ExternalLink size={13} /> Abrir ficha completa no Vantoro
+            </a>
 
             {/* O número desta conversa, só para conferir. Não se edita aqui: é
                 por ele que a conversa acha o cadastro, e trocá-lo no meio do
