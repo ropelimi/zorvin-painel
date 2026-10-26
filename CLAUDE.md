@@ -1399,6 +1399,105 @@ mesma prova mediu 0,94×. **Ao subir servidor em cópia, mate o GRUPO de
 processos** (`start_new_session` e `killpg`), e confira com `ps` que nada ficou
 antes de medir tempo.
 
+## A mensagem rápida com vídeo (23/10)
+
+Pedido do Rodrigo: *"Para as mensagens rápidas, precisa ser possível incluir
+vídeos."* O vídeo que a equipe manda a todo cliente novo era procurado no
+computador e anexado à mão, a cada vez. Agora ele mora na própria rápida:
+Configurações → Mensagens rápidas → **Anexar um vídeo (ou foto, documento,
+áudio)**. As colunas são do script 034 da ponte (`midia_url`, `midia_tipo`,
+`midia_mime`, `midia_nome`), e as contas que não precisam de tela moram em
+`src/rapidasComAnexo.js`.
+
+**O arquivo sobe UMA vez, ao salvar a rápida**, para `anexos/rapidas/…`, com
+o cache de um ano e `immutable` (a régua da ponte, `CACHE_DA_MIDIA`). Antes
+de salvar ele fica na memória: quem escolhe o vídeo errado e troca não deixa
+um arquivo a mais no depósito. **Usar a rápida manda à fila o MESMO
+endereço**, sem baixar nem subir de novo. Subir a cada cliente seria a conta
+de banda de 21/08 (a armadilha nº 6 da ponte) e deixaria quem atende
+esperando o upload de um vídeo que já está lá. `enviarArquivo` e
+`agendarArquivo` reconhecem o arquivo que já está no depósito (`doDeposito`),
+e o "Reenviar" também.
+
+**Escolher a rápida com anexo abre a PRÉVIA do anexo**, com o texto já
+preenchido como legenda. É a régua de sempre das rápidas — o que se vê é o que
+sai —, e é na prévia que se confere o vídeo e o nome do cliente antes do
+Enter. A caixa de escrever fica vazia: deixado ali, o texto sairia duas vezes.
+Numa edição de mensagem, só o texto entra.
+
+**A legenda da prévia passou a ter várias linhas**, e isso vale para qualquer
+anexo. Ela era um campo de uma linha só, e o navegador TIRA as quebras de
+linha de um campo assim. Medido no banco em 23/10: **22 das 32 rápidas têm
+parágrafos** — a do vídeo chegaria ao cliente num bloco só. Enter envia, como
+antes; Shift+Enter quebra a linha. O cursor vai para o fim da legenda: ela
+chega preenchida para ser completada.
+
+**Com anexo, o texto é opcional e o atalho não.** A rápida só com o vídeo
+grava `texto = ''` (a coluna continua `not null`).
+
+**O depósito que recusa é dito, e NADA é salvo.** O arquivo sobe antes da
+linha: ao contrário, uma gravação que passasse e um arquivo que falhasse
+deixariam uma rápida dizendo "com vídeo" sem vídeo nenhum. O 413 ganha a frase
+"o arquivo é grande demais para o depósito".
+
+**Só vai na gravação o que MUDOU**: o arquivo novo, ou o anexo tirado. Num
+banco sem o 034, a rápida de texto continua sendo gravada sem mencionar coluna
+nenhuma do anexo — mencioná-las daria 42703.
+
+**`rapidaComAnexo` tem três estados**, pela régua de `temVantoro.js`, numa
+pergunta de uma linha por abertura do painel. Só a coluna que FALTA esconde o
+anexo (`semAColunaDoAnexo`, pelo código e pelo nome). A pergunta que falha
+por outro motivo o mantém oferecido.
+
+**Tirar o anexo não apaga o arquivo.** O depósito não deixa ninguém apagar
+(armadilha nº 7 da ponte), e as mensagens já enviadas apontam para ele.
+
+**O que não foi medido, e fica dito:** o tamanho máximo de uma legenda no
+WhatsApp. A maior rápida do escritório tem 1045 caracteres. Se o WhatsApp
+cortar uma legenda longa, o caminho é mandar o texto numa mensagem à parte —
+e isso se decide depois de ver acontecer.
+
+**A bancada aprendeu duas coisas**: o depósito guarda o que subiu
+(`__SUBIDAS`), que é a única diferença visível entre "mandou o endereço
+guardado" e "subiu o vídeo de novo", já que as duas dão a mesma linha na fila;
+e `__SUBIDA_FALHA` faz ele recusar, como o de verdade recusa um arquivo
+grande demais.
+
+Prova: `as-mensagens-rapidas-com-video`, 115 conferências, com o depósito de
+mentira guardando cada subida. **24 sabotagens e 24 pegas**, todas limpas,
+rodadas em cópias e lidas uma a uma:
+
+- **no formulário:**
+  - sem o anexo (41 reprovações);
+  - o arquivo subindo ao ESCOLHER, e não ao salvar;
+  - sem o cache de um ano;
+  - fora da pasta `rapidas/`;
+  - o nome higienizado gravado no lugar do de verdade;
+  - o texto obrigatório mesmo com anexo;
+  - a rápida salva com o depósito recusando;
+- **sem o 034:**
+  - a gravação mencionando as colunas num banco sem o 034;
+  - a pergunta que falha escondendo o anexo;
+  - um 42703 de outra coluna tomado como o do anexo;
+- **no "/":**
+  - escolher pondo só o texto na caixa (17);
+  - o texto ficando também na caixa;
+  - a legenda com o `{nome}` cru;
+- **ao enviar e agendar:**
+  - o arquivo subindo de novo ao enviar, e ao agendar;
+  - a prévia tentando `createObjectURL` no arquivo do depósito;
+- **na legenda:**
+  - de uma linha só (as quebras somem);
+  - Shift+Enter enviando;
+  - o cursor no começo;
+- **editar e tirar:**
+  - editar esquecendo o anexo guardado;
+  - tirar sem limpar as colunas;
+- **o que a tela anuncia:**
+  - a lista sem dizer que há anexo;
+  - o menu do "/" sem dizer que há anexo;
+  - o vídeo gravado como documento.
+
 ## O topo da coluna — 283px para dizer o que cabe em 188
 
 Pedido do Rodrigo em 16/09, com as duas telas lado a lado: o topo do Zorvin
@@ -1607,6 +1706,107 @@ conversa não vinha na lista — a consulta da página pede `mensagens(id)` junt
 e o contador de não lidas do menu ficava em zero com o grupo na tela.
 
 Prova: `o-campo-de-grupos`, 20 conferências, 5 sabotagens e 5 pegas.
+## A pesquisa nos menus (23/10)
+
+Pedido do Rodrigo, com a foto do menu da seta: *"quando eu clico na seta e
+aparece a lista de etiquetas, precisa ter a opção de também pesquisar por nome
+para facilitar encontrar a etiqueta correta, e quando eu clico em 'Assumir' ou
+'Etiquetas' dentro da conversa, também é bom ter o campo de pesquisa. Se tiver
+mais algum local que você encontre que seja necessário ter esse campo de
+pesquisa, pode incluir também."* Medido no banco em 23/10: **32 etiquetas e 23
+pessoas**.
+
+| onde | o campo filtra |
+|---|---|
+| a seta da fita (o pedido) | as etiquetas **e** as opções fixas (Minhas, Tarefas, Grupos, Todas); "Gerenciar etiquetas" fica |
+| "Marcar tags" da conversa (o pedido) | as etiquetas |
+| "Assumir" (o pedido) | só as pessoas de "Passar para"; "Assumir esta conversa" e "Deixar sem responsável" ficam |
+| "Quem participou da conversa" | as pessoas; quem já foi marcado continua marcado |
+| Configurações → Mensagens rápidas | pelo título **e** pelo texto |
+| Configurações → Etiquetas | pelo nome |
+
+E as pesquisas que já existiam passaram a usar a mesma conta: o "/" das
+rápidas, o Encaminhar, a lista de departamentos, a do Funil e a da equipe em
+Departamentos e acessos. O campo da lista de departamentos virou o mesmo
+componente.
+
+**Uma conta só** (`src/pesquisaNosMenus.js`): sem acento, sem maiúscula, e
+cada palavra em qualquer lugar — "minuta acordo" acha "Acordo Fechado - Ag.
+Minuta". Escrita em cada menu, o "joao" que acha "João" num deixaria de achar
+no vizinho, e quem não acha conclui que a etiqueta não existe e cria outra
+igual. **Um campo só** (`src/CampoDePesquisa.jsx`), pela régua de `Chave.jsx`.
+
+**A partir de 7 itens** (`PESQUISA_A_PARTIR_DE`). A régua já estava escrita no
+menu de departamentos: *"com quatro departamentos, um campo de busca é mais
+trabalho do que correr o olho"*. Com as duas etiquetas da bancada não há campo
+nenhum, e quem compra o programa com três etiquetas não ganha um campo que não
+serve.
+
+**O comportamento, e o porquê de cada parte:**
+
+- **o cursor já vem no campo no computador, e não no celular.** Lá o teclado
+  subiria por cima da lista que a pessoa abriu para tocar;
+- **o primeiro Esc apaga o que foi escrito, e só o segundo fecha o menu.** A
+  escada do Esc ouve a janela, e o campo chega antes dela;
+- **fechado o menu, a pesquisa vai junto** (`ComPesquisa` mora dentro do
+  menu). Guardada, a pesquisa de "minuta" de dez minutos atrás reabriria o
+  menu com uma etiqueta só, e quem não lembra de ter escrito aquilo acha que as
+  outras sumiram. A lista de departamentos, que guardava, passou a apagar ao
+  fechar;
+- **nas Configurações, ao contrário, a pesquisa sobrevive ao lápis.** Editar
+  troca a lista pelo formulário, e quem pesquisou para corrigir três rápidas
+  volta do "Salvar" para a lista filtrada. Trocar de aba a apaga;
+- **marcar uma etiqueta não apaga a pesquisa**: o "Marcar tags" escolhe
+  várias;
+- **o campo fica no alto que não rola** (`sticky`), e a prova mede o que está
+  pintado (`elementFromPoint`), com a lista rolada até o fim;
+- **nada achado, o menu repete o que foi escrito** ("Nenhuma etiqueta com
+  “minta”."). É ali que se vê o erro de digitação.
+
+**E um tropeço que este arquivo já registrou:** o `\u0300-\u036f` da conta
+foi gravado com os PRÓPRIOS caracteres de acento dentro dos colchetes.
+Funciona igual, e é invisível. Quem achou foi, de novo, a montagem das
+sabotagens: a troca procurava a escrita `\u0300` e não a encontrou.
+Corrigido antes do commit.
+
+**E dois da prova:**
+
+- **marcar a etiqueta da conversa passa pela ponte** (`/etiqueta/contato`), e
+  não pela tabela. A primeira escrita conferia `conversa_tags` e reprovava o
+  painel certo. Hoje ela confere o pedido à ponte de mentira — a etiqueta
+  ACHADA, e não a que fica por baixo dela na lista inteira;
+- **`inputValue()` num campo que não está na tela espera 30 segundos.** As
+  sabotagens que tiravam o campo levavam minutos cada uma; os ajudantes passaram
+  a perguntar antes se o campo existe.
+
+Prova: `a-pesquisa-nos-menus`, 133 conferências, com 30 etiquetas, 10 colegas
+e 8 rápidas plantadas. **31 sabotagens e 31 pegas**, rodadas em cópias e
+lidas uma a uma:
+
+- a conta com acento, a frase colada (fora de ordem não acha), o campo que
+  nunca aparece e o que aparece com dois itens, a frase sem o que foi escrito;
+- o Esc que fecha de primeira, o cursor que nunca vem, o X que não limpa, a
+  pesquisa guardada entre uma abertura e outra;
+- na seta: sem o campo, só as etiquetas filtradas, sem a frase de nada achado,
+  o campo que rola junto, o cursor no celular;
+- no "Marcar tags": sem filtro, o clique marcando a etiqueta de baixo da
+  lista inteira, a pesquisa apagada ao marcar;
+- no "Assumir": o "Assumir" sumindo ao pesquisar, sem filtro;
+- em "Quem participou": sem filtro, e quem estava marcado desmarcado ao
+  pesquisar;
+- em Configurações: o lápis apagando a pesquisa, a aba herdando a da outra,
+  as rápidas só pelo título, as etiquetas sem filtro;
+- e as cinco pesquisas de antes de volta: o "/", o Encaminhar, os
+  departamentos (e eles guardando a pesquisa), o Funil e a equipe.
+
+**Duas precisaram ser refeitas, e as duas eram minhas.** A do lápis
+estourava a prova: ela citava `rapidaForm` antes de a variável existir, e o
+painel inteiro caía. Não era um defeito, era outro programa. E a da equipe
+vazou: a conta de antes juntava nome, login e e-mail numa frase só ("josé
+ribeiro jose jose@x"), e a cena pesquisava "ribeiro jose" — que aparecia ali
+colado. Hoje ela pesquisa "jose ribeiro".
+
+
 ## Copiar leva só o texto (08/10)
 
 Relato do Rodrigo: *"quando eu copio uma mensagem do Zorvin e colo em um

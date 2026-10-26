@@ -59,6 +59,10 @@ import { useEstadoDoCopiloto, copilotoAparece, pedirSugestao } from "./copiloto.
 import { ABAS_DA_SITUACAO, NOME_DA_SITUACAO } from "./abasDaSituacao.js";
 import { pareceAcessoVencido, pedirConferenciaDaSessao, marcarSaidaPedida, foiSaidaPedida } from "./vigiaDaSessao.js";
 import { rascunhosDe, guardarRascunho } from "./rascunhos.js";
+import CampoDePesquisa, { ComPesquisa } from "./CampoDePesquisa.jsx";
+import { PESQUISA_A_PARTIR_DE, casaComAPesquisa, nadaComAPesquisa } from "./pesquisaNosMenus.js";
+import { tipoDoAnexo, caminhoDoAnexoDaRapida, semAColunaDoAnexo, nomeDoAnexo, anexoDoDeposito,
+         CACHE_DO_ANEXO_DA_RAPIDA } from "./rapidasComAnexo.js";
 
 // ============================================================
 //  ZORVIN by Ropelimi — Painel real (conectado ao Supabase)
@@ -907,6 +911,15 @@ const TEMAS = {
 //
 // 10px de respiro em volta de um ícone de 20 dão 40px de alvo sem mudar nada
 // do que se vê: o desenho continua do mesmo tamanho, no mesmo lugar.
+/** O DESENHO DO ANEXO DE UMA RÁPIDA, pelo tipo — o mesmo na lista, no menu do
+ *  "/" e no formulário, para "isto tem vídeo" ter uma cara só. */
+function IconeDoAnexo({ tipo, size = 14, color }) {
+  if (tipo === "video") return <Video size={size} color={color} />;
+  if (tipo === "imagem") return <ImageIcon size={size} color={color} />;
+  if (tipo === "audio") return <Volume2 size={size} color={color} />;
+  return <FileText size={size} color={color} />;
+}
+
 /** Nome comparável: sem acento, sem maiúscula, sem espaço sobrando.
  *  O mesmo tratamento que o banco faz em `zorvin_sem_acento` — os dois lados
  *  precisam concordar, senão "JENIFER ALMEIDA" e "Jenifer Almeida" viram duas
@@ -3475,6 +3488,23 @@ export default function Painel({ sessao }) {
   // Qual deles está grande na prévia. A legenda é DE CADA arquivo, como no
   // WhatsApp: uma legenda só para o lote descreveria errado quatro dos cinco.
   const [anexoAtivo, setAnexoAtivo] = useState(0);
+  // A LEGENDA DA PRÉVIA CRESCE COM O TEXTO (23/10), até seis linhas, e o
+  // cursor vai para o FIM ao abrir ou trocar de anexo: a legenda que chega
+  // preenchida por uma rápida é para ser completada, e não reescrita do começo.
+  const legendaRef = useRef(null);
+  const legendaAtual = (anexosPendentes[Math.min(anexoAtivo, anexosPendentes.length - 1)] || {}).legenda || "";
+  useLayoutEffect(() => {
+    const el = legendaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+  }, [legendaAtual, anexoAtivo, anexosPendentes.length]);
+  useLayoutEffect(() => {
+    const el = legendaRef.current;
+    if (!el || document.activeElement !== el) return;
+    const fim = el.value.length;
+    el.setSelectionRange(fim, fim);
+  }, [anexoAtivo, anexosPendentes.length]);
   // Há um arquivo sendo arrastado sobre a janela? Serve só para a faixa
   // "solte aqui": sem retorno visual, quem arrasta não sabe se pode soltar.
   const [arrastandoArquivo, setArrastandoArquivo] = useState(false);
@@ -3543,8 +3573,42 @@ export default function Painel({ sessao }) {
   const [slashIdx, setSlashIdx] = useState(0); // item destacado no menu do "/"
   const [configAberta, setConfigAberta] = useState(false); // tela de Configurações aberta
   const [abaConfig, setAbaConfig] = useState("perfil"); // perfil | aparencia | rapidas
-  const [rapidaForm, setRapidaForm] = useState(null); // { id?, titulo, texto } sendo criada/editada
+  // A PESQUISA DAS LISTAS DE CONFIGURAÇÕES (23/10): as mensagens rápidas e as
+  // etiquetas do escritório passam de trinta cada uma. Ela mora no painel, e
+  // não dentro da lista, por causa do lápis: editar troca a lista pelo
+  // formulário, e quem pesquisou "minuta" para corrigir três rápidas volta do
+  // primeiro "Salvar" para a lista ainda filtrada. Trocar de aba ou fechar
+  // Configurações a apaga — numa aba ela não serve para a outra.
+  const [pesquisaNaConfig, setPesquisaNaConfig] = useState("");
+  useEffect(() => { setPesquisaNaConfig(""); }, [abaConfig, configAberta]);
+  const [rapidaForm, setRapidaForm] = useState(null); // { id?, titulo, texto, midia_*, arquivo?, previa? } sendo criada/editada
   const textoDaRapidaRef = useRef(null); // a caixa do texto, para pôr a variável onde está o cursor
+  const arquivoDaRapidaRef = useRef(null); // o campo escondido que escolhe o anexo da rápida
+  const [salvandoRapida, setSalvandoRapida] = useState(false);
+  // A PRÉVIA DO ARQUIVO AINDA NÃO SALVO é um endereço local (`blob:`), e é
+  // solto quando troca ou quando o formulário fecha — por aqui, num lugar só,
+  // em vez de em cada botão que fecha o formulário.
+  const previaDaRapida = (rapidaForm && rapidaForm.previa) || null;
+  useEffect(() => () => { if (previaDaRapida) URL.revokeObjectURL(previaDaRapida); }, [previaDaRapida]);
+  // O ANEXO DAS RÁPIDAS (script 034 da ponte) — três estados, pela régua de
+  // `temVantoro.js`: `null` ainda não perguntei, `false` as colunas não
+  // existem (o botão de anexar não aparece), `true` existem OU não consegui
+  // saber. Esconder por uma falha de rede tiraria o anexo no dia em que a rede
+  // tossisse; mostrando, o pior caso é a gravação dizer o erro, com o código.
+  // Uma pergunta por abertura do painel, de uma linha só.
+  const [rapidaComAnexo, setRapidaComAnexo] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        const { error } = await supabase.from("mensagens_rapidas").select("id, midia_url").limit(1);
+        if (vivo) setRapidaComAnexo(!semAColunaDoAnexo(error));
+      } catch (_) {
+        if (vivo) setRapidaComAnexo(true);
+      }
+    })();
+    return () => { vivo = false; };
+  }, []);
   const [tags, setTags] = useState([]); // definições das tags (id, nome, cor)
   const [tagsPorConversa, setTagsPorConversa] = useState({}); // { conversaId: [tagId,...] }
 
@@ -3747,6 +3811,11 @@ export default function Painel({ sessao }) {
   const [menuEtiquetas, setMenuEtiquetas] = useState(false); // lista de etiquetas para filtrar
   const [menuDepartamentos, setMenuDepartamentos] = useState(false); // lista de departamentos
   const [buscaDepartamento, setBuscaDepartamento] = useState("");
+  // FECHADO O MENU, A PESQUISA VAI JUNTO (23/10), como nos menus que guardam a
+  // pesquisa dentro deles (`ComPesquisa`): antes ela só se apagava ao escolher
+  // um departamento, e o menu fechado com um clique fora reabria mostrando um
+  // departamento só.
+  useEffect(() => { if (!menuDepartamentos) setBuscaDepartamento(""); }, [menuDepartamentos]);
   const [largura, setLargura] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1200));
   const gravadorRef = useRef(null);
   const chunksRef = useRef([]);
@@ -4270,9 +4339,10 @@ export default function Painel({ sessao }) {
     (d) => advogadosPermitidos.some((a) => a.departamento_id === d.id));
   const departamentoAtual = departamentos.find((d) => d.id === departamentoId) || null;
   // O que a lista do seletor mostra agora (a busca só existe quando são muitos).
+  // A PESQUISA DOS DEPARTAMENTOS usa a conta dos outros menus (23/10): sem
+  // acento — "execucao" acha "Execução" — e com as palavras em qualquer ordem.
   const departamentosParaEscolher = departamentosVisiveis.filter((d) =>
-    !buscaDepartamento.trim()
-    || (d.nome || "").toLowerCase().includes(buscaDepartamento.trim().toLowerCase()));
+    casaComAPesquisa(buscaDepartamento, d.nome));
 
   // O contato está digitando nesta conversa agora? (janela curta que expira).
   function digitandoAtivo(convId) {
@@ -5832,29 +5902,84 @@ export default function Painel({ sessao }) {
 
   // Cria (sem id) ou atualiza (com id) uma mensagem rápida, pela tela de Configurações.
   async function salvarRapidaForm() {
+    if (salvandoRapida) return;
     const titulo = (rapidaForm?.titulo || "").trim();
     const texto = (rapidaForm?.texto || "").trim();
-    if (!titulo || !texto) { mostrarAviso("Preencha o atalho e o texto."); return; }
-    // Mesma assimetria das etiquetas: a edição pode ser recusada em silêncio, a
-    // criação não. Aqui o que se perde é o TEXTO PRONTO que alguém escreveu
-    // para a equipe inteira usar — e ele volta ao que era na abertura seguinte.
-    let error, recusou = false;
-    if (rapidaForm.id) {
-      const r = await supabase.from("mensagens_rapidas")
-        .update({ titulo, texto }).eq("id", rapidaForm.id).select("id");
-      error = r.error; recusou = naoGravouNada(r);
-    } else {
-      ({ error } = await supabase.from("mensagens_rapidas").insert({ titulo, texto }));
+    // COM ANEXO, O TEXTO É OPCIONAL (23/10): a rápida pode ser só o vídeo. O
+    // atalho continua obrigatório — é por ele que a rápida é achada no "/".
+    const comAnexo = !!(rapidaForm?.arquivo || rapidaForm?.midia_url);
+    if (!titulo || (!texto && !comAnexo)) {
+      mostrarAviso(comAnexo ? "Preencha o atalho." : "Preencha o atalho e o texto."); return;
     }
-    if (error) {
-      mostrarAviso(comOCodigo("Não consegui salvar esta mensagem rápida.", error,
-                              "salvar mensagem rápida"), 7000);
-      return;
+    setSalvandoRapida(true);
+    try {
+      // O ANEXO SOBE ANTES DA LINHA, e uma vez só (23/10). Subindo depois, uma
+      // gravação que passasse e um arquivo que falhasse deixariam uma rápida
+      // dizendo "com vídeo" sem vídeo nenhum. Nesta ordem, a falha é dita e
+      // NADA é salvo — o formulário fica aberto com o que foi escrito.
+      //
+      // SÓ VAI NA GRAVAÇÃO O QUE MUDOU: arquivo novo, ou o anexo tirado. Num
+      // banco sem o script 034, a rápida de texto continua sendo gravada sem
+      // mencionar coluna nenhuma do anexo — mencioná-las daria 42703.
+      let anexo = {};
+      if (rapidaForm.arquivo) {
+        const f = rapidaForm.arquivo;
+        const caminho = caminhoDoAnexoDaRapida(f.name);
+        const { error: erroDaSubida } = await supabase.storage.from("anexos")
+          .upload(caminho, f, { contentType: f.type || undefined, ...CACHE_DO_ANEXO_DA_RAPIDA });
+        if (erroDaSubida) {
+          console.error("Zorvin — subir o anexo da rápida falhou:", erroDaSubida);
+          const codigo = erroDaSubida.status || erroDaSubida.statusCode || null;
+          mostrarAviso(codigo
+            ? `Não consegui subir o anexo desta mensagem rápida${String(codigo) === "413" ? ": o arquivo é grande demais para o depósito" : ""} (erro ${codigo}). Nada foi salvo.`
+            : "Não consegui subir o anexo desta mensagem rápida: o arquivo não chegou ao depósito — confira a conexão. Nada foi salvo.", 9000);
+          return;
+        }
+        const url = supabase.storage.from("anexos").getPublicUrl(caminho).data?.publicUrl;
+        if (!url) { mostrarAviso("O depósito não devolveu o endereço do anexo. Nada foi salvo.", 7000); return; }
+        anexo = { midia_url: url, midia_tipo: tipoDoAnexo(f.type), midia_mime: f.type || null, midia_nome: f.name || null };
+      } else if (rapidaForm.midiaOriginal && !rapidaForm.midia_url) {
+        anexo = { midia_url: null, midia_tipo: null, midia_mime: null, midia_nome: null };
+      }
+      // Mesma assimetria das etiquetas: a edição pode ser recusada em silêncio, a
+      // criação não. Aqui o que se perde é o TEXTO PRONTO que alguém escreveu
+      // para a equipe inteira usar — e ele volta ao que era na abertura seguinte.
+      let error, recusou = false;
+      if (rapidaForm.id) {
+        const r = await supabase.from("mensagens_rapidas")
+          .update({ titulo, texto, ...anexo }).eq("id", rapidaForm.id).select("id");
+        error = r.error; recusou = naoGravouNada(r);
+      } else {
+        ({ error } = await supabase.from("mensagens_rapidas").insert({ titulo, texto, ...anexo }));
+      }
+      if (error) {
+        mostrarAviso(comOCodigo("Não consegui salvar esta mensagem rápida.", error,
+                                "salvar mensagem rápida"), 7000);
+        return;
+      }
+      if (recusou) { mostrarAviso("O banco não deixou salvar esta mensagem rápida. Nada mudou."); return; }
+      setRapidaForm(null);
+      mostrarAviso("Mensagem rápida salva!");
+      carregarRapidas();
+    } finally {
+      setSalvandoRapida(false);
     }
-    if (recusou) { mostrarAviso("O banco não deixou salvar esta mensagem rápida. Nada mudou."); return; }
-    setRapidaForm(null);
-    mostrarAviso("Mensagem rápida salva!");
-    carregarRapidas();
+  }
+
+  /** O arquivo escolhido no formulário fica NA MEMÓRIA até "Salvar": quem
+   *  escolhe o vídeo errado e troca não deixa um arquivo a mais no depósito. */
+  function escolherAnexoDaRapida(arquivo) {
+    if (!arquivo) return;
+    const previa = URL.createObjectURL(arquivo);
+    setRapidaForm((f) => (f ? { ...f, arquivo, previa } : f));
+  }
+
+  /** Tirar o anexo é dizer que a rápida volta a ser só texto. O arquivo que já
+   *  estava no depósito fica lá: ninguém apaga arquivo pelo painel (o
+   *  depósito não deixa), e outras mensagens já enviadas apontam para ele. */
+  function tirarAnexoDaRapida() {
+    setRapidaForm((f) => (f ? { ...f, arquivo: null, previa: null,
+      midia_url: null, midia_tipo: null, midia_mime: null, midia_nome: null } : f));
   }
 
   // PÕE A VARIÁVEL ONDE ESTÁ O CURSOR, e não no fim: "Olá, !" com o cursor
@@ -5892,6 +6017,19 @@ export default function Painel({ sessao }) {
   // já com o nome do cliente, e a pessoa lê o que vai sair antes do Enter.
   function escolherSlash(r) {
     if (!r) return;
+    // A RÁPIDA COM ANEXO (23/10) abre a PRÉVIA do anexo, com o texto já
+    // preenchido como legenda — a régua de sempre das rápidas: o que se vê é
+    // o que sai, e é na prévia que se confere o vídeo e o nome do cliente antes
+    // do Enter. A caixa de escrever fica vazia: deixado ali, o texto sairia
+    // duas vezes, na legenda e numa mensagem.
+    //
+    // NUMA EDIÇÃO, SÓ O TEXTO: editar é trocar o texto de uma mensagem que já
+    // saiu, e um anexo não tem como entrar nela.
+    if (r.midia_url && !editando && abrirAnexoDaRapida(r)) {
+      setRascunho("");
+      setSlashIdx(0);
+      return;
+    }
     setRascunho(rapidaPreenchida(r.texto));
     setSlashIdx(0);
     inputRef.current?.focus();
@@ -10944,6 +11082,26 @@ export default function Painel({ sessao }) {
     });
   }
 
+  /** O ANEXO DA RÁPIDA NA PRÉVIA, com a legenda preenchida (23/10). Ele já
+   *  está no depósito: a prévia mostra o próprio endereço, e enviar não sobe
+   *  nada de novo (ver `enviarArquivo`). A nota interna é só texto, como para
+   *  qualquer anexo. */
+  function abrirAnexoDaRapida(r) {
+    const f = anexoDoDeposito(r);
+    if (!f) return false;
+    if (modoNotaRef.current) {
+      mostrarAviso("A nota interna é só texto. Feche a nota para enviar o anexo ao cliente.");
+      return false;
+    }
+    const item = { file: f, tipo: f.tipo, nome: f.name, mime: f.type, tamanho: null, url: f.url,
+                   legenda: r.texto ? rapidaPreenchida(r.texto) : "" };
+    setAnexosPendentes((antes) => {
+      setAnexoAtivo(antes.length);
+      return [...antes, item];
+    });
+    return true;
+  }
+
   /** Põe arquivos na prévia. Somando à fila: quem já colou dois e arrasta um
       terceiro quer os três, não o terceiro sozinho. */
   function abrirAnexos(arquivos) {
@@ -11233,7 +11391,7 @@ export default function Painel({ sessao }) {
     // `tipoForcado` existe por causa da FIGURINHA: pelo mime ela é só uma
     // imagem, e a Uazapi precisa saber que é sticker para o WhatsApp
     // desenhá-la sem moldura e sem legenda.
-    const tipo = tipoForcado || (ehImagem ? "imagem" : ehVideo ? "video" : ehAudio ? "audio" : "documento");
+    const tipo = tipoForcado || file.tipo || (ehImagem ? "imagem" : ehVideo ? "video" : ehAudio ? "audio" : "documento");
     const tempId = "temp-" + Date.now() + "-" + Math.round(Math.random() * 1e6);
     // Prévia local (o remetente vê o anexo na hora, sem depender do Storage).
     //
@@ -11242,7 +11400,9 @@ export default function Painel({ sessao }) {
     // enviado nascia SEM MÍDIA, com "indisponível" escrito nela, até o Storage
     // responder — quem acabou de mandar a procuração via um aviso de que ela
     // não estava lá.
-    const previa = URL.createObjectURL(file);
+    // O ANEXO DE UMA RÁPIDA JÁ ESTÁ NO DEPÓSITO (23/10): a prévia é o próprio
+    // endereço, e nada sobe de novo — nem aqui, nem no "Reenviar".
+    const previa = file.doDeposito ? file.url : URL.createObjectURL(file);
     setMensagens((prev) => [...prev, {
       id: tempId, conversa_id: convId, origem: "advogado", tipo, enviado_por: meuNome, enviado_por_id: meuId, enviado_por_foto: minhaFoto,
       texto: legenda || null, midia_url: previa, midia_mime: file.type, midia_nome: file.name,
@@ -11257,12 +11417,15 @@ export default function Painel({ sessao }) {
       // WhatsApp. O cliente recebia o nome estropiado; e o arquivo que ele
       // assinava e devolvia, voltava com ele.
       const nome = (file.name || "arquivo").replace(/[^\w.\-]+/g, "_");
-      const caminho = `${convId}/${Date.now()}-${nome}`;
-      const { error: upErr } = await supabase.storage.from("anexos").upload(caminho, file, { contentType: file.type });
-      if (upErr) throw new Error("Falha ao subir o arquivo (Storage): " + (upErr.message || upErr));
-      const { data: pub } = supabase.storage.from("anexos").getPublicUrl(caminho);
-      const url = pub?.publicUrl;
-      if (!url) throw new Error("sem URL pública do arquivo");
+      let url = file.doDeposito ? file.url : null;
+      if (!url) {
+        const caminho = `${convId}/${Date.now()}-${nome}`;
+        const { error: upErr } = await supabase.storage.from("anexos").upload(caminho, file, { contentType: file.type });
+        if (upErr) throw new Error("Falha ao subir o arquivo (Storage): " + (upErr.message || upErr));
+        const { data: pub } = supabase.storage.from("anexos").getPublicUrl(caminho);
+        url = pub?.publicUrl;
+        if (!url) throw new Error("sem URL pública do arquivo");
+      }
       // Mantém a prévia local na tela; guarda a URL do Storage só para casar
       // com a versão real que a ponte vai gravar (evita duplicar).
       setMensagens((prev) => prev.map((m) => (m.id === tempId ? { ...m, _midiaUrlFinal: url } : m)));
@@ -11287,15 +11450,19 @@ export default function Painel({ sessao }) {
     const ehImagem = file.type.startsWith("image/");
     const ehVideo = file.type.startsWith("video/");
     const ehAudio = file.type.startsWith("audio/");
-    const tipo = ehImagem ? "imagem" : ehVideo ? "video" : ehAudio ? "audio" : "documento";
+    const tipo = file.tipo || (ehImagem ? "imagem" : ehVideo ? "video" : ehAudio ? "audio" : "documento");
     try {
       const nome = (file.name || "arquivo").replace(/[^\w.\-]+/g, "_");
-      const caminho = `${convId}/${Date.now()}-${nome}`;
-      const { error: upErr } = await supabase.storage.from("anexos").upload(caminho, file, { contentType: file.type });
-      if (upErr) throw new Error("Falha ao subir o arquivo (Storage): " + (upErr.message || upErr));
-      const { data: pub } = supabase.storage.from("anexos").getPublicUrl(caminho);
-      const url = pub?.publicUrl;
-      if (!url) throw new Error("sem URL pública do arquivo");
+      // O anexo de uma rápida já está no depósito — ver `enviarArquivo`.
+      let url = file.doDeposito ? file.url : null;
+      if (!url) {
+        const caminho = `${convId}/${Date.now()}-${nome}`;
+        const { error: upErr } = await supabase.storage.from("anexos").upload(caminho, file, { contentType: file.type });
+        if (upErr) throw new Error("Falha ao subir o arquivo (Storage): " + (upErr.message || upErr));
+        const { data: pub } = supabase.storage.from("anexos").getPublicUrl(caminho);
+        url = pub?.publicUrl;
+        if (!url) throw new Error("sem URL pública do arquivo");
+      }
       // O nome como é, e o higienizado só no endereço — ver `enviarArquivo`.
       const r = await gravarAgendada({ conversa_id: convId, texto: legenda || "", tipo,
         midia_url: url, midia_mime: file.type, midia_nome: file.name || nome }, quando);
@@ -12718,10 +12885,13 @@ export default function Painel({ sessao }) {
     .filter(Boolean);
 
   // Menu de mensagens rápidas: aparece ao digitar "/" no começo da mensagem.
-  // O texto após a "/" filtra a lista (por atalho ou conteúdo).
+  // O texto após a "/" filtra a lista (por atalho ou conteúdo), pela conta dos
+  // menus (23/10): "/saudacao" acha "Saudação", e "/minuta envio" acha a
+  // rápida que fala de "envio da minuta". Antes era a frase colada e com
+  // acento — quem escreve depressa, sem acento, não achava a própria rápida.
   const slashQuery = (!modoNota && rascunho.startsWith("/")) ? rascunho.slice(1).toLowerCase() : null;
   const slashLista = slashQuery !== null
-    ? rapidas.filter((r) => (`${r.titulo} ${r.texto}`).toLowerCase().includes(slashQuery))
+    ? rapidas.filter((r) => casaComAPesquisa(slashQuery, r.titulo, r.texto))
     : [];
   const slashAberto = slashQuery !== null && slashLista.length > 0;
 
@@ -13195,9 +13365,17 @@ export default function Painel({ sessao }) {
     const ITEM = { width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "9px 12px",
                    border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary,
                    textAlign: "left", fontSize: 13.5, minHeight: estreito ? 44 : 36 };
+    // A PESQUISA (23/10) é só de PESSOAS: "Assumir esta conversa" e "Deixar
+    // sem responsável" são gestos, e não nomes — continuam no lugar com
+    // qualquer coisa escrita. Assumir é o gesto de todo dia; sumir com ele
+    // porque alguém escreveu "jen" seria esconder o botão mais usado do menu.
+    const comPesquisa = pessoasParaPassar.length >= PESQUISA_A_PARTIR_DE;
     return (
+      <ComPesquisa>{(pesquisa, setPesquisa) => {
+        const achadas = comPesquisa ? pessoasParaPassar.filter((p) => casaComAPesquisa(pesquisa, p.nome)) : pessoasParaPassar;
+        return (
       <div data-menu-responsavel role="listbox"
-           style={{ position: "absolute", zIndex: 61, width: 262, maxHeight: 360, overflowY: "auto",
+           style={{ position: "absolute", zIndex: 61, width: 262, maxHeight: comPesquisa ? 420 : 360, overflowY: "auto",
                     // A LINHA DE ONDE ELE PENDE é `nowrap` (é a do número do
                     // cliente), e a frase de quem passou a conversa herdaria
                     // isso — saía cortada em "Quem responder primeiro assu".
@@ -13205,13 +13383,19 @@ export default function Painel({ sessao }) {
                     ...(menuResponsavel === "menu" ? { top: 44, right: 0 } : { top: "100%", left: 0, marginTop: 4 }),
                     background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10,
                     boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
-        <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.divider}`, position: "sticky", top: 0, background: C.panel }}>
+        <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.divider}`, position: "sticky", top: 0, zIndex: 1, background: C.panel }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3 }}>RESPONSÁVEL PELA CONVERSA</div>
           <div data-responsavel-origem data-pela-distribuicao={pelaDistribuicao ? "sim" : undefined}
                style={{ fontSize: 12, color: C.textSecondary, marginTop: 3, lineHeight: 1.4 }}>
             {!dono ? "Ninguém ainda. Quem responder primeiro assume."
               : `${souDono ? "Você" : nomeDaPessoa(dono)}${quando ? ` desde ${quando}` : ""}${porOutro ? ` — passada por ${nomeDaPessoa(conversa.responsavel_por)}` : ""}${pelaDistribuicao ? " — pela distribuição automática" : ""}.`}
           </div>
+          {comPesquisa && (
+            <div style={{ marginTop: 8 }}>
+              <CampoDePesquisa C={C} valor={pesquisa} aoMudar={setPesquisa} rotulo="Pesquisar pessoa"
+                               focar={!estreito} nome="responsavel" />
+            </div>
+          )}
         </div>
         {!souDono && (
           <button data-assumir-conversa role="option" onClick={() => mudarResponsavel(conversa, meuId)}
@@ -13222,7 +13406,10 @@ export default function Painel({ sessao }) {
         {pessoasParaPassar.length > 0 && (
           <div style={{ padding: "8px 12px 2px", fontSize: 11.5, fontWeight: 600, color: C.textSecondary }}>Passar para</div>
         )}
-        {pessoasParaPassar.map((p) => (
+        {pessoasParaPassar.length > 0 && achadas.length === 0 && (
+          <div data-nada-com-a-pesquisa style={{ padding: "8px 12px 12px", fontSize: 13, color: C.textSecondary }}>{nadaComAPesquisa("Ninguém", pesquisa)}</div>
+        )}
+        {achadas.map((p) => (
           <button key={p.id} data-passar-para={p.id} role="option" aria-selected={dono === String(p.id)}
                   onClick={() => mudarResponsavel(conversa, p.id)} style={ITEM}>
             <Avatar nome={p.nome} foto={p.foto} size={24} />
@@ -13237,27 +13424,50 @@ export default function Painel({ sessao }) {
           </button>
         )}
       </div>
+        );
+      }}</ComPesquisa>
     );
   })();
 
+  // A PESQUISA DO "MARCAR TAGS" (23/10) fica no alto que não rola, junto do
+  // título: marcar é escolher várias, o menu continua aberto entre um clique e
+  // outro, e o campo tem de continuar à vista depois de a lista rolar. O que
+  // foi escrito também continua — marcar uma etiqueta não apaga a pesquisa.
   const listaDeEtiquetas = !conversa ? null : (
-    <div style={{ position: "absolute", top: estreito ? 44 : 30, right: 0, width: 240, maxHeight: 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 46 }}>
-      <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.divider}`, fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3, position: "sticky", top: 0, background: C.panel }}>MARCAR TAGS</div>
-      {tags.length === 0 && (
-        <div style={{ padding: 14, fontSize: 13, color: C.textSecondary, textAlign: "center" }}>Nenhuma tag ainda. Crie em Configurações → Tags.</div>
-      )}
-      {tags.map((t) => {
-        const marcada = (tagsPorConversa[conversa.id] || []).includes(t.id);
-        return (
-          <button key={t.id} data-tag-opcao={t.id} onClick={() => alternarTagConversa(t.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, textAlign: "left" }}>
-            <span style={{ width: 12, height: 12, borderRadius: 3, background: t.cor, flexShrink: 0 }} />
-            <span style={{ flex: 1, fontSize: 13.5 }}>{t.nome}</span>
-            {marcada && <Check size={16} color={C.green} />}
-          </button>
-        );
-      })}
-      <button onClick={() => { setTagMenuAberto(false); setAbaConfig("tags"); setTagForm(null); setConfigAberta(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 6, padding: "10px 12px", border: "none", borderTop: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.verdeTexto, fontSize: 13, fontWeight: 600 }}><Plus size={15} /> Gerenciar etiquetas</button>
-    </div>
+    <ComPesquisa>{(pesquisa, setPesquisa) => {
+      const comPesquisa = tags.length >= PESQUISA_A_PARTIR_DE;
+      const achadas = comPesquisa ? tags.filter((t) => casaComAPesquisa(pesquisa, t.nome)) : tags;
+      return (
+        <div data-menu-marcar-tags style={{ position: "absolute", top: estreito ? 44 : 30, right: 0, width: 240, maxHeight: comPesquisa ? 380 : 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 46 }}>
+          <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.divider}`, position: "sticky", top: 0, zIndex: 1, background: C.panel }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3 }}>MARCAR TAGS</div>
+            {comPesquisa && (
+              <div style={{ marginTop: 8 }}>
+                <CampoDePesquisa C={C} valor={pesquisa} aoMudar={setPesquisa} rotulo="Pesquisar etiqueta"
+                                 focar={!estreito} nome="marcar-tags" />
+              </div>
+            )}
+          </div>
+          {tags.length === 0 && (
+            <div style={{ padding: 14, fontSize: 13, color: C.textSecondary, textAlign: "center" }}>Nenhuma tag ainda. Crie em Configurações → Tags.</div>
+          )}
+          {tags.length > 0 && achadas.length === 0 && (
+            <div data-nada-com-a-pesquisa style={{ padding: 14, fontSize: 13, color: C.textSecondary, textAlign: "center" }}>{nadaComAPesquisa("Nenhuma etiqueta", pesquisa)}</div>
+          )}
+          {achadas.map((t) => {
+            const marcada = (tagsPorConversa[conversa.id] || []).includes(t.id);
+            return (
+              <button key={t.id} data-tag-opcao={t.id} onClick={() => alternarTagConversa(t.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, textAlign: "left" }}>
+                <span style={{ width: 12, height: 12, borderRadius: 3, background: t.cor, flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: 13.5 }}>{t.nome}</span>
+                {marcada && <Check size={16} color={C.green} />}
+              </button>
+            );
+          })}
+          <button onClick={() => { setTagMenuAberto(false); setAbaConfig("tags"); setTagForm(null); setConfigAberta(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 6, padding: "10px 12px", border: "none", borderTop: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.verdeTexto, fontSize: 13, fontWeight: 600 }}><Plus size={15} /> Gerenciar etiquetas</button>
+        </div>
+      );
+    }}</ComPesquisa>
   );
 
   // ------------------------------------------------------------------
@@ -13551,8 +13761,18 @@ export default function Painel({ sessao }) {
             de escolher, o nome que vai entrar. */}
         {slashLista.map((r, idx) => (
           <button key={r.id} data-rapida-no-menu={r.titulo} onMouseEnter={() => setSlashIdx(idx)} onClick={() => escolherSlash(r)} style={{ width: "100%", textAlign: "left", display: "block", border: "none", background: idx === Math.min(slashIdx, slashLista.length - 1) ? C.listActive : "transparent", cursor: "pointer", color: C.textPrimary, padding: "8px 12px", borderBottom: `1px solid ${C.divider}` }}>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>{r.titulo}</div>
-            <div data-texto-da-rapida style={{ fontSize: 12, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rapidaPreenchida(r.texto)}</div>
+            <div style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+              <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.titulo}</span>
+              {/* A RÁPIDA COM ANEXO SE ANUNCIA antes do clique: escolhê-la abre
+                  a prévia do arquivo, e não só põe texto na caixa. */}
+              {r.midia_url && (
+                <span data-rapida-com-anexo={r.midia_tipo || "documento"}
+                      style={{ display: "inline-flex", alignItems: "center", gap: 3, flexShrink: 0, fontSize: 11, fontWeight: 600, color: C.verdeTexto }}>
+                  <IconeDoAnexo tipo={r.midia_tipo} size={12} /> com {nomeDoAnexo(r.midia_tipo)}
+                </span>
+              )}
+            </div>
+            <div data-texto-da-rapida style={{ fontSize: 12, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.texto ? rapidaPreenchida(r.texto) : (r.midia_url ? `Só o ${nomeDoAnexo(r.midia_tipo)}, sem texto` : "")}</div>
           </button>
         ))}
       </div>
@@ -14334,7 +14554,16 @@ export default function Painel({ sessao }) {
                 <Users size={19} />
               </button>
               {menuQuem && (
-                <div style={{ position: "absolute", top: 38, right: 0, zIndex: 50, width: 272, maxHeight: 380, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
+                <ComPesquisa>{(pesquisa, setPesquisa) => {
+                  // A PESQUISA (23/10): com a equipe do escritório inteira
+                  // respondendo pelo mesmo telefone, a lista passa de vinte
+                  // nomes. Ela filtra só os NOMES — a regra ("Qualquer um" ou
+                  // "Todos juntos") fica no alto, que é onde se decide antes.
+                  // E quem já está marcado continua marcado ao pesquisar outro.
+                  const comPesquisa = atendentes.length >= PESQUISA_A_PARTIR_DE;
+                  const achados = comPesquisa ? atendentes.filter((a) => casaComAPesquisa(pesquisa, a.nome)) : atendentes;
+                  return (
+                <div data-menu-quem style={{ position: "absolute", top: 38, right: 0, zIndex: 50, width: 272, maxHeight: comPesquisa ? 440 : 380, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
                   {/* O TÍTULO ficou necessário quando o botão virou só um
                       desenho: sem rótulo na tela, é aqui que o menu diz o que
                       ele é. */}
@@ -14372,7 +14601,17 @@ export default function Painel({ sessao }) {
                     </div>
                   )}
 
-                  {atendentes.map((a) => {
+                  {comPesquisa && (
+                    <div style={{ position: "sticky", top: 0, zIndex: 1, background: C.panel, padding: "8px 10px", borderBottom: `1px solid ${C.divider}` }}>
+                      <CampoDePesquisa C={C} valor={pesquisa} aoMudar={setPesquisa} rotulo="Pesquisar pessoa"
+                                       focar={!estreito} nome="quem" />
+                    </div>
+                  )}
+                  {comPesquisa && achados.length === 0 && (
+                    <div data-nada-com-a-pesquisa style={{ padding: "14px 12px", fontSize: 13, color: C.textSecondary, textAlign: "center" }}>{nadaComAPesquisa("Ninguém", pesquisa)}</div>
+                  )}
+
+                  {achados.map((a) => {
                     const marcado = quemFiltra.includes(a.id);
                     return (
                       <button key={a.id} data-quem={a.nome}
@@ -14399,6 +14638,8 @@ export default function Painel({ sessao }) {
                     </button>
                   )}
                 </div>
+                  );
+                }}</ComPesquisa>
               )}
             </span>
             )}
@@ -14490,21 +14731,19 @@ export default function Painel({ sessao }) {
                   {/* A busca só entra quando a lista fica longa. Com quatro
                       departamentos, um campo de busca é mais trabalho do que
                       correr o olho. */}
-                  {departamentosVisiveis.length > 6 && (
+                  {/* O MESMO CAMPO DOS OUTROS MENUS (23/10), e a mesma régua
+                      de quando aparecer (`PESQUISA_A_PARTIR_DE`). Antes ele
+                      punha o cursor no campo também no celular — e o teclado
+                      subia por cima da lista que a pessoa abriu para tocar. */}
+                  {departamentosVisiveis.length >= PESQUISA_A_PARTIR_DE && (
                     <div style={{ padding: "8px 10px", borderBottom: `1px solid ${C.divider}` }}>
-                      <input autoFocus value={buscaDepartamento} onChange={(e) => setBuscaDepartamento(e.target.value)}
-                             placeholder="Buscar departamento"
-                             /* `border-box` porque o recheio entra na largura:
-                                sem isto o campo ficava 100% + 20px e escapava
-                                para fora do painel. */
-                             style={{ width: "100%", boxSizing: "border-box", border: "none", outline: "none",
-                                      background: C.searchBg, color: C.textPrimary,
-                                      borderRadius: 7, padding: "7px 10px", fontSize: 13 }} />
+                      <CampoDePesquisa C={C} valor={buscaDepartamento} aoMudar={setBuscaDepartamento}
+                                       rotulo="Pesquisar departamento" focar={!estreito} nome="departamentos" />
                     </div>
                   )}
                   <div style={{ maxHeight: 300, overflowY: "auto" }}>
                     {departamentosParaEscolher.length === 0 && (
-                      <div style={{ padding: 16, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>Nenhum departamento com esse nome.</div>
+                      <div data-nada-com-a-pesquisa style={{ padding: 16, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>{nadaComAPesquisa("Nenhum departamento", buscaDepartamento)}</div>
                     )}
                     {departamentosParaEscolher.map((d) => {
                       const ativo = departamentoId === d.id;
@@ -14834,14 +15073,38 @@ export default function Painel({ sessao }) {
                  faz o clique dentro dele contar como "dentro" para
                  `etiquetasRef`, e não fechar o menu que a pessoa acabou de
                  abrir. Quem mudou foi só o ponto de referência. */
-              <div data-menu-mais-filtros role="listbox" style={{ position: "absolute", top: "100%", left: 12, zIndex: 40, width: 250, maxHeight: 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
+              <ComPesquisa>{(pesquisa, setPesquisa) => {
+                // A PESQUISA (23/10) — o pedido do Rodrigo, com a foto deste
+                // menu: 32 etiquetas numa lista que mostra oito de cada vez.
+                // O que se escreve filtra o menu INTEIRO, e não só as
+                // etiquetas: quem escreve "grupo" acha "Grupos". Só
+                // "Gerenciar etiquetas" fica sempre, porque é um gesto, e não
+                // um item da lista.
+                const comPesquisa = tags.length >= PESQUISA_A_PARTIR_DE;
+                const ve = (rotulo) => !comPesquisa || casaComAPesquisa(pesquisa, rotulo);
+                const tagsAchadas = comPesquisa ? tags.filter((t) => casaComAPesquisa(pesquisa, t.nome)) : tags;
+                const nada = comPesquisa && tagsAchadas.length === 0
+                  && !(temResponsavel === true && ve("Minhas conversas"))
+                  && !(temTarefas === true && ve("Com tarefa para hoje"))
+                  && !ve("Grupos") && !ve("Todas as conversas");
+                return (
+              <div data-menu-mais-filtros role="listbox" style={{ position: "absolute", top: "100%", left: 12, zIndex: 40, width: 250, maxHeight: comPesquisa ? 380 : 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
+                {comPesquisa && (
+                  <div style={{ position: "sticky", top: 0, zIndex: 1, background: C.panel, padding: "8px 10px", borderBottom: `1px solid ${C.divider}` }}>
+                    <CampoDePesquisa C={C} valor={pesquisa} aoMudar={setPesquisa} rotulo="Pesquisar etiqueta"
+                                     focar={!estreito} nome="mais-filtros" />
+                  </div>
+                )}
+                {nada && (
+                  <div data-nada-com-a-pesquisa style={{ padding: 14, fontSize: 13, color: C.textSecondary, textAlign: "center" }}>{nadaComAPesquisa("Nenhuma etiqueta", pesquisa)}</div>
+                )}
                 {/* GRUPOS VEM PRIMEIRO, e separado por um traço: é uma
                     pergunta de outra natureza que as etiquetas. Etiqueta é uma
                     marca que a equipe põe; grupo é o que a conversa É. */}
                 {/* AS MINHAS VÊM PRIMEIRO: é o filtro de todo dia de quem
                     atende. Só com o script 008 — sem a coluna, a lista viria
                     sempre vazia, e "nenhuma conversa sua" seria mentira. */}
-                {temResponsavel === true && (
+                {temResponsavel === true && ve("Minhas conversas") && (
                   <button data-minhas-opcao role="option" aria-selected={filtro === "minhas"}
                           onClick={() => { setFiltro(filtro === "minhas" ? "tudo" : "minhas"); setMenuEtiquetas(false); }}
                           style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "11px 12px", border: "none", borderBottom: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
@@ -14854,7 +15117,7 @@ export default function Painel({ sessao }) {
                     telefone com tarefa aberta que vence hoje ou já venceu — de
                     qualquer pessoa, porque quem vê a conversa vê as tarefas
                     dela. As MINHAS ficam na tela de Tarefas, na barra. */}
-                {temTarefas === true && (
+                {temTarefas === true && ve("Com tarefa para hoje") && (
                   <button data-tarefas-opcao role="option" aria-selected={filtro === "tarefas"}
                           onClick={() => { setFiltro(filtro === "tarefas" ? "tudo" : "tarefas"); setMenuEtiquetas(false); }}
                           style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "11px 12px", border: "none", borderBottom: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
@@ -14863,34 +15126,38 @@ export default function Painel({ sessao }) {
                     {filtro === "tarefas" && <Check size={16} color={C.green} style={{ flexShrink: 0 }} />}
                   </button>
                 )}
-                <button data-grupos-opcao role="option" aria-selected={filtro === "grupos"}
-                        onClick={() => { setFiltro(filtro === "grupos" ? "tudo" : "grupos"); setMenuEtiquetas(false); }}
-                        style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "11px 12px", border: "none", borderBottom: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
-                  <Users size={16} color={C.textSecondary} style={{ flexShrink: 0 }} />
-                  <span style={{ flex: 1 }}>Grupos</span>
-                  {/* O CONTADOR DE NÃO LIDAS, como no WhatsApp Web: responde
-                      "vale a pena entrar aqui agora?" antes do clique. */}
-                  {naoLidasDosGrupos > 0 && (
-                    <span data-nao-lidas-grupos={naoLidasDosGrupos}
-                          style={{ flexShrink: 0, minWidth: 20, height: 20, borderRadius: 10,
-                                   background: C.unread, color: "#fff", fontSize: 11, fontWeight: 700,
-                                   display: "flex", alignItems: "center", justifyContent: "center",
-                                   padding: "0 6px" }}>{naoLidasDosGrupos}</span>
-                  )}
-                  {filtro === "grupos" && <Check size={16} color={C.green} style={{ flexShrink: 0 }} />}
-                </button>
-                <button onClick={() => { setFiltro("tudo"); setMenuEtiquetas(false); }}
-                        style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", border: "none", borderBottom: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
-                  Todas as conversas
-                  {!tagFiltrada && !filtroVerde && <Check size={16} color={C.green} style={{ marginLeft: "auto" }} />}
-                </button>
+                {ve("Grupos") && (
+                  <button data-grupos-opcao role="option" aria-selected={filtro === "grupos"}
+                          onClick={() => { setFiltro(filtro === "grupos" ? "tudo" : "grupos"); setMenuEtiquetas(false); }}
+                          style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "11px 12px", border: "none", borderBottom: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
+                    <Users size={16} color={C.textSecondary} style={{ flexShrink: 0 }} />
+                    <span style={{ flex: 1 }}>Grupos</span>
+                    {/* O CONTADOR DE NÃO LIDAS, como no WhatsApp Web: responde
+                        "vale a pena entrar aqui agora?" antes do clique. */}
+                    {naoLidasDosGrupos > 0 && (
+                      <span data-nao-lidas-grupos={naoLidasDosGrupos}
+                            style={{ flexShrink: 0, minWidth: 20, height: 20, borderRadius: 10,
+                                     background: C.unread, color: "#fff", fontSize: 11, fontWeight: 700,
+                                     display: "flex", alignItems: "center", justifyContent: "center",
+                                     padding: "0 6px" }}>{naoLidasDosGrupos}</span>
+                    )}
+                    {filtro === "grupos" && <Check size={16} color={C.green} style={{ flexShrink: 0 }} />}
+                  </button>
+                )}
+                {ve("Todas as conversas") && (
+                  <button onClick={() => { setFiltro("tudo"); setMenuEtiquetas(false); }}
+                          style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", border: "none", borderBottom: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
+                    Todas as conversas
+                    {!tagFiltrada && !filtroVerde && <Check size={16} color={C.green} style={{ marginLeft: "auto" }} />}
+                  </button>
+                )}
                 {tags.length === 0 && (
                   <div style={{ padding: 14, fontSize: 13, color: C.textSecondary, textAlign: "center" }}>Nenhuma etiqueta ainda.</div>
                 )}
-                {tags.map((t) => {
+                {tagsAchadas.map((t) => {
                   const escolhida = filtro === "tag:" + t.id;
                   return (
-                    <button key={t.id} onClick={() => { setFiltro(escolhida ? "tudo" : "tag:" + t.id); setMenuEtiquetas(false); }}
+                    <button key={t.id} data-etiqueta-da-seta={t.id} onClick={() => { setFiltro(escolhida ? "tudo" : "tag:" + t.id); setMenuEtiquetas(false); }}
                             style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
                       <span style={{ width: 11, height: 11, borderRadius: 3, background: t.cor, flexShrink: 0 }} />
                       <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.nome}</span>
@@ -14903,6 +15170,8 @@ export default function Painel({ sessao }) {
                   <Plus size={15} /> Gerenciar etiquetas
                 </button>
               </div>
+                );
+              }}</ComPesquisa>
             )}
           </span>
 
@@ -17172,28 +17441,98 @@ export default function Painel({ sessao }) {
                           </div>
                         )}
                       </div>
+                      {/* O ANEXO DA RÁPIDA (23/10) — o pedido do Rodrigo: "para as
+                          mensagens rápidas, precisa ser possível incluir vídeos".
+                          Só com o script 034 da ponte; sem ele, a rápida é o
+                          texto de sempre. */}
+                      {rapidaComAnexo === true && (() => {
+                        const novo = rapidaForm.arquivo || null;
+                        const tem = !!(novo || rapidaForm.midia_url);
+                        const tipo = novo ? tipoDoAnexo(novo.type) : rapidaForm.midia_tipo;
+                        const endereco = rapidaForm.previa || rapidaForm.midia_url;
+                        const nome = novo ? novo.name : (rapidaForm.midia_nome || "arquivo");
+                        const BOTAO = { border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary, borderRadius: 7,
+                                        padding: "6px 10px", fontSize: 12.5, cursor: "pointer", flexShrink: 0 };
+                        return (
+                          <div data-anexo-da-rapida>
+                            <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary }}>ANEXO (OPCIONAL)</label>
+                            <input ref={arquivoDaRapidaRef} type="file" data-arquivo-da-rapida style={{ display: "none" }}
+                                   onChange={(e) => {
+                                     // A cópia antes de limpar — a lição do clipe (`aoEscolherArquivo`).
+                                     const f = Array.from(e.target.files || [])[0];
+                                     e.target.value = "";
+                                     escolherAnexoDaRapida(f);
+                                   }} />
+                            {tem ? (
+                              <div data-anexo-escolhido={novo ? "novo" : "guardado"}
+                                   style={{ marginTop: 5, border: `1px solid ${C.divider}`, borderRadius: 8, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                                {tipo === "video" && <video src={endereco} controls preload="metadata" style={{ width: "100%", maxHeight: 220, borderRadius: 6, background: "#000" }} />}
+                                {tipo === "imagem" && <img src={endereco} alt="" style={{ maxWidth: "100%", maxHeight: 220, borderRadius: 6, objectFit: "contain", alignSelf: "flex-start" }} />}
+                                {tipo === "audio" && <audio src={endereco} controls style={{ width: "100%" }} />}
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                                  <IconeDoAnexo tipo={tipo} size={16} color={C.textSecondary} />
+                                  <span data-nome-do-anexo style={{ flex: 1, minWidth: 0, fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nome}</span>
+                                  <button type="button" data-trocar-anexo-da-rapida onClick={() => arquivoDaRapidaRef.current?.click()} style={BOTAO}>Trocar</button>
+                                  <button type="button" data-tirar-anexo-da-rapida onClick={tirarAnexoDaRapida} style={{ ...BOTAO, color: "#e5573f" }}>Tirar</button>
+                                </div>
+                                {novo && (
+                                  <div style={{ fontSize: 12, color: C.textSecondary }}>O arquivo sobe para o depósito quando você salvar.</div>
+                                )}
+                              </div>
+                            ) : (
+                              <button type="button" data-anexar-na-rapida onClick={() => arquivoDaRapidaRef.current?.click()}
+                                      style={{ marginTop: 5, width: "100%", display: "flex", alignItems: "center", gap: 7, border: `1px dashed ${C.divider}`,
+                                               background: "transparent", color: C.textPrimary, borderRadius: 8, padding: "10px 12px", fontSize: 13.5, cursor: "pointer", textAlign: "left" }}>
+                                <Paperclip size={16} color={C.textSecondary} /> Anexar um vídeo (ou foto, documento, áudio)
+                              </button>
+                            )}
+                            <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 6, lineHeight: 1.45 }}>
+                              Na conversa, a rápida com anexo abre a prévia do arquivo com o texto como legenda — é ali que se confere antes de enviar.
+                            </div>
+                          </div>
+                        );
+                      })()}
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                         <button onClick={() => setRapidaForm(null)} style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary, borderRadius: 8, padding: "9px 16px", fontSize: 14, cursor: "pointer" }}>Cancelar</button>
-                        <button data-salvar-rapida onClick={salvarRapidaForm} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Salvar</button>
+                        <button data-salvar-rapida onClick={salvarRapidaForm} disabled={salvandoRapida} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: salvandoRapida ? "default" : "pointer", opacity: salvandoRapida ? 0.7 : 1 }}>{salvandoRapida ? "Salvando…" : "Salvar"}</button>
                       </div>
                     </div>
-                  ) : (
+                  ) : (<>
+                    {rapidas.length >= PESQUISA_A_PARTIR_DE && (
+                      <div style={{ marginBottom: 10 }}>
+                        <CampoDePesquisa C={C} valor={pesquisaNaConfig} aoMudar={setPesquisaNaConfig}
+                                         rotulo="Pesquisar mensagem rápida" nome="rapidas-da-config" />
+                      </div>
+                    )}
                     <div style={{ border: `1px solid ${C.divider}`, borderRadius: 10, overflow: "hidden" }}>
                       {rapidas.length === 0 && (
                         <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>Nenhuma mensagem rápida ainda. Toque em <b>Nova</b> para criar a primeira.</div>
                       )}
-                      {rapidas.map((r) => (
+                      {rapidas.length > 0 && !rapidas.some((r) => casaComAPesquisa(pesquisaNaConfig, r.titulo, r.texto)) && (
+                        <div data-nada-com-a-pesquisa style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>{nadaComAPesquisa("Nenhuma mensagem rápida", pesquisaNaConfig)}</div>
+                      )}
+                      {rapidas.filter((r) => casaComAPesquisa(pesquisaNaConfig, r.titulo, r.texto)).map((r) => (
                         <div key={r.id} data-rapida-da-config={r.titulo} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px", borderBottom: `1px solid ${C.divider}` }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 14, fontWeight: 600 }}>{r.titulo}</div>
                             <div style={{ fontSize: 13, color: C.textSecondary, marginTop: 2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{r.texto}</div>
+                            {r.midia_url && (
+                              <div data-anexo-na-lista={r.midia_tipo || "documento"}
+                                   style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 5, maxWidth: "100%", fontSize: 12,
+                                            color: C.verdeTexto, background: C.listActive, borderRadius: 6, padding: "2px 8px" }}>
+                                <IconeDoAnexo tipo={r.midia_tipo} size={13} />
+                                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Com {nomeDoAnexo(r.midia_tipo)}: {r.midia_nome || "arquivo"}</span>
+                              </div>
+                            )}
                           </div>
-                          <button data-editar-rapida onClick={() => setRapidaForm({ id: r.id, titulo: r.titulo, texto: r.texto })} title="Editar" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex", flexShrink: 0 }}><Pencil size={16} /></button>
+                          <button data-editar-rapida onClick={() => setRapidaForm({ id: r.id, titulo: r.titulo, texto: r.texto,
+                            midia_url: r.midia_url || null, midia_tipo: r.midia_tipo || null, midia_mime: r.midia_mime || null,
+                            midia_nome: r.midia_nome || null, midiaOriginal: r.midia_url || null })} title="Editar" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex", flexShrink: 0 }}><Pencil size={16} /></button>
                           <button data-apagar-rapida onClick={() => apagarRapida(r.id)} title="Apagar" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#e5573f", display: "flex", flexShrink: 0 }}><Trash2 size={16} /></button>
                         </div>
                       ))}
                     </div>
-                  )}
+                  </>)}
 
                 </div>
               )}
@@ -17234,12 +17573,21 @@ export default function Painel({ sessao }) {
                         <button data-salvar-etiqueta onClick={salvarTagForm} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Salvar</button>
                       </div>
                     </div>
-                  ) : (
+                  ) : (<>
+                    {tags.length >= PESQUISA_A_PARTIR_DE && (
+                      <div style={{ marginBottom: 10 }}>
+                        <CampoDePesquisa C={C} valor={pesquisaNaConfig} aoMudar={setPesquisaNaConfig}
+                                         rotulo="Pesquisar etiqueta" nome="etiquetas-da-config" />
+                      </div>
+                    )}
                     <div style={{ border: `1px solid ${C.divider}`, borderRadius: 10, overflow: "hidden" }}>
                       {tags.length === 0 && (
                         <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>Nenhuma tag ainda. Toque em <b>Nova</b> para criar a primeira.</div>
                       )}
-                      {tags.map((t) => (
+                      {tags.length > 0 && !tags.some((t) => casaComAPesquisa(pesquisaNaConfig, t.nome)) && (
+                        <div data-nada-com-a-pesquisa style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>{nadaComAPesquisa("Nenhuma etiqueta", pesquisaNaConfig)}</div>
+                      )}
+                      {tags.filter((t) => casaComAPesquisa(pesquisaNaConfig, t.nome)).map((t) => (
                         <div key={t.id} data-etiqueta-da-config={t.nome} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: `1px solid ${C.divider}` }}>
                           <span style={{ width: 14, height: 14, borderRadius: 4, background: t.cor, flexShrink: 0 }} />
                           <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.nome}</span>
@@ -17248,7 +17596,7 @@ export default function Painel({ sessao }) {
                         </div>
                       ))}
                     </div>
-                  )}
+                  </>)}
                 </div>
               )}
 
@@ -17741,9 +18089,18 @@ export default function Painel({ sessao }) {
               </div>
             )}
             <div style={{ display: "flex", alignItems: "flex-end", gap: 10, width: "100%", background: C.headerBar, borderRadius: 10, padding: "8px 12px" }}>
-              <input autoFocus value={atual.legenda || ""} onChange={(e) => trocarLegenda(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); confirmarEnviarAnexo(); } }}
+              {/* A LEGENDA TEM VÁRIAS LINHAS (23/10). Era um campo de uma
+                  linha só, e o navegador TIRA as quebras de linha de um campo
+                  assim: 22 das 32 rápidas do escritório têm parágrafos (medido
+                  no banco), e a do vídeo chegaria ao cliente num bloco só.
+                  Enter envia, como antes; Shift+Enter quebra a linha, como na
+                  caixa de escrever. */}
+              <textarea data-legenda-do-anexo ref={legendaRef} autoFocus rows={1} value={atual.legenda || ""}
+                onChange={(e) => trocarLegenda(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); confirmarEnviarAnexo(); } }}
                 placeholder={anexosPendentes.length > 1 ? `Legenda de ${atual.nome}…` : "Adicione uma legenda…"}
-                style={{ flex: 1, border: "none", outline: "none", background: "transparent", color: C.textPrimary, fontSize: 14.5, padding: "8px 4px" }} />
+                style={{ flex: 1, border: "none", outline: "none", background: "transparent", color: C.textPrimary, fontSize: 14.5,
+                         padding: "8px 4px", resize: "none", fontFamily: "inherit", lineHeight: 1.4, maxHeight: 140, overflowY: "auto" }} />
               {/* AGENDAR OS ANEXOS — a mesma janela da caixa de escrever. */}
               {temAgenda === true && (
                 <span style={{ position: "relative", display: "flex", flexShrink: 0 }}>
@@ -17901,13 +18258,16 @@ export default function Painel({ sessao }) {
             </div>
             <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
               {(() => {
-                const q = buscaEncaminhar.trim().toLowerCase();
+                const q = buscaEncaminhar.trim();
                 // OS DÍGITOS SÓ CONTAM SE HOUVER DÍGITOS (auditoria de 07/10):
                 // "maria" sem dígito nenhum virava `includes("")`, que é sempre
                 // verdade — a busca por nome devolvia a lista inteira.
                 const digitos = q.replace(/\D/g, "");
+                // O NOME PELA CONTA DOS MENUS (23/10): "joao" acha "João", e
+                // "silva maria" acha "Maria da Silva". Antes era a frase colada
+                // e com acento, e quem escrevia sem acento não achava ninguém.
                 const lista = conversas.filter((c) => c.id !== conversaId && !c.arquivada
-                  && (!q || (nomeDoContato(c.contato) || "").toLowerCase().includes(q)
+                  && (!q || casaComAPesquisa(q, nomeDoContato(c.contato))
                           || (digitos.length >= 3 && (c.contato?.numero || "").includes(digitos))));
                 if (!lista.length) return <div style={{ padding: 22, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>Nenhuma conversa encontrada.</div>;
                 return lista.map((c) => (
