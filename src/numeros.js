@@ -84,6 +84,33 @@ export function chaveDoNumero(bruto) {
   return nacional;
 }
 
+// AS FORMAS EM QUE UM NÚMERO DIGITADO PODE ESTAR GRAVADO — para PROCURAR (26/10).
+//
+// `chaveDoNumero` compara dois números que estão na mão. A busca não tem o
+// segundo: ela pergunta ao banco "algum contato tem isto DENTRO do número?",
+// e o banco guarda o celular como o WhatsApp o mandou — umas contas COM o
+// nono dígito, outras SEM. MEDIDO em 26/10: 504 contatos (840 conversas) na
+// forma antiga. Perguntando só pela chave, que é sempre a forma com o 9, quem
+// digitava "(71) 99259-0325" não achava o cliente gravado como 557192590325.
+//
+// Por isso a busca pergunta pelas duas: a chave, e a mesma sem o 9. E quem
+// digita só o número local com o 9 ("99259-0325") pergunta também pelos oito
+// do fim, que as duas formas têm. Só para celular, pela regra da chave: fixo
+// não tem nono dígito.
+export function formasDoNumeroNaBusca(bruto) {
+  const d = String(bruto || "").replace(/\D/g, "");
+  if (d.length < 4) return [];
+  const chave = chaveDoNumero(d);
+  const formas = new Set([chave]);
+  if (chave.length === 11 && chave[2] === "9" && "6789".includes(chave[3])) {
+    formas.add(chave.slice(0, 2) + chave.slice(3));
+  }
+  if (chave.length === 9 && chave[0] === "9" && "6789".includes(chave[1])) {
+    formas.add(chave.slice(1));
+  }
+  return [...formas];
+}
+
 // A ETIQUETA DE UM TELEFONE DO ESCRITÓRIO — outra pergunta, outra resposta.
 //
 // Esta NÃO é a chave de comparar duas pessoas. É o texto que identifica uma

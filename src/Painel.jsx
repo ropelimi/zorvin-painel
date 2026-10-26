@@ -18,7 +18,7 @@ import {
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
 import { numeroCanonico, chaveDoNumero, porQueNaoRecebeWhatsApp, daParaChamar,
-         telefoneLegivel } from "./numeros.js";
+         telefoneLegivel, formasDoNumeroNaBusca } from "./numeros.js";
 import { chamarPonte, ESPERA_PADRAO } from "./ponte.js";
 import { useTemVantoro, enderecoNoVantoro } from "./temVantoro.js";
 import { useVocabulario } from "./vocabulario.js";
@@ -60,7 +60,8 @@ import { ABAS_DA_SITUACAO, NOME_DA_SITUACAO } from "./abasDaSituacao.js";
 import { pareceAcessoVencido, pedirConferenciaDaSessao, marcarSaidaPedida, foiSaidaPedida } from "./vigiaDaSessao.js";
 import { rascunhosDe, guardarRascunho } from "./rascunhos.js";
 import CampoDePesquisa, { ComPesquisa } from "./CampoDePesquisa.jsx";
-import { PESQUISA_A_PARTIR_DE, casaComAPesquisa, nadaComAPesquisa } from "./pesquisaNosMenus.js";
+import { PESQUISA_A_PARTIR_DE, casaComAPesquisa, nadaComAPesquisa, chaveDaPesquisa } from "./pesquisaNosMenus.js";
+import { padraoSemAcento, casaSemAcento, TETO_DA_BUSCA_NA_CONVERSA } from "./buscaNaConversa.js";
 import { tipoDoAnexo, caminhoDoAnexoDaRapida, semAColunaDoAnexo, nomeDoAnexo, anexoDoDeposito,
          CACHE_DO_ANEXO_DA_RAPIDA } from "./rapidasComAnexo.js";
 
@@ -185,7 +186,10 @@ function diasEsperando(conversa) {
  *  "Deus" no WhatsApp, e dizia "Nenhum contato salvo com esse nome" — e o
  *  bloco do Vantoro logo abaixo oferecia criar o mesmo número de novo. */
 function contatoCasaComABusca(c, q, chaveQ) {
-  return [c.nome, c.vantoro_nome, c.nome_zorvin].some((n) => String(n || "").toLowerCase().includes(q))
+  // SEM ACENTO E POR PALAVRA (26/10), a conta das pesquisas dos menus. O
+  // banco passou a achar "JOÃO" por "joao" e "MARIA DAS GRAÇAS" por "maria
+  // graças"; com a régua antiga aqui, a tela escondia o que ele achou.
+  return casaComAPesquisa(q, c.nome, c.vantoro_nome, c.nome_zorvin)
     || (chaveQ.length >= 4 && chaveDoNumero(c.numero).includes(chaveQ));
 }
 
@@ -287,6 +291,21 @@ function ehDeMensagens(m) {
     && !m._filaId && !String(m.id || "").startsWith("temp-") && !String(m.id || "").startsWith("fila-");
 }
 const porHora = (a, b) => new Date(a.criado_em) - new Date(b.criado_em);
+/** A MENSAGEM QUE ENTRA AGORA COM DATA DE MAIS DE UM DIA ATRÁS É HISTÓRICO
+ *  CHEGANDO, e não cliente escrevendo (26/10). A importação de histórico e o
+ *  resgate que a ponte faz das mensagens que ela tinha descartado gravam cada
+ *  uma com a data em que foi escrita — e o aviso tocava para cada uma, como
+ *  se o cliente tivesse acabado de mandar.
+ *
+ *  UM DIA, e não minutos: o cliente que escreve sem sinal e reconecta horas
+ *  depois chega com a hora em que escreveu, e esse precisa avisar. Calar a
+ *  mensagem de um cliente é o pior desfecho deste sistema; um aviso a mais
+ *  por uma mensagem de ontem à noite é o erro barato. */
+const UM_DIA_MS = 24 * 3600e3;
+function ehHistoricoChegando(m) {
+  const t = Date.parse(m && m.criado_em);
+  return Number.isFinite(t) && Date.now() - t > UM_DIA_MS;
+}
 /** A BOLHA PROVISÓRIA QUE ESTA MENSAGEM GRAVADA CONFIRMA — o mesmo texto, ou o
  *  mesmo arquivo no depósito. É a regra do aviso de INSERT e a da releitura,
  *  numa escrita só (20/10): duas escritas divergiriam, e divergir aqui é a
@@ -388,6 +407,11 @@ function compararConversas(ordem, pelaEspera) {
 // existe", descemos para o conjunto de sempre e não perguntamos de novo nesta
 // sessão. É a mesma tolerância que a Ponte já tem do outro lado ao gravar.
 let TEM_NOME_DO_CADASTRO = true;
+// `contatos.busca` — os nomes e o número SEM ACENTO, numa coluna só, que o
+// banco mantém (SQL de agosto, `2026-08-busca-de-verdade.sql`). A agenda da
+// "Nova conversa" procura nela desde 26/10; num banco sem ela, o primeiro "não
+// existe" a faz voltar aos nomes escritos como estão, como era antes.
+let TEM_BUSCA_DO_CONTATO = true;
 // `conversas.arquivada` também é de um SQL que pode não ter sido rodado.
 let TEM_ARQUIVADA = true;
 // A contagem dos selos numa ida só (`nao_lidas_por_telefone`) é outro SQL. Onde
@@ -2344,6 +2368,9 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
   // lista de mensagens e de ir ao banco buscar as anteriores; aqui só chega a
   // função, como todo o resto.
   aoIrParaCitada,
+  // O TRECHO DO MEIO (26/10): o id da primeira das recentes, onde a marca é
+  // desenhada, e quem o carrega.
+  lacunaAntesDe, buscandoMeio, aoCarregarDoMeio,
 }) {
 
   return mensagens.map((m, i) => {
@@ -2352,8 +2379,8 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
     const novoDia =
       !anterior || new Date(anterior.criado_em).toDateString() !== new Date(m.criado_em).toDateString();
     const mesmoRemetente = anterior && !novoDia && anterior.origem === m.origem;
-    const q = buscaAberta ? buscaConversa.trim().toLowerCase() : "";
-    const casa = q && (m.texto || "").toLowerCase().includes(q);
+    // O CONTORNO DA BOLHA ACHADA, pela mesma conta sem acento da busca (26/10).
+    const casa = buscaAberta && casaSemAcento(m.texto, buscaConversa);
     // Mostra o nome de quem enviou: sempre nas ENVIADAS (qual
     // atendente respondeu) e também nas RECEBIDAS quando é um GRUPO
     // (para saber qual participante escreveu, como no WhatsApp).
@@ -2379,6 +2406,22 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
     const figurinhaNua = m.tipo === "figurinha" && Boolean(m.midia_url);
     return (
       <React.Fragment key={m.id}>
+        {/* O TRECHO DO MEIO QUE NÃO ESTÁ NA TELA (26/10), logo acima das
+            recentes. Sem a marca, a última do pedaço achado e a primeira das
+            recentes ficariam coladas, como se nada houvesse entre elas. */}
+        {lacunaAntesDe && String(m.id) === lacunaAntesDe && (
+          <div data-lacuna style={{ alignSelf: "center", display: "flex", flexDirection: "column", alignItems: "center",
+                                    gap: 8, margin: "14px 0", padding: "10px 14px", maxWidth: 380, boxSizing: "border-box",
+                                    background: C.bubbleIn, color: C.textSecondary, fontSize: 12.5, lineHeight: 1.45,
+                                    textAlign: "center", borderRadius: 10, boxShadow: "0 1px 0.5px rgba(0,0,0,.15)" }}>
+            <span>Há mensagens entre estas e as mais recentes que ainda não estão na tela.</span>
+            <button onClick={aoCarregarDoMeio} disabled={buscandoMeio}
+                    style={{ border: `1px solid ${C.divider}`, background: C.panel, color: C.textSecondary, borderRadius: 20,
+                             padding: "6px 14px", fontSize: 12.5, fontWeight: 600, cursor: buscandoMeio ? "default" : "pointer" }}>
+              {buscandoMeio ? "Buscando…" : "↓ Carregar as mensagens do meio"}
+            </button>
+          </div>
+        )}
         {novoDia && (
           <div style={{ alignSelf: "center", background: C.bubbleIn, color: C.textSecondary, fontSize: 12, fontWeight: 500, padding: "5px 12px", borderRadius: 8, boxShadow: "0 1px 0.5px rgba(0,0,0,.15)", margin: "10px 0 6px" }}>
             {rotuloData(m.criado_em)}
@@ -3509,6 +3552,10 @@ export default function Painel({ sessao }) {
   // "solte aqui": sem retorno visual, quem arrasta não sabe se pode soltar.
   const [arrastandoArquivo, setArrastandoArquivo] = useState(false);
   const [buscaIdx, setBuscaIdx] = useState(0); // ocorrência atual na busca da conversa
+  // O QUE O BANCO ACHOU NA CONVERSA ABERTA (26/10) — ver `buscaNaConversa.js`.
+  // `{ conversa, termo, lista: [{ id, em }], erro, cheio }`; `null` enquanto o
+  // termo de agora não tem resposta.
+  const [achadosNaConversa, setAchadosNaConversa] = useState(null);
   const [idDivisorNaoLidas, setIdDivisorNaoLidas] = useState(null); // id da 1ª msg não lida ao abrir
   const [temMaisAntigas, setTemMaisAntigas] = useState(false); // há histórico acima do que está na tela
   // QUAL mensagem casou em cada conversa achada pela busca — não só o texto.
@@ -3548,6 +3595,16 @@ export default function Painel({ sessao }) {
   const temMaisAntigasRef = useRef(false);
   const [buscandoAntigas, setBuscandoAntigas] = useState(false);
   const buscandoAntigasRef = useRef(false);
+  // O TRECHO DO MEIO QUE AINDA NÃO ESTÁ NA TELA (26/10). A conversa aberta
+  // numa mensagem achada pela busca traz o pedaço em volta dela E as mais
+  // recentes; entre os dois pode sobrar um buraco, e a tela diz que ele existe
+  // (`data-lacuna`) e oferece carregá-lo. `{ conversa, de, ateEm, antesDe }`:
+  // o horário da última do pedaço achado, o da primeira das recentes, e o id
+  // dela, que é onde a marca é desenhada. `null` sem buraco nenhum.
+  const [lacuna, setLacuna] = useState(null);
+  const lacunaRef = useRef(null);
+  const [buscandoMeio, setBuscandoMeio] = useState(false);
+  const buscandoMeioRef = useRef(false);
   const [importando, setImportando] = useState(false); // gravando no banco
   const [impAdvId, setImpAdvId] = useState(""); // advogado dono das conversas importadas
   const [impMeuNome, setImpMeuNome] = useState(""); // nome do advogado como aparece nos .txt
@@ -6132,6 +6189,13 @@ export default function Painel({ sessao }) {
       // devolve erro.
       const seguro = String(termo || "").replace(/[,()*]/g, " ").trim();
       const chave = chaveDoNumero(termo || "");
+      // O NÚMERO NAS FORMAS EM QUE ELE PODE ESTAR GRAVADO, com e sem o nono
+      // dígito (26/10) — ver `formasDoNumeroNaBusca`.
+      const formas = formasDoNumeroNaBusca(termo || "");
+      // AS PALAVRAS, SEM ACENTO (26/10). Cada uma tem de estar em algum lugar
+      // de `busca` — que junta os três nomes e o número —, e não a frase
+      // colada: "maria graças" acha "MARIA DAS GRAÇAS PEREIRA".
+      const palavras = chaveDaPesquisa(seguro).split(" ").filter(Boolean);
       const buscar = () => {
         let q = supabase.from("contatos")
           .select(colunasDoContato("id, nome, numero, foto_url"))
@@ -6141,17 +6205,30 @@ export default function Painel({ sessao }) {
           .limit(seguro || chave.length >= 4 ? 300 : 200);
         const partes = [];
         if (seguro.length >= 2) {
-          partes.push(`nome.ilike.%${seguro}%`);
-          if (TEM_NOME_DO_CADASTRO) {
-            partes.push(`vantoro_nome.ilike.%${seguro}%`);
-            partes.push(`nome_zorvin.ilike.%${seguro}%`);
+          if (TEM_BUSCA_DO_CONTATO) {
+            const todas = palavras.map((p) => `busca.ilike.%${p}%`);
+            partes.push(todas.length > 1 ? `and(${todas.join(",")})` : todas[0]);
+          } else {
+            partes.push(`nome.ilike.%${seguro}%`);
+            if (TEM_NOME_DO_CADASTRO) {
+              partes.push(`vantoro_nome.ilike.%${seguro}%`);
+              partes.push(`nome_zorvin.ilike.%${seguro}%`);
+            }
           }
         }
-        if (chave.length >= 4) partes.push(`numero.ilike.%${chave}%`);
+        for (const f of formas) partes.push(`numero.ilike.%${f}%`);
         if (partes.length) q = q.or(partes.join(","));
         return q;
       };
       let { data, error } = await buscar();
+      // A COLUNA DA BUSCA QUE NÃO EXISTE, perguntada ANTES da do cadastro: as
+      // duas respondem 42703, e confundir uma com a outra desligaria o nome do
+      // cadastro pelo resto da sessão por causa de uma coluna que não é a dele.
+      if (error && TEM_BUSCA_DO_CONTATO && faltaColuna(error)
+          && /\bbusca\b/.test(String(error.message || ""))) {
+        TEM_BUSCA_DO_CONTATO = false;
+        ({ data, error } = await buscar());
+      }
       // `faltaColuna` junto: sem ele, uma queda de rede era lida como "a coluna
       // não existe" e o nome do cadastro do Vantoro ficava desligado pelo resto
       // da sessão, para todas as telas — por causa de um 4G que oscilou.
@@ -7240,6 +7317,7 @@ export default function Painel({ sessao }) {
       });
       setIdDivisorNaoLidas(null);
       setTemMaisAntigas(false);
+      lacunaRef.current = null; setLacuna(null);
     }
 
     // A conversa aberta a partir de um resultado de busca não começa no fim:
@@ -7281,19 +7359,43 @@ export default function Painel({ sessao }) {
       : supabase.from("zorvin_atendimentos").select(COLUNAS_DOS_ATENDIMENTOS).eq("conversa_id", convId)
           .order("aberto_em", { ascending: true }).limit(500).then((r) => r);
 
-    let recentes = [], erro = null, maisAntigas = false;
+    let recentes = [], erro = null, maisAntigas = false, lacunaNova = null;
     if (alvo && alvo.em) {
-      const [antes, depois] = await Promise.all([
+      // AS MAIS RECENTES VÊM JUNTO (26/10).
+      //
+      // Vinham só 40 antes da achada e 120 depois — e mais nada. Numa conversa
+      // longa, as mais recentes não estavam na tela, nada dizia isso, e não
+      // havia como trazê-las sem sair e entrar de novo. E a mensagem que
+      // chegasse naquela hora entrava logo depois do pedaço achado, no meio do
+      // histórico. MEDIDO: 40 conversas do escritório têm mais de 160
+      // mensagens.
+      const [antes, depois, fim] = await Promise.all([
         supabase.from("mensagens").select("*").eq("conversa_id", convId)
           .lt("criado_em", alvo.em)
           .order("criado_em", { ascending: false }).limit(ANTES_DO_ALVO),
         supabase.from("mensagens").select("*").eq("conversa_id", convId)
           .gte("criado_em", alvo.em)
           .order("criado_em", { ascending: true }).limit(TETO_MENSAGENS),
+        supabase.from("mensagens").select("*").eq("conversa_id", convId)
+          .order("criado_em", { ascending: false }).limit(TETO_MENSAGENS),
       ]);
-      erro = antes.error || depois.error;
-      recentes = [...(antes.data || []).slice().reverse(), ...(depois.data || [])];
+      erro = antes.error || depois.error || fim.error;
+      const doPedaco = [...(antes.data || []).slice().reverse(), ...(depois.data || [])];
+      const jaNoPedaco = new Set(doPedaco.map((m) => String(m.id)));
+      const doFim = (fim.data || []).slice().reverse().filter((m) => !jaNoPedaco.has(String(m.id)));
+      recentes = [...doPedaco, ...doFim].sort(porHora);
       maisAntigas = (antes.data || []).length >= ANTES_DO_ALVO;
+      // HÁ UM BURACO quando o pedaço achado veio cheio (pode haver mais depois
+      // dele) e as recentes não o alcançam: a mais antiga delas não é anterior
+      // à última do pedaço. Mesmo horário conta como buraco — com empate na
+      // emenda, carregar o meio é o que garante que nenhuma ficou de fora.
+      const ultimaDoPedaco = (depois.data || [])[(depois.data || []).length - 1];
+      const primeiraDoFim = doFim[0];
+      if ((depois.data || []).length >= TETO_MENSAGENS && ultimaDoPedaco && primeiraDoFim
+          && new Date(primeiraDoFim.criado_em) >= new Date(ultimaDoPedaco.criado_em)) {
+        lacunaNova = { conversa: convId, de: ultimaDoPedaco.criado_em,
+                       ateEm: primeiraDoFim.criado_em, antesDe: String(primeiraDoFim.id) };
+      }
     } else {
       const { data, error } = await supabase
         .from("mensagens")
@@ -7467,6 +7569,8 @@ export default function Painel({ sessao }) {
     setIdDivisorNaoLidas(alvoId);
     // Veio o lote cheio? Então provavelmente há mais para trás.
     setTemMaisAntigas(maisAntigas);
+    // E o buraco entre o pedaço achado e as recentes, se houver (26/10).
+    lacunaRef.current = lacunaNova; setLacuna(lacunaNova);
     // A mensagem achada fica marcada para a tela rolar até ela e destacá-la.
     if (alvo) setSalto((s) => ({ id: String(alvo.id ?? ""), n: (s?.n || 0) + 1 }));
     else { setSalto(null); setMsgDestacada(null); }
@@ -7766,21 +7870,41 @@ export default function Painel({ sessao }) {
     if (!maisAntiga) return [];
     buscandoAntigasRef.current = true;
     setBuscandoAntigas(true);
+    // O MESMO HORÁRIO DA MAIS ANTIGA ENTRA DE NOVO (26/10).
+    //
+    // Era `lt`: "as de ANTES da mais antiga na tela". As que tinham EXATAMENTE
+    // o horário dela e não tinham cabido na página ficavam para trás para
+    // sempre — nem esta leitura nem a seguinte as traziam. MEDIDO no banco do
+    // escritório: 1.298 grupos de mensagens com o mesmo horário na mesma
+    // conversa (as fotos de um álbum, o histórico importado com minuto cheio),
+    // e 8 mensagens em 3 conversas caindo numa borda de página.
+    //
+    // Agora é `lte`, e as do mesmo horário que já estão na tela são
+    // descontadas: o pedido cresce de quantas forem, e elas não entram duas
+    // vezes.
+    const instante = new Date(maisAntiga.criado_em).getTime();
+    const jaComEsseHorario = mensagensRef.current
+      .filter((m) => ehDeMensagens(m) && new Date(m.criado_em).getTime() === instante).length;
+    const pedidas = TETO_MENSAGENS + jaComEsseHorario;
     const { data, error } = await supabase
       .from("mensagens")
       .select("*")
       .eq("conversa_id", convId)
-      .lt("criado_em", maisAntiga.criado_em)
+      .lte("criado_em", maisAntiga.criado_em)
       .order("criado_em", { ascending: false })
-      .limit(TETO_MENSAGENS);
+      .limit(pedidas);
     buscandoAntigasRef.current = false;
     setBuscandoAntigas(false);
     if (error) { mostrarAviso(comOCodigo("Não consegui trazer as mensagens anteriores.", error, "mensagens anteriores")); return []; }
     // Troquei de conversa enquanto isto vinha: joga fora, senão o histórico de
     // uma pessoa aparece na conversa de outra.
     if (conversaIdRef.current !== convId) return [];
-    const lote = (data || []).slice().reverse();
-    setTemMaisAntigas(lote.length >= TETO_MENSAGENS);
+    const jaNaTela = new Set(mensagensRef.current.map((m) => String(m.id)));
+    const lote = (data || []).filter((m) => !jaNaTela.has(String(m.id))).reverse();
+    // "TEM MAIS" PELO QUE O BANCO DEVOLVEU, e não pelo que sobrou depois de
+    // descontar: o pedido veio cheio, então pode haver mais para trás.
+    const cheio = (data || []).length >= pedidas;
+    setTemMaisAntigas(cheio);
     if (!lote.length) return [];
     setMensagens((prev) => {
       const jaTem = new Set(prev.map((m) => m.id));
@@ -7789,12 +7913,57 @@ export default function Painel({ sessao }) {
       // todas na abertura, e a nota mais velha que a janela ficava ACIMA das
       // mensagens antigas que chegavam depois — fora da ordem do tempo.
       const mk = marcosRef.current.convId === convId ? marcosRef.current.lista : [];
-      const desde = lote.length >= TETO_MENSAGENS ? lote[0].criado_em : null;
+      const desde = cheio ? lote[0].criado_em : null;
       const marcosNovos = marcosNaJanela(mk, desde).filter((m) => !jaTem.has(m.id));
       return [...marcosNovos, ...lote.filter((m) => !jaTem.has(m.id)), ...prev].sort(porHora);
     });
     return lote;
   }
+
+  // ---- CARREGA O TRECHO DO MEIO (26/10) ----
+  //
+  // Do fim do pedaço achado para a frente, um lote por vez, até alcançar as
+  // recentes. Pela régua de `carregarAntigas`: o horário de onde se parte
+  // entra de novo (`gte`), e as que já estão na tela são descontadas — o
+  // empate na emenda não deixa ninguém de fora.
+  const carregarDoMeio = useCallback(async () => {
+    const convId = conversaIdRef.current;
+    const l = lacunaRef.current;
+    if (!l || l.conversa !== convId || buscandoMeioRef.current) return;
+    buscandoMeioRef.current = true;
+    setBuscandoMeio(true);
+    const instante = new Date(l.de).getTime();
+    const jaComEsseHorario = mensagensRef.current
+      .filter((m) => ehDeMensagens(m) && new Date(m.criado_em).getTime() === instante).length;
+    const pedidas = TETO_MENSAGENS + jaComEsseHorario;
+    const { data, error } = await supabase.from("mensagens").select("*")
+      .eq("conversa_id", convId)
+      .gte("criado_em", l.de)
+      .order("criado_em", { ascending: true })
+      .limit(pedidas);
+    buscandoMeioRef.current = false;
+    setBuscandoMeio(false);
+    if (error) { mostrarAviso(comOCodigo("Não consegui trazer as mensagens do meio.", error, "mensagens do meio")); return; }
+    if (conversaIdRef.current !== convId || lacunaRef.current !== l) return;
+    const linhas = data || [];
+    const jaNaTela = new Set(mensagensRef.current.map((m) => String(m.id)));
+    const lote = linhas.filter((m) => !jaNaTela.has(String(m.id)));
+    const ultima = linhas[linhas.length - 1];
+    // ALCANÇOU as recentes: o lote não veio cheio (acabou a conversa), trouxe
+    // a primeira delas, ou passou do horário dela.
+    const alcancou = linhas.length < pedidas || !ultima
+      || linhas.some((m) => String(m.id) === l.antesDe)
+      || new Date(ultima.criado_em) > new Date(l.ateEm);
+    if (lote.length) {
+      setMensagens((prev) => {
+        const jaTem = new Set(prev.map((m) => String(m.id)));
+        return [...prev, ...lote.filter((m) => !jaTem.has(String(m.id)))].sort(porHora);
+      });
+    }
+    const proxima = alcancou ? null : { ...l, de: ultima.criado_em };
+    lacunaRef.current = proxima;
+    setLacuna(proxima);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Mantém vivo o "estou atendendo" enquanto a conversa fica aberta ----
   // Este era o pior dos casos: um relógio que batia no banco a cada minuto,
@@ -8022,7 +8191,13 @@ export default function Painel({ sessao }) {
         // ANTES de abrir a tela, aparecia certinha como "📄 Documento".
         //
         // Aqui o tipo vem de graça: ele está na própria linha que chegou.
-        setUltimasMidias((antes) => {
+        //
+        // MAS SÓ DA MENSAGEM QUE CHEGOU AGORA (26/10). A mensagem de semanas
+        // atrás que entra hoje (o resgate da ponte, a importação de histórico)
+        // não é a última da conversa, e o rótulo dela apagaria o de quem é —
+        // a prévia passaria a mostrar o "[anexo]" cru de um áudio. A régua é
+        // a do aviso, logo abaixo: mais de um dia é história chegando.
+        if (!ehHistoricoChegando(nova)) setUltimasMidias((antes) => {
           const novo = { ...antes };
           if (nova.tipo && nova.tipo !== "texto") {
             novo[nova.conversa_id] = { tipo: nova.tipo, segundos: nova.midia_segundos || null };
@@ -8059,7 +8234,7 @@ export default function Painel({ sessao }) {
         //  depois: em fila, as duas idas ao banco somariam os seus tempos antes
         //  de o som tocar.
         // ------------------------------------------------------------
-        if (nova.origem === "contato"
+        if (nova.origem === "contato" && !ehHistoricoChegando(nova)
             && (document.hidden || nova.conversa_id !== conversaIdRef.current)) {
           esteAvisoMeInteressa(nova.conversa_id).then((paraMim) => {
             if (!paraMim) return;
@@ -9373,19 +9548,40 @@ export default function Painel({ sessao }) {
     return () => document.removeEventListener("click", fecha);
   }, [menuConversa]);
 
-  // Ao digitar na busca da conversa, vai para a ocorrência mais recente.
+  // A BUSCA DA CONVERSA PERGUNTA AO BANCO (26/10).
+  //
+  // Ela procurava só no que estava na tela — as 120 últimas — e com acento: numa
+  // conversa de 400 mensagens dizia "0" para uma palavra dita no começo. Agora a
+  // pergunta vai ao banco, recortada nesta conversa, pela expressão sem acento
+  // de `buscaNaConversa.js`. Com uma pausa, como a busca da lista: uma por
+  // palavra, e não uma por tecla. O salto até a mais recente mora mais abaixo,
+  // junto da lista das ocorrências (`achadosDaBusca`).
   useEffect(() => {
-    const q = buscaConversa.trim().toLowerCase();
-    if (!buscaAberta || !q) return;
-    const ids = mensagens.filter((m) => (m.texto || "").toLowerCase().includes(q)).map((m) => m.id);
-    if (!ids.length) return;
-    const idx = ids.length - 1;
-    setBuscaIdx(idx);
-    requestAnimationFrame(() => {
-      const el = document.querySelector(`[data-msg-id="${ids[idx]}"]`);
-      if (el) el.scrollIntoView({ block: "center" });
-    });
-  }, [buscaConversa, buscaAberta]); // eslint-disable-line react-hooks/exhaustive-deps
+    const termo = buscaConversa.trim();
+    if (!buscaAberta || !conversaId || termo.length < 2) { setAchadosNaConversa(null); return; }
+    let valeu = true;
+    const t = setTimeout(async () => {
+      let r;
+      try {
+        r = await supabase.from("mensagens").select("id, criado_em")
+          .eq("conversa_id", conversaId)
+          .imatch("texto", padraoSemAcento(termo))
+          .order("criado_em", { ascending: true }).order("id")
+          .limit(TETO_DA_BUSCA_NA_CONVERSA);
+      } catch (e) { r = { data: null, error: e }; }
+      if (!valeu) return;
+      setAchadosNaConversa({
+        conversa: conversaId, termo,
+        lista: r.error ? [] : (r.data || []).map((m) => ({ id: String(m.id), em: m.criado_em })),
+        // A FALHA É DITA, com o código, e a busca continua pelo que está na
+        // tela — "0" calado seria o defeito de antes com a frase de agora.
+        erro: r.error ? comOCodigo("Procurei só no que está na tela: o histórico inteiro não respondeu agora.",
+                                   r.error, "busca na conversa") : "",
+        cheio: !r.error && (r.data || []).length >= TETO_DA_BUSCA_NA_CONVERSA,
+      });
+    }, 300);
+    return () => { valeu = false; clearTimeout(t); };
+  }, [buscaConversa, buscaAberta, conversaId]);
 
   function aoRolar() {
     const el = listaRef.current;
@@ -11869,6 +12065,11 @@ export default function Painel({ sessao }) {
   // cliente não existe aqui" —, e quem lê isso para de procurar. Foi assim que
   // dois defeitos desta tela ficaram meses sem ninguém saber que eram defeitos.
   const [erroBusca, setErroBusca] = useState("");
+  // A BUSCA VEIO NO TETO (26/10). A função do banco devolve no máximo 80
+  // conversas, e "boa tarde" casa com 561 no telefone mais movimentado do
+  // escritório: a tela mostrava 80 com cara de todas — a armadilha nº 2, uma
+  // lista curta que se lê como completa. Ver `data-corte-da-busca`.
+  const [corteDaBusca, setCorteDaBusca] = useState(false);
   // A função de busca do banco existe? `null` enquanto não se sabe.
   const [temBuscaNoBanco, setTemBuscaNoBanco] = useState(null);
 
@@ -12105,7 +12306,7 @@ export default function Painel({ sessao }) {
     // pergunta anterior; deixá-lo de pé enquanto a nova nem saiu faria a tela
     // dizer que consulta algo por uma busca que já mudou.
     setVendoNoCadastro(false);
-    setErroBusca(""); setAlvoDaBusca({});
+    setErroBusca(""); setAlvoDaBusca({}); setCorteDaBusca(false);
     if (termo.length < 3) { setBuscando(false); return; }
 
     let cancelado = false;
@@ -12168,6 +12369,29 @@ export default function Painel({ sessao }) {
       //  saber. Entre `setBuscando(false)` e a volta desta chamada pode haver
       //  meio minuto — a ponte e o Vantoro hibernam no plano gratuito da
       //  Render —, e nesse meio a lista vazia escrevia "Nada encontrado".
+      // ------------------------------------------------------------
+      //  O QUE AS PERGUNTAS JÁ TROUXERAM, JUNTO (26/10)
+      //
+      //  São três perguntas que voltam em tempos diferentes — os nomes, a
+      //  função do banco e o cadastro —, e cada uma desenhava a SUA lista por
+      //  cima da anterior. A dos nomes, chegando depois da completa, era
+      //  jogada fora: "(71) 9259-0326" não achava o cliente gravado com o nono
+      //  dígito sempre que a função do banco respondia primeiro, porque é a
+      //  consulta dos nomes que procura o número nas formas em que ele está
+      //  gravado. Foi a prova `a-busca-acha-o-que-existe` que viu a corrida.
+      //
+      //  Agora todas SOMAM aqui, e quem chega desenha a soma.
+      const achadas = new Map();
+      const nomesQueCasaram = {};
+      const juntar = (lista, porNome = {}) => {
+        for (const c of lista || []) achadas.set(String(c.id), c);
+        Object.assign(nomesQueCasaram, porNome);
+      };
+      const desenhar = () => {
+        setAchadosNome({ ...nomesQueCasaram });
+        setExtras(peneirar([...achadas.values()]));
+      };
+
       const somarOCadastro = async (base) => {
         // SEM VANTORO NÃO HÁ CADASTRO A SOMAR — e a saída é AQUI, antes do
         // `setVendoNoCadastro(true)`, e não lá dentro. Levantando o aviso para
@@ -12189,8 +12413,9 @@ export default function Painel({ sessao }) {
         if (!meu()) return;
         setAchadosCad(doCadastro.porCad);
         setSemConversa(doCadastro.semConversa || []);
-        // As que só o cadastro achou entram na MESMA peneira das outras.
-        setExtras(peneirar([...base, ...doCadastro.novas]));
+        // As que só o cadastro achou entram na MESMA soma das outras.
+        juntar(doCadastro.novas);
+        desenhar();
       };
 
       // ------------------------------------------------------------
@@ -12217,10 +12442,12 @@ export default function Painel({ sessao }) {
       const nomes = procurarSoPelosNomes(termo, advId, sinal);
       nomes.then((r) => {
         dosNomes = r;
-        if (!meu() || jaVeioACompleta || !r.encontradas.length) return;
-        setAchadosNome(r.porNome);
-        setExtras(peneirar(r.encontradas));
-        setBuscando(false);
+        if (!meu() || !r.encontradas.length) return;
+        juntar(r.encontradas, r.porNome);
+        desenhar();
+        // CHEGANDO DEPOIS DA COMPLETA, SÓ ACRESCENTA: quem apagou o
+        // "Procurando…" foi ela, e o aviso dela continua valendo.
+        if (!jaVeioACompleta) setBuscando(false);
       }).catch(() => {});
 
       try {
@@ -12289,10 +12516,14 @@ export default function Painel({ sessao }) {
           // que já estava desenhado. Mostrar e tirar é pior do que nunca ter
           // mostrado: quem viu o nome aparecer e sumir conclui que o sistema
           // perdeu o cliente.
-          const tudo = [...dosNomes.encontradas, ...encontradas];
+          juntar(dosNomes.encontradas, dosNomes.porNome);
+          juntar(encontradas, porNome);
+          const tudo = [...achadas.values()];
           setAchadosMsg(porMsg);
-          setAchadosNome({ ...dosNomes.porNome, ...porNome });
           setAlvoDaBusca(alvos);
+          // NO TETO, A TELA DIZ (26/10): a função devolve no máximo 80, e 80
+          // de volta quer dizer que pode haver mais.
+          setCorteDaBusca((achados || []).length >= 80);
 
           // O QUE O BANCO ACHOU VAI PARA A TELA AGORA — e não depois.
           //
@@ -12308,7 +12539,7 @@ export default function Painel({ sessao }) {
           //
           // Agora são dois tempos: o que é daqui aparece de imediato, e o que
           // vem do cadastro chega depois — se chegar.
-          setExtras(peneirar(tudo));
+          desenhar();
           setBuscando(false);
           // O RELÓGIO PARA AQUI. O que falta — o cadastro do Vantoro — só
           // ACRESCENTA, e tem prazo próprio; cortá-lo aos 9 segundos junto com
@@ -12401,6 +12632,8 @@ export default function Painel({ sessao }) {
         (data || []).forEach((m) => {
           if (!porMsg[m.conversa_id]) porMsg[m.conversa_id] = m.texto || "";
         });
+        // AS MIL MENSAGENS CHEIAS: o mesmo aviso do teto (26/10).
+        if ((data || []).length >= 1000) setCorteDaBusca(true);
       } catch (e) { falhouMensagem = true; contarFalha("texto das mensagens", e); }
 
       // As conversas com mensagem casada que ainda não temos em mãos.
@@ -12421,7 +12654,6 @@ export default function Painel({ sessao }) {
       // outra pergunta: descarta.
       if (!meu()) return;
       setAchadosMsg(porMsg);
-      setAchadosNome(porNome);
       // A FRASE MUDA CONFORME O QUE FALTOU, porque a decisão de quem lê muda —
       // e a escolha dela mora em `busca.js`, com uma prova para cada caso.
       setErroBusca(recadoDaBusca({
@@ -12433,7 +12665,8 @@ export default function Painel({ sessao }) {
       // caminho de reserva (quando a função do banco ainda não foi criada), e
       // ele tinha o defeito idêntico: a ida ao Vantoro vinha antes de desenhar,
       // e o "Procurando…" ficava de pé até ela voltar.
-      setExtras(peneirar(encontradas));
+      juntar(encontradas, porNome);
+      desenhar();
       setBuscando(false);
       clearTimeout(relogio);   // o que falta só acrescenta; ver acima
 
@@ -12896,15 +13129,58 @@ export default function Painel({ sessao }) {
   const slashAberto = slashQuery !== null && slashLista.length > 0;
 
   // Ocorrências da busca dentro da conversa aberta (ids das mensagens que casam).
-  const matchesBusca = (buscaAberta && buscaConversa.trim())
-    ? mensagens.filter((m) => (m.texto || "").toLowerCase().includes(buscaConversa.trim().toLowerCase())).map((m) => m.id)
-    : [];
-  function rolarParaMatch(idx) {
-    const id = matchesBusca[idx];
-    if (!id) return;
-    const el = typeof document !== "undefined" && document.querySelector(`[data-msg-id="${id}"]`);
-    if (el) el.scrollIntoView({ block: "center" });
+  // AS OCORRÊNCIAS DA BUSCA NA CONVERSA, na ordem do tempo (26/10): o que o
+  // banco achou em `mensagens`, mais o que só a tela tem — as notas, as
+  // respostas automáticas, as bolhas que não saíram. Enquanto o banco não
+  // respondeu, ou se ele falhou, vale o que está na tela.
+  const termoDaConversa = buscaAberta ? buscaConversa.trim() : "";
+  const respostaDoBanco = achadosNaConversa && achadosNaConversa.conversa === conversaId
+    && achadosNaConversa.termo === termoDaConversa ? achadosNaConversa : null;
+  const pertoDoBanco = Boolean(respostaDoBanco && !respostaDoBanco.erro);
+  const achadosDaBusca = (() => {
+    if (!termoDaConversa) return [];
+    const porId = new Map();
+    if (pertoDoBanco) for (const a of respostaDoBanco.lista) porId.set(a.id, a);
+    for (const m of mensagens) {
+      if ((pertoDoBanco && ehDeMensagens(m)) || !casaSemAcento(m.texto, termoDaConversa)) continue;
+      porId.set(String(m.id), { id: String(m.id), em: m.criado_em });
+    }
+    return [...porId.values()].sort((a, b) => (new Date(a.em) - new Date(b.em))
+      || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  })();
+  const matchesBusca = achadosDaBusca.map((a) => a.id);
+  // O termo de duas letras ou mais ainda sem a resposta do banco.
+  const procurandoNaConversa = termoDaConversa.length >= 2 && !respostaDoBanco;
+
+  /** VAI ATÉ A OCORRÊNCIA — e, se ela não está na tela, carrega o pedaço da
+   *  conversa em volta dela, pelo mesmo caminho da busca da lista (o salto). */
+  function irParaAchado(a) {
+    if (!a) return;
+    requestAnimationFrame(() => {
+      const el = typeof document !== "undefined" && document.querySelector(`[data-msg-id="${a.id}"]`);
+      if (el) { el.scrollIntoView({ block: "center" }); return; }
+      const convId = conversaIdRef.current;
+      if (!convId) return;
+      alvoParaAbrirRef.current = { conversa: convId, id: a.id, em: a.em };
+      setPertoDoFim(false);
+      carregarMensagens(convId);
+    });
   }
+  function rolarParaMatch(idx) { irParaAchado(achadosDaBusca[idx]); }
+
+  // AO RESPONDER, A BUSCA VAI ATÉ A OCORRÊNCIA MAIS RECENTE — uma vez por
+  // termo, e não a cada mensagem que chega ou a cada pedaço carregado.
+  const saltouPeloTermoRef = useRef("");
+  useEffect(() => {
+    if (!termoDaConversa) { saltouPeloTermoRef.current = ""; return; }
+    if (procurandoNaConversa || !achadosDaBusca.length) return;
+    const chave = `${conversaId}|${termoDaConversa}|${respostaDoBanco ? "banco" : "tela"}`;
+    if (saltouPeloTermoRef.current === chave) return;
+    saltouPeloTermoRef.current = chave;
+    const idx = achadosDaBusca.length - 1;
+    setBuscaIdx(idx);
+    irParaAchado(achadosDaBusca[idx]);
+  }, [termoDaConversa, procurandoNaConversa, respostaDoBanco, conversaId, achadosDaBusca.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // AS DUAS LISTINHAS DO CABEÇALHO, ESCRITAS UMA VEZ SÓ.
   //
@@ -15308,6 +15584,17 @@ export default function Painel({ sessao }) {
               {erroBusca}
             </div>
           )}
+          {/* NO TETO, A BUSCA DIZ QUE PODE HAVER MAIS (26/10). Sem a nota, as
+              80 conversas que a função devolve se liam como todas — e quem
+              não acha o cliente entre elas conclui que ele não está aqui. */}
+          {corteDaBusca && busca.trim().length >= 3 && (
+            <div data-corte-da-busca style={{ margin: "8px 14px 4px", padding: "8px 12px", borderRadius: 10,
+                                              background: C.listActive, color: C.textSecondary,
+                                              fontSize: 12.5, lineHeight: 1.45 }}>
+              Mostrando as 80 conversas mais recentes que casam com a busca — pode haver outras.
+              {" "}Escreva mais palavras para afinar.
+            </div>
+          )}
           {conversasFiltradas.length === 0 && !erroBusca && semConversa.length === 0 && (
             // A marca e a frase vêm de `recadoDaListaVazia`, uma escolha só —
             // o porquê de cada uma está lá em cima, junto dela.
@@ -16223,8 +16510,10 @@ export default function Painel({ sessao }) {
                   <input autoFocus value={buscaConversa} onChange={(e) => setBuscaConversa(e.target.value)} placeholder="Buscar nesta conversa" style={{ border: "none", outline: "none", background: "transparent", fontSize: 14, flex: 1, color: C.textPrimary }} />
                   {buscaConversa.trim() && (
                     <>
-                      <span style={{ fontSize: 12, color: C.textSecondary, minWidth: 46, textAlign: "right" }}>
-                        {matchesBusca.length ? `${Math.min(buscaIdx, matchesBusca.length - 1) + 1} de ${matchesBusca.length}` : "0"}
+                      <span data-contagem-da-busca-na-conversa style={{ fontSize: 12, color: C.textSecondary, minWidth: 46, textAlign: "right" }}>
+                        {matchesBusca.length
+                          ? `${Math.min(buscaIdx, matchesBusca.length - 1) + 1} de ${matchesBusca.length}${respostaDoBanco && respostaDoBanco.cheio ? "+" : ""}`
+                          : (procurandoNaConversa ? "…" : "0")}
                       </span>
                       <button title="Anterior" disabled={!matchesBusca.length} onClick={() => { const i = Math.max(0, buscaIdx - 1); setBuscaIdx(i); rolarParaMatch(i); }} style={{ border: "none", background: "transparent", cursor: matchesBusca.length ? "pointer" : "default", display: "flex", padding: 0 }}>
                         <ChevronUp size={18} color={C.textSecondary} />
@@ -16235,6 +16524,11 @@ export default function Painel({ sessao }) {
                     </>
                   )}
                 </div>
+                {respostaDoBanco && respostaDoBanco.erro && (
+                  <div data-busca-so-na-tela role="alert" style={{ fontSize: 12, color: C.textSecondary, lineHeight: 1.45, padding: "6px 4px 0" }}>
+                    {respostaDoBanco.erro}
+                  </div>
+                )}
               </div>
             )}
 
@@ -16464,6 +16758,8 @@ export default function Painel({ sessao }) {
                 selecao={selecao} msgHover={msgHover} setMsgHover={setMsgHover}
                 buscaAberta={buscaAberta} buscaConversa={buscaConversa}
                 msgDestacada={msgDestacada} idDivisorNaoLidas={idDivisorNaoLidas}
+                lacunaAntesDe={lacuna && lacuna.conversa === conversaId ? lacuna.antesDe : null}
+                buscandoMeio={buscandoMeio} aoCarregarDoMeio={carregarDoMeio}
                 aoIrParaCitada={irParaCitada}
                 reagindo={reagindo} setReagindo={setReagindo}
                 reagindoTudo={reagindoTudo} setReagindoTudo={setReagindoTudo}
