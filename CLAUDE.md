@@ -1807,6 +1807,118 @@ ribeiro jose jose@x"), e a cena pesquisava "ribeiro jose" — que aparecia ali
 colado. Hoje ela pesquisa "jose ribeiro".
 
 
+## A busca e o histórico inteiro (26/10)
+
+Pedido do Rodrigo: *"Verifica para mim e me explica como está funcionando o
+campo de pesquisa no Zorvin. Corrija possíveis bugs. Veja também se todos os
+históricos de conversas estão presentes, se não existem erros referente a
+isso."*
+
+### As quatro buscas, e quem responde cada uma
+
+| onde | o que procura | quem responde |
+|---|---|---|
+| a lupa da lista | o nome (os três), o número, o texto das mensagens e o cadastro do Vantoro | o banco, por dois caminhos ao mesmo tempo: `buscar_conversas` (sem acento, até 80 conversas) e os nomes e o número em `contatos`; o Vantoro chega depois |
+| "Nova conversa" | a agenda de contatos | `contatos`, pela coluna `busca` (sem acento) e pelo número |
+| a lupa da conversa aberta | o texto das mensagens daquela conversa | o banco, até 500 achados |
+| os menus | etiquetas, pessoas, rápidas… | a tela (`pesquisaNosMenus.js`, 23/10) |
+
+### O que estava errado, medido antes de mexer
+
+1. **O número na forma antiga não era achado.** `chaveDoNumero` devolve sempre
+   a forma COM o nono dígito, e o banco guarda o celular como o WhatsApp
+   mandou. **Medido: 504 contatos (840 conversas) na forma antiga.** Quem
+   digitava "(71) 99259-0325" não achava o cliente gravado como 557192590325.
+   `formasDoNumeroNaBusca` (`numeros.js`) pergunta pelas duas formas, na lupa
+   da lista e na agenda — só para celular, pela régua da chave.
+2. **O caminho dos nomes era jogado fora quando o completo chegava antes.** Os
+   dois caminhos correm juntos, e o dos nomes só desenhava se o completo ainda
+   não tivesse respondido. Era invisível enquanto os dois achavam a mesma coisa
+   — e deixou de ser quando só o dos nomes passou a achar o número na forma
+   antiga. Hoje os dois SOMAM (`achadas`), e quem chega por último não apaga
+   quem chegou antes. Foi a prova que achou, com o "(71) 9259-0326".
+3. **A agenda da "Nova conversa" procurava a frase inteira, com acento.**
+   "maria gracas" não achava "Maria das Graças", nem "gracas pereira" a
+   "Maria das Graças Pereira". Agora ela pergunta pela coluna `busca` de
+   `contatos` (sem acento, a mesma da lupa da lista), **cada palavra em
+   qualquer lugar**, e o filtro da tela usa a régua dos menus
+   (`casaComAPesquisa`). Num banco sem a coluna, volta ao jeito de antes
+   (`TEM_BUSCA_DO_CONTATO`, pelo 42703 com o nome dela).
+4. **No teto, a lista não dizia que podia haver mais.** `buscar_conversas`
+   devolve no máximo 80 conversas, e 80 se lia como "todas": quem não achava o
+   cliente entre elas concluía que ele não está no Zorvin. Hoje a nota
+   `data-corte-da-busca` diz que pode haver outras, e manda escrever mais
+   palavras.
+5. **A lupa da conversa só olhava a tela — e com acento.** A conversa abre com
+   as 120 últimas, e a lupa dizia "0" para uma palavra dita no começo; e
+   "conciliacao" não achava "CONCILIAÇÃO". **Medido: 84 conversas com mais de
+   120 mensagens; a maior tem 2.178.** Agora ela pergunta ao banco, numa
+   conversa só, por uma expressão em que cada letra aceita as suas versões com
+   acento (`buscaNaConversa.js`, `imatch`) — sem script novo. "Anterior" e
+   "Próxima" levam até a achada que não está na tela, carregando o pedaço da
+   conversa em volta dela. A contagem diz "500+" no teto, e a busca que falha
+   diz, com o código, que procurou só no que está na tela. As notas, as
+   respostas automáticas e as bolhas que não saíram, que não moram em
+   `mensagens`, continuam sendo procuradas na tela.
+6. **"Carregar anteriores" pulava as mensagens com o mesmo horário.** Ele
+   pedia as de ANTES da mais antiga na tela (`lt`), e as que tinham EXATAMENTE
+   aquele horário e não tinham cabido na página nunca vinham. **Medido: 1.298
+   grupos de mensagens com o mesmo horário numa conversa** (o álbum de fotos, o
+   histórico importado com minuto cheio), e 8 mensagens em 3 conversas caíam na
+   borda de uma página. Hoje é `lte`, pedindo a mais as que já estão na tela
+   com aquele horário, e tirando as repetidas.
+7. **Quem abria a conversa numa mensagem antiga perdia o fim.** O salto (a
+   achada da busca, a citação) trazia 40 mensagens antes e 120 depois — e mais
+   nada: as mais recentes não estavam na tela, e nada dizia isso. **40
+   conversas têm mais de 160 mensagens.** Agora o salto traz também as 120
+   mais recentes, e entre os dois pedaços aparece *"Há mensagens entre estas e
+   as mais recentes que ainda não estão na tela"* (`data-lacuna`), com o botão
+   **"↓ Carregar as mensagens do meio"**, que vai preenchendo até encostar.
+8. **A mensagem antiga que entra agora tocava o aviso** e trocava o rótulo da
+   lista ("🎤 Mensagem de voz" virava o "[anexo]" cru). A importação de
+   histórico e o resgate da ponte gravam cada mensagem com a data em que foi
+   escrita. Hoje, a que tem **mais de um dia** (`ehHistoricoChegando`) entra na
+   conversa sem som, sem notificação e sem mexer no rótulo. Um dia, e não
+   minutos: o cliente que escreveu sem sinal e reconectou de manhã ainda avisa.
+
+### O histórico no banco
+
+Dos 64 mil avisos que a ponte recebeu desde 08/09, nenhum ficou sem processar.
+Mas **36 mensagens nunca entraram no histórico**: 27 de três tipos que a ponte
+não sabia ler (mensagem com botões, resposta a um modelo, convite de grupo) e
+9 que a equipe mandou e que saíram depois do prazo da ponte. O conserto e o
+resgate são da ponte — ver o CLAUDE.md dela, "O que não entrava no histórico
+(26/10)".
+
+**Esta PR tem de ser mesclada ANTES da da ponte**: o resgate grava mensagens
+antigas, e com o painel de antes cada uma tocaria o som.
+
+### A bancada aprendeu quatro coisas
+
+- a coluna `busca` de `contatos`, calculada como a do banco (sem acento);
+- o `or` com `and()` e `or()` dentro, e as colunas dele conferidas como as de
+  qualquer filtro — sem isso, `__SEM_COLUNAS` não recusava uma busca pela
+  coluna que falta, e o caminho de volta nunca rodava;
+- `imatch` e `match`, a expressão do PostgREST;
+- `__QUEBRAR_A_BUSCA_NA_CONVERSA`, que faz a busca por expressão falhar (57014,
+  o tempo esgotado do banco), para provar a frase de quem procurou só na tela.
+
+Provas: `a-busca-acha-o-que-existe` (30 conferências) e
+`o-historico-inteiro-na-conversa` (46), com uma conversa de 400 mensagens,
+quatro delas com o mesmo horário na borda da primeira página. **14 sabotagens
+e 14 pegas**, todas limpas, rodadas em cópias e lidas uma a uma:
+
+- o painel de antes inteiro (11 reprovações na busca e 21 no histórico — é o
+  pedido reproduzido);
+- **na busca:** o número só na forma com o 9; o caminho dos nomes jogado fora
+  quando o completo chega antes; sem a nota do corte; a agenda com a frase
+  inteira; a agenda sem o caminho de volta (o banco sem a coluna `busca`);
+- **na conversa:** a lupa só no que está na tela (12); a lupa com acento;
+  "Carregar anteriores" com `lt`; o salto sem a lacuna; o meio que não enche;
+  o salto da lupa que não carrega o pedaço em volta da achada;
+- **e o histórico chegando:** o som e a notificação para a mensagem de três
+  dias atrás; o rótulo da lista trocado por ela.
+
 ## Copiar leva só o texto (08/10)
 
 Relato do Rodrigo: *"quando eu copio uma mensagem do Zorvin e colo em um

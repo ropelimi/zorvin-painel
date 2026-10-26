@@ -1933,13 +1933,29 @@ function consulta(tabela) {
   // não tem a chave — e no Postgres a coluna existiria com o padrão. Sem isto
   // o filtro da aba não acharia a conversa nova de prova nenhuma, e a lista
   // de "Em aberto" a esconderia por um motivo que o banco de verdade não tem.
-  const valorDaColuna = (l, col) => (tabela === "conversas" && col === "situacao" && l[col] === undefined
-    && !(typeof globalThis !== "undefined" && globalThis.__SEM_SITUACAO) ? "aberto" : l[col]);
+  const valorDaColuna = (l, col) => {
+    if (tabela === "conversas" && col === "situacao" && l[col] === undefined
+        && !(typeof globalThis !== "undefined" && globalThis.__SEM_SITUACAO)) return "aberto";
+    // `contatos.busca` É GERADA PELO BANCO (o SQL de agosto da busca): os três
+    // nomes e o número, sem acento e em minúscula. A linha plantada não a
+    // traz, e no Postgres ela existiria — então ela é calculada aqui, como
+    // `zorvin_sem_acento(nome || ' ' || vantoro_nome || ' ' || nome_zorvin
+    // || ' ' || numero)`.
+    if (tabela === "contatos" && col === "busca" && l[col] === undefined) {
+      return [l.nome, l.vantoro_nome, l.nome_zorvin, l.numero].map((v) => v ?? "").join(" ")
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    }
+    return l[col];
+  };
   // O QUE FOI PEDIDO, e não só o resultado. É por isto que dá para saber se a
   // consulta varreu a tabela inteira ou entrou por um recorte — a diferença
   // entre uma busca que responde e uma que estoura o tempo.
   const pedidos = [];
   let inicio = 0, corte = Infinity, patch = null, contando = false, semLinhas = false, apagando = false;
+  // A CONSULTA USOU UMA EXPRESSÃO REGULAR (`imatch`/`match`) — é por ela que
+  // `__QUEBRAR_A_BUSCA_NA_CONVERSA` derruba SÓ a busca dentro da conversa, e
+  // não a leitura das mensagens que abre a conversa.
+  let usouPadrao = false;
   let colunas = "";
   // O SINAL DE ABORTO — o mesmo `.abortSignal()` da biblioteca de verdade.
   // Sem ele aqui, o painel que passou a cortar consulta velha quebraria na
@@ -2029,20 +2045,55 @@ function consulta(tabela) {
     ilike(col, padrao) {
       pedidos.push(col);
       const re = comoIlike(padrao);
-      linhas = linhas.filter((l) => re.test(String(l[col] ?? "")));
+      linhas = linhas.filter((l) => re.test(String(valorDaColuna(l, col) ?? "")));
+      return eu;
+    },
+    // `imatch` e `match` — a expressão regular do Postgres (`~*` e `~`), que
+    // a busca DENTRO da conversa usa para comparar sem acento (26/10). As
+    // classes que o painel monta (`[aáàâãä…]`, `\s+`) são as mesmas nas
+    // duas linguagens.
+    imatch(col, padrao) {
+      pedidos.push(col);
+      usouPadrao = true;
+      const re = new RegExp(String(padrao ?? ""), "i");
+      linhas = linhas.filter((l) => l[col] != null && re.test(String(l[col])));
+      return eu;
+    },
+    match(col, padrao) {
+      pedidos.push(col);
+      usouPadrao = true;
+      const re = new RegExp(String(padrao ?? ""));
+      linhas = linhas.filter((l) => l[col] != null && re.test(String(l[col])));
       return eu;
     },
     // `or("a.ilike.%x%,b.ilike.%x%")` — a mesma forma que o PostgREST aceita.
-    // Só o que o painel usa: `ilike` e `eq`.
+    // Só o que o painel usa: `ilike`, `eq` e `and(...)` por dentro (26/10: a
+    // agenda pede cada palavra em `busca`, todas juntas, OU o número).
+    //
+    // AS COLUNAS CITADAS ENTRAM EM `pedidos`, como as dos outros filtros: um
+    // `or` sobre uma coluna que a base não tem é recusado com 42703 no
+    // PostgREST, e a bancada que o deixasse passar aprovaria um painel que
+    // nunca cai para o caminho de reserva.
     or(expr) {
-      const partes = separarOr(String(expr || ""));
-      linhas = linhas.filter((l) => partes.some((p) => {
+      const casa = (l, p) => {
+        if (p.startsWith("and(") && p.endsWith(")")) {
+          return separarOr(p.slice(3)).every((q) => casa(l, q));
+        }
+        if (p.startsWith("or(") && p.endsWith(")")) {
+          return separarOr(p.slice(2)).some((q) => casa(l, q));
+        }
         const [col, op, ...resto] = p.split(".");
         const valor = resto.join(".");
-        if (op === "ilike") return comoIlike(valor).test(String(l[col] ?? ""));
-        if (op === "eq") return String(l[col] ?? "") === valor;
+        if (op === "ilike") return comoIlike(valor).test(String(valorDaColuna(l, col) ?? ""));
+        if (op === "eq") return String(valorDaColuna(l, col) ?? "") === valor;
         return false;
-      }));
+      };
+      const colunasCitadas = (p) => (p.startsWith("and(") || p.startsWith("or(")
+        ? separarOr(p.slice(p.indexOf("("))).flatMap(colunasCitadas)
+        : [p.split(".")[0]]);
+      const partes = separarOr(String(expr || ""));
+      for (const c of partes.flatMap(colunasCitadas)) pedidos.push(c);
+      linhas = linhas.filter((l) => partes.some((p) => casa(l, p)));
       return eu;
     },
     // `order`, `limit` e `range` PRECISAM valer, agora que a bancada tem
@@ -2474,6 +2525,13 @@ function consulta(tabela) {
           return resolver({ data: null, count: null, error: { code: "42703",
             message: `column ${tabela}.${falta} does not exist` } });
         }
+      }
+      // A BUSCA DENTRO DA CONVERSA QUE NÃO RESPONDE (26/10): só ela cai, e a
+      // conversa continua abrindo — é o caso em que a tela precisa dizer que
+      // procurou só no que tem.
+      if (usouPadrao && typeof globalThis !== "undefined" && globalThis.__QUEBRAR_A_BUSCA_NA_CONVERSA) {
+        return resolver({ data: null, count: null,
+          error: { code: "57014", message: "canceling statement due to statement timeout" } });
       }
       const quebradas = (typeof globalThis !== "undefined" && globalThis.__QUEBRAR) || [];
       if (quebradas.includes(tabela)) {

@@ -1,3 +1,5 @@
+import { formasDoNumeroNaBusca } from "./numeros.js";
+
 // AS REGRAS DA BUSCA QUE NÃO PRECISAM DE TELA.
 //
 // Elas moram aqui por dois motivos: dá para prová-las sem navegador nenhum, e
@@ -83,7 +85,6 @@ export function termoSeguro(termo) {
  *  peneirar com os olhos. */
 export function condicoesDeNome(termo, chave, comNomesDoCadastro = true) {
   const seguro = termoSeguro(termo);
-  const digitos = String(chave || "");
   const p = [];
   if (seguro.length >= 3) {
     p.push(`nome.ilike.%${seguro}%`);
@@ -92,7 +93,10 @@ export function condicoesDeNome(termo, chave, comNomesDoCadastro = true) {
       p.push(`nome_zorvin.ilike.%${seguro}%`);
     }
   }
-  if (digitos.length >= 4) p.push(`numero.ilike.%${digitos}%`);
+  // O NÚMERO, NAS FORMAS EM QUE ELE PODE ESTAR GRAVADO — com e sem o nono
+  // dígito (26/10). Só a chave, que é a forma com o 9, não achava o celular
+  // que o WhatsApp devolve na forma antiga: ver `formasDoNumeroNaBusca`.
+  for (const forma of formasDoNumeroNaBusca(chave)) p.push(`numero.ilike.%${forma}%`);
   return p;
 }
 
