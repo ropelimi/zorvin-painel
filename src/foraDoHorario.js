@@ -123,9 +123,11 @@ export function quandoPorExtenso(instante, fuso = FUSO_PADRAO, agora = new Date(
  *  conversa", nos dois lugares. Não se lê → `null`, e a frase não promete
  *  número nenhum. */
 export function minutosDaJanela(intervalo) {
-  const x = /^(?:(\d+) days? )?(\d+):(\d{2}):(\d{2})$/.exec(String(intervalo || "").trim());
-  if (!x) return null;
-  const minutos = Number(x[1] || 0) * 1440 + Number(x[2]) * 60 + Number(x[3]);
+  // A HORA É OPCIONAL (28/10): dia inteiro o Postgres escreve "1 day" e
+  // "2 days", sem "00:00:00" — e a frase caía no "pouco antes".
+  const x = /^(?:(\d+) days?)?(?:(?:^| )(\d+):(\d{2}):(\d{2}))?$/.exec(String(intervalo || "").trim());
+  if (!x || (x[1] === undefined && x[2] === undefined)) return null;
+  const minutos = Number(x[1] || 0) * 1440 + Number(x[2] || 0) * 60 + Number(x[3] || 0);
   return minutos > 0 ? minutos : null;
 }
 
