@@ -578,6 +578,29 @@ const ESPERAS_DE_VOLTA =
 // ============================================================
 const LARGURA_DA_LISTA = 360;
 
+// ============================================================
+//  A FICHA SÓ É COLUNA QUANDO SOBRA CONVERSA AO LADO DELA (auditoria de 28/10)
+//
+//  A conta das três colunas é 60 (barra) + 360 (lista) + 330 (ficha) = 750px,
+//  e o layout de três colunas começa nos 768. MEDIDO na bancada, com a ficha
+//  fixa (o padrão): a conversa ficava com 18px a 768 (o iPad em pé), 150 a
+//  900 e 274 a 1024 — a mensagem saía uma letra por linha, e os ícones da
+//  barra de escrever eram desenhados por cima da ficha. Uma janela na metade
+//  de um monitor de 1920 (960px) também caía aí.
+//
+//  O PISO É O DO PRÓPRIO CABEÇALHO, na sua forma mais recolhida: o nome
+//  (`NOME_MINIMO`, 230), o ⋮ (82) e o avatar com o recheio (56) — os mesmos
+//  números da régua de 29/09, lá embaixo. Uma conversa mais estreita que o
+//  próprio cabeçalho não tem como mostrar com quem se está falando.
+//
+//  Abaixo do piso, a ficha se comporta COMO NO CELULAR: é um gesto de cada
+//  vez (nasce recolhida, e o ⋮ ou o botão da ficha a abrem), e aberta ela
+//  toma o lugar da CONVERSA — e não o da lista, que era o pedido de 28/09:
+//  a fila de quem espera continua à vista.
+// ============================================================
+const CONVERSA_MINIMA_AO_LADO_DA_FICHA = 230 + 82 + 56;
+const LARGURA_DA_FICHA = 330;
+
 // A FICHA FIXA FICA GUARDADA NO NAVEGADOR. Padrão LIGADO: `!== "nao"`, como a
 // chave da tarja — armazenamento vazio (primeira abertura, janela anônima,
 // cache limpo) é "ninguém escolheu ainda", e o pedido era que ela ficasse
@@ -908,6 +931,11 @@ const TEMAS = {
     barraFundo: "transparent", balaoFundo: "#ffffff",
     placeholderCircle: "#dfe5e7", link: "#027eb5",
     verdeTexto: "#017561", horaNaoLida: "#017561",
+    // O VERMELHO E O ÂMBAR EM LETRA MIÚDA (auditoria de 28/10), pela mesma
+    // razão do `verdeTexto`: o #e53935 dava 3,8:1 sobre a bolha verde de quem
+    // envia, e o #d4a017 de "Editando a mensagem" 2,1:1 sobre o cinza. Estes
+    // dão 5,1 e 5,4. O ícone e a borda continuam com a cor viva.
+    erroTexto: "#c62828", ambarTexto: "#7a5f00",
   },
   escuro: {
     rail: "#161717", headerBar: "#202c33", panel: "#111b21", listActive: "#2a3942",
@@ -922,6 +950,10 @@ const TEMAS = {
     // continua na lista com o selo de não lida.
     placeholderCircle: "#202c33", link: "#53bdeb",
     verdeTexto: "#1fbf9c", horaNaoLida: "#1fbf9c",
+    // No escuro o #e53935 sobre a bolha verde de quem envia (#005c4b) dava
+    // 1,9:1 — o "não enviado · reenviar" era quase invisível justamente onde
+    // ele precisa ser visto. O rosado dá 4,7. O âmbar já passava (6,0).
+    erroTexto: "#ffb4ab", ambarTexto: "#d4a017",
   },
 };
 
@@ -1700,7 +1732,7 @@ function MetaBolha({ C, m, saida, flutuante, aoReenviar }) {
                     : { justifyContent: "flex-end", marginTop: 2 }),
       display: "flex", alignItems: "center", gap: 3, height: 15,
       fontSize: 11, lineHeight: 1, whiteSpace: "nowrap", userSelect: "none",
-      color: m._status === "erro" ? "#e53935" : C.textSecondary,
+      color: m._status === "erro" ? C.erroTexto : C.textSecondary,
     }}>
       {m.fixada && <Pin size={12} color={C.textSecondary} />}
       {m.favorita && <Star size={12} color="#f4c430" fill="#f4c430" />}
@@ -1713,9 +1745,15 @@ function MetaBolha({ C, m, saida, flutuante, aoReenviar }) {
         m._status === "enviando" ? (
           <Clock size={13} color={C.textSecondary} />
         ) : m._status === "erro" ? (
-          <span onClick={aoReenviar} data-reenviar title="Toque para reenviar" style={{ color: "#e53935", cursor: "pointer", display: "flex", alignItems: "center", gap: 3, fontWeight: 600 }}>
+          // UM BOTÃO, e não um <span> com clique (auditoria de 28/10): a bolha
+          // que falhou não tem menu (não tem `id_uazapi`), então este é o ÚNICO
+          // jeito de reenviar — e um <span> não recebe o foco do Tab nem o
+          // Enter. Sem moldura nem recheio: por fora, o mesmo texto de antes.
+          <button type="button" onClick={aoReenviar} data-reenviar title="Toque para reenviar"
+                  style={{ color: C.erroTexto, cursor: "pointer", display: "flex", alignItems: "center", gap: 3, fontWeight: 600,
+                           border: "none", background: "transparent", padding: 0, font: "inherit", lineHeight: 1 }}>
             <AlertCircle size={13} /> não enviado · reenviar
-          </span>
+          </button>
         ) : (
           // Cinza = enviada; azul = lida (igual ao WhatsApp).
           <CheckCheck size={15} color={marcaLida(m.status) ? "#53bdeb" : "#8696a0"} />
@@ -2303,7 +2341,7 @@ function BolhaAudio({ C, saida, url, m }) {
           {transcrevendo ? "Transcrevendo…" : (erroDaTranscricao ? "Tentar transcrever de novo" : "Transcrever")}
         </button>
         {erroDaTranscricao && (
-          <span data-transcricao-erro style={{ maxWidth: 280, fontSize: 12, color: "#e53935", lineHeight: 1.35 }}>
+          <span data-transcricao-erro style={{ maxWidth: 280, fontSize: 12, color: C.erroTexto, lineHeight: 1.35 }}>
             {erroDaTranscricao}
           </span>
         )}
@@ -3902,7 +3940,14 @@ export default function Painel({ sessao }) {
   // A FICHA À VISTA SAI DOS DOIS ESTADOS, e não de um. Ver o comentário de
   // `fichaFixa`, lá em cima: no computador vale a preferência guardada; no
   // celular, o gesto desta vez.
-  const fichaVisivel = estreito ? fichaAberta : fichaFixa;
+  //
+  // E entre os dois (28/10): a janela larga demais para o celular e estreita
+  // demais para três colunas trata a ficha como no celular. Ver
+  // `CONVERSA_MINIMA_AO_LADO_DA_FICHA`.
+  const fichaSemColuna = !estreito
+    && largura - 60 - LARGURA_DA_LISTA - LARGURA_DA_FICHA < CONVERSA_MINIMA_AO_LADO_DA_FICHA;
+  const fichaComoNoCelular = estreito || fichaSemColuna;
+  const fichaVisivel = fichaComoNoCelular ? fichaAberta : fichaFixa;
 
   // ============================================================
   //  O CABEÇALHO DA CONVERSA APERTA QUANDO NÃO CABE
@@ -3926,7 +3971,7 @@ export default function Painel({ sessao }) {
   // ============================================================
   const larguraDaConversa = largura - 60
     - (estreito ? 0 : LARGURA_DA_LISTA)
-    - (!estreito && fichaVisivel ? 330 : 0);
+    - (!fichaComoNoCelular && fichaVisivel ? LARGURA_DA_FICHA : 0);
 
   // ============================================================
   //  QUEM TEM PRIORIDADE NO CABEÇALHO É O NOME, E NÃO OS BOTÕES
@@ -4029,7 +4074,7 @@ export default function Painel({ sessao }) {
   const selosCompactos = !estreito && espacoDaLinha - NUMERO_NA_LINHA < selosNaLinha * SELO_ESCRITO;
   /** Mostra ou recolhe a ficha, escrevendo no estado certo para o layout. */
   function alternarFicha(mostrar) {
-    if (estreito) { setFichaAberta(mostrar); return; }
+    if (fichaComoNoCelular) { setFichaAberta(mostrar); return; }
     setFichaFixa(mostrar);
     guardarFichaFixa(mostrar);
   }
@@ -8837,7 +8882,13 @@ export default function Painel({ sessao }) {
     // A FICHA SÓ SE FECHA NO CELULAR ao trocar de conversa. No computador ela
     // é coluna fixa: fechá-la aqui faria o pedido de 28/09 valer só até o
     // segundo clique, e ninguém ligaria uma coisa à outra.
-    if (estreitoRef.current) setFichaAberta(false);
+    //
+    // Por isso mexe-se só em `fichaAberta`, que é o GESTO — o do celular e o
+    // da janela estreita demais para três colunas (28/10), onde a ficha toma
+    // o lugar da conversa e a lista continua à vista: clicar noutra conversa
+    // tem de mostrar a conversa. No computador largo quem manda é
+    // `fichaFixa`, que não se mexe aqui.
+    setFichaAberta(false);
     // A rolagem para o fim NÃO acontece quando a conversa foi aberta a partir
     // de um resultado de busca por mensagem: nesse caso quem manda é o efeito
     // logo abaixo, que leva até a mensagem achada. Sem esta condição as duas
@@ -9480,14 +9531,14 @@ export default function Painel({ sessao }) {
       // ESC FECHA O QUE ESTÁ POR CIMA, e no computador a ficha não está: ela é
       // coluna, como a lista. Recolher uma coluna com Esc surpreenderia quem
       // só queria sair de um menu.
-      else if (estreito && fichaAberta) setFichaAberta(false);
+      else if (fichaComoNoCelular && fichaAberta) setFichaAberta(false);
       else if (buscaAberta) { setBuscaAberta(false); setBuscaConversa(""); }
       else if (respondendo) setRespondendo(null);
       else if (conversaId) setConversaId(null);
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, telaFunil, menuEtapa, telaTarefas, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada, jaTratei, trateiOcupado, reabrindo, reabrirOcupado, escolhaTelefone]);
+  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, telaFunil, menuEtapa, telaTarefas, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, fichaComoNoCelular, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada, jaTratei, trateiOcupado, reabrindo, reabrirOcupado, escolhaTelefone]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -15876,7 +15927,7 @@ export default function Painel({ sessao }) {
       {/* Mesmo motivo da coluna da lista: sem `minWidth: 0` a conversa aberta
           no celular fica mais larga que a tela por causa de uma mensagem
           comprida. */}
-      <div style={{ flex: 1, minWidth: 0, display: ((estreito && !conversaId) || (estreito && (fichaVisivel || historico))) ? "none" : "flex", flexDirection: "column", background: C.chatBg, backgroundImage: modo === "escuro" ? PADRAO_CHAT_ESCURO : PADRAO_CHAT_CLARO, position: "relative" }}>
+      <div style={{ flex: 1, minWidth: 0, display: ((estreito && !conversaId) || (estreito && (fichaVisivel || historico)) || (fichaSemColuna && fichaVisivel)) ? "none" : "flex", flexDirection: "column", background: C.chatBg, backgroundImage: modo === "escuro" ? PADRAO_CHAT_ESCURO : PADRAO_CHAT_CLARO, position: "relative" }}>
         {!conversa ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: C.textSecondary, gap: 16 }}>
             <div style={{ width: 90, height: 90, borderRadius: "50%", background: C.placeholderCircle, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -16795,7 +16846,7 @@ export default function Painel({ sessao }) {
                 <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.searchBg, borderLeft: `4px solid #d4a017`, borderRadius: 6, padding: "6px 10px" }}>
                   <Pencil size={16} color="#d4a017" />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ color: "#d4a017", fontWeight: 600, fontSize: 12 }}>Editando a mensagem</div>
+                    <div style={{ color: C.ambarTexto, fontWeight: 600, fontSize: 12 }}>Editando a mensagem</div>
                     <div style={{ color: C.textSecondary, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{editando.texto}</div>
                   </div>
                   <button onClick={cancelarEdicao} title="Cancelar edição" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
@@ -16890,7 +16941,7 @@ export default function Painel({ sessao }) {
                       ? <AlertCircle size={16} color="#e53935" style={{ flexShrink: 0 }} />
                       : <Sparkles size={16} color={C.green} style={{ flexShrink: 0 }} />}
                   <div data-copiloto-frase style={{ flex: 1, minWidth: 0, fontSize: 13, color: C.textPrimary }}>
-                    <b style={{ color: copilotoAqui.fase === "erro" ? "#e53935" : C.verdeTexto }}>Copiloto</b>
+                    <b style={{ color: copilotoAqui.fase === "erro" ? C.erroTexto : C.verdeTexto }}>Copiloto</b>
                     {" · "}
                     {copilotoAqui.fase === "pensando" ? "lendo a conversa para sugerir a resposta…"
                       : copilotoAqui.fase === "erro" ? copilotoAqui.erro
@@ -17070,7 +17121,9 @@ export default function Painel({ sessao }) {
           // "Maria Aparecida" e ver o Vantoro nascer com "Deus".
           nomeContato={nomeDoContato(conversa.contato)}
           C={C}
-          estreito={estreito}
+          // `estreito` aqui quer dizer "ocupa o lugar da conversa": no
+          // celular e na janela estreita demais para três colunas (28/10).
+          estreito={fichaComoNoCelular}
           onFechar={() => alternarFicha(false)}
           onAviso={mostrarAviso}
           // O cabeçalho da conversa muda NA HORA, sem recarregar a página. A
@@ -17099,7 +17152,7 @@ export default function Painel({ sessao }) {
           // aconteceu. No computador as duas cabem lado a lado, e fechar seria
           // tirar da tela o que ela estava lendo.
           aoConversarPor={async (linha) => {
-            if (estreito) setFichaAberta(false);
+            if (fichaComoNoCelular) setFichaAberta(false);
             await conversarComClienteVantoro(linha);
           }}
         />
