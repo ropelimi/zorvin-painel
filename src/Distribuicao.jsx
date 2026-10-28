@@ -141,8 +141,9 @@ export function Distribuicao({ cx, C, departamentos = [], telefones = [], aoAvis
           Quando um <b>cliente novo</b> escreve pela primeira vez, o Zorvin escolhe sozinho quem vai
           atender — um de cada vez, na vez de cada um — e a conversa já chega com responsável. As
           conversas que já existem continuam como estão. Cada pessoa só recebe conversas dos
-          telefones que ela já vê. O aviso de mensagem nova não muda: até alguém responder, todo
-          mundo continua sendo avisado.
+          telefones que ela já vê. O aviso de mensagem nova vai só para quem recebeu a conversa
+          — e, se ninguém do rodízio puder recebê-la, para todo mundo, para o cliente não ficar
+          sem resposta.
         </div>
 
         {erroChaves ? (

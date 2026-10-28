@@ -502,10 +502,19 @@ for (const [largura, ficha, forma] of [[1280, "nao", "sim"], [1366, "nao", "sim"
 // ------------------------------------------------------------------
 console.log("\n10. No celular, as tarefas vão pelo ⋮");
 {
+  // A 390 NÃO CABE ESCRITA, e vira o sino (auditoria de 27/10). Esta
+  // conferência exigia o texto a qualquer largura — e a 390, com o
+  // responsável e a etapa na mesma linha, ele saía cortado em "se…" ou
+  // "tar…", que diz menos que o sino. Foi INVERTIDA, e não apagada: a 390 a
+  // tarefa continua na linha, e o rótulo diz qual é; a 700, onde cabe, ela
+  // continua escrita.
   const { ctx, page, estouros } = await abrirPainel({ largura: 390, altura: 844 });
   await abrirConversa(page, NOMES.a);
-  const linha = await page.locator("[data-tarefa-da-conversa]").first().innerText().catch(() => "");
-  ok("a linha diz a tarefa, em texto", /tarefa/.test(linha), linha);
+  const selo = page.locator("[data-tarefa-da-conversa]").first();
+  const forma = await selo.getAttribute("data-selo-compacto").catch(() => null);
+  const rotulo = await selo.getAttribute("aria-label").catch(() => null);
+  ok("a 390, a tarefa está na linha como o sino, e o rótulo diz a tarefa",
+     forma === "sim" && /tarefa/i.test(rotulo || ""), `${forma} · ${rotulo}`);
   await clicar(page.locator('[aria-label="Mais opções desta conversa"]'));
   await page.waitForTimeout(300);
   ok("o ⋮ tem o item das tarefas", (await page.locator("[data-menu-tarefa-item]").count()) === 1);
@@ -514,6 +523,13 @@ console.log("\n10. No celular, as tarefas vão pelo ⋮");
   ok("e ele abre a lista", await page.locator("[data-menu-tarefas]").isVisible().catch(() => false));
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
+
+  // E ONDE CABE, ESCRITA — a metade da conferência que não mudou.
+  const largo = await abrirPainel({ largura: 700, altura: 900 });
+  await abrirConversa(largo.page, NOMES.a);
+  const linha = await largo.page.locator("[data-tarefa-da-conversa]").first().innerText().catch(() => "");
+  ok("a 700, onde cabe, a linha diz a tarefa em texto", /tarefa/.test(linha), linha);
+  await largo.ctx.close();
 }
 
 await nav.close();

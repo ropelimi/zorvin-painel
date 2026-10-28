@@ -2345,14 +2345,16 @@ aberta, escrevendo nada. **E ela NÃO vale para a limpeza da saída**: lá a
 gravação leva `.eq('atendendo_por', eu)`, e zero linhas é o caso legítimo de
 outra pessoa já ter entrado na conversa.
 
-**Dois lugares ficam sem perguntar, de propósito:**
+**Um lugar fica sem perguntar, de propósito:** o `insert` do **histórico de
+alterações**, que é extra por desenho e não pode derrubar a ação que o gerou.
 
-- o `fila_envio` do **reenviar** — o `guardarDispensado` local já resolve o caso
-  de quem clicou, e uma faixa ali confundiria com a mensagem NOVA ter falhado,
-  que é o que a pessoa está olhando. O botão "Dispensar este aviso" diz a recusa
-  inteira, com código e arquivo;
-- o `insert` do **histórico de alterações**, que é extra por desenho e não pode
-  derrubar a ação que o gerou.
+~~O `fila_envio` do **reenviar** também ficava sem perguntar: o
+`guardarDispensado` local resolvia o caso de quem clicou.~~ **Mudou em 28/10:**
+desde 26/10 a ponte confirma pelo eco a mensagem que tinha dado tempo
+esgotado, e o reenviar que não perguntava gravava "descartada" por cima de
+"enviada" e mandava de novo — o cliente recebia duas vezes. Hoje ele só
+aposenta o item que ainda está em erro (`.eq("status", "erro")`) e, com zero
+linhas, relê o item e diz o que houve. Ver "A auditoria de 27/10 (28/10)".
 
 **E as cinco cópias escritas à mão viraram `naoGravouNada`** — figurinha,
 mensagem apagada, marca da mensagem, `Departamentos.jsx` e `PalavrasDaCasa.jsx`
@@ -3480,7 +3482,7 @@ conversas dele).
 |---|---|
 | **a tela de colunas** | menu ⋮ do topo → **Funil** (`Funil.jsx`, `data-tela="funil"`) |
 | **a etapa da conversa aberta** | na linha do número, ao lado do responsável — clicar troca a etapa, ou **"Pôr no funil"** |
-| no celular | a linha só diz a etapa; trocar é pelo ⋮ ("Etapa no funil") |
+| no celular | a linha só diz a etapa — escrita onde cabe, e a bolinha da cor dela quando não cabe (27/10) —; trocar é pelo ⋮ ("Etapa no funil") |
 | **as etapas** | administração → aba Estrutura → *Etapas do funil* (`EtapasDoFunil.jsx`) |
 
 **Mover tem dois caminhos, arrastar e a lista "Mover para…" do cartão.** A
@@ -3660,7 +3662,7 @@ quatro contas divergiriam.
 
 | | |
 |---|---|
-| **criar e ver as da conversa** | na linha do número, depois da etapa: o selo diz a PRÓXIMA (vermelho atrasada, âmbar hoje) ou oferece **"Lembrar"**; no celular, pelo ⋮ |
+| **criar e ver as da conversa** | na linha do número, depois da etapa: o selo diz a PRÓXIMA (vermelho atrasada, âmbar hoje) ou oferece **"Lembrar"**; no celular a linha só diz a próxima — escrita onde cabe, e o sino quando não cabe (27/10) —, e criar é pelo ⋮ |
 | **a janela** | `NovaTarefa.jsx` — o que fazer, para quem (começa em você), quando; o mesmo desenho da janela de agendar |
 | **a tela** | o **sino da barra lateral**, com o número de atrasadas + hoje (vermelho se alguma atrasou); também no menu ⋮ do topo |
 | **o filtro** | "Com tarefa para hoje", na gaveta da fita — de qualquer pessoa, porque quem vê a conversa vê as tarefas dela |
@@ -4975,6 +4977,173 @@ desempate da fila de espera não teria como ser medido.
 
 Prova: `a-auditoria-de-07-10`, 27 conferências, **11 sabotagens e 11 pegas**.
 
+## A auditoria de 27/10 (28/10)
+
+Pedido do Rodrigo: *"Faça uma auditoria completa, analise todos os arquivos,
+encontre possíveis erros, faça os ajustes necessários, me dê sugestões de
+melhorias e revise todo o layout, veja se todas as telas estão responsivas"*.
+Sete leituras do código em paralelo (o `Painel.jsx` em três pedaços, os
+componentes, a ponte em dois e os scripts SQL), mais uma **varredura das telas
+em sete larguras** (1920, 1366, 1280, 1024, 768, 390 e 360). **Cada achado foi
+conferido no código ou medido na bancada antes de mexer**; os que não se
+sustentaram ficaram de fora. A lista inteira está na PR; aqui fica o que mudou
+no painel, e por quê. A da ponte está no CLAUDE.md dela.
+
+### O layout
+
+| o que acontecia | agora |
+|---|---|
+| **a ficha fixa espremia a conversa** entre 768 e ~1170 pontos — MEDIDO: a 1024 a conversa ficava com 274 pontos e a caixa de escrever com uma letra por linha; a 800, com 48. É o notebook com zoom de 125%, ou a tela dividida ao meio | abaixo de `FICHA_EM_COLUNA_A_PARTIR` (a lista, a barra, a ficha e uma conversa de 420) ela vira uma **gaveta** por cima da conversa (`data-ficha-sobreposta`), aberta pelo mesmo botão e fechada pelo X, pelo Esc ou pela troca de conversa. **A lista continua à vista** — o pedido de 28/09. A preferência guardada não muda |
+| sem Vantoro, a conta da largura do cabeçalho descontava os 330 da ficha que não é desenhada, e a fila recolhia no ⋮ à toa | só a coluna desconta, e só com Vantoro |
+| o "+ Novo" das Configurações ficava debaixo do X de fechar | o cabeçalho de cada aba guarda o canto do X (`CABECALHO_DA_ABA`) |
+| no celular, os três botões de cada assunto do "Já tratei" passavam uns por cima dos outros | a linha quebra, e o nome tem piso — a régua que as etapas do funil já seguiam |
+| no celular, os selos da linha do número viravam "sem r…", "for…", "se…" | sem espaço, a **etapa e a tarefa viram ícone** (`selosDoCelularCompactos`: a bolinha da cor da etapa e o sino), com o que dizem no `title` e no `aria-label`; **o responsável continua escrito** — é a pergunta de todo dia. Onde cabe (a 700, por exemplo), continuam escritos |
+| a 360, a caixa de busca dizia "Buscar por nome, mensagem, CPF ou proc" | no celular a frase é curta: "Buscar por nome, CPF…" |
+| o "Mostrar senha" da entrada tinha 26 pontos, e no celular o toque caía no campo | 40 pontos de alvo, sem a caixa do campo crescer |
+| a janela de agendar um anexo saía pela esquerda da tela no celular | no celular ela é centrada, presa à tela |
+| a faixa de aviso ("Contato salvo!") ficava por baixo das Mídias e das telas por cima | por cima de todas as camadas |
+| **num Chrome com leitor de PDF (o do escritório), o menu de um PDF recebido não abria**: a prévia vinha depois da seta no documento e era pintada por cima dela | a seta tem `zIndex: 1`. O navegador das provas não tem leitor de PDF e não desenhava a prévia — por isso nenhuma prova via. A cena 8b **força o leitor** e mede o que está pintado no centro da seta |
+
+### O que é de uma conversa fica nela
+
+- **o áudio gravado em A aparecia na caixa de B, e "Enviar" mandava para A.**
+  A gravação termina na troca de conversa e o áudio fica, como prévia, na
+  conversa onde foi gravado (`gravandoConv`, `audioPronto.convId`); gravar um
+  novo com um áudio pendente noutra conversa pergunta antes;
+- **a etapa do funil do cliente de antes aparecia na conversa seguinte** — a
+  resposta atrasada passava pela guarda quando a conversa nova não tinha funil
+  (um grupo, um telefone sem departamento). Hoje vale a chave pedida por
+  último (`funilPedidoRef`);
+- **o Esc no menu do "/" e no de departamentos fechava a CONVERSA**, e não o
+  menu;
+- **a seleção de mensagens atravessava a troca**: marcadas em A, a barra
+  "2 selecionadas" ficava no lugar da caixa de B;
+- "Respondendo você mesmo" para mensagem que não era sua (a mandada pelo
+  celular, as antigas sem `enviado_por_id`): hoje só quando é você;
+- a importação de histórico oferecia telefones que a pessoa não alcança, e os
+  desativados.
+
+### O envio e o eco (a prova `a-bolha-que-saiu-nao-fica-vermelha`)
+
+Desde 26/10 a ponte confirma pelo eco do WhatsApp a mensagem que tinha dado
+tempo esgotado, às vezes um minuto e meio depois. O painel não acompanhava:
+**a bolha vermelha não sumia**, e **o "reenviar" gravava "descartada" por cima
+de "enviada"** e mandava de novo — o cliente recebia duas vezes, o caso medido
+em 26/10. Hoje o reenviar só aposenta o item que ainda está em erro
+(`.eq("status", "erro")`); zero linhas, ele relê e diz o que houve (saiu, um
+colega já reenviou, ainda está saindo). E três vizinhos da mesma fila: a
+reação, a correção e o "apagar para todos" que falham não viram bolha
+(`GESTOS_DA_FILA`), encaminhar sem legenda não manda `texto: null`, e o
+"reenviar" virou botão, com alvo de dedo no celular.
+
+**E três frases do CLAUDE.md passaram a mentir**, e foram corrigidas: a de "E
+os outros dezoito lugares" que dizia que o reenviar ficava sem perguntar, e as
+das tabelas do funil e das tarefas, que diziam que no celular a linha escreve
+a etapa e a tarefa — sem espaço, hoje ela mostra a bolinha e o sino. A do
+responsável continua certa: no celular ele segue escrito.
+
+### O que falhava calado
+
+A armadilha nº 2, com sete roupas novas:
+
+| onde | o que a tela dizia | agora |
+|---|---|---|
+| os filtros de **grupos**, das **minhas**, das **tarefas** (a segunda ida) e de **quem participou** (a segunda ida) | a lista curta, com cara de todas: três grupos onde há sete | a faixa âmbar diz o que não veio, e o que veio fica |
+| a lista de **quem atende o telefone** | o botão do filtro sumia, como se o recurso não existisse | sumir, só sem a função no banco (`semAFuncao`); qualquer outra falha é dita |
+| **o "Tentar de novo" da faixa** | não refazia os filtros, nem os departamentos e telefones relidos ao fechar a administração — e essas falhas nunca saíam da faixa | refaz todos (`tentativaDosFiltros`, `lerDepartamentosETelefones`), e a faixa sai quando a leitura dá certo |
+| **a aba que não veio** | "Carregando as conversas…" para sempre, debaixo de uma faixa dizendo que não carregou | "Não consegui carregar as conversas desta aba", com o código |
+| **o contato que não deu para conferir** | era criado de novo — e, gravado noutra forma do número, nascia o duplicado | nada é gravado, e a faixa diz por quê |
+| **a equipe que não carregou** (Atendentes) | "Ninguém com esse nome." com a pesquisa vazia | a falha, com "Tentar de novo"; e a equipe vazia diz "Ninguém na equipe ainda" |
+| **Fora do horário que não carregou** | o formulário de um departamento nunca configurado — e "Salvar" gravava isso por cima do que existe | sem saber o que está gravado, não há formulário |
+| a lista vazia de **Não lidas, Favoritas ou uma etiqueta** | "Nenhuma conversa ainda" | a frase do que foi pedido |
+
+### O nome que se vê
+
+- **as conversas que a busca e os filtros trazem de fora da lista vinham sem
+  etiqueta** — a leitura das etiquetas só conhecia a lista. Hoje ela lê também
+  as de fora (`idsDosExtras`), e vale a última pergunta (`geracaoDasTagsRef`):
+  as duas leituras podem sair no mesmo instante, e a mais velha não pode
+  apagar o que a mais nova trouxe;
+- **a citação e o avatar do alto usavam o nome cru do WhatsApp** ("Deusdete"
+  debaixo de um cabeçalho que diz "MARIA DAS GRAÇAS PEREIRA"); hoje o nome da
+  casa, como a linha da lista;
+- **o nome salvo pela agenda sumia na mensagem seguinte do cliente**: ia só
+  para `contatos.nome`, que a ponte regrava com o nome do WhatsApp a cada
+  mensagem. Hoje vai também para `nome_zorvin` (`gravarNomeDaAgenda`), que a
+  ponte não toca e `nomeDoContato` mostra antes; numa base sem a coluna, ela
+  sai do pedido uma vez só.
+
+### A ficha
+
+- **"Só abrir o cadastro, sem acrescentar este número" ligava a conversa a
+  ele.** É o "não é ele" — a mãe falando pelo celular do filho —, e ligada a
+  conversa dela ganhava o nome do filho e as notas subiam para a ficha dele,
+  enquanto a ficha, na abertura seguinte, voltava a dizer que o número não tem
+  cadastro. Hoje abre só para ver (`escolher(c, { ligar: false })`), e diz;
+- o pré-cadastro criado mostrava a lista de telefones de antes (vazia);
+- "conversar por este" colava "55" na frente de dígitos que às vezes já têm o
+  55 — hoje `numeroCanonico`;
+- **o rascunho da ficha era de quem viesse depois.** Desde 22/10 outra pessoa
+  pode entrar na mesma aba quando a sessão acaba, e a ficha dela abria com o
+  que a anterior deixou por salvar — senhas do SERASA e do GOV inclusive.
+  Hoje os rascunhos da ficha são por pessoa (`quem`), como os da caixa de
+  escrever.
+
+### O Painel de números
+
+- **as setas do período esticavam o período**: andavam "N dias menos 1 ms", e
+  7 dias viravam 8, 9, 10. Hoje andam N dias de calendário;
+- o filtro de atendente escrevia o nome de quem olha sobre os números de outra
+  pessoa;
+- um erro de DENTRO da função ("column … does not exist") virava "falta uma
+  atualização" — hoje a falta é reconhecida pelo código (`semAFuncao`), e o
+  resto é dito como erro;
+- **um nome começando com "=" virava fórmula na planilha** (o nome do cliente
+  é ele quem escreve no WhatsApp). `planilha.js` põe um apóstrofo na frente, e
+  número de verdade continua número.
+
+### A bancada fora do pacote
+
+`src/bancada.js` (os dados de mentira, ~35 KB) **entrava no pacote que vai
+para o ar**, e era carregado em toda abertura. Hoje o `vite.config.js` troca o
+import por `bancada-desligada.js` quando `VITE_BANCADA` não é `1`, e a cena 15
+monta o pacote de produção e confere que os dados de mentira não estão nele.
+
+### Quatro lições desta rodada
+
+- **a seta do PDF**: a prova passava num navegador que não desenha o que o
+  escritório vê. Quando o defeito depende do navegador, a cena força o mundo
+  do escritório;
+- **o vigia `provas-que-reprovam` pegou três conferências minhas** — um
+  `.every` sem o tamanho, um `.every` sobre uma lista escrita ali e um
+  `ok(…, false)` dentro de um `if` — **e reclamou do filtro de cenas**
+  (`if (vale("13b"))`). O filtro é legítimo, e por isso o vigia foi ENSINADO,
+  e não calado (`olho-nas-provas.mjs`): ele aceita a função que só olha
+  `CENAS`, lida do ambiente, e só com o nome da cena escrito ali. E a prova
+  reprova quando uma cena pedida em `CENAS` não existe — um erro de digitação
+  não pode terminar verde sem ter rodado nada;
+- **a prova `tarefas-e-lembretes` foi INVERTIDA, e não apagada**: ela exigia,
+  a 390, a tarefa escrita na linha — o que o celular não comporta. Hoje confere
+  o sino com o rótulo a 390 e o texto a 700, onde cabe;
+- **uma conferência minha usava um contato que só outra prova planta** ("ct-deus"),
+  e reprovou dizendo que não achou nada. Cena de prova usa o que a bancada tem
+  de sempre, ou planta o seu.
+
+### O que ficou como sugestão
+
+O Encaminhar só lista as conversas da aba aberta; "Passar para" oferece a
+equipe inteira (inclusive quem não vê o telefone); a busca da lista recomeça a
+cada conversa nova que chega; a releitura da conversa aberta troca a lista
+inteira; colar do Excel abre a prévia de anexo; os colegas não veem ao vivo a
+edição e a exclusão; a prévia de mídia só olha as 300 mais recentes; no
+celular, o canto da figurinha favorita a remove para a equipe toda sem
+perguntar; editar uma mensagem apaga o rascunho da caixa; o CEP sem guarda de
+ordem; e no celular as tabelas do Painel de números não têm rolagem própria.
+
+Provas: `a-auditoria-de-27-10` (205 conferências; `CENAS=13b,13c` roda só as
+pedidas, para as sabotagens) e `a-bolha-que-saiu-nao-fica-vermelha` (100), mais
+a conferência nova da prova do CPF (o "Só abrir" não liga).
+
 ## Banco de dados (tabelas que o painel lê/escreve)
 
 - `advogados` — lê (id, nome, numero, foto_url) onde `ativo = true`
@@ -5648,3 +5817,12 @@ com `ps` que nada ficou rodando.**
   (`git fetch origin main && git checkout -B <branch> origin/main`), aplicar a mudança,
   commit, push e **abrir uma PR nova**.
 - Passo a passo (SQL, merge, etc.) vai **no chat**, não na descrição da PR — o Rodrigo não lê a descrição para instruções de setup.
+- **O SQL pelo conector do Supabase roda sem pedir permissão a ele** — dito em
+  26/10: *"Sempre que for para executar o SQL, não precisa me pedir permissão,
+  pode sempre fazer."* O que isso não muda: **mudança de estrutura** (tabela,
+  coluna, regra) continua indo por `sql/automaticos/`, no repo da ponte, que é
+  o que mantém o banco e o código dizendo a mesma coisa; **correção de dados**
+  se faz olhando antes o que vai mudar e contando a ele depois o que mudou; e
+  a consulta é **pequena, uma pergunta de cada vez** — a pesada atrasa o
+  webhook do escritório. Ver "Mandar SQL para o Rodrigo", no CLAUDE.md da
+  ponte.
