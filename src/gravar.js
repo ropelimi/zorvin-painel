@@ -38,6 +38,12 @@
  *  coluna em vez de desistir de todas. */
 export function colunaQueFalta(erro) {
   if (!erro) return null;
+  // SÓ QUANDO O CÓDIGO DIZ QUE ELA FALTA (28/10). O NOT NULL (23502) e o tipo
+  // errado (42804) também citam `column "x"`, e ler o nome ali tirava a coluna
+  // de toda gravação até o F5 — pelo lembrete. Sem código nenhum, a mensagem
+  // é a única pista, e continua sendo lida.
+  const codigo = String(erro.code || "");
+  if (codigo && codigo !== "42703" && codigo !== "PGRST204") return null;
   const msg = String(erro.message || "") + " " + String(erro.details || "");
   const aspaSimples = /'([A-Za-z0-9_]+)'\s+column/.exec(msg);
   if (aspaSimples) return aspaSimples[1];

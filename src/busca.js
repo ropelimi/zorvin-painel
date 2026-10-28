@@ -63,6 +63,9 @@ export function funcaoNaoExiste(erro) {
       || /Could not find the function/i.test(erro.message || "");
 }
 
+// O que separa condições no `or` vira espaço — ver `termoSeguro`.
+const semSeparadores = (termo) => String(termo || "").replace(/[,()*]/g, " ").trim();
+
 /** O termo, sem os caracteres que quebram o `or` do PostgREST.
  *
  *  A vírgula e os parênteses separam condições lá dentro. Deixá-los passar não
@@ -70,7 +73,12 @@ export function funcaoNaoExiste(erro) {
  *  silêncio quando alguém procurava por "(67) 9…", que é como todo mundo
  *  escreve um telefone. */
 export function termoSeguro(termo) {
-  return String(termo || "").replace(/[,()*]/g, " ").trim();
+  return semSeparadores(termo)
+    // E OS CURINGAS DO ILIKE VIRAM LETRA (28/10). `_` e `%` eram curinga
+    // ("a_b" achava "axb"), e a `\` do fim comia o `%` de fechar: "Silva\"
+    // virava `%Silva\%`. Escapados com a barra — o escape padrão do LIKE —,
+    // são procurados como foram escritos. A barra não separa nada no `or`.
+    .replace(/[\\%_]/g, "\\$&");
 }
 
 /** As condições do `or` para achar um contato pelos nomes e pelo número.
@@ -86,7 +94,8 @@ export function termoSeguro(termo) {
 export function condicoesDeNome(termo, chave, comNomesDoCadastro = true) {
   const seguro = termoSeguro(termo);
   const p = [];
-  if (seguro.length >= 3) {
+  // O piso conta as letras ESCRITAS, e não as barras do escape (28/10).
+  if (semSeparadores(termo).length >= 3) {
     p.push(`nome.ilike.%${seguro}%`);
     if (comNomesDoCadastro) {
       p.push(`vantoro_nome.ilike.%${seguro}%`);

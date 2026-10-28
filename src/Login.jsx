@@ -391,8 +391,11 @@ export default function Login({ authMudo = false, sessaoTerminou = false } = {})
               onChange={(e) => { setSenha(e.target.value); if (erro) setErro(""); }} onFocus={() => setFoco("senha")} onBlur={() => setFoco("")}
               required style={inputEstilo}
             />
+            {/* 40×40 PARA O DEDO (28/10), o mínimo da casa: a folga cresce de
+                4 para 11 e a margem de -7 devolve o espaço, então o ícone e o
+                campo ficam onde estavam — muda o alvo, não o desenho. */}
             <button type="button" onClick={() => setVerSenha((v) => !v)} title={verSenha ? "Ocultar senha" : "Mostrar senha"}
-              style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", padding: 4, color: C.textSecondary, flexShrink: 0 }}>
+              style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", padding: 11, margin: -7, color: C.textSecondary, flexShrink: 0 }}>
               {verSenha ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
