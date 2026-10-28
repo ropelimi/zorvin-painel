@@ -5031,10 +5031,20 @@ tempo esgotado, às vezes um minuto e meio depois. O painel não acompanhava:
 de "enviada"** e mandava de novo — o cliente recebia duas vezes, o caso medido
 em 26/10. Hoje o reenviar só aposenta o item que ainda está em erro
 (`.eq("status", "erro")`); zero linhas, ele relê e diz o que houve (saiu, um
-colega já reenviou, ainda está saindo). E três vizinhos da mesma fila: a
+colega já reenviou, ainda está saindo). **Sem conseguir perguntar** (a rede, o
+tempo esgotado), ele não manda: diz que não conferiu, e a bolha continua
+vermelha. **A recusa do banco é outra coisa**: ela só alcança a linha que ainda
+está em erro, então a mensagem não saiu, e reenviar continua valendo — é o
+caso da prova `dispensar-aviso`. E três vizinhos da mesma fila: a
 reação, a correção e o "apagar para todos" que falham não viram bolha
 (`GESTOS_DA_FILA`), encaminhar sem legenda não manda `texto: null`, e o
 "reenviar" virou botão, com alvo de dedo no celular.
+
+**E vários anexos saem na ordem da prévia.** Cada um entrava na fila quando o
+arquivo dele terminava de subir: a procuração de 200 KB passava na frente do
+vídeo de 20 MB escolhido antes dela. Hoje os arquivos sobem juntos e entram na
+fila um atrás do outro (`vez`, a vez do anterior). E a bolha que falhou guarda
+o nome do arquivo, em vez de dizer só "Documento".
 
 **E três frases do CLAUDE.md passaram a mentir**, e foram corrigidas: a de "E
 os outros dezoito lugares" que dizia que o reenviar ficava sem perguntar, e as
@@ -5044,7 +5054,7 @@ responsável continua certa: no celular ele segue escrito.
 
 ### O que falhava calado
 
-A armadilha nº 2, com sete roupas novas:
+A armadilha nº 2, com oito roupas novas:
 
 | onde | o que a tela dizia | agora |
 |---|---|---|
@@ -5056,6 +5066,13 @@ A armadilha nº 2, com sete roupas novas:
 | **a equipe que não carregou** (Atendentes) | "Ninguém com esse nome." com a pesquisa vazia | a falha, com "Tentar de novo"; e a equipe vazia diz "Ninguém na equipe ainda" |
 | **Fora do horário que não carregou** | o formulário de um departamento nunca configurado — e "Salvar" gravava isso por cima do que existe | sem saber o que está gravado, não há formulário |
 | a lista vazia de **Não lidas, Favoritas ou uma etiqueta** | "Nenhuma conversa ainda" | a frase do que foi pedido |
+| a aba **Contatos** das Configurações | "Nenhum contato ainda" numa sessão nova, com 1.432 contatos no banco (contados em 28/10) — só a "Nova conversa" carregava a agenda —, e depois só o que a última busca de lá tinha trazido | carrega a agenda também ali (`agendaNaTela`) |
+
+**E uma frase da tela mentia desde 13/10.** A aba Distribuição dizia que *"o
+aviso de mensagem nova não muda: até alguém responder, todo mundo continua
+sendo avisado"* — e desde aquele dia ele vai só para quem recebeu a conversa.
+Hoje ela diz a regra de agora, com o contrapeso: se ninguém do rodízio puder
+receber a conversa, todo mundo é avisado.
 
 ### O nome que se vê
 
@@ -5142,7 +5159,42 @@ ordem; e no celular as tabelas do Painel de números não têm rolagem própria.
 
 Provas: `a-auditoria-de-27-10` (205 conferências; `CENAS=13b,13c` roda só as
 pedidas, para as sabotagens) e `a-bolha-que-saiu-nao-fica-vermelha` (100), mais
-a conferência nova da prova do CPF (o "Só abrir" não liga).
+a conferência nova da prova do CPF (o "Só abrir" não liga). **64 sabotagens e
+64 pegas**, todas limpas, rodadas em cópias e lidas uma a uma — 46 na prova da
+auditoria e 18 na do envio:
+
+- **o layout:** a ficha sempre em coluna (14 reprovações); a conta da largura
+  descontando a ficha sem Vantoro; o "+ Novo" debaixo do X (8); os selos do
+  celular nunca compactos (4); a frase longa da busca no celular; o "Mostrar
+  senha" pequeno; a janela de agendar fora da tela no celular; o aviso por
+  baixo das Mídias; a seta do PDF por baixo da prévia;
+- **o que é de uma conversa:** o áudio de outra conversa na caixa; a etapa do
+  funil do cliente de antes; o Esc do "/" fechando a conversa; a seleção
+  atravessando a troca; o "você mesmo" sempre; a importação com todos os
+  telefones; os anexos fora da vez;
+- **o envio:** o painel de antes inteiro (33); o aviso "enviada" sem procurar
+  a vermelha; a linha de verdade que não substitui a bolha da fila; a vermelha
+  que fica sempre na releitura; as vermelhas na mesma passada das que saem; o
+  reenviar de antes (9); o reenviar com o `.eq` e sem reler (8); a reenviada
+  pela colega, a que ainda está saindo e a sem conexão indo de novo; a recusa
+  do banco que deixa de reenviar; a dispensada antes de decidir; os gestos que
+  falharam virando bolha, e o que falha na hora sem aviso; encaminhar com o
+  texto nulo; a bolha da fila sem o nome do arquivo; o reenviar de volta a ser
+  um texto; a linha do envio presa em 15;
+- **o que falhava calado:** os grupos, as minhas, a segunda ida das tarefas e
+  quem atende, calados; quem atende sem a função acendendo a faixa; o "Tentar
+  de novo" sem refazer os filtros (4), as tarefas e os departamentos; a
+  releitura que não limpa a faixa; a aba que fica carregando; o contato que
+  não conferiu sendo criado; a equipe que falhou virando "ninguém"; Fora do
+  horário que falhou virando formulário; o recado das favoritas; a aba
+  Contatos sem a agenda; e a frase antiga da Distribuição;
+- **o nome que se vê:** as etiquetas só da lista; sem reler pelos extras; a
+  citação e o avatar com o nome cru; a agenda gravando só o nome;
+- **a ficha:** o "Só abrir" ligando a conversa; o pré-cadastro sem os
+  telefones; o "55" colado; o rascunho de todo mundo;
+- **o Painel de números:** as setas esticando o período; o rótulo do atendente
+  virando o meu; a falta da função pela frase; a planilha com fórmula (4);
+- **e a bancada de volta ao pacote.**
 
 ## Banco de dados (tabelas que o painel lê/escreve)
 

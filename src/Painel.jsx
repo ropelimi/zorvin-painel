@@ -6455,7 +6455,7 @@ export default function Painel({ sessao }) {
   //
   // E TAMBÉM NA ABA CONTATOS DAS CONFIGURAÇÕES (auditoria de 27/10). Ela usa
   // a mesma lista e a mesma caixa de busca, e só a "Nova conversa" carregava:
-  // numa sessão nova a aba dizia "Nenhum contato ainda" com 1.343 contatos no
+  // numa sessão nova a aba dizia "Nenhum contato ainda" com 1.432 contatos no
   // banco, e depois mostrava só o que a última busca de lá tinha trazido.
   const agendaNaTela = novaConversaAberta || (configAberta && abaConfig === "contatos");
   useEffect(() => {
