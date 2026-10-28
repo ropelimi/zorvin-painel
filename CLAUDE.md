@@ -4975,6 +4975,76 @@ desempate da fila de espera não teria como ser medido.
 
 Prova: `a-auditoria-de-07-10`, 27 conferências, **11 sabotagens e 11 pegas**.
 
+## A auditoria de 28/10 — o layout em todas as telas e a revisão inteira
+
+Pedido: *"Pode auditar o zorvin-painel do mesmo jeito"* — o roteiro da
+auditoria do Vantoro: ferramentas automáticas, o layout de todas as telas,
+uma leitura de todos os arquivos, as dependências, e cada conserto com prova
+e sabotagem.
+
+**Como foi feito.**
+- **Ferramentas:** build, `npm audit` e um ESLint com as regras de hooks do
+  React, rodado de fora do repositório (a casa não tem lint, e não ganhou um).
+- **Layout:** uma varredura na bancada abriu **420 estados** — cada botão da
+  tela principal e da conversa, cada item do ⋮, cada aba das Configurações e
+  de Departamentos — em 375, 768 e 1366px, claro e escuro, medindo rolagem de
+  lado, o que sai da tela, texto cortado, alvo de toque, letra de campo no
+  celular, contraste e erro de JavaScript.
+- **Leitura:** cinco revisões em paralelo (o `Painel.jsx` em três pedaços, os
+  componentes, os módulos com o SQL) deram **~60 achados**.
+- **Consertos:** quatro frentes, cada uma na sua cópia da branch. Cada achado
+  foi **reproduzido por uma prova que reprova antes do conserto**, e cada
+  conserto foi sabotado. São **42 provas novas**, e mais de cem sabotagens,
+  todas pegas.
+
+**Os de maior peso:**
+
+| o que acontecia | agora |
+|---|---|
+| entre 768 e 1117px (o iPad em pé, a janela na metade de um monitor de 1920) a ficha fixa deixava a conversa com 18 a 350px — a mensagem saía uma letra por linha | abaixo do piso do próprio cabeçalho (368px), a ficha é gesto, como no celular, e toma o lugar da conversa — a lista fica |
+| o build de produção levava a **bancada inteira para o site**, com telefones copiados de casos reais | `vite.config.js` troca a bancada por `src/semBancada.js`; os telefones da bancada viraram números de exemplo |
+| a mensagem que chegava pelo tempo real **durante a carga** da conversa sumia — o eco da própria mensagem também, e quem enviou mandava de novo | `chegaramDuranteACarga` |
+| com o relógio aberto, virar a caixa para nota e agendar mandava a **nota ao cliente** | a janela da hora só existe fora da nota e da edição |
+| o áudio gravado em A aparecia na barra de B; a prévia de anexos de A, com Tab até a lista, era enviada a B; a seleção de A abria B sem caixa de escrever | cada coisa fica na conversa dela |
+| começar a editar apagava o que estava sendo escrito; a correção que o banco recusava se perdia | a caixa volta ao que era, e só sai da edição depois de gravar |
+| as setas de período do Painel de números andavam em milissegundos: "7 dias" ← dizia "8 dias" | dias de calendário |
+| "Salvar no Vantoro" apagava o que se digitou durante a gravação; o rascunho da ficha de quem saiu aparecia para quem entrou na mesma aba | preservado; rascunho por pessoa |
+| Fora do horário que não carregou virava "Desligada", e Salvar gravava isso por cima | a tela diz que não carregou |
+| o funil se esvaziava e relia a cada mensagem do tempo real | depende do conteúdo, e não da lista nova a cada desenho |
+| filtros (minhas, grupos, tarefas, etiqueta, favoritas, não lidas, atendentes) diziam "nenhuma" antes de o banco responder, ou depois de ele falhar | procurando, falhou e pronto — e o teto é dito |
+| a página da lista pedida antes de uma releitura da página 0 apagava páginas | contador de geração, e 20 linhas de sobra |
+| o histórico de atendimento com uma ponta só derrubava o painel (tela branca) | só o par, e a falha é dita |
+| Configurações › Contatos não perguntava ao banco; a falha da conferência do número criava contato duplicado | pergunta, e não cria nada sem conferir |
+| `sql/dispensar_aviso_de_falha.sql`, rodado hoje, faria todo "Cancelar" de agendada dar 23514 (e reabria a permissão para `anon`) | acrescenta 'descartada' à lista existente, como o 014 da ponte |
+| o "não enviado · reenviar" tinha **1,9:1** no escuro, e era um `<span>` | `erroTexto` (4,7) e um botão; as frases de erro das telas também |
+
+**O que não foi feito, e por quê:**
+- **os selos do cabeçalho no celular** ("sem r…", "fo…", "se…" de 360 a 430px):
+  as provas pedem texto ali (`o-responsavel-pela-conversa`,
+  `tarefas-e-lembretes`), e ícone, terceira linha ou esconder o vazio é
+  escolha de desenho — perguntado;
+- **número estrangeiro com "+"**: o painel e a ponte (`numeroLimpo`) põem o 55
+  na frente; consertar um lado só faria os dois divergirem. A prova
+  `o-numero-com-zero-na-frente` registra e reprova a metade;
+- **a ponte ignora o `error`** das duas leituras de `/historico/contato` — é do
+  outro repositório;
+- **o Vite 5** tem um alerta de segurança do `esbuild` só no servidor de
+  desenvolvimento; sair dele é trocar de versão maior;
+- os telefones de casos reais **continuam no histórico do git**: tirá-los de
+  lá é reescrever o histórico, decisão do Rodrigo.
+
+**Três lições:**
+- **O que o build leva não é o que o código usa.** Um `import` estático de
+  módulo com efeito no nível de cima entra no pacote mesmo atrás de um
+  ternário que nunca o escolhe. A prova `a-bancada-nao-vai-para-o-site` faz o
+  build de produção e procura.
+- **Toda prova roda em 1360 ou em 390.** O defeito da ficha morava entre as
+  duas larguras, onde nenhuma prova olhava — e o iPad em pé mora ali.
+- **SQL do painel que a tela manda rodar envelhece.** A ponte refaz as funções
+  e as regras nos scripts automáticos dela; um script daqui que faz `create or
+  replace` ou apaga regra desfaz o que veio depois. Os dois daqui agora só
+  acrescentam ou só criam o que falta.
+
 ## Banco de dados (tabelas que o painel lê/escreve)
 
 - `advogados` — lê (id, nome, numero, foto_url) onde `ativo = true`
