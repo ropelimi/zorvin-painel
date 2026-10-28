@@ -255,8 +255,14 @@ let secoesAbertas = null;
 //  SÓ NA MEMÓRIA, e não no navegador: a ficha tem as senhas do SERASA e do
 //  GOV, e elas não podem ficar gravadas no disco de uma máquina do
 //  escritório. Recarregar a página pergunta antes (`beforeunload`).
+//
+//  E POR PESSOA (auditoria de 28/10), como os da caixa (`rascunhos.js`). O
+//  "Sair" não recarrega a página: a senha GOV que uma pessoa digitou e não
+//  salvou aparecia — e podia ser salva — na ficha de quem entrasse depois na
+//  mesma aba. Quem saiu encontra o dela ao voltar.
 // ------------------------------------------------------------
-const rascunhosDaFicha = new Map();   // id do cadastro → { campos: { chave: valor } }
+const rascunhosDaFicha = new Map();   // "quem|id do cadastro" → { campos: { chave: valor } }
+const chaveDoRascunho = (pessoa, clienteId) => `${pessoa || ""}|${clienteId}`;
 
 /** Os campos em que a tela difere do cadastro — a MESMA conta que decide o
  *  que vai ao Vantoro ao salvar, o que o rascunho guarda e quando o botão
@@ -272,8 +278,8 @@ function camposMudados(edicao, base) {
 /** O cadastro com o que tinha ficado por salvar nele. SÓ OS CAMPOS QUE
  *  VIERAM: o que não veio no cadastro não vira campo editável (a régua das
  *  observações, logo abaixo), e um rascunho não pode furar essa régua. */
-function comRascunho(c) {
-  const guardado = c && c.id != null ? rascunhosDaFicha.get(String(c.id)) : null;
+function comRascunho(c, pessoa) {
+  const guardado = c && c.id != null ? rascunhosDaFicha.get(chaveDoRascunho(pessoa, c.id)) : null;
   if (!guardado) return { edicao: { ...c }, voltou: false };
   const campos = Object.fromEntries(Object.entries(guardado.campos)
     .filter(([chave]) => Object.prototype.hasOwnProperty.call(c, chave)));
@@ -291,7 +297,8 @@ if (typeof window !== "undefined") {
   });
 }
 
-export default function FichaVantoro({ numero, nomeContato, C, estreito, onFechar, onAviso, aoLigarCadastro, aoConversarPor }) {
+export default function FichaVantoro({ numero, nomeContato, C, estreito, onFechar, onAviso, aoLigarCadastro, aoConversarPor,
+                                       idDaPessoa }) {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [cliente, setCliente] = useState(null);
@@ -646,7 +653,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       setCpfDeOutro(null);
       setCpfProcura(null);
       setCliente(inteiro);
-      const comOGuardado = comRascunho(inteiro);
+      const comOGuardado = comRascunho(inteiro, idDaPessoa);
       setEdicao(comOGuardado.edicao);
       setRascunhoVoltou(comOGuardado.voltou);
       setTelefones(novaLista);
@@ -670,7 +677,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
 
   async function escolher(c) {
     setCliente(c);
-    const comOGuardado = comRascunho(c);
+    const comOGuardado = comRascunho(c, idDaPessoa);
     setEdicao(comOGuardado.edicao);
     setRascunhoVoltou(comOGuardado.voltou);
     // A LISTA DE TELEFONES VEM JUNTO. Só `buscar` a preenchia, e escolher um
@@ -728,7 +735,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       // O QUE FICOU POR SALVAR VOLTA — menos no Atualizar (`forcar`), que é
       // justamente o gesto de trocar o digitado pelo que está no Vantoro, e
       // que pergunta antes.
-      const comOGuardado = achado && !forcar ? comRascunho(achado) : { edicao: achado ? { ...achado } : {}, voltou: false };
+      const comOGuardado = achado && !forcar ? comRascunho(achado, idDaPessoa) : { edicao: achado ? { ...achado } : {}, voltou: false };
       setEdicao(comOGuardado.edicao);
       setRascunhoVoltou(comOGuardado.voltou);
       // Só ABRIR a ficha já conserta o nome da conversa. Sem isto, os contatos
@@ -770,9 +777,10 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   useEffect(() => {
     if (!cliente || cliente.id == null) return;
     const mudou = camposMudados(edicao, cliente);
-    if (Object.keys(mudou).length) rascunhosDaFicha.set(String(cliente.id), { campos: mudou });
-    else rascunhosDaFicha.delete(String(cliente.id));
-  }, [edicao, cliente]);
+    const chave = chaveDoRascunho(idDaPessoa, cliente.id);
+    if (Object.keys(mudou).length) rascunhosDaFicha.set(chave, { campos: mudou });
+    else rascunhosDaFicha.delete(chave);
+  }, [edicao, cliente, idDaPessoa]);
 
   // A FRASE SAI DO QUE O VANTORO RESPONDEU (`tarefa_cadastro`), e não da
   // caixa: é ele quem sabe se a tarefa nasceu. Sem a resposta (um Vantoro de
@@ -819,6 +827,12 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       const pediuTarefa = papel === "cliente" && criarTarefa;
       setCliente(r.cliente);
       setEdicao({ ...r.cliente });
+      // A LISTA DE TELEFONES VEM JUNTO (auditoria de 28/10), como em
+      // `escolher`. Sem ela, a seção "Telefones" do cadastro recém-criado (ou
+      // do que já existia) aparecia vazia, e o "+ Acrescentar" conferia a
+      // duplicata contra a lista vazia — o número da própria conversa ia de
+      // novo ao Vantoro.
+      setTelefones(listaDeTelefones(r.cliente));
       const ligou = await ligarContatoAoCadastro(r.cliente);
       // O CADASTRO NASCEU LÁ; O VÍNCULO É DAQUI. Dizer só "criado" quando o
       // segundo não gravou é o relato de 24/09: o pré-cadastro existe no
@@ -845,6 +859,9 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     if (!cliente) return;
     setSalvando(true);
     esquecerFicha(numero);   // ver `criar`
+    // O QUE ESTAVA NA TELA NO CLIQUE — é o que vai ao Vantoro, e é contra
+    // ele que a volta mede o que foi digitado DEPOIS (ver abaixo).
+    const enviado = edicao;
     try {
       const mudou = camposMudados(edicao, cliente);
       if (!Object.keys(mudou).length) { onAviso && onAviso("Nada foi alterado."); return; }
@@ -856,7 +873,14 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       // trocou de conversa e voltou) guardou o cadastro de ANTES dela.
       esquecerFicha(numero);
       setCliente(r.cliente);
-      setEdicao({ ...r.cliente });
+      // O QUE FOI DIGITADO COM A GRAVAÇÃO NO AR FICA (auditoria de 28/10).
+      // Os campos não travam enquanto salva, e a ponte que hiberna leva
+      // segundos: trocar a tela inteira pelo cadastro gravado apagava o
+      // acréscimo — e o rascunho junto, porque a tela ficava igual ao
+      // cadastro —, com a frase dizendo "Cadastro atualizado". Agora só o
+      // que não mudou depois do clique vem do Vantoro; o resto continua por
+      // salvar, com o aviso do pé.
+      setEdicao((atual) => ({ ...r.cliente, ...camposMudados(atual, enviado) }));
       setRascunhoVoltou(false);
       const ligou = await ligarContatoAoCadastro(r.cliente);
       const naoLigou = "Atualizei no Vantoro, mas não consegui ligá-lo a este contato aqui.";
@@ -1308,11 +1332,17 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   function desenharTelefones() {
     if (!cliente) return null;
     const AMBAR = "#d4a017";
+    // AS CHAVES (auditoria de 28/10): este bloco entra na lista dos campos da
+    // Identificação no lugar do "Outro WhatsApp", e sem `key` o React
+    // reclamava a cada ficha aberta; e a linha que não tem `id` (a lista
+    // montada para um Vantoro antigo) leva a chave pelo número — todas com
+    // `null` eram "duas crianças com a mesma chave", que o React pode
+    // duplicar ou sumir.
     return (
-      <div data-telefones style={{ marginBottom: 10 }}>
+      <div key="telefone2" data-telefones style={{ marginBottom: 10 }}>
         <label style={rotulo}>Telefones</label>
         {telefones.map((t) => (
-          <div key={t.id} // `data-telefone-do-cliente`, e não `data-telefone`: este último já existe no
+          <div key={t.id ?? `sem-id-${t.digitos || t.numero}`} // `data-telefone-do-cliente`, e não `data-telefone`: este último já existe no
                // painel, no seletor de telefones do escritório na barra lateral. A
                // colisão fez uma prova contar 6 linhas onde havia 3 — e o nome curto
                // ia continuar mentindo para quem escrevesse a próxima.

@@ -17155,6 +17155,10 @@ export default function Painel({ sessao }) {
             if (fichaComoNoCelular) setFichaAberta(false);
             await conversarComClienteVantoro(linha);
           }}
+          // O RASCUNHO DA FICHA É DE QUEM ENTROU (auditoria de 28/10), como o
+          // da caixa: quem entra depois na mesma aba não vê o que a pessoa de
+          // antes digitou e não salvou — as senhas do GOV e do SERASA incluídas.
+          idDaPessoa={sessao?.user?.id}
         />
       )}
 

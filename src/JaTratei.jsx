@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { CircleCheck, ListChecks, Loader2, X } from "lucide-react";
 import { NOME_DA_SITUACAO } from "./abasDaSituacao.js";
 
@@ -70,8 +70,15 @@ export function JaTratei({ C, estreito, nome, dias, esperando = true, finalizar 
     setEscolhidos((v) => (v.includes(id) ? v.filter((x) => x !== id) : [...v, id]));
   }
 
+  // O FUNDO SÓ FECHA O QUE FOI APERTADO NELE (auditoria de 28/10): selecionar
+  // a descrição até fora da janela virava um clique no fundo, e os assuntos
+  // marcados e o texto iam embora sem pergunta.
+  const apertouNoFundo = useRef(false);
+
   return (
-    <div onClick={aoFechar} data-ja-tratei-janela data-ja-tratei-modo={finalizar ? "finalizar" : "tratar"}
+    <div onMouseDown={(e) => { apertouNoFundo.current = e.target === e.currentTarget; }}
+         onClick={(e) => { if (apertouNoFundo.current && e.target === e.currentTarget) aoFechar(); }}
+         data-ja-tratei-janela data-ja-tratei-modo={finalizar ? "finalizar" : "tratar"}
          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 200,
                   display: "flex", alignItems: "center", justifyContent: "center", padding: estreito ? 12 : 24 }}>
       <div onClick={(e) => e.stopPropagation()}
