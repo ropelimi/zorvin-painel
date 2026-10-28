@@ -712,6 +712,16 @@ function faltaAFuncao(erro) {
     || /could not find the function/i.test(String(erro.message || ""));
 }
 
+// A CHAVE DA PERGUNTA QUE O FILTRO DA LISTA FAZ AO BANCO (28/10) — a mesma
+// conta no efeito que pergunta e na frase que espera a resposta (ver
+// `perguntasDoFiltro`). A pasta de arquivadas só entra na chave dos filtros que
+// ela muda: as minhas, os grupos, as tarefas e a etiqueta perguntam igual
+// dentro e fora dela.
+function chaveDoFiltro(filtro, arquivadas, advId) {
+  const pelaPasta = filtro === "tudo" || filtro === "naolidas" || filtro === "favoritas";
+  return `${filtro}|${pelaPasta && arquivadas ? "arquivadas" : ""}|${advId || ""}`;
+}
+
 const RECURSOS = { atendendo: true, digitando: true };
 // QUANTO TEMPO UMA MARCA DE "ESTOU ATENDENDO" VALE sem ser renovada: o aviso
 // para de mostrá-la depois disto, e o pulso pode tomá-la (28/10).
@@ -2699,9 +2709,13 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
               Presa em `left: 8`, todas caem no mesmo eixo, e a linha
               ganha um recuo do mesmo tamanho para nada ficar por
               baixo. É assim que o WhatsApp desenha. */}
+          {/* UM BOTÃO (28/10): o `span` não recebia o foco, e quem usa o
+              teclado não marcava nada. Desligado onde não há o que apagar. */}
           {selecao && (
-            <span onClick={(e) => { e.stopPropagation(); if (podeSerApagada(m)) alternarSelecao(m.id); }}
-              style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)",
+            <button type="button" aria-label="Selecionar esta mensagem" aria-pressed={selecao.includes(m.id)}
+              disabled={!podeSerApagada(m)}
+              onClick={(e) => { e.stopPropagation(); if (podeSerApagada(m)) alternarSelecao(m.id); }}
+              style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", padding: 0,
                        // Do tamanho da do WhatsApp: a caixinha é uma
                        // marca ao lado da conversa, não um botão a
                        // disputar atenção com a mensagem. A área de
@@ -2713,7 +2727,7 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
                        border: podeSerApagada(m) ? `1.5px solid ${selecao.includes(m.id) ? C.green : C.textSecondary}` : "1.5px solid transparent",
                        background: selecao.includes(m.id) ? C.green : "transparent" }}>
               {selecao.includes(m.id) && <Check size={12} strokeWidth={3} color="#fff" />}
-            </span>
+            </button>
           )}
           {m.id_uazapi && !m.apagada && saida && (
             <RostoReagir C={C} saida={saida} tudo={reagindoTudo}
@@ -3519,6 +3533,17 @@ export default function Painel({ sessao }) {
   const [quantasNaLista, setQuantasNaLista] = useState(PAGINA);
   // Quantas conversas vêm do BANCO por vez, e se ainda há mais para buscar.
   const PAGINA_BANCO = 200;
+  // A SOBRA DA PÁGINA (28/10): a página seguinte começa 20 linhas antes de onde
+  // a anterior terminou. A página é pedida por posição, e a ordem anda entre
+  // uma página e outra — Finalizar tira a linha da aba, responder leva a
+  // conversa para o fim da fila de espera. Cada linha que sai de cima empurra
+  // a fronteira uma posição, e sem a sobra o cliente que subiu para a
+  // fronteira não vinha em página nenhuma. As repetidas o `vistos` descarta.
+  const SOBRA_DA_PAGINA = 20;
+  // A GERAÇÃO DA LISTA (28/10): sobe a cada vez que a página 0 é pedida. A
+  // página N pedida ANTES da última página 0 é de uma lista que não existe
+  // mais — ver `carregarConversas`.
+  const geracaoDaListaRef = useRef(0);
   const [paginaConversas, setPaginaConversas] = useState(0);
   const [temMaisConversas, setTemMaisConversas] = useState(false);
   const [buscandoMais, setBuscandoMais] = useState(false);
@@ -4645,6 +4670,23 @@ export default function Painel({ sessao }) {
     try { localStorage.setItem("zorvin_advogado", advogadoId); } catch (_) { /* ignora */ }
   }, [advogadoId]);
 
+  // OS DEPARTAMENTOS E OS TELEFONES, RELIDOS — ao fechar "Departamentos e
+  // acessos" e pelo "Tentar de novo". SÓ SE GRAVA O QUE VEIO — a regra da
+  // abertura: uma piscada de rede esvaziaria a barra de telefones e diria
+  // "nenhum número liberado" a quem administra (auditoria de 07/10). E A FALHA
+  // APAGA QUANDO VEM (28/10): as duas chaves eram anotadas e nunca limpas, e o
+  // botão da faixa não relia nenhuma delas — a faixa âmbar ficava para sempre.
+  const relerDepartamentosETelefones = useCallback(() => Promise.all([
+    supabase.from("departamentos").select("id, nome, slug, cor, ordem").eq("ativo", true).order("ordem"),
+    supabase.from("advogados").select("id, nome, numero, foto_url, departamento_id, ativo").order("nome"),
+  ]).then(([d, t]) => {
+    if (!d.error) { setDepartamentos(d.data || []); limparFalhaDeLeitura("departamentos"); }
+    else anotarFalhaDeLeitura("departamentos", "os departamentos", d.error);
+    if (!t.error) { setAdvogados(t.data || []); limparFalhaDeLeitura("telefones"); }
+    else anotarFalhaDeLeitura("telefones", "os telefones", t.error);
+  }).catch((e) => anotarFalhaDeLeitura("telefones", "os telefones", e)),
+  [anotarFalhaDeLeitura, limparFalhaDeLeitura]);
+
   // ---- Carrega "quem está atendendo" cada conversa (recurso opcional) ----
   const carregarAtendimentos = useCallback(async (advId) => {
     if (!advId || !RECURSOS.atendendo) return;
@@ -4741,7 +4783,10 @@ export default function Painel({ sessao }) {
   const carregarConversas = useCallback(async (advId, pagina = 0, manterAberta = null) => {
     if (!advId) return;
     if (pagina === 0) ultimaReleituraDaListaRef.current = Date.now();
+    const geracao = pagina === 0 ? ++geracaoDaListaRef.current : geracaoDaListaRef.current;
     const de = pagina * PAGINA_BANCO;
+    // A SOBRA — ver `SOBRA_DA_PAGINA`. A página 0 não tem o que sobrepor.
+    const desde = pagina > 0 ? de - SOBRA_DA_PAGINA : de;
     /** A ordem vai para o BANCO, e não para a lista já carregada.
      *
      *  Ordenar aqui dentro daria "quem mais espera entre as 200 que vieram",
@@ -4795,7 +4840,7 @@ export default function Painel({ sessao }) {
       // A ORDEM É DAQUI, e não de uma reordenação depois. Ver o comentário em
       // `ordem`: virar a lista já carregada mostraria "a mais antiga das 200
       // que vieram", que não é a mais antiga de nada.
-      .range(de, de + PAGINA_BANCO - 1)
+      .range(desde, de + PAGINA_BANCO - 1)
       .limit(1, { referencedTable: "mensagens" })
       // `.then((r) => r)` DISPARA. O construtor do supabase-js é PREGUIÇOSO: a
       // linha acima só monta o pedido, e a rede não sai do lugar até alguém
@@ -4862,13 +4907,19 @@ export default function Painel({ sessao }) {
           // espera virar do avesso só nas bases antigas — e sem nada na tela
           // dizendo por quê. E é a MESMA função, com o mesmo desempate: duas
           // escritas da ordem divergiriam no primeiro conserto.
-          .range(de, de + PAGINA_BANCO - 1)
+          .range(desde, de + PAGINA_BANCO - 1)
           .limit(1, { referencedTable: "mensagens" }),
         pagina === 0 ? buscarFixadas() : Promise.resolve({ data: [], error: null }),
       ]);
       ({ data, error } = refeitos[0]);
       fixadasRefeitas = refeitos[1];
     }
+    // A PÁGINA N PEDIDA ANTES DA ÚLTIMA PÁGINA 0 É DESCARTADA (28/10). A
+    // página 0 é relida sozinha — a conversa nova, a releitura de 20 s, um
+    // gesto —, e SUBSTITUI a lista. A página 2 que estava em voo chegava
+    // depois, era emendada na lista nova e gravava "estou na página 2": a
+    // página 1 sumia sem aviso, e a rolagem seguia para a 3.
+    if (pagina > 0 && geracao !== geracaoDaListaRef.current) return;
     // Queda de rede não pode esvaziar a lista: sem resposta, fica o que já
     // estava na tela em vez de "Nenhuma conversa ainda".
     //
@@ -4945,7 +4996,7 @@ export default function Painel({ sessao }) {
     // PÁGINA — as fixadas que vêm à parte, logo abaixo, não dizem nada sobre
     // quanto ainda falta. E conta o BRUTO, antes do corte abaixo: o que foi
     // escondido saiu da tela, não da página.
-    setTemMaisConversas(bruto.length === PAGINA_BANCO);
+    setTemMaisConversas(bruto.length === de + PAGINA_BANCO - desde);
     setPaginaConversas(pagina);
 
     // ------------------------------------------------------------
@@ -5131,6 +5182,9 @@ export default function Painel({ sessao }) {
   // ficar perguntando.
   const contarNaoLidasAgora = useCallback(async () => {
     if (!advogados.length) return;
+    // DE QUAL TELEFONE é a conta das arquivadas (28/10): a de A que chegava
+    // depois da de B pintava — ou escondia — a linha "Arquivadas" de B.
+    const advId = advogadoId;
 
     if (TEM_CONTAGEM_NO_BANCO) {
       // A LISTA DE TELEFONES VAI JUNTO, e não por economia: `advogados` já é o
@@ -5138,10 +5192,11 @@ export default function Painel({ sessao }) {
       // contagem de telefones que ela não abre — e a resposta chega no
       // navegador, onde qualquer um lê.
       const { data, error } = await supabase.rpc("nao_lidas_por_telefone", {
-        p_advogado: advogadoId ? String(advogadoId) : null,
+        p_advogado: advId ? String(advId) : null,
         p_telefones: advogados.map((a) => String(a.id)),
       });
       if (!error && data) {
+        limparFalhaDeLeitura("selos");
         const vindo = data.por_telefone || {};
         const mapa = {};
         // ZERO EXPLÍCITO PARA QUEM NÃO APARECEU. O `group by` não devolve linha
@@ -5152,14 +5207,20 @@ export default function Painel({ sessao }) {
         setNaoLidasPorAdv(mapa);
         const arq = data.arquivadas;
         setArquivadasNoBanco(arq
-          ? { total: Number(arq.total || 0), naoLidas: Number(arq.nao_lidas || 0) }
+          ? { de: advId, total: Number(arq.total || 0), naoLidas: Number(arq.nao_lidas || 0) }
           : {});
         return;
       }
       // Só desce para o caminho antigo quando a função NÃO EXISTE. Erro de rede
       // é passageiro: apagar os selos por causa dele mostraria "nenhum recado
       // esperando" num momento em que ninguém sabe se há.
-      if (!faltaAFuncao(error)) return;
+      //
+      // E É DITO (28/10): era `return` calado, e os selos ficavam com o número
+      // de antes, com cara de número de agora.
+      if (!faltaAFuncao(error)) {
+        anotarFalhaDeLeitura("selos", "o número de não lidas de cada telefone", error);
+        return;
+      }
       TEM_CONTAGEM_NO_BANCO = false;
       console.info('Zorvin: a função "nao_lidas_por_telefone" não existe neste banco — '
         + "contando telefone a telefone. Rode o SQL e recarregue para ficar mais rápido.");
@@ -5206,6 +5267,7 @@ export default function Painel({ sessao }) {
     ]);
     // Mesma regra do mapa: falhou, fica sem número em vez de virar zero.
     setArquivadasNoBanco({
+      de: advId,
       total: tudo.error ? undefined : (tudo.count || 0),
       naoLidas: porLer.error ? undefined : (porLer.count || 0),
     });
@@ -5214,7 +5276,7 @@ export default function Painel({ sessao }) {
     // A contagem das arquivadas é do telefone ABERTO. Sem isto ela ficaria
     // parada no número do telefone anterior até a próxima mensagem chegar — e
     // número velho na tela é indistinguível de número certo.
-  }, [advogados, advogadoId]);
+  }, [advogados, advogadoId, anotarFalhaDeLeitura, limparFalhaDeLeitura]);
 
   // UMA CONTAGEM POR RAJADA, E NÃO UMA POR MENSAGEM.
   //
@@ -5368,8 +5430,11 @@ export default function Painel({ sessao }) {
   // etiqueta o que atende, ela passa de mil linhas em poucos meses. A consulta
   // sem recorte parava no teto de 1000 da API, e as etiquetas simplesmente
   // sumiam das conversas que não couberam — sem erro, sem aviso.
+  // OS IDS VÊM DE `idsDaLista` (28/10): a lista E as linhas que a busca e os
+  // filtros trazem de fora dela.
+  const idsDaListaRef = useRef("");
   const carregarTagsConversas = useCallback(async () => {
-    const ids = conversasRef.current.map((c) => c.id);
+    const ids = idsDaListaRef.current ? idsDaListaRef.current.split(",") : [];
     if (!ids.length) { setTagsPorConversa({}); return; }
     try {
       const mapa = {};
@@ -5457,6 +5522,30 @@ export default function Painel({ sessao }) {
   // inteira. Quem conclui "não tenho nada pendente" a partir dela esquece
   // justamente o cliente mais esquecido.
   const [extrasMinhas, setExtrasMinhas] = useState([]);
+  // AS NÃO LIDAS, AS FAVORITAS E AS ARQUIVADAS QUE AS PÁGINAS LIDAS NÃO TÊM
+  // (auditoria de 28/10) — o desenho de `extrasMinhas`. As três são uma marca
+  // na própria linha, e a tela as procurava só nas páginas carregadas: a
+  // favorita da posição 450 não aparecia, a pasta dizia "Nenhuma conversa
+  // arquivada." logo abaixo da linha "Arquivadas 1", e na ordem "Antigas" a
+  // pílula dizia "Não lidas 500" sobre uma lista que dizia "Nenhuma conversa
+  // ainda.".
+  const [extrasMarcadas, setExtrasMarcadas] = useState([]);
+  // AS PERGUNTAS QUE OS FILTROS DA LISTA FAZEM AO BANCO (auditoria de 28/10):
+  // `{ [chave]: { estado, codigo, cortou } }`, e `estado` é "procurando",
+  // "falhou" ou "pronto" — a régua do `estadoQuem`. A lista vazia dizia
+  // "Nenhuma conversa sua…" e "Nenhum grupo…" com a pergunta ainda no ar, e
+  // também depois de ela falhar, com o erro só no console. O contrato está na
+  // frase da lista vazia: "nada encontrado" só depois de perguntar em todo
+  // lugar. `cortou` é o teto que a resposta encostou — a tela diz que pode
+  // haver mais. UMA ENTRADA POR CHAVE (`chaveDoFiltro`), e não uma só: a
+  // resposta atrasada de um filtro que já saiu da tela não escreve por cima
+  // da pergunta do filtro que entrou.
+  const [perguntasDoFiltro, setPerguntasDoFiltro] = useState({});
+  const marcarPergunta = useCallback((chave, estado, erro = null, cortou = 0) => {
+    setPerguntasDoFiltro((antes) => ({ ...antes, [chave]: { estado, codigo: (erro && erro.code) || "", cortou } }));
+  }, []);
+  // "Tentar de novo" pergunta de novo — e só quando uma delas falhou.
+  const [tentativaDoFiltro, setTentativaDoFiltro] = useState(0);
   const [idsQuem, setIdsQuem] = useState(null);            // null = sem filtro
   // "carregando" | "falhou" | "ok" — o filtro de atendentes ESCOLHIDO e ainda
   // sem resposta não pode deixar tudo passar (auditoria de 07/10): a pílula
@@ -5464,6 +5553,9 @@ export default function Painel({ sessao }) {
   // conversas dela — e assim ficava para sempre se o banco recusasse.
   const [estadoQuem, setEstadoQuem] = useState("ok");
   const [tentativaQuem, setTentativaQuem] = useState(0);
+  // O TETO DO FILTRO DE ATENDENTES (28/10): a função devolve no máximo 500, e
+  // quem participou de mais do que isso via uma lista com cara de completa.
+  const [corteQuem, setCorteQuem] = useState(0);
   const chaveQuemRef = useRef("");
   const quemRef = useRef(null);
   // A lista de quem participou DESTA conversa (o grupinho de rostos do topo).
@@ -5488,6 +5580,12 @@ export default function Painel({ sessao }) {
   // `filtroQuemOk` e não `atendentes.length`: são perguntas diferentes. Uma é
   // "o banco sabe responder isto?" — que decide se o botão existe. A outra é
   // "quantas pessoas há para escolher?" — que é conteúdo do menu.
+  //
+  // SÓ A FUNÇÃO QUE FALTA ESCONDE O BOTÃO (auditoria de 28/10). Era `if
+  // (error) return;` para qualquer erro: uma queda de rede sumia com o filtro
+  // sem uma palavra, que é o que o parágrafo acima condena. Outro erro acende
+  // a faixa, o botão fica, e o menu diz que a lista não carregou.
+  const [tentativaAtendentes, setTentativaAtendentes] = useState(0);
   useEffect(() => {
     let vivo = true;
     setAtendentes([]); setFiltroQuemOk(false);
@@ -5495,12 +5593,19 @@ export default function Painel({ sessao }) {
     (async () => {
       const { data, error } = await supabase.rpc("atendentes_do_telefone", { p_advogado: advogadoId });
       if (!vivo) return;
-      if (error) return;            // sem a função no banco: o botão não aparece
+      if (error) {
+        // Sem a função no banco: o botão não aparece.
+        if (faltaAFuncao(error)) { limparFalhaDeLeitura("atendentes"); return; }
+        anotarFalhaDeLeitura("atendentes", "a lista de quem atende por este telefone", error);
+        setFiltroQuemOk(true);
+        return;
+      }
+      limparFalhaDeLeitura("atendentes");
       setAtendentes(data || []);
       setFiltroQuemOk(true);
     })();
     return () => { vivo = false; };
-  }, [advogadoId]);
+  }, [advogadoId, tentativaAtendentes, anotarFalhaDeLeitura, limparFalhaDeLeitura]);
 
   // Trocar de conversa fecha a lista de quem participou: ela é de UMA conversa,
   // e deixá-la aberta mostraria os rostos da anterior sobre a nova.
@@ -5511,15 +5616,25 @@ export default function Painel({ sessao }) {
 
   useEffect(() => {
     let vivo = true;
-    setExtrasQuem([]);
-    if (!quemFiltra.length || !advogadoId) { setIdsQuem(null); setEstadoQuem("ok"); limparFalhaDeLeitura("filtro-quem"); return; }
+    if (!quemFiltra.length || !advogadoId) {
+      chaveQuemRef.current = "";
+      setExtrasQuem([]); setIdsQuem(null); setEstadoQuem("ok"); setCorteQuem(0);
+      limparFalhaDeLeitura("filtro-quem");
+      return;
+    }
     const advId = advogadoId;
     // SÓ ESVAZIA QUANDO A ESCOLHA MUDA. Este efeito também roda quando a lista
     // cresce (`conversas.length`), e esvaziar ali faria a lista filtrada piscar
     // vazia a cada conversa nova que chega.
+    //
+    // AS LINHAS DE FORA TAMBÉM (auditoria de 28/10): `setExtrasQuem([])` vinha
+    // antes desta conferência e rodava sempre — e abrir uma delas a emenda na
+    // lista (`abrirConversa`), o que muda `conversas.length`. As outras sumiam
+    // por duas idas ao banco a cada conversa aberta.
     const chave = JSON.stringify([quemFiltra, modoQuem, advId, tentativaQuem]);
     if (chaveQuemRef.current !== chave) {
       chaveQuemRef.current = chave;
+      setExtrasQuem([]);
       setIdsQuem(new Set());
       setEstadoQuem("carregando");
     }
@@ -5538,16 +5653,29 @@ export default function Painel({ sessao }) {
       setEstadoQuem("ok");
       const ids = (data || []).map((r) => String(r.id));
       setIdsQuem(new Set(ids));
+      // NO TETO, A TELA DIZ (28/10): 500 de volta quer dizer que pode haver
+      // mais — e quem participou de mais do que isso via uma lista cortada com
+      // cara de inteira.
+      setCorteQuem(ids.length >= 500 ? 500 : 0);
 
       // As que a lista ainda não tem — mesmo caminho da busca e da etiqueta.
       const jaNaLista = new Set(conversasRef.current.map((c) => String(c.id)));
       const faltando = ids.filter((id) => !jaNaLista.has(id));
       const achadas = [];
       for (let i = 0; i < faltando.length; i += 150) {
-        const { data: cs } = await supabase.from("conversas")
+        const { data: cs, error: erroLote } = await supabase.from("conversas")
           .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
           .eq("advogado_id", advId)
           .in("id", faltando.slice(i, i + 150));
+        if (!vivo || advogadoIdRef.current !== advId) return;
+        // A RELEITURA QUE FALHA É DITA, E NÃO APAGA (28/10): o erro era jogado
+        // fora, as linhas de fora não voltavam e nada avisava. Ficam as que
+        // já estavam na tela, e a faixa diz que o filtro está incompleto.
+        if (erroLote) {
+          setEstadoQuem("falhou");
+          anotarFalhaDeLeitura("filtro-quem", "o filtro de atendentes", erroLote);
+          return;
+        }
         achadas.push(...(cs || []));
       }
       if (!vivo || advogadoIdRef.current !== advId) return;
@@ -5570,36 +5698,63 @@ export default function Painel({ sessao }) {
   //  aparecem por `passaNoFiltro`, que não depende desta ida ao banco; se ela
   //  não voltar, a lista fica incompleta em vez de vazia — e é a diferença
   //  entre uma lista curta e uma tela que diz "não há grupos".
+  //  E A PERGUNTA TEM TRÊS DESFECHOS (auditoria de 28/10) — `perguntasDoFiltro`:
+  //  procurando, falhou e pronto. A falha ia só para o console (ou saía com
+  //  `return`), e a lista vazia dizia "nenhuma" sobre uma pergunta sem
+  //  resposta.
   useEffect(() => {
     let cancelado = false;
     setExtrasMinhas([]);
-    if (filtro !== "minhas" || !advogadoId || !meuId || temResponsavel !== true) return;
+    if (filtro !== "minhas" || !advogadoId) { limparFalhaDeLeitura("filtro-minhas"); return; }
     const advId = advogadoId;
+    const chave = chaveDoFiltro(filtro, false, advId);
+    // Sem a coluna (ou sem saber quem sou) não há o que perguntar.
+    if (!meuId || temResponsavel !== true) { marcarPergunta(chave, "pronto"); return; }
+    marcarPergunta(chave, "procurando");
     (async () => {
+      // COM ORDEM, para o teto cortar as mais antigas — sem ela, quais 500
+      // vinham era sorte do banco.
       const { data, error } = await supabase.from("conversas")
         .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
-        .eq("advogado_id", advId).eq("responsavel_id", meuId).limit(500);
+        .eq("advogado_id", advId).eq("responsavel_id", meuId)
+        .order("ultima_atividade", { ascending: false }).order("id").limit(500);
+      if (cancelado || advogadoIdRef.current !== advId) return;
       // FALHOU, NÃO APAGA: as minhas das páginas lidas continuam aparecendo
-      // por `passaNoFiltro`, que não depende desta ida.
-      if (error) console.error("As minhas conversas fora das páginas lidas não vieram:", error);
-      if (error || cancelado || advogadoIdRef.current !== advId) return;
+      // por `passaNoFiltro`, que não depende desta ida. Mas é DITO.
+      if (error) {
+        anotarFalhaDeLeitura("filtro-minhas", "as suas conversas deste telefone", error);
+        marcarPergunta(chave, "falhou", error);
+        return;
+      }
+      limparFalhaDeLeitura("filtro-minhas");
       setExtrasMinhas(data || []);
+      marcarPergunta(chave, "pronto", null, (data || []).length >= 500 ? 500 : 0);
     })();
     return () => { cancelado = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtro, advogadoId, meuId, temResponsavel]);
+  }, [filtro, advogadoId, meuId, temResponsavel, tentativaDoFiltro]);
 
   useEffect(() => {
     let cancelado = false;
     setExtrasGrupo([]);
-    if (filtro !== "grupos" || !advogadoId) return;
+    if (filtro !== "grupos" || !advogadoId) { limparFalhaDeLeitura("filtro-grupos"); return; }
     const advId = advogadoId;
+    const chave = chaveDoFiltro(filtro, false, advId);
+    marcarPergunta(chave, "procurando");
+    // A FALHA É DITA (28/10): era `return` calado, e a lista dizia "Nenhum
+    // grupo neste telefone." sobre um banco que não respondeu.
+    const falhou = (erro) => {
+      if (cancelado) return;
+      anotarFalhaDeLeitura("filtro-grupos", "os grupos deste telefone", erro);
+      marcarPergunta(chave, "falhou", erro);
+    };
     (async () => {
       try {
         const { data: contatos, error: e1 } = await supabase.from("contatos")
-          .select("id").ilike("numero", "grupo:%").limit(500);
-        if (e1 || cancelado || !contatos || !contatos.length) return;
-        const ids = contatos.map((c) => c.id);
+          .select("id").ilike("numero", "grupo:%").order("id").limit(500);
+        if (e1) { falhou(e1); return; }
+        if (cancelado) return;
+        const ids = (contatos || []).map((c) => c.id);
         const achadas = [];
         // Em lotes: a lista de ids vai na URL, e centenas de uma vez fariam o
         // pedido ser recusado pelo tamanho. Mesmo teto do filtro de etiquetas.
@@ -5608,18 +5763,20 @@ export default function Painel({ sessao }) {
             .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
             .eq("advogado_id", advId)
             .in("contato_id", ids.slice(i, i + 150));
-          if (error) return;
+          if (error) { falhou(error); return; }
           achadas.push(...(data || []));
         }
         // Troquei de telefone ou de filtro enquanto isto vinha? É resposta de
         // outra pergunta: descarta.
         if (cancelado || advogadoIdRef.current !== advId) return;
+        limparFalhaDeLeitura("filtro-grupos");
         setExtrasGrupo(achadas);
-      } catch (_) { /* sem rede: a lista fica com os grupos já carregados */ }
+        marcarPergunta(chave, "pronto", null, ids.length >= 500 ? 500 : 0);
+      } catch (e) { falhou(e); }
     })();
     return () => { cancelado = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtro, advogadoId]);
+  }, [filtro, advogadoId, tentativaDoFiltro]);
 
   useEffect(() => {
     let cancelado = false;
@@ -5627,6 +5784,13 @@ export default function Painel({ sessao }) {
     setExtrasEtiqueta([]); setIdsEtiqueta(null);
     if (!tagId || !advogadoId) { limparFalhaDeLeitura("filtro-etiqueta"); return; }
     const advId = advogadoId;
+    const chave = chaveDoFiltro(filtro, false, advId);
+    marcarPergunta(chave, "procurando");
+    const falhou = (erro) => {
+      if (cancelado) return;
+      anotarFalhaDeLeitura("filtro-etiqueta", "as conversas desta etiqueta", erro);
+      marcarPergunta(chave, "falhou", erro);
+    };
     (async () => {
       try {
         const ids = [];
@@ -5637,11 +5801,14 @@ export default function Painel({ sessao }) {
           // A FALHA É DITA (auditoria de 07/10): calada, a tela mostrava só as
           // conversas com a etiqueta que já estavam carregadas, com cara de
           // "todas" — três quando havia trinta.
-          if (error) { if (!cancelado) anotarFalhaDeLeitura("filtro-etiqueta", "as conversas desta etiqueta", error); return; }
+          if (error) { falhou(error); return; }
           ids.push(...(data || []).map((r) => r.conversa_id));
           if (!data || data.length < 1000) break;
         }
-        if (cancelado || !ids.length) return;
+        // A ETIQUETA SEM CONVERSA NENHUMA TAMBÉM É RESPOSTA (28/10): saía aqui
+        // com `return`, antes de apagar a falha — a faixa de uma tentativa
+        // anterior ficava de pé sobre uma pergunta que deu certo.
+        if (cancelado) return;
 
         // As conversas em si, em lotes — a lista de ids vai na URL, e centenas
         // de uma vez fariam o pedido ser recusado pelo tamanho.
@@ -5652,7 +5819,7 @@ export default function Painel({ sessao }) {
             .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
             .eq("advogado_id", advId)
             .in("id", ids.slice(i, i + 150));
-          if (error) { if (!cancelado) anotarFalhaDeLeitura("filtro-etiqueta", "as conversas desta etiqueta", error); return; }
+          if (error) { falhou(error); return; }
           achadas.push(...(data || []));
         }
         // Troquei de telefone ou de etiqueta enquanto isto vinha? É resposta de
@@ -5661,13 +5828,54 @@ export default function Painel({ sessao }) {
         limparFalhaDeLeitura("filtro-etiqueta");
         setExtrasEtiqueta(achadas);
         setIdsEtiqueta(new Set(ids.map(String)));
-      } catch (e) {
-        if (!cancelado) anotarFalhaDeLeitura("filtro-etiqueta", "as conversas desta etiqueta", e);
+        marcarPergunta(chave, "pronto");
+      } catch (e) { falhou(e); }
+    })();
+    return () => { cancelado = true; };
+    // `tentativaDoFiltro` (28/10): sem ela, "Tentar de novo" não relia a
+    // etiqueta — a faixa ficava, e as conversas de fora das páginas não
+    // voltavam.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtro, advogadoId, tentativaDoFiltro]);
+
+  // AS NÃO LIDAS, AS FAVORITAS E AS ARQUIVADAS — ver `extrasMarcadas`. Pela
+  // régua das minhas: COM ORDEM (a da lista) e com teto, e o teto é dito.
+  useEffect(() => {
+    let cancelado = false;
+    setExtrasMarcadas([]);
+    const pelaMarca = filtro === "naolidas" || filtro === "favoritas";
+    if (!advogadoId || !(pelaMarca || (verArquivadas && filtro === "tudo"))) {
+      limparFalhaDeLeitura("filtro-marcadas");
+      return;
+    }
+    const advId = advogadoId;
+    const chave = chaveDoFiltro(filtro, verArquivadas, advId);
+    marcarPergunta(chave, "procurando");
+    (async () => {
+      let q = supabase.from("conversas")
+        .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
+        .eq("advogado_id", advId);
+      if (verArquivadas) q = q.eq("arquivada", true);
+      if (filtro === "naolidas") q = q.gt("nao_lidas", 0);
+      if (filtro === "favoritas") q = q.eq("favorita", true);
+      const { data, error } = await q.order("ultima_atividade", { ascending: ordem === "antigas" })
+        .order("id").limit(500);
+      if (cancelado || advogadoIdRef.current !== advId) return;
+      // A COLUNA QUE NÃO EXISTE é ausência de verdade, e não falha: num banco
+      // sem `favorita` não há favorita nenhuma para trazer.
+      if (error && !faltaColuna(error)) {
+        anotarFalhaDeLeitura("filtro-marcadas", verArquivadas && filtro === "tudo" ? "as conversas arquivadas"
+          : filtro === "naolidas" ? "as conversas não lidas" : "as favoritas", error);
+        marcarPergunta(chave, "falhou", error);
+        return;
       }
+      limparFalhaDeLeitura("filtro-marcadas");
+      setExtrasMarcadas(error ? [] : (data || []));
+      marcarPergunta(chave, "pronto", null, (data || []).length >= 500 ? 500 : 0);
     })();
     return () => { cancelado = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtro, advogadoId]);
+  }, [filtro, verArquivadas, advogadoId, ordem, tentativaDoFiltro]);
 
   useEffect(() => { carregarTags(); }, [carregarTags]);
 
@@ -5881,14 +6089,26 @@ export default function Painel({ sessao }) {
   // VAI AO BANCO, pela régua do filtro de grupos: a conversa com tarefa de
   // hoje pode estar fora das 200 mais recentes, e é justamente a esquecida.
   const lerFiltroDeTarefas = useCallback(async (advId) => {
+    const chave = chaveDoFiltro("tarefas", false, advId);
+    // A FALHA É DITA NA LISTA (28/10): a da primeira leitura deixava a frase
+    // em "Procurando…" para sempre, e a da segunda ia só para o console — com
+    // a lista dizendo "nenhuma conversa com tarefa" sobre uma tarefa que o
+    // banco tinha acabado de achar.
+    const falhou = (erro) => {
+      if (advogadoIdRef.current !== advId) return;
+      anotarFalhaDeLeitura("filtro-tarefas", "as conversas com tarefa para hoje", erro);
+      marcarPergunta(chave, "falhou", erro);
+    };
     try {
+      // COM ORDEM, e o teto é dito (28/10): a consulta é do escritório
+      // inteiro — a tarefa não diz de qual telefone é —, e sem ordem quais
+      // 1000 vinham era sorte do banco. As que vencem por último primeiro: num
+      // corte, ficam de fora as atrasadas há mais tempo, e a tela avisa.
       const r = await supabase.from("zorvin_tarefas").select("conversa_id")
-        .is("feita_em", null).lte("vence_em", fimDeHoje().toISOString()).limit(1000);
-      if (r.error) {
-        anotarFalhaDeLeitura("filtro-tarefas", "as conversas com tarefa para hoje", r.error);
-        return;
-      }
-      limparFalhaDeLeitura("filtro-tarefas");
+        .is("feita_em", null).lte("vence_em", fimDeHoje().toISOString())
+        .order("vence_em", { ascending: false }).limit(1000);
+      if (r.error) { falhou(r.error); return; }
+      const cortou = (r.data || []).length >= 1000 ? 1000 : 0;
       const ids = [...new Set((r.data || []).map((t) => String(t.conversa_id)))];
       if (advogadoIdRef.current !== advId) return;
       setIdsTarefaHoje(new Set(ids));
@@ -5898,28 +6118,34 @@ export default function Painel({ sessao }) {
           .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
           .eq("advogado_id", advId).in("id", ids.slice(i, i + 150));
         // FALHOU, NÃO APAGA: as das páginas lidas aparecem pelo conjunto.
-        if (error) { console.error("Conversas com tarefa fora das páginas lidas:", error); break; }
+        if (error) { falhou(error); return; }
         achadas.push(...(data || []));
       }
       if (advogadoIdRef.current !== advId) return;
+      limparFalhaDeLeitura("filtro-tarefas");
       setExtrasTarefas(achadas);
+      marcarPergunta(chave, "pronto", null, cortou);
     } catch (e) {
-      console.error("Zorvin — filtro de tarefas:", e);
+      falhou(e);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [anotarFalhaDeLeitura, limparFalhaDeLeitura]);
+  }, [anotarFalhaDeLeitura, limparFalhaDeLeitura, marcarPergunta]);
   useEffect(() => {
     setExtrasTarefas([]);
     setIdsTarefaHoje(null);
     if (filtro !== "tarefas" || !advogadoId || temTarefas !== true) {
       limparFalhaDeLeitura("filtro-tarefas");
+      // Escolhido sem a tabela, não há o que perguntar: a frase diz "nenhuma",
+      // e não "procurando" para sempre.
+      if (filtro === "tarefas" && advogadoId) marcarPergunta(chaveDoFiltro(filtro, false, advogadoId), "pronto");
       return undefined;
     }
     const advId = advogadoId;
+    marcarPergunta(chaveDoFiltro(filtro, false, advId), "procurando");
     lerFiltroDeTarefas(advId);
     const t = setInterval(() => lerFiltroDeTarefas(advId), 60000);
     return () => clearInterval(t);
-  }, [filtro, advogadoId, temTarefas, lerFiltroDeTarefas, limparFalhaDeLeitura]);
+  }, [filtro, advogadoId, temTarefas, lerFiltroDeTarefas, limparFalhaDeLeitura, marcarPergunta, tentativaDoFiltro]);
   // DEPOIS DE CRIAR, CONCLUIR OU APAGAR, tudo o que conta tarefas é relido: a
   // conversa, o número da barra e o filtro. Sem isso o número diria o que era
   // verdade antes do clique.
@@ -5928,20 +6154,8 @@ export default function Painel({ sessao }) {
     lerMinhasTarefas();
     if (filtroRef.current === "tarefas" && advogadoIdRef.current) lerFiltroDeTarefas(advogadoIdRef.current);
   }, [lerTarefasDaConversa, lerMinhasTarefas, lerFiltroDeTarefas]);
-  // As etiquetas seguem a LISTA: quando ela troca de telefone ou chega uma
-  // conversa nova, são outras conversas para etiquetar.
-  //
-  // PELOS IDS, E NÃO PELA LISTA (20/10). Com `conversas` aqui, as etiquetas
-  // da lista INTEIRA eram relidas a cada aviso do tempo real que tocasse
-  // nela: a prévia nova, o "digitando…", o "estou atendendo" de minuto em
-  // minuto de cada colega, a lista reordenada. MEDIDO no Supabase naquele
-  // dia: 190 mil leituras de `conversa_tags` numa hora, em lotes de 150, por
-  // uma tela em que quase nunca alguém tinha mexido em etiqueta. Etiqueta
-  // muda pelo seu próprio aviso (o de `conversa_tags`, no canal); daqui, só
-  // muda o CONJUNTO de conversas, e é ele que entra na conta. A ordem não
-  // entra: a lista que só mudou de ordem tem as mesmas etiquetas.
-  const idsDaLista = useMemo(() => conversas.map((c) => String(c.id)).sort().join(","), [conversas]);
-  useEffect(() => { carregarTagsConversas(); }, [idsDaLista, carregarTagsConversas]);
+  // As etiquetas seguem a LISTA — ver `idsDaLista`, que mora depois dos
+  // estados da busca porque soma as linhas que ela e os filtros trazem.
 
   async function salvarTagForm() {
     const nome = (tagForm?.nome || "").trim();
@@ -10018,6 +10232,50 @@ export default function Painel({ sessao }) {
     return { error };
   }
 
+  // ENCAMINHAR PROCURA NO TELEFONE INTEIRO (auditoria de 28/10). A janela
+  // olhava só `conversas` — a aba aberta, e só as páginas lidas —, e para o
+  // cliente em "Finalizados", ou parado há meses, dizia "Nenhuma conversa
+  // encontrada.". Com três letras, ela pergunta ao banco pela mesma função da
+  // busca da lista (`buscar_conversas`), e traz as que a lista não tem — só as
+  // achadas pelo NOME ou pelo NÚMERO: o destino se procura por quem é, e não
+  // pelo que foi dito. `{ termo, estado, conversas, codigo }`; "sem-funcao" é
+  // o banco sem o SQL da busca, onde só a lista responde.
+  const [encaminharNoBanco, setEncaminharNoBanco] = useState(null);
+  useEffect(() => {
+    const termo = buscaEncaminhar.trim();
+    setEncaminharNoBanco(null);
+    if (!encaminhar || termo.length < 3 || !advogadoId) return undefined;
+    const advId = advogadoId;
+    const corte = new AbortController();
+    const tarefa = setTimeout(async () => {
+      setEncaminharNoBanco({ termo, estado: "procurando", conversas: [], codigo: "" });
+      try {
+        const { data, error } = await supabase.rpc("buscar_conversas", { p_advogado: advId, p_termo: termo, p_limite: 80 })
+          .abortSignal(corte.signal);
+        if (corte.signal.aborted) return;
+        if (error) {
+          setEncaminharNoBanco({ termo, estado: faltaAFuncao(error) ? "sem-funcao" : "falhou", conversas: [], codigo: error.code || "" });
+          return;
+        }
+        const naLista = new Set(conversasRef.current.map((c) => String(c.id)));
+        const ids = [...new Set((data || []).filter((a) => a.motivo !== "mensagem").map((a) => String(a.id)))]
+          .filter((id) => !naLista.has(id));
+        const achadas = [];
+        for (let i = 0; i < ids.length; i += 150) {
+          const r = await supabase.from("conversas")
+            .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
+            .eq("advogado_id", advId).abortSignal(corte.signal).in("id", ids.slice(i, i + 150));
+          if (corte.signal.aborted) return;
+          if (r.error) { setEncaminharNoBanco({ termo, estado: "falhou", conversas: [], codigo: r.error.code || "" }); return; }
+          achadas.push(...(r.data || []));
+        }
+        setEncaminharNoBanco({ termo, estado: "pronto", conversas: achadas, codigo: "" });
+      } catch (e) {
+        if (!corte.signal.aborted) setEncaminharNoBanco({ termo, estado: "falhou", conversas: [], codigo: (e && e.code) || "" });
+      }
+    }, 300);
+    return () => { clearTimeout(tarefa); corte.abort(); };
+  }, [encaminhar, buscaEncaminhar, advogadoId]);
 
   // Reage a uma mensagem (ou tira a reação, se tocar no mesmo emoji de novo).
   //
@@ -12154,7 +12412,10 @@ export default function Painel({ sessao }) {
   // caem além da primeira página — e a linha inteira sumia. Não era só o
   // contador: era a PORTA para as conversas arquivadas que desaparecia, e com
   // ela o único aviso de que há mensagem por ler lá dentro.
-  const totalArquivadas = arquivadasNoBanco.total;
+  // E SÓ A CONTA DESTE TELEFONE (28/10): a resposta de outro, chegando
+  // atrasada, não acende nem apaga a linha deste.
+  const arquivadasDaqui = arquivadasNoBanco.de === advogadoId ? arquivadasNoBanco : {};
+  const totalArquivadas = arquivadasDaqui.total;
   // NÃO LIDAS QUE ESTÃO DENTRO DAS ARQUIVADAS.
   //
   // Elas saíram do selo do advogado, e com razão: conversa arquivada não entra
@@ -12166,7 +12427,7 @@ export default function Painel({ sessao }) {
   // número que existe justamente para que estas conversas não fiquem
   // invisíveis atrás da pasta de arquivadas ficava, ele próprio, menor do que a
   // verdade.
-  const naoLidasArquivadas = arquivadasNoBanco.naoLidas;
+  const naoLidasArquivadas = arquivadasDaqui.naoLidas;
 
   // A etiqueta escolhida no filtro, quando há uma. É ela que dá cor e nome à
   // pílula de etiquetas — sem isso, com o filtro ligado a lista fica curta e
@@ -12363,6 +12624,30 @@ export default function Painel({ sessao }) {
   const [corteDaBusca, setCorteDaBusca] = useState(false);
   // A função de busca do banco existe? `null` enquanto não se sabe.
   const [temBuscaNoBanco, setTemBuscaNoBanco] = useState(null);
+
+  // As etiquetas seguem a LISTA: quando ela troca de telefone ou chega uma
+  // conversa nova, são outras conversas para etiquetar.
+  //
+  // PELOS IDS, E NÃO PELA LISTA (20/10). Com `conversas` aqui, as etiquetas
+  // da lista INTEIRA eram relidas a cada aviso do tempo real que tocasse
+  // nela: a prévia nova, o "digitando…", o "estou atendendo" de minuto em
+  // minuto de cada colega, a lista reordenada. MEDIDO no Supabase naquele
+  // dia: 190 mil leituras de `conversa_tags` numa hora, em lotes de 150, por
+  // uma tela em que quase nunca alguém tinha mexido em etiqueta. Etiqueta
+  // muda pelo seu próprio aviso (o de `conversa_tags`, no canal); daqui, só
+  // muda o CONJUNTO de conversas, e é ele que entra na conta. A ordem não
+  // entra: a lista que só mudou de ordem tem as mesmas etiquetas.
+  //
+  // E AS LINHAS QUE A BUSCA E OS FILTROS TRAZEM DE FORA (28/10): só a lista
+  // entrava na conta, e a conversa 980 aparecia no filtro "Urgente" sem o
+  // próprio selo "Urgente" — a etiqueta pela qual ela tinha sido achada.
+  const idsDaLista = useMemo(() => [...new Set([conversas, extras, extrasEtiqueta, extrasQuem, extrasGrupo,
+    extrasMinhas, extrasTarefas, extrasMarcadas].flat().map((c) => String(c.id)))].sort().join(","),
+  [conversas, extras, extrasEtiqueta, extrasQuem, extrasGrupo, extrasMinhas, extrasTarefas, extrasMarcadas]);
+  useEffect(() => {
+    idsDaListaRef.current = idsDaLista;
+    carregarTagsConversas();
+  }, [idsDaLista, carregarTagsConversas]);
 
   /** SÓ OS NOMES — a metade barata da busca, para desenhar antes das outras.
    *
@@ -12637,7 +12922,8 @@ export default function Painel({ sessao }) {
       // A peneira: tira o que a lista já mostra e o que veio repetido. Está
       // aqui em cima porque os DOIS caminhos e a resposta rápida usam a mesma —
       // três cópias divergiriam na primeira mudança.
-      const jaNaLista = new Set(conversas.map((c) => String(c.id)));
+      // PELO ESPELHO, e não por `conversas` (28/10) — ver as dependências.
+      const jaNaLista = new Set(conversasRef.current.map((c) => String(c.id)));
       const peneirar = (lista) => {
         const vistos = new Set();
         return lista.filter((c) => {
@@ -12929,7 +13215,7 @@ export default function Painel({ sessao }) {
 
       // As conversas com mensagem casada que ainda não temos em mãos.
       const faltando = Object.keys(porMsg)
-        .filter((id) => !conversas.some((c) => String(c.id) === String(id))
+        .filter((id) => !conversasRef.current.some((c) => String(c.id) === String(id))
                      && !encontradas.some((c) => String(c.id) === String(id)));
       for (let i = 0; i < faltando.length; i += 150) {
         const { data, error: erroLote } = await supabase.from("conversas")
@@ -13000,8 +13286,14 @@ export default function Painel({ sessao }) {
       // de a pessoa já ter digitado outra letra: só a RESPOSTA era descartada.
       corte.abort();
     };
+    // SEM `conversas.length` (28/10): abrir um resultado de fora das páginas
+    // o emenda na lista (`abrirConversa`), e a lista que cresceu um refazia a
+    // busca inteira — apagando antes o que ela tinha achado. A conversa
+    // clicada sumia por um a dois segundos, o alvo da mensagem ia junto (o
+    // segundo clique abria no fim), e o banco respondia duas vezes. A lista é
+    // lida pelo espelho, na hora de peneirar.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busca, conversas.length, advogadoId]);
+  }, [busca, advogadoId]);
 
   /** Todos os nomes por que um contato pode ser chamado — inclusive o que a
    *  tela mostra, que nem sempre é o `nome`. */
@@ -13152,11 +13444,17 @@ export default function Painel({ sessao }) {
     // e o de baixo custaria um `Set` sobre a lista inteira a cada redesenho —
     // trabalho de sobra em cima do caminho mais quente que esta tela tem.
     if (!busca.trim() && !filtro.startsWith("tag:") && filtro !== "grupos"
-        && filtro !== "minhas" && filtro !== "tarefas" && !quemFiltra.length) return daLista;
+        && filtro !== "minhas" && filtro !== "tarefas" && filtro !== "naolidas" && filtro !== "favoritas"
+        && !verArquivadas && !quemFiltra.length) return daLista;
     // As que vieram do banco e não estavam na lista. Entram na mesma ordem de
     // sempre — fixada em cima, depois recente primeiro —, e não emendadas no
     // fim, que faria a mais nova de todas aparecer embaixo da mais velha.
     const jaTem = new Set(daLista.map((c) => String(c.id)));
+    // A CÓPIA DO BANCO PERDE PARA A LINHA DA LISTA (28/10): a dos filtros é um
+    // retrato do momento da pergunta, e a da lista o tempo real mantém em dia.
+    // A não lida respondida sairia de "Não lidas" pela lista e voltaria pela
+    // cópia, com o selo de antes.
+    const naLista = new Set(conversasNaTela.map((c) => String(c.id)));
     const doBanco = busca.trim()
       ? extras.filter((c) => !jaTem.has(String(c.id))
           && naPasta(c) && naAba(c) && passaNoFiltro(c))
@@ -13167,8 +13465,15 @@ export default function Painel({ sessao }) {
       // acabou de ser encontrado.
       // (sem `casaNaBusca`: este ramo só existe quando a caixa de busca está
       // vazia — o de cima é que trata a busca.)
-      : [...extrasEtiqueta, ...extrasQuem, ...extrasGrupo, ...extrasMinhas, ...extrasTarefas].filter((c) => !jaTem.has(String(c.id))
-          && naPasta(c) && naAba(c) && passaNoFiltro(c));
+      // E UMA VEZ SÓ: o filtro de atendentes soma com os outros, e a mesma
+      // conversa pode vir pelos dois.
+      : [...extrasEtiqueta, ...extrasQuem, ...extrasGrupo, ...extrasMinhas, ...extrasTarefas, ...extrasMarcadas]
+          .filter((c) => {
+            const id = String(c.id);
+            if (naLista.has(id)) return false;
+            naLista.add(id);
+            return naPasta(c) && naAba(c) && passaNoFiltro(c);
+          });
     if (!doBanco.length) return daLista;
     return [...daLista, ...doBanco].sort(compararConversas(ordem, ordenarPelaEspera));
   })();
@@ -13275,13 +13580,29 @@ export default function Painel({ sessao }) {
     aberto: "Nenhuma conversa em atendimento. Aqui ficam as conversas já atendidas que ainda não foram finalizadas.",
     finalizado: "Nenhuma conversa finalizada. Uma conversa vem para cá quando alguém aperta “Finalizar” nela.",
   };
+  // O FILTRO QUE PERGUNTA AO BANCO, e em que pé está a pergunta (28/10) — ver
+  // `perguntasDoFiltro`. Sem resposta guardada para a chave de agora, ela
+  // ainda não voltou: "procurando".
+  const filtroPerguntaAoBanco = filtro === "minhas" || filtro === "grupos" || filtro === "tarefas"
+    || filtro === "naolidas" || filtro === "favoritas" || filtro.startsWith("tag:") || (verArquivadas && filtro === "tudo");
+  const perguntaDaLista = filtroPerguntaAoBanco
+    ? perguntasDoFiltro[chaveDoFiltro(filtro, verArquivadas, advogadoId)] || { estado: "procurando", codigo: "", cortou: 0 }
+    : null;
+  const oQueOFiltroProcura = verArquivadas && filtro === "tudo" ? "as conversas arquivadas"
+    : filtro === "minhas" ? "as suas conversas" : filtro === "grupos" ? "os grupos"
+    : filtro === "tarefas" ? "as conversas com tarefa para hoje" : filtro === "naolidas" ? "as conversas não lidas"
+    : filtro === "favoritas" ? "as favoritas" : "as conversas desta etiqueta";
   const recadoDaListaVazia =
     // A LEITURA QUE FALHOU NÃO É "NENHUMA CONVERSA AINDA" (armadilha nº 2).
     quemFiltra.length && estadoQuem === "carregando" ? ["procurando-quem", "Procurando as conversas de quem você marcou…"]
     : quemFiltra.length && estadoQuem === "falhou"
       ? ["falhou-quem", `Não consegui filtrar pelas pessoas marcadas${falhasDeLeitura["filtro-quem"]?.codigo
           ? ` (código ${falhasDeLeitura["filtro-quem"].codigo})` : ""}. Use "Tentar de novo", no alto.`]
-    : falhasDeLeitura.conversas && !conversas.length
+    // CONTRA A LISTA FILTRADA, e não contra `conversas` (28/10): na troca de
+    // aba e na entrada das arquivadas, `conversas` ainda guarda a aba de
+    // antes, e a falha caía em "Carregando…" para sempre — ou, sem o 028, em
+    // "Nenhuma conversa arquivada.". Era a volta do defeito de 07/10.
+    : falhasDeLeitura.conversas && !conversasFiltradas.length
       ? ["falhou", `Não consegui carregar as conversas deste telefone${falhasDeLeitura.conversas.codigo
           ? ` (código ${falhasDeLeitura.conversas.codigo})` : ""}. Use "Tentar de novo", no alto.`]
     : trocandoDeTelefone ? ["trocando", "Carregando as conversas…"]
@@ -13290,6 +13611,14 @@ export default function Painel({ sessao }) {
     : vendoNoCadastro && busca.trim()
       ? ["cadastro", "Nas conversas, nada. Vendo no cadastro do Vantoro…"]
     : busca.trim() ? ["nada", "Nada encontrado para essa busca."]
+    // O FILTRO AINDA NO BANCO, OU QUE NÃO CONSEGUIU (28/10): "nenhuma" com a
+    // pergunta no ar, ou depois de ela falhar, é a tela afirmando o que não
+    // apurou — as frases de baixo só valem com a resposta na mão.
+    : perguntaDaLista && perguntaDaLista.estado === "procurando"
+      ? ["procurando-filtro", `Procurando ${oQueOFiltroProcura} neste telefone…`]
+    : perguntaDaLista && perguntaDaLista.estado === "falhou"
+      ? ["falhou-filtro", `Não consegui procurar ${oQueOFiltroProcura} neste telefone${perguntaDaLista.codigo
+          ? ` (código ${perguntaDaLista.codigo})` : ""}. Use "Tentar de novo", no alto.`]
     : verArquivadas ? ["arquivadas", "Nenhuma conversa arquivada."]
     // "NENHUMA CONVERSA AINDA" COM O FILTRO DE GRUPOS LIGADO seria sobre o
     // telefone, e a pessoa acabou de ver a lista cheia dois cliques atrás. A
@@ -13297,10 +13626,16 @@ export default function Painel({ sessao }) {
     : filtro === "grupos" ? ["sem-grupo", "Nenhum grupo neste telefone."]
     // E A DAS MINHAS DIZ COMO UMA CONVERSA VIRA MINHA — sem isso, "nenhuma"
     // no primeiro dia pareceria defeito, e não o começo.
-    : filtro === "tarefas" ? ["sem-tarefas-hoje", idsTarefaHoje
-        ? "Nenhuma conversa deste telefone com tarefa para hoje ou atrasada."
-        : "Procurando as conversas com tarefa para hoje…"]
+    : filtro === "tarefas" ? ["sem-tarefas-hoje", "Nenhuma conversa deste telefone com tarefa para hoje ou atrasada."]
     : filtro === "minhas" ? ["sem-minhas", "Nenhuma conversa sua neste telefone. Uma conversa vira sua quando você responde primeiro, ou pelo responsável no alto dela."]
+    // A ETIQUETA, AS NÃO LIDAS E AS FAVORITAS TAMBÉM FALAM DO QUE SE PEDIU
+    // (28/10): "Nenhuma conversa ainda." se lia como "o telefone não tem
+    // conversa nenhuma".
+    : filtro.startsWith("tag:")
+      ? ["sem-etiqueta", `Nenhuma conversa com a etiqueta “${tagFiltrada ? tagFiltrada.nome : "escolhida"}” neste telefone.`]
+    : filtro === "naolidas" ? ["sem-nao-lidas", temSituacao === true && NOME_DA_SITUACAO[abaSituacao]
+        ? `Nenhuma conversa não lida em “${NOME_DA_SITUACAO[abaSituacao]}”.` : "Nenhuma conversa não lida neste telefone."]
+    : filtro === "favoritas" ? ["sem-favoritas", "Nenhuma favorita neste telefone. Uma conversa vira favorita pelo ⌄ dela, em “Adicionar aos favoritos”."]
     : temSituacao === true && filtro === "tudo" && ABA_VAZIA[abaSituacao]
       ? [`sem-conversa-${abaSituacao}`, ABA_VAZIA[abaSituacao]]
     : ["sem-conversa", "Nenhuma conversa ainda."];
@@ -13310,8 +13645,11 @@ export default function Painel({ sessao }) {
   // trouxeram tudo o que casa. Deixar o "+" ali diria que ainda falta alguma
   // coisa — e quem estivesse conferindo uma etiqueta não saberia se o número
   // na tela é o número de verdade.
+  // AS NÃO LIDAS, AS FAVORITAS E A PASTA TAMBÉM (28/10): perguntam ao banco
+  // agora, e "0 de 0+ conversas" era a página carregada falando pelo filtro.
   const listaPodeCrescer = !busca.trim() && !filtro.startsWith("tag:")
-    && filtro !== "grupos" && filtro !== "minhas" && filtro !== "tarefas" && !quemFiltra.length;
+    && filtro !== "grupos" && filtro !== "minhas" && filtro !== "tarefas"
+    && filtro !== "naolidas" && filtro !== "favoritas" && !verArquivadas && !quemFiltra.length;
 
   // Não lidas de cada advogado, para o selo na barra lateral.
   // Para o advogado atual usamos a lista já carregada (que zera a conversa
@@ -14652,6 +14990,16 @@ export default function Painel({ sessao }) {
                     if (advogadoId) carregarConversas(advogadoId);
                     if (conversaId) carregarAgendadas(conversaId);
                     if (falhasDeLeitura["filtro-quem"]) setTentativaQuem((n) => n + 1);
+                    // E O QUE A FAIXA ANOTAVA E O BOTÃO NÃO RELIA (28/10): os
+                    // filtros da lista, a lista de quem atende, os selos da
+                    // barra, as figurinhas, e os departamentos e telefones de
+                    // "Departamentos e acessos" — a faixa deles nunca apagava.
+                    if (["filtro-etiqueta", "filtro-minhas", "filtro-grupos", "filtro-tarefas", "filtro-marcadas"]
+                      .some((k) => falhasDeLeitura[k])) setTentativaDoFiltro((n) => n + 1);
+                    if (falhasDeLeitura.atendentes) setTentativaAtendentes((n) => n + 1);
+                    if (falhasDeLeitura.selos) contarNaoLidasAgora();
+                    if (falhasDeLeitura.figurinhas) carregarFigurinhas();
+                    if (falhasDeLeitura.departamentos || falhasDeLeitura.telefones) relerDepartamentosETelefones();
                     carregarTags();
                     carregarTagsConversas();
                     carregarRapidas();
@@ -14908,11 +15256,14 @@ export default function Painel({ sessao }) {
             )}
           </button>
         )}
-        {/* MÍDIAS de todas as conversas — o mesmo lugar do WhatsApp Web. */}
-        <div onClick={() => abrirMidias(midiaAba)} title="Mídias, documentos e links"
-             style={{ width: 40, height: 40, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: midiasAberta ? "#fff" : "#aebac1", background: midiasAberta ? "rgba(255,255,255,.12)" : "transparent", cursor: "pointer" }}>
+        {/* MÍDIAS de todas as conversas — o mesmo lugar do WhatsApp Web.
+            UM BOTÃO, e não um `div` (28/10): é a única entrada do acervo, e o
+            teclado não chegava até ela. */}
+        <button type="button" onClick={() => abrirMidias(midiaAba)} title="Mídias, documentos e links"
+             aria-label="Mídias, documentos e links"
+             style={{ width: 40, height: 40, borderRadius: 8, border: "none", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", color: midiasAberta ? "#fff" : "#aebac1", background: midiasAberta ? "rgba(255,255,255,.12)" : "transparent", cursor: "pointer" }}>
           <Images size={22} />
-        </div>
+        </button>
         {/* O CONTROLE DE ATENDIMENTO DO VANTORO (23/10), pedido do Rodrigo: a
             tela de lá com as conversas abertas pela ordem de quem espera há
             mais tempo. É um LINK, e não uma tela daqui: ela mora no Vantoro,
@@ -15026,7 +15377,11 @@ export default function Painel({ sessao }) {
                       && !vantoroBuscando && !vantoroErro && !doVantoro.length;
                     const TITULO = { padding: "10px 16px 4px", fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3 };
                     const RECADO = { padding: "14px 16px", textAlign: "center", color: C.textSecondary, fontSize: 13.5 };
-                    const LINHA = { display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", cursor: "pointer", color: C.textPrimary };
+                    // AS LINHAS SÃO BOTÕES (28/10): `div` com `onClick` não
+                    // recebe o foco, e o teclado não escolhia ninguém. O resto
+                    // do estilo desfaz o que o navegador põe num botão.
+                    const LINHA = { display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", cursor: "pointer", color: C.textPrimary,
+                                    width: "100%", boxSizing: "border-box", border: "none", background: "transparent", font: "inherit", textAlign: "left" };
                     const realce = (e, ligado) => { e.currentTarget.style.background = ligado ? C.divider : "transparent"; };
                     return (
                       <>
@@ -15037,13 +15392,13 @@ export default function Painel({ sessao }) {
                           // aqui não havia como alcançá-la a não ser procurando
                           // texto na tela — que casa com a lista de conversas atrás
                           // do diálogo e clica na linha errada.
-                          <div key={c.id} data-contato-agenda={c.id} role="button" onClick={() => abrirConversaContato(c)} style={LINHA} onMouseEnter={(e) => realce(e, true)} onMouseLeave={(e) => realce(e, false)}>
+                          <button type="button" key={c.id} data-contato-agenda={c.id} role="button" onClick={() => abrirConversaContato(c)} style={LINHA} onMouseEnter={(e) => realce(e, true)} onMouseLeave={(e) => realce(e, false)}>
                             <Avatar nome={c.nome || c.numero} foto={c.foto_url} size={44} />
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nomeDoContato(c)}</div>
                               <div style={{ fontSize: 12.5, color: C.textSecondary }}>+{c.numero}</div>
                             </div>
-                          </div>
+                          </button>
                         )) : (
                           <div style={erroContatos ? { ...RECADO, color: "#c0392b" } : RECADO}>{erroContatos || (contatosLista.length ? "Nenhum contato salvo com esse nome." : "Nenhum contato salvo ainda.")}</div>
                         )}
@@ -15058,13 +15413,13 @@ export default function Painel({ sessao }) {
                             {!doVantoro.length && !vantoroBuscando && vantoroErro && <div style={RECADO}>{vantoroErro}</div>}
                             {vantoroVazio && !lista.length && <div style={RECADO}>Nenhuma pessoa com esse nome no Vantoro.</div>}
                             {doVantoro.map((l) => (
-                              <div key={l.chave} role="button" onClick={() => conversarComClienteVantoro(l)} style={LINHA} onMouseEnter={(e) => realce(e, true)} onMouseLeave={(e) => realce(e, false)}>
+                              <button type="button" key={l.chave} role="button" onClick={() => conversarComClienteVantoro(l)} style={LINHA} onMouseEnter={(e) => realce(e, true)} onMouseLeave={(e) => realce(e, false)}>
                                 <Avatar nome={l.nome} size={44} />
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                   <div style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.nome}</div>
                                   <div style={{ fontSize: 12.5, color: C.textSecondary }}>+{l.numero}{l.segundo ? " · segundo telefone" : ""}</div>
                                 </div>
-                              </div>
+                              </button>
                             ))}
                           </>
                         )}
@@ -15166,8 +15521,16 @@ export default function Painel({ sessao }) {
                   </div>
 
                   {/* NINGUÉM ESCREVEU AINDA é resposta, não é erro. Antes o
-                      botão sumia neste caso, e sumir não explica nada. */}
-                  {atendentes.length === 0 && (
+                      botão sumia neste caso, e sumir não explica nada.
+                      E A LISTA QUE NÃO VEIO É ERRO, e não "ninguém" (28/10). */}
+                  {atendentes.length === 0 && falhasDeLeitura.atendentes && (
+                    <div data-quem-nao-carregou style={{ padding: "14px 12px", fontSize: 12.5, color: C.textSecondary, lineHeight: 1.5 }}>
+                      Não consegui carregar a lista de quem atende por este número
+                      {falhasDeLeitura.atendentes.codigo ? ` (código ${falhasDeLeitura.atendentes.codigo})` : ""}.
+                      {" "}Use “Tentar de novo”, no alto.
+                    </div>
+                  )}
+                  {atendentes.length === 0 && !falhasDeLeitura.atendentes && (
                     <div style={{ padding: "14px 12px", fontSize: 12.5, color: C.textSecondary, lineHeight: 1.5 }}>
                       Ninguém do escritório escreveu por este número ainda — só há
                       mensagens recebidas. Quando alguém responder daqui, o nome
@@ -15842,15 +16205,18 @@ export default function Painel({ sessao }) {
           {/* Daqui para baixo, só com um telefone escolhido. */}
           {!advogadoId ? null : <>
           {/* Cabeçalho da visão "Arquivadas" (botão de voltar) */}
+          {/* BOTÕES, e não `div` (28/10): entrar e sair da pasta pelo teclado.
+              O `font` e o `color` herdados são o que os deixa com a cara de
+              antes — um botão traz os do navegador. */}
           {verArquivadas && (
-            <div data-vendo-arquivadas onClick={() => setVerArquivadas(false)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: `1px solid ${C.divider}`, cursor: "pointer", background: C.headerBar }}>
+            <button type="button" data-vendo-arquivadas onClick={() => setVerArquivadas(false)} style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", boxSizing: "border-box", padding: "12px 16px", borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: `1px solid ${C.divider}`, cursor: "pointer", background: C.headerBar, color: "inherit", font: "inherit", textAlign: "left" }}>
               <ArrowLeft size={18} color={C.textSecondary} />
               <span style={{ fontSize: 15, fontWeight: 600 }}>Arquivadas</span>
-            </div>
+            </button>
           )}
           {/* Atalho para as arquivadas (estilo WhatsApp Web), no topo da lista */}
           {!verArquivadas && totalArquivadas > 0 && !busca && (
-            <div onClick={() => setVerArquivadas(true)} role="button" style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 16px", borderBottom: `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary }}>
+            <button type="button" onClick={() => setVerArquivadas(true)} role="button" style={{ display: "flex", alignItems: "center", gap: 14, width: "100%", boxSizing: "border-box", padding: "12px 16px", borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary, background: "transparent", font: "inherit", textAlign: "left" }}>
               <Archive size={20} color={C.green} />
               <span style={{ flex: 1, fontSize: 14.5, fontWeight: 600 }}>Arquivadas</span>
               {/* O selo verde de não lidas vem ANTES da contagem de conversas,
@@ -15865,7 +16231,7 @@ export default function Painel({ sessao }) {
                 </span>
               )}
               <span style={{ fontSize: 12, color: C.textSecondary, fontWeight: 600 }}>{totalArquivadas}</span>
-            </div>
+            </button>
           )}
           {/* "Nenhuma conversa ainda" durante a troca de telefone era mentira:
               a lista não está vazia, ela ainda não chegou. Quem lia isso podia
@@ -15893,6 +16259,18 @@ export default function Painel({ sessao }) {
               {" "}Escreva mais palavras para afinar.
             </div>
           )}
+          {/* E O FILTRO NO TETO TAMBÉM DIZ (28/10): as minhas, as tarefas de
+              hoje, as não lidas e o filtro de atendentes perguntam ao banco
+              com um teto, e a resposta que chega nele se lia como inteira. */}
+          {!busca.trim() && ((quemFiltra.length > 0 && corteQuem > 0) || (perguntaDaLista && perguntaDaLista.cortou > 0)) && (
+            <div data-corte-do-filtro style={{ margin: "8px 14px 4px", padding: "8px 12px", borderRadius: 10,
+                                               background: C.listActive, color: C.textSecondary,
+                                               fontSize: 12.5, lineHeight: 1.45 }}>
+              {quemFiltra.length > 0 && corteQuem > 0
+                ? `Mostrando as ${corteQuem} conversas mais recentes de quem você marcou — pode haver outras.`
+                : `A resposta do banco veio no teto (${perguntaDaLista.cortou}) — pode haver mais do que as mostradas.`}
+            </div>
+          )}
           {conversasFiltradas.length === 0 && !erroBusca && semConversa.length === 0 && (
             // A marca e a frase vêm de `recadoDaListaVazia`, uma escolha só —
             // o porquê de cada uma está lá em cima, junto dela.
@@ -15911,7 +16289,11 @@ export default function Painel({ sessao }) {
               ? rotuloMidia(midia.tipo, midia.segundos, !estreito) : bruto;
             const espera = diasEsperando(c);
             return (
-              <div key={c.id} data-conversa-nome={nome} data-conversa-id={c.id} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrirConversa(c); } }} onClick={() => abrirConversa(c)} onMouseEnter={() => setConvHover(c.id)} onMouseLeave={() => setConvHover((h) => (h === c.id ? null : h))} style={{ position: "relative", width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: estreito ? 10 : 12, padding: estreito ? "10px 8px" : "10px 14px", background: c.id === conversaId ? C.listActive : (convHover === c.id ? C.divider : C.panel), borderBottom: `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary }}>
+              // AS TECLAS SÃO DA LINHA, e não dos filhos dela (28/10): o Enter e
+              // o Espaço no ⌄ (e nos itens do menu dele) subiam até aqui, o
+              // `preventDefault` cancelava o botão e a conversa abria no lugar
+              // do menu — e Fixar, Favoritar e Arquivar só existem nele.
+              <div key={c.id} data-conversa-nome={nome} data-conversa-id={c.id} role="button" tabIndex={0} onKeyDown={(e) => { if (e.target !== e.currentTarget) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrirConversa(c); } }} onClick={() => abrirConversa(c)} onMouseEnter={() => setConvHover(c.id)} onMouseLeave={() => setConvHover((h) => (h === c.id ? null : h))} style={{ position: "relative", width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: estreito ? 10 : 12, padding: estreito ? "10px 8px" : "10px 14px", background: c.id === conversaId ? C.listActive : (convHover === c.id ? C.divider : C.panel), borderBottom: `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary }}>
                 <Avatar nome={nome} foto={c.contato?.foto_url} size={48} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
@@ -16840,14 +17222,17 @@ export default function Painel({ sessao }) {
               const fixadas = mensagens.filter((x) => x.fixada);
               if (!fixadas.length) return null;
               const ultima = fixadas[fixadas.length - 1];
+              // UM BOTÃO (28/10): o `div` não recebia o foco, e o atalho até a
+              // mensagem fixada não existia para quem usa o teclado.
               return (
-                <div role="button" onClick={() => {
+                <button type="button" onClick={() => {
                   const el = document.querySelector(`[data-msg-id="${ultima.id}"]`);
                   if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); }
                   else mostrarAviso("Essa mensagem está mais acima; carregue as anteriores.");
                 }}
-                  style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer",
-                           background: C.headerBar, borderBottom: `1px solid ${C.divider}`,
+                  style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", width: "100%",
+                           boxSizing: "border-box", borderTop: "none", borderLeft: "none", borderRight: "none",
+                           background: C.headerBar, borderBottom: `1px solid ${C.divider}`, font: "inherit", textAlign: "left",
                            padding: estreito ? "8px 12px" : "8px 16px", color: C.textPrimary }}>
                   <Pin size={16} color={C.green} />
                   <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: C.textSecondary,
@@ -16859,7 +17244,7 @@ export default function Painel({ sessao }) {
                       {fixadas.length} fixadas
                     </span>
                   )}
-                </div>
+                </button>
               );
             })()}
 
@@ -17898,11 +18283,15 @@ export default function Painel({ sessao }) {
 
                   <div style={{ fontSize: 12, fontWeight: 700, color: C.textSecondary,
                                 letterSpacing: .3, marginBottom: 8 }}>SOM DA MENSAGEM NOVA</div>
+                  {/* BOTÕES, e não `div` (28/10): o teclado não escolhia som
+                      nenhum. `aria-pressed` diz qual está escolhido a quem não
+                      vê a borda verde. */}
                   {SONS.map((som) => (
-                    <div key={som.id} data-som-opcao={som.id}
+                    <button type="button" key={som.id} data-som-opcao={som.id} aria-pressed={somDoAviso === som.id}
                          onClick={() => { setSomDoAviso(som.id); guardarSom(som.id); tocarAviso(som.id); }}
                          style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px",
-                                  marginBottom: 6, borderRadius: 10, cursor: "pointer",
+                                  marginBottom: 6, borderRadius: 10, cursor: "pointer", width: "100%",
+                                  boxSizing: "border-box", font: "inherit", color: "inherit", textAlign: "left",
                                   background: somDoAviso === som.id ? C.listActive : C.searchBg,
                                   border: `1px solid ${somDoAviso === som.id ? C.green : "transparent"}` }}>
                       <span style={{ width: 16, height: 16, borderRadius: "50%", flexShrink: 0,
@@ -17917,7 +18306,7 @@ export default function Painel({ sessao }) {
                           botão a mais por linha dobraria os botões de uma tela
                           que só tem linhas. */}
                       <Volume2 size={17} color={C.textSecondary} />
-                    </div>
+                    </button>
                   ))}
 
                   {/* A PERMISSÃO DO NAVEGADOR É OUTRA COISA, e some da vista se
@@ -18888,10 +19277,29 @@ export default function Painel({ sessao }) {
                 // O NOME PELA CONTA DOS MENUS (23/10): "joao" acha "João", e
                 // "silva maria" acha "Maria da Silva". Antes era a frase colada
                 // e com acento, e quem escrevia sem acento não achava ninguém.
-                const lista = conversas.filter((c) => c.id !== conversaId && !c.arquivada
+                const daLista = conversas.filter((c) => c.id !== conversaId && !c.arquivada
                   && (!q || casaComAPesquisa(q, nomeDoContato(c.contato))
                           || (digitos.length >= 3 && (c.contato?.numero || "").includes(digitos))));
-                if (!lista.length) return <div style={{ padding: 22, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>Nenhuma conversa encontrada.</div>;
+                // AS DO BANCO VÊM DEPOIS DAS DA LISTA, sem repetir (28/10) — ver
+                // `encaminharNoBanco`.
+                const doBanco = encaminharNoBanco && encaminharNoBanco.termo === q ? encaminharNoBanco : null;
+                const vistas = new Set(daLista.map((c) => String(c.id)));
+                const lista = [...daLista, ...((doBanco && doBanco.conversas) || [])
+                  .filter((c) => !vistas.has(String(c.id)) && c.id !== conversaId && !c.arquivada)];
+                if (!lista.length) {
+                  // "NENHUMA" SÓ DEPOIS DE PERGUNTAR AO TELEFONE INTEIRO (28/10):
+                  // olhando só a lista, a frase afirmava que o cliente não existe.
+                  const [marca, frase] = q.length >= 3 && (!doBanco || doBanco.estado === "procurando")
+                    ? ["procurando", "Procurando nas conversas deste telefone…"]
+                    : doBanco && doBanco.estado === "falhou"
+                      ? ["falhou", `Não consegui procurar nas conversas deste telefone${doBanco.codigo ? ` (código ${doBanco.codigo})` : ""}. Na lista carregada, nenhuma tem esse nome.`]
+                    : q && q.length < 3
+                      ? ["curta", "Nenhuma conversa da lista com esse nome. Escreva ao menos três letras para procurar no telefone inteiro."]
+                    : doBanco && doBanco.estado === "sem-funcao"
+                      ? ["so-a-lista", "Nenhuma conversa da lista com esse nome."]
+                    : ["nenhuma", "Nenhuma conversa encontrada."];
+                  return <div data-encaminhar-recado={marca} style={{ padding: 22, textAlign: "center", color: C.textSecondary, fontSize: 13.5 }}>{frase}</div>;
+                }
                 return lista.map((c) => (
                   <button key={c.id} onClick={() => enviarEncaminhada(c)} data-encaminhar-para={c.id}
                     style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "10px 16px",
@@ -19096,18 +19504,8 @@ export default function Painel({ sessao }) {
           // aparecia depois de um F5 (auditoria de 07/10).
           carregarAssuntos();
           etapasPorDep.current.clear();
-          Promise.all([
-            supabase.from("departamentos").select("id, nome, slug, cor, ordem").eq("ativo", true).order("ordem"),
-            supabase.from("advogados").select("id, nome, numero, foto_url, departamento_id, ativo").order("nome"),
-          ]).then(([d, t]) => {
-            // SÓ SE GRAVA O QUE VEIO — a regra da abertura. Era `d.data || []`:
-            // uma piscada de rede ao fechar esta tela esvaziava a barra de
-            // telefones e dizia "nenhum número liberado" a quem administra.
-            if (!d.error) setDepartamentos(d.data || []);
-            else anotarFalhaDeLeitura("departamentos", "os departamentos", d.error);
-            if (!t.error) setAdvogados(t.data || []);
-            else anotarFalhaDeLeitura("telefones", "os telefones", t.error);
-          }).catch((e) => anotarFalhaDeLeitura("telefones", "os telefones", e));
+          // SÓ SE GRAVA O QUE VEIO — ver `relerDepartamentosETelefones`.
+          relerDepartamentosETelefones();
         }} />
       )}
 

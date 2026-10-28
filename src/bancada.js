@@ -2318,6 +2318,15 @@ function consulta(tabela) {
         ? (encomendado.length > 1 ? encomendado.shift() : encomendado[0])
         : encomendado;
       if (extra && await esperaOuAborto(extra, sinal)) return resolver(respostaAbortada());
+      // A PÁGINA QUE DEMORA (28/10). `__ATRASO_DA_PAGINA = { conversas: {
+      // aPartirDe: 300, ms: 3000 } }` atrasa só as leituras paginadas desta
+      // tabela que começam daquela linha em diante: é a página 2 da lista em
+      // voo enquanto a página 0 é relida. Pelo atraso da tabela, as quatro
+      // leituras de `conversas` que saem juntas disputariam o mesmo atraso, e
+      // a corrida não teria como ser montada.
+      const daPagina = (globalThis.__ATRASO_DA_PAGINA || {})[tabela];
+      if (daPagina && inicio >= daPagina.aPartirDe
+          && await esperaOuAborto(daPagina.ms, sinal)) return resolver(respostaAbortada());
       // A COLUNA QUE NÃO EXISTE NESTA BASE.
       //
       // `__SEM_COLUNAS = { notas: ["autor_foto"] }` faz a gravação ser RECUSADA
@@ -3005,6 +3014,26 @@ export const supabase = {
     let sinal = null, correndo = null;
     const correr = () => (correndo || (correndo = executar()));
     const executar = async () => {
+    // A FUNÇÃO QUE TROPEÇA, E A QUE DEMORA (28/10).
+    //
+    // `__QUEBRAR_FUNCAO = ["nao_lidas_por_telefone"]` faz a função responder
+    // com ERRO — e não com "não existe" (PGRST202), que a tela trata por
+    // outro caminho. Sem isto só dava para tirar a função inteira, e um painel
+    // que tratasse qualquer erro como "não existe" passava calado.
+    //
+    // `__ATRASO_POR_FUNCAO = { nome: ms }` atrasa cada chamada; o valor pode
+    // ser uma função dos argumentos (`(a) => a.p_advogado === "a13" ? 2500 :
+    // 0`), que é o que monta a corrida entre a resposta de um telefone e a do
+    // telefone escolhido depois dele.
+    if (((typeof globalThis !== "undefined" && globalThis.__QUEBRAR_FUNCAO) || []).includes(nome)) {
+      await espera(40);
+      return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } };
+    }
+    {
+      const pedido = ((typeof globalThis !== "undefined" && globalThis.__ATRASO_POR_FUNCAO) || {})[nome];
+      const ms = typeof pedido === "function" ? pedido(args || {}) : pedido;
+      if (ms && await esperaOuAborto(ms, sinal)) return respostaAbortada();
+    }
     // QUEM JÁ ESCREVEU POR ESTE TELEFONE, e as conversas de quem se escolher.
     //
     // A de verdade casa por id E, no histórico antigo que não tem id, pelo
