@@ -2662,6 +2662,26 @@ function consulta(tabela) {
         } });
       }
 
+      // O EMPATE NÃO TEM ORDEM NO BANCO DE VERDADE (28/10). Linhas iguais em
+      // todas as colunas do `order` vêm na ordem que a consulta escolher, e o
+      // `range` da página 2 não sabe o que a página 1 trouxe. Aqui a ordem é
+      // estável, e uma paginação sem desempate passava calada.
+      // `__EMPATE_SEM_ORDEM = ["zorvin_cartoes"]` faz as páginas ímpares
+      // verem os empates ao contrário, como uma consulta que o banco montou
+      // por outro caminho. Com desempate (`.order("id")`), não há empate.
+      const empateSemOrdem = (typeof globalThis !== "undefined" && globalThis.__EMPATE_SEM_ORDEM) || [];
+      if (empateSemOrdem.includes(tabela) && ordensDaConsulta.length
+          && Math.floor(inicio / LIMITE_LINHAS) % 2 === 1) {
+        const empata = (a, b) => ordensDaConsulta.every((o) => comparar(a[o.col], b[o.col]) === 0);
+        const reordenadas = [];
+        for (let i = 0; i < linhas.length;) {
+          let j = i + 1;
+          while (j < linhas.length && empata(linhas[i], linhas[j])) j++;
+          reordenadas.push(...linhas.slice(i, j).reverse());
+          i = j;
+        }
+        linhas = reordenadas;
+      }
       // O teto entra AQUI, no fim, igual à API de verdade: depois de filtrar e
       // ordenar, e sem avisar ninguém de que sobrou coisa para trás.
       // A CONTAGEM NÃO PASSA PELO TETO DE LINHAS, como no banco de verdade: o
@@ -2976,6 +2996,12 @@ export const supabase = {
   // defeito que o painel não tem. Ela só COMEÇA quando alguém espera por ela,
   // para o `.abortSignal()` chegar antes de o primeiro atraso começar a correr.
   rpc: (nome, args) => {
+    // AS CHAMADAS DE FUNÇÃO FICAM ANOTADAS quando a prova pede
+    // (`__FUNCOES_CHAMADAS = []`), como o `__DIARIO` das tabelas. O período
+    // do Painel só existe nos argumentos (`p_desde`, `p_ate`): o rótulo do
+    // botão é uma conta sobre eles, e um período torto por um milissegundo
+    // tem o mesmo rótulo de um certo (28/10).
+    if (Array.isArray(globalThis.__FUNCOES_CHAMADAS)) globalThis.__FUNCOES_CHAMADAS.push({ nome, args: { ...(args || {}) } });
     let sinal = null, correndo = null;
     const correr = () => (correndo || (correndo = executar()));
     const executar = async () => {

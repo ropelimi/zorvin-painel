@@ -106,6 +106,8 @@ export default function Departamentos({ C, aoFechar, abaInicial, aoSaberDosScrip
   // banco tem — inclusive quando o banco NÃO mudou, que é justamente o caso
   // em que o campo estava mentindo.
   const [releituras, setReleituras] = useState(0);
+  // O botão desceu no fundo escuro? Ver o fundo, lá embaixo.
+  const apertouNoFundo = useRef(false);
 
   const recarregar = useCallback(async () => {
     setErro("");
@@ -221,8 +223,15 @@ export default function Departamentos({ C, aoFechar, abaInicial, aoSaberDosScrip
     aba: (on) => ({ border: `1px solid ${on ? C.green : C.divider}`, background: on ? C.green : "transparent", color: on ? "#fff" : C.textSecondary, borderRadius: 20, padding: "5px 15px", fontSize: 13, fontWeight: 600, cursor: "pointer" }),
   };
 
+  // O FUNDO SÓ FECHA O QUE FOI APERTADO NELE (auditoria de 28/10). O
+  // navegador entrega o `click` ao ancestral comum de onde o botão desceu e
+  // subiu: selecionar texto de dentro da caixa até fora da janela virava um
+  // clique no fundo, e a janela fechava com o Manual do Copiloto ou o texto
+  // do Fora do horário por salvar.
   return (
-    <div style={cx.fundo} onClick={aoFechar}>
+    <div style={cx.fundo}
+         onMouseDown={(e) => { apertouNoFundo.current = e.target === e.currentTarget; }}
+         onClick={(e) => { if (apertouNoFundo.current && e.target === e.currentTarget) aoFechar(); }}>
       <div style={cx.caixa} onClick={(e) => e.stopPropagation()}>
         <style>{`@keyframes zv-girar { to { transform: rotate(360deg); } } .zv-girando { animation: zv-girar 1s linear infinite; }`}</style>
         <div style={cx.topo}>
@@ -855,6 +864,12 @@ function NotasNoVantoro({ cx, C }) {
   // valor a cada volta, e um `state` ficaria congelado no valor que existia
   // quando o laço começou — o botão de parar não pararia nada.
   const parar = useRef(false);
+  // A ABA QUE SAI DE CENA PARA O LAÇO (auditoria de 28/10). Trocar de aba ou
+  // fechar a janela desmontava esta tela e o laço seguia sozinho, fatia
+  // atrás de fatia, sem ninguém ver; e a aba de volta, sem saber dele,
+  // oferecia "Subir agora" — dois laços em paralelo. Apertar de novo
+  // continua de onde parou, sem repetir nada.
+  useEffect(() => () => { parar.current = true; }, []);
 
   // Meio minuto é o que as outras telas pedem, e não serve aqui: uma fatia
   // percorre dezenas de clientes mandando nota a nota para o Vantoro. Desistir

@@ -60,7 +60,7 @@
 // livre para repetir o que o comprimento da barra já mostra.
 //
 // Todo gráfico tem um botão "Tabela" que troca o desenho pelos números.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabase";
 import { nomeDoContato } from "./contato.js";
 import { telefoneLegivel } from "./numeros.js";
@@ -177,16 +177,31 @@ function rotuloDoPeriodo(p) {
   return `${f(p.de)} – ${f(p.ate)} · ${n} dias`;
 }
 
-/** Um passo para trás (-1) ou para frente (+1), sem passar de hoje. */
+/** Um passo para trás (-1) ou para frente (+1), sem passar de hoje.
+ *
+ *  EM DIAS DE CALENDÁRIO, e não em milissegundos (auditoria de 28/10). O
+ *  passo era `fimDoDia(até) - inicioDoDia(de)` — um dia menos um
+ *  milissegundo —, e o período seguinte terminava à meia-noite do dia de
+ *  depois; o passo seguinte engolia esse dia. "Hoje" ← ← dizia 25/10 cobrindo
+ *  48 horas, "7 dias" ← dizia "8 dias", e depois de "Ontem" a seta → não saía
+ *  do lugar. O ano anda por ano civil, como o mês anda por mês. */
 function passear(p, sentido) {
   const agora = new Date();
   if (p.tipo === "mes") {
     const alvo = mesDe(p.de.getFullYear(), p.de.getMonth() + sentido);
     return alvo.de > agora ? p : alvo;
   }
-  const dur = fimDoDia(p.ate) - inicioDoDia(p.de);
-  const de = new Date(inicioDoDia(p.de).getTime() + sentido * dur);
-  const ate = new Date(fimDoDia(p.ate).getTime() + sentido * dur);
+  if (p.tipo === "ano") {
+    const ano = p.de.getFullYear() + sentido;
+    const de = new Date(ano, 0, 1);
+    const ate = new Date(ano, 11, 31, 23, 59, 59, 999);
+    if (de > agora) return p;
+    return { de, ate: ate > agora ? agora : ate, tipo: p.tipo };
+  }
+  const ini = inicioDoDia(p.de);
+  const n = Math.round((inicioDoDia(p.ate) - ini) / 86400e3) + 1;
+  const de = new Date(ini.getFullYear(), ini.getMonth(), ini.getDate() + sentido * n);
+  const ate = fimDoDia(new Date(de.getFullYear(), de.getMonth(), de.getDate() + n - 1));
   if (de > agora) return p;
   return { de, ate: ate > agora ? agora : ate, tipo: p.tipo };
 }
@@ -214,6 +229,19 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
   const [periodo, setPeriodo] = useState(() => ultimosDias(30));
   // Quem não administra não escolhe atendente: é sempre ele mesmo.
   const [quem, setQuem] = useState(souAdmin ? null : meuId);
+  // O NOME DE QUEM FOI ESCOLHIDO, guardado junto do id (auditoria de 28/10).
+  // A lista do filtro sai de `por_atendente`, e quem não estava nela — a
+  // Jenifer escolhida no "Por pessoa" do Já tratei, a colega num mês em que
+  // ela não atendeu — ganhava no "Filtrando por:" o nome de quem administra.
+  const [nomeDeQuem, setNomeDeQuem] = useState("");
+  const escolherPessoa = (id, nome) => {
+    setQuem((v) => (String(v) === String(id) ? null : id));
+    setNomeDeQuem(nome || "");
+  };
+  // OUTRA PESSOA ESCOLHIDA: o banco diz `so_meu` para qualquer recorte por
+  // pessoa, e "os seus números" seria mentira para quem administra e
+  // escolheu a colega.
+  const outraPessoa = souAdmin && quem != null && String(quem) !== String(meuId);
   const [telefone, setTelefone] = useState(null);
   const [departamento, setDepartamento] = useState(null);
   const [carregando, setCarregando] = useState(true);
@@ -287,13 +315,14 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
     // filtro "só eu" some justamente quando eu quero saber por que sumi.
     if (meuId && !vistos.has(String(meuId))) vistos.set(String(meuId), meuNome || "Você");
     // E quem estiver selecionado continua na lista mesmo que saia do período,
-    // senão trocar o mês faria o filtro se apagar sozinho.
-    if (quem && !vistos.has(String(quem))) vistos.set(String(quem), meuNome || "Selecionado");
+    // senão trocar o mês faria o filtro se apagar sozinho — com o NOME dele,
+    // guardado na escolha, e não o de quem está olhando (28/10).
+    if (quem && !vistos.has(String(quem))) vistos.set(String(quem), nomeDeQuem || "Pessoa escolhida");
     return [{ valor: null, rotulo: "Todos os atendentes" },
             ...[...vistos.entries()]
               .sort((a, b) => a[1].localeCompare(b[1]))
               .map(([id, nome]) => ({ valor: id, rotulo: id === String(meuId) ? `${nome} (você)` : nome }))];
-  }, [d, meuId, meuNome, quem]);
+  }, [d, meuId, meuNome, quem, nomeDeQuem]);
 
   const opcoesTelefone = useMemo(() => {
     const lista = departamento
@@ -349,7 +378,8 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
 
           {souAdmin && (
             <Escolha C={C} sombra={sombra} icone={Users} grupo="escopo"
-                     opcoes={opcoesAtendente} valor={quem} definir={setQuem} />
+                     opcoes={opcoesAtendente} valor={quem}
+                     definir={(v) => { setQuem(v); setNomeDeQuem(nomeDe(opcoesAtendente, v)); }} />
           )}
           <Escolha C={C} sombra={sombra} icone={Phone} grupo="telefone"
                    opcoes={opcoesTelefone} valor={telefone} definir={setTelefone} />
@@ -392,7 +422,7 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
         <RelatorioProtocolos C={C} estilos={estilos} cores={cores} deIso={deIso} ateIso={ateIso} fuso={fuso}
                              quem={quem} telefone={telefone} departamento={departamento}
                              souAdmin={souAdmin} meuId={meuId} advogados={advogados}
-                             aoEscolherPessoa={(id) => souAdmin && setQuem((v) => (String(v) === String(id) ? null : id))} />
+                             aoEscolherPessoa={(id, nome) => souAdmin && escolherPessoa(id, nome)} />
 
         {carregando && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, color: C.textSecondary, padding: 24 }}>
@@ -432,7 +462,9 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
         {!carregando && !erro && !faltaSql && d && (
           <>
             <div style={{ ...nota, marginBottom: 14 }} data-teste="escopo">
-              {d.so_meu
+              {d.so_meu && outraPessoa
+                ? <>Estes são os números <b style={{ color: C.textPrimary }}>da pessoa escolhida</b>: os atendimentos que ela pegou e as mensagens que passaram por eles. A comparação entre atendentes, no fim da tela, continua mostrando todo mundo.</>
+                : d.so_meu
                 ? <>Estes são <b style={{ color: C.textPrimary }}>os seus números</b>{meuNome && !souAdmin ? ` (${meuNome})` : ""}: os atendimentos que você pegou e as mensagens que passaram por eles. A comparação entre atendentes, no fim da tela, continua mostrando todo mundo.</>
                 : <>Estes são os números <b style={{ color: C.textPrimary }}>do escritório inteiro</b> — de todos os telefones que você alcança.</>}
               {" "}<b style={{ color: C.textPrimary }}>{rotuloDoPeriodo(periodo)}</b>.
@@ -514,7 +546,7 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
             </div>
             <Atendentes C={C} estilos={estilos} cores={cores} dados={d.por_atendente || []}
                         meuId={meuId} selecionado={quem} podeEscolher={souAdmin}
-                        aoEscolher={(id) => setQuem((v) => (String(v) === String(id) ? null : id))} />
+                        aoEscolher={escolherPessoa} />
 
             <Ressalvas d={d} t={t} C={C} estilos={estilos} />
           </>
@@ -543,7 +575,7 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
                            deIso={deIso} ateIso={ateIso} fuso={fuso} passo="day"
                            quem={quem} telefone={telefone} departamento={departamento}
                            souAdmin={souAdmin} meuId={meuId} advogados={advogados}
-                           aoEscolherPessoa={(id) => souAdmin && setQuem((v) => (String(v) === String(id) ? null : id))} />
+                           aoEscolherPessoa={(id, nome) => souAdmin && escolherPessoa(id, nome)} />
       </div>
     </div>
   );
@@ -908,7 +940,27 @@ function Colunas({ C, dados, series, formatar, passo }) {
   const [sobre, setSobre] = useState(null);
   const alt = 172;
   const max = Math.max(1, ...dados.flatMap((x) => series.map((s) => Number(x[s.campo] || 0))));
-  const cada = Math.max(1, Math.ceil(dados.length / 10));
+  // OS RÓTULOS CABEM NA LARGURA QUE O GRÁFICO TEM (auditoria de 28/10). Um a
+  // cada `ceil(n/10)` colunas, cada um numa caixa de UMA coluna e cortado:
+  // a 375px a caixa tinha 8px e o "29/09" pede 26 — sobrava "2!". Agora a
+  // largura do trilho é medida, o passo cresce quando é estreito, e o texto
+  // fica centrado na coluna dele, por cima das vizinhas vazias. No computador
+  // a conta dá o passo de sempre, e o gráfico fica como era.
+  const trilho = useRef(null);
+  const [largura, setLargura] = useState(0);
+  useLayoutEffect(() => {
+    const el = trilho.current;
+    if (!el) return undefined;
+    const medir = () => setLargura(el.getBoundingClientRect().width);
+    medir();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const vigia = new ResizeObserver(medir);
+    vigia.observe(el);
+    return () => vigia.disconnect();
+  }, []);
+  const ROTULO_PX = 34;   // o "29/09" em 10,5px pede 26; o resto é o respiro
+  const cada = Math.max(1, Math.ceil(dados.length / 10),
+                        largura ? Math.ceil((dados.length * ROTULO_PX) / largura) : 1);
   const atual = sobre != null ? dados[sobre] : null;
 
   return (
@@ -963,11 +1015,11 @@ function Colunas({ C, dados, series, formatar, passo }) {
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 2, marginTop: 6 }}>
+      <div ref={trilho} style={{ display: "flex", gap: 2, marginTop: 6 }}>
         {dados.map((x, i) => (
-          <div key={x.quando} style={{ flex: 1, minWidth: 0, textAlign: "center", fontSize: 10.5,
-                                       color: C.textSecondary, fontVariantNumeric: "tabular-nums",
-                                       whiteSpace: "nowrap", overflow: "hidden" }}>
+          <div key={x.quando} style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center",
+                                       fontSize: 10.5, color: C.textSecondary,
+                                       fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
             {i % cada === 0 ? rotuloData(x.quando, passo) : ""}
           </div>
         ))}
@@ -1206,7 +1258,7 @@ function Atendentes({ C, estilos, cores, dados, meuId, selecionado, podeEscolher
         <tbody>
           {linhas.map((l) => (
             <tr key={l.chave} data-atendente={l.nome}
-                onClick={() => podeEscolher && l.id && aoEscolher(l.id)}
+                onClick={() => podeEscolher && l.id && aoEscolher(l.id, l.nome)}
                 style={{ cursor: podeEscolher && l.id ? "pointer" : "default",
                          background: String(selecionado) === String(l.id) ? C.listActive : "transparent" }}>
               <td style={{ ...estilos.td, width: "40%" }}>
@@ -1581,7 +1633,7 @@ function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, fuso, quem, tel
                         const escolhe = souAdmin && p.id;
                         return (
                           <tr key={`${p.tipo}-${p.id || p.nome}`} data-pessoa-nos-protocolos={p.nome}
-                              onClick={() => escolhe && aoEscolherPessoa(p.id)}
+                              onClick={() => escolhe && aoEscolherPessoa(p.id, p.nome)}
                               title={p.tipo === "celular" ? "Respondido direto pelo WhatsApp do aparelho, fora do Zorvin: não dá para saber quem foi."
                                    : p.tipo === "rotulo" ? "Mensagem de antes de ago/2026, que guardou só o nome de quem escreveu."
                                    : undefined}
@@ -2132,8 +2184,10 @@ function RelatorioJaTratei({ C, estilos, cores, deIso, ateIso, fuso, passo, quem
         return (
           <>
             <div style={{ ...estilos.nota, marginBottom: 12 }} data-relatorio-escopo>
+              {/* "VOCÊ" SÓ PARA QUEM É VOCÊ (28/10): `so_meu` vale para qualquer
+                  recorte por pessoa, e quem administra escolhe outras. */}
               {r.so_meu
-                ? <>O que <b style={{ color: C.textPrimary }}>você</b> tirou da fila sem mandar mensagem. A comparação por pessoa, mais abaixo, mostra todo mundo.</>
+                ? <>O que <b style={{ color: C.textPrimary }}>{souAdmin && quem != null && String(quem) !== String(meuId) ? "a pessoa escolhida" : "você"}</b> tirou da fila sem mandar mensagem. A comparação por pessoa, mais abaixo, mostra todo mundo.</>
                 : <>O que <b style={{ color: C.textPrimary }}>a equipe</b> tirou da fila sem mandar mensagem, nos telefones que você alcança.</>}
             </div>
 
@@ -2205,7 +2259,7 @@ function RelatorioJaTratei({ C, estilos, cores, deIso, ateIso, fuso, passo, quem
                     const sou = meuId && String(p.id) === String(meuId);
                     return (
                       <tr key={p.id || p.nome} data-pessoa-no-relatorio={p.nome}
-                          onClick={() => souAdmin && p.id && aoEscolherPessoa(p.id)}
+                          onClick={() => souAdmin && p.id && aoEscolherPessoa(p.id, p.nome)}
                           style={{ cursor: souAdmin && p.id ? "pointer" : "default",
                                    background: String(quem) === String(p.id) ? C.listActive : "transparent" }}>
                         <td style={{ ...estilos.td, width: "70%" }}>
