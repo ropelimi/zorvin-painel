@@ -430,7 +430,7 @@ function Departamento({ d, cx, C, telefones, departamentos, releituras, aoRenome
                }}
                aria-label={`Nome do departamento ${d.nome}`}
                style={{ ...cx.campo, flex: 1, fontWeight: 700 }} />
-        <button style={{ ...cx.botaoFraco, color: "#c0392b" }}
+        <button style={{ ...cx.botaoFraco, color: C.erroTexto }}
                 onClick={() => {
                   if (meus.length) return alert("Mova os telefones para outro departamento antes de apagar este.");
                   if (confirm(`Apagar o departamento “${d.nome}”?`)) aoApagar();

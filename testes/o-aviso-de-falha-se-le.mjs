@@ -90,6 +90,50 @@ console.log("\n2. O teclado alcança o reenviar");
   await ctx.close();
 }
 
+// AS FRASES DE ERRO DAS TELAS também eram de um vermelho só (#c0392b) para os
+// dois temas: 5,4:1 no claro e 3,2:1 no escuro. Elas passaram ao mesmo
+// `erroTexto` do aviso da bolha. A da agenda serve de amostra: é uma frase
+// que diz que algo NÃO carregou — exatamente a que não pode passar batida.
+console.log("\n3. A frase de erro de uma tela se lê no tema escuro");
+{
+  const ctx = await nav.newContext({ viewport: { width: 1400, height: 900 } });
+  const page = await ctx.newPage();
+  page.on("pageerror", (e) => erros.push(e.message));
+  await page.addInitScript(() => { try { localStorage.setItem("zorvin_modo", "escuro"); } catch (_) {} });
+  await page.goto(ENDERECO);
+  await page.waitForSelector("[data-conversa-nome]");
+  await page.waitForTimeout(1000);
+  // Quebra a leitura da agenda só agora: a lista de conversas já veio.
+  await page.evaluate(() => { globalThis.__QUEBRAR_SO_A_LEITURA = ["contatos"]; });
+  await page.getByRole("button", { name: "Menu" }).click();
+  await page.getByRole("button", { name: "Configurações" }).click();
+  await page.waitForTimeout(500);
+  await page.locator("div").filter({ hasText: "Importar histórico" }).last()
+    .getByRole("button", { name: "Contatos", exact: true }).first().click();
+  await page.waitForTimeout(1800);
+  const c = await page.evaluate(() => {
+    const el = [...document.querySelectorAll("div")].reverse()
+      .find((d) => (d.textContent || "").startsWith("Não consegui ler a agenda"));
+    if (!el) return null;
+    const rgb = (x) => (x.match(/[\d.]+/g) || []).map(Number);
+    let fundo = null;
+    for (let a = el; a && a.nodeType === 1; a = a.parentElement) {
+      const f = rgb(getComputedStyle(a).backgroundColor);
+      if (f.length >= 3 && (f.length < 4 || f[3] > 0)) { fundo = f; break; }
+    }
+    const letra = rgb(getComputedStyle(el).color);
+    if (!fundo) return null;
+    const lum = ([r, g, b]) => [r, g, b].map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; })
+      .reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
+    const [l1, l2] = [lum(letra), lum(fundo)];
+    return { razao: (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05), letra: getComputedStyle(el).color };
+  });
+  ok("com a agenda sem carregar, a aba diz que não carregou", c !== null);
+  ok("e a frase de erro tem pelo menos 4,5:1 no tema escuro", c !== null && c.razao >= 4.5,
+     c ? `${c.razao.toFixed(2)}:1 (${c.letra})` : "sem a frase");
+  await ctx.close();
+}
+
 ok("sem erro de JavaScript", erros.length === 0, erros.slice(0, 3).join(" | "));
 
 await nav.close();

@@ -14071,7 +14071,7 @@ export default function Painel({ sessao }) {
           </div>
         </div>
         {f.erro && (
-          <div data-erro-da-etapa style={{ padding: "8px 12px", fontSize: 12.5, color: "#c0392b" }}>{f.erro}</div>
+          <div data-erro-da-etapa style={{ padding: "8px 12px", fontSize: 12.5, color: C.erroTexto }}>{f.erro}</div>
         )}
         {f.cartao !== undefined && ativas.map((e) => (
           <button key={e.id} data-escolher-etapa={e.nome} role="option" aria-selected={atual === String(e.id)}
@@ -14089,7 +14089,7 @@ export default function Painel({ sessao }) {
         {f.cartao && (
           <>
             <div style={{ height: 1, background: C.divider, margin: "4px 0" }} />
-            <button data-tirar-do-funil onClick={tirarDoFunilDaConversa} style={{ ...ITEM, color: "#c0392b" }}>
+            <button data-tirar-do-funil onClick={tirarDoFunilDaConversa} style={{ ...ITEM, color: C.erroTexto }}>
               <X size={15} /> Tirar do funil
             </button>
           </>
@@ -14229,7 +14229,7 @@ export default function Painel({ sessao }) {
           </div>
         </div>
         {f.erro && (
-          <div data-erro-das-tarefas style={{ padding: "8px 12px", fontSize: 12.5, color: "#c0392b", borderTop: `1px solid ${C.divider}` }}>{f.erro}</div>
+          <div data-erro-das-tarefas style={{ padding: "8px 12px", fontSize: 12.5, color: C.erroTexto, borderTop: `1px solid ${C.divider}` }}>{f.erro}</div>
         )}
         {!f.erro && tarefasAbertasDaConversa.map((t) => linhaDaTarefa(t, false))}
         {!f.erro && !tarefasAbertasDaConversa.length && (
@@ -15400,7 +15400,7 @@ export default function Painel({ sessao }) {
                             </div>
                           </button>
                         )) : (
-                          <div style={erroContatos ? { ...RECADO, color: "#c0392b" } : RECADO}>{erroContatos || (contatosLista.length ? "Nenhum contato salvo com esse nome." : "Nenhum contato salvo ainda.")}</div>
+                          <div style={erroContatos ? { ...RECADO, color: C.erroTexto } : RECADO}>{erroContatos || (contatosLista.length ? "Nenhum contato salvo com esse nome." : "Nenhum contato salvo ainda.")}</div>
                         )}
                         {/* O CADASTRO DO VANTORO. Só aparece quando há o que
                             mostrar: uma seção vazia em toda busca ensinaria a
@@ -17816,7 +17816,7 @@ export default function Painel({ sessao }) {
             {historico.carregando && <div style={{ fontSize: 13, color: C.textSecondary }}>Levantando…</div>}
             {!!historico.erro && <div style={{ fontSize: 13, color: C.textSecondary }}>{historico.erro}</div>}
             {!!historico.erroAlteracoes && (
-              <div data-erro-das-alteracoes style={{ fontSize: 13, color: "#c0392b", marginBottom: 12 }}>{historico.erroAlteracoes}</div>
+              <div data-erro-das-alteracoes style={{ fontSize: 13, color: C.erroTexto, marginBottom: 12 }}>{historico.erroAlteracoes}</div>
             )}
             {/* ALTERAÇÕES — quem mexeu no quê.
                 Vem ANTES da lista de telefones e FORA do bloco dela, de
@@ -18092,7 +18092,7 @@ export default function Painel({ sessao }) {
                           </div>
                         </>
                       ) : l.falhou ? (
-                        <div data-historico-sem-leitura style={{ fontSize: 12, color: "#c0392b", lineHeight: 1.45 }}>{l.falhou}</div>
+                        <div data-historico-sem-leitura style={{ fontSize: 12, color: C.erroTexto, lineHeight: 1.45 }}>{l.falhou}</div>
                       ) : (
                         <div style={{ fontSize: 12, color: C.textSecondary }}>ainda não respondemos por aqui</div>
                       )}
@@ -18180,7 +18180,7 @@ export default function Painel({ sessao }) {
                   <Marco rotulo="Primeira mensagem enviada" l={primeira} msg={primeira.primeira} />
                   <Marco rotulo="Última mensagem enviada" l={ultima} msg={ultima.ultima} />
                   {semLeitura > 0 && (
-                    <div style={{ fontSize: 12, color: "#c0392b", lineHeight: 1.5, marginBottom: 14 }}>
+                    <div style={{ fontSize: 12, color: C.erroTexto, lineHeight: 1.5, marginBottom: 14 }}>
                       Não consegui ler as mensagens de {semLeitura === 1 ? "um telefone" : `${semLeitura} telefones`}:
                       a primeira ou a última podem estar lá.
                     </div>
@@ -18650,7 +18650,7 @@ export default function Painel({ sessao }) {
                           const q = buscaContato.trim().toLowerCase();
                           const chaveQ = chaveDoNumero(q);
                           const lista = contatosLista.filter((c) => contatoCasaComABusca(c, q, chaveQ));
-                          if (!lista.length) return <div style={{ padding: 24, textAlign: "center", color: erroContatos ? "#c0392b" : C.textSecondary, fontSize: 13.5 }}>{erroContatos || (lendoAgenda ? "Lendo a agenda…" : contatosLista.length ? "Nenhum contato encontrado." : "Nenhum contato ainda. Toque em Novo para criar.")}</div>;
+                          if (!lista.length) return <div style={{ padding: 24, textAlign: "center", color: erroContatos ? C.erroTexto : C.textSecondary, fontSize: 13.5 }}>{erroContatos || (lendoAgenda ? "Lendo a agenda…" : contatosLista.length ? "Nenhum contato encontrado." : "Nenhum contato ainda. Toque em Novo para criar.")}</div>;
                           return lista.map((c) => (
                             <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderBottom: `1px solid ${C.divider}` }}>
                               <Avatar nome={c.nome || c.numero} foto={c.foto_url} size={40} />
@@ -19344,7 +19344,7 @@ export default function Painel({ sessao }) {
               {" "}É por este número que a mensagem vai chegar para o cliente.
             </div>
             {!!escolhaTelefone.naoConferi && (
-              <div data-escolha-nao-conferi style={{ fontSize: 12.5, color: "#c0392b", lineHeight: 1.45, marginBottom: 12 }}>
+              <div data-escolha-nao-conferi style={{ fontSize: 12.5, color: C.erroTexto, lineHeight: 1.45, marginBottom: 12 }}>
                 {escolhaTelefone.naoConferi}
               </div>
             )}
@@ -19416,7 +19416,7 @@ export default function Painel({ sessao }) {
             <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
               {acervo.carregando && <div style={{ color: C.textSecondary, fontSize: 14 }}>Carregando…</div>}
               {!acervo.carregando && !!acervo.erro && (
-                <div data-erro-das-midias style={{ color: "#c0392b", fontSize: 14 }}>{acervo.erro}</div>
+                <div data-erro-das-midias style={{ color: C.erroTexto, fontSize: 14 }}>{acervo.erro}</div>
               )}
               {!acervo.carregando && !acervo.erro && acervo.cheio && (
                 <div style={{ color: C.textSecondary, fontSize: 12.5, marginBottom: 10 }}>Mostrando os 500 mais recentes.</div>

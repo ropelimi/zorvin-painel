@@ -124,7 +124,7 @@ export function JaTratei({ C, estreito, nome, dias, esperando = true, finalizar 
 
         <div style={{ overflowY: "auto", padding: "0 16px 4px" }}>
           {ativos.length === 0 && !!erroDosAssuntos && (
-            <div data-erro-dos-assuntos style={{ fontSize: 13, color: "#c0392b", paddingBottom: 12 }}>
+            <div data-erro-dos-assuntos style={{ fontSize: 13, color: C.erroTexto, paddingBottom: 12 }}>
               {erroDosAssuntos}
             </div>
           )}
