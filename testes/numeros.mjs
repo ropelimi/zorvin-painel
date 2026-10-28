@@ -275,8 +275,8 @@ console.log("\nO que dá para saber olhando o número, antes de tentar mandar");
     // contrário, elas são o que impede o aviso de voltar por engano numa
     // limpeza futura. Um `null` sem prova nenhuma seria só a ausência de
     // teste.
-    ok("celular sem o nono dígito NÃO vira aviso", diz("553189271231") === null,
-       JSON.stringify(diz("553189271231")));
+    ok("celular sem o nono dígito NÃO vira aviso", diz("553187774411") === null,
+       JSON.stringify(diz("553187774411")));
     ok("nem em outro DDD", diz("557182197259") === null,
        JSON.stringify(diz("557182197259")));
     ok("nem o celular antigo que começa com 7", diz("553172371748") === null,
@@ -286,17 +286,17 @@ console.log("\nO que dá para saber olhando o número, antes de tentar mandar");
     // duas formas na mesma conversa, que é o que impede o cliente de virar
     // duas linhas na lista.
     ok("mas as duas formas continuam sendo a MESMA linha",
-       chaveDoNumero("553189271231") === chaveDoNumero("5531989271231"),
-       `${chaveDoNumero("553189271231")} vs ${chaveDoNumero("5531989271231")}`);
+       chaveDoNumero("553187774411") === chaveDoNumero("5531987774411"),
+       `${chaveDoNumero("553187774411")} vs ${chaveDoNumero("5531987774411")}`);
   }
 
   // ---- os 8 fixos ----
   {
     // PG ADVOGADOS, 8 tentativas. BSPZ ADVOGADOS, 2.
-    const r = diz("551130383888");
+    const r = diz("551132345678");
     ok("telefone fixo é reconhecido como fixo", r?.tipo === "fixo", JSON.stringify(r));
     ok("e diz o número por extenso, para quem confere na ficha",
-       /\(11\) 3038-3888/.test(r?.titulo || ""), r?.titulo);
+       /\(11\) 3234-5678/.test(r?.titulo || ""), r?.titulo);
     ok("NÃO sugere pôr um 9 num fixo", !r?.sugestao,
        `inventou ${r?.sugestao} — seria um número que não existe`);
     ok("outro fixo, outro estado", diz("555133214500")?.tipo === "fixo");
@@ -304,12 +304,12 @@ console.log("\nO que dá para saber olhando o número, antes de tentar mandar");
 
   // ---- o DDD que não existe ----
   //
-  // FONTANA & ADVOGADOS ASSOCIADOS, gravado como "550497234535". Sem a lista
+  // FONTANA & ADVOGADOS ASSOCIADOS, gravado como "550491234567". Sem a lista
   // de DDDs, a regra do nono dígito transforma isso em "04 99723-4535" e a
   // tela sugere, com toda a confiança, um DDD que não existe no Brasil. Foi o
   // que aconteceu quando montei essa conta na mão, antes de escrever isto.
   {
-    const r = diz("550497234535");
+    const r = diz("550491234567");
     ok("DDD inexistente é apontado, e não 'consertado'", r?.tipo === "ddd", JSON.stringify(r));
     ok("dizendo qual é o DDD errado", /04/.test(r?.titulo || ""), r?.titulo);
     ok("e sem sugerir número nenhum", !r?.sugestao, `inventou ${r?.sugestao}`);
@@ -323,8 +323,8 @@ console.log("\nO que dá para saber olhando o número, antes de tentar mandar");
     // FRANCISCO VIEIRA DA SILVA, 26 tentativas: o número está PERFEITO, ele é
     // que não tem WhatsApp. Isso o número não conta, e a tela não deve fingir
     // que conta.
-    ok("celular bem escrito não gera aviso nenhum", diz("5511991777483") === null);
-    ok("nem o que já tem o nono dígito", diz("5531989271231") === null);
+    ok("celular bem escrito não gera aviso nenhum", diz("5511998765432") === null);
+    ok("nem o que já tem o nono dígito", diz("5531987774411") === null);
     ok("número estrangeiro não é medido pelas regras daqui",
        diz("351912345678") === null, JSON.stringify(diz("351912345678")));
     ok("grupo do WhatsApp não é telefone", diz("grupo:120363@g.us") === null);

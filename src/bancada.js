@@ -495,19 +495,20 @@ CONVERSAS.push({
 // número do contato da conversa aberta, e pendurar isto no APELIDO faria
 // metade das outras provas encontrarem uma tarja âmbar que não esperavam.
 const NUMEROS_RUINS = [
-  { id: "ct-sem-nono", numero: "553189271231", nome: "Alcides (sem o 9)" },
-  { id: "ct-fixo",     numero: "551130383888", nome: "PG Advogados (fixo)" },
-  { id: "ct-ddd-mau",  numero: "550497234535", nome: "Fontana (DDD 04)" },
+  { id: "ct-sem-nono", numero: "553187774411", nome: "Alcides (sem o 9)" },
+  { id: "ct-fixo",     numero: "551132345678", nome: "PG Advogados (fixo)" },
+  { id: "ct-ddd-mau",  numero: "550491234567", nome: "Fontana (DDD 04)" },
   // A TRAVA CONTRA A TARJA QUE APARECE À TOA. Este número está perfeito — ele
   // é que não tem WhatsApp, e isso o número não conta. Se a tarja nascer aqui,
   // ela nasce em toda conversa e vira ruído que se aprende a pular.
-  { id: "ct-numero-bom", numero: "5511991777483", nome: "Francisco (número bom)" },
-  // A SEGUNDA TRAVA, E ELA VEIO DE UM RELATO. "Dias Costa Advogados",
-  // (31) 8418-0018: doze dígitos, forma antiga — e a conversa FUNCIONA, com
+  { id: "ct-numero-bom", numero: "5511998765432", nome: "Francisco (número bom)" },
+  // A SEGUNDA TRAVA, E ELA VEIO DE UM RELATO. Um escritório parceiro, com
+  // doze dígitos na forma antiga (o número aqui é de exemplo; o de verdade não
+  // fica no código) — e a conversa FUNCIONA, com
   // mensagens indo e voltando. A primeira versão da tarja anunciava em âmbar
   // que faltava o nono dígito, com a prova do contrário logo abaixo, na mesma
   // tela. Contas antigas continuam atendendo na forma de oito dígitos.
-  { id: "ct-antigo-que-funciona", numero: "553184180018", nome: "Dias Costa (antigo, funciona)" },
+  { id: "ct-antigo-que-funciona", numero: "553186543210", nome: "Dias Costa (antigo, funciona)" },
 ];
 
 // A FILA DE ERRO DESTES NÚMEROS. As tentativas que falharam moram em

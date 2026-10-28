@@ -16730,8 +16730,8 @@ export default function Painel({ sessao }) {
               // A CONVERSA QUE JÁ FUNCIONOU CALA A TARJA — e era isto que
               // faltava na primeira versão.
               //
-              // O relato que consertou isto: "Dias Costa Advogados",
-              // (31) 8418-0018, doze dígitos. A tarja anunciava em âmbar que
+              // O relato que consertou isto: um escritório parceiro, com um
+              // número de doze dígitos. A tarja anunciava em âmbar que
               // faltava o nono dígito — e logo abaixo dela estavam as mensagens
               // indo e voltando, com dois tiques. O número funciona sem o 9.
               //

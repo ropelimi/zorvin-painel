@@ -205,8 +205,9 @@ export function outrosNumeros(cadastro, numeroDaConversa) {
 //  Tirando os que são erro passageiro, o que sobrou foram DUAS coisas, as duas
 //  visíveis no próprio número, sem perguntar nada a ninguém:
 //
-//    16 celulares gravados na forma antiga, sem o nono dígito. "553189271231"
-//       é o 31 8927-1231 do Alcides. O WhatsApp só conhece "5531989271231".
+//    16 celulares gravados na forma antiga, sem o nono dígito: um número como
+//       "553187774411" (31 8777-4411, de exemplo — os de verdade não ficam no
+//       código) que o WhatsApp só conhece como "5531987774411".
 //       Cada um desses é um cliente que nunca recebeu nada.
 //
 //     8 telefones FIXOS — PG ADVOGADOS, BSPZ ADVOGADOS, Queiroz Cavalcanti.
@@ -225,7 +226,7 @@ export function outrosNumeros(cadastro, numeroDaConversa) {
 //
 //  NÃO responde "tem WhatsApp?": isso só o WhatsApp sabe, e a primeira versão
 //  desta função fingiu que sabia. Ela dizia "o WhatsApp só conhece (31)
-//  98418-0018" numa conversa em que as mensagens iam e voltavam com dois
+//  98654-3210" numa conversa em que as mensagens iam e voltavam com dois
 //  tiques pelo número de oito dígitos. Contas antigas continuam atendendo na
 //  forma antiga, e fixo recebe quando o dono usa o WhatsApp Business.
 //
@@ -238,7 +239,7 @@ export function outrosNumeros(cadastro, numeroDaConversa) {
 //  veio, aquele número FUNCIONA, e nada aqui deveria ser mostrado. A tela faz
 //  esse corte; esta função só olha o número, e o número não sabe disso.
 
-// Os DDDs que existem. Sem esta lista, "550497234535" (do cadastro de um
+// Os DDDs que existem. Sem esta lista, "550491234567" (do cadastro de um
 // escritório parceiro) vira "04 9723-4535" e a tela sugere ligar para um DDD
 // que não existe — foi o que aconteceu quando eu montei essa conta na mão.
 const DDDS = new Set([
