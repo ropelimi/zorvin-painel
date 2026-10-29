@@ -7,7 +7,7 @@
 // pessoa baixa na tela de entrada — os nomes e telefones da bancada (alguns
 // copiados de casos reais), o `__TABELAS` e o "jwt-de-mentira". 35 KB a mais.
 //
-// Agora o `vite.config.js` troca `./bancada.js` por `src/semBancada.js` (vazio)
+// Agora o `vite.config.js` troca `./bancada.js` por `src/bancada-desligada.js` (vazio)
 // quando o build não é da bancada.
 //
 // O QUE ESTA PROVA GUARDA

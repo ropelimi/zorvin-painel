@@ -323,10 +323,22 @@ await abrir();
   const antes = idas.length;
   const so = page.locator("[data-so-abrir-achado]");
   ok("há o caminho de só abrir, sem acrescentar", await so.count() === 1);
+  await comecarFilme();
   await so.click().catch(() => {});
   await page.waitForTimeout(1800);
   const depois = idas.slice(antes).map((i) => i.o);
   ok("e ele NÃO manda número nenhum", !depois.includes("acrescentar"), JSON.stringify(depois));
+  // NEM LIGA A CONVERSA AO CADASTRO DELE (auditoria de 27/10). Ligada, a
+  // conversa da mãe ganhava o nome do filho e as notas dela subiam para a
+  // ficha dele — e a ficha, na abertura seguinte, voltava a dizer que este
+  // número não tem cadastro.
+  const ligado = await page.evaluate((n) => {
+    const c = (globalThis.__TABELAS.contatos || []).find((x) => String(x.numero) === String(n));
+    return c ? (c.vantoro_cliente_id == null ? null : c.vantoro_cliente_id) : "sem contato";
+  }, numeroDaConversa);
+  ok("e NÃO liga esta conversa ao cadastro dele", ligado === null, String(ligado));
+  const frases = await filme();
+  ok("e a tela diz que foi só para ver", frases.some((f) => /só para ver/.test(f)), JSON.stringify(frases));
 }
 
 ok("nenhum erro de página no caminho", erros.length === 0, erros.slice(0, 2).join(" | "));

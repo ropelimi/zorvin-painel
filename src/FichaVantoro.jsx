@@ -18,7 +18,7 @@ import { supabase } from "./supabase";
 // As regras de telefone são as MESMAS do painel, e por isso vêm do mesmo
 // lugar: decidir se o segundo número do cadastro é outra linha ou o mesmo
 // aparelho escrito diferente é a mesma pergunta que a busca já respondia.
-import { chaveDoNumero, outrosNumeros, telefoneLegivel } from "./numeros.js";
+import { chaveDoNumero, outrosNumeros, telefoneLegivel, numeroCanonico } from "./numeros.js";
 // A chamada à ponte mora em `ponte.js`: duas telas precisam dela (esta e a de
 // atendentes), e duas cópias divergiriam na primeira mudança.
 import { chamarPonte, BRIDGE_URL, FALTA_PONTE } from "./ponte.js";
@@ -255,14 +255,14 @@ let secoesAbertas = null;
 //  SÓ NA MEMÓRIA, e não no navegador: a ficha tem as senhas do SERASA e do
 //  GOV, e elas não podem ficar gravadas no disco de uma máquina do
 //  escritório. Recarregar a página pergunta antes (`beforeunload`).
-//
-//  E POR PESSOA (auditoria de 28/10), como os da caixa (`rascunhos.js`). O
-//  "Sair" não recarrega a página: a senha GOV que uma pessoa digitou e não
-//  salvou aparecia — e podia ser salva — na ficha de quem entrasse depois na
-//  mesma aba. Quem saiu encontra o dela ao voltar.
 // ------------------------------------------------------------
-const rascunhosDaFicha = new Map();   // "quem|id do cadastro" → { campos: { chave: valor } }
-const chaveDoRascunho = (pessoa, clienteId) => `${pessoa || ""}|${clienteId}`;
+//
+//  POR PESSOA (auditoria de 27/10), pela régua de `rascunhos.js`. Desde 22/10
+//  o painel sai de cena quando a sessão acaba e outra pessoa pode entrar na
+//  MESMA aba — e a ficha dela abriria com o que a de antes deixou por salvar,
+//  senhas do SERASA e do GOV inclusive. A chave é quem entrou E o cadastro.
+const rascunhosDaFicha = new Map();   // "quem:id do cadastro" → { campos: { chave: valor } }
+const chaveDoRascunho = (quem, idDoCadastro) => `${quem || ""}:${idDoCadastro}`;
 
 /** Os campos em que a tela difere do cadastro — a MESMA conta que decide o
  *  que vai ao Vantoro ao salvar, o que o rascunho guarda e quando o botão
@@ -278,8 +278,8 @@ function camposMudados(edicao, base) {
 /** O cadastro com o que tinha ficado por salvar nele. SÓ OS CAMPOS QUE
  *  VIERAM: o que não veio no cadastro não vira campo editável (a régua das
  *  observações, logo abaixo), e um rascunho não pode furar essa régua. */
-function comRascunho(c, pessoa) {
-  const guardado = c && c.id != null ? rascunhosDaFicha.get(chaveDoRascunho(pessoa, c.id)) : null;
+function comRascunho(c, quem) {
+  const guardado = c && c.id != null ? rascunhosDaFicha.get(chaveDoRascunho(quem, c.id)) : null;
   if (!guardado) return { edicao: { ...c }, voltou: false };
   const campos = Object.fromEntries(Object.entries(guardado.campos)
     .filter(([chave]) => Object.prototype.hasOwnProperty.call(c, chave)));
@@ -297,8 +297,7 @@ if (typeof window !== "undefined") {
   });
 }
 
-export default function FichaVantoro({ numero, nomeContato, C, estreito, onFechar, onAviso, aoLigarCadastro, aoConversarPor,
-                                       idDaPessoa }) {
+export default function FichaVantoro({ numero, nomeContato, C, estreito, sobreposta = false, quem = "", onFechar, onAviso, aoLigarCadastro, aoConversarPor }) {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [cliente, setCliente] = useState(null);
@@ -573,8 +572,14 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       const inteiro = (r && r.cliente) || null;
       if (!inteiro) throw new Error("não veio a ficha");
       setCpfDeOutro(null);
-      await escolher(inteiro);
-      onAviso && onAviso(`Abri o cadastro de ${inteiro.nome}.`);
+      // ABRIR NÃO LIGA (auditoria de 27/10). Este é o "não é ele" — a mãe
+      // falando pelo celular do filho, com o CPF dele na mão —, e por baixo
+      // ele gravava o vínculo: a conversa dela ganhava o nome do filho e as
+      // notas subiam para a ficha dele, enquanto a ficha, na abertura
+      // seguinte, voltava a dizer que este número não tem cadastro (ela
+      // procura pelo número). Quem quer ligar usa o "Acrescentar".
+      await escolher(inteiro, { ligar: false });
+      onAviso && onAviso(`Abri o cadastro de ${inteiro.nome}, só para ver — esta conversa não foi ligada a ele.`);
     } catch (e) {
       // Sem a ficha inteira NÃO SE TROCA NADA. Trocar com o resumo deixaria a
       // pessoa olhando campos vazios e concluindo que o cadastro está incompleto
@@ -653,7 +658,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       setCpfDeOutro(null);
       setCpfProcura(null);
       setCliente(inteiro);
-      const comOGuardado = comRascunho(inteiro, idDaPessoa);
+      const comOGuardado = comRascunho(inteiro, quem);
       setEdicao(comOGuardado.edicao);
       setRascunhoVoltou(comOGuardado.voltou);
       setTelefones(novaLista);
@@ -675,9 +680,9 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     }
   }
 
-  async function escolher(c) {
+  async function escolher(c, { ligar = true } = {}) {
     setCliente(c);
-    const comOGuardado = comRascunho(c, idDaPessoa);
+    const comOGuardado = comRascunho(c, quem);
     setEdicao(comOGuardado.edicao);
     setRascunhoVoltou(comOGuardado.voltou);
     // A LISTA DE TELEFONES VEM JUNTO. Só `buscar` a preenchia, e escolher um
@@ -690,7 +695,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     // O retorno é ignorado aqui de propósito: esta é a resposta a uma pergunta
     // de escolha de cadastro, e a frase que interessa já foi dada. Falhando o
     // vínculo, quem cria ou salva logo em seguida é que avisa.
-    await ligarContatoAoCadastro(c);
+    if (ligar) await ligarContatoAoCadastro(c);
   }
 
   async function buscar(forcar = false) {
@@ -735,7 +740,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       // O QUE FICOU POR SALVAR VOLTA — menos no Atualizar (`forcar`), que é
       // justamente o gesto de trocar o digitado pelo que está no Vantoro, e
       // que pergunta antes.
-      const comOGuardado = achado && !forcar ? comRascunho(achado, idDaPessoa) : { edicao: achado ? { ...achado } : {}, voltou: false };
+      const comOGuardado = achado && !forcar ? comRascunho(achado, quem) : { edicao: achado ? { ...achado } : {}, voltou: false };
       setEdicao(comOGuardado.edicao);
       setRascunhoVoltou(comOGuardado.voltou);
       // Só ABRIR a ficha já conserta o nome da conversa. Sem isto, os contatos
@@ -777,10 +782,9 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   useEffect(() => {
     if (!cliente || cliente.id == null) return;
     const mudou = camposMudados(edicao, cliente);
-    const chave = chaveDoRascunho(idDaPessoa, cliente.id);
-    if (Object.keys(mudou).length) rascunhosDaFicha.set(chave, { campos: mudou });
-    else rascunhosDaFicha.delete(chave);
-  }, [edicao, cliente, idDaPessoa]);
+    if (Object.keys(mudou).length) rascunhosDaFicha.set(chaveDoRascunho(quem, cliente.id), { campos: mudou });
+    else rascunhosDaFicha.delete(chaveDoRascunho(quem, cliente.id));
+  }, [edicao, cliente, quem]);
 
   // A FRASE SAI DO QUE O VANTORO RESPONDEU (`tarefa_cadastro`), e não da
   // caixa: é ele quem sabe se a tarefa nasceu. Sem a resposta (um Vantoro de
@@ -827,11 +831,10 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       const pediuTarefa = papel === "cliente" && criarTarefa;
       setCliente(r.cliente);
       setEdicao({ ...r.cliente });
-      // A LISTA DE TELEFONES VEM JUNTO (auditoria de 28/10), como em
-      // `escolher`. Sem ela, a seção "Telefones" do cadastro recém-criado (ou
-      // do que já existia) aparecia vazia, e o "+ Acrescentar" conferia a
-      // duplicata contra a lista vazia — o número da própria conversa ia de
-      // novo ao Vantoro.
+      // A LISTA DE TELEFONES DO QUE NASCEU (auditoria de 27/10), pela régua de
+      // `escolher`: sem ela, a ficha nova desenhava a lista de antes — vazia,
+      // num pré-cadastro —, e o "conversar por este" e o "+ Acrescentar"
+      // trabalhavam sobre um cadastro que a tela não mostrava.
       setTelefones(listaDeTelefones(r.cliente));
       const ligou = await ligarContatoAoCadastro(r.cliente);
       // O CADASTRO NASCEU LÁ; O VÍNCULO É DAQUI. Dizer só "criado" quando o
@@ -859,9 +862,6 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
     if (!cliente) return;
     setSalvando(true);
     esquecerFicha(numero);   // ver `criar`
-    // O QUE ESTAVA NA TELA NO CLIQUE — é o que vai ao Vantoro, e é contra
-    // ele que a volta mede o que foi digitado DEPOIS (ver abaixo).
-    const enviado = edicao;
     try {
       const mudou = camposMudados(edicao, cliente);
       if (!Object.keys(mudou).length) { onAviso && onAviso("Nada foi alterado."); return; }
@@ -873,14 +873,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
       // trocou de conversa e voltou) guardou o cadastro de ANTES dela.
       esquecerFicha(numero);
       setCliente(r.cliente);
-      // O QUE FOI DIGITADO COM A GRAVAÇÃO NO AR FICA (auditoria de 28/10).
-      // Os campos não travam enquanto salva, e a ponte que hiberna leva
-      // segundos: trocar a tela inteira pelo cadastro gravado apagava o
-      // acréscimo — e o rascunho junto, porque a tela ficava igual ao
-      // cadastro —, com a frase dizendo "Cadastro atualizado". Agora só o
-      // que não mudou depois do clique vem do Vantoro; o resto continua por
-      // salvar, com o aviso do pé.
-      setEdicao((atual) => ({ ...r.cliente, ...camposMudados(atual, enviado) }));
+      setEdicao({ ...r.cliente });
       setRascunhoVoltou(false);
       const ligou = await ligarContatoAoCadastro(r.cliente);
       const naoLigou = "Atualizei no Vantoro, mas não consegui ligá-lo a este contato aqui.";
@@ -1332,17 +1325,11 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   function desenharTelefones() {
     if (!cliente) return null;
     const AMBAR = "#d4a017";
-    // AS CHAVES (auditoria de 28/10): este bloco entra na lista dos campos da
-    // Identificação no lugar do "Outro WhatsApp", e sem `key` o React
-    // reclamava a cada ficha aberta; e a linha que não tem `id` (a lista
-    // montada para um Vantoro antigo) leva a chave pelo número — todas com
-    // `null` eram "duas crianças com a mesma chave", que o React pode
-    // duplicar ou sumir.
     return (
-      <div key="telefone2" data-telefones style={{ marginBottom: 10 }}>
+      <div data-telefones style={{ marginBottom: 10 }}>
         <label style={rotulo}>Telefones</label>
         {telefones.map((t) => (
-          <div key={t.id ?? `sem-id-${t.digitos || t.numero}`} // `data-telefone-do-cliente`, e não `data-telefone`: este último já existe no
+          <div key={t.id} // `data-telefone-do-cliente`, e não `data-telefone`: este último já existe no
                // painel, no seletor de telefones do escritório na barra lateral. A
                // colisão fez uma prova contar 6 linhas onde havia 3 — e o nome curto
                // ia continuar mentindo para quem escrevesse a próxima.
@@ -1420,9 +1407,13 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
                   SAI O DA CONVERSA ABERTA: um botão que oferece abrir a
                   conversa em que a pessoa já está não faz nada e confunde. */}
               {aoConversarPor && chaveDoNumero(t.digitos || t.numero) !== chaveDoNumero(numero) && (
-                <button data-conversar-por={`55${t.digitos}`}
+                // A FORMA CANÔNICA (auditoria de 27/10), e não "55" colado na
+                // frente: os dígitos que o Vantoro manda nem sempre vêm sem o
+                // 55, e "55" + "5571…" abria a conversa com um número que não
+                // existe.
+                <button data-conversar-por={numeroCanonico(t.digitos || t.numero)}
                         onClick={() => aoConversarPor({
-                          numero: `55${t.digitos}`,
+                          numero: numeroCanonico(t.digitos || t.numero),
                           // O nome do CADASTRO, e não o do contato do WhatsApp: é
                           // o mesmo cliente, e é assim que a conversa nova nasce
                           // com o nome certo em vez de um número seco no topo.
@@ -1501,7 +1492,14 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   return (
     // Coluna de verdade, ao lado da conversa — não uma camada por cima dela.
     // No celular não cabem as duas, então a ficha ocupa a tela inteira.
-    <div data-ficha style={{
+    //
+    // E NAS JANELAS MÉDIAS ELA É UMA GAVETA (27/10): entre 768 e 1170 pontos
+    // não cabem três colunas, e a coluna espremia a conversa até a caixa de
+    // escrever virar uma letra por linha. Ali ela fica por cima da conversa,
+    // encostada à direita, com a lista de conversas à vista.
+    <div data-ficha data-ficha-sobreposta={sobreposta ? "sim" : undefined} style={{
+      ...(sobreposta ? { position: "absolute", top: 0, right: 0, bottom: 0, zIndex: 45,
+                         boxShadow: "-10px 0 28px rgba(0,0,0,0.22)" } : {}),
       width: estreito ? "100%" : 330, flex: estreito ? 1 : "none",
       background: C.panel, borderLeft: `1px solid ${C.divider}`,
       display: "flex", flexDirection: "column", height: "100%", overflow: "hidden",
@@ -1523,10 +1521,11 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
             volta. No computador a escolha fica guardada no navegador; no
             celular ela é a tela inteira, e aí voltar é o gesto natural. */}
         <button onClick={tentarFechar} data-recolher-ficha
-                title={estreito ? "Voltar para a conversa" : "Recolher a ficha"}
+                title={estreito ? "Voltar para a conversa" : sobreposta ? "Fechar a ficha" : "Recolher a ficha"}
+                aria-label={estreito ? "Voltar para a conversa" : sobreposta ? "Fechar a ficha" : "Recolher a ficha"}
                 style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>
-          {estreito ? <X size={18} color={C.textSecondary} />
-                    : <ChevronRight size={18} color={C.textSecondary} />}
+          {estreito || sobreposta ? <X size={18} color={C.textSecondary} />
+                                  : <ChevronRight size={18} color={C.textSecondary} />}
         </button>
       </div>
 

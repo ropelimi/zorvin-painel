@@ -233,3 +233,15 @@ export function semATabela(erro) {
   const codigo = String((erro && erro.code) || "");
   return codigo === "42P01" || codigo === "PGRST205";
 }
+
+/** A FUNÇÃO AINDA NÃO EXISTE NESTE BANCO (o script dela não rodou)? Pelo
+ *  CÓDIGO, e não pela frase (auditoria de 27/10): o PostgREST responde
+ *  `PGRST202` ("Could not find the function …") e o Postgres `42883`. O Painel
+ *  de números procurava o NOME da função ou "does not exist" na mensagem — e um
+ *  erro de dentro da função ("column … does not exist", "permission denied for
+ *  function zorvin_relatorio_…") virava "falta uma atualização", escondendo de
+ *  quem administra a frase que diz o que está quebrado. */
+export function semAFuncao(erro) {
+  const codigo = String((erro && erro.code) || "");
+  return codigo === "PGRST202" || codigo === "42883";
+}

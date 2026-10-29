@@ -1858,6 +1858,11 @@ function comparar(a, b) {
 // junções, e projetar ali seria reescrever o PostgREST.
 const COM_PROJECAO = new Set(["zorvin_assuntos"]);
 
+// AS COLUNAS `not null` SEM PADRÃO, como no banco do escritório — ver onde a
+// lista é usada, em `then`. Só as conferidas lá: inventar uma restrição aqui
+// reprovaria um painel certo.
+const NAO_ACEITAM_NULO = { fila_envio: ["texto"] };
+
 // POR QUAL COLUNA CADA TABELA EMBUTIDA SE LIGA À DE FORA.
 //
 // Escrito à mão, tabela por tabela, e não deduzido do nome. A dedução
@@ -2373,9 +2378,30 @@ function consulta(tabela) {
       //
       // VEM ANTES DE GRAVAR, de propósito: um banco que recusa não grava
       // metade — a mesma razão do `__RECUSAR_STATUS` logo abaixo.
+      //
+      // `apenas: "alteracao"` faz só a ALTERAÇÃO falhar, e não a inserção: é o
+      // pedido que se perde no meio de duas idas ao banco (o "reenviar" aposenta
+      // a tentativa velha e depois insere a nova — auditoria de 27/10).
       const erroNaGravacao = (typeof globalThis !== "undefined" && globalThis.__ERRO_NA_GRAVACAO) || {};
-      if ((gravacao || patch || apagando) && erroNaGravacao[tabela]) {
-        return resolver({ data: null, count: null, error: erroNaGravacao[tabela] });
+      const erroDaTabela = erroNaGravacao[tabela];
+      if (erroDaTabela && (patch || ((gravacao || apagando) && erroDaTabela.apenas !== "alteracao"))) {
+        const { apenas, ...erro } = erroDaTabela;
+        void apenas;
+        return resolver({ data: null, count: null, error: erro });
+      }
+      // A COLUNA QUE NÃO ACEITA NULO (auditoria de 27/10). `fila_envio.texto` é
+      // `not null`, sem padrão — conferido no banco do escritório —, e a
+      // bancada aceitava qualquer coisa: encaminhar uma foto sem legenda
+      // (`texto: null`) passava aqui e falhava lá, com "Não consegui
+      // encaminhar". O erro é o do Postgres (23502), com a mesma frase.
+      if (gravacao && NAO_ACEITAM_NULO[tabela]) {
+        const regs = Array.isArray(gravacao.reg) ? gravacao.reg : [gravacao.reg];
+        for (const coluna of NAO_ACEITAM_NULO[tabela]) {
+          if (regs.some((r) => r && r[coluna] == null)) {
+            return resolver({ data: null, count: null, error: { code: "23502",
+              message: `null value in column "${coluna}" of relation "${tabela}" violates not-null constraint` } });
+          }
+        }
       }
       // O HISTÓRICO DO FUNIL É DO GATILHO no banco (script 017): todo cartão
       // que nasce, muda de etapa ou sai deixa uma linha em `zorvin_movimentos`,
@@ -3014,6 +3040,14 @@ export const supabase = {
     let sinal = null, correndo = null;
     const correr = () => (correndo || (correndo = executar()));
     const executar = async () => {
+    // A FUNÇÃO QUE EXISTE E FALHA (auditoria de 27/10). `__FUNCAO_FALHA =
+    // ["atendentes_do_telefone"]` faz ela responder com o tempo esgotado do
+    // banco (57014), e não com "não existe" (PGRST202): são coisas diferentes
+    // para a tela — a primeira se diz, a segunda esconde o recurso calada —, e
+    // sem poder reprovar a primeira a bancada só provava a segunda.
+    if ((globalThis.__FUNCAO_FALHA || []).includes(nome)) {
+      return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } };
+    }
     // A FUNÇÃO QUE TROPEÇA, E A QUE DEMORA (28/10).
     //
     // `__QUEBRAR_FUNCAO = ["nao_lidas_por_telefone"]` faz a função responder
@@ -3768,6 +3802,12 @@ export const supabase = {
       }, error: null };
     }
 
+    // UM ERRO DE DENTRO DA FUNÇÃO (auditoria de 27/10): a função existe e
+    // tropeça — uma coluna que falta lá dentro, uma permissão. É o caso que a
+    // tela lia como "falta a função" quando a frase dizia "does not exist".
+    if (nome === "painel_dashboard" && globalThis.__ERRO_NO_PAINEL) {
+      return { data: null, error: globalThis.__ERRO_NO_PAINEL };
+    }
     if (nome !== "painel_dashboard" || !globalThis.__TEM_FUNCAO_PAINEL) {
       return { data: null, error: { code: "PGRST202", message: `Could not find the function public.${nome}` } };
     }
@@ -4105,6 +4145,14 @@ export const supabase = {
           tamanho: arquivo && typeof arquivo.size === "number" ? arquivo.size : null });
         if (globalThis.__SUBIDA_FALHA) {
           return { data: null, error: { message: "The object exceeded the maximum allowed size", status: 413, statusCode: "413" } };
+        }
+        // O ARQUIVO MAIOR DEMORA MAIS PARA SUBIR (auditoria de 27/10), como
+        // no depósito de verdade: `__SUBIDA_POR_KB` é quantos milissegundos
+        // custa cada KB. Sem isto todo anexo subia na hora, e a prova não
+        // tinha como ver um anexo pequeno passar na frente de um grande.
+        const porKb = globalThis.__SUBIDA_POR_KB;
+        if (typeof porKb === "number" && arquivo && typeof arquivo.size === "number") {
+          await new Promise((r) => setTimeout(r, Math.round((arquivo.size / 1024) * porKb)));
         }
       }
       return { data: { path: caminho }, error: null };

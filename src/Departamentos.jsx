@@ -51,7 +51,7 @@ import { X, Plus, Trash2, Loader2, Building2, Phone, ShieldCheck } from "lucide-
 const CORES = ["#c98a2e", "#2e9e6b", "#3d7dd6", "#8a72c9", "#d2555f", "#2ea3a8", "#7b8794"];
 
 function semAcento(t) {
-  return String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "");
+  return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 function paraSlug(nome) {
   return semAcento(nome).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
@@ -545,14 +545,21 @@ function Atendentes({ cx, C, departamentos, telefones, aoAvisar }) {
   const [criando, setCriando] = useState(false);
   const [nova, setNova] = useState({ nome: "", email: "", senha: "" });
 
+  // A LISTA QUE NÃO CARREGOU (auditoria de 27/10): sem isto, a falha deixava
+  // a lista vazia e a tela dizia "Ninguém com esse nome." — com a pesquisa em
+  // branco, sobre uma equipe que existe.
+  const [falhaDaEquipe, setFalhaDaEquipe] = useState("");
   const carregar = useCallback(async () => {
     setCarregando(true);
     try {
       const r = await chamarPonte("/permissoes/atendentes");
       setGente(r.usuarios || []);
       setComVantoro(r.com_vantoro !== false);
+      setFalhaDaEquipe("");
     } catch (e) {
-      aoAvisar(e.message || "Não consegui ler os atendentes.");
+      const frase = e.message || "Não consegui ler os atendentes.";
+      aoAvisar(frase);
+      setFalhaDaEquipe(frase);
     }
     setCarregando(false);
   }, [aoAvisar]);
@@ -677,7 +684,16 @@ function Atendentes({ cx, C, departamentos, telefones, aoAvisar }) {
         <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Pesquisar…"
                style={{ ...cx.campo, width: "100%", marginBottom: 8 }} />
         {carregando && <div style={cx.dica}>Carregando…</div>}
-        {!carregando && filtradas.length === 0 && <div style={cx.dica}>Ninguém com esse nome.</div>}
+        {!carregando && filtradas.length === 0 && (
+          falhaDaEquipe && !gente.length ? (
+            <div style={cx.dica} data-equipe-nao-carregou>
+              {falhaDaEquipe}{" "}
+              <button style={cx.botaoFraco} onClick={() => carregar()}>Tentar de novo</button>
+            </div>
+          ) : (
+            <div style={cx.dica} data-equipe-vazia>{busca.trim() ? "Ninguém com esse nome." : "Ninguém na equipe ainda."}</div>
+          )
+        )}
         <div style={{ maxHeight: 420, overflowY: "auto" }}>
           {filtradas.map((u) => {
             const on = pessoa && String(pessoa.id) === String(u.id);

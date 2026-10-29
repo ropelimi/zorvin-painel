@@ -142,7 +142,7 @@ export function EtapasDoFunil({ cx, C, departamentos = [], aoAvisar }) {
 
   const ativas = etapas.filter((e) => e.ativo !== false).sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
   const fora = etapas.filter((e) => e.ativo === false);
-  const botaoFraco = { ...cx.botao, background: "transparent", color: C.textSecondary, border: `1px solid ${C.divider}` };
+  const botaoFraco = { ...cx.botao, background: "transparent", color: C.textSecondary, border: `1px solid ${C.divider}`, whiteSpace: "nowrap" };
 
   return (
     <div style={cx.secao} data-etapas-do-funil>
