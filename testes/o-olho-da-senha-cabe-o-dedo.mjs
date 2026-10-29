@@ -10,6 +10,12 @@
 // O conserto aumenta o ALVO e não o DESENHO: o ícone fica onde estava, o
 // campo da senha continua da altura do campo do usuário.
 //
+// O ALVO DE 40 VEIO PELA AUDITORIA DE 27/10, com largura e altura mínimas, e
+// não pela folga. Com a margem só à direita, o ícone andava 3 pontos no
+// computador e 7 no celular, onde encostava na borda do campo — é o que esta
+// prova pega. Por isso o "antes" zera também os mínimos: sem isso ele
+// continuava com 40, e não era o desenho de antes.
+//
 // O QUE ESTA PROVA GUARDA, no celular e no computador:
 //   1. o botão tem pelo menos 40×40;
 //   2. o ícone não sai do lugar — o mesmo ponto que ocupava com a folga
@@ -46,12 +52,13 @@ for (const [onde, largura, altura] of [["celular", 390, 844], ["computador", 128
     const caixa = (el) => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; };
     const agora = { botao: caixa(b), icone: caixa(svg), campo: caixa(campo), usuario: caixa(usuario.parentElement) };
     // O DESENHO DE ANTES, medido na mesma tela: a folga antiga (4px, sem
-    // margem) devolvida ao botão por um instante. O ícone tem de estar no
-    // mesmo ponto nas duas — é o "sem mudar o desenho" posto em número.
-    const { padding, margin } = b.style;
-    b.style.padding = "4px"; b.style.margin = "0px";
+    // margem e sem os mínimos de 40) devolvida ao botão por um instante. O
+    // ícone tem de estar no mesmo ponto nas duas — é o "sem mudar o desenho"
+    // posto em número. O estilo inteiro volta depois, como estava.
+    const guardado = b.getAttribute("style");
+    Object.assign(b.style, { padding: "4px", margin: "0px", minWidth: "0px", minHeight: "0px" });
     const antes = { icone: caixa(svg), campo: caixa(campo) };
-    b.style.padding = padding; b.style.margin = margin;
+    b.setAttribute("style", guardado);
     return { agora, antes, rolaDeLado: document.documentElement.scrollWidth > window.innerWidth };
   });
   ok("achei o botão de mostrar a senha", !!m);

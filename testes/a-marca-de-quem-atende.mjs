@@ -28,7 +28,13 @@
 //   2. a marca VENCIDA de quem fechou a aba não ganha hora nova — passa a ser
 //      minha;
 //   3. a marca VIVA de outra pessoa fica com ela; e quando ela sai, o pulso
-//      seguinte toma — o recurso não se desligou por ter achado zero linhas.
+//      seguinte toma — o recurso não se desligou por ter achado zero linhas;
+//   4. a marca sem nome e com hora nova (a de uma aba de antes do conserto,
+//      que pulsa só a hora) também passa a ser minha;
+//   5. o pulso que estava no meio do caminho quando eu saí da conversa não
+//      toma a marca vazia dela depois (no porte sobre a auditoria de 27/10:
+//      tomar a vazia é o conserto, e saindo no meio eu apareceria lá por
+//      três minutos sem estar).
 import { abrirNavegador, ENDERECO } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
@@ -114,6 +120,53 @@ console.log("\nOutra pessoa está lá de verdade, com a marca viva");
   await umMinutoDepois();
   const depois = await marca();
   ok("quando ela sai, o pulso seguinte toma a marca", depois?.por === EU, JSON.stringify(depois));
+}
+
+console.log("\nA marca sem nome e com hora nova (uma aba de antes do conserto pulsa só a hora)");
+{
+  // UMA ABA ABERTA DESDE ANTES DO CONSERTO continua pulsando só a hora, e
+  // depois de uma limpeza a marca fica SEM NOME e com hora nova. Quem a toma
+  // é o passo da marca vazia (`is null`); o da vencida não alcança, porque a
+  // hora é nova. É esta cena que pega a falta daquele passo: na bancada, `lt`
+  // compara o nulo como o menor de todos (no Postgres, `NULL < x` não é
+  // verdade), e a limpeza comum, que zera as duas colunas, acabava tomada
+  // pelo passo da vencida — a cena de cima passava sem o `is null`.
+  await page.evaluate((c) => {
+    const l = (globalThis.__TABELAS.conversas || []).find((x) => String(x.id) === String(c));
+    l.atendendo_por = null;
+    l.atendendo_em = new Date(Date.now() - 10 * 1000).toISOString();
+  }, conversa);
+  await umMinutoDepois();
+  const m = await marca();
+  ok("a marca sem nome, com hora nova, passa a ser minha", m?.por === EU, JSON.stringify(m));
+}
+
+console.log("\nEu saio da conversa com o pulso no meio do caminho");
+{
+  // A COLEGA SAIU LIMPANDO, e a marca está vazia. O pulso sai, e a primeira
+  // gravação dele demora (`__ATRASO_POR_TABELA`: a próxima ida a `conversas`
+  // leva 800 ms a mais); eu saio no meio. Achando zero linhas, o pulso de
+  // antes da guarda tomava a marca vazia — de uma conversa que eu já deixei.
+  await outraPessoa(null);
+  await page.evaluate(() => { globalThis.__ATRASO_POR_TABELA = { conversas: [800, 0] }; });
+  await page.clock.fastForward(61000);
+  const outra = page.locator(`[data-conversa-nome]:not([data-conversa-id="${conversa}"])`).first();
+  const outraId = await outra.getAttribute("data-conversa-id");
+  await outra.click();
+  await page.waitForTimeout(3000);
+  const gastou = await page.evaluate(() => {
+    const fila = (globalThis.__ATRASO_POR_TABELA || {}).conversas || [];
+    globalThis.__ATRASO_POR_TABELA = {};
+    return fila.length === 1;
+  });
+  ok("a cena montou a demora (o atraso foi gasto)", gastou);
+  const daOutra = await page.evaluate((c) => {
+    const l = (globalThis.__TABELAS.conversas || []).find((x) => String(x.id) === String(c));
+    return l ? l.atendendo_por ?? null : null;
+  }, outraId);
+  ok("abri a outra conversa (a marca de lá é minha)", daOutra === EU, String(daOutra));
+  const m = await marca();
+  ok("e a marca que ficou vazia continua vazia, sem o meu nome", m?.por === null, JSON.stringify(m));
 }
 
 ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));

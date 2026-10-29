@@ -394,11 +394,16 @@ export default function Login({ authMudo = false, sessaoTerminou = false } = {})
             {/* UM ALVO QUE O DEDO ACERTA (auditoria de 27/10): eram 26 pontos,
                 e no celular o toque caía no campo da senha. 40 é a régua do
                 resto do painel; a margem negativa devolve o espaço, e a
-                caixa do campo não cresce. */}
+                caixa do campo não cresce.
+                E O OLHO NÃO SAI DO LUGAR (auditoria de 28/10): com a margem
+                só à direita, o ícone andava 3 pontos para a direita no
+                computador e 7 no celular, onde encostava na borda do campo.
+                Os 14 pontos a mais de largura saem metade de cada lado, e o
+                ícone fica onde estava — muda o alvo, não o desenho. */}
             <button type="button" onClick={() => setVerSenha((v) => !v)} title={verSenha ? "Ocultar senha" : "Mostrar senha"}
               aria-label={verSenha ? "Ocultar senha" : "Mostrar senha"}
               style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                       minWidth: 40, minHeight: 40, margin: "-8px -10px -8px 0", padding: 0, color: C.textSecondary, flexShrink: 0 }}>
+                       minWidth: 40, minHeight: 40, margin: "-8px -7px", padding: 0, color: C.textSecondary, flexShrink: 0 }}>
               {verSenha ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>

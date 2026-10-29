@@ -189,6 +189,12 @@ console.log("\nUm telefone com as duas pontas, outro com uma só");
   ok("a primeira e a última aparecem, pelo telefone que veio inteiro",
      /Primeira mensagem enviada/i.test(t) && /Última mensagem enviada/i.test(t), t.slice(-500));
   ok("e o outro telefone diz que não conseguiu ler", /não consegui ler/i.test(t), t.slice(-500));
+  // E O ALTO TAMBÉM DIZ (no porte sobre a auditoria de 27/10): a primeira e a
+  // última de lá são as dos telefones lidos, e a de verdade pode estar no que
+  // não veio. A frase da linha ("…enviadas por este telefone") não serve aqui:
+  // sem esta conferência, tirar o aviso do alto passava.
+  ok("e o alto avisa que a primeira ou a última podem estar no telefone que não leu",
+     /Não consegui ler as mensagens de um telefone/i.test(t), t.slice(0, 600));
   await ctx.close();
 }
 

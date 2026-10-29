@@ -730,6 +730,9 @@ function faltaAFuncao(erro) {
 }
 
 const RECURSOS = { atendendo: true, digitando: true };
+// QUANTO TEMPO UMA MARCA DE "ESTOU ATENDENDO" VALE sem ser renovada: o aviso
+// para de mostrá-la depois disto, e o pulso pode tomá-la (auditoria de 28/10).
+const PRESENCA_VALE_MS = 3 * 60 * 1000;
 function desligarRecurso(nome, erro) {
   if (!RECURSOS[nome] || !faltaColuna(erro)) return;
   RECURSOS[nome] = false;
@@ -750,6 +753,9 @@ function desligarRecurso(nome, erro) {
 // NÃO VALE PARA A LIMPEZA DA SAÍDA. Lá a gravação leva `.eq('atendendo_por',
 // eu)`, e zero linhas é o caso LEGÍTIMO de outra pessoa já ter entrado na
 // conversa — desligar ali tiraria o recurso de quem está trabalhando certo.
+// NEM PARA O PULSO, desde a auditoria de 28/10: ele também filtra pela marca,
+// e quem usa esta porta é a gravação da ABERTURA da conversa, que vem antes do
+// primeiro pulso.
 function desligarPorRecusa(nome) {
   if (!RECURSOS[nome]) return;
   RECURSOS[nome] = false;
@@ -3399,6 +3405,9 @@ export default function Painel({ sessao }) {
   const [contatosLista, setContatosLista] = useState([]); // todos os contatos (agenda)
   // A LEITURA DA AGENDA QUE FALHOU não é "nenhum contato salvo" (armadilha nº 2).
   const [erroContatos, setErroContatos] = useState("");
+  // E A QUE AINDA ESTÁ VINDO também não é (auditoria de 28/10): a aba Contatos
+  // diz que está lendo.
+  const [lendoAgenda, setLendoAgenda] = useState(false);
   // A RESPOSTA MAIS NOVA VENCE: digitando, uma busca lenta de "and" chegava
   // depois da de "andreia" e a sobrescrevia.
   const pedidoContatosRef = useRef(0);
@@ -4706,7 +4715,7 @@ export default function Painel({ sessao }) {
     void tique; // re-avalia a cada "tique", igual ao "digitando…"
     const a = atendimentos[convId];
     if (!a || !a.por || a.por === meuNome) return null;
-    if (a.em && Date.now() - new Date(a.em).getTime() > 3 * 60 * 1000) return null;
+    if (a.em && Date.now() - new Date(a.em).getTime() > PRESENCA_VALE_MS) return null;
     return a.por;
   }
 
@@ -6551,6 +6560,7 @@ export default function Painel({ sessao }) {
   // ---- Agenda de contatos (ver todos / criar novo) ----
   const carregarContatos = useCallback(async (termo) => {
     const meu = ++pedidoContatosRef.current;
+    setLendoAgenda(true);
     try {
       // O TERMO VAI PARA O BANCO, e a agenda deixa de ser uma lista inteira
       // baixada e filtrada aqui.
@@ -6621,6 +6631,8 @@ export default function Painel({ sessao }) {
       setContatosLista((data || []).filter((c) => !String(c.numero || "").startsWith("grupo:")));
     } catch (e) {
       if (meu === pedidoContatosRef.current) setErroContatos(comOCodigo("Não consegui ler a agenda de contatos.", e, "agenda"));
+    } finally {
+      if (meu === pedidoContatosRef.current) setLendoAgenda(false);
     }
   }, []);
 
@@ -6631,9 +6643,15 @@ export default function Painel({ sessao }) {
   // a mesma lista e a mesma caixa de busca, e só a "Nova conversa" carregava:
   // numa sessão nova a aba dizia "Nenhum contato ainda" com 1.432 contatos no
   // banco, e depois mostrava só o que a última busca de lá tinha trazido.
+  //
+  // E SEM DIZER "NENHUM" ENQUANTO ELA VEM (auditoria de 28/10): `lendoAgenda`
+  // sobe já aqui, na pausa, e a aba diz "Lendo a agenda…" antes de perguntar.
+  // O "Nenhum contato ainda" de um instante já mandava criar pelo "Novo" o
+  // contato que existia.
   const agendaNaTela = novaConversaAberta || (configAberta && abaConfig === "contatos");
   useEffect(() => {
     if (!agendaNaTela) return;
+    setLendoAgenda(true);
     const t = setTimeout(() => carregarContatos(buscaContato), 300);
     return () => clearTimeout(t);
   }, [buscaContato, agendaNaTela, carregarContatos]);
@@ -6792,7 +6810,7 @@ export default function Painel({ sessao }) {
                               "criar contato do Vantoro"), 7000);
       return;
     }
-    carregarContatos();
+    carregarContatos(buscaContato);
     await abrirConversaContato(cont);
   }
 
@@ -6845,7 +6863,10 @@ export default function Painel({ sessao }) {
     // pela de baixo no mesmo instante, e a pessoa não sabia que tinha
     // sobrescrito o nome de um contato que já existia.
     mostrarAviso(jaExiste ? "Este número já estava salvo; atualizei o nome." : "Contato salvo!");
-    carregarContatos();
+    // COM O TERMO QUE ESTÁ ESCRITO (auditoria de 28/10): sem ele vinham os 200
+    // primeiros do alfabeto, filtrados pela caixa — e a aba dizia "Nenhum
+    // contato encontrado". Vale para as outras portas que gravam contato.
+    carregarContatos(buscaContato);
   }
 
   // Abre (ou cria) a conversa do advogado atual com este contato.
@@ -6992,7 +7013,7 @@ export default function Painel({ sessao }) {
       mostrarAviso(comOCodigo("Não consegui salvar o contato.", error, "novo contato"), 7000);
       return;
     }
-    carregarContatos();
+    carregarContatos(buscaContato);
     await abrirConversaContato(cont);
   }
 
@@ -7012,7 +7033,7 @@ export default function Painel({ sessao }) {
       mostrarAviso(comOCodigo("Não consegui iniciar a conversa.", error, "conversar com o número"), 7000);
       return;
     }
-    carregarContatos();
+    carregarContatos(buscaContato);
     await abrirConversaContato(cont);
   }
 
@@ -7140,6 +7161,11 @@ export default function Painel({ sessao }) {
   // Só entram mensagens ENVIADAS (`origem = 'advogado'`). "Quem falou com o
   // cliente" é sobre nós; o que ele mandou está na conversa.
   async function carregarHistorico(contatoId) {
+    // OS ASSUNTOS QUE NÃO VIERAM SÃO PEDIDOS DE NOVO (auditoria de 28/10), como
+    // na janela do "Já tratei": sem eles, cada registro do histórico fica sem
+    // nome.
+    if (erroAssuntos) carregarAssuntos();
+    const NAO_LI_AS_PONTAS = "Não consegui ler as mensagens enviadas por este telefone.";
     // `contatoId` vai junto para as leituras que chegam depois (alterações,
     // "Já tratei") saberem se o painel ainda é o deste cliente: trocar de
     // conversa com ele aberto, e a resposta atrasada da anterior pintaria o
@@ -7198,6 +7224,11 @@ export default function Painel({ sessao }) {
           : advogados.find((a) => String(a.id) === String(l.advogado_id)) || null,
         primeira: l.primeira || null,
         ultima: l.ultima || null,
+        // UMA PONTA SÓ É LEITURA QUE FALHOU (auditoria de 28/10). Havendo
+        // mensagem nossa, as duas existem (podem ser a mesma); a ponte lê cada
+        // uma numa consulta e não diz quando uma cai — e a tela supunha as
+        // duas, e estourava.
+        falhou: !l.primeira !== !l.ultima ? NAO_LI_AS_PONTAS : "",
       }));
       linhas.sort((a, b) => new Date(b.ultima?.criado_em || 0) - new Date(a.ultima?.criado_em || 0));
       // Forma funcional: as alterações chegam por outra promessa, e trocar o
@@ -7231,12 +7262,19 @@ export default function Painel({ sessao }) {
 
     const linhas = await Promise.all((convs || []).map(async (v) => {
       const [pri, ult] = await Promise.all([pontas(v, true), pontas(v, false)]);
+      const primeira = (pri.data || [])[0] || null;
+      const ultima = (ult.data || [])[0] || null;
+      // A PONTA QUE NÃO VEIO NÃO É "NINGUÉM MANDOU" (auditoria de 28/10): o
+      // `error` das duas leituras era ignorado, e a falha virava "ainda não
+      // respondemos".
+      const erro = pri.error || ult.error;
       return {
         conversaId: v.id,
         advogadoId: v.advogado_id,
         adv: advogados.find((a) => String(a.id) === String(v.advogado_id)) || null,
-        primeira: (pri.data || [])[0] || null,
-        ultima: (ult.data || [])[0] || null,
+        primeira, ultima,
+        falhou: erro ? comOCodigo(NAO_LI_AS_PONTAS, erro, "pontas do histórico")
+          : (!primeira !== !ultima ? NAO_LI_AS_PONTAS : ""),
       };
     }));
     // O telefone com movimento mais recente primeiro: é onde a conversa está
@@ -7627,15 +7665,26 @@ export default function Painel({ sessao }) {
         const { data: conv, error: e2 } = await supabase.from("conversas")
           .upsert({ advogado_id: impAdvId, contato_id: cont.id }, { onConflict: "advogado_id,contato_id" }).select("id, ultima_atividade").single();
         if (e2) throw e2;
+        // A ORDEM DA REPETIÇÃO ENTRA NA CHAVE (auditoria de 28/10). A exportação
+        // do Android só tem o minuto: três fotos do mesmo minuto são três linhas
+        // iguais, com a mesma chave — e a gravação (`ignoreDuplicates`) ficava
+        // com uma, enquanto o aviso contava as três. A PRIMEIRA de cada
+        // repetição continua com a chave de sempre: reimportar um arquivo que
+        // entrou antes deste conserto não duplica nada, e só as que tinham se
+        // perdido entram.
+        const vezes = new Map();
         const linhas = it.msgs.map((m) => {
           const origem = m.autor === meu ? "advogado" : "contato";
           const texto = rotularMidiaExport(m.texto) || m.texto;
           const iso = m.data.toISOString();
+          const chave = conv.id + "|" + iso + "|" + (it.ehGrupo ? m.autor : origem) + "|" + (texto || "").slice(0, 80);
+          const vez = (vezes.get(chave) || 0) + 1;
+          vezes.set(chave, vez);
           return {
             conversa_id: conv.id, origem, tipo: "texto", texto,
             // No grupo, várias pessoas escrevem — o autor entra na chave para não
             // colidir; e guardamos SEMPRE quem enviou (para mostrar na bolha).
-            id_uazapi: (it.ehGrupo ? "grp-" : "txt-") + hashCurto(conv.id + "|" + iso + "|" + (it.ehGrupo ? m.autor : origem) + "|" + (texto || "").slice(0, 80)),
+            id_uazapi: (it.ehGrupo ? "grp-" : "txt-") + hashCurto(vez === 1 ? chave : chave + "|" + vez),
             status: origem === "advogado" ? "enviada" : "recebida",
             criado_em: iso,
             enviado_por: it.ehGrupo ? m.autor : (origem === "advogado" ? meu : null),
@@ -8399,26 +8448,37 @@ export default function Painel({ sessao }) {
   // ---- Mantém vivo o "estou atendendo" enquanto a conversa fica aberta ----
   // Este era o pior dos casos: um relógio que batia no banco a cada minuto,
   // para sempre, mesmo quando a coluna não existia e a resposta era erro.
+  //
+  // O PULSO GRAVA QUEM ATENDE, e não só a hora (auditoria de 28/10). Só com a
+  // hora, ele renovava a marca de quem estivesse nela: B saía limpando, e A,
+  // ainda na conversa, sumia para os colegas; B fechava a aba sem limpar, e o
+  // pulso de A mantinha o nome de B vivo sem fim. Agora ele renova a MINHA
+  // marca, toma a vazia ou a vencida (`PRESENCA_VALE_MS`, a régua do aviso) e
+  // não toca na viva de outra pessoa — quem abriu por último continua sendo
+  // quem aparece. Por isso zero linhas aqui é o caso legítimo, e não a recusa
+  // calada: quem pega a recusa é a gravação da abertura, que desliga o recurso
+  // antes do primeiro pulso. E o pulso que estava no meio do caminho quando eu
+  // saí da conversa não toma a marca dela (`vivo`): a limpeza da saída acabou
+  // de apagá-la, e tomá-la de volta me mostraria lá por três minutos.
   useEffect(() => {
     if (!conversaId || !RECURSOS.atendendo) return;
-    const id = setInterval(() => {
+    let vivo = true;
+    const id = setInterval(async () => {
       if (!RECURSOS.atendendo) { clearInterval(id); return; }
-      supabase.from("conversas")
-        .update({ atendendo_em: new Date().toISOString() })
-        .eq("id", conversaId).select("id")
-        .then((r) => {
-          if (r.error) desligarRecurso("atendendo", r.error);
-          // A recusa calada não é erro passageiro: ela não muda no minuto
-          // seguinte, e sem isto o pulso bateria no banco para sempre à toa.
-          else if (naoGravouNada(r)) desligarPorRecusa("atendendo");
-          else return;
-          // Só para o relógio se o recurso morreu de vez. Erro passageiro
-          // (rede) não desliga nada e o próximo minuto tenta de novo.
-          if (!RECURSOS.atendendo) clearInterval(id);
-        });
+      const agora = Date.now();
+      const marca = { atendendo_por: meuNome, atendendo_em: new Date(agora).toISOString() };
+      const vencida = new Date(agora - PRESENCA_VALE_MS).toISOString();
+      const gravar = (so) => so(supabase.from("conversas").update(marca).eq("id", conversaId)).select("id");
+      let r = await gravar((q) => q.eq("atendendo_por", meuNome));
+      if (vivo && !r.error && naoGravouNada(r)) r = await gravar((q) => q.is("atendendo_por", null));
+      if (vivo && !r.error && naoGravouNada(r)) r = await gravar((q) => q.lt("atendendo_em", vencida));
+      // Só para o relógio se o recurso morreu de vez (a coluna que falta).
+      // Erro passageiro (rede) não desliga nada e o próximo minuto tenta de novo.
+      if (r.error) desligarRecurso("atendendo", r.error);
+      if (!RECURSOS.atendendo) clearInterval(id);
     }, 60000);
-    return () => clearInterval(id);
-  }, [conversaId]);
+    return () => { vivo = false; clearInterval(id); };
+  }, [conversaId, meuNome]);
 
   // AO SAIR DA CONVERSA, A MARCA É APAGADA.
   //
@@ -17949,7 +18009,9 @@ export default function Painel({ sessao }) {
                   const nomes = g.assuntos
                     .map((id) => assuntos.find((a) => String(a.id) === String(id)))
                     .sort((a, b) => (a?.ordem ?? 999) - (b?.ordem ?? 999))
-                    .map((a) => a?.nome || "assunto removido");
+                    // A LISTA QUE NÃO VEIO NÃO APAGOU NADA (auditoria de
+                    // 28/10): sem ela, todo assunto virava "removido".
+                    .map((a) => a?.nome || (erroAssuntos ? "assunto não carregado" : "assunto removido"));
                   const quemDesfez = g.desfeitoPor ? (equipe.porId[String(g.desfeitoPor)]?.nome || "alguém") : null;
                   return (
                     <div key={g.chave} data-registro-no-historico data-desfeito={g.desfeitoEm ? "sim" : undefined}
@@ -18110,7 +18172,13 @@ export default function Painel({ sessao }) {
             })()}
 
             {!historico.carregando && !historico.erro && (() => {
-              const comEnvio = historico.linhas.filter((l) => l.primeira);
+              // SÓ COM AS DUAS PONTAS (auditoria de 28/10). Com uma só, a que
+              // faltava era lida do nada no meio do desenho —
+              // `l.ultima.criado_em` —, e o TypeError desmontava o painel
+              // inteiro até o F5. A linha que não tem as duas diz que não
+              // conseguiu ler (`falhou`).
+              const comEnvio = historico.linhas.filter((l) => l.primeira && l.ultima);
+              const semLeitura = historico.linhas.filter((l) => l.falhou).length;
               // A PRIMEIRA e a ÚLTIMA de todas: a conta é entre os
               // telefones, e não dentro de um. Quem abriu a relação com o
               // cliente pode ter sido um telefone que hoje está calado.
@@ -18134,7 +18202,7 @@ export default function Painel({ sessao }) {
                       <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 4 }}>
                         {l.adv ? comNumero(l.adv) : "telefone removido"}
                       </div>
-                      {l.ultima ? (
+                      {l.primeira && l.ultima ? (
                         <>
                           <div style={{ fontSize: 12, color: C.textSecondary }}>
                             última: <b style={{ color: C.textPrimary, fontWeight: 600 }}>{l.ultima.enviado_por || "equipe"}</b> · {dataHoraDe(l.ultima.criado_em)}
@@ -18143,6 +18211,8 @@ export default function Painel({ sessao }) {
                             primeira: {l.primeira.enviado_por || "equipe"} · {dataHoraDe(l.primeira.criado_em)}
                           </div>
                         </>
+                      ) : l.falhou ? (
+                        <div data-historico-sem-leitura style={{ fontSize: 12, color: C.erroTexto, lineHeight: 1.45 }}>{l.falhou}</div>
                       ) : (
                         <div style={{ fontSize: 12, color: C.textSecondary }}>ainda não respondemos por aqui</div>
                       )}
@@ -18191,12 +18261,16 @@ export default function Painel({ sessao }) {
                 return (
                   <>
                     <div style={{ fontSize: 13.5, color: C.textSecondary, lineHeight: 1.6, marginBottom: porTelefone ? 14 : 0 }}>
+                      {/* A LEITURA QUE FALHOU NÃO VIRA "NINGUÉM ENVIOU" (auditoria de 28/10). */}
+                      {semLeitura ? "Não consegui ler o que o escritório enviou a este cliente. "
+                                    + "Feche e abra o histórico de novo daqui a pouco." : <>
                       Ninguém do escritório enviou mensagem para este cliente ainda —
                       {historico.linhas.length
                         ? " a conversa existe, mas só com o que ele mandou."
                         : (historico.parcial
                             ? " não há conversa com ele nos telefones que você alcança (e não consegui consultar os outros agora)."
                             : " não há conversa com ele em nenhum telefone do escritório.")}
+                      </>}
                     </div>
                     {porTelefone}
                   </>
@@ -18225,6 +18299,12 @@ export default function Painel({ sessao }) {
                 <>
                   <Marco rotulo="Primeira mensagem enviada" l={primeira} msg={primeira.primeira} />
                   <Marco rotulo="Última mensagem enviada" l={ultima} msg={ultima.ultima} />
+                  {semLeitura > 0 && (
+                    <div style={{ fontSize: 12, color: C.erroTexto, lineHeight: 1.5, marginBottom: 14 }}>
+                      Não consegui ler as mensagens de {semLeitura === 1 ? "um telefone" : `${semLeitura} telefones`}:
+                      a primeira ou a última podem estar lá.
+                    </div>
+                  )}
                   {porTelefone}
                 </>
               );
@@ -18686,7 +18766,8 @@ export default function Painel({ sessao }) {
                           const q = buscaContato.trim().toLowerCase();
                           const chaveQ = chaveDoNumero(q);
                           const lista = contatosLista.filter((c) => contatoCasaComABusca(c, q, chaveQ));
-                          if (!lista.length) return <div style={{ padding: 24, textAlign: "center", color: erroContatos ? C.erroTexto : C.textSecondary, fontSize: 13.5 }}>{erroContatos || (contatosLista.length ? "Nenhum contato encontrado." : "Nenhum contato ainda. Toque em Novo para criar.")}</div>;
+                          // ENQUANTO A AGENDA VEM, NÃO HÁ "NENHUM" (auditoria de 28/10).
+                          if (!lista.length) return <div style={{ padding: 24, textAlign: "center", color: erroContatos ? C.erroTexto : C.textSecondary, fontSize: 13.5 }}>{erroContatos || (lendoAgenda ? "Lendo a agenda…" : contatosLista.length ? "Nenhum contato encontrado." : "Nenhum contato ainda. Toque em Novo para criar.")}</div>;
                           return lista.map((c) => (
                             <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderBottom: `1px solid ${C.divider}` }}>
                               <Avatar nome={c.nome || c.numero} foto={c.foto_url} size={40} />
