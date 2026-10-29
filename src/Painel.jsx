@@ -6847,8 +6847,13 @@ export default function Painel({ sessao }) {
   // sobe já aqui, na pausa, e a aba diz "Lendo a agenda…" antes de perguntar.
   // O "Nenhum contato ainda" de um instante já mandava criar pelo "Novo" o
   // contato que existia.
+  //
+  // ANTES DA PINTURA (`useLayoutEffect`, 29/10). Com `useEffect`, o aviso só
+  // subia depois do primeiro quadro da aba aberta — e esse quadro dizia
+  // "Nenhum contato ainda". Com a máquina carregada ele durava o bastante para
+  // ser visto (a prova o pegou numa rodada com três filas ao mesmo tempo).
   const agendaNaTela = novaConversaAberta || (configAberta && abaConfig === "contatos");
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!agendaNaTela) return;
     setLendoAgenda(true);
     const t = setTimeout(() => carregarContatos(buscaContato), 300);

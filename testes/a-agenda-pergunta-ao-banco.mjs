@@ -65,6 +65,14 @@ async function abrirPainel({ endereco = ENDERECO, quebrarContatos = false } = {}
     globalThis.__QUEBRAR_SO_A_LEITURA = d.quebrar ? ["contatos"] : [];
     globalThis.__FILME = [];
     globalThis.__DISSE_NENHUM = false;
+    // A CADA MUDANÇA DA TELA, e não a cada 50 ms (junção com a #290, 29/10): o
+    // "Nenhum contato ainda" durava UM quadro — o da abertura da aba, antes de
+    // o aviso de "lendo" subir —, e a olhada de 50 em 50 só o pegava com a
+    // máquina carregada. O observador vê a tela como ela fica ao fim de cada
+    // mudança, que é o que pode chegar a ser pintado.
+    new MutationObserver(() => {
+      if (document.body && document.body.textContent.includes("Nenhum contato ainda")) globalThis.__DISSE_NENHUM = true;
+    }).observe(document, { childList: true, subtree: true, characterData: true });
     setInterval(() => {
       const el = document.querySelector("[data-aviso]");
       const t = el ? el.innerText.trim() : "";
