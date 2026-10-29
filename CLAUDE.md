@@ -2079,6 +2079,13 @@ Ler sem baixar continua a um clique, no menu da mensagem — e só em
 documento. **No modo de seleção o clique é da seleção**: quem marca o que
 apagar não quer um arquivo baixado a cada bolha.
 
+**Mudou em 29/10, só para o PDF recebido:** o cartão ganhou em cima a foto
+da primeira página, e **o clique na FOTO abre o PDF em tela cheia**, com o
+"Baixar" ali dentro (com o nome, pelo mesmo `baixarDocumento`). **A linha do
+nome continua baixando**, como está escrito acima. A foto fica fora do link,
+para cada lugar ter um gesto só. Ver "A prévia do PDF, como a das imagens
+(29/10)".
+
 **O jeito é o de `baixarImagem`, que já existia**: buscar o arquivo e salvar
 de um endereço local (`blob:`), onde o `download` vale
 (`baixarComONome`). O `href` do cartão já é o endereço que o Storage serve
@@ -2154,6 +2161,211 @@ primeira rodada ensinaram:
   para os navegadores que leem o endereço depois, e a prova não roda neles.
   É a régua de 25/09: sabotagem que o resto do sistema conserta sozinho não
   prova nada.
+
+## A prévia do PDF, como a das imagens (29/10)
+
+Pedido do Rodrigo: *"Para os arquivos em PDF recebidos, dá para ter uma pré
+visualização igual as imagens? Se sim, faça."*
+
+A imagem aparece na conversa como foto, e o clique a abre grande. O PDF
+aparecia como um cartão com o nome — e só no Chrome com o leitor de PDF ligado
+ganhava, por cima, uma faixa de 150px de um `<iframe>`. Agora:
+
+| | |
+|---|---|
+| na bolha | a **primeira página como foto**, no tamanho da imagem da conversa (até 260 de largura e 320 de altura: uma A4 sai com 226×320), e a linha embaixo diz **"PDF · 3 páginas"** |
+| o clique na foto | abre o **PDF inteiro em tela cheia** (`VisualizadorDePdf.jsx`), com "Baixar" (com o nome do cartão), "Abrir numa aba nova" e fechar |
+| a linha do nome | continua **baixando**, com o nome (16/10) |
+| fecha com | Esc, o X e o clique no escuro; o clique na página não fecha |
+
+**A foto e a linha do nome são dois gestos, em dois lugares**: a foto abre, o
+nome baixa. Um botão dentro do link não seria nem um nem outro — por isso a
+foto mora fora do `<a>`, num `<div data-cartao-do-pdf>` que segura os dois. No
+modo de seleção a foto não abre nada (o clique é da seleção), e a seta de
+opções continua pintada por cima dela.
+
+### Quem desenha é o pdf.js, e não o leitor do navegador
+
+O `<iframe>` só desenhava quando duas coisas davam certo juntas: o depósito
+dizer `application/pdf` **e** o navegador ter o leitor ligado. Faltando uma,
+nada — e o iframe que nascesse no caso errado **baixava o arquivo sozinho**
+(o relato de 29/09). O pdf.js lê os bytes e desenha numa tela própria: não
+depende de nenhum dos dois, e não baixa nada para a pasta de ninguém. O PDF que
+o WhatsApp manda sem tipo, que antes ficava sem prévia, agora tem a foto.
+
+`arquivos.js` dizia que um leitor de PDF em JavaScript "pesa mais do que o
+painel inteiro, e seria carregado por toda pessoa que abre a tela". A primeira
+metade é verdade; a segunda não precisa ser:
+
+- **a biblioteca só vem quando um PDF chega perto da tela** (`import()`), num
+  arquivo à parte (`pdf-….js`, 542 KB), com o trabalhador noutro
+  (`trabalhadorDoPdf-….js`, 1,3 MB). Quem nunca abre uma conversa com PDF não
+  baixa nada disso;
+- **a versão "legacy", e não a moderna** — MEDIDO: a moderna usa
+  `Map.prototype.getOrInsertComputed`, que o Chromium das provas (141) não
+  tem, e falhava em todo PDF. A "legacy" traz esses recursos junto; custa uns
+  70 KB a mais, só para quem abre um PDF;
+- **o trabalhador sai como `.js`** (`src/trabalhadorDoPdf.js`, importado com
+  `?worker&url`). O do pacote é `.mjs`, e o navegador só aceita um trabalhador
+  que o servidor entregue com o tipo de JavaScript — daqui não dá para ver o
+  que o site responde para `.mjs`, e um trabalhador recusado deixaria toda
+  prévia de fora, calada;
+- **um trabalhador só para todos os PDFs**, e **no máximo duas fotos
+  desenhadas ao mesmo tempo** (`MINIATURAS_JUNTAS`): uma conversa com vinte
+  PDFs não abre vinte processos nem trava a rolagem.
+
+O pacote é o `pdfjs-dist` 6.4.299, com a versão escrita sem `^`. Ele traz como
+opcional o `@napi-rs/canvas` (36 MB), que só serve no Node: o `npm install`
+da Render e da integração contínua o baixa, e o navegador nunca o usa.
+
+### Os arquivos de apoio, servidos pelo próprio site
+
+O pdf.js busca à parte, só quando o PDF pede, os **decodificadores de imagem
+em WebAssembly** (JBIG2, o de muita digitalização em preto e branco; JPEG
+2000), a versão deles em JavaScript para quando o WebAssembly falhar, o de
+perfil de cor, e as **fontes padrão**. Faltando um, **a página digitalizada sai
+em branco, sem erro nenhum na tela** — a falha que ninguém associa à causa.
+
+O `vite.config.js` os põe em `dist/pdfjs/` no build e os serve do pacote no
+servidor de desenvolvimento, no mesmo endereço (`/pdfjs/wasm/`,
+`/pdfjs/standard_fonts/`). **Ficam de fora, e é decisão**: o `quickjs-eval`
+(roda o JavaScript que vem dentro do PDF, e a prévia não roda), os `cmaps`
+(fontes chinesas, japonesas e coreanas que não vêm no arquivo) e os perfis de
+cor `iccs`.
+
+### O que o depósito tem, medido em 29/10
+
+Em `storage.objects`, só os tamanhos: **3.201 PDFs**, mediana de **111 KB**,
+90% até **845 KB**, o maior com **38,2 MB**. **8 passam de 25 MB**, que é o
+teto da foto (`TETO_DA_MINIATURA_BYTES`): para esses, o depósito é perguntado
+só pelo tamanho (um HEAD), o arquivo nem é pedido, e fica o cartão de sempre.
+
+**1.338 passam de 128 KB**, e para eles importa ler por pedaços. A foto pede
+ao pdf.js só o que a primeira página precisa (`disableStream` e
+`disableAutoFetch`): **num depósito que deixa ler por pedaços** (`Range`, com
+o `Accept-Ranges` à vista do navegador), um PDF grande não vem inteiro — a
+prova mede menos de um quarto de 2,2 MB. **Se o Supabase deixa, não deu para
+conferir daqui** (o proxy desta sessão recusa `supabase.co`). Se não deixar, o
+arquivo vem inteiro, como já vinha para o iframe no Chrome do escritório, e
+fica guardado pelo navegador (o `immutable` de um ano da armadilha nº 6).
+
+### O que não dá fica com o cartão de sempre
+
+PDF quebrado, com senha, grande demais, ou que o depósito não tem: sem foto e
+**sem o lugar dela** — nunca uma moldura vazia. Word, Excel e o resto não
+ganham foto nenhuma. Enquanto a foto não chega, o PDF guarda o lugar de uma
+página A4, e a conversa não pula 320px no meio da leitura.
+
+**A biblioteca que não carregou** (a rede caiu naquele segundo; uma publicação
+nova trocou o nome do arquivo com a página aberta) deixa o cartão de sempre,
+que baixa. **O navegador guarda o `import` que falhou até a página ser
+recarregada** — medido no Chromium: o segundo `import()` do mesmo arquivo
+falha sem nem pedir de novo. Ali, só um F5 traz a foto de volta. **E sem o
+pdf.js o Zorvin abre**: ele só vem pelo `import()`. Preso no arquivo principal,
+o arquivo que a rede derrubasse derrubaria a tela inteira.
+
+**O que não vai mudar fica guardado, e o tropeço não** (`naoMudaNaSegunda`).
+A resposta "não dá" do PDF quebrado, do que tem senha, do grande demais e do
+que o depósito não tem fica guardada enquanto a página estiver aberta:
+perguntar de novo a cada conversa aberta seria ida ao depósito à toa. **O
+tropeço não fica** — o depósito respondendo 5xx, a conexão que caiu no meio.
+Guardado, ele deixaria o PDF sem foto até alguém apertar F5, e o painel passa
+o dia aberto. A bolha que volta à tela tenta de novo. Achado relendo o código
+antes da PR, e não por relato.
+
+### A janela em tela cheia
+
+- **as páginas são desenhadas quando chegam perto da vista, e apagadas quando
+  se afastam**: uma A4 na largura da janela, numa tela de alta resolução, ocupa
+  uns 18 MB; um contrato de cem páginas desenhado inteiro seriam quase 2 GB, e
+  o navegador fecharia a aba. Perto da vista ficam três ou quatro;
+- **o lugar de cada página já tem o tamanho certo** (pela proporção da
+  primeira), e a barra de rolagem diz desde o começo o tamanho do documento;
+- **o que não abre é dito, com o motivo** (senha; não é um PDF; o depósito
+  respondeu 404) e com as duas saídas, Baixar e Abrir numa aba nova;
+- **nada de links nem de campos clicáveis dentro do PDF**: a página é uma
+  imagem desenhada. É um documento que chegou de fora, e um link dentro dele
+  leva para onde quem o fez quis.
+
+**A prévia ANTES DE MANDAR um anexo continua com o iframe**, e é decisão: lá o
+arquivo é o da própria máquina, e rolar e ampliar no leitor do navegador é o
+ponto.
+
+### Um erro sem dono no console, e era meu
+
+A prova reprovou "nenhum erro de JavaScript" na janela, com `InvalidPDFException`
+e `ResponseException`. Li o pdf.js e achei um relançamento lá dentro
+(`sink.ready.catch(... throw ...)`), e escrevi na prova que o erro era dele.
+**Não era.** A janela que fecha antes de a biblioteca chegar — e o React de
+desenvolvimento monta tudo duas vezes, que é o mesmo caso — deixava uma tarefa
+abrindo o PDF para ninguém, e a falha dela não tinha quem a ouvisse. Soltando a
+tarefa na hora, os dois erros sumiram, e a conferência voltou a valer para o
+404 também. **Antes de pôr a culpa na biblioteca, confira se quem esqueceu a
+promessa não fui eu.**
+
+### A prova
+
+`a-previa-do-pdf`, 105 conferências. Os PDFs são **montados na própria prova**
+(catálogo, páginas, índice com as posições de verdade), e a página
+digitalizada é 1 KB de JPEG 2000 embutido. Um **depósito de mentira noutro
+endereço** serve tudo, como o de verdade, e um deles atende `Range`. Ela roda
+no servidor de desenvolvimento — é lá que o React monta tudo duas vezes, e foi
+assim que a tarefa esquecida apareceu — e **monta o build**, como a Render o
+monta (sem a bancada), para conferir o que vai para o ar: os decodificadores em
+`dist/pdfjs/`, iguais aos do pacote; o pdf.js e o trabalhador em arquivos à
+parte; nada `.mjs`.
+
+**Ela levava cinco minutos, e dois eram de uma pergunta só.** `getAttribute` e
+`innerText` num elemento que não existe esperam 30 segundos antes de desistir,
+e "não há foto" é a resposta certa de metade das cenas: a cena 5 esperava
+quatro vezes, 120 segundos. Hoje os ajudantes contam antes de ler, e a prova
+leva 90 segundos. Nas sabotagens que tiram a foto, cada pergunta teria
+esperado os 30 segundos, e a prova estouraria o prazo sem dizer qual
+conferência viu o defeito.
+
+**E uma sabotagem pegou estourando.** O pdf.js importado direto reprovava a
+cena 1 e, na cena 12, com a biblioteca fora do ar, o painel inteiro não abria
+— e a espera da prova não era guardada. Era um defeito de verdade sem
+conferência própria: hoje a cena 12 começa por *"sem a biblioteca, o painel
+abre assim mesmo"*. O meu script de sabotagens também contava como pega limpa
+a que reprovava uma conferência e depois estourava; hoje ele diz "PEGOU, MAS
+ESTOUROU" e guarda a saída inteira de cada uma — é o avesso do engano de
+28/09, quando ele dizia VAZOU para a que derrubava a prova.
+
+As conferências das provas vizinhas foram **invertidas, e não apagadas**:
+
+- `documentos`: "o PDF ganha prévia, desenhada pelo leitor do navegador" virou
+  "o PDF ganha a primeira página como foto, com ou sem o leitor — e nenhum
+  iframe"; e entraram três: o PDF sem tipo também ganha a foto, a foto fica
+  fora do link que baixa, e sem leitor os dois PDFs ganham a foto assim mesmo;
+- `a-auditoria-de-27-10`, cena 8b: a seta continua pintada por cima da prévia,
+  que hoje é a foto.
+
+**28 sabotagens e 28 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma:
+
+- o painel de antes inteiro (70 reprovações — é o pedido reproduzido);
+- **a biblioteca:** o pdf.js importado direto, sem esperar um PDF (e o painel
+  não abre sem ele); a versão moderna (65 reprovações: nenhuma foto sai); sem
+  os arquivos de apoio (a página digitalizada sai em branco); o build sem eles;
+  o build levando o `quickjs`;
+- **a foto:** sem o teto de 25 MB; sem perguntar o tamanho ao depósito; sem o
+  `disableStream` (o arquivo vem inteiro, sem pedaços); sem o
+  `disableAutoFetch`; sem a fila; a foto que baixa em vez de abrir; a que abre
+  no modo de seleção; o lugar da página sem tamanho; a foto maior que a imagem
+  da conversa; sem o número de páginas; a biblioteca que falha deixando o
+  lugar vazio; o tropeço do depósito guardado; nada guardado, nem o que não
+  muda;
+- **a janela:** o Esc sem a janela na escada; o Esc sem o `return`; o clique
+  na página fechando; as páginas longe da vista sem apagar; todas desenhadas
+  ao abrir; a tarefa esquecida; o nome cru; o "Baixar" abrindo uma aba (o
+  arquivo sai como `PDF2SEMTIPO.pdf`); a falha sem o motivo.
+
+**A do `disableAutoFetch` pega por outro caminho.** A cena dos pedaços passa
+sem ele — provavelmente porque ali a foto fica pronta, e a tarefa é solta,
+antes de o pdf.js começar a buscar o resto. Quem pega é a cena da fila, com o
+depósito lento: três downloads ficam no ar ao mesmo tempo, quando a fila deixa
+dois.
 
 ## A citação leva até a mensagem citada
 
@@ -5512,6 +5724,13 @@ que o relato nem chegou a mostrar.
 Prova: `documentos`, 42 conferências, **6 sabotagens e 6 pegas** (o painel de
 antes inteiro, nos dois navegadores; o PDF sem perguntar o tipo; o texto de
 volta no iframe; a prévia de mandar com o iframe próprio; o leitor ignorado).
+
+**Mudou em 29/10, na bolha:** o PDF deixou de usar o iframe e ganhou a foto da
+primeira página, desenhada pelo pdf.js — com ou sem o leitor do navegador, e
+também o PDF servido sem tipo. O que esta seção conserta continua consertado
+(nenhum iframe nasce numa bolha). O iframe ficou só na prévia antes de mandar
+um anexo. Ver "A prévia do PDF, como a das imagens (29/10)"; as conferências
+de `documentos` que pediam o iframe foram invertidas.
 
 ## As atualizações do banco — o que a ponte fez ao subir (08/10)
 
