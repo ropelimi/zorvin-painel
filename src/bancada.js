@@ -495,19 +495,20 @@ CONVERSAS.push({
 // número do contato da conversa aberta, e pendurar isto no APELIDO faria
 // metade das outras provas encontrarem uma tarja âmbar que não esperavam.
 const NUMEROS_RUINS = [
-  { id: "ct-sem-nono", numero: "553189271231", nome: "Alcides (sem o 9)" },
-  { id: "ct-fixo",     numero: "551130383888", nome: "PG Advogados (fixo)" },
-  { id: "ct-ddd-mau",  numero: "550497234535", nome: "Fontana (DDD 04)" },
+  { id: "ct-sem-nono", numero: "553187774411", nome: "Alcides (sem o 9)" },
+  { id: "ct-fixo",     numero: "551132345678", nome: "PG Advogados (fixo)" },
+  { id: "ct-ddd-mau",  numero: "550491234567", nome: "Fontana (DDD 04)" },
   // A TRAVA CONTRA A TARJA QUE APARECE À TOA. Este número está perfeito — ele
   // é que não tem WhatsApp, e isso o número não conta. Se a tarja nascer aqui,
   // ela nasce em toda conversa e vira ruído que se aprende a pular.
-  { id: "ct-numero-bom", numero: "5511991777483", nome: "Francisco (número bom)" },
-  // A SEGUNDA TRAVA, E ELA VEIO DE UM RELATO. "Dias Costa Advogados",
-  // (31) 8418-0018: doze dígitos, forma antiga — e a conversa FUNCIONA, com
+  { id: "ct-numero-bom", numero: "5511998765432", nome: "Francisco (número bom)" },
+  // A SEGUNDA TRAVA, E ELA VEIO DE UM RELATO. Um escritório parceiro, com
+  // doze dígitos na forma antiga (o número aqui é de exemplo; o de verdade não
+  // fica no código) — e a conversa FUNCIONA, com
   // mensagens indo e voltando. A primeira versão da tarja anunciava em âmbar
   // que faltava o nono dígito, com a prova do contrário logo abaixo, na mesma
   // tela. Contas antigas continuam atendendo na forma de oito dígitos.
-  { id: "ct-antigo-que-funciona", numero: "553184180018", nome: "Dias Costa (antigo, funciona)" },
+  { id: "ct-antigo-que-funciona", numero: "553186543210", nome: "Dias Costa (antigo, funciona)" },
 ];
 
 // A FILA DE ERRO DESTES NÚMEROS. As tentativas que falharam moram em
@@ -2322,6 +2323,15 @@ function consulta(tabela) {
         ? (encomendado.length > 1 ? encomendado.shift() : encomendado[0])
         : encomendado;
       if (extra && await esperaOuAborto(extra, sinal)) return resolver(respostaAbortada());
+      // A PÁGINA QUE DEMORA (28/10). `__ATRASO_DA_PAGINA = { conversas: {
+      // aPartirDe: 300, ms: 3000 } }` atrasa só as leituras paginadas desta
+      // tabela que começam daquela linha em diante: é a página 2 da lista em
+      // voo enquanto a página 0 é relida. Pelo atraso da tabela, as quatro
+      // leituras de `conversas` que saem juntas disputariam o mesmo atraso, e
+      // a corrida não teria como ser montada.
+      const daPagina = (globalThis.__ATRASO_DA_PAGINA || {})[tabela];
+      if (daPagina && inicio >= daPagina.aPartirDe
+          && await esperaOuAborto(daPagina.ms, sinal)) return resolver(respostaAbortada());
       // A COLUNA QUE NÃO EXISTE NESTA BASE.
       //
       // `__SEM_COLUNAS = { notas: ["autor_foto"] }` faz a gravação ser RECUSADA
@@ -2687,6 +2697,26 @@ function consulta(tabela) {
         } });
       }
 
+      // O EMPATE NÃO TEM ORDEM NO BANCO DE VERDADE (28/10). Linhas iguais em
+      // todas as colunas do `order` vêm na ordem que a consulta escolher, e o
+      // `range` da página 2 não sabe o que a página 1 trouxe. Aqui a ordem é
+      // estável, e uma paginação sem desempate passava calada.
+      // `__EMPATE_SEM_ORDEM = ["zorvin_cartoes"]` faz as páginas ímpares
+      // verem os empates ao contrário, como uma consulta que o banco montou
+      // por outro caminho. Com desempate (`.order("id")`), não há empate.
+      const empateSemOrdem = (typeof globalThis !== "undefined" && globalThis.__EMPATE_SEM_ORDEM) || [];
+      if (empateSemOrdem.includes(tabela) && ordensDaConsulta.length
+          && Math.floor(inicio / LIMITE_LINHAS) % 2 === 1) {
+        const empata = (a, b) => ordensDaConsulta.every((o) => comparar(a[o.col], b[o.col]) === 0);
+        const reordenadas = [];
+        for (let i = 0; i < linhas.length;) {
+          let j = i + 1;
+          while (j < linhas.length && empata(linhas[i], linhas[j])) j++;
+          reordenadas.push(...linhas.slice(i, j).reverse());
+          i = j;
+        }
+        linhas = reordenadas;
+      }
       // O teto entra AQUI, no fim, igual à API de verdade: depois de filtrar e
       // ordenar, e sem avisar ninguém de que sobrou coisa para trás.
       // A CONTAGEM NÃO PASSA PELO TETO DE LINHAS, como no banco de verdade: o
@@ -3001,6 +3031,12 @@ export const supabase = {
   // defeito que o painel não tem. Ela só COMEÇA quando alguém espera por ela,
   // para o `.abortSignal()` chegar antes de o primeiro atraso começar a correr.
   rpc: (nome, args) => {
+    // AS CHAMADAS DE FUNÇÃO FICAM ANOTADAS quando a prova pede
+    // (`__FUNCOES_CHAMADAS = []`), como o `__DIARIO` das tabelas. O período
+    // do Painel só existe nos argumentos (`p_desde`, `p_ate`): o rótulo do
+    // botão é uma conta sobre eles, e um período torto por um milissegundo
+    // tem o mesmo rótulo de um certo (28/10).
+    if (Array.isArray(globalThis.__FUNCOES_CHAMADAS)) globalThis.__FUNCOES_CHAMADAS.push({ nome, args: { ...(args || {}) } });
     let sinal = null, correndo = null;
     const correr = () => (correndo || (correndo = executar()));
     const executar = async () => {
@@ -3011,6 +3047,26 @@ export const supabase = {
     // sem poder reprovar a primeira a bancada só provava a segunda.
     if ((globalThis.__FUNCAO_FALHA || []).includes(nome)) {
       return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } };
+    }
+    // A FUNÇÃO QUE TROPEÇA, E A QUE DEMORA (28/10).
+    //
+    // `__QUEBRAR_FUNCAO = ["nao_lidas_por_telefone"]` faz a função responder
+    // com ERRO — e não com "não existe" (PGRST202), que a tela trata por
+    // outro caminho. Sem isto só dava para tirar a função inteira, e um painel
+    // que tratasse qualquer erro como "não existe" passava calado.
+    //
+    // `__ATRASO_POR_FUNCAO = { nome: ms }` atrasa cada chamada; o valor pode
+    // ser uma função dos argumentos (`(a) => a.p_advogado === "a13" ? 2500 :
+    // 0`), que é o que monta a corrida entre a resposta de um telefone e a do
+    // telefone escolhido depois dele.
+    if (((typeof globalThis !== "undefined" && globalThis.__QUEBRAR_FUNCAO) || []).includes(nome)) {
+      await espera(40);
+      return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } };
+    }
+    {
+      const pedido = ((typeof globalThis !== "undefined" && globalThis.__ATRASO_POR_FUNCAO) || {})[nome];
+      const ms = typeof pedido === "function" ? pedido(args || {}) : pedido;
+      if (ms && await esperaOuAborto(ms, sinal)) return respostaAbortada();
     }
     // QUEM JÁ ESCREVEU POR ESTE TELEFONE, e as conversas de quem se escolher.
     //

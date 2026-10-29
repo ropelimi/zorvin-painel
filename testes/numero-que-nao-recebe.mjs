@@ -4,8 +4,8 @@
 // escritório. Tirando o erro passageiro, o que sobrou foram duas coisas — e as
 // duas são visíveis no próprio número, sem perguntar nada a ninguém:
 //
-//   16 celulares gravados na forma antiga, sem o nono dígito. "553189271231" é
-//      o 31 8927-1231; o WhatsApp só conhece "5531989271231". Cada um desses é
+//   16 celulares gravados na forma antiga, sem o nono dígito. "553187774411" é
+//      o 31 8777-4411; o WhatsApp só conhece "5531987774411". Cada um desses é
 //      um cliente que nunca recebeu nada.
 //
 //    8 telefones FIXOS — dois deles escritórios parceiros. Fixo não tem
@@ -91,7 +91,7 @@ console.log("\nO telefone fixo");
      /WhatsApp Business/i.test(t?.texto || ""), t?.texto);
   // A TRAVA QUE IMPORTA AQUI: pôr um 9 num fixo inventa um número que não
   // existe, e mandaria alguém ligar para o nada.
-  ok("e NÃO sugere pôr um 9 nele", !/3038-3888/.test((t?.texto || "").replace(/\(11\) 3038-3888/, "")),
+  ok("e NÃO sugere pôr um 9 nele", !/3234-5678/.test((t?.texto || "").replace(/\(11\) 3234-5678/, "")),
      t?.texto);
 }
 
@@ -117,10 +117,11 @@ console.log("\nE o silêncio, que é metade do valor");
 
   // O CASO QUE VEIO DO ESCRITÓRIO, e é o mais importante desta prova.
   //
-  // "Dias Costa Advogados", (31) 8418-0018: doze dígitos, forma antiga — e a
+  // Um escritório parceiro, doze dígitos na forma antiga (aqui com um número
+  // de exemplo; o de verdade não fica no código) — e a
   // conversa FUNCIONA, com mensagens indo e voltando desde julho. A primeira
   // versão da tarja anunciava em âmbar "falta o nono dígito, o WhatsApp só
-  // conhece (31) 98418-0018", com a prova do contrário logo abaixo, na mesma
+  // conhece (31) 98654-3210", com a prova do contrário logo abaixo, na mesma
   // tela: quatro mensagens do cliente e duas nossas com dois tiques.
   //
   // A premissa estava errada. Doze dígitos não é prova de que o número não

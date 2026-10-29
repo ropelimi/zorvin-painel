@@ -49,7 +49,9 @@ import { BRIDGE_URL } from "./ponte.js";
 //  diagnóstico custou três rodadas.
 //
 //  Mostrando, o pior caso é alguém abrir a ficha e ler o erro que a própria
-//  ponte dá — que é uma frase, e não um sumiço. E a resposta seguinte conserta.
+//  ponte dá — que é uma frase, e não um sumiço. E a resposta seguinte conserta
+//  — e desde 28/10 ela VEM: o "não consegui" não fica guardado, e a pergunta
+//  é feita de novo (ver `perguntarDeNovoDepois`).
 //
 //  E o primeiro estado é diferente do terceiro de propósito: enquanto a
 //  pergunta está no ar ninguém errou nada ainda, então esconder é barato e a
@@ -63,7 +65,34 @@ import { BRIDGE_URL } from "./ponte.js";
 // escritório não perde nada por causa da espera.
 const ESPERA_MS = 8000;
 
+// A PERGUNTA QUE NÃO TEVE RESPOSTA É FEITA DE NOVO (auditoria de 28/10). Os
+// 8 segundos acima não cobrem a ponte da Render acordando (~30 s), e o "não
+// consegui" ficava guardado até o F5: numa instalação sem Vantoro, a primeira
+// abertura do dia mostrava as telas do Vantoro o dia inteiro — o que este
+// módulo existe para evitar. Agora a falha não fica guardada (como em
+// `vocabulario.js`), e a pergunta volta sozinha daqui a meio minuto, quando a
+// ponte já acordou com a primeira. Algumas vezes, e não para sempre: a ponte
+// que caiu de vez não vira uma pergunta a cada meio minuto, de cada aba, o dia
+// inteiro — e o que aparece continua aparecendo.
+const DE_NOVO_EM_MS =
+  (typeof globalThis !== "undefined" && globalThis.__PERGUNTAR_DE_NOVO_EM) || 30000;
+const VEZES_DE_NOVO = 4;
+
 let promessa = null;
+let falhas = 0;
+let deNovo = null;
+// QUEM ESTÁ OLHANDO é avisado da resposta que chega depois — a do Painel foi
+// pedida uma vez, na abertura, e não pergunta de novo sozinho.
+const ouvintes = new Set();
+
+function perguntarDeNovoDepois() {
+  if (deNovo || falhas >= VEZES_DE_NOVO) return;
+  falhas += 1;
+  deNovo = setTimeout(() => {
+    deNovo = null;
+    perguntarSeTemVantoro().then((r) => ouvintes.forEach((f) => f(r)));
+  }, DE_NOVO_EM_MS);
+}
 
 /** Pergunta à ponte, uma vez por abertura do painel. */
 export function perguntarSeTemVantoro() {
@@ -77,17 +106,26 @@ export function perguntarSeTemVantoro() {
   }
   const relogio = new AbortController();
   const estourou = setTimeout(() => relogio.abort(), ESPERA_MS);
-  promessa = fetch(BRIDGE_URL + "/vantoro/status", {
+  const esta = fetch(BRIDGE_URL + "/vantoro/status", {
     cache: "no-store", signal: relogio.signal,
   })
     .then((r) => (r.ok ? r.json() : null))
-    // `configurado === false` é a única resposta que esconde. Qualquer outra
-    // coisa — erro de rede, resposta estranha, corpo sem o campo — é "não
-    // consegui", e não "não tem".
-    .then((corpo) => (corpo && corpo.configurado === false ? false : true))
-    .catch(() => true)
+    // `configurado` É A RESPOSTA, e `false` é a única que esconde. Qualquer
+    // outra coisa — erro de rede, resposta estranha, corpo sem o campo — é
+    // "não consegui", e não "não tem".
+    .then((corpo) => {
+      if (corpo && typeof corpo.configurado === "boolean") return corpo.configurado;
+      throw new Error("a ponte não disse se tem Vantoro");
+    })
+    .catch(() => {
+      // "NÃO CONSEGUI" MOSTRA, e não fica guardado (28/10).
+      if (promessa === esta) promessa = null;
+      perguntarDeNovoDepois();
+      return true;
+    })
     .finally(() => clearTimeout(estourou));
-  return promessa;
+  promessa = esta;
+  return esta;
 }
 
 /** `null` enquanto a pergunta está no ar; depois `true` ou `false`. */
@@ -96,7 +134,9 @@ export function useTemVantoro() {
   useEffect(() => {
     let vivo = true;
     perguntarSeTemVantoro().then((r) => { if (vivo) setTem(r); });
-    return () => { vivo = false; };
+    const ouvir = (r) => { if (vivo) setTem(r); };
+    ouvintes.add(ouvir);
+    return () => { vivo = false; ouvintes.delete(ouvir); };
   }, []);
   return tem;
 }
@@ -105,7 +145,11 @@ export function useTemVantoro() {
 // página inteira, o que é o certo em uso real — mas uma prova que abre o painel
 // com Vantoro e depois sem ele leria a primeira resposta nas duas vezes, e
 // passaria falando de outro assunto.
-export function esquecerSeTemVantoro() { promessa = null; }
+export function esquecerSeTemVantoro() {
+  promessa = null;
+  falhas = 0;
+  if (deNovo) { clearTimeout(deNovo); deNovo = null; }
+}
 
 // ============================================================
 //  O ENDEREÇO DO VANTORO NO NAVEGADOR

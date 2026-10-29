@@ -100,6 +100,15 @@ function fimDaLinha(texto, p) {
  * intenção e os dois desfazem.
  */
 function comMarca(texto, ini, fim, marca) {
+  // A SELEÇÃO ENCOLHE PARA FORA DOS ESPAÇOS (28/10), antes de pôr ou tirar.
+  // O duplo clique do Windows pega a palavra E o espaço depois dela, e
+  // `*oi *` o WhatsApp não aplica: a marca precisa encostar numa letra. Só
+  // seleção que tem alguma letra encolhe; a feita só de espaços fica como veio.
+  const crua = texto.slice(ini, fim);
+  if (crua.trim()) {
+    ini += crua.length - crua.trimStart().length;
+    fim -= crua.length - crua.trimEnd().length;
+  }
   const dentro = texto.slice(ini, fim);
 
   // Caso 1: a seleção já é `*isto*`.

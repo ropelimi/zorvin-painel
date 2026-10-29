@@ -45,7 +45,13 @@
 // intacto — o WhatsApp do escritório fala com o mundo todo, e prefixar 55 num
 // número de Portugal criaria justamente o problema que se quer evitar.
 export function numeroCanonico(bruto) {
-  const d = String(bruto || "").replace(/\D/g, "");
+  let d = String(bruto || "").replace(/\D/g, "");
+  // O ZERO DA LIGAÇÃO INTERURBANA SAI (28/10): "(071) 99001-2345" tinha 12
+  // dígitos e passava por estrangeiro, e "(011) 3333-4444" ganhava o 55 na
+  // frente do zero. Só quando o que vem depois do zero é um DDD que existe —
+  // 0800 não é DDD. O "+" de fora continua sem ser lido: consertá-lo exige a
+  // ponte junto (ver a prova `o-numero-com-zero-na-frente`).
+  if ((d.length === 11 || d.length === 12) && d[0] === "0" && DDDS.has(d.slice(1, 3))) d = d.slice(1);
   if (d.length === 10 || d.length === 11) return "55" + d;
   return d;
 }
@@ -91,10 +97,10 @@ export function chaveDoNumero(bruto) {
 // e o banco guarda o celular como o WhatsApp o mandou — umas contas COM o
 // nono dígito, outras SEM. MEDIDO em 26/10: 504 contatos (840 conversas) na
 // forma antiga. Perguntando só pela chave, que é sempre a forma com o 9, quem
-// digitava "(71) 99259-0325" não achava o cliente gravado como 557192590325.
+// digitava "(71) 99001-2345" não achava o cliente gravado como 557190012345.
 //
 // Por isso a busca pergunta pelas duas: a chave, e a mesma sem o 9. E quem
-// digita só o número local com o 9 ("99259-0325") pergunta também pelos oito
+// digita só o número local com o 9 ("99001-2345") pergunta também pelos oito
 // do fim, que as duas formas têm. Só para celular, pela regra da chave: fixo
 // não tem nono dígito.
 export function formasDoNumeroNaBusca(bruto) {
@@ -205,8 +211,9 @@ export function outrosNumeros(cadastro, numeroDaConversa) {
 //  Tirando os que são erro passageiro, o que sobrou foram DUAS coisas, as duas
 //  visíveis no próprio número, sem perguntar nada a ninguém:
 //
-//    16 celulares gravados na forma antiga, sem o nono dígito. "553189271231"
-//       é o 31 8927-1231 do Alcides. O WhatsApp só conhece "5531989271231".
+//    16 celulares gravados na forma antiga, sem o nono dígito: um número como
+//       "553187774411" (31 8777-4411, de exemplo — os de verdade não ficam no
+//       código) que o WhatsApp só conhece como "5531987774411".
 //       Cada um desses é um cliente que nunca recebeu nada.
 //
 //     8 telefones FIXOS — PG ADVOGADOS, BSPZ ADVOGADOS, Queiroz Cavalcanti.
@@ -225,7 +232,7 @@ export function outrosNumeros(cadastro, numeroDaConversa) {
 //
 //  NÃO responde "tem WhatsApp?": isso só o WhatsApp sabe, e a primeira versão
 //  desta função fingiu que sabia. Ela dizia "o WhatsApp só conhece (31)
-//  98418-0018" numa conversa em que as mensagens iam e voltavam com dois
+//  98654-3210" numa conversa em que as mensagens iam e voltavam com dois
 //  tiques pelo número de oito dígitos. Contas antigas continuam atendendo na
 //  forma antiga, e fixo recebe quando o dono usa o WhatsApp Business.
 //
@@ -238,7 +245,7 @@ export function outrosNumeros(cadastro, numeroDaConversa) {
 //  veio, aquele número FUNCIONA, e nada aqui deveria ser mostrado. A tela faz
 //  esse corte; esta função só olha o número, e o número não sabe disso.
 
-// Os DDDs que existem. Sem esta lista, "550497234535" (do cadastro de um
+// Os DDDs que existem. Sem esta lista, "550491234567" (do cadastro de um
 // escritório parceiro) vira "04 9723-4535" e a tela sugere ligar para um DDD
 // que não existe — foi o que aconteceu quando eu montei essa conta na mão.
 const DDDS = new Set([

@@ -3,7 +3,22 @@
 --
 --  >>> RODAR NO SUPABASE DO **ZORVIN** (o das conversas). <<<
 --  Dashboard → SQL Editor → New query → cole tudo → Run.
---  Pode rodar de novo sem medo.
+--  Pode rodar de novo sem medo: desde 28/10, se a função já existe, ele não
+--  mexe nela (ver logo abaixo).
+--
+--  ------------------------------------------------------------
+--  A VERSÃO DE HOJE DA FUNÇÃO NÃO MORA AQUI (auditoria de 28/10)
+--
+--  A ponte refaz `zorvin_saude()` sozinha, ao subir, nos scripts automáticos
+--  dela — o 007 (a linha que voltou não fica caída, relato de 29/09) e os
+--  seguintes, no repositório zorvin-bridge, em `sql/automaticos/`. Este
+--  arquivo era um `create or replace`: rodado de novo depois deles, devolvia a
+--  função à versão de setembro — e com ela o aviso falso de "linha caída" por
+--  meia hora depois de o aparelho reconectar —, e a ponte não reaplica o 007,
+--  que já está marcado como aplicado.
+--
+--  Agora ele só CRIA a função onde ela ainda não existe (que é o caso em que
+--  o painel manda rodá-lo). Onde ela existe, avisa e não toca.
 --
 --  ------------------------------------------------------------
 --  O QUE ISTO CONSERTA
@@ -44,7 +59,14 @@
 --  a coluna, esta função dá erro, e o painel diz isso na tela em vez de calar.
 -- ============================================================
 
-create or replace function public.zorvin_saude()
+do $saude$
+begin
+  if to_regprocedure('public.zorvin_saude()') is not null then
+    raise notice 'zorvin_saude() ja existe: nao mexi. A versao de hoje e a dos scripts automaticos da ponte (007 e seguintes).';
+    return;
+  end if;
+  execute $criar$
+create function public.zorvin_saude()
 returns table (sinal text, quantas integer, desde timestamptz, detalhe text)
 language plpgsql
 security definer
@@ -145,11 +167,14 @@ begin
     $q$;
   end if;
 end $$;
-
+  $criar$;
+  execute $comentar$
 comment on function public.zorvin_saude() is
   'Os sinais de que algo parou, em CONTAGENS — nenhum texto de mensagem e '
   'nenhum telefone de cliente sai daqui. Existe para o painel poder avisar sem '
-  'alcançar `eventos_recebidos`, que guarda conteúdo e nasceu fechada.';
+  'alcançar `eventos_recebidos`, que guarda conteúdo e nasceu fechada.'
+  $comentar$;
+end $saude$;
 
 -- ------------------------------------------------------------
 --  QUEM PODE PERGUNTAR: quem entrou. Mais ninguém.

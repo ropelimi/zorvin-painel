@@ -116,9 +116,16 @@ export default function Funil({
   // lido de um lugar que não depende disso.
   const arrastandoRef = useRef(null);
 
+  // PELO CONTEÚDO, e não pela lista (auditoria de 28/10). O Painel passa um
+  // `.filter()` novo a cada desenho dele, e uma mensagem do tempo real
+  // redesenha o Painel com o funil aberto: pela lista, `ler` era refeita e o
+  // quadro esvaziava e relia tudo — "Lendo o funil…", a rolagem de volta ao
+  // começo, o arraste morto no meio e o "Mover para…" fechando sozinho.
+  const chaveDosTelefones = advogados.filter((a) => String(a.departamento_id) === String(depId))
+    .map((a) => a.id).join(",");
   const telefonesDoDep = useMemo(
     () => advogados.filter((a) => String(a.departamento_id) === String(depId)).map((a) => a.id),
-    [advogados, depId]);
+    [chaveDosTelefones]);
 
   const avisar = useCallback((t) => {
     setAviso(t);
@@ -149,8 +156,12 @@ export default function Funil({
       const todos = [];
       let passou = false;
       for (let p = 0; p < PAGINAS_NO_MAXIMO; p++) {
+        // O DESEMPATE PELO `id` (auditoria de 28/10): o "Trazer conversas"
+        // grava todos os cartões num INSERT só, com o mesmo `movido_em`, e o
+        // empate não tem ordem garantida de uma consulta para a outra — a
+        // página 2 repetia cartões da 1 e deixava outros de fora.
         const rc = await supabase.from("zorvin_cartoes").select("*")
-          .eq("departamento_id", depId).order("movido_em", { ascending: false })
+          .eq("departamento_id", depId).order("movido_em", { ascending: false }).order("id")
           .range(p * PAGINA, (p + 1) * PAGINA - 1);
         if (minha !== leitura.current) return;
         if (rc.error) {
@@ -232,7 +243,11 @@ export default function Funil({
     }
   }, [depId, telefonesDoDep, comTarefas]);
 
-  useEffect(() => { setCartoes([]); setEtapas([]); ler(true); }, [ler]);
+  // O QUADRO SÓ SE ESVAZIA QUANDO O DEPARTAMENTO MUDA (28/10): é o único caso
+  // em que o que está na tela é de outro funil. Uma releitura do mesmo
+  // departamento troca os cartões quando a resposta chega, sem buraco.
+  useEffect(() => { setCartoes([]); setEtapas([]); }, [depId]);
+  useEffect(() => { ler(true); }, [ler]);
 
   // A RELEITURA SOZINHA, de 30 em 30 segundos enquanto a tela está aberta: é
   // como o colega que moveu um cartão aparece aqui sem ninguém clicar.

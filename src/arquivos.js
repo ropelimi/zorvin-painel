@@ -145,7 +145,19 @@ export async function comecoDoTexto(url, limite = 4096) {
       if (pos >= tudo.length) break;
     }
     // O corte pode cair no meio de uma letra acentuada; o `�` do fim sai.
-    return new TextDecoder("utf-8").decode(tudo).replace(/\uFFFD+$/, "");
+    //
+    // UTF-8 SÓ QUANDO É UTF-8 (28/10). O CSV do Excel em português vem em
+    // Windows-1252 — o "ã" é um byte só —, e a bolha mostrava "Jo�o". O
+    // `fatal` recusa o que não é UTF-8, e aí a tabela do Windows lê; o
+    // `stream` deixa de fora a meia letra do corte, que é UTF-8 cortado, e não
+    // motivo para trocar de tabela.
+    let texto;
+    try {
+      texto = new TextDecoder("utf-8", { fatal: true }).decode(tudo, { stream: true });
+    } catch (_) {
+      texto = new TextDecoder("windows-1252").decode(tudo);
+    }
+    return texto.replace(/\uFFFD+$/, "");
   } catch (_) {
     return null;
   }

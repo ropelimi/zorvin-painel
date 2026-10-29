@@ -1828,7 +1828,7 @@ isso."*
 1. **O número na forma antiga não era achado.** `chaveDoNumero` devolve sempre
    a forma COM o nono dígito, e o banco guarda o celular como o WhatsApp
    mandou. **Medido: 504 contatos (840 conversas) na forma antiga.** Quem
-   digitava "(71) 99259-0325" não achava o cliente gravado como 557192590325.
+   digitava "(71) 99001-2345" não achava o cliente gravado como 557190012345.
    `formasDoNumeroNaBusca` (`numeros.js`) pergunta pelas duas formas, na lupa
    da lista e na agenda — só para celular, pela régua da chave.
 2. **O caminho dos nomes era jogado fora quando o completo chegava antes.** Os
@@ -1836,7 +1836,7 @@ isso."*
    não tivesse respondido. Era invisível enquanto os dois achavam a mesma coisa
    — e deixou de ser quando só o dos nomes passou a achar o número na forma
    antiga. Hoje os dois SOMAM (`achadas`), e quem chega por último não apaga
-   quem chegou antes. Foi a prova que achou, com o "(71) 9259-0326".
+   quem chegou antes. Foi a prova que achou, com o "(71) 9001-2346".
 3. **A agenda da "Nova conversa" procurava a frase inteira, com acento.**
    "maria gracas" não achava "Maria das Graças", nem "gracas pereira" a
    "Maria das Graças Pereira". Agora ela pergunta pela coluna `busca` de
@@ -3247,8 +3247,9 @@ fila; a largura sem a parcela do "Já tratei", pega por
 
 ## O aviso do nono dígito não previa nada — e mandou mexer na ficha de um cliente
 
-Relato do Rodrigo em 28/09: ele acrescentou `(71) 99259-0325` na ficha de um
-cliente que já tinha `(71) 9259-0325`, o número novo apareceu na lista com o
+Relato do Rodrigo em 28/09 (com o número trocado por um de exemplo em 28/10):
+ele acrescentou `(71) 99001-2345` na ficha de um
+cliente que já tinha `(71) 9001-2345`, o número novo apareceu na lista com o
 selo "WhatsApp", **e não havia como conversar por ele**. Pediu para eu procurar
 o defeito.
 
@@ -3298,7 +3299,7 @@ lugar de falha (04/09), sucesso no lugar de falha (24/09), falha sem causa
 mesmo: alguém procura defeito onde não há.
 
 Hoje a ficha recusa **antes de gravar** e diz por quê: *"é a MESMA linha de
-(71) 9259-0325 — no WhatsApp o nono dígito não muda a conta"*. Acrescentar uma
+(71) 9001-2345 — no WhatsApp o nono dígito não muda a conta"*. Acrescentar uma
 segunda escrita do mesmo número não conserta nada e deixa a lista com duas
 linhas que parecem dois telefones.
 
@@ -5407,6 +5408,132 @@ auditoria e 18 na do envio:
 - **o Painel de números:** as setas esticando o período; o rótulo do atendente
   virando o meu; a falta da função pela frase; a planilha com fórmula (4);
 - **e a bancada de volta ao pacote.**
+
+## A auditoria de 28/10 — o layout em todas as telas e a revisão inteira
+
+Pedido: *"Pode auditar o zorvin-painel do mesmo jeito"* — o roteiro da
+auditoria do Vantoro: ferramentas automáticas, o layout de todas as telas,
+uma leitura de todos os arquivos, as dependências, e cada conserto com prova
+e sabotagem.
+
+**Como foi feito.**
+- **Ferramentas:** build, `npm audit` e um ESLint com as regras de hooks do
+  React, rodado de fora do repositório (a casa não tem lint, e não ganhou um).
+- **Layout:** uma varredura na bancada abriu **432 estados** — cada botão da
+  tela principal e da conversa, cada item do ⋮, cada aba das Configurações e
+  de Departamentos — em 375, 768 e 1366px, claro e escuro, medindo rolagem de
+  lado, o que sai da tela, texto cortado, alvo de toque, letra de campo no
+  celular, contraste e erro de JavaScript.
+- **Leitura:** cinco revisões em paralelo (o `Painel.jsx` em três pedaços, os
+  componentes, os módulos com o SQL) deram **~60 achados**.
+- **Consertos:** quatro frentes, cada uma na sua cópia da branch. Cada achado
+  foi **reproduzido por uma prova que reprova antes do conserto**, e cada
+  conserto foi sabotado. São **42 provas novas**.
+
+### A junção com a auditoria de 27/10 (#290) — 29/10
+
+Enquanto o CI desta PR rodava, o Rodrigo juntou ao main a **#290**: outra
+auditoria, pedida em 27/10, feita em paralelo por outra sessão. Ela consertou
+por outro caminho muitos dos mesmos defeitos — a ficha que espremia a
+conversa, o que é de uma conversa ficar nela, as falhas caladas, a ficha, o
+painel de números, a bancada fora do pacote. Oito arquivos em conflito.
+
+**Como foi junta.** Nos oito arquivos, ficou a versão do main, que é a
+aprovada. As 42 provas desta PR viraram o juiz do que faltava: rodadas contra
+o main, **14 passaram** (a #290 já cobria, ou não tocava) e **28 reprovaram**.
+Cada reprovação foi lida e virou uma de três coisas:
+- **o defeito estava lá**: o conserto desta PR voltou, adaptado ao código da
+  #290 e sabotado de novo;
+- **a #290 escolheu outro desenho de propósito**: a prova passou a pedir o que
+  os dois desenhos garantem (está dito no alto de cada uma);
+- **a #290 cobria só parte**: voltou só o resto.
+
+Nenhum conserto da #290 foi desfeito. As provas dela (`a-auditoria-de-27-10`,
+205 conferências; `a-bolha-que-saiu-nao-fica-vermelha`, 100) passam junto
+com as desta PR. A #292 (a prévia do PDF) entrou depois, sem conflito.
+
+**As provas que mudaram de pedido, e por quê:**
+
+| prova | a #290 escolheu | a prova pede agora |
+|---|---|---|
+| `a-ficha-nao-esmaga-a-conversa` | a ficha das larguras médias é uma gaveta por cima da conversa (`data-ficha-sobreposta`), e não troca de lugar com ela | a ficha sobreposta e a conversa com a mesma largura de antes de abri-la |
+| `o-que-e-de-uma-conversa-fica-nela` | gravar em B com o áudio de A esperando PERGUNTA (`window.confirm`) | responde "não" e confere que nada se grava e que a pergunta diz por quê |
+| `o-olho-da-senha-cabe-o-dedo` | mínimos de 40 no botão | a simulação do "antes" zera também os mínimos; a margem sai metade de cada lado (`-8px -7px`), e o ícone fica onde estava |
+| `a-aba-que-falha-diz-que-falhou` | a aba que não carregou leva a marca `falhou-aba` | a marca dela nas abas; nas Arquivadas, que a #290 não cobria, a falha é medida pela lista filtrada |
+| `o-filtro-de-atendentes-nao-some` | com a função falhando, o botão de quem atende some e a faixa âmbar diz a falha (cena 13b dela) | o caminho dela: a falha dita, e o "Tentar de novo" traz o botão e as pessoas |
+| `os-filtros-nao-afirmam-ausencia` | a etiqueta vazia diz "com esta etiqueta", sem o nome | a frase dela; e o rodapé das Favoritas e das Não lidas passou a conferir o "+" do teto |
+
+**O que a #290 já cobria, e ficou como ela fez:** a ficha nas larguras
+médias (gaveta), a bancada fora do pacote (`bancada-desligada.js`), o
+rascunho da ficha por pessoa, os telefones do pré-cadastro, as setas em dias
+de calendário, o nome da pessoa no filtro do Painel de números, o Esc do "/"
+e dos departamentos, a seleção e o áudio na troca de conversa, a ordem dos
+anexos, os gestos que falham (`GESTOS_DA_FILA`), a aba que não carregou
+(`falhou-aba`), as faixas de departamentos e telefones
+(`lerDepartamentosETelefones`), a agenda na aba Contatos, a conferência do
+número que falha, o alvo de 40 do "Mostrar senha" e os selos do celular em
+ícone.
+
+**O que esta PR acrescenta ao que a #290 fez:**
+
+| o que acontecia (no main de 29/10) | agora |
+|---|---|
+| o "não enviado · reenviar" em #e53935: **1,9:1** sobre a bolha verde no escuro; as frases de erro das telas em #c0392b, 3,2:1 no escuro | tokens `erroTexto` e `ambarTexto` nas letras miúdas (4,7 e 5,1); o ícone e a borda continuam com a cor viva |
+| os menus dos selos (responsável, etapa, tarefas) e o painel de emojis passavam da borda a 768 (o de tarefas ia até 933px) | `encaixarNaJanela` empurra para dentro ao aparecer |
+| a mensagem que o tempo real trazia **durante a carga** da conversa sumia; o eco da própria mensagem também | `chegaramDuranteACarga`, ao lado do `provisoriasQueFicam` da #290 |
+| com o relógio aberto, virar a caixa para nota e agendar mandava a **nota ao cliente** | a janela da hora só existe fora da nota e da edição |
+| começar a editar apagava o que se escrevia e a citação; a correção recusada se perdia; o segundo Enter mandava duas vezes (era uma sugestão da #290) | a edição guarda e devolve o rascunho; só sai da caixa depois de gravar |
+| pelo teclado, o "Enviar" da prévia de anexos de A mandava a B; dois anexos de mesmo nome caíam no mesmo endereço do depósito (com a subida junta da #290, sempre) | a troca fecha a prévia e a confirmação de apagar; `caminhoNoDeposito` |
+| a busca na conversa, acima do teto, trazia as 500 mais antigas | as 500 mais recentes |
+| "Salvar no Vantoro" apagava o que se digitou durante a gravação | só o que não mudou depois do clique vem do Vantoro |
+| Fora do horário: com a configuração falhando, os feriados nem eram lidos; a falha deles virava "Nenhum feriado daqui para a frente" | os feriados valem por si, e a falha deles é dita na seção |
+| Painel de números: o ano andava os dias corridos; quem administra e escolhe outra pessoa lia "os seus números"; os rótulos de data cortados no celular | ano civil; "a pessoa escolhida"; o passo dos rótulos acompanha a largura |
+| Configurações › Contatos dizia "Nenhum contato ainda" enquanto a agenda vinha | "Lendo a agenda…"; as recargas levam o termo escrito |
+| o histórico de atendimento com uma ponta faltando derrubava o painel; o assunto que não carregou aparecia como "removido" | só o par, a falha dita, "assunto não carregado" |
+| a importação juntava mensagens iguais no mesmo minuto | a ordem da repetição entra na chave (a primeira mantém a antiga) |
+| o pulso de "Estou atendendo" não gravava quem atende | renova a própria marca, toma a vazia ou a vencida — e não a da conversa deixada no meio do pulso (guarda `vivo`) |
+| os filtros (minhas, grupos, tarefas, etiqueta, não lidas, favoritas, arquivadas) diziam "nenhuma" com a pergunta no ar ou depois de ela falhar — a faixa da #290 avisava, e a lista logo abaixo afirmava | três desfechos na lista (`perguntasDoFiltro`): procurando, falhou (com o código) e pronto; o teto é dito; tudo pelo `tentativaDosFiltros` da #290 |
+| o Encaminhar só listava a aba aberta (sugestão da #290) | procura no banco (`encaminharNoBanco`) |
+| a busca da lista se refazia ao abrir uma conversa achada (sugestão da #290) | a busca lê a lista por um espelho, e abrir não a refaz |
+| a página pedida antes de uma releitura da página 0 apagava páginas da lista | contador de geração, e 20 linhas de sobra por página |
+| entrar nas Arquivadas com a leitura falhando dizia "Nenhuma conversa arquivada." | a falha é dita |
+| o ⌄ da linha, Mídias, Arquivadas, a agenda e o Vantoro na Nova conversa, a barra das fixadas, o som e a caixinha de seleção não eram alcançados pelo teclado | botões, e as teclas valem também nos filhos da linha |
+| os selos da barra não diziam a falha; o "Tentar de novo" não relia as figurinhas; a conta das Arquivadas ficava presa ao telefone de antes | a falha dita e relida; presa ao telefone certo |
+| as linhas de fora do filtro de atendentes piscavam ao abrir uma delas e sumiam quando a releitura falhava; o teto de 500 era calado | só se esvaziam quando a escolha muda; o teto é dito |
+| o SQL `dispensar_aviso_de_falha.sql`, rodado hoje, faria todo "Cancelar" de agendada dar 23514 (e reabria a permissão para `anon`); o de 2026-09 desfazia a `zorvin_saude()` da ponte | acrescenta 'descartada' à lista existente, como o 014 da ponte; o outro só cria onde não existe |
+| telefones de casos reais em provas e comentários (inclusive o do relato de 28/09) | números de exemplo com as mesmas propriedades |
+
+**O que não foi feito, e por quê:**
+- **número estrangeiro com "+"**: o painel e a ponte (`numeroLimpo`) põem o 55
+  na frente; consertar um lado só faria os dois divergirem. A prova
+  `o-numero-com-zero-na-frente` registra o defeito como está, e reprova se
+  só um dos lados mudar;
+- **a ponte ignora o `error`** das duas leituras de `/historico/contato` — é do
+  outro repositório (a zorvin-bridge#211 não tratou disso);
+- **o Vite 5** tem um alerta de segurança do `esbuild` só no servidor de
+  desenvolvimento; sair dele é trocar de versão maior;
+- **a bancada difere do Postgres** em dois pontos que esconderam casos aqui:
+  aplica o `.eq` de uma gravação quando o pedido é montado, e não quando é
+  executado; e no `lt` trata o nulo como menor que tudo;
+- os telefones de casos reais **continuam no histórico do git**: tirá-los de
+  lá é reescrever o histórico, decisão do Rodrigo.
+
+**Quatro lições:**
+- **Duas auditorias do mesmo código ao mesmo tempo** custam a segunda junção
+  inteira. Antes de começar uma, olhar as PRs abertas e os ramos recentes. Se
+  elas se cruzarem, a aprovada fica, e as provas da outra dizem o que falta —
+  rodar as provas contra o main foi o que separou, em minutos, os 14 casos já
+  cobertos dos 28 que não estavam.
+- **O que o build leva não é o que o código usa.** Um `import` estático de
+  módulo com efeito no nível de cima entra no pacote mesmo atrás de um
+  ternário que nunca o escolhe. As duas auditorias chegaram nisso sozinhas.
+- **Toda prova roda em 1360 ou em 390.** O defeito da ficha e o dos menus
+  moravam entre as duas larguras, onde nenhuma prova olhava — e o iPad em pé
+  mora ali.
+- **SQL do painel que a tela manda rodar envelhece.** A ponte refaz as funções
+  e as regras nos scripts automáticos dela; um script daqui que faz `create or
+  replace` ou apaga regra desfaz o que veio depois. Os dois daqui agora só
+  acrescentam ou só criam o que falta.
 
 ## Banco de dados (tabelas que o painel lê/escreve)
 

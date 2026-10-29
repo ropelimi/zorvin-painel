@@ -68,6 +68,11 @@ export function ForaDoHorario({ cx, C, departamentos = [], aoAvisar }) {
   // texto, com o horário padrão — e "Salvar" gravava isso POR CIMA da resposta
   // que existe e não chegou: a falha de leitura virava a configuração apagada.
   const [falhaDaLeitura, setFalhaDaLeitura] = useState("");
+  // E A DOS FERIADOS, à parte (auditoria de 28/10): são duas perguntas, e uma
+  // não fala pela outra. Ela é dita na seção dos feriados, e não só no aviso
+  // do alto — que o `aoAvisar("")` do próprio `salvar()` apagava, deixando a
+  // seção dizer "Nenhum feriado daqui para a frente".
+  const [falhaDosFeriados, setFalhaDosFeriados] = useState("");
 
   useEffect(() => {
     if (depId == null && departamentos.length) setDepId(departamentos[0].id);
@@ -78,6 +83,10 @@ export function ForaDoHorario({ cx, C, departamentos = [], aoAvisar }) {
       supabase.from("zorvin_fora_do_horario").select("*"),
       supabase.from("zorvin_feriados").select("*").order("dia"),
     ]);
+    // OS FERIADOS VALEM POR SI, nos dois caminhos (28/10): eram jogados fora
+    // quando a configuração falhava, e a falha deles virava "nenhum feriado".
+    if (fer.error) setFalhaDosFeriados(comOCodigo("Não consegui ler os feriados.", fer.error, "ler os feriados"));
+    else { setFeriados(fer.data || []); setFalhaDosFeriados(""); }
     if (cfg.error) {
       // A tabela que falta (o script 021 não rodou) é o único caso em que
       // sumir é o certo. Qualquer outra falha é DITA — "nenhum departamento
@@ -91,8 +100,6 @@ export function ForaDoHorario({ cx, C, departamentos = [], aoAvisar }) {
       return null;
     }
     setFalhaDaLeitura("");
-    if (fer.error) aoAvisar(comOCodigo("Não consegui ler os feriados.", fer.error, "ler os feriados"));
-    else setFeriados(fer.data || []);
     setExiste(true);
     setLinhas(cfg.data || []);
     return cfg.data || [];
@@ -211,22 +218,8 @@ export function ForaDoHorario({ cx, C, departamentos = [], aoAvisar }) {
     );
   }
   if (existe === null) return <div style={{ color: C.textSecondary, fontSize: 14 }}>Carregando…</div>;
-  // SEM SABER O QUE ESTÁ GRAVADO, NÃO HÁ FORMULÁRIO: o que se editasse aqui
-  // iria por cima de uma configuração que a tela não viu.
-  if (falhaDaLeitura) {
-    return (
-      <div style={cx.secao} data-fora-falha-de-leitura>
-        <div style={cx.titulo}><Clock size={16} /> Resposta fora do horário</div>
-        <div style={{ ...cx.dica, color: "#c0392b" }}>{falhaDaLeitura}</div>
-        <div style={cx.dica}>
-          A configuração continua como estava no banco. Sem conseguir lê-la, a tela não deixa mudar
-          nada — o que se salvasse aqui iria por cima dela.
-        </div>
-        <button style={cx.botao} onClick={() => ler()} data-fora-tentar-de-novo>Tentar de novo</button>
-      </div>
-    );
-  }
-  if (!departamentos.length) {
+  // A FALHA DA LEITURA É DITA mesmo sem departamento (ver o desenho, abaixo).
+  if (!departamentos.length && !falhaDaLeitura) {
     return <div style={cx.dica}>Crie um departamento primeiro: a resposta é de cada um.</div>;
   }
 
@@ -242,6 +235,21 @@ export function ForaDoHorario({ cx, C, departamentos = [], aoAvisar }) {
 
   return (
     <>
+      {/* SEM SABER O QUE ESTÁ GRAVADO, NÃO HÁ FORMULÁRIO: o que se editasse
+          aqui iria por cima de uma configuração que a tela não viu. E OS
+          FERIADOS FICAM, logo abaixo (auditoria de 28/10): são outra leitura,
+          e o que ela trouxe vale sem a configuração. */}
+      {falhaDaLeitura ? (
+        <div style={cx.secao} data-fora-falha-de-leitura>
+          <div style={cx.titulo}><Clock size={16} /> Resposta fora do horário</div>
+          <div style={{ ...cx.dica, color: "#c0392b" }}>{falhaDaLeitura}</div>
+          <div style={cx.dica}>
+            A configuração continua como estava no banco. Sem conseguir lê-la, a tela não deixa mudar
+            nada — o que se salvasse aqui iria por cima dela.
+          </div>
+          <button style={cx.botao} onClick={() => ler()} data-fora-tentar-de-novo>Tentar de novo</button>
+        </div>
+      ) : (
       <div style={cx.secao} data-fora-do-horario>
         <div style={cx.titulo}><Clock size={16} /> Resposta fora do horário</div>
         <div style={cx.dica}>
@@ -371,6 +379,7 @@ export function ForaDoHorario({ cx, C, departamentos = [], aoAvisar }) {
           {mudou && <span style={{ fontSize: 12.5, color: C.textSecondary }}>Ainda não salvo.</span>}
         </div>
       </div>
+      )}
 
       <div style={cx.secao} data-feriados>
         <div style={cx.titulo}><CalendarX2 size={16} /> Feriados do escritório</div>
@@ -379,7 +388,14 @@ export function ForaDoHorario({ cx, C, departamentos = [], aoAvisar }) {
           inteiro. Os feriados nacionais já vêm na lista; Carnaval e Corpus Christi não, porque são
           ponto facultativo — acrescente se o escritório fecha.
         </div>
-        {proximos.length === 0 && (
+        {/* A LISTA QUE NÃO CARREGOU É DITA, e não vira "nenhum feriado" (28/10). */}
+        {falhaDosFeriados && (
+          <div data-feriados-falhou style={{ fontSize: 13, color: C.erroTexto, lineHeight: 1.5, marginBottom: 8 }}>
+            {falhaDosFeriados}{" "}
+            <button type="button" style={cx.botaoFraco} onClick={() => ler()}>Tentar de novo</button>
+          </div>
+        )}
+        {!falhaDosFeriados && proximos.length === 0 && (
           <div style={{ fontSize: 13, color: C.textSecondary, marginBottom: 8 }}>Nenhum feriado daqui para a frente.</div>
         )}
         {proximos.map((f) => (

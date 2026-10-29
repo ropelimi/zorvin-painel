@@ -862,6 +862,9 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
     if (!cliente) return;
     setSalvando(true);
     esquecerFicha(numero);   // ver `criar`
+    // O QUE ESTAVA NA TELA NO CLIQUE — é o que vai ao Vantoro, e é contra
+    // ele que a volta mede o que foi digitado DEPOIS (ver abaixo).
+    const enviado = edicao;
     try {
       const mudou = camposMudados(edicao, cliente);
       if (!Object.keys(mudou).length) { onAviso && onAviso("Nada foi alterado."); return; }
@@ -873,7 +876,14 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
       // trocou de conversa e voltou) guardou o cadastro de ANTES dela.
       esquecerFicha(numero);
       setCliente(r.cliente);
-      setEdicao({ ...r.cliente });
+      // O QUE FOI DIGITADO COM A GRAVAÇÃO NO AR FICA (auditoria de 28/10).
+      // Os campos não travam enquanto salva, e a ponte que hiberna leva
+      // segundos: trocar a tela inteira pelo cadastro gravado apagava o
+      // acréscimo — e o rascunho junto, porque a tela ficava igual ao
+      // cadastro —, com a frase dizendo "Cadastro atualizado". Agora só o
+      // que não mudou depois do clique vem do Vantoro; o resto continua por
+      // salvar, com o aviso do pé.
+      setEdicao((atual) => ({ ...r.cliente, ...camposMudados(atual, enviado) }));
       setRascunhoVoltou(false);
       const ligou = await ligarContatoAoCadastro(r.cliente);
       const naoLigou = "Atualizei no Vantoro, mas não consegui ligá-lo a este contato aqui.";
@@ -1091,7 +1101,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
   //  ACRESCENTAR UM NÚMERO QUE JÁ ESTÁ AÍ, COM OUTRA ROUPA
   //
   //  RELATO DE 28/09, e a tela ficou calada do começo ao fim. O Rodrigo
-  //  acrescentou (71) 99259-0325 numa ficha que já tinha (71) 9259-0325, o
+  //  acrescentou (71) 99001-2345 numa ficha que já tinha (71) 9001-2345, o
   //  número novo apareceu na lista, e não havia como conversar por ele. Ele
   //  procurou o defeito; não havia nenhum.
   //
@@ -1325,11 +1335,17 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
   function desenharTelefones() {
     if (!cliente) return null;
     const AMBAR = "#d4a017";
+    // AS CHAVES (auditoria de 28/10): este bloco entra na lista dos campos da
+    // Identificação no lugar do "Outro WhatsApp", e sem `key` o React
+    // reclamava a cada ficha aberta; e a linha que não tem `id` (a lista
+    // montada para um Vantoro antigo) leva a chave pelo número — todas com
+    // `null` eram "duas crianças com a mesma chave", que o React pode
+    // duplicar ou sumir.
     return (
-      <div data-telefones style={{ marginBottom: 10 }}>
+      <div key="telefone2" data-telefones style={{ marginBottom: 10 }}>
         <label style={rotulo}>Telefones</label>
         {telefones.map((t) => (
-          <div key={t.id} // `data-telefone-do-cliente`, e não `data-telefone`: este último já existe no
+          <div key={t.id ?? `sem-id-${t.digitos || t.numero}`} // `data-telefone-do-cliente`, e não `data-telefone`: este último já existe no
                // painel, no seletor de telefones do escritório na barra lateral. A
                // colisão fez uma prova contar 6 linhas onde havia 3 — e o nome curto
                // ia continuar mentindo para quem escrevesse a próxima.

@@ -38,8 +38,26 @@ const ESPERA_DO_ESTADO_MS = 8000;
 // servidor) e depois pergunta à Anthropic. Meio minuto desistiria de um
 // pedido que estava andando.
 const ESPERA_DA_SUGESTAO_MS = 75000;
+// O "NÃO CONSEGUI" É PERGUNTADO DE NOVO (auditoria de 28/10), pela régua de
+// `temVantoro.js`: guardado até o F5, ele deixava o botão numa instalação sem
+// a chave, para dar erro a cada clique, o dia inteiro.
+const DE_NOVO_EM_MS =
+  (typeof globalThis !== "undefined" && globalThis.__PERGUNTAR_DE_NOVO_EM) || 30000;
+const VEZES_DE_NOVO = 4;
 
 let promessa = null;
+let falhas = 0;
+let deNovo = null;
+const ouvintes = new Set();
+
+function perguntarDeNovoDepois() {
+  if (deNovo || falhas >= VEZES_DE_NOVO) return;
+  falhas += 1;
+  deNovo = setTimeout(() => {
+    deNovo = null;
+    perguntarOCopiloto().then((r) => ouvintes.forEach((f) => f(r)));
+  }, DE_NOVO_EM_MS);
+}
 
 /** `{ ligado, modelo }`. `ligado` é `null` quando não deu para perguntar. */
 export function perguntarOCopiloto() {
@@ -50,7 +68,7 @@ export function perguntarOCopiloto() {
   }
   const relogio = new AbortController();
   const estourou = setTimeout(() => relogio.abort(), ESPERA_DO_ESTADO_MS);
-  promessa = fetch(BRIDGE_URL + "/copiloto/estado", { cache: "no-store", signal: relogio.signal })
+  const esta = fetch(BRIDGE_URL + "/copiloto/estado", { cache: "no-store", signal: relogio.signal })
     .then((r) => (r.ok ? r.json() : null))
     // SÓ `ligado === false` ESCONDE. Erro de rede, resposta estranha ou a
     // ponte de antes desta rota (404) são "não consegui", e não "não tem".
@@ -59,8 +77,17 @@ export function perguntarOCopiloto() {
       modelo: (corpo && corpo.modelo) || null,
     }))
     .catch(() => ({ ligado: null, modelo: null }))
+    .then((r) => {
+      // "NÃO CONSEGUI" MOSTRA, e não fica guardado (28/10).
+      if (r.ligado === null) {
+        if (promessa === esta) promessa = null;
+        perguntarDeNovoDepois();
+      }
+      return r;
+    })
     .finally(() => clearTimeout(estourou));
-  return promessa;
+  promessa = esta;
+  return esta;
 }
 
 /** `null` enquanto pergunta; depois `{ ligado, modelo }`. */
@@ -69,7 +96,10 @@ export function useEstadoDoCopiloto() {
   useEffect(() => {
     let vivo = true;
     perguntarOCopiloto().then((r) => { if (vivo) setEstado(r); });
-    return () => { vivo = false; };
+    // A RESPOSTA QUE CHEGA DEPOIS da pergunta feita de novo (28/10).
+    const ouvir = (r) => { if (vivo) setEstado(r); };
+    ouvintes.add(ouvir);
+    return () => { vivo = false; ouvintes.delete(ouvir); };
   }, []);
   return estado;
 }
@@ -92,4 +122,8 @@ export async function pedirSugestao(conversaId) {
 }
 
 // A BANCADA PRECISA ESQUECER ENTRE CENÁRIOS (a régua de `temVantoro.js`).
-export function esquecerOCopiloto() { promessa = null; }
+export function esquecerOCopiloto() {
+  promessa = null;
+  falhas = 0;
+  if (deNovo) { clearTimeout(deNovo); deNovo = null; }
+}
