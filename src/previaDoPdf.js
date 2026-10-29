@@ -110,6 +110,16 @@ export function porQueNaoAbriu(erro) {
   return "Não consegui abrir o PDF aqui.";
 }
 
+/** O que não muda na segunda vez: o arquivo que não é um PDF que dê para
+ *  ler, o que tem senha, e o depósito dizendo que não tem o arquivo (4xx).
+ *  O resto — o depósito respondendo 5xx, a conexão que caiu no meio — é
+ *  tropeço, e a próxima vez pode dar certo. */
+function naoMudaNaSegunda(erro) {
+  const nome = erro && erro.name;
+  if (nome === "InvalidPDFException" || nome === "PasswordException") return true;
+  return nome === "ResponseException" && erro.status >= 400 && erro.status < 500;
+}
+
 /** O tamanho que o depósito diz. `null` quando não deu para saber (aí a
  *  miniatura é tentada: não saber não é motivo para não mostrar); `false`
  *  quando o depósito respondeu que não tem o arquivo. Um endereço local
@@ -164,9 +174,12 @@ const MINIATURAS = new Map();
  * comum se comporta como a das imagens da conversa (o mesmo tamanho máximo, o
  * mesmo botão em volta), e a tela de pintura não precisa ficar na memória.
  *
- * A BIBLIOTECA QUE NÃO CARREGOU não é guardada aqui como "não dá": a
- * promessa falha e sai da memória (ver `carregarPdfjs`). O PDF que não abre,
- * sim — ele não vai abrir na segunda vez.
+ * O QUE NÃO VAI MUDAR FICA GUARDADO como "não dá": o PDF quebrado ou com
+ * senha, o grande demais, o que o depósito não tem. O TROPEÇO NÃO FICA — a
+ * biblioteca que não carregou (a promessa falha; ver `carregarPdfjs`) e o
+ * depósito que respondeu 5xx ou a conexão que caiu no meio: guardados, eles
+ * deixariam o PDF sem foto até alguém apertar F5, e o painel passa o dia
+ * aberto. A bolha que voltar à tela tenta de novo.
  */
 export function miniaturaDoPdf(url) {
   if (!url) return Promise.resolve(null);
@@ -184,9 +197,10 @@ export function miniaturaDoPdf(url) {
       return { src: URL.createObjectURL(foto), paginas: doc.numPages,
                largura: tela.width, altura: tela.height };
     } catch (e) {
-      // O ARQUIVO NÃO É UM PDF QUE DÊ PARA LER (quebrado, com senha, ou outra
-      // coisa com o nome .pdf). Não é falha da tela: o cartão fica.
+      // NÃO DEU PARA DESENHAR: o cartão fica, e não é falha da tela. Se foi
+      // tropeço, a resposta não fica guardada (ver acima).
       console.warn("prévia do PDF: não deu para desenhar", e && e.message);
+      if (!naoMudaNaSegunda(e)) MINIATURAS.delete(url);
       return null;
     } finally {
       tarefa.destroy().catch(() => {});

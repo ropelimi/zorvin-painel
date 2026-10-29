@@ -165,7 +165,7 @@ async function primeiraConversa() {
   const ctx = await nav.newContext({ viewport: { width: 1400, height: 900 } });
   const page = await ctx.newPage();
   await page.goto(ENDERECO);
-  await page.waitForSelector("[data-conversa-id]");
+  await page.waitForSelector("[data-conversa-id]", { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(800);
   const ids = await page.evaluate(() =>
     [...document.querySelectorAll("[data-conversa-id]")].map((e) => e.getAttribute("data-conversa-id")));
@@ -174,6 +174,13 @@ async function primeiraConversa() {
 }
 const [ALVO, OUTRA] = await primeiraConversa();
 ok("achei a conversa da prova, e uma segunda para ir e voltar", Boolean(ALVO && OUTRA));
+if (!ALVO) {
+  // Sem painel não há o que conferir — e seguir daria um estouro no lugar de
+  // uma reprovação que se lê.
+  await nav.close();
+  console.log(`\n${feitas - falhas}/${feitas} conferências passaram`);
+  process.exit(1);
+}
 
 const minutosAtras = (n) => new Date(Date.now() - n * 60e3).toISOString();
 const doc = (id, caminho, nome, mime, min) => ({
@@ -214,7 +221,7 @@ const ehDoPdfjs = (u) => DA_BIBLIOTECA.test(u.pathname) || DO_TRABALHADOR.test(u
 async function abrirPainel({ largura = 1400, altura = 900, bloquearBiblioteca = false } = {}) {
   const ctx = await nav.newContext({ viewport: { width: largura, height: altura }, acceptDownloads: true });
   const pedidos = [];
-  const cfg = { sumir: new Set(), trocar: new Map(), atrasoGet: 0, noAr: 0, maxNoAr: 0 };
+  const cfg = { sumir: new Set(), trocar: new Map(), falhar: new Set(), atrasoGet: 0, noAr: 0, maxNoAr: 0 };
   await ctx.route(new RegExp("^" + HOST.replace(/[.]/g, "\\.") + "/"), async (route) => {
     const req = route.request();
     const caminho = decodeURIComponent(new URL(req.url()).pathname.replace("/storage/v1/object/public/anexos", ""));
@@ -229,6 +236,10 @@ async function abrirPainel({ largura = 1400, altura = 900, bloquearBiblioteca = 
         body: JSON.stringify({ statusCode: "404", error: "not_found", message: "Object not found" }) });
     }
     const cab = { ...CORS, "content-type": a.tipo, ...(a.pedacos ? { "accept-ranges": "bytes" } : {}) };
+    if (req.method() === "GET" && cfg.falhar.has(caminho)) {
+      // O DEPÓSITO TOSSE: diz o tamanho (HEAD) e falha ao entregar o arquivo.
+      return route.fulfill({ status: 503, headers: CORS, contentType: "text/plain", body: "fora do ar" });
+    }
     if (req.method() === "GET" && cfg.atrasoGet) {
       // QUANTOS PDFs SÃO BAIXADOS AO MESMO TEMPO — a fila das miniaturas.
       cfg.noAr++;
@@ -277,9 +288,12 @@ async function abrirPainel({ largura = 1400, altura = 900, bloquearBiblioteca = 
     window.open = (...a) => { globalThis.__ABERTAS.push(String(a[0])); return abrir(...a); };
   }, { semente: SEMENTE });
   await page.goto(ENDERECO);
-  await page.waitForSelector("[data-conversa-id]");
+  // GUARDADO: o painel que não abre (o pdf.js preso no arquivo principal, e
+  // fora do ar) faria esta espera estourar a prova inteira em 30 segundos — e
+  // prova que estoura não diz QUAL conferência viu o defeito.
+  const abriu = await page.waitForSelector("[data-conversa-id]", { timeout: 15000 }).then(() => true, () => false);
   await page.waitForTimeout(1000);
-  return { ctx, page, estouros, baixados, pedidos, daBiblioteca, doApoio, cfg, bloqueados };
+  return { ctx, page, abriu, estouros, baixados, pedidos, daBiblioteca, doApoio, cfg, bloqueados };
 }
 
 /** Clique GUARDADO: num elemento que não existe, `click()` estoura a prova
@@ -294,8 +308,10 @@ async function clicar(page, sel, opcoes = {}) {
   return true;
 }
 async function abrirConversa(page, id) {
-  await page.locator(`[data-conversa-id="${id}"]`).first().click();
+  try { await page.locator(`[data-conversa-id="${id}"]`).first().click({ timeout: 5000 }); }
+  catch (_) { return false; }
   await page.waitForTimeout(1200);
+  return true;
 }
 /** Rola até cada documento, como quem lê a conversa: é perto da tela que a
  *  foto nasce. E espera as fotos que estão sendo desenhadas. */
@@ -315,10 +331,20 @@ async function lerAteOFim(page) {
   return n;
 }
 const naBolha = (id) => `[data-msg-id="${id}"]`;
-const estadoDaFoto = (page, id) =>
-  page.locator(`${naBolha(id)} [data-previa-do-pdf]`).first().getAttribute("data-previa-do-pdf").catch(() => null);
-const linhaDoTipo = (page, id) =>
-  page.locator(`${naBolha(id)} [data-doc-tipo]`).first().innerText().catch(() => "");
+// CONTA ANTES DE LER: `getAttribute` e `innerText` num elemento que não
+// existe esperam 30 segundos antes de desistir — e "não há foto" é a resposta
+// certa de metade das cenas. Eram 120 segundos só na cena 5.
+const estadoDaFoto = async (page, id) => {
+  const l = page.locator(`${naBolha(id)} [data-previa-do-pdf]`);
+  if (!(await l.count())) return null;
+  return l.first().getAttribute("data-previa-do-pdf", { timeout: 2000 }).catch(() => null);
+};
+const textoDe = async (page, sel) => {
+  const l = page.locator(sel);
+  if (!(await l.count())) return "";
+  return l.first().innerText({ timeout: 2000 }).catch(() => "");
+};
+const linhaDoTipo = (page, id) => textoDe(page, `${naBolha(id)} [data-doc-tipo]`);
 /** A parte escura de uma imagem ou tela de pintura: 0 é tudo branco. */
 const escuro = (page, sel) => page.evaluate((sel) => {
   const el = document.querySelector(sel);
@@ -500,9 +526,9 @@ console.log("\n7. O clique na foto abre o PDF em tela cheia");
   ok("abri de novo", await clicar(page, `${naBolha("pdf-tres")} [data-previa-do-pdf="pronta"]`));
   await esperarVisualizador(page, "pronto");
   const r = await caixaDe(page, "[data-visualizador-de-pdf]");
-  await page.mouse.click(r.x + 12, r.y + r.h - 12);
+  if (r) await page.mouse.click(r.x + 12, r.y + r.h - 12);
   await page.waitForTimeout(400);
-  ok("o clique no escuro fecha a janela", (await visualizador(page)) === null);
+  ok("o clique no escuro fecha a janela", r !== null && (await visualizador(page)) === null);
   ok("abri e fechei pelo X", await clicar(page, `${naBolha("pdf-tres")} [data-previa-do-pdf="pronta"]`)
      && (await esperarVisualizador(page, "pronto")) && await clicar(page, "[data-fechar-o-pdf]")
      && (await visualizador(page)) === null);
@@ -589,7 +615,7 @@ console.log("\n11. O que não abre na janela é dito, com as duas saídas");
   ok("abri o PDF que deixou de ser PDF", await clicar(page, `${naBolha("pdf-sem-tipo")} [data-previa-do-pdf="pronta"]`));
   const v = await esperarVisualizador(page, "falhou");
   ok("a janela diz que não abriu", v && v.estado === "falhou", JSON.stringify(v));
-  const frase = await page.locator("[data-pdf-que-nao-abriu]").innerText().catch(() => "");
+  const frase = await textoDe(page, "[data-pdf-que-nao-abriu]");
   ok("com o motivo: não é um PDF que dê para ler", /não é um PDF que dê para ler/.test(frase), frase);
   ok("e com as duas saídas, Baixar e Abrir numa aba nova", /Baixar/.test(frase) && /Abrir numa aba nova/.test(frase), frase);
   baixados.length = 0;
@@ -606,7 +632,7 @@ console.log("\n11. O que não abre na janela é dito, com as duas saídas");
   cfg.sumir.add("/recebidos/PDF3PAISAGEM.pdf");
   ok("abri o PDF que sumiu do depósito", await clicar(page, `${naBolha("pdf-paisagem")} [data-previa-do-pdf="pronta"]`));
   const v2 = await esperarVisualizador(page, "falhou");
-  const frase2 = await page.locator("[data-pdf-que-nao-abriu]").innerText().catch(() => "");
+  const frase2 = await textoDe(page, "[data-pdf-que-nao-abriu]");
   ok("a janela diz que o depósito respondeu 404", v2 && v2.estado === "falhou" && /404/.test(frase2), frase2);
   // UM ERRO SEM DONO NO CONSOLE era o sintoma de uma tarefa esquecida: a
   // janela que fecha antes de a biblioteca chegar (e o React de
@@ -622,28 +648,34 @@ await ctx.close();
 console.log("\n12. A biblioteca que não carregou deixa o cartão de sempre, que baixa");
 {
   const b = await abrirPainel({ bloquearBiblioteca: true });
-  await abrirConversa(b.page, ALVO);
-  await lerAteOFim(b.page);
-  ok("a cena bloqueou mesmo a biblioteca", b.bloqueados.length >= 1, JSON.stringify(b.bloqueados));
-  const foto = await estadoDaFoto(b.page, "pdf-tres");
-  ok("sem a biblioteca, o PDF fica sem foto e sem o lugar dela", foto === null, String(foto));
-  ok("com o cartão do nome", (await b.page.locator(`${naBolha("pdf-tres")} [data-documento-da-conversa]`).count()) === 1);
-  ok("que continua baixando", await clicar(b.page, `${naBolha("pdf-tres")} [data-documento-da-conversa]`)
-     && await (async () => { const ate = Date.now() + 5000;
-                             while (!b.baixados.length && Date.now() < ate) await b.page.waitForTimeout(100);
-                             return b.baixados[0] === "0001.01 - Procuração.pdf"; })(), JSON.stringify(b.baixados));
-  ok("e sem erro de JavaScript", b.estouros.length === 0, b.estouros.slice(0, 2).join(" | "));
-  // O NAVEGADOR GUARDA O `import` QUE FALHOU até a página ser recarregada
-  // (medido no Chromium): é o F5 que traz a foto de volta — e é isso que esta
-  // metade confere, que nada daqui guardou a falha além da página.
-  b.cfg.bloquear = false;
-  await b.page.reload();
-  await b.page.waitForSelector("[data-conversa-id]");
-  await b.page.waitForTimeout(800);
-  await abrirConversa(b.page, ALVO);
-  await lerAteOFim(b.page);
-  ok("recarregada a página, a foto sai", (await estadoDaFoto(b.page, "pdf-tres")) === "pronta",
-     String(await estadoDaFoto(b.page, "pdf-tres")));
+  // SEM O pdf.js, O ZORVIN ABRE. Preso no arquivo principal (um `import`
+  // comum, e não o que só vem com um PDF), ele faria a tela inteira depender
+  // dele: o arquivo que a rede derrubasse derrubaria o Zorvin junto.
+  ok("sem a biblioteca, o painel abre assim mesmo", b.abriu);
+  if (b.abriu) {
+    await abrirConversa(b.page, ALVO);
+    await lerAteOFim(b.page);
+    ok("a cena bloqueou mesmo a biblioteca", b.bloqueados.length >= 1, JSON.stringify(b.bloqueados));
+    const foto = await estadoDaFoto(b.page, "pdf-tres");
+    ok("sem a biblioteca, o PDF fica sem foto e sem o lugar dela", foto === null, String(foto));
+    ok("com o cartão do nome", (await b.page.locator(`${naBolha("pdf-tres")} [data-documento-da-conversa]`).count()) === 1);
+    ok("que continua baixando", await clicar(b.page, `${naBolha("pdf-tres")} [data-documento-da-conversa]`)
+       && await (async () => { const ate = Date.now() + 5000;
+                               while (!b.baixados.length && Date.now() < ate) await b.page.waitForTimeout(100);
+                               return b.baixados[0] === "0001.01 - Procuração.pdf"; })(), JSON.stringify(b.baixados));
+    ok("e sem erro de JavaScript", b.estouros.length === 0, b.estouros.slice(0, 2).join(" | "));
+    // O NAVEGADOR GUARDA O `import` QUE FALHOU até a página ser recarregada
+    // (medido no Chromium): é o F5 que traz a foto de volta — e é isso que esta
+    // metade confere, que nada daqui guardou a falha além da página.
+    b.cfg.bloquear = false;
+    await b.page.reload();
+    await b.page.waitForSelector("[data-conversa-id]", { timeout: 15000 }).catch(() => {});
+    await b.page.waitForTimeout(800);
+    await abrirConversa(b.page, ALVO);
+    await lerAteOFim(b.page);
+    ok("recarregada a página, a foto sai", (await estadoDaFoto(b.page, "pdf-tres")) === "pronta",
+       String(await estadoDaFoto(b.page, "pdf-tres")));
+  }
   await b.ctx.close();
 }
 
@@ -662,6 +694,33 @@ console.log("\n12b. Muitos PDFs na tela: no máximo dois desenhados ao mesmo tem
   await f.ctx.close();
 }
 
+console.log("\n12c. O tropeço do depósito não fica guardado; o PDF quebrado, sim");
+{
+  // O DEPÓSITO TOSSE UMA VEZ (503) no PDF de três páginas. Guardada, essa
+  // resposta deixaria o PDF sem foto até alguém apertar F5 — e o painel passa
+  // o dia aberto. O PDF quebrado e o que sumiu, ao contrário, não vão mudar:
+  // perguntar de novo a cada conversa aberta seria ida ao depósito à toa.
+  const t = await abrirPainel();
+  t.cfg.falhar.add("/recebidos/PDF1TRES.pdf");
+  ok("abri a conversa com o depósito tossindo", t.abriu && await abrirConversa(t.page, ALVO));
+  await lerAteOFim(t.page);
+  ok("com o 503, o PDF fica com o cartão de sempre",
+     (await estadoDaFoto(t.page, "pdf-tres")) === null
+       && (await t.page.locator(`${naBolha("pdf-tres")} [data-documento-da-conversa]`).count()) === 1,
+     String(await estadoDaFoto(t.page, "pdf-tres")));
+  const pedidosDoQueNaoMuda = () => pedidosDe(t.pedidos, "/recebidos/PDF7QUEBRADO.pdf").length
+                                    + pedidosDe(t.pedidos, "/recebidos/PDF0SUMIU.pdf").length;
+  const antes = pedidosDoQueNaoMuda();
+  t.cfg.falhar.clear();
+  ok("fui para outra conversa e voltei", await abrirConversa(t.page, OUTRA) && await abrirConversa(t.page, ALVO));
+  await lerAteOFim(t.page);
+  ok("de volta, a foto sai: o tropeço não ficou guardado", (await estadoDaFoto(t.page, "pdf-tres")) === "pronta",
+     String(await estadoDaFoto(t.page, "pdf-tres")));
+  ok("e o PDF quebrado e o que sumiu não foram pedidos de novo: o que não muda fica guardado",
+     antes >= 2 && pedidosDoQueNaoMuda() === antes, `antes ${antes}, depois ${pedidosDoQueNaoMuda()}`);
+  await t.ctx.close();
+}
+
 console.log("\n13. No celular, a foto e a janela cabem na tela");
 {
   const c = await abrirPainel({ largura: 390, altura: 844 });
@@ -674,18 +733,21 @@ console.log("\n13. No celular, a foto e a janela cabem na tela");
   const v = await esperarVisualizador(c.page, "pronto");
   ok("a janela abriu", v && v.estado === "pronto", JSON.stringify(v));
   const medidas = await c.page.evaluate(() => {
-    const pagina = document.querySelector('[data-pagina-do-pdf="1"]').getBoundingClientRect();
+    const pagina = document.querySelector('[data-pagina-do-pdf="1"]');
     const botoes = ["[data-baixar-o-pdf]", "[data-fechar-o-pdf]", "[data-pdf-numa-aba]"]
-      .map((s) => document.querySelector(s).getBoundingClientRect());
-    return { pagina: { x: pagina.x, w: pagina.width }, botoes: botoes.map((r) => ({ x: r.x, d: r.right, h: r.height })),
+      .map((s) => document.querySelector(s));
+    if (!pagina || botoes.some((b) => !b)) return null;
+    const p = pagina.getBoundingClientRect();
+    return { pagina: { x: p.x, w: p.width },
+             botoes: botoes.map((b) => b.getBoundingClientRect()).map((r) => ({ x: r.x, d: r.right, h: r.height })),
              rolaDeLado: document.documentElement.scrollWidth > window.innerWidth };
   });
-  ok("a página cabe na largura do celular", medidas.pagina.x >= 0 && medidas.pagina.x + medidas.pagina.w <= 390,
-     JSON.stringify(medidas.pagina));
+  ok("a página cabe na largura do celular",
+     medidas && medidas.pagina.x >= 0 && medidas.pagina.x + medidas.pagina.w <= 390, JSON.stringify(medidas));
   ok("os três botões estão dentro da tela, com 40 de alvo",
-     medidas.botoes.length === 3 && medidas.botoes.every((b) => b.x >= 0 && b.d <= 390 && b.h >= 40),
-     JSON.stringify(medidas.botoes));
-  ok("e a tela não rola de lado", !medidas.rolaDeLado);
+     medidas && medidas.botoes.length === 3 && medidas.botoes.every((b) => b.x >= 0 && b.d <= 390 && b.h >= 40),
+     JSON.stringify(medidas && medidas.botoes));
+  ok("e a tela não rola de lado", medidas && !medidas.rolaDeLado);
   ok("o X fecha", await clicar(c.page, "[data-fechar-o-pdf]") && (await visualizador(c.page)) === null);
   ok("sem erro de JavaScript no celular", c.estouros.length === 0, c.estouros.slice(0, 2).join(" | "));
   await c.ctx.close();
@@ -703,8 +765,11 @@ console.log("\n14. O que o build põe no ar");
   const os = await import("node:os");
   const path = await import("node:path");
   const saida = fs.mkdtempSync(path.join(os.tmpdir(), "zorvin-pdf-"));
+  // Montado como o da Render: sem a bancada (a régua da cena 15 da auditoria).
+  const env = { ...process.env };
+  delete env.VITE_BANCADA;
   const r = spawnSync("npx", ["vite", "build", "--logLevel", "error", "--outDir", saida, "--emptyOutDir"],
-                      { env: { ...process.env, VITE_BANCADA: "1" }, encoding: "utf8", timeout: 240000 });
+                      { env, encoding: "utf8", timeout: 240000 });
   ok("o build montou", r.status === 0, (r.stderr || "").slice(0, 300));
   const pacote = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "node_modules", "pdfjs-dist");
   const igual = (rel, origem) => {
