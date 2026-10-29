@@ -251,8 +251,11 @@ console.log("\n5. A etiqueta");
      (await marca(page)) === "procurando-filtro", String(await marca(page)));
   await page.waitForTimeout(4500);
   const r = await recado(page);
-  ok("com a resposta, a frase é da etiqueta, e não do telefone", r && r.marca === "sem-etiqueta" && /Urgente/.test(r.texto),
-     JSON.stringify(r));
+  // A FRASE É A DA #290 (auditoria de 27/10), que chegou antes ao mesmo
+  // defeito: "Nenhuma conversa com esta etiqueta neste telefone." — fala da
+  // etiqueta escolhida, que a pílula do filtro mostra, sem repetir o nome.
+  ok("com a resposta, a frase é da etiqueta, e não do telefone", r && r.marca === "sem-etiqueta"
+     && /com esta etiqueta/.test(r.texto) && !/Nenhuma conversa ainda/.test(r.texto), JSON.stringify(r));
 
   // A ETIQUETA SEM CONVERSA NENHUMA, depois de uma falha: a faixa apaga.
   await normal(page);
@@ -301,8 +304,11 @@ console.log("\n7. “Favoritas” e a pasta de arquivadas perguntam ao banco");
   ok("escolhi “Favoritas”", await clicar(page, '[data-aba="favoritas"]'));
   await page.waitForTimeout(3000);
   ok("a favorita da posição 450 aparece", (await idsNaLista(page)).includes("a13-c450"), JSON.stringify(await idsNaLista(page)));
+  // O "+" É A PÁGINA CARREGADA FALANDO PELO FILTRO: com o banco já perguntado,
+  // não há mais nada a buscar por ele. Era "0 de 0+" com a lista vazia; com as
+  // linhas de fora trazidas, seria "1 de 1+" — a mesma promessa falsa.
   const rodape = await page.locator('[data-teste="fim-da-lista"]').innerText().catch(() => "");
-  ok("e o rodapé não diz “0 de 0+”", !/\b0 de 0\+/.test(rodape), rodape);
+  ok("e o rodapé não promete mais com o “+” — nem “0 de 0+”", !/\+/.test(rodape), rodape);
 
   await clicar(page, '[data-aba="tudo"]');
   await page.waitForTimeout(800);
@@ -361,7 +367,7 @@ console.log("\n9. “Não lidas” na ordem “Antigas”");
   const ids = await idsNaLista(page);
   ok("a lista mostra as não lidas, e não “Nenhuma conversa ainda.”", ids.length > 0, `${await marca(page)}`);
   const rodape = await page.locator('[data-teste="fim-da-lista"]').innerText().catch(() => "");
-  ok("e o rodapé não diz “0 de 0+”", !/\b0 de 0\+/.test(rodape), rodape);
+  ok("e o rodapé não promete mais com o “+” — nem “0 de 0+”", !/\+/.test(rodape), rodape);
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }

@@ -23,6 +23,12 @@
 //   4. e o contraste: com a leitura de volta, "Tentar de novo" tira a frase
 //      da falha e a faixa — um conserto que dissesse "falhou" sempre passaria
 //      sem ele.
+//
+// AS MARCAS. A troca de aba (1, e 2, que com o 028 também é uma troca: a pasta
+// pede a lista sem aba) foi consertada antes pela #290 (auditoria de 27/10),
+// com a marca `falhou-aba` e a frase "desta aba" — é ela que esta prova pede
+// ali. Sem o 028 não há troca de aba, e é a régua da lista filtrada que diz
+// `falhou` (3).
 import { abrirNavegador, ENDERECO } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
@@ -79,7 +85,7 @@ console.log("\n1. Trocar para “Finalizados” com a leitura falhando");
   ok("cliquei em “Finalizados”", await clicar(page, '[data-aba-da-situacao="finalizado"]'));
   await page.waitForTimeout(2500);
   const r = await recado(page);
-  ok("o recado é o da falha, e não “Carregando as conversas…”", r && r.marca === "falhou", JSON.stringify(r));
+  ok("o recado é o da falha, e não “Carregando as conversas…”", r && r.marca === "falhou-aba", JSON.stringify(r));
   ok("com o código do banco", r && /PGRST301/.test(r.texto), JSON.stringify(r));
   ok("e a faixa âmbar acende", (await faixa(page)) === 1);
 
@@ -103,12 +109,12 @@ console.log("\n2. Entrar nas arquivadas com a leitura falhando");
   ok("entrei nas arquivadas", await entrarNasArquivadas(page));
   await page.waitForTimeout(2500);
   const r = await recado(page);
-  ok("o recado é o da falha, e não “Carregando as conversas…”", r && r.marca === "falhou", JSON.stringify(r));
+  ok("o recado é o da falha, e não “Carregando as conversas…”", r && r.marca === "falhou-aba", JSON.stringify(r));
   await quebrarALeitura(page, false);
   await clicar(page, "[data-tentar-leituras]");
   await page.waitForTimeout(2500);
   const depois = await recado(page);
-  ok("com a leitura de volta, a frase da falha sai", !depois || depois.marca !== "falhou", JSON.stringify(depois));
+  ok("com a leitura de volta, a frase da falha sai", !depois || !/^falhou/.test(depois.marca), JSON.stringify(depois));
   ok("e a faixa apaga", (await faixa(page)) === 0);
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();

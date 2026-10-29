@@ -1,4 +1,4 @@
-// O FILTRO DE ATENDENTES NÃO SOME — nem o botão, nem as linhas de fora
+// O FILTRO DE ATENDENTES NÃO SOME CALADO — nem o botão, nem as linhas de fora
 // (auditoria de 28/10)
 //
 // Três defeitos no mesmo filtro, os três calados:
@@ -20,10 +20,17 @@
 //   3. O TETO DE 500 CORTAVA CALADO: quem participou de mais de 500 conversas
 //      via uma lista cortada com cara de inteira.
 //
-// O QUE ESTA PROVA GUARDA: o botão fica (e diz que a lista não veio) quando a
-// função falha, e some só quando ela falta; as linhas de fora não piscam ao
-// abrir uma delas, e não somem quando a releitura falha — a faixa diz; e o
-// teto é dito.
+// O DEFEITO 1 FOI CONSERTADO ANTES PELA #290 (auditoria de 27/10), por outro
+// caminho, e é o dela que vale: com a função falhando o botão não aparece, mas
+// a falha é DITA na faixa âmbar, e o "Tentar de novo" traz o botão de volta (a
+// cena 13b de `a-auditoria-de-27-10` confere o mesmo). Esta prova pedia o
+// botão de pé com o menu dizendo que a lista não veio; passou a pedir o
+// caminho da #290 — a falha dita, e não um sumiço calado.
+//
+// O QUE ESTA PROVA GUARDA: a falha da função é dita, e o "Tentar de novo"
+// traz o botão e as pessoas; sem a função, o botão some calado; as linhas de
+// fora não piscam ao abrir uma delas, e não somem quando a releitura falha — a
+// faixa diz; e o teto é dito.
 import { abrirNavegador, ENDERECO } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
@@ -73,22 +80,19 @@ const idsNaLista = (page) => page.locator("[data-conversa-id]").evaluateAll(
   (els) => els.map((e) => e.getAttribute("data-conversa-id")));
 
 // ==================================================================
-console.log("\n1. A lista de quem atende que não veio não leva o botão junto");
+console.log("\n1. A lista de quem atende que não veio é dita, e o “Tentar de novo” a traz");
 {
   const { ctx, page, estouros } = await abrir({ quebrarFuncao: ["atendentes_do_telefone"] });
-  ok("o botão do filtro continua lá", (await botao(page)) === 1);
-  ok("e a faixa âmbar diz o que não carregou", /quem atende/.test(await textoDaFaixa(page)), await textoDaFaixa(page));
-  await clicar(page, '[data-grupo="quem"]');
-  await page.waitForTimeout(300);
-  ok("o menu diz que a lista não carregou, e não “Ninguém do escritório escreveu”",
-     (await page.locator("[data-quem-nao-carregou]").count()) === 1
-     && !/Ninguém do escritório/.test(await page.locator("[data-menu-quem]").innerText().catch(() => "")));
-  await page.keyboard.press("Escape");
+  ok("a faixa âmbar diz o que não carregou", /quem atende/.test(await textoDaFaixa(page)), await textoDaFaixa(page));
+  // O CAMINHO DA #290: o botão não fica de pé oferecendo um menu sem ninguém —
+  // que diria "Ninguém do escritório escreveu" sobre uma leitura que falhou.
+  ok("e o botão não fica de pé com um menu sem ninguém", (await botao(page)) === 0);
   // O CONTRASTE: a função de volta, e o mesmo botão da faixa relê.
   await page.evaluate(() => { globalThis.__QUEBRAR_FUNCAO = []; });
   ok("apertei “Tentar de novo”", await clicar(page, "[data-tentar-leituras]"));
   await page.waitForTimeout(1500);
   ok("com a função respondendo, a faixa apaga", (await faixa(page)) === 0);
+  ok("e o botão volta", (await botao(page)) === 1);
   await clicar(page, '[data-grupo="quem"]');
   await page.waitForTimeout(300);
   ok("e o menu traz as pessoas", (await page.locator("[data-quem]").count()) > 0);
