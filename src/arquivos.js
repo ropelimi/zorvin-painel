@@ -12,6 +12,15 @@
 // inteiro, e seria carregado por toda pessoa que abre a tela, para um recurso
 // que só aparece em algumas bolhas.
 //
+// MUDOU EM 29/10, NA BOLHA: o PDF recebido ganhou a primeira página como foto,
+// desenhada pelo pdf.js (`previaDoPdf.js`), que chega só quando há um PDF
+// perto da tela — o peso que este parágrafo temia é pago por quem abre um
+// PDF, e não por toda abertura. O iframe só desenhava com o leitor do
+// navegador ligado e o depósito dizendo `application/pdf`; a foto não depende
+// de nenhum dos dois. O iframe ficou na prévia ANTES DE MANDAR um anexo
+// (`PreviaDeArquivo` com `inteira`), onde rolar e ampliar no leitor do
+// navegador é o ponto.
+//
 // TEXTO TAMBÉM: .txt, .csv, .json, .xml e afins — mas LIDOS e escritos na
 // bolha, e não num iframe. Ver "Abrir a conversa não pode baixar nada".
 //

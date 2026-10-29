@@ -128,22 +128,28 @@ for (let i = 0; i < quantosDocs; i++) {
 }
 await page.waitForTimeout(1200);
 
-/** Para cada documento da conversa: o nome, a prévia e se há um iframe. */
+/** Para cada documento da conversa: o nome, a prévia, a foto do PDF (29/10) e
+ *  se há um iframe em qualquer lugar da bolha. */
 const porDocumento = () => page.evaluate(() =>
   [...document.querySelectorAll("[data-doc-tipo]")].map((t) => {
     const a = t.closest("a");
     const p = a && a.querySelector("[data-previa-arquivo]");
+    const cartao = t.closest("[data-cartao-do-pdf]");
+    const foto = cartao && cartao.querySelector("[data-previa-do-pdf]");
+    const bolha = t.closest("[data-msg-id]") || cartao || a;
     return {
       nome: (a && a.innerText.split("\n").find((l) => /\.\w{2,4}$/.test(l.trim())) || "").trim(),
       previa: p ? p.getAttribute("data-previa-arquivo") : null,
-      quadro: !!(p && p.querySelector("iframe")),
+      foto: foto ? foto.getAttribute("data-previa-do-pdf") : null,
+      fotoNoLink: !!(foto && foto.closest("a")),
+      quadro: !!(bolha && bolha.querySelector("iframe")),
       texto: p ? p.innerText.slice(0, 200) : "",
       link: !!(a && a.getAttribute("href")),
     };
   }));
 const vistos = await porDocumento();
 const doc = (re) => vistos.find((v) => re.test(v.nome));
-console.log("     " + JSON.stringify(vistos.map((v) => `${v.nome}:${v.previa}${v.quadro ? "+quadro" : ""}`)));
+console.log("     " + JSON.stringify(vistos.map((v) => `${v.nome}:${v.previa}${v.foto ? "+foto:" + v.foto : ""}${v.quadro ? "+quadro" : ""}`)));
 
 console.log("\nNa conversa");
 {
@@ -162,16 +168,16 @@ console.log("\nNa conversa");
   // certo, e por isso ele não nasce. Escrevi primeiro só a primeira metade:
   // passou aqui, num Chrome com leitor, e reprovou na integração contínua,
   // que tinha razão.
+  //
+  // INVERTIDA EM 29/10, e não apagada: o PDF deixou de depender do leitor do
+  // navegador. A primeira página é desenhada pelo pdf.js e aparece como uma
+  // foto (`a-previa-do-pdf`), nos dois mundos — e iframe, em nenhum dos dois.
+  // O que esta conferência protegia continua protegido: o iframe que baixava
+  // não nasce.
   const temLeitor = await page.evaluate(() => navigator.pdfViewerEnabled);
-  if (temLeitor === false) {
-    ok("sem leitor de PDF no navegador, o PDF NÃO ganha iframe — ele baixaria",
-       doc(/procuracao\.pdf/) && doc(/procuracao\.pdf/).quadro === false,
-       JSON.stringify(doc(/procuracao/)));
-  } else {
-    ok("o PDF ganha prévia, desenhada pelo leitor do navegador",
-       doc(/procuracao\.pdf/)?.previa === "pdf" && doc(/procuracao\.pdf/)?.quadro === true,
-       JSON.stringify(doc(/procuracao/)));
-  }
+  ok(`o PDF ganha a primeira página como foto, ${temLeitor === false ? "SEM" : "com"} o leitor do navegador — e nenhum iframe`,
+     doc(/procuracao\.pdf/)?.foto === "pronta" && doc(/procuracao\.pdf/)?.quadro === false,
+     JSON.stringify(doc(/procuracao/)));
 
   // A METADE QUE PROTEGE: o que não tem leitor fica sem prévia.
   ok("a planilha do Excel NÃO ganha", doc(/orcamento\.xlsx/)?.previa === null,
@@ -182,6 +188,10 @@ console.log("\nNa conversa");
   // dizendo "PDF", ele continua abrindo com um clique.
   ok("o PDF servido sem tipo NÃO ganha iframe — era um dos que baixavam",
      doc(/comprovante\.pdf/) && doc(/comprovante\.pdf/).quadro === false,
+     JSON.stringify(doc(/comprovante/)));
+  // E DESDE 29/10 ELE GANHA A FOTO: o pdf.js lê os bytes, e não o tipo que o
+  // depósito diz.
+  ok("e ganha a foto da primeira página, desenhada pelo pdf.js", doc(/comprovante\.pdf/)?.foto === "pronta",
      JSON.stringify(doc(/comprovante/)));
   ok("e o cartão dele continua dizendo que é um PDF",
      (await page.evaluate(() => [...document.querySelectorAll("[data-doc-tipo]")]
@@ -204,12 +214,19 @@ console.log("\nNa conversa");
   // CADA PRÉVIA QUE EXISTE é conferida — e o TAMANHO vai junto: numa lista
   // vazia `.every` diria que sim sem ter olhado nada. A do texto sempre
   // existe; a do PDF só com leitor.
+  //
+  // A FOTO DO PDF (29/10) NÃO MORA NO LINK: é um botão à parte, em cima dele,
+  // que abre o PDF em tela cheia. Dentro do link ela engoliria o clique que
+  // baixa — e um botão dentro de um link não seria nem um nem outro.
   const cliques = await page.evaluate(() =>
     [...document.querySelectorAll('[data-previa-arquivo="pdf"] iframe, [data-previa-arquivo="texto"] pre')]
       .map((e) => getComputedStyle(e).pointerEvents));
   ok("nenhuma prévia engole o clique do link",
-     cliques.length >= (temLeitor === false ? 1 : 2) && cliques.every((c) => c === "none"),
+     cliques.length >= 1 && cliques.every((c) => c === "none"),
      JSON.stringify(cliques));
+  ok("e a foto do PDF fica fora do link que baixa",
+     doc(/procuracao\.pdf/)?.foto === "pronta" && doc(/procuracao\.pdf/)?.fotoNoLink === false
+       && doc(/procuracao\.pdf/)?.link === true, JSON.stringify(doc(/procuracao/)));
 
   // E O ARQUIVO CONTINUA BAIXÁVEL, com ou sem prévia: a prévia é um
   // acréscimo, não uma troca — e o PDF que ficou sem ela é justamente o que
@@ -246,6 +263,9 @@ console.log("\nO navegador que BAIXA PDFs em vez de abrir");
   const quadros = await p2.evaluate(() => document.querySelectorAll("[data-previa-arquivo] iframe").length);
   ok("a cena viu os documentos", n2 >= 4, `vi ${n2}`);
   ok("sem leitor de PDF, nenhum iframe nasce", quadros === 0, `nasceram ${quadros}`);
+  // E A FOTO SAI ASSIM MESMO (29/10): quem desenha é o pdf.js, e não o leitor.
+  const fotos2 = await p2.locator('[data-previa-do-pdf="pronta"]').count();
+  ok("e os dois PDFs ganham a foto assim mesmo", fotos2 >= 2, `fotos: ${fotos2}`);
   ok("e nada é baixado", baixados2.length === 0, JSON.stringify(baixados2));
   await ctx2.close();
 }
