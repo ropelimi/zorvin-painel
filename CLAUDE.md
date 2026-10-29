@@ -5419,7 +5419,7 @@ e sabotagem.
 **Como foi feito.**
 - **Ferramentas:** build, `npm audit` e um ESLint com as regras de hooks do
   React, rodado de fora do repositório (a casa não tem lint, e não ganhou um).
-- **Layout:** uma varredura na bancada abriu **420 estados** — cada botão da
+- **Layout:** uma varredura na bancada abriu **432 estados** — cada botão da
   tela principal e da conversa, cada item do ⋮, cada aba das Configurações e
   de Departamentos — em 375, 768 e 1366px, claro e escuro, medindo rolagem de
   lado, o que sai da tela, texto cortado, alvo de toque, letra de campo no
@@ -5428,52 +5428,108 @@ e sabotagem.
   componentes, os módulos com o SQL) deram **~60 achados**.
 - **Consertos:** quatro frentes, cada uma na sua cópia da branch. Cada achado
   foi **reproduzido por uma prova que reprova antes do conserto**, e cada
-  conserto foi sabotado. São **42 provas novas**, e mais de cem sabotagens,
-  todas pegas.
+  conserto foi sabotado. São **42 provas novas**.
 
-**Os de maior peso:**
+### A junção com a auditoria de 27/10 (#290) — 29/10
 
-| o que acontecia | agora |
+Enquanto o CI desta PR rodava, o Rodrigo juntou ao main a **#290**: outra
+auditoria, pedida em 27/10, feita em paralelo por outra sessão. Ela consertou
+por outro caminho muitos dos mesmos defeitos — a ficha que espremia a
+conversa, o que é de uma conversa ficar nela, as falhas caladas, a ficha, o
+painel de números, a bancada fora do pacote. Oito arquivos em conflito.
+
+**Como foi junta.** Nos oito arquivos, ficou a versão do main, que é a
+aprovada. As 42 provas desta PR viraram o juiz do que faltava: rodadas contra
+o main, **14 passaram** (a #290 já cobria, ou não tocava) e **28 reprovaram**.
+Cada reprovação foi lida e virou uma de três coisas:
+- **o defeito estava lá**: o conserto desta PR voltou, adaptado ao código da
+  #290 e sabotado de novo;
+- **a #290 escolheu outro desenho de propósito**: a prova passou a pedir o que
+  os dois desenhos garantem (está dito no alto de cada uma);
+- **a #290 cobria só parte**: voltou só o resto.
+
+Nenhum conserto da #290 foi desfeito. As provas dela (`a-auditoria-de-27-10`,
+205 conferências; `a-bolha-que-saiu-nao-fica-vermelha`, 100) passam junto
+com as desta PR. A #292 (a prévia do PDF) entrou depois, sem conflito.
+
+**As provas que mudaram de pedido, e por quê:**
+
+| prova | a #290 escolheu | a prova pede agora |
+|---|---|---|
+| `a-ficha-nao-esmaga-a-conversa` | a ficha das larguras médias é uma gaveta por cima da conversa (`data-ficha-sobreposta`), e não troca de lugar com ela | a ficha sobreposta e a conversa com a mesma largura de antes de abri-la |
+| `o-que-e-de-uma-conversa-fica-nela` | gravar em B com o áudio de A esperando PERGUNTA (`window.confirm`) | responde "não" e confere que nada se grava e que a pergunta diz por quê |
+| `o-olho-da-senha-cabe-o-dedo` | mínimos de 40 no botão | a simulação do "antes" zera também os mínimos; a margem sai metade de cada lado (`-8px -7px`), e o ícone fica onde estava |
+| `a-aba-que-falha-diz-que-falhou` | a aba que não carregou leva a marca `falhou-aba` | a marca dela nas abas; nas Arquivadas, que a #290 não cobria, a falha é medida pela lista filtrada |
+| `o-filtro-de-atendentes-nao-some` | com a função falhando, o botão de quem atende some e a faixa âmbar diz a falha (cena 13b dela) | o caminho dela: a falha dita, e o "Tentar de novo" traz o botão e as pessoas |
+| `os-filtros-nao-afirmam-ausencia` | a etiqueta vazia diz "com esta etiqueta", sem o nome | a frase dela; e o rodapé das Favoritas e das Não lidas passou a conferir o "+" do teto |
+
+**O que a #290 já cobria, e ficou como ela fez:** a ficha nas larguras
+médias (gaveta), a bancada fora do pacote (`bancada-desligada.js`), o
+rascunho da ficha por pessoa, os telefones do pré-cadastro, as setas em dias
+de calendário, o nome da pessoa no filtro do Painel de números, o Esc do "/"
+e dos departamentos, a seleção e o áudio na troca de conversa, a ordem dos
+anexos, os gestos que falham (`GESTOS_DA_FILA`), a aba que não carregou
+(`falhou-aba`), as faixas de departamentos e telefones
+(`lerDepartamentosETelefones`), a agenda na aba Contatos, a conferência do
+número que falha, o alvo de 40 do "Mostrar senha" e os selos do celular em
+ícone.
+
+**O que esta PR acrescenta ao que a #290 fez:**
+
+| o que acontecia (no main de 29/10) | agora |
 |---|---|
-| entre 768 e 1117px (o iPad em pé, a janela na metade de um monitor de 1920) a ficha fixa deixava a conversa com 18 a 350px — a mensagem saía uma letra por linha | abaixo do piso do próprio cabeçalho (368px), a ficha é gesto, como no celular, e toma o lugar da conversa — a lista fica |
-| o build de produção levava a **bancada inteira para o site**, com telefones copiados de casos reais | `vite.config.js` troca a bancada por `src/semBancada.js`; os telefones da bancada viraram números de exemplo, e o do relato de 28/09 (o da ficha) virou (71) 99001-2345 nas provas, nos comentários e aqui |
-| a mensagem que chegava pelo tempo real **durante a carga** da conversa sumia — o eco da própria mensagem também, e quem enviou mandava de novo | `chegaramDuranteACarga` |
+| o "não enviado · reenviar" em #e53935: **1,9:1** sobre a bolha verde no escuro; as frases de erro das telas em #c0392b, 3,2:1 no escuro | tokens `erroTexto` e `ambarTexto` nas letras miúdas (4,7 e 5,1); o ícone e a borda continuam com a cor viva |
+| os menus dos selos (responsável, etapa, tarefas) e o painel de emojis passavam da borda a 768 (o de tarefas ia até 933px) | `encaixarNaJanela` empurra para dentro ao aparecer |
+| a mensagem que o tempo real trazia **durante a carga** da conversa sumia; o eco da própria mensagem também | `chegaramDuranteACarga`, ao lado do `provisoriasQueFicam` da #290 |
 | com o relógio aberto, virar a caixa para nota e agendar mandava a **nota ao cliente** | a janela da hora só existe fora da nota e da edição |
-| o áudio gravado em A aparecia na barra de B; a prévia de anexos de A, com Tab até a lista, era enviada a B; a seleção de A abria B sem caixa de escrever | cada coisa fica na conversa dela |
-| começar a editar apagava o que estava sendo escrito; a correção que o banco recusava se perdia | a caixa volta ao que era, e só sai da edição depois de gravar |
-| as setas de período do Painel de números andavam em milissegundos: "7 dias" ← dizia "8 dias" | dias de calendário |
-| "Salvar no Vantoro" apagava o que se digitou durante a gravação; o rascunho da ficha de quem saiu aparecia para quem entrou na mesma aba | preservado; rascunho por pessoa |
-| Fora do horário que não carregou virava "Desligada", e Salvar gravava isso por cima | a tela diz que não carregou |
-| o funil se esvaziava e relia a cada mensagem do tempo real | depende do conteúdo, e não da lista nova a cada desenho |
-| filtros (minhas, grupos, tarefas, etiqueta, favoritas, não lidas, atendentes) diziam "nenhuma" antes de o banco responder, ou depois de ele falhar | procurando, falhou e pronto — e o teto é dito |
-| a página da lista pedida antes de uma releitura da página 0 apagava páginas | contador de geração, e 20 linhas de sobra |
-| o histórico de atendimento com uma ponta só derrubava o painel (tela branca) | só o par, e a falha é dita |
-| Configurações › Contatos não perguntava ao banco; a falha da conferência do número criava contato duplicado | pergunta, e não cria nada sem conferir |
-| `sql/dispensar_aviso_de_falha.sql`, rodado hoje, faria todo "Cancelar" de agendada dar 23514 (e reabria a permissão para `anon`) | acrescenta 'descartada' à lista existente, como o 014 da ponte |
-| o "não enviado · reenviar" tinha **1,9:1** no escuro, e era um `<span>` | `erroTexto` (4,7) e um botão; as frases de erro das telas também |
+| começar a editar apagava o que se escrevia e a citação; a correção recusada se perdia; o segundo Enter mandava duas vezes (era uma sugestão da #290) | a edição guarda e devolve o rascunho; só sai da caixa depois de gravar |
+| pelo teclado, o "Enviar" da prévia de anexos de A mandava a B; dois anexos de mesmo nome caíam no mesmo endereço do depósito (com a subida junta da #290, sempre) | a troca fecha a prévia e a confirmação de apagar; `caminhoNoDeposito` |
+| a busca na conversa, acima do teto, trazia as 500 mais antigas | as 500 mais recentes |
+| "Salvar no Vantoro" apagava o que se digitou durante a gravação | só o que não mudou depois do clique vem do Vantoro |
+| Fora do horário: com a configuração falhando, os feriados nem eram lidos; a falha deles virava "Nenhum feriado daqui para a frente" | os feriados valem por si, e a falha deles é dita na seção |
+| Painel de números: o ano andava os dias corridos; quem administra e escolhe outra pessoa lia "os seus números"; os rótulos de data cortados no celular | ano civil; "a pessoa escolhida"; o passo dos rótulos acompanha a largura |
+| Configurações › Contatos dizia "Nenhum contato ainda" enquanto a agenda vinha | "Lendo a agenda…"; as recargas levam o termo escrito |
+| o histórico de atendimento com uma ponta faltando derrubava o painel; o assunto que não carregou aparecia como "removido" | só o par, a falha dita, "assunto não carregado" |
+| a importação juntava mensagens iguais no mesmo minuto | a ordem da repetição entra na chave (a primeira mantém a antiga) |
+| o pulso de "Estou atendendo" não gravava quem atende | renova a própria marca, toma a vazia ou a vencida — e não a da conversa deixada no meio do pulso (guarda `vivo`) |
+| os filtros (minhas, grupos, tarefas, etiqueta, não lidas, favoritas, arquivadas) diziam "nenhuma" com a pergunta no ar ou depois de ela falhar — a faixa da #290 avisava, e a lista logo abaixo afirmava | três desfechos na lista (`perguntasDoFiltro`): procurando, falhou (com o código) e pronto; o teto é dito; tudo pelo `tentativaDosFiltros` da #290 |
+| o Encaminhar só listava a aba aberta (sugestão da #290) | procura no banco (`encaminharNoBanco`) |
+| a busca da lista se refazia ao abrir uma conversa achada (sugestão da #290) | a busca lê a lista por um espelho, e abrir não a refaz |
+| a página pedida antes de uma releitura da página 0 apagava páginas da lista | contador de geração, e 20 linhas de sobra por página |
+| entrar nas Arquivadas com a leitura falhando dizia "Nenhuma conversa arquivada." | a falha é dita |
+| o ⌄ da linha, Mídias, Arquivadas, a agenda e o Vantoro na Nova conversa, a barra das fixadas, o som e a caixinha de seleção não eram alcançados pelo teclado | botões, e as teclas valem também nos filhos da linha |
+| os selos da barra não diziam a falha; o "Tentar de novo" não relia as figurinhas; a conta das Arquivadas ficava presa ao telefone de antes | a falha dita e relida; presa ao telefone certo |
+| as linhas de fora do filtro de atendentes piscavam ao abrir uma delas e sumiam quando a releitura falhava; o teto de 500 era calado | só se esvaziam quando a escolha muda; o teto é dito |
+| o SQL `dispensar_aviso_de_falha.sql`, rodado hoje, faria todo "Cancelar" de agendada dar 23514 (e reabria a permissão para `anon`); o de 2026-09 desfazia a `zorvin_saude()` da ponte | acrescenta 'descartada' à lista existente, como o 014 da ponte; o outro só cria onde não existe |
+| telefones de casos reais em provas e comentários (inclusive o do relato de 28/09) | números de exemplo com as mesmas propriedades |
 
 **O que não foi feito, e por quê:**
-- **os selos do cabeçalho no celular** ("sem r…", "fo…", "se…" de 360 a 430px):
-  as provas pedem texto ali (`o-responsavel-pela-conversa`,
-  `tarefas-e-lembretes`), e ícone, terceira linha ou esconder o vazio é
-  escolha de desenho — perguntado;
 - **número estrangeiro com "+"**: o painel e a ponte (`numeroLimpo`) põem o 55
   na frente; consertar um lado só faria os dois divergirem. A prova
-  `o-numero-com-zero-na-frente` registra e reprova a metade;
+  `o-numero-com-zero-na-frente` registra o defeito como está, e reprova se
+  só um dos lados mudar;
 - **a ponte ignora o `error`** das duas leituras de `/historico/contato` — é do
-  outro repositório;
+  outro repositório (a zorvin-bridge#211 não tratou disso);
 - **o Vite 5** tem um alerta de segurança do `esbuild` só no servidor de
   desenvolvimento; sair dele é trocar de versão maior;
+- **a bancada difere do Postgres** em dois pontos que esconderam casos aqui:
+  aplica o `.eq` de uma gravação quando o pedido é montado, e não quando é
+  executado; e no `lt` trata o nulo como menor que tudo;
 - os telefones de casos reais **continuam no histórico do git**: tirá-los de
   lá é reescrever o histórico, decisão do Rodrigo.
 
-**Três lições:**
+**Quatro lições:**
+- **Duas auditorias do mesmo código ao mesmo tempo** custam a segunda junção
+  inteira. Antes de começar uma, olhar as PRs abertas e os ramos recentes. Se
+  elas se cruzarem, a aprovada fica, e as provas da outra dizem o que falta —
+  rodar as provas contra o main foi o que separou, em minutos, os 14 casos já
+  cobertos dos 28 que não estavam.
 - **O que o build leva não é o que o código usa.** Um `import` estático de
   módulo com efeito no nível de cima entra no pacote mesmo atrás de um
-  ternário que nunca o escolhe. A prova `a-bancada-nao-vai-para-o-site` faz o
-  build de produção e procura.
-- **Toda prova roda em 1360 ou em 390.** O defeito da ficha morava entre as
-  duas larguras, onde nenhuma prova olhava — e o iPad em pé mora ali.
+  ternário que nunca o escolhe. As duas auditorias chegaram nisso sozinhas.
+- **Toda prova roda em 1360 ou em 390.** O defeito da ficha e o dos menus
+  moravam entre as duas larguras, onde nenhuma prova olhava — e o iPad em pé
+  mora ali.
 - **SQL do painel que a tela manda rodar envelhece.** A ponte refaz as funções
   e as regras nos scripts automáticos dela; um script daqui que faz `create or
   replace` ou apaga regra desfaz o que veio depois. Os dois daqui agora só
