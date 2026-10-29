@@ -1886,6 +1886,29 @@ function usarDentroDaTela(aberto, tudo) {
   return [alvo, desloca];
 }
 
+// O MENU QUE ABRE PARA O LADO NÃO SAI DA JANELA (auditoria de 28/10).
+//
+// Os menus dos selos da linha do número (responsável, etapa, tarefas) e o
+// painel de emojis da caixa de escrever abrem para a DIREITA de onde nascem.
+// Com a conversa estreita — 348px a 768, o iPad em pé — eles passavam da
+// borda: o "Tarefas desta conversa" ia até 933px numa tela de 768, a página
+// inteira rolava de lado e o fim do menu sumia.
+//
+// Mede uma vez, ao aparecer, e empurra para dentro só o que faltou. Pela
+// propriedade `translate`, e não por `transform`, para não brigar com quem
+// usa `transform` no mesmo elemento. Fica fora do componente de propósito:
+// estável, o React só a chama quando o elemento nasce — e não a cada desenho.
+function encaixarNaJanela(el) {
+  if (!el) return;
+  el.style.translate = "";
+  const r = el.getBoundingClientRect();
+  const FOLGA = 8;
+  let d = 0;
+  if (r.right > window.innerWidth - FOLGA) d = window.innerWidth - FOLGA - r.right;
+  if (r.left + d < FOLGA) d = FOLGA - r.left;
+  if (d) el.style.translate = `${Math.round(d)}px 0`;
+}
+
 // O ROSTO DE REAGIR, ao lado da bolha.
 //
 // Faz o que a seta também faz, e existe assim mesmo: reagir é a ação mais
@@ -13867,7 +13890,7 @@ export default function Painel({ sessao }) {
                    textAlign: "left", fontSize: 13.5, minHeight: estreito ? 44 : 36 };
     const atual = f.cartao ? String(f.cartao.etapa_id) : "";
     return (
-      <div data-menu-etapa role="listbox"
+      <div data-menu-etapa role="listbox" ref={encaixarNaJanela}
            style={{ position: "absolute", zIndex: 61, width: 250, maxHeight: 360, overflowY: "auto",
                     whiteSpace: "normal", fontWeight: 400,
                     ...(menuEtapa === "menu" ? { top: 44, right: 0 } : { top: "100%", left: 0, marginTop: 4 }),
@@ -14026,7 +14049,7 @@ export default function Painel({ sessao }) {
       );
     };
     return (
-      <div data-menu-tarefas role="dialog"
+      <div data-menu-tarefas role="dialog" ref={encaixarNaJanela}
            style={{ position: "absolute", zIndex: 61, width: 300, maxHeight: 420, overflowY: "auto",
                     whiteSpace: "normal", fontWeight: 400,
                     ...(menuTarefa === "menu" ? { top: 44, right: 0 } : { top: "100%", left: 0, marginTop: 4 }),
@@ -14089,7 +14112,7 @@ export default function Painel({ sessao }) {
       <ComPesquisa>{(pesquisa, setPesquisa) => {
         const achadas = comPesquisa ? pessoasParaPassar.filter((p) => casaComAPesquisa(pesquisa, p.nome)) : pessoasParaPassar;
         return (
-      <div data-menu-responsavel role="listbox"
+      <div data-menu-responsavel role="listbox" ref={encaixarNaJanela}
            style={{ position: "absolute", zIndex: 61, width: 262, maxHeight: comPesquisa ? 420 : 360, overflowY: "auto",
                     // A LINHA DE ONDE ELE PENDE é `nowrap` (é a do número do
                     // cliente), e a frase de quem passou a conversa herdaria
@@ -14389,7 +14412,7 @@ export default function Painel({ sessao }) {
     {!modoNota && (
     <span ref={emojiRef} data-figurinhas style={{ display: "flex" }}>
       {emojiAberto && (
-        <div style={{ position: "absolute", bottom: 60, left: 12, zIndex: 30 }}>
+        <div ref={encaixarNaJanela} style={{ position: "absolute", bottom: 60, left: 12, zIndex: 30 }}>
           {abaEmoji === "figurinha" ? (
             <PainelFigurinhas C={C} figurinhas={figurinhas} figHover={figHover}
               aoPassarMouse={setFigHover}

@@ -8,17 +8,21 @@
 // desenhados por cima da ficha. Uma janela na metade de um monitor de 1920
 // (960px) caía no mesmo lugar.
 //
-// Agora a ficha só é coluna quando sobra, ao lado dela, a conversa mínima — a
-// do próprio cabeçalho recolhido (nome 230 + ⋮ 82 + avatar 56 = 368). Abaixo
-// disso ela se comporta como no celular: nasce recolhida, abre por gesto e,
-// aberta, toma o lugar da CONVERSA — nunca o da lista, que era o pedido de
-// 28/09 (a fila de quem espera continua à vista).
+// Agora a ficha só é coluna quando sobra, ao lado dela, uma conversa de
+// verdade. Abaixo disso ela nasce recolhida, abre por gesto e, aberta, vem
+// por CIMA da conversa, como uma gaveta (`data-ficha-sobreposta`, auditoria
+// de 27/10, #290) — nunca por cima da lista, que era o pedido de 28/09 (a
+// fila de quem espera continua à vista). Esta prova nasceu com a ficha
+// tomando o lugar da conversa; na junção com a #290 ficou o desenho dela, e
+// a prova pede o que os dois desenhos garantem: a conversa não divide a
+// largura com a ficha.
 //
 // O QUE ESTA PROVA GUARDA
 //   1. de 768 a 1120, a conversa aberta fica com tudo o que sobra da lista
 //      (e nunca menos que 368px ao lado da ficha), e o nome do cliente
 //      aparece inteiro no cabeçalho;
-//   2. a 768, a ficha abre pelo ⋮, toma o lugar da conversa e a lista fica;
+//   2. a 768, a ficha abre pelo ⋮, por cima da conversa (sem tirar largura
+//      dela), e a lista fica;
 //   3. o X da ficha devolve a conversa; o Esc também;
 //   4. com a ficha aberta, clicar noutra conversa da lista mostra a conversa;
 //   5. o gesto não mexe na preferência guardada do computador largo;
@@ -109,6 +113,7 @@ console.log("\n2. A 768, a ficha abre pelo ⋮ e toma o lugar da conversa — n�
   const { ctx, page } = await novaJanela(768, 1024);
   await abrirAPrimeira(page);
   ok("a ficha nasce recolhida (não há três colunas)", !(await fichaVisivel(page)));
+  const conversaSemFicha = await larguraDaConversa(page);
   const guardadaAntes = await page.evaluate(() => localStorage.getItem("zorvin_ficha_fixa"));
 
   const mais = page.locator('[aria-label="Mais opções desta conversa"]');
@@ -124,7 +129,14 @@ console.log("\n2. A 768, a ficha abre pelo ⋮ e toma o lugar da conversa — n�
   const larguraFicha = await page.locator("[data-ficha]").first().evaluate((e) => Math.round(e.getBoundingClientRect().width));
   ok("e ela tem espaço (pelo menos a largura da coluna de sempre)", larguraFicha >= 330, `${larguraFicha}px`);
   ok("a lista de conversas continua à vista", await listaVisivel(page));
-  ok("a conversa saiu da frente (não ficou espremida ao lado)", !(await conversaVisivel(page)));
+  {
+    const sobreposta = await page.locator("[data-ficha]").first().getAttribute("data-ficha-sobreposta");
+    const conversaComFicha = await larguraDaConversa(page);
+    ok("a ficha vem por cima da conversa, e não espremida ao lado dela",
+       sobreposta === "sim" && conversaSemFicha > 0 && conversaComFicha !== null
+         && conversaComFicha >= conversaSemFicha - 1,
+       `ficha sobreposta: ${sobreposta}; conversa com a ficha ${conversaComFicha}px, sem ela ${conversaSemFicha}px`);
+  }
 
   // 3. o X devolve a conversa
   await page.locator("[data-recolher-ficha]").first().click();
