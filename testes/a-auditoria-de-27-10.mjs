@@ -382,6 +382,11 @@ if (vale("8b")) {
   // prévia é desenhada (no navegador sem leitor, o quadro de dentro baixa o
   // arquivo em silêncio, e isso não muda nada aqui), e a seta tem de estar
   // PINTADA por cima dela.
+  //
+  // DESDE 29/10 A PRÉVIA É A FOTO da primeira página, desenhada pelo pdf.js
+  // com ou sem leitor (`a-previa-do-pdf`), e mora num botão próprio, acima
+  // da linha do nome. A seta tem de continuar por cima dela do mesmo jeito; a
+  // cena segue dizendo ao painel que há leitor, que é o mundo do escritório.
   const PDF = Buffer.from("JVBERi0xLjEKMSAwIG9iajw8L1R5cGUvQ2F0YWxvZy9QYWdlcyAyIDAgUj4+ZW5kb2JqCjIgMCBvYmo8PC9UeXBlL1BhZ2VzL0tpZHNbMyAwIFJdL0NvdW50IDE+PmVuZG9iagozIDAgb2JqPDwvVHlwZS9QYWdlL1BhcmVudCAyIDAgUi9NZWRpYUJveFswIDAgMjAwIDIwMF0+PmVuZG9iagp0cmFpbGVyPDwvUm9vdCAxIDAgUj4+", "base64");
   const URL_DO_PDF = `${HOST}/storage/v1/object/public/anexos/recebidos/AUD0000COMPREVIA.pdf`;
   const { ctx, page } = await abrir({
@@ -399,9 +404,10 @@ if (vale("8b")) {
   ok("abri a conversa", await abrirConversa(page, D.alvo, 1800));
   // A prévia só pergunta o tipo quando a bolha chega perto da tela.
   await page.locator('[data-msg-id="aud-pdf"]').scrollIntoViewIfNeeded().catch(() => {});
-  const previa = page.locator('[data-msg-id="aud-pdf"] [data-previa-arquivo="pdf"]');
-  await previa.first().waitFor({ timeout: 6000 }).catch(() => {});
-  ok("a prévia do PDF foi desenhada (é ela que cobria a seta)", (await previa.count()) === 1);
+  const previa = page.locator('[data-msg-id="aud-pdf"] [data-previa-do-pdf="pronta"]');
+  await previa.first().waitFor({ timeout: 8000 }).catch(() => {});
+  ok("a prévia do PDF foi desenhada — hoje a foto da primeira página (é ela que fica embaixo da seta)",
+     (await previa.count()) === 1);
   await page.locator('[data-msg-id="aud-pdf"]').hover().catch(() => {});
   await page.waitForTimeout(300);
   const seta = await page.evaluate(() => {
@@ -410,7 +416,7 @@ if (vale("8b")) {
     const r = b.getBoundingClientRect();
     const no = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
     return { tem: true, pintada: Boolean(no && (no === b || b.contains(no))),
-             quem: no ? (no.getAttribute("data-previa-arquivo") ? "a prévia" : no.tagName) : null };
+             quem: no ? (no.closest("[data-previa-arquivo], [data-previa-do-pdf]") ? "a prévia" : no.tagName) : null };
   });
   ok("a seta está PINTADA por cima da prévia", seta.tem && seta.pintada === true, JSON.stringify(seta));
   ok("e o clique nela abre o menu", await clicar(page, '[data-msg-id="aud-pdf"] button[aria-label="Opções da mensagem"]')

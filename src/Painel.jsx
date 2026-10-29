@@ -31,6 +31,8 @@ import { PRAZO_DA_BUSCA, foiAbortada, funcaoNaoExiste,
 import { comoPrever, nomeDoTipo, tamanhoLegivel, tipoServido, oQuadroDesenha,
          comecoDoTexto, nomeParaBaixar, enderecoParaBaixar, baixarComONome } from "./arquivos.js";
 import { gravarSemAsQueFaltam, naoGravouNada, comOCodigo, semATabela, semAFuncao } from "./gravar.js";
+import { miniaturaDoPdf } from "./previaDoPdf.js";
+import VisualizadorDePdf from "./VisualizadorDePdf.jsx";
 
 // O que este banco já disse que não tem, para não perguntar de novo a cada nota.
 // Vale só nesta sessão: rodar o SQL que falta e apertar F5 devolve a coluna.
@@ -2125,11 +2127,19 @@ function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoRespond
 //
 // NO MODO DE SELEÇÃO o clique é da seleção: quem está marcando o que apagar
 // não quer um arquivo baixado a cada bolha que toca.
-function CartaoDoDocumento({ C, m, saida, emSelecao, aoBaixar }) {
+//
+// O PDF GANHOU A PRIMEIRA PÁGINA COMO FOTO (29/10), em cima da linha do nome,
+// e o clique nela o ABRE em tela cheia — como a imagem. A linha do nome
+// continua sendo o link que baixa: são dois gestos, e cada um mora no seu
+// lugar (um botão dentro de um link não seria nem um nem outro). Os outros
+// documentos ficam como estavam. Ver `src/previaDoPdf.js`.
+function CartaoDoDocumento({ C, m, saida, emSelecao, aoBaixar, aoAbrirPdf, aoMudarDeTamanho }) {
   const [baixando, setBaixando] = useState(false);
+  const [paginas, setPaginas] = useState(null);
   const nome = nomeParaBaixar({ nome: m.midia_nome, mime: m.midia_mime, url: m.midia_url,
                                 quando: m.criado_em });
   const tipo = nomeDoTipo(m.midia_mime, m.midia_nome);
+  const ehPdf = comoPrever(m.midia_mime, m.midia_nome) === "pdf";
   async function clicar(e) {
     if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
@@ -2137,27 +2147,32 @@ function CartaoDoDocumento({ C, m, saida, emSelecao, aoBaixar }) {
     setBaixando(true);
     try { await aoBaixar(m); } finally { setBaixando(false); }
   }
-  return (
+  const fundo = saida ? "rgba(0,0,0,.06)" : C.searchBg;
+  const linha = (
     <a href={enderecoParaBaixar(m.midia_url, nome)} target="_blank" rel="noopener noreferrer"
        onClick={clicar} title={`Baixar “${nome}”`} aria-busy={baixando || undefined}
        data-documento-da-conversa={baixando ? "baixando" : "pronto"} data-nome-ao-baixar={nome}
-       style={{ display: "block", textDecoration: "none", color: C.textPrimary, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 6, overflow: "hidden", minWidth: 180 }}>
+       style={{ display: "block", textDecoration: "none", color: C.textPrimary,
+                ...(ehPdf ? {} : { background: fundo, borderRadius: 6, overflow: "hidden", minWidth: 180 }) }}>
       {/* A PRIMEIRA PÁGINA, quando o navegador sabe desenhar o arquivo.
           Numa banca o que chega o dia inteiro é PDF — procuração,
           contrato, extrato, intimação — e "Documento" não distingue a
           procuração que se esperava do panfleto que alguém encaminhou.
           Ver `src/arquivos.js` para o que dá e o que não dá para prever,
-          e por quê. */}
-      <PreviaDeArquivo C={C} url={m.midia_url} mime={m.midia_mime} nome={m.midia_nome} />
+          e por quê. (O PDF tem a dele, fora deste link: ver acima.) */}
+      {!ehPdf && <PreviaDeArquivo C={C} url={m.midia_url} mime={m.midia_mime} nome={m.midia_nome} />}
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px" }}>
         <FileText size={22} color={C.textSecondary} />
         <span style={{ flex: 1, minWidth: 0 }}>
           <span style={{ display: "block", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>{m.midia_nome || "Documento"}</span>
           {/* O TIPO POR EXTENSO, embaixo do nome. "Planilha do Excel"
               responde sozinho a pergunta que faz alguém abrir o arquivo só
-              para descobrir. Baixando, a mesma linha diz isso. */}
+              para descobrir. Baixando, a mesma linha diz isso. E o PDF
+              desenhado diz quantas páginas tem: "1 página" e "40 páginas"
+              são documentos diferentes antes de abrir qualquer um. */}
           <span style={{ display: "block", fontSize: 11, color: C.textSecondary }} data-doc-tipo={tipo}>
-            {baixando ? "Baixando…" : tipo}
+            {baixando ? "Baixando…"
+              : paginas ? `${tipo} · ${paginas === 1 ? "1 página" : `${paginas} páginas`}` : tipo}
           </span>
         </span>
         {baixando
@@ -2167,6 +2182,83 @@ function CartaoDoDocumento({ C, m, saida, emSelecao, aoBaixar }) {
       </div>
     </a>
   );
+  if (!ehPdf) return linha;
+  return (
+    <div data-cartao-do-pdf style={{ background: fundo, borderRadius: 6, overflow: "hidden", minWidth: 180 }}>
+      <MiniaturaDoPdf url={m.midia_url} nome={nome} emSelecao={emSelecao}
+                      aoAbrir={() => aoAbrirPdf(m)} aoPaginas={setPaginas} aoMudar={aoMudarDeTamanho} />
+      {linha}
+    </div>
+  );
+}
+
+// A PRIMEIRA PÁGINA DO PDF, NA BOLHA, COMO UMA FOTO (29/10). Quem desenha é
+// `miniaturaDoPdf`; aqui mora o que a bolha faz com ela.
+//
+// SÓ QUANDO A BOLHA CHEGA PERTO DA TELA, como as outras prévias: uma conversa
+// de cliente antigo tem dezenas de PDFs lá em cima, e ninguém rolou até eles.
+//
+// ENQUANTO NÃO CHEGA, O LUGAR DE UMA PÁGINA A4 — branco, do tamanho em que ela
+// vai aparecer —, e não nada: a bolha que cresce 320px depois de desenhada
+// empurraria a conversa no meio da leitura. Quase todo PDF de escritório é A4,
+// e para ele nada se mexe quando a foto chega.
+//
+// NÃO DEU (PDF quebrado, com senha, grande demais), O LUGAR SOME e fica o
+// cartão de sempre, com o nome e o clique que baixa.
+//
+// O TAMANHO É O DA IMAGEM DA CONVERSA: até 260 de largura e 320 de altura.
+function MiniaturaDoPdf({ url, nome, emSelecao, aoAbrir, aoPaginas, aoMudar }) {
+  const caixa = useRef(null);
+  const [perto, setPerto] = useState(false);
+  // `undefined` = ainda não sei; `null` = não dá; objeto = a foto.
+  const [foto, setFoto] = useState(undefined);
+
+  useEffect(() => {
+    if (perto || !caixa.current) return undefined;
+    if (typeof IntersectionObserver === "undefined") { setPerto(true); return undefined; }
+    const vigia = new IntersectionObserver((vistos) => {
+      if (vistos.some((v) => v.isIntersecting)) { setPerto(true); vigia.disconnect(); }
+    }, { rootMargin: "400px" });
+    vigia.observe(caixa.current);
+    return () => vigia.disconnect();
+  }, [perto]);
+
+  useEffect(() => {
+    if (!perto || !url) return undefined;
+    let vivo = true;
+    miniaturaDoPdf(url).then((r) => { if (vivo) setFoto(r); },
+                             () => { if (vivo) setFoto(null); });
+    return () => { vivo = false; };
+  }, [perto, url]);
+
+  // AS FUNÇÕES DE QUEM CHAMA FICAM DE FORA DE PROPÓSITO: elas nascem a cada
+  // desenho da bolha, e com elas aqui o aviso sairia de novo a cada desenho.
+  useEffect(() => {
+    if (foto === undefined) return;
+    aoPaginas(foto ? foto.paginas : null);
+    if (!foto && aoMudar) aoMudar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [foto]);
+
+  if (foto === null) return null;
+  if (foto === undefined) {
+    return (
+      <div ref={caixa} data-previa-do-pdf="esperando"
+           style={{ width: "min(226px, 62vw)", aspectRatio: "210 / 297", margin: "0 auto",
+                    background: "#fff", opacity: 0.85 }} />
+    );
+  }
+  return (
+    <button type="button" data-previa-do-pdf="pronta" data-paginas={foto.paginas}
+            onClick={() => { if (!emSelecao) aoAbrir(); }}
+            title={`Abrir “${nome}”`} aria-label={`Abrir o PDF “${nome}” em tela cheia`}
+            style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer",
+                     display: "block", width: "100%" }}>
+      <img src={foto.src} alt={`Primeira página de “${nome}”`} onLoad={aoMudar}
+           style={{ display: "block", margin: "0 auto", maxWidth: "min(260px, 62vw)",
+                    maxHeight: 320, width: "auto", height: "auto", background: "#fff" }} />
+    </button>
+  );
 }
 
 // A PRIMEIRA PÁGINA DE UM ARQUIVO, quando o navegador sabe desenhá-la.
@@ -2175,6 +2267,11 @@ function CartaoDoDocumento({ C, m, saida, emSelecao, aoBaixar }) {
 // leitor de PDF em JavaScript pesa mais do que o painel inteiro, e seria
 // baixado por toda pessoa que abre a tela — para um recurso que aparece em
 // algumas bolhas. O `<iframe>` usa o leitor que o próprio navegador já tem.
+//
+// O PDF DA BOLHA SAIU DAQUI EM 29/10: ele ganhou a foto da primeira página,
+// desenhada pelo pdf.js e carregada só quando um PDF chega perto da tela
+// (`MiniaturaDoPdf`, logo acima). O ramo do PDF continua servindo a prévia
+// ANTES DE MANDAR (`inteira`), onde o arquivo é o da própria máquina.
 //
 // SEM CLIQUE E SEM ROLAGEM DENTRO DELA: `pointerEvents: none`. A prévia mora
 // dentro de um link que baixa o arquivo; um iframe que aceita o clique
@@ -2448,7 +2545,7 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
   // editar estourava com "setProcessoDaNota is not defined" — este componente
   // é uma função à parte, e nada do `Painel` chega nele sem ser passado.
   setProcessoDaNota,
-  setEncaminhar, setBuscaEncaminhar, setImagemAberta, setRetratoAberto,
+  setEncaminhar, setBuscaEncaminhar, setImagemAberta, setRetratoAberto, setPdfAberto,
   setNotaParaApagar,
   // CLICAR NA CITAÇÃO LEVA ATÉ A CITADA. Mora no `Painel` porque precisa da
   // lista de mensagens e de ir ao banco buscar as anteriores; aqui só chega a
@@ -2929,7 +3026,8 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
             {m.tipo === "documento" && (
               m.midia_url ? (
                 <CartaoDoDocumento C={C} m={m} saida={saida} emSelecao={Boolean(selecao)}
-                                   aoBaixar={baixarDocumento} />
+                                   aoBaixar={baixarDocumento} aoAbrirPdf={setPdfAberto}
+                                   aoMudarDeTamanho={() => { if (pertoDoFim) fimRef.current?.scrollIntoView(); }} />
               ) : (
                 <div style={{ display: "flex", alignItems: "center", gap: 8, color: C.textPrimary, background: saida ? "rgba(0,0,0,.06)" : C.searchBg, borderRadius: 6, padding: "8px 10px", minWidth: 180 }}>
                   <FileText size={22} color={C.textSecondary} />
@@ -3565,6 +3663,9 @@ export default function Painel({ sessao }) {
   const [gravandoConv, setGravandoConv] = useState(null);
   const [tempoGravacao, setTempoGravacao] = useState(0); // segundos gravados
   const [imagemAberta, setImagemAberta] = useState(null); // URL da imagem em tela cheia
+  // O PDF EM TELA CHEIA (29/10): a MENSAGEM inteira, e não só o endereço —
+  // o "Baixar" de lá salva com o nome que o cartão escreve.
+  const [pdfAberto, setPdfAberto] = useState(null);
   // A imagem aberta é a FOTO DE PERFIL do contato, e não uma foto da conversa.
   // As duas usam a mesma tela preta, mas pedem tamanhos opostos: a da conversa
   // é grande e só precisa caber; a de perfil costuma vir com 200 ou 300 pixels
@@ -9767,6 +9868,9 @@ export default function Painel({ sessao }) {
       // E A DO "REABRIR" (script 028), pela mesma razão.
       if (reabrindo) { if (!reabrirOcupado) { setReabrindo(null); setReabrirErro(""); } return; }
       if (escolhaTelefone) { setEscolhaTelefone(null); return; }
+      // O PDF EM TELA CHEIA, como a imagem ampliada: Esc fecha ELE, e não a
+      // conversa lá atrás.
+      if (pdfAberto) { setPdfAberto(null); return; }
       if (imagemAberta) { setImagemAberta(null); setRetratoAberto(false); }
       else if (anexosPendentes.length) fecharAnexoPendente();
       // SÓ O ÁUDIO DESTA CONVERSA (27/10): o de outra não está na tela, e o
@@ -9822,7 +9926,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, telaFunil, menuEtapa, telaTarefas, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, fichaEmColuna, menuDepartamentos, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada, jaTratei, trateiOcupado, reabrindo, reabrirOcupado, escolhaTelefone]);
+  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, pdfAberto, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, telaFunil, menuEtapa, telaTarefas, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, fichaEmColuna, menuDepartamentos, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada, jaTratei, trateiOcupado, reabrindo, reabrirOcupado, escolhaTelefone]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -11789,7 +11893,7 @@ export default function Painel({ sessao }) {
     function aoColar(e) {
       // Com uma prévia já aberta, ou no meio de editar/encaminhar, o Ctrl+V é
       // para o campo de texto que está ali — não para começar outro anexo.
-      if (editando || encaminhar || imagemAberta) return;
+      if (editando || encaminhar || imagemAberta || pdfAberto) return;
       const itens = Array.from((e.clipboardData && e.clipboardData.items) || []);
       // QUALQUER ARQUIVO, e não só imagem. O filtro era `image/`: um vídeo
       // copiado caía aqui, não casava, e o Ctrl+V não fazia absolutamente
@@ -11820,7 +11924,7 @@ export default function Painel({ sessao }) {
     }
     document.addEventListener("paste", aoColar);
     return () => document.removeEventListener("paste", aoColar);
-  }, [conversaId, editando, encaminhar, imagemAberta]);
+  }, [conversaId, editando, encaminhar, imagemAberta, pdfAberto]);
 
   // O QUE SE COPIA DO ZORVIN SAI COMO TEXTO, sem o desenho da tela (08/10).
   //
@@ -11912,7 +12016,7 @@ export default function Painel({ sessao }) {
       if (!arquivos || !arquivos.length) return;
       e.preventDefault();
       setArrastandoArquivo(false);
-      if (editando || encaminhar || imagemAberta) return;
+      if (editando || encaminhar || imagemAberta || pdfAberto) return;
       abrirAnexos(arquivos);
     }
     document.addEventListener("dragover", aoArrastar);
@@ -11923,7 +12027,7 @@ export default function Painel({ sessao }) {
       document.removeEventListener("dragleave", aoSair);
       document.removeEventListener("drop", aoSoltar);
     };
-  }, [conversaId, editando, encaminhar, imagemAberta, arrastandoArquivo]);
+  }, [conversaId, editando, encaminhar, imagemAberta, pdfAberto, arrastandoArquivo]);
 
   function fecharAnexoPendente() {
     for (const a of anexosPendentes) {
@@ -17277,7 +17381,7 @@ export default function Painel({ sessao }) {
                 setModoNota={setModoNota} setProcessoDaNota={setProcessoDaNota}
                 setEncaminhar={setEncaminhar}
                 setBuscaEncaminhar={setBuscaEncaminhar}
-                setImagemAberta={setImagemAberta} setRetratoAberto={setRetratoAberto}
+                setImagemAberta={setImagemAberta} setRetratoAberto={setRetratoAberto} setPdfAberto={setPdfAberto}
                 setNotaParaApagar={setNotaParaApagar} />
               <div ref={fimRef} />
             </div>
@@ -18579,6 +18683,18 @@ export default function Painel({ sessao }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* O PDF EM TELA CHEIA (29/10), aberto pela miniatura da bolha — ver
+          `src/VisualizadorDePdf.jsx`. "Baixar" é o mesmo caminho do cartão:
+          o nome que o cartão escreve, e a frase do depósito que falhou. */}
+      {pdfAberto && (
+        <VisualizadorDePdf url={pdfAberto.midia_url}
+          nome={nomeParaBaixar({ nome: pdfAberto.midia_nome, mime: pdfAberto.midia_mime,
+                                 url: pdfAberto.midia_url, quando: pdfAberto.criado_em })}
+          aoBaixar={() => baixarDocumento(pdfAberto)}
+          aoAbrirNumaAba={() => window.open(pdfAberto.midia_url, "_blank", "noopener")}
+          aoFechar={() => setPdfAberto(null)} />
       )}
 
       {/* Imagem em tela cheia, com a GALERIA da conversa (estilo WhatsApp Web).
