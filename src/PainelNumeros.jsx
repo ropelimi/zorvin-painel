@@ -60,7 +60,7 @@
 // livre para repetir o que o comprimento da barra já mostra.
 //
 // Todo gráfico tem um botão "Tabela" que troca o desenho pelos números.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { campoDaPlanilha } from "./planilha.js";
 import { semAFuncao } from "./gravar.js";
 import { supabase } from "./supabase";
@@ -186,6 +186,17 @@ function passear(p, sentido) {
     const alvo = mesDe(p.de.getFullYear(), p.de.getMonth() + sentido);
     return alvo.de > agora ? p : alvo;
   }
+  // O ANO ANDA POR ANO CIVIL, como o mês anda por mês (auditoria de 28/10).
+  // Pela conta dos dias, "Este ano" ← andava só os dias que o ano tinha até
+  // hoje — 301 em 28/10 —, e caía no meio do ano passado: de 06/03 a 31/12,
+  // com o rótulo "2025 · 301 dias".
+  if (p.tipo === "ano") {
+    const ano = p.de.getFullYear() + sentido;
+    const de = new Date(ano, 0, 1);
+    const ate = new Date(ano, 11, 31, 23, 59, 59, 999);
+    if (de > agora) return p;
+    return { de, ate: ate > agora ? agora : ate, tipo: p.tipo };
+  }
   // EM DIAS INTEIROS, E NÃO EM MILISSEGUNDOS (auditoria de 27/10). A duração
   // era `fim do último dia − início do primeiro`, que é um dia menos 1 ms: o
   // período andava 1 ms a menos do que devia, o fim novo caía na meia-noite do
@@ -226,6 +237,10 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
   const [periodo, setPeriodo] = useState(() => ultimosDias(30));
   // Quem não administra não escolhe atendente: é sempre ele mesmo.
   const [quem, setQuem] = useState(souAdmin ? null : meuId);
+  // OUTRA PESSOA ESCOLHIDA (auditoria de 28/10): o banco diz `so_meu` para
+  // qualquer recorte por pessoa, e "os seus números" seria mentira para quem
+  // administra e escolheu a colega.
+  const outraPessoa = souAdmin && quem != null && String(quem) !== String(meuId);
   const [telefone, setTelefone] = useState(null);
   const [departamento, setDepartamento] = useState(null);
   const [carregando, setCarregando] = useState(true);
@@ -457,7 +472,9 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
         {!carregando && !erro && !faltaSql && d && (
           <>
             <div style={{ ...nota, marginBottom: 14 }} data-teste="escopo">
-              {d.so_meu
+              {d.so_meu && outraPessoa
+                ? <>Estes são os números <b style={{ color: C.textPrimary }}>da pessoa escolhida</b>: os atendimentos que ela pegou e as mensagens que passaram por eles. A comparação entre atendentes, no fim da tela, continua mostrando todo mundo.</>
+                : d.so_meu
                 ? <>Estes são <b style={{ color: C.textPrimary }}>os seus números</b>{meuNome && !souAdmin ? ` (${meuNome})` : ""}: os atendimentos que você pegou e as mensagens que passaram por eles. A comparação entre atendentes, no fim da tela, continua mostrando todo mundo.</>
                 : <>Estes são os números <b style={{ color: C.textPrimary }}>do escritório inteiro</b> — de todos os telefones que você alcança.</>}
               {" "}<b style={{ color: C.textPrimary }}>{rotuloDoPeriodo(periodo)}</b>.
@@ -933,7 +950,27 @@ function Colunas({ C, dados, series, formatar, passo }) {
   const [sobre, setSobre] = useState(null);
   const alt = 172;
   const max = Math.max(1, ...dados.flatMap((x) => series.map((s) => Number(x[s.campo] || 0))));
-  const cada = Math.max(1, Math.ceil(dados.length / 10));
+  // OS RÓTULOS CABEM NA LARGURA QUE O GRÁFICO TEM (auditoria de 28/10). Um a
+  // cada `ceil(n/10)` colunas, cada um numa caixa de UMA coluna e cortado:
+  // a 375px a caixa tinha 8px e o "29/09" pede 26 — sobrava "2!". Agora a
+  // largura do trilho é medida, o passo cresce quando é estreito, e o texto
+  // fica centrado na coluna dele, por cima das vizinhas vazias. No computador
+  // a conta dá o passo de sempre, e o gráfico fica como era.
+  const trilho = useRef(null);
+  const [largura, setLargura] = useState(0);
+  useLayoutEffect(() => {
+    const el = trilho.current;
+    if (!el) return undefined;
+    const medir = () => setLargura(el.getBoundingClientRect().width);
+    medir();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const vigia = new ResizeObserver(medir);
+    vigia.observe(el);
+    return () => vigia.disconnect();
+  }, []);
+  const ROTULO_PX = 34;   // o "29/09" em 10,5px pede 26; o resto é o respiro
+  const cada = Math.max(1, Math.ceil(dados.length / 10),
+                        largura ? Math.ceil((dados.length * ROTULO_PX) / largura) : 1);
   const atual = sobre != null ? dados[sobre] : null;
 
   return (
@@ -988,11 +1025,11 @@ function Colunas({ C, dados, series, formatar, passo }) {
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 2, marginTop: 6 }}>
+      <div ref={trilho} style={{ display: "flex", gap: 2, marginTop: 6 }}>
         {dados.map((x, i) => (
-          <div key={x.quando} style={{ flex: 1, minWidth: 0, textAlign: "center", fontSize: 10.5,
-                                       color: C.textSecondary, fontVariantNumeric: "tabular-nums",
-                                       whiteSpace: "nowrap", overflow: "hidden" }}>
+          <div key={x.quando} style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center",
+                                       fontSize: 10.5, color: C.textSecondary,
+                                       fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
             {i % cada === 0 ? rotuloData(x.quando, passo) : ""}
           </div>
         ))}
@@ -2153,8 +2190,10 @@ function RelatorioJaTratei({ C, estilos, cores, deIso, ateIso, fuso, passo, quem
         return (
           <>
             <div style={{ ...estilos.nota, marginBottom: 12 }} data-relatorio-escopo>
+              {/* "VOCÊ" SÓ PARA QUEM É VOCÊ (auditoria de 28/10): `so_meu` vale
+                  para qualquer recorte por pessoa, e quem administra escolhe outras. */}
               {r.so_meu
-                ? <>O que <b style={{ color: C.textPrimary }}>você</b> tirou da fila sem mandar mensagem. A comparação por pessoa, mais abaixo, mostra todo mundo.</>
+                ? <>O que <b style={{ color: C.textPrimary }}>{souAdmin && quem != null && String(quem) !== String(meuId) ? "a pessoa escolhida" : "você"}</b> tirou da fila sem mandar mensagem. A comparação por pessoa, mais abaixo, mostra todo mundo.</>
                 : <>O que <b style={{ color: C.textPrimary }}>a equipe</b> tirou da fila sem mandar mensagem, nos telefones que você alcança.</>}
             </div>
 
