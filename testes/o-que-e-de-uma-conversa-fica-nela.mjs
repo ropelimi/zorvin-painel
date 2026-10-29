@@ -18,8 +18,13 @@
 //
 // O QUE ESTA PROVA GUARDA: a troca desliga a seleção e a confirmação; o áudio
 // de A só aparece (e só sai) em A — a gravação em curso termina e espera lá, o
-// Esc de B não a descarta, e B não grava outro por cima dela; a prévia dos
-// anexos fecha na troca, e nada do que foi escolhido em A chega a B.
+// Esc de B não a descarta, e B não grava outro por cima dela sem perguntar; a
+// prévia dos anexos fecha na troca, e nada do que foi escolhido em A chega a B.
+//
+// O "SEM PERGUNTAR" É DA AUDITORIA DE 27/10, que chegou primeiro ao main: lá,
+// gravar em B com o áudio de A esperando PERGUNTA (`window.confirm`) se é para
+// descartá-lo, em vez de recusar com um aviso. A prova responde "não" e
+// confere a pergunta — que diz por quê —, e não mais a frase do aviso.
 import { abrirNavegador, ENDERECO } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
@@ -196,12 +201,18 @@ console.log("\n5. O áudio gravado para Ana não aparece, nem sai, na conversa d
   ok("troquei para a Bia", await abrir(page, "b"));
   ok("na Bia, a prévia do áudio da Ana NÃO aparece", (await page.locator('button[title="Enviar áudio"]').count()) === 0);
   ok("e a caixa de escrever da Bia está lá", (await page.locator('[data-campo="mensagem"]').count()) === 1);
-  // B NÃO GRAVA POR CIMA: o áudio da Ana está esperando, e um segundo
-  // gravador apagaria o primeiro sem ninguém ver.
+  // B NÃO GRAVA POR CIMA SEM PERGUNTAR: o áudio da Ana está esperando, e um
+  // segundo gravador apagaria o primeiro sem ninguém ver. A pergunta é a da
+  // auditoria de 27/10 (`window.confirm`, ver o alto); quem responde "não"
+  // fica com o áudio da Ana como estava.
+  const perguntas = [];
+  page.on("dialog", (d) => { perguntas.push(d.message()); d.dismiss().catch(() => {}); });
   await clicar(page, 'button[title="Gravar áudio"]');
-  ok("gravar na Bia com o áudio da Ana esperando não começa outra gravação",
-     !/Gravando/.test(await textoDaTela(page)), await filme(page));
-  ok("e a tela diz por quê", /áudio gravado/i.test(await filme(page)), await filme(page));
+  ok("gravar na Bia com o áudio da Ana esperando, e responder “não”, não começa outra gravação",
+     !/Gravando/.test(await textoDaTela(page)), `${JSON.stringify(perguntas)} | ${await filme(page)}`);
+  ok("e a tela pergunta antes, dizendo por quê: há um áudio gravado em outra conversa",
+     perguntas.length === 1 && /áudio/i.test(perguntas[0]) && /outra conversa/i.test(perguntas[0]),
+     JSON.stringify(perguntas));
   // O ESC DA BIA não é sobre o áudio da Ana: fecha a conversa, como sempre.
   await page.keyboard.press("Escape");
   await page.waitForTimeout(400);

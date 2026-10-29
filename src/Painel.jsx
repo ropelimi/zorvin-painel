@@ -199,6 +199,16 @@ function contatoCasaComABusca(c, q, chaveQ) {
     || (chaveQ.length >= 4 && chaveDoNumero(c.numero).includes(chaveQ));
 }
 
+/** O ENDEREÇO DO ANEXO NO DEPÓSITO (auditoria de 28/10). Era
+ *  `conversa/milissegundo-nome`, e dois arquivos de MESMO NOME mandados juntos
+ *  caíam no mesmo milissegundo — e desde a auditoria de 27/10 eles sobem
+ *  juntos de propósito (`vez`): o depósito não sobrescreve ("already
+ *  exists"), e o segundo virava bolha vermelha. O sorteio separa os dois; o
+ *  nome que o cliente vê é o `midia_nome`, que não muda. */
+function caminhoNoDeposito(convId, nome) {
+  return `${convId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${nome}`;
+}
+
 /** O QUE NÃO É MENSAGEM NÃO VIRA BOLHA (auditoria de 27/10). A reação, a
  *  correção e o "apagar para todos" também entram na fila, e quando a Uazapi os
  *  recusa (uma reação em grupo, por exemplo) a linha fica em `erro` como a de
@@ -390,6 +400,25 @@ function provisoriasQueFicam(antes, juntas, convId, agora = Date.now()) {
     if (p._filaId == null || !juntas.some((m) => m.id === "fila-" + p._filaId)) ficam.push(p);
   }
   return ficam;
+}
+/** AS LINHAS QUE O TEMPO REAL TROUXE DURANTE A CARGA FICAM (auditoria de
+ *  28/10).
+ *
+ *  A consulta é uma foto do banco, e a carga termina trocando a lista por
+ *  ela. A mensagem que o aviso de INSERT pôs na tela DEPOIS da foto não está
+ *  na foto — e sumia: a do cliente que escreveu enquanto a conversa abria, e
+ *  a nossa que o eco confirmou no meio da conferência do envio (o tratador já
+ *  tinha trocado a provisória pela gravada, então nem `provisoriasQueFicam` a
+ *  segurava). A mensagem enviada desaparecia, e quem enviou mandava de novo.
+ *
+ *  Fica a linha de `mensagens` desta conversa que a foto não tem e que não é
+ *  mais velha que a última da foto. A mais velha que não veio é o histórico
+ *  trazido à parte ("Carregar anteriores"), que a releitura sempre deixou. */
+function chegaramDuranteACarga(antes, juntas, recentes, convId) {
+  const naFoto = new Set(juntas.map((m) => String(m.id)));
+  const ultima = recentes.length ? new Date(recentes[recentes.length - 1].criado_em).getTime() : -Infinity;
+  return antes.filter((m) => ehDeMensagens(m) && String(m.conversa_id) === String(convId)
+    && !naFoto.has(String(m.id)) && new Date(m.criado_em).getTime() >= ultima);
 }
 /** A frase do marco. Quem abriu só existe no Reabrir: o atendimento que
  *  começa com a mensagem do cliente, ou com a da equipe, não foi aberto por
@@ -2748,8 +2777,11 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
                         o processo vinculado: a única saída era apagar a nota e
                         escrever outra, perdendo quem a escreveu e quando.
                         Agora é o mesmo campo âmbar, com a mesma barra de
-                        processo, já apontando para o processo que a nota tem. */}
-                    <button onClick={() => { setRespondendo(null); setModoNota(true); setEditando(m); setRascunho(m.texto || ""); setProcessoDaNota(m.processo_id ? String(m.processo_id) : ""); setTimeout(() => inputRef.current?.focus(), 0); }}
+                        processo, já apontando para o processo que a nota tem.
+                        PELO MESMO `iniciarEdicao` da mensagem (auditoria de
+                        28/10): aqui ela apagava o que estava sendo escrito na
+                        caixa. */}
+                    <button onClick={() => iniciarEdicao(m)}
                             title="Editar nota"
                             style={{ border: "none", background: "transparent", cursor: "pointer", color: "rgba(255,255,255,.75)", padding: 3, display: "flex", minHeight: estreito ? 40 : 24, minWidth: estreito ? 40 : 24, alignItems: "center", justifyContent: "center" }}>
                       <Pencil size={13} />
@@ -3228,6 +3260,15 @@ export default function Painel({ sessao }) {
   // dependências dele — que a caixa guarda uma EDIÇÃO, e não um rascunho.
   const editandoRef = useRef(null);
   editandoRef.current = editando;
+  // O QUE ESTAVA NA CAIXA QUANDO A EDIÇÃO COMEÇOU (auditoria de 28/10) — o
+  // texto, o modo, a citação e o processo da nota. Começar a corrigir uma
+  // mensagem ou uma nota punha o texto dela na caixa e jogava fora o que
+  // estava sendo escrito; e sair da edição esvaziava a caixa. Volta ao sair
+  // (`cancelarEdicao`).
+  const antesDaEdicaoRef = useRef(null);
+  // A correção que está indo ao banco: a caixa fica com ela até a resposta, e
+  // um segundo Enter nesse meio mandaria a mesma correção duas vezes.
+  const salvandoEdicaoRef = useRef(false);
   // Nota que está prestes a ser apagada (mostra a confirmação). Apagar sem
   // perguntar seria irreversível num clique — e a lixeira fica ao lado do
   // lápis, a três milímetros dele.
@@ -7930,8 +7971,11 @@ export default function Painel({ sessao }) {
     // MENOS AS DAS BOLHAS QUE AINDA ESTÃO SAINDO, que ficam (20/10) — ver
     // `provisoriasQueFicam`. Trocar a lista inteira pelo banco apagava da tela
     // a mensagem que acabou de entrar na fila, e ela parecia não ter saído.
+    // E AS QUE O TEMPO REAL TROUXE DEPOIS DA FOTO também (auditoria de 28/10)
+    // — ver `chegaramDuranteACarga`.
     setMensagens((prev) => {
-      const ficam = provisoriasQueFicam(prev, juntas, convId);
+      const ficam = [...provisoriasQueFicam(prev, juntas, convId),
+                     ...chegaramDuranteACarga(prev, juntas, recentes, convId)];
       const mantidas = new Set(ficam.map((m) => m.id));
       prev.forEach((m) => {
         if (!mantidas.has(m.id) && m.midia_url && String(m.midia_url).startsWith("blob:")) URL.revokeObjectURL(m.midia_url);
@@ -8186,7 +8230,8 @@ export default function Painel({ sessao }) {
   async function salvarAgendada(item, quando, texto) {
     const motivo = porQueNaoServe(quando);
     if (motivo) { mostrarAviso(motivo, 6000); return; }
-    setEditandoAgendada(null);
+    // A JANELA SÓ FECHA DEPOIS DE GRAVAR (auditoria de 28/10): fechava antes
+    // do `update`, e na recusa o texto corrigido ia embora com ela.
     const mudancas = { texto: texto || "", agendada_para: quando, tentar_em: quando };
     let r = await supabase.from("fila_envio")
       .update({ ...mudancas, editada_em: new Date().toISOString(), editada_por: meuId })
@@ -8202,6 +8247,7 @@ export default function Painel({ sessao }) {
     } else if (naoGravouNada(r)) {
       mostrarAviso("Não deu para editar: ela já saiu, ou o banco não deixou. Confira a conversa.", 7000);
     } else {
+      setEditandoAgendada((aberta) => (aberta === item ? null : aberta));
       mostrarAviso(`Mensagem agendada alterada — sai ${rotuloDaHora(quando)}.`);
     }
     carregarAgendadas(item.conversa_id);
@@ -9231,6 +9277,11 @@ export default function Painel({ sessao }) {
     // nota de A com o texto digitado para B. E o texto da edição NÃO vira
     // rascunho de A: voltando lá, o Enter mandaria a mensagem antiga de novo.
     const estavaEditando = !!editandoRef.current;
+    // MAS O QUE A EDIÇÃO TIROU DA CAIXA É O RASCUNHO DE A (auditoria de
+    // 28/10): era o que estava sendo escrito antes do lápis — ver
+    // `antesDaEdicaoRef`.
+    const antesDaEdicao = estavaEditando ? antesDaEdicaoRef.current : null;
+    antesDaEdicaoRef.current = null;
     if (estavaEditando) { setEditando(null); setProcessoDaNota(""); }
     // A GRAVAÇÃO EM CURSO TERMINA NA TROCA (auditoria de 27/10), e o áudio
     // fica esperando, como prévia, na conversa onde foi gravado: voltando lá,
@@ -9247,9 +9298,16 @@ export default function Painel({ sessao }) {
     // procurava as marcadas entre as mensagens de B — não achava nenhuma e
     // voltava sem dizer nada.
     setSelecao(null);
+    // E A CONFIRMAÇÃO DE APAGAR E A PRÉVIA DOS ANEXOS (auditoria de 28/10). A
+    // confirmação ficava aberta em B, perguntando sobre a seleção de A. A
+    // prévia cobre a tela, mas o Tab alcança a lista atrás dela: Enter abria
+    // B, e o "Enviar" mandava a B o documento escolhido para A.
+    setConfirmarApagar(false);
+    if (anexosPendentes.length) fecharAnexoPendente();
     if (antes && antes !== conversaId) {
-      guardarRascunho(rascunhosRef.current, antes,
-        { texto: rascunhoRef.current, nota: modoNotaRef.current, editando: estavaEditando });
+      guardarRascunho(rascunhosRef.current, antes, antesDaEdicao
+        ? { texto: antesDaEdicao.rascunho, nota: antesDaEdicao.modoNota }
+        : { texto: rascunhoRef.current, nota: modoNotaRef.current, editando: estavaEditando });
     }
     conversaAnteriorRef.current = conversaId;
     const guardado = conversaId ? rascunhosRef.current[conversaId] : null;
@@ -9765,6 +9823,17 @@ export default function Painel({ sessao }) {
     // cobre tudo o que a função lê: a posição e o tamanho da galeria.
   }, [temGaleria, posNaGaleria, imagensDaConversa.length]);
 
+  // A FITA DE MINIATURAS ROLA ATÉ A IMAGEM ABERTA QUANDO ELA MUDA — e só
+  // então (auditoria de 28/10). Era um `ref` em função escrito na fita, novo a
+  // cada desenho: o React o chamava de novo a cada redesenho do painel (o
+  // tempo real, o "digitando…" dos colegas), e a fita voltava ao centro no
+  // meio de quem a rolava procurando outra foto.
+  const fitaDaGaleriaRef = useRef(null);
+  useEffect(() => {
+    const el = fitaDaGaleriaRef.current && fitaDaGaleriaRef.current.children[posNaGaleria];
+    if (el) el.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [temGaleria, posNaGaleria]);
+
   // ---- MÍDIAS, DOCUMENTOS E LINKS DE TODAS AS CONVERSAS ----
   //
   // "Aquele comprovante que mandaram semana passada" é uma busca que existe
@@ -10002,10 +10071,14 @@ export default function Painel({ sessao }) {
     const t = setTimeout(async () => {
       let r;
       try {
+        // AS MAIS RECENTES, quando passam do teto (auditoria de 28/10). Em
+        // ordem crescente vinham as 500 MAIS ANTIGAS: o salto "até a mais
+        // recente" caía na 500ª, e as novas sumiam da navegação. A ordem da
+        // tela é refeita em `achadosDaBusca`.
         r = await supabase.from("mensagens").select("id, criado_em")
           .eq("conversa_id", conversaId)
           .imatch("texto", padraoSemAcento(termo))
-          .order("criado_em", { ascending: true }).order("id")
+          .order("criado_em", { ascending: false }).order("id", { ascending: false })
           .limit(TETO_DA_BUSCA_NA_CONVERSA);
       } catch (e) { r = { data: null, error: e }; }
       if (!valeu) return;
@@ -10512,11 +10585,19 @@ export default function Painel({ sessao }) {
   // O texto novo aparece na bolha NA HORA. A ponte confirma depois; se a
   // Uazapi recusar (o WhatsApp só permite editar por um tempo), a próxima
   // leitura da conversa devolve a verdade do banco.
+  //
+  // A NOTA TAMBÉM COMEÇA AQUI (auditoria de 28/10), na caixa DA NOTA — ver o
+  // lápis, em `ListaDeBolhas`. E o que estava escrito fica guardado: só na
+  // primeira edição, para trocar de uma edição para outra não guardar a
+  // correção.
   function iniciarEdicao(m) {
+    if (!editandoRef.current) antesDaEdicaoRef.current = { rascunho, modoNota, respondendo, processoDaNota };
+    const nota = m.origem === "nota";
     setRespondendo(null);
-    setModoNota(false);
+    setModoNota(nota);
     setEditando(m);
     setRascunho(m.texto || "");
+    if (nota) setProcessoDaNota(m.processo_id ? String(m.processo_id) : "");
     setTimeout(() => inputRef.current?.focus(), 0);
   }
 
@@ -10526,16 +10607,23 @@ export default function Painel({ sessao }) {
     // digitada viraria uma NOTA INTERNA em vez de uma mensagem para o cliente
     // — o erro mais caro que esta tela pode cometer, porque é silencioso dos
     // dois lados: o cliente não recebe e ninguém percebe que não recebeu.
+    //
+    // E A CAIXA VOLTA AO QUE ERA ANTES DA EDIÇÃO (auditoria de 28/10) — o
+    // texto, o modo, a citação e o processo —, e não vazia. É a saída de toda
+    // edição: cancelar, o Esc e a correção que gravou.
+    const antes = antesDaEdicaoRef.current;
+    antesDaEdicaoRef.current = null;
     setEditando(null);
-    setRascunho("");
-    setModoNota(false);
-    setProcessoDaNota("");
+    setRascunho(antes ? antes.rascunho : "");
+    setModoNota(antes ? antes.modoNota : false);
+    setRespondendo(antes ? antes.respondendo : null);
+    setProcessoDaNota(antes ? antes.processoDaNota : "");
   }
 
   async function salvarEdicao() {
     const m = editando;
     const novo = rascunho.trim();
-    if (!m) return;
+    if (!m || salvandoEdicaoRef.current) return;
     // NOTA INTERNA segue por outro caminho: ela não passa pelo WhatsApp, então
     // não tem prazo de edição nem fila de envio. É o mesmo botão e a mesma
     // caixa — o desvio é só aqui, para não haver duas telas de edição.
@@ -10548,26 +10636,36 @@ export default function Painel({ sessao }) {
     // vencido. Sem ela, a mensagem sairia como notificação fantasma no celular
     // do contato — que foi exatamente o defeito relatado.
     if (!dentroDoPrazoDeEdicao(m)) {
-      setEditando(null); setRascunho("");
+      cancelarEdicao();
       mostrarAviso("Passou o prazo do WhatsApp para editar (cerca de 15 minutos). Envie uma correção.");
       return;
     }
     if (novo === (m.texto || "")) { cancelarEdicao(); return; }
-    setEditando(null);
-    setRascunho("");
+    // A CAIXA SÓ SAI DA EDIÇÃO DEPOIS DE GRAVAR (auditoria de 28/10). Saía
+    // antes de perguntar ao banco, e na recusa a bolha voltava ao texto de
+    // antes com a correção em lugar nenhum. Agora ela fica na caixa para a
+    // segunda tentativa — como a mensagem que não agendou (`agendarTexto`).
     setMensagens((prev) => prev.map((x) => (x.id === m.id ? { ...x, texto: novo, editada: true } : x)));
-    const { error } = await inserirNaFila({
-      conversa_id: conversaId,
-      tipo: "edicao",
-      texto: novo,
-      responder_id_uazapi: m.id_uazapi,
-      status: "pendente",
-      enviado_por: meuNome, enviado_por_id: meuId,
-    });
+    salvandoEdicaoRef.current = true;
+    let error;
+    try {
+      ({ error } = await inserirNaFila({
+        conversa_id: conversaId,
+        tipo: "edicao",
+        texto: novo,
+        responder_id_uazapi: m.id_uazapi,
+        status: "pendente",
+        enviado_por: meuNome, enviado_por_id: meuId,
+      }));
+    } finally { salvandoEdicaoRef.current = false; }
     if (error) {
       setMensagens((prev) => prev.map((x) => (x.id === m.id ? { ...x, texto: m.texto, editada: m.editada } : x)));
       mostrarAviso(comOCodigo("Não consegui editar.", error, "editar mensagem"), 7000);
+      return;
     }
+    // A MESMA EDIÇÃO AINDA ABERTA: quem trocou de conversa ou cancelou no meio
+    // já tirou a caixa dela.
+    if (editandoRef.current === m) cancelarEdicao();
   }
 
   // Copiar o texto da mensagem.
@@ -11392,7 +11490,9 @@ export default function Painel({ sessao }) {
     const agoraProcesso = doProcesso.processo_id ? String(doProcesso.processo_id) : "";
     const mudouProcesso = antesProcesso !== agoraProcesso;
     if (novoTexto === antes && !mudouProcesso) { cancelarEdicao(); return; }
-    cancelarEdicao();
+    // A CAIXA SÓ SAI DA EDIÇÃO DEPOIS DE GRAVAR (auditoria de 28/10) — ver
+    // `salvarEdicao`. Na recusa, a nota corrigida fica na caixa, e não em
+    // lugar nenhum.
     setMensagens((prev) => prev.map((x) => (
       x.id === m.id ? { ...x, ...doProcesso, texto: novoTexto,
                         editada_em: new Date().toISOString(),
@@ -11409,12 +11509,16 @@ export default function Painel({ sessao }) {
     // `gravar.js`). A tela mostrava a nota já corrigida, e a correção sumia no
     // F5. Nota é TEXTO QUE ALGUÉM ESCREVEU — é o que mais dói perder calado
     // desta lista toda.
-    const rNota = await gravarSemAsQueFaltam(
-      (linha) => supabase.from("notas").update(linha).eq("id", idReal).select("id"),
-      { texto: novoTexto, editada_em: new Date().toISOString(), editada_por: meuNome,
-        ...doProcesso },
-      ["processo_id", "processo_numero", "processo_reu", "editada_em", "editada_por"],
-      COLUNAS_QUE_FALTAM_EM_NOTAS);
+    salvandoEdicaoRef.current = true;
+    let rNota;
+    try {
+      rNota = await gravarSemAsQueFaltam(
+        (linha) => supabase.from("notas").update(linha).eq("id", idReal).select("id"),
+        { texto: novoTexto, editada_em: new Date().toISOString(), editada_por: meuNome,
+          ...doProcesso },
+        ["processo_id", "processo_numero", "processo_reu", "editada_em", "editada_por"],
+        COLUNAS_QUE_FALTAM_EM_NOTAS);
+    } finally { salvandoEdicaoRef.current = false; }
     const { error, perdidas } = rNota;
     if (error || naoGravouNada(rNota)) {
       setMensagens((prev) => prev.map((x) => (
@@ -11424,6 +11528,7 @@ export default function Painel({ sessao }) {
         : comOCodigo("Não consegui editar a nota.", error, "editar nota"), 7000);
       return;
     }
+    if (editandoRef.current === m) cancelarEdicao();
     // O AVISO SÓ APARECE QUANDO A PESSOA PERDEU O QUE ESCOLHEU. Perder o
     // `editada_em` numa base velha não muda nada do que ela quis dizer; perder
     // o processo, sim — e calar sobre isso é o defeito que já custou 289 notas.
@@ -12077,18 +12182,36 @@ export default function Painel({ sessao }) {
     if (!anexosPendentes.length) return;
     const motivo = porQueNaoServe(quando);
     if (motivo) { mostrarAviso(motivo, 6000); return; }
-    const lote = anexosPendentes.map((a) => ({ file: a.file, legenda: (a.legenda || "").trim() }));
+    const lote = anexosPendentes.slice();
     const convId = conversaId;
-    for (const a of anexosPendentes) { try { URL.revokeObjectURL(a.url); } catch (_) {} }
     setAnexosPendentes([]);
     setAnexoAtivo(0);
+    // O QUE NÃO AGENDOU É DITO NA FRASE DO FIM, e volta para a prévia
+    // (auditoria de 28/10). Cada falha avisava sozinha e era coberta, um
+    // instante depois, por "2 anexos agendados" — quem mandou três ia embora
+    // achando que foram três. E a prévia já tinha sido esvaziada: o que falhou
+    // não estava em lugar nenhum.
     let foram = 0;
-    for (const { file, legenda } of lote) {
-      if (await enviarArquivo(file, legenda, convId, null, quando)) foram++;
+    const naoForam = [];
+    for (const a of lote) {
+      const r = await enviarArquivo(a.file, (a.legenda || "").trim(), convId, null, quando);
+      if (r === true) { foram++; try { URL.revokeObjectURL(a.url); } catch (_) {} }
+      else naoForam.push({ a, motivo: typeof r === "string" ? r : "" });
     }
-    if (foram) {
-      mostrarAviso(foram === 1 ? `Anexo agendado para ${rotuloDaHora(quando)}.`
-        : `${foram} anexos agendados para ${rotuloDaHora(quando)}.`);
+    const hora = rotuloDaHora(quando);
+    if (!naoForam.length) {
+      mostrarAviso(foram === 1 ? `Anexo agendado para ${hora}.` : `${foram} anexos agendados para ${hora}.`);
+    } else {
+      // DE VOLTA À PRÉVIA só na conversa deles: a prévia aberta em outra
+      // mandaria para lá (ver a troca de conversa).
+      const voltam = String(conversaIdRef.current) === String(convId);
+      if (voltam) { setAnexosPendentes(naoForam.map((x) => x.a)); setAnexoAtivo(0); }
+      else for (const { a } of naoForam) { try { URL.revokeObjectURL(a.url); } catch (_) {} }
+      const nomes = naoForam.map((x) => x.a.nome || "o anexo").join(", ");
+      const porque = naoForam[0].motivo ? ` ${naoForam[0].motivo.replace(/[.\s]*$/, ".")}` : "";
+      mostrarAviso((foram ? `${foram === 1 ? "1 anexo agendado" : `${foram} anexos agendados`} para ${hora} — não`
+        : "Não") + ` consegui agendar ${nomes}.${porque}`
+        + (voltam ? (naoForam.length === 1 ? " Ele voltou para a prévia." : " Eles voltaram para a prévia.") : ""), 10000);
     }
     carregarAgendadas(convId);
   }
@@ -12136,7 +12259,7 @@ export default function Painel({ sessao }) {
       const nome = (file.name || "arquivo").replace(/[^\w.\-]+/g, "_");
       let url = file.doDeposito ? file.url : null;
       if (!url) {
-        const caminho = `${convId}/${Date.now()}-${nome}`;
+        const caminho = caminhoNoDeposito(convId, nome);
         const { error: upErr } = await supabase.storage.from("anexos").upload(caminho, file, { contentType: file.type });
         if (upErr) throw new Error("Falha ao subir o arquivo (Storage): " + (upErr.message || upErr));
         const { data: pub } = supabase.storage.from("anexos").getPublicUrl(caminho);
@@ -12176,7 +12299,7 @@ export default function Painel({ sessao }) {
       // O anexo de uma rápida já está no depósito — ver `enviarArquivo`.
       let url = file.doDeposito ? file.url : null;
       if (!url) {
-        const caminho = `${convId}/${Date.now()}-${nome}`;
+        const caminho = caminhoNoDeposito(convId, nome);
         const { error: upErr } = await supabase.storage.from("anexos").upload(caminho, file, { contentType: file.type });
         if (upErr) throw new Error("Falha ao subir o arquivo (Storage): " + (upErr.message || upErr));
         const { data: pub } = supabase.storage.from("anexos").getPublicUrl(caminho);
@@ -12189,8 +12312,10 @@ export default function Painel({ sessao }) {
       if (r.error) throw new Error(r.motivo || comOCodigo("Falha ao agendar (banco).", r.error, "agendar anexo"));
       return true;
     } catch (err) {
-      mostrarAviso(`Não consegui agendar ${file.name || "o anexo"}. ` + (err?.message || err), 8000);
-      return false;
+      // O MOTIVO VOLTA PARA QUEM CHAMOU (auditoria de 28/10), que diz a frase
+      // do lote inteiro — ver `agendarAnexos`. Dito aqui, era coberto pela
+      // seguinte.
+      return String(err?.message || err);
     }
   }
 
@@ -14759,7 +14884,11 @@ export default function Painel({ sessao }) {
         <Clock size={22} color={escolhendoHora === "texto" ? C.green : C.textSecondary} />
       </button>
     )}
-    {escolhendoHora === "texto" && rascunho.trim() && (
+    {/* E A JANELA, PELA MESMA REGRA DO RELÓGIO (auditoria de 28/10). Ela só
+        conferia o texto: aberta antes de a caixa virar nota — o botão da nota
+        não a fecha — ou antes de uma edição começar, o "Agendar" mandava ao
+        cliente a NOTA, ou a correção como mensagem nova. */}
+    {escolhendoHora === "texto" && rascunho.trim() && !modoNota && !editando && (
       <div style={{ position: "absolute", bottom: 60, right: 12, zIndex: 40 }}>
         <EscolherHora C={C} escuro={modo === "escuro"} titulo="Agendar esta mensagem"
                       previa={`“${rascunho.trim().replace(/\s+/g, " ")}”`}
@@ -18913,13 +19042,13 @@ export default function Painel({ sessao }) {
           )}
 
           {/* A FITA. Rola sozinha até a imagem aberta, senão numa conversa com
-              trinta fotos a marcada fica fora da vista e a fita parece travada. */}
+              trinta fotos a marcada fica fora da vista e a fita parece travada.
+              Quem rola é um efeito (`fitaDaGaleriaRef`), e não cada desenho. */}
           {temGaleria && (
-            <div className="sem-scrollbar" onClick={(e) => e.stopPropagation()}
+            <div ref={fitaDaGaleriaRef} className="sem-scrollbar" onClick={(e) => e.stopPropagation()}
                  style={{ position: "absolute", bottom: 16, left: 0, right: 0, zIndex: 2, display: "flex", gap: 8, justifyContent: "safe center", overflowX: "auto", padding: "0 18px" }}>
               {imagensDaConversa.map((url, i) => (
                 <button key={url + i} onClick={() => { setRetratoAberto(false); setImagemAberta(url); }}
-                        ref={i === posNaGaleria ? (el) => el && el.scrollIntoView({ block: "nearest", inline: "center" }) : undefined}
                         title={`Imagem ${i + 1}`}
                         style={{ flex: "none", width: 62, height: 62, padding: 0, borderRadius: 6, cursor: "pointer", overflow: "hidden", background: "rgba(255,255,255,.08)", border: i === posNaGaleria ? "2px solid #25d366" : "2px solid transparent", opacity: i === posNaGaleria ? 1 : 0.6 }}>
                   <img src={url} alt="" loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
