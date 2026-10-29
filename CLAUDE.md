@@ -1828,7 +1828,7 @@ isso."*
 1. **O número na forma antiga não era achado.** `chaveDoNumero` devolve sempre
    a forma COM o nono dígito, e o banco guarda o celular como o WhatsApp
    mandou. **Medido: 504 contatos (840 conversas) na forma antiga.** Quem
-   digitava "(71) 99259-0325" não achava o cliente gravado como 557192590325.
+   digitava "(71) 99001-2345" não achava o cliente gravado como 557190012345.
    `formasDoNumeroNaBusca` (`numeros.js`) pergunta pelas duas formas, na lupa
    da lista e na agenda — só para celular, pela régua da chave.
 2. **O caminho dos nomes era jogado fora quando o completo chegava antes.** Os
@@ -1836,7 +1836,7 @@ isso."*
    não tivesse respondido. Era invisível enquanto os dois achavam a mesma coisa
    — e deixou de ser quando só o dos nomes passou a achar o número na forma
    antiga. Hoje os dois SOMAM (`achadas`), e quem chega por último não apaga
-   quem chegou antes. Foi a prova que achou, com o "(71) 9259-0326".
+   quem chegou antes. Foi a prova que achou, com o "(71) 9001-2346".
 3. **A agenda da "Nova conversa" procurava a frase inteira, com acento.**
    "maria gracas" não achava "Maria das Graças", nem "gracas pereira" a
    "Maria das Graças Pereira". Agora ela pergunta pela coluna `busca` de
@@ -3033,8 +3033,9 @@ fila; a largura sem a parcela do "Já tratei", pega por
 
 ## O aviso do nono dígito não previa nada — e mandou mexer na ficha de um cliente
 
-Relato do Rodrigo em 28/09: ele acrescentou `(71) 99259-0325` na ficha de um
-cliente que já tinha `(71) 9259-0325`, o número novo apareceu na lista com o
+Relato do Rodrigo em 28/09 (com o número trocado por um de exemplo em 28/10):
+ele acrescentou `(71) 99001-2345` na ficha de um
+cliente que já tinha `(71) 9001-2345`, o número novo apareceu na lista com o
 selo "WhatsApp", **e não havia como conversar por ele**. Pediu para eu procurar
 o defeito.
 
@@ -3084,7 +3085,7 @@ lugar de falha (04/09), sucesso no lugar de falha (24/09), falha sem causa
 mesmo: alguém procura defeito onde não há.
 
 Hoje a ficha recusa **antes de gravar** e diz por quê: *"é a MESMA linha de
-(71) 9259-0325 — no WhatsApp o nono dígito não muda a conta"*. Acrescentar uma
+(71) 9001-2345 — no WhatsApp o nono dígito não muda a conta"*. Acrescentar uma
 segunda escrita do mesmo número não conserta nada e deixa a lista com duas
 linhas que parecem dois telefones.
 
@@ -5002,7 +5003,7 @@ e sabotagem.
 | o que acontecia | agora |
 |---|---|
 | entre 768 e 1117px (o iPad em pé, a janela na metade de um monitor de 1920) a ficha fixa deixava a conversa com 18 a 350px — a mensagem saía uma letra por linha | abaixo do piso do próprio cabeçalho (368px), a ficha é gesto, como no celular, e toma o lugar da conversa — a lista fica |
-| o build de produção levava a **bancada inteira para o site**, com telefones copiados de casos reais | `vite.config.js` troca a bancada por `src/semBancada.js`; os telefones da bancada viraram números de exemplo |
+| o build de produção levava a **bancada inteira para o site**, com telefones copiados de casos reais | `vite.config.js` troca a bancada por `src/semBancada.js`; os telefones da bancada viraram números de exemplo, e o do relato de 28/09 (o da ficha) virou (71) 99001-2345 nas provas, nos comentários e aqui |
 | a mensagem que chegava pelo tempo real **durante a carga** da conversa sumia — o eco da própria mensagem também, e quem enviou mandava de novo | `chegaramDuranteACarga` |
 | com o relógio aberto, virar a caixa para nota e agendar mandava a **nota ao cliente** | a janela da hora só existe fora da nota e da edição |
 | o áudio gravado em A aparecia na barra de B; a prévia de anexos de A, com Tab até a lista, era enviada a B; a seleção de A abria B sem caixa de escrever | cada coisa fica na conversa dela |

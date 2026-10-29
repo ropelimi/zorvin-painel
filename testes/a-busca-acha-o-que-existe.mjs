@@ -9,8 +9,8 @@
 //     sem o nono dígito — é como o WhatsApp devolve umas contas. Quem digita
 //     o número como ele é hoje, COM o 9, não achava nenhum deles, a não ser
 //     que a conversa já estivesse numa das páginas carregadas da lista. A
-//     busca pergunta ao banco pelo número digitado, e "71992590325" não está
-//     dentro de "557192590325". É justamente o cliente antigo, com quem não se
+//     busca pergunta ao banco pelo número digitado, e "71990012345" não está
+//     dentro de "557190012345". É justamente o cliente antigo, com quem não se
 //     fala há tempo, que a busca existe para achar;
 //   - a "Nova conversa" tinha o mesmo defeito, e mais um: comparava o nome
 //     COM acento — "joao" não achava "JOÃO", e "maria graças" não achava
@@ -76,8 +76,8 @@ function semente() {
   // OS QUATRO DA CENA, parados há meses: atrás de duzentas e dez conversas
   // mais recentes, fora da primeira página da lista (que é de 200). É ali
   // que a busca precisa perguntar ao banco — e é ali que ela errava.
-  planta("antigo", ANTIGO, "557192590325", H(3000));
-  planta("com9", COM_NOVE, "5571992590326", H(3001));
+  planta("antigo", ANTIGO, "557190012345", H(3000));
+  planta("com9", COM_NOVE, "5571990012346", H(3001));
   planta("joao", JOAO, "5511970007701", H(3002));
   planta("maria", MARIA, "5511970007702", H(3003));
   for (let i = 0; i < 210; i++) {
@@ -130,13 +130,13 @@ console.log("\nA busca da lista acha o celular COM e SEM o nono dígito");
      !(await linha(page, "cv-antigo")));
 
   for (const [termo, conversa, quem] of [
-    ["(71) 99259-0325", "cv-antigo", "digitado com o 9, gravado sem"],
-    ["99259-0325", "cv-antigo", "só o número local, com o 9"],
-    ["+55 71 99259-0325", "cv-antigo", "com o +55 e o 9"],
-    ["71 9259-0325", "cv-antigo", "digitado sem o 9, gravado sem"],
-    ["9259-0325", "cv-antigo", "os oito dígitos do fim"],
-    ["(71) 9259-0326", "cv-com9", "digitado sem o 9, gravado com"],
-    ["(71) 99259-0326", "cv-com9", "digitado com o 9, gravado com"],
+    ["(71) 99001-2345", "cv-antigo", "digitado com o 9, gravado sem"],
+    ["99001-2345", "cv-antigo", "só o número local, com o 9"],
+    ["+55 71 99001-2345", "cv-antigo", "com o +55 e o 9"],
+    ["71 9001-2345", "cv-antigo", "digitado sem o 9, gravado sem"],
+    ["9001-2345", "cv-antigo", "os oito dígitos do fim"],
+    ["(71) 9001-2346", "cv-com9", "digitado sem o 9, gravado com"],
+    ["(71) 99001-2346", "cv-com9", "digitado com o 9, gravado com"],
   ]) {
     await buscar(page, termo);
     ok(`“${termo}” acha a conversa (${quem})`, await linha(page, conversa));
@@ -169,8 +169,8 @@ console.log("\nA “Nova conversa” acha pelo número com o 9, e pelo nome sem 
   };
 
   for (const [termo, contato, quem] of [
-    ["(71) 99259-0325", "ct-antigo", "o número com o 9, gravado sem"],
-    ["71 9259-0326", "ct-com9", "o número sem o 9, gravado com"],
+    ["(71) 99001-2345", "ct-antigo", "o número com o 9, gravado sem"],
+    ["71 9001-2346", "ct-com9", "o número sem o 9, gravado com"],
     ["joao", "ct-joao", "“joao” acha “JOÃO”"],
     ["maria graças", "ct-maria", "duas palavras separadas no nome"],
     ["gracas pereira", "ct-maria", "sem acento, e na ordem do nome"],
@@ -213,7 +213,7 @@ console.log("\nA “Nova conversa” num banco sem a coluna da busca continua ac
   ok("sem a coluna, o nome escrito como está continua achando",
      await page.evaluate(() => Boolean(document.querySelector('[data-contato-agenda="ct-joao"]'))));
   if (await page.locator(PESQUISA).count()) {
-    await page.fill(PESQUISA, "(71) 99259-0325");
+    await page.fill(PESQUISA, "(71) 99001-2345");
     await page.waitForTimeout(1600);
   }
   ok("e o número com o 9 também",

@@ -12952,7 +12952,7 @@ export default function Painel({ sessao }) {
       //  São três perguntas que voltam em tempos diferentes — os nomes, a
       //  função do banco e o cadastro —, e cada uma desenhava a SUA lista por
       //  cima da anterior. A dos nomes, chegando depois da completa, era
-      //  jogada fora: "(71) 9259-0326" não achava o cliente gravado com o nono
+      //  jogada fora: "(71) 9001-2346" não achava o cliente gravado com o nono
       //  dígito sempre que a função do banco respondia primeiro, porque é a
       //  consulta dos nomes que procura o número nas formas em que ele está
       //  gravado. Foi a prova `a-busca-acha-o-que-existe` que viu a corrida.

@@ -1,11 +1,11 @@
-// O NÚMERO COM O ZERO NA FRENTE — "(071) 99259-0325" (auditoria de 28/10)
+// O NÚMERO COM O ZERO NA FRENTE — "(071) 99001-2345" (auditoria de 28/10)
 //
 // Muita gente ainda escreve o DDD com o zero da ligação interurbana, como se
-// discava antigamente: "(071) 99259-0325". `numeroCanonico` tirava a
+// discava antigamente: "(071) 99001-2345". `numeroCanonico` tirava a
 // pontuação e contava os dígitos — 12 — e, como não eram 10 nem 11, tratava
-// como número ESTRANGEIRO e gravava "071992590325". A mensagem ia para um
+// como número ESTRANGEIRO e gravava "071990012345". A mensagem ia para um
 // número que não existe, e a resposta do cliente, que chega pelo WhatsApp como
-// "5571992590325", nascia num SEGUNDO contato. O fixo com zero ("(011)
+// "5571990012345", nascia num SEGUNDO contato. O fixo com zero ("(011)
 // 3333-4444", 11 dígitos) era pior: ganhava um 55 na frente do zero.
 //
 // O que NÃO foi consertado, e está escrito aqui embaixo de propósito: o "+" de
@@ -30,14 +30,14 @@ const ok = (nome, cond, det = "") => {
 
 console.log("\nO zero da ligação interurbana sai");
 {
-  ok("celular: (071) 99259-0325", numeroCanonico("(071) 99259-0325") === "5571992590325",
-     numeroCanonico("(071) 99259-0325"));
-  ok("celular na forma antiga: (071) 9259-0325", numeroCanonico("(071) 9259-0325") === "557192590325",
-     numeroCanonico("(071) 9259-0325"));
+  ok("celular: (071) 99001-2345", numeroCanonico("(071) 99001-2345") === "5571990012345",
+     numeroCanonico("(071) 99001-2345"));
+  ok("celular na forma antiga: (071) 9001-2345", numeroCanonico("(071) 9001-2345") === "557190012345",
+     numeroCanonico("(071) 9001-2345"));
   ok("fixo: (011) 3333-4444", numeroCanonico("(011) 3333-4444") === "551133334444",
      numeroCanonico("(011) 3333-4444"));
-  ok("e só os dígitos, sem máscara", numeroCanonico("071992590325") === "5571992590325",
-     numeroCanonico("071992590325"));
+  ok("e só os dígitos, sem máscara", numeroCanonico("071990012345") === "5571990012345",
+     numeroCanonico("071990012345"));
 }
 
 console.log("\nSem um DDD de verdade depois do zero, nada é inventado");
@@ -66,15 +66,15 @@ ok("consegui ler a regra da ponte para comparar", !!ponte,
 if (ponte) {
   // O QUE CHEGA À PONTE: o que o banco guarda, o JID do WhatsApp (só dígitos,
   // com o país) e o que o Vantoro manda (sem o 55, às vezes com máscara).
-  const DA_PONTE = ["5511999998888", "551133334444", "557192590325", "5571992590325", "351912345678",
+  const DA_PONTE = ["5511999998888", "551133334444", "557190012345", "5571990012345", "351912345678",
                     "11999998888", "(11) 99999-8888", "1133334444", "120363000000000001"];
   const diferentes = DA_PONTE.filter((n) => numeroCanonico(n) !== ponte(n));
   ok("o mesmo resultado em todos", diferentes.length === 0,
      diferentes.map((n) => `${n}: painel ${numeroCanonico(n)} vs ponte ${ponte(n)}`).join("; "));
 
   // O QUE O PAINEL GRAVA, A PONTE MANDA COMO ESTÁ. É isto que faz o conserto
-  // do zero valer sem mexer na ponte: "5571992590325" não muda lá.
-  const ESCRITOS = ["(071) 99259-0325", "(071) 9259-0325", "(011) 3333-4444", "0800 123 4567",
+  // do zero valer sem mexer na ponte: "5571990012345" não muda lá.
+  const ESCRITOS = ["(071) 99001-2345", "(071) 9001-2345", "(011) 3333-4444", "0800 123 4567",
                     "11999998888", "+55 (11) 99999-8888", "351912345678"];
   const mexidos = ESCRITOS.filter((n) => ponte(numeroCanonico(n)) !== numeroCanonico(n));
   ok("o que o painel grava, a ponte não muda", mexidos.length === 0,

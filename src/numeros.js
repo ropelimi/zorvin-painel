@@ -46,7 +46,7 @@
 // número de Portugal criaria justamente o problema que se quer evitar.
 export function numeroCanonico(bruto) {
   let d = String(bruto || "").replace(/\D/g, "");
-  // O ZERO DA LIGAÇÃO INTERURBANA SAI (28/10): "(071) 99259-0325" tinha 12
+  // O ZERO DA LIGAÇÃO INTERURBANA SAI (28/10): "(071) 99001-2345" tinha 12
   // dígitos e passava por estrangeiro, e "(011) 3333-4444" ganhava o 55 na
   // frente do zero. Só quando o que vem depois do zero é um DDD que existe —
   // 0800 não é DDD. O "+" de fora continua sem ser lido: consertá-lo exige a
@@ -97,10 +97,10 @@ export function chaveDoNumero(bruto) {
 // e o banco guarda o celular como o WhatsApp o mandou — umas contas COM o
 // nono dígito, outras SEM. MEDIDO em 26/10: 504 contatos (840 conversas) na
 // forma antiga. Perguntando só pela chave, que é sempre a forma com o 9, quem
-// digitava "(71) 99259-0325" não achava o cliente gravado como 557192590325.
+// digitava "(71) 99001-2345" não achava o cliente gravado como 557190012345.
 //
 // Por isso a busca pergunta pelas duas: a chave, e a mesma sem o 9. E quem
-// digita só o número local com o 9 ("99259-0325") pergunta também pelos oito
+// digita só o número local com o 9 ("99001-2345") pergunta também pelos oito
 // do fim, que as duas formas têm. Só para celular, pela regra da chave: fixo
 // não tem nono dígito.
 export function formasDoNumeroNaBusca(bruto) {

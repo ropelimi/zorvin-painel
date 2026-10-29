@@ -44,8 +44,8 @@ const nav = await abrirNavegador();
 // WhatsApp devolve as contas antigas.
 const ZENAIDE = "ZENAIDE DA AGENDA";
 const ZILDA = "ZILDA SEM O NOVE";
-const ZILDA_GRAVADA = "557192590325";
-const ZILDA_DIGITADA = "(71) 99259-0325";
+const ZILDA_GRAVADA = "557190012345";
+const ZILDA_DIGITADA = "(71) 99001-2345";
 const SEMENTE = {
   contatos: [
     { id: "ct-zenaide", numero: "5531970004321", nome: ZENAIDE, foto_url: null },
@@ -105,7 +105,7 @@ const nomesDaAba = (page) => page.$$eval('button[title="Abrir conversa"]',
 /** Quantos contatos do banco são esta linha, em qualquer escrita. */
 const contatosDaZilda = (page) => page.evaluate(() => (globalThis.__TABELAS.contatos || [])
   .filter((c) => { const d = String(c.numero || "").replace(/\D/g, "");
-                   return d.endsWith("92590325") && d.includes("71"); }).map((c) => c.numero));
+                   return d.endsWith("90012345") && d.includes("71"); }).map((c) => c.numero));
 
 const filme = (page) => page.evaluate(() => globalThis.__FILME.join(" ‖ "));
 
@@ -220,7 +220,7 @@ console.log("\nE pelas outras portas: o Salvar da aba e o Conversar com +número
   // a Zilda para a agenda da memória, e a conferência a acharia ali sem
   // precisar do banco — a cena não mediria nada.
   await page.evaluate(() => { globalThis.__QUEBRAR_SO_A_LEITURA = ["contatos"]; });
-  await page.locator('input[placeholder="Pesquisar nome ou número"]').fill("71992590325");
+  await page.locator('input[placeholder="Pesquisar nome ou número"]').fill("71990012345");
   await page.waitForTimeout(1500);
   const botao = page.getByRole("button", { name: /Conversar com \+/ });
   ok("a Nova conversa oferece conversar com o número", (await botao.count()) === 1);
@@ -235,7 +235,7 @@ console.log("\nE pelas outras portas: o Salvar da aba e o Conversar com +número
 // ==================================================================
 console.log("\nE o link ?telefone= não segue sem ter conferido");
 {
-  const { ctx, page } = await abrirPainel({ endereco: `${ENDERECO}?telefone=5571992590325&nome=ZILDA%20DO%20LINK`,
+  const { ctx, page } = await abrirPainel({ endereco: `${ENDERECO}?telefone=5571990012345&nome=ZILDA%20DO%20LINK`,
                                            quebrarContatos: true });
   await page.waitForTimeout(800);
   const avisos = await filme(page);

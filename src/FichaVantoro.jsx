@@ -1098,7 +1098,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, onFecha
   //  ACRESCENTAR UM NÚMERO QUE JÁ ESTÁ AÍ, COM OUTRA ROUPA
   //
   //  RELATO DE 28/09, e a tela ficou calada do começo ao fim. O Rodrigo
-  //  acrescentou (71) 99259-0325 numa ficha que já tinha (71) 9259-0325, o
+  //  acrescentou (71) 99001-2345 numa ficha que já tinha (71) 9001-2345, o
   //  número novo apareceu na lista, e não havia como conversar por ele. Ele
   //  procurou o defeito; não havia nenhum.
   //
