@@ -63,6 +63,11 @@ export function ForaDoHorario({ cx, C, departamentos = [], aoAvisar }) {
   const [novoDia, setNovoDia] = useState("");
   const [novoNome, setNovoNome] = useState("");
   const [janela, setJanela] = useState(null);     // minutos; null = sem número
+  // A LEITURA QUE FALHOU (auditoria de 27/10). Sem ela, a tela mostrava o
+  // formulário de um departamento que nunca foi configurado — desligado, sem
+  // texto, com o horário padrão — e "Salvar" gravava isso POR CIMA da resposta
+  // que existe e não chegou: a falha de leitura virava a configuração apagada.
+  const [falhaDaLeitura, setFalhaDaLeitura] = useState("");
 
   useEffect(() => {
     if (depId == null && departamentos.length) setDepId(departamentos[0].id);
@@ -79,10 +84,13 @@ export function ForaDoHorario({ cx, C, departamentos = [], aoAvisar }) {
       // configurado" no lugar de "não consegui ler" faria alguém configurar
       // de novo por cima do que existe.
       if (semATabela(cfg.error)) { setExiste(false); return null; }
-      aoAvisar(comOCodigo("Não consegui ler a resposta fora do horário.", cfg.error, "ler a configuração"));
+      const frase = comOCodigo("Não consegui ler a resposta fora do horário.", cfg.error, "ler a configuração");
+      aoAvisar(frase);
+      setFalhaDaLeitura(frase);
       setExiste(true);
       return null;
     }
+    setFalhaDaLeitura("");
     if (fer.error) aoAvisar(comOCodigo("Não consegui ler os feriados.", fer.error, "ler os feriados"));
     else setFeriados(fer.data || []);
     setExiste(true);
@@ -203,6 +211,21 @@ export function ForaDoHorario({ cx, C, departamentos = [], aoAvisar }) {
     );
   }
   if (existe === null) return <div style={{ color: C.textSecondary, fontSize: 14 }}>Carregando…</div>;
+  // SEM SABER O QUE ESTÁ GRAVADO, NÃO HÁ FORMULÁRIO: o que se editasse aqui
+  // iria por cima de uma configuração que a tela não viu.
+  if (falhaDaLeitura) {
+    return (
+      <div style={cx.secao} data-fora-falha-de-leitura>
+        <div style={cx.titulo}><Clock size={16} /> Resposta fora do horário</div>
+        <div style={{ ...cx.dica, color: "#c0392b" }}>{falhaDaLeitura}</div>
+        <div style={cx.dica}>
+          A configuração continua como estava no banco. Sem conseguir lê-la, a tela não deixa mudar
+          nada — o que se salvasse aqui iria por cima dela.
+        </div>
+        <button style={cx.botao} onClick={() => ler()} data-fora-tentar-de-novo>Tentar de novo</button>
+      </div>
+    );
+  }
   if (!departamentos.length) {
     return <div style={cx.dica}>Crie um departamento primeiro: a resposta é de cada um.</div>;
   }

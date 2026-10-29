@@ -391,8 +391,14 @@ export default function Login({ authMudo = false, sessaoTerminou = false } = {})
               onChange={(e) => { setSenha(e.target.value); if (erro) setErro(""); }} onFocus={() => setFoco("senha")} onBlur={() => setFoco("")}
               required style={inputEstilo}
             />
+            {/* UM ALVO QUE O DEDO ACERTA (auditoria de 27/10): eram 26 pontos,
+                e no celular o toque caía no campo da senha. 40 é a régua do
+                resto do painel; a margem negativa devolve o espaço, e a
+                caixa do campo não cresce. */}
             <button type="button" onClick={() => setVerSenha((v) => !v)} title={verSenha ? "Ocultar senha" : "Mostrar senha"}
-              style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", padding: 4, color: C.textSecondary, flexShrink: 0 }}>
+              aria-label={verSenha ? "Ocultar senha" : "Mostrar senha"}
+              style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                       minWidth: 40, minHeight: 40, margin: "-8px -10px -8px 0", padding: 0, color: C.textSecondary, flexShrink: 0 }}>
               {verSenha ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>

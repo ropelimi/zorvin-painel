@@ -37,7 +37,14 @@
 //   * `if` cuja condição JÁ foi conferida por um `ok` antes — o padrão certo,
 //     "confere e só então entra";
 //   * `.every(...)` acompanhado de um tamanho, na mesma condição ou num `ok`
-//     anterior sobre a mesma lista.
+//     anterior sobre a mesma lista;
+//   * o FILTRO DE CENAS (28/10): `if (vale("13b")) { … }`, onde `vale` é uma
+//     função do próprio arquivo que só olha `CENAS` (lida de
+//     `process.env.CENAS`) e o nome pedido. Não é uma condição da tela: é a
+//     escolha de quem rodou a prova à mão, e na integração contínua `CENAS`
+//     vem vazia e toda cena roda. Só vale com o nome escrito ali
+//     (`vale("13b")`, e não `vale(algo)`), e a função não pode olhar mais nada
+//     — um filtro que perguntasse à tela voltaria a ser o IF de cima.
 //
 // Se ela reprovar por um caso legítimo que não entende, o certo é ensiná-la o
 // caso — não silenciá-la.
@@ -117,6 +124,35 @@ export function analisar(fonte, nome = "(memória)") {
     }
   });
 
+  // O FILTRO DE CENAS — ver o alto do arquivo. Primeiro os conjuntos do
+  // arquivo (`const x = new Set()`), que o filtro pode anotar; depois `CENAS`,
+  // que tem de vir do ambiente; e só então as funções que só olham para ela.
+  const conjuntos = new Set();
+  let cenasDoAmbiente = false;
+  walk.full(arvore, (n) => {
+    if (n.type !== "VariableDeclarator" || n.id.type !== "Identifier" || !n.init) return;
+    if (n.init.type === "NewExpression" && n.init.callee.type === "Identifier"
+        && n.init.callee.name === "Set") conjuntos.add(n.id.name);
+    if (n.id.name === "CENAS" && /process\.env\.CENAS\b/.test(trecho(n.init))) cenasDoAmbiente = true;
+  });
+  const filtrosDeCena = new Set();
+  if (cenasDoAmbiente) {
+    walk.full(arvore, (n) => {
+      if (n.type !== "VariableDeclarator" || n.id.type !== "Identifier" || !n.init
+          || n.init.type !== "ArrowFunctionExpression" || n.init.params.length !== 1
+          || n.init.params[0].type !== "Identifier") return;
+      const parametro = n.init.params[0].name;
+      const usa = [...atomos(trecho(n.init.body))].filter((a) => a !== parametro);
+      const permitido = (a) => ["CENAS", "CENAS.length", "CENAS.includes"].includes(a)
+        || (conjuntos.has(a.split(".")[0]) && (!a.includes(".") || /^[\w$]+\.add$/.test(a)));
+      if (usa.includes("CENAS") && usa.every(permitido)) filtrosDeCena.add(n.id.name);
+    });
+  }
+  const ehFiltroDeCena = (teste) => teste.type === "CallExpression"
+    && teste.callee.type === "Identifier" && filtrosDeCena.has(teste.callee.name)
+    && teste.arguments.length === 1 && teste.arguments[0].type === "Literal"
+    && typeof teste.arguments[0].value === "string";
+
   const condicoes = [];
   walk.full(arvore, (n) => {
     if (ehOk(n) && n.arguments[1]) {
@@ -176,7 +212,8 @@ export function analisar(fonte, nome = "(memória)") {
       }
     }
 
-    if (no.type === "IfStatement" && !no.alternate && temOk(no.consequent)) {
+    if (no.type === "IfStatement" && !no.alternate && temOk(no.consequent)
+        && !ehFiltroDeCena(no.test)) {
       const teste = trecho(no.test);
       const vistos = jaConferidos(no.start);
       const soltos = [...atomos(teste)].filter((a) => !vistos.has(a));

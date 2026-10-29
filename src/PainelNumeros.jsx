@@ -61,6 +61,8 @@
 //
 // Todo gráfico tem um botão "Tabela" que troca o desenho pelos números.
 import { useEffect, useMemo, useRef, useState } from "react";
+import { campoDaPlanilha } from "./planilha.js";
+import { semAFuncao } from "./gravar.js";
 import { supabase } from "./supabase";
 import { nomeDoContato } from "./contato.js";
 import { telefoneLegivel } from "./numeros.js";
@@ -184,9 +186,19 @@ function passear(p, sentido) {
     const alvo = mesDe(p.de.getFullYear(), p.de.getMonth() + sentido);
     return alvo.de > agora ? p : alvo;
   }
-  const dur = fimDoDia(p.ate) - inicioDoDia(p.de);
-  const de = new Date(inicioDoDia(p.de).getTime() + sentido * dur);
-  const ate = new Date(fimDoDia(p.ate).getTime() + sentido * dur);
+  // EM DIAS INTEIROS, E NÃO EM MILISSEGUNDOS (auditoria de 27/10). A duração
+  // era `fim do último dia − início do primeiro`, que é um dia menos 1 ms: o
+  // período andava 1 ms a menos do que devia, o fim novo caía na meia-noite do
+  // primeiro dia de antes, e a tela o lia como um dia a mais. Cada clique
+  // esticava o período — 7 dias, 8, 9, 10 —, comparando semanas que não eram
+  // semanas. `setDate` também atravessa a troca de horário de verão de um
+  // computador fora do Brasil sem perder uma hora.
+  const dias = Math.round((inicioDoDia(p.ate) - inicioDoDia(p.de)) / 86400e3) + 1;
+  const de = inicioDoDia(p.de);
+  de.setDate(de.getDate() + sentido * dias);
+  const ateDia = inicioDoDia(p.ate);
+  ateDia.setDate(ateDia.getDate() + sentido * dias);
+  const ate = fimDoDia(ateDia);
   if (de > agora) return p;
   return { de, ate: ate > agora ? agora : ate, tipo: p.tipo };
 }
@@ -242,8 +254,7 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
       if (error) {
         // Banco sem a função ainda. Aqui NÃO existe plano B honesto: contar no
         // navegador é justamente o que dava número errado.
-        const m = (error.message || "") + (error.code || "");
-        if (/painel_dashboard|PGRST202|does not exist|Could not find/i.test(m)) setFaltaSql(true);
+        if (semAFuncao(error)) setFaltaSql(true);
         // O CÓDIGO VAI JUNTO, a régua das duas seções de baixo.
         else setErro(`${error.message || "Erro desconhecido"}${error.code ? ` (código ${error.code})` : ""}`);
         setCarregando(false);
@@ -280,15 +291,29 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
   const serie = (d && d.por_periodo) || [];
 
   // ---------- as opções dos filtros ----------
+  // OS NOMES JÁ VISTOS, de todo período que veio nesta abertura: é daqui que
+  // sai o nome de quem está escolhido num período em que não atendeu ninguém.
+  const nomesVistosRef = useRef(new Map());
   const opcoesAtendente = useMemo(() => {
     const vistos = new Map();
-    (d?.por_atendente || []).forEach((p) => { if (p.id) vistos.set(String(p.id), p.nome || "(sem nome)"); });
+    (d?.por_atendente || []).forEach((p) => {
+      if (!p.id) return;
+      vistos.set(String(p.id), p.nome || "(sem nome)");
+      nomesVistosRef.current.set(String(p.id), p.nome || "(sem nome)");
+    });
     // Eu apareço sempre, mesmo num período em que não atendi nada — senão o
     // filtro "só eu" some justamente quando eu quero saber por que sumi.
     if (meuId && !vistos.has(String(meuId))) vistos.set(String(meuId), meuNome || "Você");
     // E quem estiver selecionado continua na lista mesmo que saia do período,
     // senão trocar o mês faria o filtro se apagar sozinho.
-    if (quem && !vistos.has(String(quem))) vistos.set(String(quem), meuNome || "Selecionado");
+    // COM O NOME DELA, e não o meu (auditoria de 27/10): a linha dizia
+    // `meuNome` para qualquer pessoa escolhida que saísse do período, e o
+    // filtro passava a escrever o nome de quem olha sobre os números de outra
+    // pessoa.
+    if (quem && !vistos.has(String(quem))) {
+      vistos.set(String(quem), nomesVistosRef.current.get(String(quem))
+        || (String(quem) === String(meuId) ? (meuNome || "Você") : "Atendente escolhido"));
+    }
     return [{ valor: null, rotulo: "Todos os atendentes" },
             ...[...vistos.entries()]
               .sort((a, b) => a[1].localeCompare(b[1]))
@@ -1396,8 +1421,7 @@ function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, fuso, quem, tel
       if (!vivo) return;
       setCarregando(false);
       if (error) {
-        const m = (error.message || "") + (error.code || "");
-        if (/zorvin_relatorio_atendimentos|PGRST202|Could not find/i.test(m)) { setFalta("029"); return; }
+        if (semAFuncao(error)) { setFalta("029"); return; }
         setErro(`${error.message || "erro desconhecido"}${error.code ? ` (código ${error.code})` : ""}`);
         return;
       }
@@ -1428,7 +1452,7 @@ function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, fuso, quem, tel
   // MINUTOS inteiros, que se somam e se ordenam — "2 h 10 min" não.
   function baixarPlanilha() {
     const regs = (r && r.registros) || [];
-    const campo = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const campo = campoDaPlanilha;
     const linhas = [
       ["Protocolo", "Aberto em", "Como começou", "Cliente", "Número", "Telefone do escritório",
        "Primeira resposta em", "Quem respondeu", "Minutos até a primeira resposta",
@@ -1701,8 +1725,7 @@ function RelatorioResponsaveis({ C, estilos, cores, fuso, telefone, departamento
       if (!vivo) return;
       setCarregando(false);
       if (error) {
-        const m = (error.message || "") + (error.code || "");
-        if (/zorvin_relatorio_responsaveis|PGRST202|Could not find/i.test(m)) { setFalta("011"); return; }
+        if (semAFuncao(error)) { setFalta("011"); return; }
         setErro(`${error.message || "erro desconhecido"}${error.code ? ` (código ${error.code})` : ""}`);
         return;
       }
@@ -1865,8 +1888,7 @@ function RelatorioFunil({ C, estilos, cores, deIso, ateIso, telefone, departamen
       if (!vivo) return;
       setCarregando(false);
       if (error) {
-        const m = (error.message || "") + (error.code || "");
-        if (/zorvin_relatorio_funil|PGRST202|Could not find/i.test(m)) { setFalta("019"); return; }
+        if (semAFuncao(error)) { setFalta("019"); return; }
         setErro(`${error.message || "erro desconhecido"}${error.code ? ` (código ${error.code})` : ""}`);
         return;
       }
@@ -2036,8 +2058,7 @@ function RelatorioJaTratei({ C, estilos, cores, deIso, ateIso, fuso, passo, quem
       if (!vivo) return;
       setCarregando(false);
       if (error) {
-        const m = (error.message || "") + (error.code || "");
-        if (/zorvin_relatorio_tratados|PGRST202|Could not find/i.test(m)) { setFalta(true); return; }
+        if (semAFuncao(error)) { setFalta(true); return; }
         setErro(`${error.message || "erro desconhecido"}${error.code ? ` (código ${error.code})` : ""}`);
         return;
       }
@@ -2055,7 +2076,7 @@ function RelatorioJaTratei({ C, estilos, cores, deIso, ateIso, fuso, passo, quem
   // abre direto, com acento e sem juntar as colunas numa só.
   function baixarPlanilha() {
     const regs = (r && r.registros) || [];
-    const campo = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const campo = campoDaPlanilha;
     const linhas = [
       ["Quando", "Quem", "Cliente", "Número", "Telefone do escritório", "Assuntos", "O que foi tratado", "Esperava desde", "Desfeito"],
       ...regs.map((x) => [

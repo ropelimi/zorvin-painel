@@ -160,9 +160,15 @@ export function AssuntosDoJaTratei({ cx, C, aoAvisar }) {
         </button>
       </div>
 
+      {/* A LINHA QUEBRA, E NÃO ESPREME (auditoria de 27/10). Sem `flexWrap`,
+          num celular de 390 os três botões disputavam ~300px com o nome e
+          encolhiam por baixo do próprio texto: "Pedir descrição" passava por
+          cima de "Renomear", e "Parar de usar" virava três linhas. É a régua
+          que as etapas do funil já seguiam (`EtapasDoFunil.jsx`): o nome tem um
+          piso e os botões descem para a linha de baixo quando não cabem. */}
       {assuntos.map((a) => (
         <div key={a.id} data-assunto-da-config={a.nome}
-             style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0",
+             style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0", flexWrap: "wrap",
                       borderTop: `1px solid ${C.divider}`, opacity: a.ativo ? 1 : 0.55 }}>
           {editando && editando.id === a.id ? (
             <>
@@ -174,13 +180,13 @@ export function AssuntosDoJaTratei({ cx, C, aoAvisar }) {
                 <Check size={15} /> Salvar
               </button>
               <button onClick={() => setEditando(null)}
-                      style={{ ...cx.botao, background: "transparent", color: C.textSecondary, border: `1px solid ${C.divider}` }}>
+                      style={{ ...cx.botao, background: "transparent", color: C.textSecondary, border: `1px solid ${C.divider}`, whiteSpace: "nowrap" }}>
                 Cancelar
               </button>
             </>
           ) : (
             <>
-              <span style={{ flex: 1, fontSize: 13.5, textDecoration: a.ativo ? "none" : "line-through" }}>
+              <span style={{ flex: 1, minWidth: 120, fontSize: 13.5, textDecoration: a.ativo ? "none" : "line-through" }}>
                 {a.nome}
                 {!a.ativo && <span style={{ marginLeft: 8, fontSize: 11.5, color: C.textSecondary }}>fora de uso</span>}
                 {a.ativo && a.pede_descricao && (
@@ -194,19 +200,19 @@ export function AssuntosDoJaTratei({ cx, C, aoAvisar }) {
                         title={a.pede_descricao
                           ? "Marcar este assunto deixa de pedir o que foi tratado"
                           : "Marcar este assunto passa a exigir que se escreva o que foi tratado"}
-                        style={{ ...cx.botao, background: "transparent", color: C.textSecondary, border: `1px solid ${C.divider}` }}>
+                        style={{ ...cx.botao, background: "transparent", color: C.textSecondary, border: `1px solid ${C.divider}`, whiteSpace: "nowrap" }}>
                   <PenLine size={15} />
                   {a.pede_descricao ? "Não pedir descrição" : "Pedir descrição"}
                 </button>
               )}
               <button onClick={() => setEditando({ id: a.id, nome: a.nome })} disabled={ocupado}
                       data-assunto-renomear
-                      style={{ ...cx.botao, background: "transparent", color: C.textSecondary, border: `1px solid ${C.divider}` }}>
+                      style={{ ...cx.botao, background: "transparent", color: C.textSecondary, border: `1px solid ${C.divider}`, whiteSpace: "nowrap" }}>
                 Renomear
               </button>
               <button onClick={() => gravar(a, { ativo: !a.ativo }, a.ativo ? "parar de usar" : "voltar a usar")}
                       disabled={ocupado} data-assunto-ativo={a.ativo ? "sim" : "nao"}
-                      style={{ ...cx.botao, background: "transparent", color: C.textSecondary, border: `1px solid ${C.divider}` }}>
+                      style={{ ...cx.botao, background: "transparent", color: C.textSecondary, border: `1px solid ${C.divider}`, whiteSpace: "nowrap" }}>
                 {a.ativo ? <EyeOff size={15} /> : <Eye size={15} />}
                 {a.ativo ? "Parar de usar" : "Voltar a usar"}
               </button>

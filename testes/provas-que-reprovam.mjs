@@ -52,7 +52,7 @@ console.log("\nNenhuma conferência da bancada pode passar sem conferir");
 
 console.log("\nE a vigia sabe achar o defeito (senão ela passaria sempre)");
 {
-  // SEM ESTAS TRÊS, um erro que fizesse `analisar` devolver sempre lista vazia
+  // SEM ESTAS, um erro que fizesse `analisar` devolver sempre lista vazia
   // deixaria a conferência de cima verde para sempre — que é exatamente o
   // defeito que este arquivo existe para caçar, agora dentro dele mesmo.
   const CASOS = [
@@ -62,6 +62,17 @@ console.log("\nE a vigia sabe achar o defeito (senão ela passaria sempre)");
      'const l = f(); for (const x of l) { ok("x", x > 0); }'],
     ["if calado",
      'const el = f(); if (el) { ok("x", el.largura > 10); }'],
+    // O FILTRO QUE OLHA A TELA não é filtro de cenas: é o IF calado de cima,
+    // com nome de filtro.
+    ["filtro de cenas que também olha a tela",
+     'const CENAS = (process.env.CENAS || "").split(","); const el = f();'
+     + ' const vale = (c) => !CENAS.length || CENAS.includes(c) || !el;'
+     + ' if (vale("1")) { ok("x", el.largura > 10); }'],
+    // E o nome que não vem escrito ali pode ser qualquer coisa.
+    ["filtro de cenas com um nome que não vem escrito",
+     'const CENAS = (process.env.CENAS || "").split(",");'
+     + ' const vale = (c) => !CENAS.length || CENAS.includes(c);'
+     + ' const qual = f(); if (vale(qual)) { ok("x", qual > 10); }'],
   ];
   for (const [nome, codigo] of CASOS) {
     ok(`pega: ${nome}`, analisar(codigo).length === 1,
@@ -77,6 +88,11 @@ console.log("\nE a vigia sabe achar o defeito (senão ela passaria sempre)");
      'const casos = [["a", 1], ["b", 2]]; for (const c of casos) { ok("x", !!c); }'],
     ["if depois de conferir a condição",
      'const el = f(); ok("achei", !!el); if (el) { ok("x", el.largura > 10); }'],
+    ["o filtro de cenas (CENAS=13b,13c)",
+     'const CENAS = (process.env.CENAS || "").split(",").filter(Boolean);'
+     + ' const pedidas = new Set();'
+     + ' const vale = (cena) => (pedidas.add(cena), !CENAS.length || CENAS.includes(cena));'
+     + ' if (vale("13b")) { const el = f(); ok("x", el.largura > 10); }'],
   ];
   for (const [nome, codigo] of BONS) {
     ok(`deixa em paz: ${nome}`, analisar(codigo).length === 0,
