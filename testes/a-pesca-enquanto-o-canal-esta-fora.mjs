@@ -70,9 +70,28 @@ const levantar = async () => {
     if (typeof globalThis.__LEVANTAR_TEMPO_REAL === "function") globalThis.__LEVANTAR_TEMPO_REAL();
   });
 };
+/** A LEITURA DE "QUEM ESPERA DEMAIS" (31/10) NÃO É PESCA, e fica fora das
+ *  duas contas desta prova.
+ *
+ *  É a única outra leitura de `conversas` com relógio próprio: as minhas
+ *  conversas esperando há 3 dias ou mais, cinco segundos depois de a lista
+ *  chegar e depois de minuto em minuto — com o canal de pé ou fora, porque ela
+ *  não tem nada a ver com ele. Contada aqui, a cena 4 reprovava dizendo "1 ida
+ *  a mais com tudo funcionando", sobre um recurso que não é a pesca. A
+ *  cadência dela é conferida na prova dela (`o-aviso-de-quem-espera-demais`:
+ *  uma leitura por rodada, e não mais).
+ *
+ *  A SEPARAÇÃO É PELO FORMATO, e estreita de propósito: ela pede
+ *  `esperando_desde` logo no começo das colunas E filtra por `responsavel_id`.
+ *  A releitura da lista pede `*`, e nunca casa com isso — uma pesca não tem
+ *  como se esconder aqui. */
+const COLUNAS_DA_ESPERA = "^id, advogado_id, esperando_desde\\b";
+
 /** Quantas idas a `conversas` o painel já fez. */
-const idas = () => page.evaluate(() =>
-  (globalThis.__DIARIO || []).filter((m) => m.tabela === "conversas").length);
+const idas = () => page.evaluate((padrao) => {
+  const daEspera = (m) => new RegExp(padrao).test(m.colunas || "") && (m.pedidos || []).includes("responsavel_id");
+  return (globalThis.__DIARIO || []).filter((m) => m.tabela === "conversas" && !daEspera(m)).length;
+}, COLUNAS_DA_ESPERA);
 
 /** Quantas RODADAS de releitura houve — e não quantas consultas.
  *
@@ -88,13 +107,14 @@ const idas = () => page.evaluate(() =>
  *  uma releitura em duas. 400 é maior do que esse vão e menor do que a
  *  cadência da pesca, que é o que precisa ficar separado. */
 const CORTE_DA_RODADA = 400;
-const rodadas = () => page.evaluate((CORTE) => {
+const rodadas = () => page.evaluate(([CORTE, padrao]) => {
+  const daEspera = (m) => new RegExp(padrao).test(m.colunas || "") && (m.pedidos || []).includes("responsavel_id");
   const t = (globalThis.__DIARIO || [])
-    .filter((m) => m.tabela === "conversas").map((m) => m.inicio).sort((a, b) => a - b);
+    .filter((m) => m.tabela === "conversas" && !daEspera(m)).map((m) => m.inicio).sort((a, b) => a - b);
   let n = 0;
   for (let i = 0; i < t.length; i++) if (i === 0 || t[i] - t[i - 1] > CORTE) n++;
   return n;
-}, CORTE_DA_RODADA);
+}, [CORTE_DA_RODADA, COLUNAS_DA_ESPERA]);
 
 const abrirPrimeira = async () => {
   await page.locator("[data-conversa-nome]").first().click();

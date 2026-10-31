@@ -1471,6 +1471,9 @@ const TABELAS = {
   zorvin_distribuicao: [],
   zorvin_rodizio: [],
   zorvin_distribuicoes: [],
+  // O AVISO DE CLIENTE SEM RESPOSTA (script 041 da ponte) começa VAZIO, que é
+  // como o script o entrega: sem linha, vale o padrão (ligado, 30 minutos).
+  zorvin_aviso_de_espera: [],
   // O MANUAL DO COPILOTO (script 024 da ponte): uma linha só, com o começo
   // do modelo que o script semeia. Quem sugere é a PONTE — cada prova finge a
   // resposta dela por `page.route`; aqui mora só o que a aba de administração
@@ -1943,6 +1946,10 @@ function consulta(tabela) {
         // e a aba de administração some — o botão continua, porque quem decide
         // se ele aparece é a ponte, e ela sugere sem o manual.
         || (tabela === "zorvin_copiloto" && globalThis.__SEM_COPILOTO)
+        // O AVISO DE CLIENTE SEM RESPOSTA (script 041) que ainda não rodou:
+        // "não existe", e a aba some. Vazia é o banco com o script e ninguém
+        // tendo mexido — vale o padrão, e a aba aparece.
+        || (tabela === "zorvin_aviso_de_espera" && globalThis.__SEM_AVISO_DE_ESPERA)
         // OS ATENDIMENTOS (script 028) que ainda não rodaram: "não existe", e
         // não lista vazia — vazia é a conversa que ainda não tem protocolo.
         || (tabela === "zorvin_atendimentos" && globalThis.__SEM_SITUACAO));
@@ -2594,6 +2601,15 @@ function consulta(tabela) {
         return resolver({ data: null, count: null,
           error: { code: "57014", message: "canceling statement due to statement timeout" } });
       }
+      // SÓ A PERGUNTA DAS MINHAS ESPERANDO HÁ 3 DIAS OU MAIS (31/10) — a
+      // lista de conversas continua de pé. É o caso em que o resumo e a tela
+      // têm de dizer que não conseguiram contar, em vez de "nenhuma".
+      if (tabela === "conversas" && !gravacao && !patch && !apagando && typeof globalThis !== "undefined"
+          && globalThis.__QUEBRAR_AS_QUE_ESPERAM && pedidos.includes("responsavel_id")
+          && /esperando_desde/.test(String(colunas || ""))) {
+        return resolver({ data: null, count: null,
+          error: { code: "57014", message: "canceling statement due to statement timeout" } });
+      }
       const quebradas = (typeof globalThis !== "undefined" && globalThis.__QUEBRAR) || [];
       if (quebradas.includes(tabela)) {
         return resolver({ data: null, count: null,
@@ -3159,6 +3175,21 @@ export const supabase = {
         if ((c.esperando_desde || null) !== novo) { c.esperando_desde = novo; mudaram += 1; }
       }
       return { data: mudaram, error: null };
+    }
+
+    // OS CLIENTES SEM RESPOSTA (script 041). A prova DITA a resposta, pela
+    // régua de `zorvin_saude` logo acima: os minutos de expediente são do
+    // banco, e a conta foi conferida num Postgres de verdade (seção 86 da
+    // ponte). Aqui mora o que a TELA faz com cada linha — para quem avisa,
+    // uma vez só, o que escreve. Cada pergunta é contada
+    // (`__PERGUNTAS_DA_ESPERA`), para a prova saber quando uma rodada passou.
+    if (nome === "zorvin_clientes_sem_resposta") {
+      if (globalThis.__SEM_AVISO_DE_ESPERA) {
+        return { data: null, error: { code: "PGRST202", message: "Could not find the function public.zorvin_clientes_sem_resposta" } };
+      }
+      await espera(40);
+      globalThis.__PERGUNTAS_DA_ESPERA = (globalThis.__PERGUNTAS_DA_ESPERA || 0) + 1;
+      return { data: (globalThis.__SEM_RESPOSTA || []).map((l) => ({ ...l, contato: l.contato ? { ...l.contato } : l.contato })), error: null };
     }
 
     // QUANTAS EM CADA ABA (script 028) — o que a lista mostra: sem as
