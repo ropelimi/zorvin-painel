@@ -1738,6 +1738,19 @@ if (typeof globalThis !== "undefined") {
   };
 }
 
+// A TRANSCRIÇÃO QUE A PONTE GRAVA SOZINHA (31/10), com o aviso do tempo real
+// que o Supabase mandaria: a linha inteira da mensagem, num UPDATE. É o caminho
+// de "a rodada automática transcreveu este áudio" nas provas.
+if (typeof globalThis !== "undefined") {
+  globalThis.__TRANSCRICAO_PELA_PONTE = (mensagemId, texto) => {
+    const m = (TABELAS.mensagens || []).find((x) => String(x.id) === String(mensagemId));
+    if (!m) return null;
+    m.transcricao = texto; m.transcrita_em = new Date().toISOString();
+    if (typeof globalThis.__EMITIR === "function") globalThis.__EMITIR("UPDATE", "mensagens", { ...m });
+    return m;
+  };
+}
+
 // O BANCO SEM O SCRIPT 028. As duas colunas TIRADAS das conversas, e pedidas
 // pelo nome — num filtro, numa leitura ou numa gravação — respondem 42703,
 // como no Postgres; a tabela dos atendimentos responde "não existe".
@@ -1962,6 +1975,9 @@ function consulta(tabela) {
   // `__QUEBRAR_A_BUSCA_NA_CONVERSA` derruba SÓ a busca dentro da conversa, e
   // não a leitura das mensagens que abre a conversa.
   let usouPadrao = false;
+  // E EM QUAL COLUNA (31/10): `__QUEBRAR_A_BUSCA_NOS_AUDIOS` derruba só a
+  // pergunta pela transcrição, e a do texto continua respondendo.
+  let colunaDoPadrao = "";
   let colunas = "";
   // O SINAL DE ABORTO — o mesmo `.abortSignal()` da biblioteca de verdade.
   // Sem ele aqui, o painel que passou a cortar consulta velha quebraria na
@@ -2061,6 +2077,7 @@ function consulta(tabela) {
     imatch(col, padrao) {
       pedidos.push(col);
       usouPadrao = true;
+      colunaDoPadrao = col;
       const re = new RegExp(String(padrao ?? ""), "i");
       linhas = linhas.filter((l) => l[col] != null && re.test(String(l[col])));
       return eu;
@@ -2566,6 +2583,14 @@ function consulta(tabela) {
       // conversa continua abrindo — é o caso em que a tela precisa dizer que
       // procurou só no que tem.
       if (usouPadrao && typeof globalThis !== "undefined" && globalThis.__QUEBRAR_A_BUSCA_NA_CONVERSA) {
+        return resolver({ data: null, count: null,
+          error: { code: "57014", message: "canceling statement due to statement timeout" } });
+      }
+      // SÓ A PERGUNTA PELO QUE FOI DITO NOS ÁUDIOS (31/10) — a do texto
+      // continua de pé. É o caso em que a tela tem de dizer que procurou o
+      // escrito inteiro e os áudios só no que está nela.
+      if (usouPadrao && colunaDoPadrao === "transcricao" && typeof globalThis !== "undefined"
+          && globalThis.__QUEBRAR_A_BUSCA_NOS_AUDIOS) {
         return resolver({ data: null, count: null,
           error: { code: "57014", message: "canceling statement due to statement timeout" } });
       }
@@ -3337,14 +3362,20 @@ export const supabase = {
       }
       if (termo.length >= 3) {
         const daqui = new Set(minhas.map((c) => String(c.id)));
+        // O QUE FOI ESCRITO E O QUE FOI DITO NOS ÁUDIOS (script 040 da ponte):
+        // a mensagem casa pelo texto ou pela transcrição, e vale a mais
+        // recente da conversa — escrita ou falada —, como na função do banco.
         const recentes = TABELAS.mensagens
-          .filter((m) => daqui.has(String(m.conversa_id)) && semAcento(m.texto).includes(termo))
-          .sort((a, b) => String(b.criado_em || "").localeCompare(String(a.criado_em || "")));
-        for (const m of recentes) {
+          .filter((m) => daqui.has(String(m.conversa_id)))
+          .map((m) => (semAcento(m.texto).includes(termo) ? { m, motivo: "mensagem", trecho: m.texto }
+            : (m.transcricao && semAcento(m.transcricao).includes(termo) ? { m, motivo: "audio", trecho: m.transcricao } : null)))
+          .filter(Boolean)
+          .sort((a, b) => String(b.m.criado_em || "").localeCompare(String(a.m.criado_em || "")));
+        for (const { m, motivo, trecho } of recentes) {
           const k = String(m.conversa_id);
           if (saida.has(k)) continue;
           const c = minhas.find((x) => String(x.id) === k);
-          saida.set(k, { id: m.conversa_id, motivo: "mensagem", trecho: m.texto,
+          saida.set(k, { id: m.conversa_id, motivo, trecho,
                          ultima_atividade: c && c.ultima_atividade,
                          mensagem_id: String(m.id), mensagem_em: m.criado_em });
         }

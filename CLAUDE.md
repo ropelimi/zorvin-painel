@@ -1288,7 +1288,7 @@ Prova: `o-audio-em-2x`, 15 conferências, **7 sabotagens de verdade e 7 pegas**
 carregamento tiradas juntas). Os áudios são plantados pela prova
 (`__SEMENTE`): a bancada não tem nenhum.
 
-### A transcrição, ao clicar (05/10)
+### A transcrição, ao clicar (05/10) — e sozinha desde 31/10
 
 Pedido da equipe junto com o 2x. Decidido com o Rodrigo: pelo **Groq**
 (Whisper, ~US$ 0,04 por hora de áudio), **ao clicar** no botão
@@ -1315,6 +1315,66 @@ interrupção e não vi; **a integração contínua viu**, nas duas conferência
 cena do erro. A régua escrita em 30/09 vale também para o commit, e não só
 para a cópia de referência: **depois de uma rodada de sabotagens
 interrompida, rode a prova inteira ANTES de fazer o commit.**
+
+### E sozinha, assim que chega (31/10)
+
+Pedido do Rodrigo, da lista de recomendações: *"Vamos trabalhar nas suas
+recomendações! Pode mandar bala na primeira"*. Desde 31/10 **a ponte
+transcreve sozinha todo áudio que chega** (os dos últimos sete dias, de 20 em
+20 segundos — ver o CLAUDE.md dela). A medição que derrubou o "só ao clicar"
+de 05/10: nos 14 dias até 31/10, 161 dos 388 áudios de clientes (41%) já
+tinham sido transcritos no clique, e transcrever todos custava uns US$ 0,10.
+
+O painel acompanha em três lugares:
+
+| onde | o que mudou |
+|---|---|
+| a bolha do áudio | o texto aparece **sozinho**, pelo tempo real: o tratador de UPDATE de `mensagens` passou a copiar `transcricao` (e `transcrita_em`). Sem isso, o texto só apareceria para quem reabrisse a conversa, e o botão continuaria oferecendo pagar de novo |
+| a lupa da conversa | procura também no que foi **dito** (`casaNaMensagem`, em `buscaNaConversa.js`): no banco, numa segunda pergunta ao mesmo tempo (`imatch` em `transcricao`), e na tela |
+| a busca da lista | a conversa achada por um áudio (o motivo `'audio'` do script 040 da ponte) mostra o trecho com **🎤** no lugar do 💬, e abre no áudio |
+
+**O botão "Transcrever" continua**, para o áudio de antes da janela da rodada
+e para quando ela não conseguiu. O clique durante a rodada não paga duas
+vezes: a ponte junta os dois pedidos.
+
+**Duas perguntas, e não um `or`.** O padrão sem acento tem colchetes, barras e
+vírgulas, que dentro de um `or` do PostgREST precisariam de aspas e escapes —
+e um escape errado ali seria uma busca que não acha nada, calada. As duas
+respostas viram uma lista só (`juntarAchados`), sem repetir a mesma mensagem.
+
+**Três desfechos da parte dos áudios**, e cada um diz o seu:
+
+| o banco | a lupa |
+|---|---|
+| sem a coluna (o 015 não rodou) | procura só no texto, **calada** — a coluna que falta não é uma falha (`TRANSCRICAO_NO_BANCO`, pela régua de `TEM_NOME_DO_CADASTRO`) |
+| a pergunta dos áudios falha | `data-busca-sem-os-audios`: o escrito foi procurado inteiro, e os áudios só na tela — "procurei só na tela" seria mentira pela metade |
+| a do texto falha | a frase de sempre (`data-busca-so-na-tela`) |
+
+**No ícone da lista, o 🎤 sai do banco, e não da tela.** O trecho guardado em
+`achadosMsg` já leva o 💬 ou o 🎤, e a linha o mostra como veio: o 💬 escrito
+na hora de desenhar daria "💬 🎤 …". **Sem o 040 da ponte, nada muda**: o banco
+nunca diz `'audio'`.
+
+Prova: `a-transcricao-chega-sozinha`, 32 conferências, com uma conversa
+plantada — um áudio de 400 dias atrás já transcrito, 130 mensagens depois dele
+(a conversa abre com as 120 últimas, então ele fica fora da tela), uma
+mensagem escrita e um áudio novo sem texto. A bancada ganhou
+`__TRANSCRICAO_PELA_PONTE` (a ponte grava a transcrição, com o UPDATE do tempo
+real), a busca nos áudios na `buscar_conversas` de mentira e
+`__QUEBRAR_A_BUSCA_NOS_AUDIOS` (só a pergunta pela transcrição falha).
+
+**12 sabotagens e 12 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma:
+
+- **a bolha:** o tempo real sem copiar a transcrição;
+- **a lupa:** sem a pergunta pela transcrição (7 reprovações); a tela sem a
+  transcrição; o contorno da bolha só pelo texto; a coluna que falta virando
+  falha; a falha dos áudios calada; a falha dos áudios virando falha inteira
+  ("procurei só na tela"); sem procurar na tela quando só os áudios falham;
+- **a lista:** o motivo `'audio'` tratado como nome; o áudio com o 💬; o 💬
+  junto do 🎤;
+- **e a bancada** sem o áudio na busca de mentira: sem ele, as cenas da lista
+  não mediriam nada.
 
 ## As respostas rápidas com o nome do cliente (08/10)
 
@@ -1818,9 +1878,9 @@ isso."*
 
 | onde | o que procura | quem responde |
 |---|---|---|
-| a lupa da lista | o nome (os três), o número, o texto das mensagens e o cadastro do Vantoro | o banco, por dois caminhos ao mesmo tempo: `buscar_conversas` (sem acento, até 80 conversas) e os nomes e o número em `contatos`; o Vantoro chega depois |
+| a lupa da lista | o nome (os três), o número, o texto das mensagens, o que foi dito nos áudios (desde 31/10) e o cadastro do Vantoro | o banco, por dois caminhos ao mesmo tempo: `buscar_conversas` (sem acento, até 80 conversas) e os nomes e o número em `contatos`; o Vantoro chega depois |
 | "Nova conversa" | a agenda de contatos | `contatos`, pela coluna `busca` (sem acento) e pelo número |
-| a lupa da conversa aberta | o texto das mensagens daquela conversa | o banco, até 500 achados |
+| a lupa da conversa aberta | o texto das mensagens daquela conversa, e o que foi dito nos áudios (desde 31/10) | o banco, até 500 achados |
 | os menus | etiquetas, pessoas, rápidas… | a tela (`pesquisaNosMenus.js`, 23/10) |
 
 ### O que estava errado, medido antes de mexer
