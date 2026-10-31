@@ -55,3 +55,45 @@ export function casaSemAcento(texto, termo) {
   if (!base) return false;
   return chaveDaPesquisa(texto).includes(base);
 }
+
+// ============================================================
+//  O QUE FOI DITO NOS ÁUDIOS (31/10)
+//
+//  Desde 31/10 a ponte transcreve sozinha todo áudio que chega, e o texto mora
+//  em `mensagens.transcricao` (script 015). A lupa da conversa procura nas
+//  duas colunas: o que foi escrito e o que foi dito. Quem procura
+//  "comprovante" e não acha o áudio em que o cliente disse "mandei o
+//  comprovante" conclui que ele não mandou.
+// ============================================================
+
+/** Esta mensagem casa com o que foi escrito na lupa — pelo texto, ou pela
+ *  transcrição, se for um áudio? A conta da tela, para o contorno da bolha e
+ *  para o que mora só nela. */
+export function casaNaMensagem(m, termo) {
+  if (!m) return false;
+  return casaSemAcento(m.texto, termo) || casaSemAcento(m.transcricao, termo);
+}
+
+/** O banco sem a coluna da transcrição (o script 015 não rodou) responde
+ *  42703 ao filtro por ela. É a falta da COLUNA, e não uma falha: a lupa
+ *  procura só no texto, calada, como antes da transcrição existir. */
+export function semAColunaDaTranscricao(erro) {
+  if (!erro) return false;
+  const codigo = String(erro.code || "");
+  return (codigo === "42703" || codigo === "PGRST204") && /transcricao/.test(String(erro.message || ""));
+}
+
+/** As achadas das duas perguntas (o texto e a transcrição), numa lista só,
+ *  sem repetir a mesma mensagem e das mais recentes para as mais antigas —
+ *  a ordem em que o banco respondeu cada uma. `{ id, em }`. */
+export function juntarAchados(listas) {
+  const porId = new Map();
+  for (const lista of listas) {
+    for (const m of lista || []) {
+      const id = String(m.id);
+      if (!porId.has(id)) porId.set(id, { id, em: m.criado_em });
+    }
+  }
+  return [...porId.values()].sort((a, b) => (new Date(b.em) - new Date(a.em))
+    || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+}

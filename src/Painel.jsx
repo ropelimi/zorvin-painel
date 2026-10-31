@@ -67,7 +67,8 @@ import { pareceAcessoVencido, pedirConferenciaDaSessao, marcarSaidaPedida, foiSa
 import { rascunhosDe, guardarRascunho } from "./rascunhos.js";
 import CampoDePesquisa, { ComPesquisa } from "./CampoDePesquisa.jsx";
 import { PESQUISA_A_PARTIR_DE, casaComAPesquisa, nadaComAPesquisa, chaveDaPesquisa } from "./pesquisaNosMenus.js";
-import { padraoSemAcento, casaSemAcento, TETO_DA_BUSCA_NA_CONVERSA } from "./buscaNaConversa.js";
+import { padraoSemAcento, casaNaMensagem, semAColunaDaTranscricao, juntarAchados,
+         TETO_DA_BUSCA_NA_CONVERSA } from "./buscaNaConversa.js";
 import { tipoDoAnexo, caminhoDoAnexoDaRapida, semAColunaDoAnexo, nomeDoAnexo, anexoDoDeposito,
          CACHE_DO_ANEXO_DA_RAPIDA } from "./rapidasComAnexo.js";
 
@@ -492,6 +493,11 @@ let TEM_CONTAGEM_NO_BANCO = true;
 // estado, para a descoberta não mudar a função que lê a lista e pedir uma
 // segunda leitura (a lição de 25/09, em `ordenarPelaEspera`).
 let SITUACAO_NO_BANCO = null;
+// A TRANSCRIÇÃO DOS ÁUDIOS (script 015 da ponte) — a coluna existe? A lupa
+// da conversa procura nela desde 31/10; num banco sem ela, o primeiro "não
+// existe" a faz procurar só no texto, calada, e não se pergunta de novo
+// nesta sessão (a régua de `TEM_NOME_DO_CADASTRO`).
+let TRANSCRICAO_NO_BANCO = true;
 
 // AVISOS DE FALHA JÁ DISPENSADOS, GUARDADOS AQUI NO APARELHO.
 //
@@ -2438,16 +2444,19 @@ function BolhaAudio({ C, saida, url, m }) {
   useEffect(aplicar, [aplicar, url]);
 
   // ------------------------------------------------------------
-  //  A TRANSCRIÇÃO, AO CLICAR (pedido da equipe, 02/10)
+  //  A TRANSCRIÇÃO (pedido da equipe, 02/10) — e, desde 31/10, SOZINHA
   //
-  //  Quem fala com o Groq é a PONTE (a chave mora lá); a bolha só pede. E só
-  //  AO CLICAR: transcrever todo áudio que chega pagaria pelos que ninguém
-  //  precisou ler.
+  //  Quem fala com o Groq é a PONTE (a chave mora lá); a bolha só pede. Até
+  //  31/10 era só ao clicar; desde então a ponte transcreve sozinha todo áudio
+  //  que chega (ver o CLAUDE.md dela), e o texto entra nesta bolha pelo tempo
+  //  real, segundos depois do áudio — o tratador de UPDATE de `mensagens`
+  //  copia `transcricao`. O botão continua: para o áudio de antes da janela da
+  //  rodada (sete dias), e para quando a rodada não conseguiu.
   //
-  //  O texto que a ponte guardou volta em `m.transcricao` na próxima leitura
-  //  da conversa, e aí aparece direto, sem botão — a equipe inteira lê o que
-  //  uma pessoa transcreveu, sem pagar de novo. O estado daqui é só o desta
-  //  sessão, para o texto aparecer na hora do clique.
+  //  O texto que a ponte guardou volta em `m.transcricao`, e aí aparece direto,
+  //  sem botão — a equipe inteira lê o que foi transcrito, sem pagar de novo.
+  //  O estado daqui é só o desta sessão, para o texto aparecer na hora do
+  //  clique.
   //
   //  O ERRO É DITO NA PRÓPRIA BOLHA, com a frase da ponte (que diz o que
   //  fazer: a chave que falta, o limite do Groq), e o botão continua lá para
@@ -2608,7 +2617,9 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
       !anterior || new Date(anterior.criado_em).toDateString() !== new Date(m.criado_em).toDateString();
     const mesmoRemetente = anterior && !novoDia && anterior.origem === m.origem;
     // O CONTORNO DA BOLHA ACHADA, pela mesma conta sem acento da busca (26/10).
-    const casa = buscaAberta && casaSemAcento(m.texto, buscaConversa);
+    // E PELO QUE FOI DITO, se for um áudio (31/10): a transcrição conta como
+    // o texto dele.
+    const casa = buscaAberta && casaNaMensagem(m, buscaConversa);
     // Mostra o nome de quem enviou: sempre nas ENVIADAS (qual
     // atendente respondeu) e também nas RECEBIDAS quando é um GRUPO
     // (para saber qual participante escreveu, como no WhatsApp).
@@ -9024,7 +9035,14 @@ export default function Painel({ sessao }) {
               midia_url: "midia_url" in atual ? (atual.midia_url ?? m.midia_url) : m.midia_url,
               midia_mime: "midia_mime" in atual ? (atual.midia_mime ?? m.midia_mime) : m.midia_mime,
               midia_segundos: "midia_segundos" in atual
-                ? (atual.midia_segundos ?? m.midia_segundos) : m.midia_segundos }
+                ? (atual.midia_segundos ?? m.midia_segundos) : m.midia_segundos,
+              // A TRANSCRIÇÃO QUE A PONTE GRAVOU SOZINHA (31/10). Ela chega
+              // segundos depois do áudio, por esta mesma porta, e sem copiá-la
+              // aqui o texto só apareceria na bolha de quem reabrisse a
+              // conversa — com ela à vista do lado, o botão "Transcrever"
+              // continuaria oferecendo pagar de novo pelo que já foi pago.
+              transcricao: "transcricao" in atual ? (atual.transcricao ?? m.transcricao) : m.transcricao,
+              transcrita_em: "transcrita_em" in atual ? (atual.transcrita_em ?? m.transcrita_em) : m.transcrita_em }
           : m)));
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversas" }, (payload) => {
@@ -10333,27 +10351,48 @@ export default function Painel({ sessao }) {
     if (!buscaAberta || !conversaId || termo.length < 2) { setAchadosNaConversa(null); return; }
     let valeu = true;
     const t = setTimeout(async () => {
-      let r;
-      try {
-        // AS MAIS RECENTES, quando passam do teto (auditoria de 28/10). Em
-        // ordem crescente vinham as 500 MAIS ANTIGAS: o salto "até a mais
-        // recente" caía na 500ª, e as novas sumiam da navegação. A ordem da
-        // tela é refeita em `achadosDaBusca`.
-        r = await supabase.from("mensagens").select("id, criado_em")
-          .eq("conversa_id", conversaId)
-          .imatch("texto", padraoSemAcento(termo))
-          .order("criado_em", { ascending: false }).order("id", { ascending: false })
-          .limit(TETO_DA_BUSCA_NA_CONVERSA);
-      } catch (e) { r = { data: null, error: e }; }
+      // AS MAIS RECENTES, quando passam do teto (auditoria de 28/10). Em
+      // ordem crescente vinham as 500 MAIS ANTIGAS: o salto "até a mais
+      // recente" caía na 500ª, e as novas sumiam da navegação. A ordem da
+      // tela é refeita em `achadosDaBusca`.
+      //
+      // O QUE FOI ESCRITO E O QUE FOI DITO NOS ÁUDIOS (31/10), em duas
+      // perguntas ao mesmo tempo, e não num `or`: o padrão sem acento tem
+      // colchetes, barras e vírgulas, que dentro de um `or` do PostgREST
+      // precisariam de aspas e escapes — e um escape errado ali seria uma
+      // busca que não acha nada, calada.
+      const padrao = padraoSemAcento(termo);
+      const pedir = async (coluna) => {
+        try {
+          return await supabase.from("mensagens").select("id, criado_em")
+            .eq("conversa_id", conversaId)
+            .imatch(coluna, padrao)
+            .order("criado_em", { ascending: false }).order("id", { ascending: false })
+            .limit(TETO_DA_BUSCA_NA_CONVERSA);
+        } catch (e) { return { data: null, error: e }; }
+      };
+      const [escrito, falado] = await Promise.all([
+        pedir("texto"),
+        TRANSCRICAO_NO_BANCO ? pedir("transcricao") : Promise.resolve({ data: [], error: null }),
+      ]);
       if (!valeu) return;
+      let erroDoAudio = falado.error || null;
+      if (erroDoAudio && semAColunaDaTranscricao(erroDoAudio)) { TRANSCRICAO_NO_BANCO = false; erroDoAudio = null; }
       setAchadosNaConversa({
         conversa: conversaId, termo,
-        lista: r.error ? [] : (r.data || []).map((m) => ({ id: String(m.id), em: m.criado_em })),
+        lista: escrito.error ? [] : juntarAchados([escrito.data, erroDoAudio ? [] : falado.data]),
         // A FALHA É DITA, com o código, e a busca continua pelo que está na
         // tela — "0" calado seria o defeito de antes com a frase de agora.
-        erro: r.error ? comOCodigo("Procurei só no que está na tela: o histórico inteiro não respondeu agora.",
-                                   r.error, "busca na conversa") : "",
-        cheio: !r.error && (r.data || []).length >= TETO_DA_BUSCA_NA_CONVERSA,
+        erro: escrito.error ? comOCodigo("Procurei só no que está na tela: o histórico inteiro não respondeu agora.",
+                                         escrito.error, "busca na conversa") : "",
+        // E A DOS ÁUDIOS TAMBÉM. O texto foi procurado inteiro, e a frase diz
+        // isso: "procurei só na tela" seria mentira pela metade. Os áudios que
+        // estão na tela continuam sendo procurados nela (`achadosDaBusca`).
+        erroDoAudio: !escrito.error && erroDoAudio
+          ? comOCodigo("Procurei no que foi escrito, mas não no que foi dito nos áudios fora da tela: essa parte não respondeu agora.",
+                       erroDoAudio, "busca nos áudios") : "",
+        cheio: !escrito.error && ((escrito.data || []).length >= TETO_DA_BUSCA_NA_CONVERSA
+          || (!erroDoAudio && (falado.data || []).length >= TETO_DA_BUSCA_NA_CONVERSA)),
       });
     }, 300);
     return () => { valeu = false; clearTimeout(t); };
@@ -13028,7 +13067,7 @@ export default function Painel({ sessao }) {
   // Agora a busca é uma CONSULTA: procura os contatos no banco pelas três
   // colunas de nome e pelo número, procura o termo dentro das mensagens, e
   // traz as conversas que casaram mesmo que elas não estivessem na lista.
-  const [achadosMsg, setAchadosMsg] = useState({});   // conversa_id → trecho
+  const [achadosMsg, setAchadosMsg] = useState({});   // conversa_id → trecho, com o 💬 ou o 🎤 na frente
   const [achadosCad, setAchadosCad] = useState({});   // conversa_id → motivo
   const [achadosNome, setAchadosNome] = useState({}); // conversa_id → nome que casou
   const [extras, setExtras] = useState([]);           // conversas que a lista não tinha
@@ -13479,8 +13518,12 @@ export default function Painel({ sessao }) {
           const ids = [];
           for (const a of achados || []) {
             ids.push(a.id);
-            if (a.motivo === "mensagem") {
-              porMsg[a.id] = a.trecho || "";
+            // O QUE FOI DITO NUM ÁUDIO (script 040 da ponte) vem com o motivo
+            // 'audio' e o trecho falado: o mesmo caminho da mensagem escrita,
+            // com o 🎤 no lugar do 💬 — quem lê o trecho precisa saber que ele
+            // foi DITO, e que ao abrir vai cair num áudio, e não num texto.
+            if (a.motivo === "mensagem" || a.motivo === "audio") {
+              porMsg[a.id] = a.trecho ? `${a.motivo === "audio" ? "🎤" : "💬"} ${a.trecho}` : "";
               // `mensagem_em` pode não vir: é uma coluna que o SQL
               // `2026-08-busca-ir-para-a-mensagem.sql` acrescenta. Sem ela a
               // conversa abre no fim, como abria antes — e não quebra.
@@ -13624,7 +13667,7 @@ export default function Painel({ sessao }) {
         // falha encheria a tela de erro a cada tecla.
         if (error && !foiAbortada(error)) { falhouMensagem = true; contarFalha("texto das mensagens", error); }
         (data || []).forEach((m) => {
-          if (!porMsg[m.conversa_id]) porMsg[m.conversa_id] = m.texto || "";
+          if (!porMsg[m.conversa_id]) porMsg[m.conversa_id] = m.texto ? `💬 ${m.texto}` : "";
         });
         // AS MIL MENSAGENS CHEIAS: o mesmo aviso do teto (26/10).
         if ((data || []).length >= 1000) setCorteDaBusca(true);
@@ -14206,7 +14249,14 @@ export default function Painel({ sessao }) {
     const porId = new Map();
     if (pertoDoBanco) for (const a of respostaDoBanco.lista) porId.set(a.id, a);
     for (const m of mensagens) {
-      if ((pertoDoBanco && ehDeMensagens(m)) || !casaSemAcento(m.texto, termoDaConversa)) continue;
+      // O QUE MORA EM `mensagens` o banco já respondeu — o escrito e o dito
+      // nos áudios. Se só a parte dos áudios falhou, os áudios da tela ainda
+      // são procurados aqui, pela transcrição.
+      const doBanco = pertoDoBanco && ehDeMensagens(m);
+      if (doBanco && !respostaDoBanco.erroDoAudio) continue;
+      const casa = doBanco ? casaNaMensagem({ transcricao: m.transcricao }, termoDaConversa)
+                           : casaNaMensagem(m, termoDaConversa);
+      if (!casa) continue;
       porId.set(String(m.id), { id: String(m.id), em: m.criado_em });
     }
     return [...porId.values()].sort((a, b) => (new Date(a.em) - new Date(b.em))
@@ -16854,7 +16904,7 @@ export default function Painel({ sessao }) {
                    !nomesDoContato(c.contato).some((n) => String(n || "").toLowerCase().includes(busca.trim().toLowerCase())) && (
                     <div style={{ marginTop: 3, fontSize: 11.5, color: C.verdeTexto, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 260 }}>
                       {achadosMsg[c.id]
-                        ? '💬 ' + achadosMsg[c.id]
+                        ? achadosMsg[c.id]
                         : '🗂 ' + achadosCad[c.id]}
                     </div>
                   )}
@@ -17674,6 +17724,11 @@ export default function Painel({ sessao }) {
                 {respostaDoBanco && respostaDoBanco.erro && (
                   <div data-busca-so-na-tela role="alert" style={{ fontSize: 12, color: C.textSecondary, lineHeight: 1.45, padding: "6px 4px 0" }}>
                     {respostaDoBanco.erro}
+                  </div>
+                )}
+                {respostaDoBanco && respostaDoBanco.erroDoAudio && (
+                  <div data-busca-sem-os-audios role="alert" style={{ fontSize: 12, color: C.textSecondary, lineHeight: 1.45, padding: "6px 4px 0" }}>
+                    {respostaDoBanco.erroDoAudio}
                   </div>
                 )}
               </div>
