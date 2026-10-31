@@ -1363,6 +1363,19 @@ mensagem escrita e um áudio novo sem texto. A bancada ganhou
 real), a busca nos áudios na `buscar_conversas` de mentira e
 `__QUEBRAR_A_BUSCA_NOS_AUDIOS` (só a pergunta pela transcrição falha).
 
+**12 sabotagens e 12 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma:
+
+- **a bolha:** o tempo real sem copiar a transcrição;
+- **a lupa:** sem a pergunta pela transcrição (7 reprovações); a tela sem a
+  transcrição; o contorno da bolha só pelo texto; a coluna que falta virando
+  falha; a falha dos áudios calada; a falha dos áudios virando falha inteira
+  ("procurei só na tela"); sem procurar na tela quando só os áudios falham;
+- **a lista:** o motivo `'audio'` tratado como nome; o áudio com o 💬; o 💬
+  junto do 🎤;
+- **e a bancada** sem o áudio na busca de mentira: sem ele, as cenas da lista
+  não mediriam nada.
+
 ## As respostas rápidas com o nome do cliente (08/10)
 
 Pedido do Rodrigo, escolhido da lista de ideias de 08/10: a resposta pronta
