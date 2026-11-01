@@ -1,5 +1,5 @@
-import React, { useRef, useState } from "react";
-import { CircleCheck, ListChecks, Loader2, X } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { CircleCheck, ListChecks, Loader2, Sparkles, X } from "lucide-react";
 import { NOME_DA_SITUACAO } from "./abasDaSituacao.js";
 
 // ============================================================
@@ -46,6 +46,34 @@ import { NOME_DA_SITUACAO } from "./abasDaSituacao.js";
 //  A janela diz o protocolo que está sendo fechado e o que acontece se o
 //  cliente escrever de novo — sem isso, "finalizar" se leria como "arquivar",
 //  e a pessoa hesitaria em fechar uma conversa que talvez volte.
+//
+//  ------------------------------------------------------------
+//  A IA SUGERE O ASSUNTO (01/11)
+//
+//  Recomendação nº 5 de 31/10: "A lista já abre com o assunto provável
+//  marcado, e a pessoa só confere." Quem sugere é a ponte
+//  (`POST /copiloto/assunto`), pela função `sugerir` que o painel passa; sem
+//  ela (a ponte de antes, a instalação sem a chave, o lote da faxina), a
+//  janela é a de sempre.
+//
+//  TRÊS REGRAS, e cada uma tem prova:
+//
+//    - SÓ MARCA SOZINHA SE A PESSOA AINDA NÃO MEXEU na lista. Quem já começou
+//      a marcar recebe a sugestão como DICA, com um botão: tirar ou trocar o
+//      que ela marcou seria a tela decidindo por cima de quem está decidindo;
+//    - NADA É GRAVADO SEM O CLIQUE DA PESSOA. A marcação obrigatória de cima
+//      continua valendo: a sugestão só adianta o gesto, e o botão continua
+//      sendo o de sempre;
+//    - O QUE A IA SUGERIU VAI JUNTO DO CLIQUE (`sugestao_ia`, script 042 da
+//      ponte), com `marcou` dizendo se a janela marcou sozinha. É o que dá
+//      para medir o acerto depois: sem isso, uma sugestão que erra muito,
+//      confirmada por quem conferiu com pressa, viraria o assunto errado no
+//      relatório sem ninguém saber.
+//
+//  A SUGESTÃO É CONFERIDA CONTRA A LISTA DESTA JANELA: o id que não está entre
+//  os ativos dela não é marcado. E a falha é dita, sem cor de erro: o Finalizar
+//  funciona sem a IA, mas uma janela que simplesmente não sugere se leria como
+//  "a IA não soube" — a ausência no lugar da falha.
 // ============================================================
 
 // O TETO DO TEXTO, o mesmo do banco (check de 500 no script 009). Aqui ele
@@ -63,12 +91,85 @@ const TETO_DA_DESCRICAO = 500;
 //  quantas, e a frase diz que nenhum cliente recebe mensagem.
 // ------------------------------------------------------------
 export function JaTratei({ C, estreito, nome, dias, esperando = true, finalizar = false, protocolo = null,
-                           assuntos, erroDosAssuntos = "", ocupado, erro, aoConfirmar, aoFechar, lote = 0 }) {
+                           assuntos, erroDosAssuntos = "", ocupado, erro, aoConfirmar, aoFechar, lote = 0,
+                           sugerir = null }) {
   const emLote = finalizar && lote > 1;
   const [escolhidos, setEscolhidos] = useState([]);
   const [descricao, setDescricao] = useState("");
 
   const ativos = (assuntos || []).filter((a) => a.ativo);
+
+  // ---- A SUGESTÃO DA IA (01/11) — ver o bloco do alto ----
+  //
+  // `sugestao`: null (não foi pedida), `{ fase: "pedindo" }`,
+  // `{ fase: "pronta", ids, motivo }` ou `{ fase: "erro", erro }`.
+  const [sugestao, setSugestao] = useState(null);
+  const [marcouSozinha, setMarcouSozinha] = useState(false);
+  // MEXEU fica num espelho, além do estado: a resposta da IA pode chegar no
+  // mesmo instante do clique, e é o espelho que o efeito de marcar lê sem
+  // esperar o desenho seguinte. O estado é só para a frase.
+  const mexeu = useRef(false);
+  const [tocou, setTocou] = useState(false);
+  const aplicada = useRef(false);
+  const pediu = useRef(false);
+  const sugerirRef = useRef(sugerir);
+  sugerirRef.current = sugerir;
+  // A MARCA DE "A JANELA ESTÁ ABERTA" RELIGA A CADA MONTAGEM: em
+  // desenvolvimento o React monta, desmonta e monta de novo, e os espelhos
+  // sobrevivem. Só desligando na saída, a resposta que chega depois da
+  // segunda montagem seria jogada fora (a lição da faxina, de 01/11).
+  const aberta = useRef(true);
+  useEffect(() => {
+    aberta.current = true;
+    return () => { aberta.current = false; };
+  }, []);
+
+  const podeSugerir = typeof sugerir === "function" && !emLote;
+  useEffect(() => {
+    if (!podeSugerir || pediu.current) return;
+    pediu.current = true;
+    setSugestao({ fase: "pedindo" });
+    let promessa;
+    try { promessa = Promise.resolve(sugerirRef.current()); } catch (e) { promessa = Promise.reject(e); }
+    promessa.then(
+      (r) => {
+        if (!aberta.current) return;
+        const ids = (Array.isArray(r && r.assuntos) ? r.assuntos : [])
+          .map((a) => a && a.id).filter((id) => id != null);
+        setSugestao({ fase: "pronta", ids, motivo: String((r && r.motivo) || "").trim() });
+      },
+      (e) => {
+        if (!aberta.current) return;
+        setSugestao({ fase: "erro", erro: String((e && e.message) || "a ponte não respondeu").trim() });
+      });
+  }, [podeSugerir]);
+
+  // O QUE DÁ PARA MARCAR: os ids sugeridos que estão entre os ativos desta
+  // janela, na ordem da IA. A lista pode chegar depois da sugestão (ela é
+  // relida ao abrir), e por isso a conta é refeita a cada desenho.
+  const sugeridos = sugestao && sugestao.fase === "pronta"
+    ? sugestao.ids.filter((id, i, v) => v.indexOf(id) === i && ativos.some((a) => a.id === id)) : [];
+  const chaveDosSugeridos = sugeridos.join("|");
+  useEffect(() => {
+    if (!chaveDosSugeridos || aplicada.current || mexeu.current) return;
+    aplicada.current = true;
+    setEscolhidos([...sugeridos]);
+    setMarcouSozinha(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chaveDosSugeridos]);
+  const nomesSugeridos = sugeridos.map((id) => (ativos.find((a) => a.id === id) || {}).nome).filter(Boolean);
+  const faltaMarcarSugerido = sugeridos.some((id) => !escolhidos.includes(id));
+  // O QUE VAI AO BANCO JUNTO DO CLIQUE: o que a IA sugeriu, como ela sugeriu
+  // (inclusive a lista vazia: "não sei" também se mede), e se a janela marcou
+  // sozinha. Sem resposta da IA até o clique, nada.
+  const sugestaoParaGravar = sugestao && sugestao.fase === "pronta"
+    ? { assuntos: sugestao.ids, marcou: marcouSozinha } : null;
+
+  function usarSugestao() {
+    mexeu.current = true;
+    setTocou(true);
+    setEscolhidos((v) => [...v, ...sugeridos.filter((id) => !v.includes(id))]);
+  }
   const nenhum = escolhidos.length === 0;
   // OS ASSUNTOS MARCADOS QUE PEDEM TEXTO — pelos nomes, para a frase dizer
   // qual deles está pedindo ("Descreva o que foi tratado em OUTROS").
@@ -77,6 +178,8 @@ export function JaTratei({ C, estreito, nome, dias, esperando = true, finalizar 
   const bloqueado = nenhum || faltaTexto;
 
   function alternar(id) {
+    mexeu.current = true;
+    setTocou(true);
     setEscolhidos((v) => (v.includes(id) ? v.filter((x) => x !== id) : [...v, id]));
   }
 
@@ -139,6 +242,50 @@ export function JaTratei({ C, estreito, nome, dias, esperando = true, finalizar 
             : <>Esta conversa não está esperando resposta: o “Já tratei” só <b>registra</b> o que foi tratado.</>}
         </div>
 
+        {/* A SUGESTÃO DA IA, entre a frase e a lista: é sobre a lista. Some
+            sem lista (não há o que sugerir) e no lote. */}
+        {sugestao && ativos.length > 0 && (() => {
+          const estado = sugestao.fase === "pedindo" ? "pedindo"
+            : sugestao.fase === "erro" ? "erro"
+            : !sugeridos.length ? "nenhum"
+            : marcouSozinha ? "marcou" : "dica";
+          const motivo = sugestao.fase === "pronta" ? sugestao.motivo : "";
+          return (
+            <div data-sugestao-do-assunto={estado} role="status" aria-live="polite"
+                 style={{ margin: "0 16px 10px", padding: "8px 10px", borderRadius: 8, fontSize: 12.5,
+                          lineHeight: 1.45, border: `1px solid ${C.divider}`,
+                          color: estado === "erro" ? (C.ambarTexto || C.textSecondary) : C.textSecondary,
+                          display: "flex", gap: 8, alignItems: "flex-start" }}>
+              {estado === "pedindo"
+                ? <Loader2 size={14} className="zv-girando" style={{ flexShrink: 0, marginTop: 2 }} />
+                : <Sparkles size={14} color={estado === "erro" ? undefined : C.green} style={{ flexShrink: 0, marginTop: 2 }} />}
+              <div style={{ minWidth: 0, flex: 1 }}>
+                {estado === "pedindo" && <>A IA está lendo a conversa para sugerir o assunto. Você pode marcar enquanto isso.</>}
+                {estado === "erro" && <><b>Sem a sugestão da IA desta vez:</b> {sugestao.erro} Marque o assunto à mão.</>}
+                {estado === "nenhum" && <>A IA não arriscou um assunto desta vez. Marque à mão.</>}
+                {(estado === "marcou" || estado === "dica") && (
+                  <>
+                    <b>Sugestão da IA:</b>{" "}<span data-sugestao-nomes>{nomesSugeridos.join(" e ")}</span>.
+                    {estado === "marcou" && !tocou && <> Já veio marcado — confira antes de {finalizar ? "finalizar" : "confirmar"}.</>}
+                  </>
+                )}
+                {!!motivo && estado !== "pedindo" && estado !== "erro" && (
+                  <div data-sugestao-motivo style={{ fontSize: 12, marginTop: 2, fontStyle: "italic" }}>{motivo}</div>
+                )}
+                {(estado === "marcou" || estado === "dica") && faltaMarcarSugerido && (
+                  <button type="button" onClick={usarSugestao} data-usar-sugestao
+                          style={{ marginTop: 6, border: `1px solid ${C.green}`, background: "transparent", color: C.green,
+                                   borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer",
+                                   minHeight: estreito ? 40 : undefined }}
+                          title="Marca o que a IA sugeriu, sem desmarcar o que você já marcou">
+                    Marcar a sugestão
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         <div style={{ overflowY: "auto", padding: "0 16px 4px" }}>
           {ativos.length === 0 && !!erroDosAssuntos && (
             <div data-erro-dos-assuntos style={{ fontSize: 13, color: C.erroTexto, paddingBottom: 12 }}>
@@ -161,7 +308,14 @@ export function JaTratei({ C, estreito, nome, dias, esperando = true, finalizar 
                               background: marcado ? (C.listActive || C.divider) : "transparent" }}>
                 <input type="checkbox" checked={marcado} onChange={() => alternar(a.id)}
                        style={{ width: 17, height: 17, accentColor: C.green, cursor: "pointer" }} />
-                <span style={{ fontSize: 13.5, fontWeight: marcado ? 600 : 400 }}>{a.nome}</span>
+                <span style={{ fontSize: 13.5, fontWeight: marcado ? 600 : 400, flex: 1, minWidth: 0 }}>{a.nome}</span>
+                {sugeridos.includes(a.id) && (
+                  <span data-sugerido-pela-ia title="Sugerido pela IA"
+                        style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, fontWeight: 600,
+                                 color: C.green, flexShrink: 0 }}>
+                    <Sparkles size={11} /> IA
+                  </span>
+                )}
               </label>
             );
           })}
@@ -211,7 +365,7 @@ export function JaTratei({ C, estreito, nome, dias, esperando = true, finalizar 
           {/* O BOTÃO DIZ POR QUE ESTÁ DESLIGADO, no `title` e na frase abaixo.
               Um botão apagado sem explicação faz a pessoa clicar de novo e
               concluir que a tela travou. */}
-          <button onClick={() => aoConfirmar(escolhidos, descricao)} disabled={bloqueado || ocupado}
+          <button onClick={() => aoConfirmar(escolhidos, descricao, sugestaoParaGravar)} disabled={bloqueado || ocupado}
                   data-ja-tratei-confirmar
                   title={nenhum ? "Marque pelo menos um assunto"
                        : faltaTexto ? "Escreva o que foi tratado"
