@@ -13,7 +13,7 @@ import {
   Image as ImageIcon, Video,
   Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote, Volume2,
   ListChecks, Undo2, UserCheck, SquareKanban, BellRing, BellPlus, CircleCheck, RotateCcw,
-  Sparkles, Loader2, Headset, Hourglass
+  Sparkles, Loader2, Headset, Hourglass, Eraser
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
@@ -48,6 +48,8 @@ import PainelNumeros from "./PainelNumeros";
 import Funil from "./Funil";
 import Tarefas from "./Tarefas.jsx";
 import Esperando from "./Esperando.jsx";
+import Faxina from "./Faxina.jsx";
+import { mudouDesdeALista } from "./faxina.js";
 import { RELER_A_CADA_MS as RELER_A_ESPERA_MS, TETO_DAS_ATRASADAS, ESPERA_ANTES_DA_PRIMEIRA_MS, ehParaMim,
          quemAvisarAgora, marcarAvisadas as marcarEsperasAvisadas, chaveDoAviso as chaveDoAvisoDeEspera,
          corteDosTresDias, esperaHaTresDias, rotuloDosMinutos, fraseDoLimite, quantosClientes,
@@ -3629,6 +3631,9 @@ export default function Painel({ sessao }) {
   // ponte não rodou) e `true` tem — OU A PERGUNTA FALHOU por outro motivo, e
   // aí a lista aparece e diz o erro, em vez de sumir por causa de um tropeço.
   const [telaEsperando, setTelaEsperando] = useState(false);
+  // A FAXINA DA FILA (01/11) — ver `Faxina.jsx`. Só existe com o 028 (as
+  // abas) e com o "Finalizar" de pé: é ele que a faxina usa.
+  const [telaFaxina, setTelaFaxina] = useState(false);
   const [temAvisoDeEspera, setTemAvisoDeEspera] = useState(null);
   const temAvisoDeEsperaRef = useRef(null);
   useEffect(() => { temAvisoDeEsperaRef.current = temAvisoDeEspera; }, [temAvisoDeEspera]);
@@ -6459,6 +6464,9 @@ export default function Painel({ sessao }) {
   const nAtrasadas = atrasadas.linhas.length;
   const nEsperando = nSemResposta + nAtrasadas;
   const mostraEsperando = temAvisoDeEspera === true || podeContarAtrasadas;
+  // A FAXINA SÓ COM O 028 E COM O FINALIZAR DE PÉ: sem as abas não há "não
+  // finalizada", e sem os assuntos não há como finalizar.
+  const podeFaxina = temSituacao === true && temTratada === true && temAssuntos === true;
   const erroDaEspera = semResposta.erro || atrasadas.erro;
   const tituloDaEspera = nEsperando
     ? `Esperando resposta — ${[nSemResposta ? `${quantosClientes(nSemResposta)} sem resposta` : "",
@@ -10387,6 +10395,7 @@ export default function Painel({ sessao }) {
       else if (telaFunil) setTelaFunil(false);
       else if (telaTarefas) setTelaTarefas(false);
       else if (telaEsperando) setTelaEsperando(false);
+      else if (telaFaxina) setTelaFaxina(false);
       else if (configAberta) setConfigAberta(false);
       else if (novaConversaAberta) setNovaConversaAberta(false);
       else if (menuConversa) setMenuConversa(null);
@@ -10414,7 +10423,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, pdfAberto, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, telaFunil, menuEtapa, telaTarefas, telaEsperando, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, fichaEmColuna, menuDepartamentos, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada, jaTratei, trateiOcupado, reabrindo, reabrirOcupado, escolhaTelefone]);
+  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, pdfAberto, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, telaFunil, menuEtapa, telaTarefas, telaEsperando, telaFaxina, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, fichaEmColuna, menuDepartamentos, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada, jaTratei, trateiOcupado, reabrindo, reabrirOcupado, escolhaTelefone]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -11365,18 +11374,17 @@ export default function Painel({ sessao }) {
   //  transação com desfazer-na-mão daria um terceiro caminho de falha para
   //  cuidar. A ordem acima é o que torna a falha parcial suportável.
   // ============================================================
-  async function confirmarJaTratei(ids, descricao) {
-    const conv = jaTratei;
-    if (!conv || !ids.length) return;
-    setTrateiOcupado(true); setTrateiErro("");
-
+  // AS LINHAS DE UM "JÁ TRATEI", numa escrita só: o Finalizar da conversa e o
+  // da faxina da fila (01/11) gravam o mesmo registro, e duas montagens
+  // divergiriam no primeiro conserto.
+  function linhasDoTratamento(conv, ids, descricao) {
     // O TEXTO VAI SÓ NA LINHA DO ASSUNTO QUE O PEDE (o OUTROS, script 009).
     // Repeti-lo em ACORDOS e VENDA LN faria o relatório dizer três vezes a
     // mesma coisa sobre três assuntos diferentes. E a chave só entra quando há
     // texto: num banco sem a coluna, mandá-la derrubaria o registro inteiro.
     const pedeTexto = new Set(assuntos.filter((a) => a.pede_descricao).map((a) => a.id));
     const texto = (descricao || "").trim();
-    const linhas = ids.map((assunto_id) => ({
+    return ids.map((assunto_id) => ({
       conversa_id: conv.id,
       assunto_id,
       quem: meuId,
@@ -11385,6 +11393,14 @@ export default function Painel({ sessao }) {
       esperava_desde: conv.esperando_desde || null,
       ...(texto && pedeTexto.has(assunto_id) ? { observacao: texto } : {}),
     }));
+  }
+
+  async function confirmarJaTratei(ids, descricao) {
+    const conv = jaTratei;
+    if (!conv || !ids.length) return;
+    setTrateiOcupado(true); setTrateiErro("");
+
+    const linhas = linhasDoTratamento(conv, ids, descricao);
     // NO 028 O CLIQUE É A FINALIZAÇÃO, e a frase da falha diz isso.
     const finalizando = temSituacao === true && Object.prototype.hasOwnProperty.call(conv, "situacao");
     const reg = await supabase.from("zorvin_tratamentos").insert(linhas).select("id");
@@ -11460,6 +11476,59 @@ export default function Painel({ sessao }) {
     setJaTratei(null);
     releTratadosDoHistorico(conv.id);
     mostrarAviso("Tirada da fila de espera.");
+  }
+
+  // ============================================================
+  //  A FINALIZAÇÃO DA FAXINA DA FILA (01/11) — ver `Faxina.jsx`
+  //
+  //  A mesma gravação do Finalizar da conversa (`linhasDoTratamento`), e o
+  //  banco finaliza na mesma gravação (028). Duas coisas a mais, e as duas
+  //  porque NINGUÉM ESTÁ OLHANDO para a conversa:
+  //
+  //    - ANTES, relê a conversa e confere que nada mudou desde que a lista
+  //      foi lida (`mudouDesdeALista`). O cliente que escreve enquanto a
+  //      pessoa limpa a fila teria a mensagem dele coberta pela finalização —
+  //      o 028 não reabre por mensagem anterior ao clique —, e ninguém leria;
+  //    - DEPOIS, relê a situação, como o Finalizar da conversa: a resposta
+  //      diz o que o banco fez, e não o que se esperava que ele fizesse.
+  //
+  //  Devolve `{ ok, protocolo }`, `{ ok, jaEstava }` ou `{ ok: false, erro }`
+  //  (com `mudou` quando chegou mensagem). Quem diz à pessoa é a faxina,
+  //  linha por linha.
+  // ============================================================
+  async function finalizarDaFaxina(conv, ids, descricao) {
+    const NADA = "Nada foi gravado.";
+    let agora;
+    try {
+      const r = await supabase.from("conversas")
+        .select("id, situacao, protocolo, ultima_atividade, esperando_desde").eq("id", conv.id).maybeSingle();
+      if (r.error) return { ok: false, erro: comOCodigo(`Não consegui conferir a conversa antes de finalizar. ${NADA}`, r.error, "conferir a conversa") };
+      agora = r.data;
+    } catch (e) {
+      return { ok: false, erro: comOCodigo(`Não consegui conferir a conversa antes de finalizar. ${NADA}`, e, "conferir a conversa") };
+    }
+    if (!agora) return { ok: false, erro: `Esta conversa não existe mais — pode ter sido juntada a outra. ${NADA}` };
+    if (agora.situacao === "finalizado") return { ok: true, jaEstava: true };
+    if (mudouDesdeALista(conv, agora)) {
+      return { ok: false, mudou: true,
+               erro: "Chegou mensagem nesta conversa depois que a lista foi lida, e ela não foi finalizada. Abra a conversa e veja antes." };
+    }
+    let reg;
+    try {
+      reg = await supabase.from("zorvin_tratamentos").insert(linhasDoTratamento(agora, ids, descricao)).select("id");
+    } catch (e) {
+      return { ok: false, erro: comOCodigo("Não consegui registrar o que foi tratado. A conversa não foi finalizada.", e, "registrar tratamento") };
+    }
+    if (reg.error) return { ok: false, erro: comOCodigo("Não consegui registrar o que foi tratado. A conversa não foi finalizada.", reg.error, "registrar tratamento") };
+    if (naoGravouNada(reg)) return { ok: false, erro: "O banco não deixou registrar. A conversa não foi finalizada." };
+    const s2 = await lerSituacao(conv.id);
+    if (!s2) return { ok: false, erro: "Registrei o que foi tratado, mas não consegui conferir se a conversa foi finalizada. Atualize a lista." };
+    aplicarSituacao(conv.id, s2);
+    releTratadosDoHistorico(conv.id);
+    if (s2.situacao !== "finalizado") {
+      return { ok: false, erro: "Registrei o que foi tratado, mas o banco não finalizou a conversa. Ela continua onde estava." };
+    }
+    return { ok: true, protocolo: s2.protocolo };
   }
 
   //  DESFAZER — e ele não é luxo.
@@ -16273,6 +16342,13 @@ export default function Painel({ sessao }) {
                       )}
                     </button>
                   )}
+                  {/* A FAXINA DA FILA (01/11): as conversas paradas há mais de
+                      um mês, com o Finalizar na linha. Ver `Faxina.jsx`. */}
+                  {podeFaxina && (
+                    <button data-abrir-faxina onClick={() => { setMenuTopoAberto(false); setTelaFaxina(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}>
+                      <Eraser size={17} color={C.textSecondary} /> Faxina da fila
+                    </button>
+                  )}
                   <button onClick={() => { setMenuTopoAberto(false); setTelaPainel(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><BarChart3 size={17} color={C.textSecondary} /> Painel</button>
                   {/* Quem administra no Vantoro administra aqui. Esconder o botão
                       é cortesia, não segurança: quem não é admin esbarra nas
@@ -20328,6 +20404,23 @@ export default function Painel({ sessao }) {
                    }}
                    aoAtualizar={lerQuemEspera}
                    aoFechar={() => setTelaEsperando(false)} />
+      )}
+
+      {/* A FAXINA DA FILA (01/11). Abrir a conversa é o caminho do histórico,
+          como nas Tarefas; finalizar passa pela gravação do Finalizar. */}
+      {telaFaxina && (
+        <Faxina C={C} estreito={estreito} meuId={meuId} advogados={advogadosPermitidos} nomeDaPessoa={nomeDaPessoa}
+                assuntos={assuntos} erroDosAssuntos={erroAssuntos}
+                colunasContato={colunasDoContato("nome, numero, foto_url")} temArquivada={TEM_ARQUIVADA}
+                rotularMidia={(tipo) => rotuloMidia(tipo, null, false)}
+                aoAbrirConversa={(cv) => {
+                  setTelaFaxina(false);
+                  verConversaDoHistorico({ advogadoId: cv.advogado_id, conversaId: cv.id });
+                }}
+                aoFinalizar={finalizarDaFaxina}
+                aoTerminarLote={agendarContagemDasAbas}
+                aoAvisar={mostrarAviso}
+                aoFechar={() => setTelaFaxina(false)} />
       )}
 
       {/* A JANELA DA TAREFA, no meio da tela — como a de editar a agendada:

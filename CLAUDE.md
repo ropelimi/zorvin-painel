@@ -4265,6 +4265,219 @@ caiu às 00h21 de 01/11. Hoje a semente é contada no calendário de São Paulo.
 **Prova que abre o navegador num fuso e calcula datas no Node calcula no
 fuso do navegador**, e não no da máquina.
 
+## A faxina da fila (01/11)
+
+Pedido do Rodrigo, da lista de recomendações de 31/10: *"Pode seguir para a
+terceira recomendação"* — *"Uma tela de faxina da fila. As 313 conversas
+paradas há mais de um mês, uma embaixo da outra, cada uma com a última
+mensagem à vista e o Finalizar a um clique. Dá para limpar a fila numa tarde,
+sem abrir conversa por conversa."*
+
+**Medido em 01/11, só contando** (nenhum texto de cliente lido):
+
+| | |
+|---|---|
+| conversas não finalizadas (Novos e Em Atendimento) | 1.805 |
+| sem mensagem nenhuma há mais de 30 dias | 1.058 |
+| delas, sem mensagem nenhuma na vida (conversa vazia) | 286 |
+| **paradas de verdade** | **772** |
+| o cliente falou por último | 295 |
+| a equipe falou por último | 477 |
+| em "Novos" | 88 |
+| com responsável | 35 |
+| grupos | 4 |
+
+**Os "313" da recomendação eram outra conta**: conversas *esperando* há mais
+de 30 dias (316 em 01/11). A faxina conta *paradas* — sem mensagem de nenhum
+lado. O cliente que esperava desde 40 dias atrás e escreveu de novo anteontem
+espera há 40 dias e **não** está parado: a resposta dele é responder, e não
+faxinar. A prova tem uma cena só para ele.
+
+### Onde fica
+
+| | |
+|---|---|
+| a entrada | o ⋮ do topo → **Faxina da fila** (`data-abrir-faxina`), antes de "Painel" |
+| a tela | `Faxina.jsx` (`data-tela="faxina"`), por cima de tudo, como as Tarefas |
+| as contas sem tela | `faxina.js` |
+| quem grava | o painel, `finalizarDaFaxina` — a mesma montagem do Finalizar da conversa (`linhasDoTratamento`) |
+
+**Só com o 028, a marca do "Já tratei" e os assuntos** (`podeFaxina`). Sem as
+abas não há o que finalizar; sem os assuntos, a janela do Finalizar não tem o
+que marcar.
+
+### O que entra, e o que não entra
+
+- **Parada** é sem mensagem nenhuma há mais de N dias (`ultima_atividade`), e
+  ainda em Novos ou Em Atendimento;
+- **fora**: a finalizada, a arquivada e **a vazia**. Medido na tabela inteira
+  em 01/11: "tem prévia" (`ultima_mensagem`) e "tem mensagem" são a mesma
+  coisa, sem nenhuma exceção nos dois sentidos — e a prévia é coluna da
+  própria conversa, então a página e a conta saem certas do banco numa ida;
+- **os grupos entram**, marcados como grupo: grupo parado também ocupa a fila;
+- **dois grupos de conversas**, e é a pergunta que muda o que fazer:
+  - *O cliente espera resposta* (`esperando_desde` preenchido): pode ser um
+    "obrigado" ou um pedido que ficou para trás. Pede leitura;
+  - *A equipe falou por último*: a conversa que ficou em "Em Atendimento" para
+    sempre. Se limpa em lote.
+
+**Os filtros**: o telefone (padrão: todos os que a pessoa vê), o responsável
+(qualquer um, as minhas, sem responsável) e os dias (15, 30, 60 ou 90; padrão
+30, o "mais de um mês" da recomendação).
+
+**Tudo vem do banco, em páginas de 50**, a parada há mais tempo primeiro, com
+o id desempatando. Os números de cada grupo também (`count: "exact"`, sem
+trazer as linhas). As paradas de um telefone podem estar fora das 200
+conversas que a lista carregou — a faxina é justamente das esquecidas.
+
+### A linha
+
+O nome, o telefone, o responsável, a aba, *"parada há N dias"* e *"esperando
+há N dias"* (a régua de calendário da lista, `diasDesde`), e **a última
+mensagem com quem a escreveu e quando** — o anexo com o rótulo
+("📄 Documento"), e não o "[anexo]" cru da prévia. Por linha:
+
+- **Ver as últimas mensagens**: as oito últimas, ali mesmo, sem sair da tela.
+  É o bastante para saber se o "ok" do fim encerrou alguma coisa;
+- **Abrir a conversa**: fecha a faxina e abre a conversa no telefone dela,
+  pelo caminho do histórico (`verConversaDoHistorico`);
+- **Finalizar**.
+
+**O responsável que não está na lista da equipe vira "alguém da equipe"**, e
+nunca "sem responsável": são coisas diferentes, e a segunda mudaria quem limpa
+o quê. A primeira escrita caía em "sem responsável", e foi a prova que pegou.
+
+### Finalizar
+
+**A mesma janela e o mesmo registro do Finalizar da conversa**
+(`JaTratei.jsx`, `linhasDoTratamento`): a marcação dos assuntos continua
+obrigatória, o OUTROS continua pedindo o que foi tratado, e quem finaliza é o
+gatilho do 028. Limpar a fila não pode virar o botão de sumir com cinquenta
+conversas sem registro.
+
+**Antes de cada finalização, a conversa é relida**, e são três desfechos:
+
+| a conversa agora | a faxina |
+|---|---|
+| igual à da lista | registra, e relê se o banco finalizou |
+| **recebeu mensagem** (`ultima_atividade` mudou) | não finaliza, e a linha diz por quê |
+| já finalizada por outra pessoa | não registra de novo (o relatório contaria duas vezes), e tira da lista |
+
+**A do meio é a que importa.** Pela regra do 028, a mensagem com data de antes
+do clique não reabre a conversa. Sem a conferência, o cliente que escrevesse
+enquanto alguém limpava a fila teria a mensagem coberta pela finalização, e
+ninguém leria.
+
+### Em lote
+
+Marcar as linhas (ou a caixa do alto, que marca as da página) e **Finalizar
+N conversas**. A janela é a mesma, com o título do lote e a frase *"sem mandar
+mensagem a nenhum cliente"*.
+
+- **Uma de cada vez, com 300 ms entre elas** (`PAUSA_ENTRE_FINALIZACOES_MS`):
+  cada finalização é um aviso do tempo real para cada aba aberta do
+  escritório, e cinquenta de uma vez seriam a rajada que entupiu o canal em
+  20/10. Um lote de 50 leva uns 30 segundos;
+- **o andamento aparece na faixa do lote** ("Finalizando 12 de 50…"), e as
+  linhas vão saindo da lista uma a uma;
+- **"Parar"** termina a que está em voo e não começa a seguinte;
+- **o Esc no meio do lote não faz nada**: fechar a tela pararia o lote sem
+  querer. E o botão de voltar fica desligado;
+- **no fim, uma frase só**: *"48 conversas finalizadas; 2 não foram — o motivo
+  está em cada uma, na lista"*. As que não foram ficam, com o porquê.
+
+**"Marcar todas" marca no máximo 50**, mesmo com "Carregar mais" já tendo
+trazido 100 — e a caixa diz *"Marcar as primeiras 50"*: um lote fica do
+tamanho que a tela mostra de uma vez.
+
+**No celular**, os botões e as caixas de escolha ganham os 40 pontos de alvo
+de dedo pela regra geral do painel, e a faxina não os repete. **As caixas de
+marcar ficam fora dessa regra** (esticadas, viram retângulos), e na faxina
+marcar é o gesto do lote: o alvo delas é o rótulo em volta
+(`data-faxina-alvo-marcar`), com 40 pontos e o mesmo desenho.
+
+### O "Carregar mais" conta só as que o banco ainda conta
+
+A próxima página é pedida pela posição. A conversa que recebeu mensagem no
+meio da faxina **continua na tela**, com o porquê, mas **o banco já não a
+conta** entre as paradas. Contada pela tela, a posição andaria uma a mais, e
+uma conversa parada pularia sem nunca aparecer. Hoje a posição desconta as
+que saíram do recorte (`foraDoRecorteRef`). Achado relendo o código antes da
+PR, e não por relato; a cena 8 da prova o reproduz.
+
+### A escolha fica na memória da aba
+
+Quem abre uma conversa para conferir e volta pelo ⋮ encontra a faxina como a
+deixou: o grupo, o telefone, o responsável e os dias (`ULTIMA_ESCOLHA`, no
+módulo). Recarregar a página volta ao padrão.
+
+### O que fica de fora, e é decisão
+
+- **O desempate pelo id não se prova na bancada**: ela ordena com a ordenação
+  estável do JavaScript, e empates saem sempre na mesma ordem. No Postgres não
+  há essa garantia, e é por isso que o desempate está lá;
+- **a recusa calada (zero linhas) de uma gravação nova não se prova**: a
+  bancada só sabe recusar calada uma edição ou uma exclusão. A conferência
+  (`naoGravouNada`) fica, pela régua das outras gravações;
+- **a tela não ouve o tempo real**: a conferência antes de cada finalização é
+  o que a protege da conversa que mudou.
+
+**Sugestão dada ao Rodrigo:** criar o assunto *"SEM RETORNO DO CLIENTE"*
+(Departamentos e acessos → Assuntos do "Já tratei"). Sem ele, a faxina entra
+no relatório misturada com o trabalho do dia, no nome de quem limpou.
+
+Prova: `a-faxina-da-fila`, 96 conferências, sobre onze conversas plantadas
+no telefone a8 (que na bancada não tem nenhuma parada) e as centenas do a13,
+onde a prova mede a página, a conta e o lote grande. A cena do lote grande
+roda com o atraso da bancada em zero (`__ATRASO_UNIFORME`) e mede a pausa
+pelo diário: o intervalo entre uma gravação e a seguinte passa a ser só ela.
+
+**29 sabotagens: 27 pegas e 2 que vazam com razão**, rodadas em cópias e
+lidas uma a uma:
+
+- **o que entra:** sem as vazias de fora; sem as arquivadas de fora; os dois
+  grupos trocados (54 reprovações); a ordem invertida; sem o "Carregar mais";
+  a conta de um grupo no lugar do outro; o menu sem a guarda do 028 e dos
+  assuntos;
+- **a conferência antes de finalizar:** sem ela (11 reprovações); a já
+  finalizada registrada de novo; sem reler se o banco finalizou;
+- **o lote:** sem a pausa; o Parar que não para; o assunto opcional no lote;
+  o lote sem a frase de nenhum cliente receber mensagem; o OUTROS sem o texto
+  no lote; o Esc no meio do lote fechando a tela; o "marcar todas" sem o teto
+  de 50;
+- **a tela:** a marca da montagem que não religa (59 — a lista em
+  "Procurando…" para sempre); o Esc da janela fechando também a tela; abrir a
+  conversa sem trocar de telefone; a escolha esquecida ao voltar; o "Carregar
+  mais" contando a que saiu do recorte;
+- **a falha:** a leitura que falha virando "nenhuma conversa parada"; a conta
+  que falha virando zero;
+- **o celular:** as duas caixas de marcar sem o alvo de 40 pontos;
+- **o responsável:** as duas guardas tiradas juntas (sem o nome do painel e
+  com a reserva "sem responsável") — o defeito da primeira escrita.
+
+**As duas que vazam, e por que vazam:**
+
+- **a reserva da faxina dizendo "sem responsável"**: o nome vem do painel
+  (`nomeDaPessoa`), que nunca devolve vazio — quem não está na lista da equipe
+  já sai como "alguém da equipe". A reserva é a segunda guarda, e a sabotagem
+  que tira as duas é pega;
+- **os botões sem os 40 pontos no celular**: a regra geral do painel já os
+  dá. A faxina repetia isso em três lugares, e a repetição saiu — é a régua
+  escrita na própria regra: ninguém tem de lembrar caso a caso.
+
+**Três coisas que a prova ensinou nesta rodada:**
+
+- **a marca de "a tela está montada" tem de religar a cada montagem.** Em
+  desenvolvimento o React monta, desmonta e monta de novo, e os `useRef`
+  sobrevivem. Só desligando na saída, a tela remontada achava que tinha sido
+  fechada e jogava fora toda resposta do banco;
+- **entre o clique num filtro e a resposta, a tela mostra a lista de antes.**
+  A primeira escrita conferia a lista velha. Hoje a tela escreve quantas
+  leituras terminaram (`data-faxina-leituras`), e a prova espera a leitura que
+  o gesto provocou;
+- **o responsável que não está na equipe virava "sem responsável"** na
+  primeira escrita, que decidia o nome sozinha. Hoje ela usa o nome do painel.
+
 ## A resposta automática fora do horário (09/10)
 
 Pedido do Rodrigo, o nº 1 da lista de ideias de 08/10: quem escreve à noite,
