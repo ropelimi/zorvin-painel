@@ -261,7 +261,9 @@ export function JaTratei({ C, estreito, nome, dias, esperando = true, finalizar 
                 : <Sparkles size={14} color={estado === "erro" ? undefined : C.green} style={{ flexShrink: 0, marginTop: 2 }} />}
               <div style={{ minWidth: 0, flex: 1 }}>
                 {estado === "pedindo" && <>A IA está lendo a conversa para sugerir o assunto. Você pode marcar enquanto isso.</>}
-                {estado === "erro" && <><b>Sem a sugestão da IA desta vez:</b> {sugestao.erro} Marque o assunto à mão.</>}
+                {/* SÓ A FRASE DA PONTE, que já diz o que fazer ("Marque à mão.");
+                    repetir aqui daria a mesma instrução duas vezes. */}
+                {estado === "erro" && <><b>Sem a sugestão da IA desta vez:</b> {sugestao.erro}</>}
                 {estado === "nenhum" && <>A IA não arriscou um assunto desta vez. Marque à mão.</>}
                 {(estado === "marcou" || estado === "dica") && (
                   <>
@@ -275,8 +277,7 @@ export function JaTratei({ C, estreito, nome, dias, esperando = true, finalizar 
                 {(estado === "marcou" || estado === "dica") && faltaMarcarSugerido && (
                   <button type="button" onClick={usarSugestao} data-usar-sugestao
                           style={{ marginTop: 6, border: `1px solid ${C.green}`, background: "transparent", color: C.green,
-                                   borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer",
-                                   minHeight: estreito ? 40 : undefined }}
+                                   borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
                           title="Marca o que a IA sugeriu, sem desmarcar o que você já marcou">
                     Marcar a sugestão
                   </button>
