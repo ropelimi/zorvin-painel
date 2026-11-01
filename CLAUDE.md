@@ -4159,7 +4159,7 @@ seção 86 da ponte —, com cada pergunta contada (`__PERGUNTAS_DA_ESPERA`);
 `__ESPERA_PRIMEIRA_MS` e `__ESPERA_A_CADA_MS`, para a prova não esperar
 minutos.
 
-Prova: `o-aviso-de-quem-espera-demais`, 68 conferências.
+Prova: `o-aviso-de-quem-espera-demais`, 77 conferências.
 
 **Duas armadilhas da primeira escrita, e as duas eram da prova:**
 
@@ -4173,7 +4173,7 @@ Prova: `o-aviso-de-quem-espera-demais`, 68 conferências.
   nada, e a prova reprovava o painel certo. Hoje a cena confere, pelo nome no
   alto, que a conversa abriu mesmo.
 
-**33 sabotagens e 33 pegas**, todas limpas, rodadas em cópias e lidas uma a
+**35 sabotagens e 35 pegas**, todas limpas, rodadas em cópias e lidas uma a
 uma:
 
 - **o resumo e a barra:**
@@ -4201,6 +4201,9 @@ uma:
   - o resumo sem o código;
   - a das minhas virando "nenhuma";
   - a função que falta perguntada sempre;
+  - o "Tentar de novo" sem reler os clientes sem resposta, e sem reler a
+    minha carteira (a segunda também é pega pela
+    `a-aba-que-falha-diz-que-falhou`);
 - **a cadência:**
   - a primeira pergunta sem esperar a abertura, pega pela `partida`: a espera
     da abertura dobra, de 736 para 1440 ms;
@@ -4223,6 +4226,44 @@ uma:
 **A das minhas de todo mundo também reprova a cadência** ("0 leituras das
 minhas"): sem o filtro do responsável, a consulta muda de forma. É a
 conferência do formato fazendo o que foi feita para fazer.
+
+### A primeira rodada no GitHub reprovou duas provas (01/11)
+
+**Uma era minha.** O "Tentar de novo" da faixa âmbar relê o que acendeu a
+faixa — e não relia as duas leituras novas. Ela ficava de pé até a próxima
+volta do relógio delas, um minuto depois, com a leitura já de volta. Quem
+pegou foi `a-aba-que-falha-diz-que-falhou`: ela quebra a leitura das conversas
+por uns 2,5 s ao trocar de aba, e a das minhas há 3 dias cai bem nessa janela,
+cinco segundos depois de a lista chegar. Hoje o botão relê as duas
+(`sem-resposta` e `minhas-atrasadas`), e a conferência "e a faixa apaga"
+daquela prova passou a dizer o texto da faixa quando reprova: "a faixa não
+apagou", sozinho, manda procurar em todas as leituras.
+
+**E a cena 3 da prova nova ganhou o contraste**, nas duas metades — que vazou
+duas vezes antes de valer:
+
+- **o relógio das leituras estava em 1,2 s em todas as cenas**, e não em um
+  minuto, como dizia o comentário que eu tinha escrito: a próxima volta dele
+  apagava a faixa antes de o botão fazer diferença. A cena 3 roda com o
+  relógio em dez minutos;
+- **a bancada decide se quebra na hora de RESPONDER**, e não na de perguntar.
+  A leitura pedida ao abrir a tela "Esperando resposta" ainda estava no ar
+  quando a cena desfez a quebra, e voltou certa. Hoje a cena espera não haver
+  leitura da carteira no ar (`semCarteiraNoAr`, pelo `fim` do diário) antes de
+  desfazer. **Antes de desfazer uma quebra da bancada, espere as leituras no
+  ar voltarem** — senão quem apaga a faixa é a leitura velha, e não o gesto
+  que se quer medir.
+
+**A outra não era desta PR, e reprovava na `main` também.** A cena 4 de
+`o-periodo-e-a-pessoa-do-painel` planta um "Já tratei" no mês mais antigo da
+lista "Escolher mês", calculado no relógio da MÁQUINA — que no GitHub está na
+hora universal —, enquanto o navegador da prova está no fuso de São Paulo.
+Entre 00h e 03h do dia 1º (das 21h à meia-noite do último dia do mês, em
+Brasília) os dois discordam de mês: a semente caía no penúltimo mês da lista,
+e a cena reprovava seis conferências sem defeito nenhum. A rodada desta PR
+caiu às 00h21 de 01/11. Hoje a semente é contada no calendário de São Paulo.
+**Prova que abre o navegador num fuso e calcula datas no Node calcula no
+fuso do navegador**, e não no da máquina.
 
 ## A resposta automática fora do horário (09/10)
 

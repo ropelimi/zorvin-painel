@@ -15627,6 +15627,12 @@ export default function Painel({ sessao }) {
                     // de pé até o F5.
                     if (falhasDeLeitura.selos) contarNaoLidasAgora();
                     if (falhasDeLeitura.figurinhas) carregarFigurinhas();
+                    // E QUEM ESTÁ ESPERANDO DEMAIS (31/10): as duas leituras
+                    // acendem esta faixa, e o relógio delas só volta daqui a
+                    // um minuto — a faixa ficaria de pé até lá, com a leitura
+                    // já de volta. Foi a prova da aba que falha que pegou.
+                    if (falhasDeLeitura["sem-resposta"]) lerSemResposta();
+                    if (falhasDeLeitura["minhas-atrasadas"]) lerAtrasadas();
                     carregarTags();
                     carregarTagsConversas();
                     carregarRapidas();

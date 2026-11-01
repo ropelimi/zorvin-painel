@@ -213,8 +213,20 @@ console.log("\n3. “Este ano”: a seta anda um ano civil; o mês continua de m
 // lista de meses, onde o roteiro da bancada não chega: ela está no "Por
 // pessoa" do Já tratei e NÃO no "Por atendente" — é o caso em que o nome
 // caía para o de quem administra.
-const hojeNoNode = new Date(AGORA);
-const NO_MES_MAIS_ANTIGO = new Date(hojeNoNode.getFullYear(), hojeNoNode.getMonth() - 11, 15, 12).toISOString();
+//
+// O MÊS É CONTADO NO CALENDÁRIO DE SÃO PAULO, o fuso do navegador desta prova
+// (`abrirPainel`), e não no relógio da máquina. Contado na máquina — que no
+// GitHub está na hora universal —, entre 00h e 03h do dia 1º ela já está no
+// mês novo e a página ainda no velho: a lista da página termina um mês antes,
+// a semente cai no penúltimo mês dela, e a cena reprova sem defeito nenhum.
+// Foi o que aconteceu às 00h21 de 01/11/2026, na rodada da PR #294.
+const [ANO_EM_SP, MES_EM_SP] = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit",
+}).format(new Date(AGORA)).split("-").map(Number);
+// Dia 15, meio-dia em São Paulo (15h na hora universal): longe das duas
+// pontas do mês, em qualquer fuso. `Date.UTC` volta o ano sozinho quando o
+// mês fica negativo.
+const NO_MES_MAIS_ANTIGO = new Date(Date.UTC(ANO_EM_SP, MES_EM_SP - 1 - 11, 15, 15)).toISOString();
 const SEMENTE = {
   contatos: [{ id: "ct-jen", numero: "5511970028101", nome: "CLIENTE DA JENIFER" }],
   conversas: [{

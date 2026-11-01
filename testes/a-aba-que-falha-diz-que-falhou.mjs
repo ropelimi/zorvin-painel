@@ -65,6 +65,10 @@ const recado = (page) => page.evaluate(() => {
   return r ? { marca: r.getAttribute("data-recado-da-lista"), texto: (r.innerText || "").trim() } : null;
 });
 const faixa = (page) => page.locator("[data-falha-de-leitura]").count();
+// O QUE A FAIXA DIZ, para a conferência que reprova dizer QUAL leitura ficou
+// de pé — "a faixa não apagou" sozinho manda procurar em todas.
+const textoDaFaixa = (page) => page.evaluate(() =>
+  (document.querySelector("[data-falha-de-leitura]")?.innerText || "").replace(/\s+/g, " ").trim());
 const quebrarALeitura = (page, sim) => page.evaluate((s) => { globalThis.__RECUSAR_LEITURA = s ? ["conversas"] : []; }, sim);
 async function clicar(page, seletor) {
   const el = page.locator(seletor);
@@ -96,7 +100,7 @@ console.log("\n1. Trocar para “Finalizados” com a leitura falhando");
   const depois = await recado(page);
   ok("com a leitura de volta, a aba vazia diz o que mora nela", depois && depois.marca === "sem-conversa-finalizado",
      JSON.stringify(depois));
-  ok("e a faixa apaga", (await faixa(page)) === 0);
+  ok("e a faixa apaga", (await faixa(page)) === 0, await textoDaFaixa(page));
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
@@ -115,7 +119,7 @@ console.log("\n2. Entrar nas arquivadas com a leitura falhando");
   await page.waitForTimeout(2500);
   const depois = await recado(page);
   ok("com a leitura de volta, a frase da falha sai", !depois || !/^falhou/.test(depois.marca), JSON.stringify(depois));
-  ok("e a faixa apaga", (await faixa(page)) === 0);
+  ok("e a faixa apaga", (await faixa(page)) === 0, await textoDaFaixa(page));
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }

@@ -122,6 +122,29 @@ async function rodadas(page, n = 1) {
   for (let i = 0; i < 40 && (await perguntas(page)) < antes + n; i++) await page.waitForTimeout(150);
   await page.waitForTimeout(250);
 }
+/** O CLIQUE GUARDADO, para os gestos que uma sabotagem pode deixar cobertos:
+ *  sem ele, o clique espera 30 segundos e estoura a prova inteira — e prova
+ *  que estoura não diz qual conferência viu o defeito. */
+async function clicarGuardado(page, sel) {
+  if (!(await contar(page, sel))) return false;
+  try { await page.locator(sel).first().click({ timeout: 3000 }); return true; } catch (_) { return false; }
+}
+/** NENHUMA LEITURA DA CARTEIRA NO AR. A bancada decide se quebra na hora de
+ *  RESPONDER, e não na de perguntar: a leitura que abrir a tela pediu, ainda
+ *  no ar quando a prova desfaz a quebra, voltaria certa — e apagaria a faixa
+ *  no lugar do botão. Foi assim que a sabotagem do botão sem a carteira
+ *  passou por esta cena na primeira escrita. */
+async function semCarteiraNoAr(page, ms = 5000) {
+  return page.waitForFunction(() => !(globalThis.__DIARIO || []).some((m) => m.tabela === "conversas"
+    && /^id, advogado_id, esperando_desde\b/.test(m.colunas || "")
+    && (m.pedidos || []).includes("responsavel_id") && m.fim == null), null, { timeout: ms })
+    .then(() => true).catch(() => false);
+}
+/** Espera a faixa âmbar sumir, e devolve se sumiu. */
+async function faixaApagou(page, ms = 4000) {
+  return page.waitForFunction(() => !document.querySelector("[data-falha-de-leitura]"), null, { timeout: ms })
+    .then(() => true).catch(() => false);
+}
 async function esperar(page, sel, ms = 6000) {
   try { await page.waitForSelector(sel, { timeout: ms }); return true; } catch (_) { return false; }
 }
@@ -311,7 +334,10 @@ console.log("\n2. O aviso: uma vez só, para quem é, e não para quem está olh
 // ------------------------------------------------------------------
 console.log("\n3. A falha é dita, e nunca vira “ninguém esperando”");
 {
-  const { ctx, page, estouros } = await abrir({ quebrar: true, semente: SEMENTE_DAS_MINHAS });
+  // O RELÓGIO DA LEITURA EM DEZ MINUTOS, e não nos 1,2 s das outras cenas: o
+  // contraste do fim mede o "Tentar de novo", e com o relógio curto a próxima
+  // volta dele apagaria a faixa antes — as duas sabotagens do botão vazavam.
+  const { ctx, page, estouros } = await abrir({ quebrar: true, semente: SEMENTE_DAS_MINHAS, aCada: 600000 });
   const apareceu = await esperar(page, "[data-resumo-falhou]");
   ok("a pergunta que falha aparece no resumo, com o código", apareceu
      && /Não consegui ler os clientes sem resposta/.test(await texto(page, "[data-resumo-falhou]"))
@@ -327,11 +353,22 @@ console.log("\n3. A falha é dita, e nunca vira “ninguém esperando”");
      await texto(page, '[data-secao-da-espera="sem-resposta"]'));
   ok("nem conta zero no título da seção",
      !/\(0\)/.test(await texto(page, '[data-secao-da-espera="sem-resposta"] header')), await texto(page, '[data-secao-da-espera="sem-resposta"] header'));
+  // O CONTRASTE: com a leitura de volta, o "Tentar de novo" da faixa relê os
+  // clientes sem resposta — e a faixa apaga agora, e não na próxima volta do
+  // relógio desta leitura (que esta cena pôs em dez minutos).
+  await page.keyboard.press("Escape");
+  ok("antes de a leitura voltar, a faixa ainda diz que ela não carregou",
+     /clientes sem resposta/.test(await texto(page, "[data-falha-de-leitura]")), await texto(page, "[data-falha-de-leitura]"));
+  await page.evaluate(() => { globalThis.__QUEBRAR_FUNCAO = []; });
+  ok("com a leitura de volta, apertei “Tentar de novo”", await clicarGuardado(page, "[data-tentar-leituras]"));
+  ok("e a faixa apaga sem esperar o relógio da leitura", await faixaApagou(page), await texto(page, "[data-falha-de-leitura]"));
+  ok("e o resumo deixa de dizer que falhou", (await contar(page, "[data-resumo-falhou]")) === 0,
+     await texto(page, "[data-resumo-da-espera]"));
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
 {
-  const { ctx, page, estouros } = await abrir({ quebrarAtrasadas: true, semente: SEMENTE_DAS_MINHAS });
+  const { ctx, page, estouros } = await abrir({ quebrarAtrasadas: true, semente: SEMENTE_DAS_MINHAS, aCada: 600000 });
   const apareceu = await esperar(page, "[data-resumo-falhou]");
   ok("a minha carteira que não carrega também é dita, com o código", apareceu
      && /Não consegui ler as suas conversas que esperam há 3 dias ou mais/.test(await texto(page, "[data-resumo-falhou]"))
@@ -341,6 +378,17 @@ console.log("\n3. A falha é dita, e nunca vira “ninguém esperando”");
   ok("e na tela não vira “nenhuma conversa sua”", await visivel(page, "[data-espera-falhou-atrasadas]")
      && !/Nenhuma conversa sua/.test(await texto(page, '[data-secao-da-espera="atrasadas"]')),
      await texto(page, '[data-secao-da-espera="atrasadas"]'));
+  // E O MESMO CONTRASTE para a minha carteira — foi esta leitura que a prova
+  // `a-aba-que-falha-diz-que-falhou` pegou, na primeira rodada da PR #294.
+  await page.keyboard.press("Escape");
+  ok("antes de a carteira voltar, nenhuma leitura dela está no ar", await semCarteiraNoAr(page));
+  ok("e a faixa ainda diz que ela não carregou",
+     /esperam há 3 dias/.test(await texto(page, "[data-falha-de-leitura]")), await texto(page, "[data-falha-de-leitura]"));
+  await page.evaluate(() => { globalThis.__QUEBRAR_AS_QUE_ESPERAM = false; });
+  ok("com a carteira de volta, apertei “Tentar de novo”", await clicarGuardado(page, "[data-tentar-leituras]"));
+  ok("e a faixa apaga sem esperar o relógio da leitura", await faixaApagou(page), await texto(page, "[data-falha-de-leitura]"));
+  ok("e o resumo volta a contar as minhas", await esperarValor(page, "[data-resumo-atrasadas]", "data-resumo-atrasadas", "2", 4000),
+     await texto(page, "[data-resumo-da-espera]"));
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
