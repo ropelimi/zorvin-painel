@@ -6864,11 +6864,25 @@ com `ps` que nada ficou rodando.**
 ## Fluxo de trabalho — PRs (REGRA IMPORTANTE do Rodrigo)
 
 - **Cada entrega/pedido deve ir numa PR NOVA.** Nunca reutilizar nem estender uma PR já mesclada.
-- O Rodrigo faz o merge e, na rodada seguinte, quer **sempre uma PR nova** (não empilhar em cima da anterior).
+- **Mesclar não pede o OK dele** — dito em 01/11, depois de duas PRs verdes
+  passarem horas esperando um OK: *"Não fica me pedindo ok, sempre que estiver
+  tudo certo é só mesclar, não precisa de permissão para isso."* "Tudo certo"
+  quer dizer: as provas verdes no último commit da PR, sem conflito com a
+  `main`, e nenhum comentário ou revisão esperando resposta. Com PR nos dois
+  repositórios, **a da ponte entra primeiro**. Mesclou, conta-se a ele o que
+  entrou no ar (e o Ctrl+Shift+R, quando faz diferença).
+- **O que continua sendo dele é a decisão sobre o conteúdo**, e não o merge:
+  o som que ele precisa ouvir antes (ver "A galinha — e a quinta tentativa de
+  sintetizar bicho (01/10)"), e o script que reescreve dado de produção sem
+  volta. O merge publica sozinho e o script roda na subida, então a pergunta
+  vem ANTES (ver "As senhas voltam ao histórico (script 039, 29/10)", no
+  CLAUDE.md da ponte). Com uma pergunta dessas em aberto, não está "tudo
+  certo".
+- Mesclada a PR, a rodada seguinte é **sempre uma PR nova** (não empilhar em cima da anterior).
 - Fluxo por rodada: recomeçar a branch a partir da `main` mais recente
   (`git fetch origin main && git checkout -B <branch> origin/main`), aplicar a mudança,
-  commit, push e **abrir uma PR nova**.
-- Passo a passo (SQL, merge, etc.) vai **no chat**, não na descrição da PR — o Rodrigo não lê a descrição para instruções de setup.
+  commit, push, **abrir uma PR nova**, esperar as provas ficarem verdes e mesclar.
+- Passo a passo (SQL, o que conferir depois de publicar, etc.) vai **no chat**, não na descrição da PR — o Rodrigo não lê a descrição para instruções de setup.
 - **O SQL pelo conector do Supabase roda sem pedir permissão a ele** — dito em
   26/10: *"Sempre que for para executar o SQL, não precisa me pedir permissão,
   pode sempre fazer."* **E de novo em 01/11, pedindo que ficasse guardado:**
