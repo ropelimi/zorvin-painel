@@ -31,6 +31,16 @@ import { BRIDGE_URL, chamarPonte } from "./ponte.js";
 //  Mostrar na dúvida custa, no pior caso, um clique que lê o erro da própria
 //  ponte. Esconder na dúvida sumiria com o botão sempre que a ponte tossisse,
 //  sem uma palavra dizendo por quê — a armadilha nº 2 do CLAUDE.md.
+//
+//  ------------------------------------------------------------
+//  O RESUMO DA CONVERSA (01/11) usa a mesma pergunta
+//
+//  A mesma chave e o mesmo estado. A ponte que tem a rota do resumo diz
+//  `resumo: true`; a de antes não diz nada, e aí só o "Resumir" some — o
+//  painel pode chegar ao ar antes da ponte (em 14/10 a Render passou um dia
+//  sem publicá-la), e o botão de uma rota que não existe daria 404 a cada
+//  clique. A régua dos três estados vale aqui também: só a resposta que
+//  CHEGOU sem a chave esconde; a pergunta que falhou mostra.
 // ============================================================
 
 const ESPERA_DO_ESTADO_MS = 8000;
@@ -38,6 +48,8 @@ const ESPERA_DO_ESTADO_MS = 8000;
 // servidor) e depois pergunta à Anthropic. Meio minuto desistiria de um
 // pedido que estava andando.
 const ESPERA_DA_SUGESTAO_MS = 75000;
+// O RESUMO LÊ MAIS (até 300 mensagens), e a ponte pode ter de acordar antes.
+const ESPERA_DO_RESUMO_MS = 100000;
 // O "NÃO CONSEGUI" É PERGUNTADO DE NOVO (auditoria de 28/10), pela régua de
 // `temVantoro.js`: guardado até o F5, ele deixava o botão numa instalação sem
 // a chave, para dar erro a cada clique, o dia inteiro.
@@ -59,11 +71,12 @@ function perguntarDeNovoDepois() {
   }, DE_NOVO_EM_MS);
 }
 
-/** `{ ligado, modelo }`. `ligado` é `null` quando não deu para perguntar. */
+/** `{ ligado, modelo, resumo }`. `ligado` e `resumo` são `null` quando não
+ *  deu para perguntar. */
 export function perguntarOCopiloto() {
   if (promessa) return promessa;
   if (!BRIDGE_URL) {
-    promessa = Promise.resolve({ ligado: null, modelo: null });
+    promessa = Promise.resolve({ ligado: null, modelo: null, resumo: null });
     return promessa;
   }
   const relogio = new AbortController();
@@ -72,11 +85,16 @@ export function perguntarOCopiloto() {
     .then((r) => (r.ok ? r.json() : null))
     // SÓ `ligado === false` ESCONDE. Erro de rede, resposta estranha ou a
     // ponte de antes desta rota (404) são "não consegui", e não "não tem".
-    .then((corpo) => ({
-      ligado: corpo && typeof corpo.ligado === "boolean" ? corpo.ligado : null,
-      modelo: (corpo && corpo.modelo) || null,
-    }))
-    .catch(() => ({ ligado: null, modelo: null }))
+    .then((corpo) => {
+      const respondeu = Boolean(corpo) && typeof corpo.ligado === "boolean";
+      return {
+        ligado: respondeu ? corpo.ligado : null,
+        modelo: (corpo && corpo.modelo) || null,
+        // A PONTE RESPONDEU E NÃO FALOU DO RESUMO: é a de antes da rota.
+        resumo: respondeu ? corpo.resumo === true : null,
+      };
+    })
+    .catch(() => ({ ligado: null, modelo: null, resumo: null }))
     .then((r) => {
       // "NÃO CONSEGUI" MOSTRA, e não fica guardado (28/10).
       if (r.ligado === null) {
@@ -90,7 +108,7 @@ export function perguntarOCopiloto() {
   return esta;
 }
 
-/** `null` enquanto pergunta; depois `{ ligado, modelo }`. */
+/** `null` enquanto pergunta; depois `{ ligado, modelo, resumo }`. */
 export function useEstadoDoCopiloto() {
   const [estado, setEstado] = useState(null);
   useEffect(() => {
@@ -107,6 +125,10 @@ export function useEstadoDoCopiloto() {
 /** O botão aparece? Só a resposta "não está ligado" esconde. */
 export const copilotoAparece = (estado) => Boolean(estado) && estado.ligado !== false;
 
+/** O "Resumir" aparece? O mesmo, e mais: a ponte que respondeu sem a rota do
+ *  resumo (a de antes de 01/11) também esconde. */
+export const resumoAparece = (estado) => copilotoAparece(estado) && estado.resumo !== false;
+
 /** Pede a sugestão de uma conversa. Devolve o texto CRU, com os marcadores
  *  ({saudacao}, {nome}, {atendente}) — quem chama os preenche com as regras
  *  das mensagens rápidas, para a conversa EM QUE o pedido foi feito. */
@@ -119,6 +141,33 @@ export async function pedirSugestao(conversaId) {
   const texto = String((r && r.sugestao) || "").trim();
   if (!texto) throw new Error("A IA não devolveu sugestão desta vez. Tente de novo.");
   return texto;
+}
+
+/** Pede o resumo de uma conversa. Devolve `{ resumo: { quer, combinado,
+ *  falta }, mensagens, notas, cortou, ate, avisos }` — conferido aqui, para
+ *  a tela nunca desenhar um resumo pela metade como se fosse inteiro. */
+export async function pedirResumo(conversaId) {
+  const r = await chamarPonte("/copiloto/resumir", {
+    method: "POST",
+    body: JSON.stringify({ conversa_id: conversaId }),
+    espera: ESPERA_DO_RESUMO_MS,
+  });
+  const resumo = r && r.resumo;
+  const lista = (v) => (Array.isArray(v) ? v.map((x) => String(x || "").trim()).filter(Boolean) : []);
+  const quer = String((resumo && resumo.quer) || "").trim();
+  const combinado = lista(resumo && resumo.combinado);
+  const falta = lista(resumo && resumo.falta);
+  if (!quer && !combinado.length && !falta.length) {
+    throw new Error("A IA não devolveu resumo desta vez. Tente de novo.");
+  }
+  return {
+    resumo: { quer, combinado, falta },
+    mensagens: Number(r.mensagens) || 0,
+    notas: Number(r.notas) || 0,
+    cortou: r.cortou === true,
+    ate: r.ate || null,
+    avisos: lista(r.avisos),
+  };
 }
 
 // A BANCADA PRECISA ESQUECER ENTRE CENÁRIOS (a régua de `temVantoro.js`).
