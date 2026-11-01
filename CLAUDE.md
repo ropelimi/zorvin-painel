@@ -4923,6 +4923,186 @@ e os tiques num `<span>`, e por isso não é "folha". A conferência do que est�
 pintado procurava a última mensagem entre os elementos sem filhos, e não a
 achava. Hoje ela procura o elemento que tem o texto como filho direto.
 
+## O assunto do Finalizar — a IA sugere (01/11)
+
+Pedido do Rodrigo, da lista de recomendações de 31/10: *"Siga para a
+recomendação 5"* — *"A IA sugere o assunto no Finalizar. A lista já abre com o
+assunto provável marcado, e a pessoa só confere. Finalizar fica mais rápido, e
+o relatório mais certo."*
+
+Quem fala com a IA é a ponte (`POST /copiloto/assunto`; ver "O assunto do
+Finalizar — a IA sugere (01/11)" no CLAUDE.md dela): ela lê o atendimento de
+agora e devolve até dois assuntos da lista ativa, com um porquê. **Medido em
+01/11, só contando:** 346 cliques de "Já tratei" em 14 dias (uns 25 por dia), e
+só 15 (4%) marcaram mais de um assunto.
+
+### Três regras, e cada uma tem prova
+
+- **Só marca sozinha se a pessoa ainda não mexeu na lista.** Quem já começou a
+  marcar recebe a sugestão como **dica**, com o botão *Marcar a sugestão*, que
+  **soma** ao que ela marcou e não tira nada. Marcar e desmarcar também conta
+  como mexer.
+- **Nada é gravado sem o clique.** A marcação obrigatória continua valendo: a
+  sugestão só adianta o gesto, e o botão é o de sempre.
+- **O que a IA sugeriu vai junto do clique**, em `zorvin_tratamentos.sugestao_ia`
+  (script 042 da ponte): `{"assuntos": [ids], "marcou": true|false}`, igual em
+  todas as linhas do clique. `marcou` diz se a janela marcou sozinha. **É o que
+  dá para medir o acerto depois.** Sem isso, uma sugestão que erra muito,
+  confirmada por quem conferiu com pressa, viraria o assunto errado no
+  relatório sem ninguém saber.
+
+### A caixa da sugestão (`data-sugestao-do-assunto`)
+
+Ela fica entre a frase da janela e a lista, porque é sobre a lista.
+
+| estado | quando | a caixa diz |
+|---|---|---|
+| `pedindo` | a IA está lendo | "A IA está lendo a conversa para sugerir o assunto. Você pode marcar enquanto isso." |
+| `marcou` | chegou, e ninguém tinha mexido | "Sugestão da IA: ACORDOS. Já veio marcado — confira antes de finalizar." (a segunda frase some quando a pessoa mexe) |
+| `dica` | chegou depois de a pessoa mexer | "Sugestão da IA: ACORDOS." e o botão *Marcar a sugestão* |
+| `nenhum` | a IA não arriscou, ou sugeriu só o que não está entre os ativos da janela | "A IA não arriscou um assunto desta vez. Marque à mão." |
+| `erro` | a ponte não respondeu, ou respondeu com a frase de uma falha | "Sem a sugestão da IA desta vez:" e a frase da ponte, em âmbar |
+
+O porquê da IA vai embaixo (`data-sugestao-motivo`). Cada item sugerido ganha
+o selo **IA** (`data-sugerido-pela-ia`).
+
+**A falha é dita, sem cor de erro.** O Finalizar funciona sem a IA, mas uma
+janela que simplesmente não sugere se leria como "a IA não soube": a ausência
+no lugar da falha. **E só com a frase da ponte**, que já diz o que fazer ("A
+IA preferiu não sugerir o assunto desta conversa. Marque à mão."). A primeira
+escrita acrescentava "Marque o assunto à mão." depois dela, e a caixa dizia a
+mesma coisa duas vezes.
+
+**A sugestão é conferida contra a lista desta janela.** O id que não está entre
+os ativos dela não é marcado: um assunto desativado entre o pedido e a
+resposta, ou um id que a ponte não deveria ter mandado. Marcado, ele ligaria o
+botão de Finalizar com um assunto que não aparece na tela.
+
+### O que vai ao banco
+
+| o clique | `sugestao_ia` |
+|---|---|
+| a janela marcou sozinha | `{"assuntos": ["<id>"], "marcou": true}`, mesmo que a pessoa tenha trocado o assunto depois (é assim que o erro da IA aparece) |
+| a sugestão chegou como dica | `{"assuntos": ["<id>"], "marcou": false}` |
+| a IA disse "não sei" | `{"assuntos": [], "marcou": false}`: quantas vezes ela se abstém também se mede |
+| a sugestão não chegou até o clique, ou falhou | nada (a coluna fica nula) |
+
+**`assuntos` é o que a IA disse, como ela disse**, inclusive o id que a janela
+não conhecia: medir o acerto é comparar com o que ela sugeriu, e não com o que
+sobrou dele.
+
+**Num banco sem o 042, o clique é gravado sem a coluna** (`gravarTratamento`,
+pela régua de `gravarSemAsQueFaltam`, com o lembrete
+`COLUNAS_QUE_FALTAM_EM_TRATAMENTOS`). A sugestão some do registro calada, e é
+decisão: ela não é uma escolha da pessoa. Os assuntos são, e eles vão. A
+mesma gravação serve o Finalizar da conversa e o da faxina.
+
+**A conta do acerto, para quando houver cliques**, conferida no banco do
+escritório em 01/11 (com zero cliques, só para ver que roda):
+
+```sql
+with cliques as (
+  select conversa_id, quem, quando, sugestao_ia,
+         array_agg(assunto_id::text order by assunto_id::text) as gravados
+    from zorvin_tratamentos
+   where sugestao_ia is not null and desfeito_em is null
+   group by conversa_id, quem, quando, sugestao_ia)
+select count(*) as cliques,
+       count(*) filter (where (sugestao_ia->>'marcou')::boolean) as marcou_sozinha,
+       count(*) filter (where jsonb_array_length(sugestao_ia->'assuntos') = 0) as nao_soube,
+       count(*) filter (where gravados = (select array_agg(x order by x)
+                                            from jsonb_array_elements_text(sugestao_ia->'assuntos') x)) as acertou
+  from cliques;
+```
+
+### Quando a janela pede, e quanto se paga
+
+- **Só quando a ponte sabe sugerir** (`assunto: true` em `/copiloto/estado`,
+  `assuntoAparece` em `copiloto.js`, pela régua dos três estados): a ponte de
+  antes e o copiloto desligado não pedem; a pergunta que falhou pede.
+- **E só com assunto ativo na lista.** A lista que não carregou, ou sem nenhum
+  ativo, não pede: a ponte responderia "nenhum assunto" a cada abertura, e a
+  janela já diz isso sozinha.
+- **A resposta fica guardada por dez minutos**, por conversa, protocolo e
+  última atividade (`pedirSugestaoDeAssunto`). Abrir, fechar e abrir de novo
+  não paga outra ida à IA. **Uma mensagem nova pede de novo**: a guardada
+  falaria de uma conversa que já não é aquela. **O que falhou não fica
+  guardado**: a próxima abertura pede de novo.
+- **Na faxina, só a finalização de UMA conversa pede.** No lote, uma sugestão
+  valeria para cinquenta clientes que a IA não leu (`sugerirAssunto`, em
+  `Faxina.jsx`). A janela também não pede em lote (`!emLote`), como segunda
+  guarda.
+- **Sem o 028**, a janela do "Já tratei" de antes ganha a mesma sugestão: a
+  checklist é a mesma.
+
+**A marca de "a janela está aberta" religa a cada montagem** (`aberta`). Em
+desenvolvimento o React monta, desmonta e monta de novo, e os espelhos
+sobrevivem. Só desligando na saída, toda resposta seria jogada fora, e a caixa
+ficaria em "lendo" para sempre: é a lição da faxina, e uma sabotagem a
+confere.
+
+### Nas provas vizinhas aparece a caixa de erro, e está certo
+
+A bancada aponta a ponte para `127.0.0.1:5199/ponte-de-mentira`, e as provas
+que não fingem a ponte recebem a página do próprio servidor no lugar do JSON do
+estado. Isso conta como "a pergunta falhou", e na dúvida a janela pede. Então,
+em toda prova antiga que abre o Finalizar, a caixa aparece em `erro`, embaixo
+da frase, sem mexer em nada do que essas provas conferem. É o que aconteceria
+no escritório com a ponte fora do ar.
+
+Prova: `a-ia-sugere-o-assunto`, 96 conferências em 15 cenas, com a ponte
+fingida pela prova. As vizinhas passam sem mudança: as cinco do "Já tratei", a
+da faxina, a das abas, a do copiloto, a do resumo e as duas auditorias.
+
+**35 sabotagens e 35 pegas**, todas limpas, rodadas em cópias (cada uma com o
+seu servidor da bancada, porta e `cacheDir` próprios) e lidas uma a uma:
+
+- **o painel de antes inteiro** (54 reprovações — é o pedido reproduzido);
+- **a janela:** marcar sozinha com a pessoa mexendo; *Marcar a sugestão*
+  trocando o que a pessoa marcou; o clique na lista sem contar como mexer;
+  `marcou` sempre falso, e sempre verdadeiro; a sugestão fora do clique; o
+  "não sei" fora do clique; gravar só os ids que a janela conhece; sem
+  conferir contra a lista (a janela gravava um assunto desativado, que nem
+  aparecia na tela); a falha calada; a falha virando "não sei"; sem a frase do
+  "lendo"; sem o "confira"; o "já veio marcado" continuando depois de mexer;
+  sem o selo; sem o botão; a marca da janela que não religa (45 reprovações:
+  a caixa em "lendo" para sempre); o lote pedindo (as duas guardas tiradas
+  juntas); a frase da falha repetindo "à mão";
+- **o pedido:** o estado ignorando a ponte de antes; o desligado ignorado; a
+  dúvida escondendo; sem guardar; guardando a falha; a guardada sem a
+  conversa na chave, e sem a última atividade;
+- **a gravação:** sem a volta do banco sem o 042; a sugestão numa linha só do
+  clique; o Finalizar da conversa sem a sugestão, e o da faxina; sem conferir
+  se há assunto ativo; a janela sem pedir (50); a faxina sem pedir; a faxina
+  sem passar a sugestão adiante.
+
+**A da última atividade vazou primeiro, e a culpa era da cena.** As conversas
+da prova nasciam sem protocolo, e a mensagem nova da cena 14 abria um
+protocolo novo na bancada (o 028 abre um quando o cliente escreve numa
+conversa sem atendimento). O protocolo novo mudava a chave sozinho, e a cena
+passava sem medir a última atividade. Hoje toda conversa da prova nasce com o
+seu protocolo aberto, como no escritório, e a cena confere que ele não muda.
+
+**E a primeira rodada emperrou na sabotagem do painel de antes, e a culpa era
+da prova.** `getAttribute` num elemento que não existe espera 30 segundos, e
+sem a caixa cada pergunta por ela custava isso. Hoje os ajudantes contam antes
+de ler (`attr`), e o resto tem um teto de 8 segundos (`setDefaultTimeout`). É
+a lição da prova da prévia do PDF (29/10), que estava escrita aqui e eu não
+apliquei na primeira escrita.
+
+**E um tropeço meu ao parar a rodada:** `pkill -f sabotar-painel.py` matou
+também o comando que o chamava e o vigia que lia a saída das sabotagens — os
+dois tinham o nome do script na linha de comando. **Para parar uma rodada,
+mate os grupos de processos pelo número**, e não por um pedaço do nome.
+
+**Uma armadilha da máquina, e não do painel.** A sessão foi reiniciada, e o
+`npm install` de depois trouxe um Playwright mais novo que o navegador da
+máquina: toda prova parou em *"Executable doesn't exist"*. O conserto é apontar
+o navegador que já está lá (`PLAYWRIGHT_CHROMIUM=/opt/pw-browsers/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell`),
+que é o que `testes/navegador.mjs` já aceita. A versão do Playwright do
+`package.json` não mudou, e é ela que a integração contínua instala junto com
+o navegador.
+
 ## Aguardando, em aberto e finalizados (19/10)
 
 Pedido do Rodrigo, com a descrição do DataCrazy ao lado: *"para facilitar a

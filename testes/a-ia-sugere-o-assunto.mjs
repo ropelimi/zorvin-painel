@@ -85,12 +85,18 @@ const contato = (id, numero, nome) =>
   ({ id, numero, nome, vantoro_nome: null, nome_zorvin: null, vantoro_cliente_id: null, foto_url: null });
 const N = 8;
 const CONTATOS = Array.from({ length: N }, (_, i) => contato(`ct-sug-${i + 1}`, `55119482304${String(i + 10)}`, `Cliente Sugestão ${i + 1}`));
+// CADA UMA COM O SEU PROTOCOLO ABERTO, como no escritório: no 028 toda
+// conversa em "Em Atendimento" tem um. Sem ele, a primeira mensagem do cliente
+// que a cena 14 manda ABRIRIA um protocolo novo, e o protocolo novo pediria
+// de novo sozinho — a cena passava sem medir a última atividade da chave (foi
+// a sabotagem que mostrou).
+const protocoloDe = (n) => `2026-0009${String(n).padStart(2, "0")}`;
 const conversa = (n) => ({
   id: `cv-sug-${n}`, advogado_id: ADV, contato_id: `ct-sug-${n}`,
   nao_lidas: 0, arquivada: false, fixada: false, favorita: false,
   ultima_atividade: antes(n), esperando_desde: antes(30 + n), tratada_em: null,
   ultima_mensagem: "Queria saber do acordo", frente: null, digitando_ate: null,
-  vantoro_nome: null, situacao: "aberto", protocolo: null,
+  vantoro_nome: null, situacao: "aberto", protocolo: protocoloDe(n),
   responsavel_id: null, responsavel_em: null, responsavel_por: null,
   contato: CONTATOS[n - 1],
 });
@@ -103,6 +109,10 @@ const parada = (id, i) => ({
   esperando_desde: null, tratada_em: null, contato: CT_FX[i],
 });
 const SEMENTE = {
+  zorvin_atendimentos: Array.from({ length: N }, (_, i) => ({
+    id: `at-sug-${i + 1}`, protocolo: protocoloDe(i + 1), conversa_id: `cv-sug-${i + 1}`,
+    aberto_em: antes(40 + i), origem: "cliente", aberto_por: null,
+    primeira_resposta_em: antes(35 + i), finalizado_em: null, finalizado_por: null })),
   contatos: [...CONTATOS, ...CT_FX],
   conversas: [...Array.from({ length: N }, (_, i) => conversa(i + 1)),
               parada("cv-sug-fx1", 0), parada("cv-sug-fx2", 1), parada("cv-sug-fx3", 2)],
@@ -575,6 +585,8 @@ console.log("\n14. Uma mensagem nova na conversa pede de novo");
   await fecharJanela(page);
   await page.evaluate(() => globalThis.__MENSAGEM_PELA_PONTE("cv-sug-4", "contato", "Na verdade é sobre a blindagem."));
   await page.waitForTimeout(1500);
+  ok("a mensagem nova é do mesmo atendimento: o protocolo não mudou",
+     (await page.evaluate(() => (globalThis.__TABELAS.conversas.find((c) => c.id === "cv-sug-4") || {}).protocolo)) === protocoloDe(4));
   await abrirJanela(page);
   await esperarCaixa(page, "marcou");
   ok("depois da mensagem nova, a janela pede de novo", pedidos.length === 2, String(pedidos.length));
