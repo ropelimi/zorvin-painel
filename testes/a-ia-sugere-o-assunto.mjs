@@ -52,6 +52,10 @@ async function clicar(loc) {
   return true;
 }
 const texto = async (loc) => ((await loc.count()) ? loc.first().innerText().catch(() => "") : "");
+/** Um atributo — GUARDADO: `getAttribute` num elemento que não existe espera
+ *  30 segundos antes de desistir, e "não há caixa" é a resposta certa de
+ *  metade das cenas (a lição da prova da prévia do PDF, de 29/10). */
+const attr = async (loc, nome) => ((await loc.count()) ? loc.first().getAttribute(nome).catch(() => null) : null);
 const normal = (s) => String(s || "").replace(/\s+/g, " ").trim();
 
 /** O telefone que o painel ABRE — descoberto, e não escolhido a dedo. */
@@ -59,7 +63,7 @@ async function telefoneQueAbre() {
   const ctx = await nav.newContext({ viewport: { width: 1400, height: 900 } });
   const page = await ctx.newPage();
   await page.goto(ENDERECO);
-  await page.waitForSelector("[data-conversa-nome]");
+  await page.waitForSelector("[data-conversa-nome]", { timeout: 90000 });
   await page.waitForTimeout(1200);
   const id = await page.evaluate(() => {
     const cid = document.querySelector("[data-conversa-id]")?.getAttribute("data-conversa-id");
@@ -157,8 +161,12 @@ async function abrirPagina({ largura = 1400, altura = 900, semColunas = {}, semS
     return json(404, {});
   });
   await page.goto(ENDERECO);
-  await page.waitForSelector("[data-conversa-nome]");
+  await page.waitForSelector("[data-conversa-nome]", { timeout: 90000 });
   await page.waitForTimeout(1300);
+  // UM TETO CURTO PARA O RESTO: o que esquecer a guarda espera 8 segundos, e
+  // não 30 — numa sabotagem que tira a caixa, 30 por pergunta deixavam a
+  // prova perto de dez minutos.
+  page.setDefaultTimeout(8000);
   return { ctx, page, estouros };
 }
 async function abrirConversa(page, id) {
@@ -175,7 +183,7 @@ async function abrirJanela(page) {
   return tem && (await page.locator("[data-ja-tratei-janela]").count()) > 0;
 }
 const fecharJanela = (page) => clicar(page.locator("[data-ja-tratei-janela] button", { hasText: "Cancelar" }));
-const caixa = (page) => page.locator("[data-sugestao-do-assunto]").first().getAttribute("data-sugestao-do-assunto").catch(() => null);
+const caixa = (page) => attr(page.locator("[data-sugestao-do-assunto]"), "data-sugestao-do-assunto");
 const temCaixa = async (page) => (await page.locator("[data-sugestao-do-assunto]").count()) > 0;
 /** Espera a caixa chegar a um estado, com teto — e diz em qual parou. */
 async function esperarCaixa(page, estado, ms = 5000) {
@@ -459,7 +467,7 @@ console.log("\n9. Na faxina: uma conversa pede e grava; o lote não pede");
   await page.waitForTimeout(200);
   await clicar(page.locator("[data-faxina-finalizar-marcadas]"));
   await page.waitForTimeout(800);
-  const lote = await page.locator("[data-ja-tratei-janela]").getAttribute("data-ja-tratei-lote").catch(() => null);
+  const lote = await attr(page.locator("[data-ja-tratei-janela]"), "data-ja-tratei-lote");
   ok("no lote a janela abre", Number(lote) === 2, q(lote));
   ok("e NÃO pede sugestão nem mostra a caixa", pedidos.length === pedidosAntes && !(await temCaixa(page)),
      q({ pedidos: pedidos.length - pedidosAntes, caixa: await caixa(page) }));
@@ -491,7 +499,7 @@ console.log("\n11. Sem o 028 (o “Já tratei” de antes), a mesma sugestão");
   const { ctx, page, estouros } = await abrirPagina({ semSituacao: true });
   await abrirConversa(page, "cv-sug-1");
   const abriu = await abrirJanela(page);
-  const modo = await page.locator("[data-ja-tratei-janela]").getAttribute("data-ja-tratei-modo").catch(() => null);
+  const modo = await attr(page.locator("[data-ja-tratei-janela]"), "data-ja-tratei-modo");
   ok("a janela é a do “Já tratei”", abriu && modo === "tratar", q(modo));
   ok("e a sugestão marca sozinha", await esperarCaixa(page, "marcou") && igual(await marcados(page), ["ACORDOS"]),
      q({ caixa: await caixa(page), marcados: await marcados(page) }));
@@ -527,7 +535,8 @@ console.log("\n12. No celular, a caixa cabe na janela");
      && medida.janela.r <= medida.largura + 0.5 && !medida.rolaDeLado, q(medida));
   await alternar(page, "ACORDOS");
   await page.waitForTimeout(150);
-  const alvo = await page.locator("[data-usar-sugestao]").first().boundingBox().catch(() => null);
+  const alvo = (await page.locator("[data-usar-sugestao]").count())
+    ? await page.locator("[data-usar-sugestao]").first().boundingBox().catch(() => null) : null;
   ok("“Marcar a sugestão” tem o alvo de dedo de 40 pontos", alvo && alvo.height >= 39.5, q(alvo));
   ok("sem erro de JavaScript", estouros.length === 0, q(estouros));
   await ctx.close();
