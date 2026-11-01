@@ -13,7 +13,7 @@ import {
   Image as ImageIcon, Video,
   Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote, Volume2,
   ListChecks, Undo2, UserCheck, SquareKanban, BellRing, BellPlus, CircleCheck, RotateCcw,
-  Sparkles, Loader2, Headset, Hourglass, Eraser
+  Sparkles, Loader2, Headset, Hourglass, Eraser, ScrollText
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
@@ -68,7 +68,9 @@ import { montarCaminho, duracaoLegivel } from "./caminhoNoFunil.js";
 import EscolherHora from "./EscolherHora.jsx";
 import { perguntarOsScripts, fraseDosScriptsParaAFaixa, manterOQueSeSabia } from "./scriptsDoBanco.js";
 import { rotuloDaHora, porQueNaoServe, semAColunaDaAgenda, aindaDaParaEditar } from "./agenda.js";
-import { useEstadoDoCopiloto, copilotoAparece, pedirSugestao } from "./copiloto.js";
+import { useEstadoDoCopiloto, copilotoAparece, pedirSugestao, resumoAparece, pedirResumo } from "./copiloto.js";
+import ResumoDaConversa from "./ResumoDaConversa.jsx";
+import { mensagensDepoisDoResumo, textoDoResumo } from "./resumoDaConversa.js";
 import { ABAS_DA_SITUACAO, NOME_DA_SITUACAO } from "./abasDaSituacao.js";
 import { pareceAcessoVencido, pedirConferenciaDaSessao, marcarSaidaPedida, foiSaidaPedida } from "./vigiaDaSessao.js";
 import { rascunhosDe, guardarRascunho } from "./rascunhos.js";
@@ -3839,6 +3841,14 @@ export default function Painel({ sessao }) {
   // ============================================================
   const estadoDoCopiloto = useEstadoDoCopiloto();
   const [copiloto, setCopiloto] = useState({});
+  // O RESUMO DA CONVERSA (01/11) — "Resumir". Também POR CONVERSA:
+  // { [conversaId]: { fase: "pensando" | "pronto" | "erro", pedido, ... } }.
+  // O resumo de A não aparece em B, e voltar para A mostra o de A. O
+  // `pedido` é o número de cada clique: fechado o quadro, ou pedido de novo,
+  // a resposta que chega depois é de um pedido que ninguém espera mais, e
+  // não pode reabrir o quadro sozinha.
+  const [resumos, setResumos] = useState({});
+  const pedidoDoResumoRef = useRef(0);
   const [escolhendoHora, setEscolhendoHora] = useState(null);
   // A AGENDADA SENDO EDITADA (pedido de 05/10): o item da fila, ou nulo.
   const [editandoAgendada, setEditandoAgendada] = useState(null);
@@ -10417,13 +10427,16 @@ export default function Painel({ sessao }) {
       // é coluna, como a lista. Recolher uma coluna com Esc surpreenderia quem
       // só queria sair de um menu. A gaveta das janelas médias está por cima.
       else if (!fichaEmColuna && fichaAberta) setFichaAberta(false);
+      // O RESUMO DA CONVERSA (01/11) está por cima do alto da conversa: Esc
+      // fecha ELE, e só o seguinte fecha a busca ou a conversa.
+      else if (conversaId && resumos[conversaId]) fecharResumo(conversaId);
       else if (buscaAberta) { setBuscaAberta(false); setBuscaConversa(""); }
       else if (respondendo) setRespondendo(null);
       else if (conversaId) setConversaId(null);
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, pdfAberto, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, telaFunil, menuEtapa, telaTarefas, telaEsperando, telaFaxina, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, fichaEmColuna, menuDepartamentos, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada, jaTratei, trateiOcupado, reabrindo, reabrirOcupado, escolhaTelefone]);
+  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, pdfAberto, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, telaFunil, menuEtapa, telaTarefas, telaEsperando, telaFaxina, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, fichaEmColuna, menuDepartamentos, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada, jaTratei, trateiOcupado, reabrindo, reabrirOcupado, escolhaTelefone, resumos]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -13210,6 +13223,67 @@ export default function Painel({ sessao }) {
     colocarNaCaixa(s.sugestao);
   }
 
+  // ------------------------------------------------------------
+  //  "RESUMIR" — o resumo da conversa pela IA (01/11)
+  //
+  //  O que o cliente quer, o que já foi combinado e o que falta. Quem pede à
+  //  IA é a ponte (`POST /copiloto/resumir`, com a mesma chave do copiloto);
+  //  aqui o pedido é feito, guardado POR CONVERSA e desenhado num quadro por
+  //  cima do alto da conversa (`ResumoDaConversa.jsx`).
+  //
+  //  O BOTÃO MORA NA BARRA DE ESCREVER, ao lado do ✨ do copiloto, e não no
+  //  cabeçalho: a fila de botões do cabeçalho tem uma conta de largura medida
+  //  (`FILA_ESCRITA`), e um botão a mais nela apertaria o nome do cliente em
+  //  todas as larguras de notebook. No celular ele mora no ⋮, como o copiloto.
+  //  Ao contrário do ✨, ele não some com texto na caixa: resumir não mexe no
+  //  que está escrito.
+  // ------------------------------------------------------------
+  const resumoDisponivel = resumoAparece(estadoDoCopiloto);
+  const resumoAqui = conversaId ? resumos[conversaId] || null : null;
+  const podeResumir = resumoDisponivel && Boolean(conversa) && !linhaDesativada;
+  const resumoNovas = resumoAqui && resumoAqui.fase === "pronto"
+    ? mensagensDepoisDoResumo(mensagens, resumoAqui.ate) : 0;
+
+  async function resumirAConversa() {
+    if (!conversa || !conversaId) return;
+    const id = conversaId;
+    if (resumos[id] && resumos[id].fase === "pensando") return;
+    const pedido = ++pedidoDoResumoRef.current;
+    const deste = (x) => Boolean(x[id]) && x[id].pedido === pedido;
+    setResumos((x) => ({ ...x, [id]: { fase: "pensando", pedido } }));
+    let r;
+    try {
+      r = await pedirResumo(id);
+    } catch (e) {
+      setResumos((x) => (deste(x) ? { ...x, [id]: { fase: "erro", pedido, erro: String((e && e.message) || e) } } : x));
+      return;
+    }
+    const quando = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    setResumos((x) => (deste(x) ? { ...x, [id]: { fase: "pronto", pedido, quando, ...r } } : x));
+  }
+
+  function fecharResumo(id = conversaId) {
+    if (!id) return;
+    setResumos((x) => {
+      if (!x[id]) return x;
+      const novo = { ...x };
+      delete novo[id];
+      return novo;
+    });
+  }
+
+  async function copiarResumo() {
+    if (!resumoAqui || resumoAqui.fase !== "pronto") return;
+    const nome = conversa && !ehGrupo(conversa) ? nomeDoContato(conversa.contato) : "";
+    const texto = textoDoResumo(resumoAqui.resumo, { nome, quando: resumoAqui.quando ? `às ${resumoAqui.quando}` : "" });
+    try {
+      await navigator.clipboard.writeText(texto);
+      mostrarAviso("Resumo copiado.");
+    } catch (e) {
+      mostrarAviso("Não consegui copiar o resumo — o navegador não deixou. Selecione o texto e copie com Ctrl+C.");
+    }
+  }
+
   // QUANTAS NÃO LIDAS ESTÃO EM GRUPO — o número do menu.
   //
   // Sai da lista que já está na tela, e não de uma ida a mais ao banco: é um
@@ -15523,6 +15597,37 @@ export default function Painel({ sessao }) {
                       previa={`“${rascunho.trim().replace(/\s+/g, " ")}”`}
                       aoEscolher={agendarTexto} aoFechar={() => setEscolhendoHora(null)} />
       </div>
+    )}
+    {/* "RESUMIR", NO COMPUTADOR (01/11) — ao lado do ✨ do copiloto, os
+        dois botões de IA juntos. Ele não some com texto na caixa (resumir não
+        mexe no que está escrito), e por isso vem ANTES do lugar que o ✨ e o
+        relógio dividem: o botão fica parado enquanto o vizinho troca. Um
+        clique com o quadro aberto o fecha. No celular, o caminho é o ⋮.
+
+        ONDE O CABEÇALHO RECOLHE NO ⋮, ELE VAI JUNTO. São 40 pontos a menos
+        na caixa de escrever, e a prova `a-auditoria-de-27-10` mediu: a 900, a
+        caixa caía para 181 (o piso é 200). Abaixo do recolhido a conversa
+        tem menos de ~590 pontos; acima, a caixa fica com ~290 ou mais. E é
+        uma régua que já existe: no recolhido, o ⋮ do cabeçalho está lá, com
+        "Resumir a conversa" escrito. */}
+    {!estreito && !cabecalhoRecolhido && podeResumir && !editando && (
+      <button data-resumo-botao
+              onClick={() => (resumoAqui ? fecharResumo() : resumirAConversa())}
+              disabled={Boolean(resumoAqui && resumoAqui.fase === "pensando")}
+              title={resumoAqui && resumoAqui.fase === "pensando" ? "A IA está lendo a conversa…"
+                : resumoAqui ? "Fechar o resumo" : "Resumir a conversa (IA)"}
+              aria-label={resumoAqui ? "Fechar o resumo da conversa" : "Resumir a conversa com a IA"}
+              aria-pressed={Boolean(resumoAqui)}
+              style={{ border: "none", background: resumoAqui ? C.listActive : "transparent",
+                       cursor: resumoAqui && resumoAqui.fase === "pensando" ? "default" : "pointer",
+                       display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40,
+                       borderRadius: "50%", flexShrink: 0, padding: 0, alignSelf: "flex-end" }}>
+        {resumoAqui && resumoAqui.fase === "pensando"
+          // O GIRO É O DO QUADRO ("zv-resumo-gira"): enquanto o botão pensa,
+          // o quadro desta conversa está aberto, e é ele que define o giro.
+          ? <Loader2 size={21} color={C.green} style={{ animation: "zv-resumo-gira 1s linear infinite" }} />
+          : <ScrollText size={21} color={resumoAqui ? C.green : C.textSecondary} />}
+      </button>
     )}
     {/* O COPILOTO, NO COMPUTADOR: só com a caixa vazia, no lugar em que o
         relógio de agendar aparece quando há texto — a barra nunca ganha um
@@ -17843,6 +17948,20 @@ export default function Painel({ sessao }) {
                           <Sparkles size={17} color={C.green} /> Sugerir resposta
                         </button>
                       )}
+                      {/* O RESUMO (01/11), logo depois do copiloto: os dois de IA
+                          juntos. No celular e no computador com o cabeçalho
+                          recolhido este é o único caminho; com o quadro
+                          aberto, ele pede um resumo NOVO (fechar é o X do
+                          quadro). */}
+                      {podeResumir && (
+                        <button onClick={() => { setMenuDaConversa(false); resumirAConversa(); }}
+                                data-resumo-item
+                                disabled={Boolean(resumoAqui && resumoAqui.fase === "pensando")}
+                                style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
+                          <ScrollText size={17} color={C.green} />
+                          {resumoAqui && resumoAqui.fase === "pronto" ? "Resumir de novo" : "Resumir a conversa"}
+                        </button>
+                      )}
                       {/* O RESPONSÁVEL, escrito — no celular este é o único
                           caminho para assumir ou passar a conversa. */}
                       {temResponsavel === true && (
@@ -18186,6 +18305,17 @@ export default function Painel({ sessao }) {
               );
             })()}
 
+            {/* O RESUMO DA CONVERSA (01/11), pendurado numa âncora de altura
+                zero logo acima da lista — o truque do "Ir para o fim": ele cobre
+                o alto da conversa (o que é mais velho) sem mexer na altura nem
+                na rolagem da lista. Por conversa: o de A não aparece em B. */}
+            {resumoAqui && (
+              <div data-ancora-do-resumo style={{ position: "relative", height: 0, zIndex: 15 }}>
+                <ResumoDaConversa C={C} escuro={modo === "escuro"} estreito={estreito} estado={resumoAqui}
+                                  novas={resumoNovas} aoFechar={() => fecharResumo()}
+                                  aoResumirDeNovo={resumirAConversa} aoCopiar={copiarResumo} />
+              </div>
+            )}
             <div ref={listaRef} data-lista-mensagens onScroll={aoRolar} style={{ flex: 1, overflowY: "auto", padding: estreito ? "16px 10px" : "20px 8%", display: "flex", flexDirection: "column", gap: 6 }}>
               {/* O degrau para subir no histórico. A conversa abre com as
                   últimas mensagens; o resto vem daqui, um lote por vez. Um

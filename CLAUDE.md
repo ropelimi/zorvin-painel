@@ -4782,6 +4782,147 @@ importam mais:
 - a recusa calada virando "salvo";
 - salvar sem reler.
 
+## O resumo da conversa — "Resumir" (01/11)
+
+Pedido do Rodrigo, da lista de recomendações de 31/10: *"…em seguida pode
+continuar com a recomendação 4"* — *"Um botão 'Resumir' que diz em poucas
+linhas o que o cliente quer, o que já foi combinado e o que falta. Serve para
+quem pega a conversa de uma colega e para o cliente que volta depois de
+semanas. Usa a mesma chave do copiloto."*
+
+Quem fala com a IA é a ponte (`POST /copiloto/resumir`, ver "O resumo da
+conversa" no CLAUDE.md dela): ela lê até 300 mensagens e as notas internas, e
+devolve as três partes. **Nada é gravado**: o resumo é só de quem pediu, e some
+ao recarregar a página. As contas sem tela moram em `src/resumoDaConversa.js`;
+o quadro, em `src/ResumoDaConversa.jsx`.
+
+### Onde ele mora na tela
+
+| | |
+|---|---|
+| computador | um ícone de pergaminho (`data-resumo-botao`) na barra de escrever, ao lado do ✨ |
+| computador com o cabeçalho recolhido | "Resumir a conversa" no ⋮ do cabeçalho |
+| celular | "Resumir a conversa" no ⋮ (`data-resumo-item`), logo depois de "Sugerir resposta" |
+| o resultado | um quadro por cima do alto da conversa (`data-resumo-da-conversa`) |
+
+**Na barra de escrever, e não no cabeçalho**: a fila de botões do cabeçalho
+tem a conta de largura de 29/09 (`FILA_ESCRITA`), e um botão a mais nela
+apertaria o nome do cliente em todas as larguras de notebook.
+
+**E onde o cabeçalho recolhe no ⋮ (`cabecalhoRecolhido`), o botão vai
+junto.** São 40 pontos a menos na caixa de escrever, e a prova
+`a-auditoria-de-27-10` mediu: numa janela de 900, a caixa caía para **181
+pontos**, abaixo do piso de 200. O cabeçalho recolhe quando a conversa tem
+menos de ~590 pontos; acima disso, com o botão, a caixa fica com ~290 ou
+mais. E não é uma régua nova: no recolhido o ⋮ do cabeçalho está lá, com
+"Resumir a conversa" escrito. A primeira escrita não tinha essa guarda, e foi
+a prova vizinha que reprovou.
+
+**Ao contrário do ✨, ele não some com texto na caixa**: resumir não mexe no
+que está escrito. Por isso ele vem antes do lugar que o ✨ e o relógio de
+agendar dividem, e fica parado enquanto o vizinho troca.
+
+**Um clique com o quadro aberto fecha o quadro**, sem pedir outro resumo.
+Pedir de novo é o "Resumir de novo", dentro do quadro; no celular, o mesmo
+item do ⋮ muda de nome.
+
+### O quadro
+
+**Por cima do alto da conversa**, pendurado numa âncora de altura zero logo
+acima da lista (o truque do "Ir para o fim"). Embaixo, ele cobriria as
+mensagens mais novas, que são as que a pessoa precisa ler para responder; no
+meio do fluxo, encolheria a lista e a rolagem pularia. Em cima, ele cobre o
+que é mais velho e some num clique. A prova mede o que está PINTADO
+(`elementFromPoint`): o quadro por cima, e a mensagem mais nova à vista.
+
+Três fases: *"Lendo a conversa…"*, o resumo, e o erro, com a frase da ponte
+(que diz o que fazer) e "Tentar de novo".
+
+**Pronto, ele diz:**
+
+- as três partes (*O que o cliente quer*, *O que já foi combinado*, *O que
+  falta*). A lista vazia é escrita: "Nada combinado ainda.", "Nada pendente.";
+- quando foi feito e **o que a IA leu** (`fraseDaLeitura`): *"Leu a conversa
+  inteira: 5 mensagens e 1 nota interna"*, ou *"Leu as últimas 300 mensagens…
+  — as mais antigas ficaram de fora"*. Dizer "a conversa inteira" de um resumo
+  que não viu o começo do caso faria quem lê confiar no que ele não sabe;
+- os avisos da ponte (as notas internas que não vieram);
+- **as mensagens que chegaram depois do resumo**
+  (`mensagensDepoisDoResumo`), contadas pelo `criado_em` do banco contra o
+  `ate` que a ponte devolve (a mensagem mais nova que ela leu), e não pelo
+  relógio do computador. Só contam as do cliente e as da equipe; a bolha que
+  ainda está saindo, não;
+- e, sempre, *"Feito pela IA a partir da conversa e das notas internas:
+  confira na conversa antes de agir."* É um escritório de advocacia: um resumo
+  que inventasse um acordo e fosse lido como fato é o pior desfecho, e a frase
+  custa uma linha.
+
+**Copiar leva o texto puro** (`textoDoResumo`), com o nome do alto da
+conversa, a hora e *"(feito pela IA do Zorvin)"*. Colado numa nota ou no
+Vantoro, longe da tela, ele não pode passar por anotação de alguém da equipe.
+
+### Por conversa, e a corrida da troca
+
+O estado é **por conversa** (`resumos`, um objeto por id), pela lição do
+copiloto: trocar de conversa no meio não pinta o resumo de A em B, e ao voltar
+para A o resumo dela está lá.
+
+**Cada pedido leva um número** (`pedidoDoResumoRef`). Fechado o quadro
+enquanto a IA lia, a resposta que chega depois não o reabre; e "Resumir de
+novo" troca o resumo pelo novo. Enquanto a IA lê, o botão fica desligado: um
+segundo clique não manda outro pedido.
+
+**O Esc fecha o quadro antes da conversa**: ele está por cima, e a escada do
+Esc fecha o que está por cima.
+
+### Está ligado? A mesma pergunta do copiloto
+
+`GET /copiloto/estado` ganhou `resumo: true`. **A ponte que respondeu sem essa
+chave é a de antes do resumo**, e aí só o "Resumir" some. O painel pode chegar
+ao ar antes da ponte (em 14/10 a Render passou um dia sem publicá-la), e o
+botão de uma rota que ainda não existe daria 404 a cada clique. Os três
+estados de `temVantoro.js` valem aqui: só a resposta que CHEGOU sem a chave
+esconde; a pergunta que falhou mostra (`resumoAparece`, em `copiloto.js`).
+
+**A resposta é conferida antes de virar quadro** (`pedirResumo`): o resumo
+com as três partes vazias vira o erro *"A IA não devolveu resumo desta vez"*,
+e não um quadro em branco.
+
+**As notas internas vão para a IA no resumo, e não no copiloto**, e é
+decisão. A sugestão do copiloto entra na caixa de escrever, a um Enter do
+cliente; o resumo só é lido pela equipe, e é nas notas que ela escreve o que
+combinou.
+
+Prova: `o-resumo-da-conversa`, 82 conferências em 12 cenas, com a ponte
+fingida pela prova e o relógio fixado às 9h de Brasília. **26 sabotagens, 25
+pegas e uma que vaza com razão**, todas rodadas em cópias e lidas uma a uma:
+
+- **o botão:** some com texto na caixa; sem a guarda da ponte de antes; a
+  dúvida escondendo; não desliga enquanto a IA lê (10 reprovações); não fecha
+  o quadro; aparece também no celular; aparece também no cabeçalho recolhido
+  (a caixa de 181 pontos de volta);
+- **o pedido e a corrida:** a resposta sem o número do pedido; um quadro só
+  para todas as conversas; o pedido pelo contato, e não pela conversa; o Esc
+  sem o degrau do resumo;
+- **o quadro:** o erro calado (6); o resumo vazio virando quadro; sem dizer
+  que cortou; sem dizer o que leu; a lista vazia em branco; sem os avisos;
+  sem a frase da IA; o quadro embaixo, cobrindo as mensagens novas; o quadro
+  mais largo que a tela do celular;
+- **as mensagens que chegam depois:** a última lida contada como nova; a
+  conta pelo relógio do computador;
+- **o Copiar** sem dizer que é da IA;
+- **o ⋮:** sem o item no celular; o item só no celular (o computador com o
+  cabeçalho recolhido ficaria sem caminho);
+- **e a que vaza:** o X do quadro sem os 40 pontos de dedo no celular. A regra
+  geral do painel já os dá a todo botão que é só ícone, e o quadro repetia
+  isso. A repetição saiu, pela régua da faxina: ninguém tem de lembrar caso a
+  caso.
+
+**E uma armadilha da prova:** a bolha de texto guarda, junto do texto, a hora
+e os tiques num `<span>`, e por isso não é "folha". A conferência do que está
+pintado procurava a última mensagem entre os elementos sem filhos, e não a
+achava. Hoje ela procura o elemento que tem o texto como filho direto.
+
 ## Aguardando, em aberto e finalizados (19/10)
 
 Pedido do Rodrigo, com a descrição do DataCrazy ao lado: *"para facilitar a
@@ -6730,7 +6871,10 @@ com `ps` que nada ficou rodando.**
 - Passo a passo (SQL, merge, etc.) vai **no chat**, não na descrição da PR — o Rodrigo não lê a descrição para instruções de setup.
 - **O SQL pelo conector do Supabase roda sem pedir permissão a ele** — dito em
   26/10: *"Sempre que for para executar o SQL, não precisa me pedir permissão,
-  pode sempre fazer."* O que isso não muda: **mudança de estrutura** (tabela,
+  pode sempre fazer."* **E de novo em 01/11, pedindo que ficasse guardado:**
+  *"sempre que precisar rodar alguma consulta no banco de dados, não precisa
+  ficar pedindo permissão. Só faz!"* Também não se avisa antes: roda-se, e
+  conta-se depois o que foi feito, quando fizer diferença. O que isso não muda: **mudança de estrutura** (tabela,
   coluna, regra) continua indo por `sql/automaticos/`, no repo da ponte, que é
   o que mantém o banco e o código dizendo a mesma coisa; **correção de dados**
   se faz olhando antes o que vai mudar e contando a ele depois o que mudou; e
