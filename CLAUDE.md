@@ -4025,6 +4025,246 @@ recorte, e esse é pego pelo número da barra.
 sozinha de uma etapa do funil — as duas ficam para quando o Rodrigo usar
 esta.
 
+## Quem está esperando demais (31/10)
+
+Pedido do Rodrigo, da lista de recomendações de 31/10: *"Pode seguir para a
+segunda recomendação"* — *"Ao abrir o Zorvin, cada pessoa vê quantas conversas
+dela esperam há mais de 3 dias, com um botão que mostra quais. E um aviso
+quando um cliente novo passa de X minutos sem resposta no expediente."* O X
+ficou em **30 minutos**, pela medição (ver o script 041 no CLAUDE.md da ponte),
+e quem administra troca por departamento.
+
+**Medido em 31/10, só contando**, nos 30 dias anteriores: dos 297 clientes que
+escreveram primeiro dentro do expediente, a mediana até a primeira resposta
+foi **1 h 46 min**, só 19% foram respondidos em 30 minutos e **40% não tinham
+resposta nenhuma**. E 596 conversas esperavam há 3 dias ou mais — 193 com
+responsável (17 pessoas, de 1 a 56 cada).
+
+### Onde aparece
+
+| | |
+|---|---|
+| ao abrir, sem conversa escolhida | o resumo na tela da direita (`data-resumo-da-espera`): *"2 clientes sem resposta há mais de 30 min de expediente"*, *"12 conversas suas esperando resposta há 3 dias ou mais"*, e **Ver quais** |
+| a barra lateral | a ampulheta (`data-abrir-esperando`), com a soma das duas listas — **vermelha** quando há cliente sem resposta, **âmbar** quando são só as suas |
+| o ⋮ do topo | "Esperando resposta", com o mesmo número: no celular a tela da direita não aparece ao abrir, e a barra e o ⋮ são o caminho |
+| a tela | `Esperando.jsx` (`data-tela="esperando"`), com as duas seções; clicar abre a conversa no telefone dela, pelo caminho do histórico (`verConversaDoHistorico`) |
+| o aviso | o som escolhido, a tarja (pela chave de `notificarDesktop`) e a faixa |
+| a administração | a aba **Aviso de espera**, em Departamentos e acessos (`AvisoDeEspera.jsx`) |
+
+**Nada aparece quando não há o que dizer**: o resumo só nasce com alguém
+esperando, ou com uma leitura que falhou.
+
+### As duas listas
+
+- **Clientes sem resposta** — da função do banco
+  (`zorvin_clientes_sem_resposta`, script 041): quem abriu um atendimento e
+  espera a primeira resposta além do limite do departamento, **contado só no
+  expediente**. Os minutos são do banco, pela mesma semana que decide a
+  resposta fora do horário: uma segunda conta aqui divergiria dela no primeiro
+  feriado. **São "meus" os sem responsável e os de que sou o responsável**
+  (`ehParaMim`), a régua do aviso de mensagem nova: o cliente da colega
+  aparece só para ela.
+- **As minhas há 3 dias ou mais** — as conversas em que sou o responsável e a
+  espera começou antes da meia-noite de anteontem (`corteDosTresDias`), que é a
+  régua do rótulo vermelho da lista (`diasDesde`). A tela confere de novo com
+  `diasDesde`: o corte do banco é o mesmo, e a segunda conferência é o que
+  impede os dois de divergirem calados. **Sem a linha desativada** (a régua do
+  relatório por responsável) **e sem a arquivada**; até 500, e a tela diz
+  quando cortou.
+
+### O aviso: uma vez só, e só o que acabou de acontecer
+
+- **De minuto em minuto**, a pergunta ao banco.
+- **Toca quem passou do limite há menos de 15 minutos** (`JANELA_DO_AVISO_MIN`).
+  Quem passou há mais está na lista e no número da barra, e não no susto: sem
+  a janela, quem abre o Zorvin às 10h ouviria de uma vez todos os que passaram
+  do limite às 9h30 — a régua das doze horas do lembrete das tarefas.
+- **Uma vez por navegador, por PROTOCOLO** (`zorvin-esperas-avisadas`), marcado
+  ANTES de tocar: recarregar não toca de novo, e duas abas não tocam duas
+  vezes. O cliente que volta a escrever depois de finalizado abre um protocolo
+  novo, e toca de novo.
+- **A conversa aberta na minha tela não toca**: quem está olhando para ela não
+  precisa ser avisado dela.
+- **Vários de uma vez são um som só**, uma tarja por cliente (até três) e uma
+  faixa com quantos.
+
+### A primeira pergunta espera cinco segundos
+
+`ESPERA_ANTES_DA_PRIMEIRA_MS`. A das minhas vai à tabela de conversas, e na
+partida as idas a essa tabela saem todas juntas, numa rodada — a prova
+`partida` mede isso. Perguntada na hora, ela começaria depois de a lista
+chegar (é a lista que diz se a coluna do responsável existe), e a abertura
+voltaria a esperar em fila. Os cinco segundos contam **de quando a lista
+chega**: o relógio recomeça quando ela diz que a coluna do responsável existe
+(`podeContarAtrasadas` vira `true`), e é depois de a lista aparecer e antes de
+alguém ter escolhido a primeira conversa.
+
+**O que entra nas dependências do relógio é a PERGUNTA** (`podeContarAtrasadas`,
+um booleano que vira `true` uma vez), e o que muda a cada desenho
+(`advogadosPermitidos`) entra por espelho — a lição do relógio órfão de 20/10.
+
+### E a prova da pesca aprendeu a separar esta leitura
+
+`a-pesca-enquanto-o-canal-esta-fora` conta as idas a `conversas` com o canal
+de pé e exige **zero** — e reprovou: as minhas há 3 dias caíram dentro da
+janela dela, cinco segundos depois de a lista chegar. Até aqui a pesca era a
+única leitura de `conversas` com relógio próprio, e por isso "nenhuma ida a
+mais" queria dizer "nenhuma pesca". Agora são duas.
+
+**Esta leitura não é pesca**: ela tem o relógio dela, com o canal de pé ou
+fora. A prova passou a deixá-la de fora das duas contas (idas e rodadas)
+**pelo formato**, e estreito de propósito: ela pede `esperando_desde` no começo
+das colunas E filtra por `responsavel_id`; a releitura da lista pede `*` e
+nunca casa com isso. **Uma sabotagem confere que a prova continua vendo a
+pesca**: com a pesca correndo de canal de pé, ela reprova.
+
+**E o custo dela não ficou sem dono**: a prova nova confere a cadência — uma
+leitura das minhas por rodada, nem a mais nem nunca —, com o mesmo formato. Se
+a consulta mudar de forma, a conferência daqui reprova dizendo zero, e é o
+lembrete de mudar o formato lá também. **Ao criar outra leitura de `conversas`
+com relógio próprio, ela entra nesse mesmo formato, ou a pesca reprova.**
+
+### Três estados, e a falha dita
+
+`temAvisoDeEspera`, pela régua de `temVantoro.js`: **só a função que falta
+esconde** (o 041 não rodou), e ela é perguntada **uma vez**; qualquer outro
+tropeço é dito no resumo, na faixa âmbar e na tela, com o código — e nunca vira
+"ninguém esperando", que faria a pessoa ir embora achando que a fila está em
+dia. A das minhas também: sem a espera (004) ou sem o responsável (008), não há
+o que contar, e a consulta pela coluna que falta nem sai.
+
+### A aba Aviso de espera
+
+Por departamento: a chave, os minutos (de 5 a 480) e o expediente da aba Fora
+do horário, em três frases — o escrito; *"sem horário escrito: o aviso conta
+o relógio inteiro"*; *"todos os dias fechados: o aviso nunca toca"*.
+
+- **Sem linha, vale o padrão** (ligado, 30), e é o que a tela desenha.
+- **A leitura que falha é dita, e o padrão não é desenhado por cima**: quem
+  visse "30" poderia salvar 30 por cima dos 45 que estão gravados.
+- **Gravar manda a linha inteira e relê do banco**; a recusa é dita com o
+  código.
+- **A recusa calada (zero linhas) não existe num `upsert`**: o Postgres levanta
+  42501 quando a regra de acesso recusa. O ramo de `naoGravouNada` fica, pela
+  régua da aba Distribuição, mas não tem cena — a bancada só sabe recusar
+  calada uma edição ou uma exclusão, e uma cena ali mediria a bancada.
+
+### A bancada
+
+A tabela `zorvin_aviso_de_espera` (vazia, como o script a entrega) e
+`__SEM_AVISO_DE_ESPERA`; a função **ditada** pela prova (`__SEM_RESPOSTA`),
+pela régua de `zorvin_saude` — a conta foi conferida num Postgres de verdade na
+seção 86 da ponte —, com cada pergunta contada (`__PERGUNTAS_DA_ESPERA`);
+`__QUEBRAR_AS_QUE_ESPERAM`, que derruba só a pergunta das minhas; e
+`__ESPERA_PRIMEIRA_MS` e `__ESPERA_A_CADA_MS`, para a prova não esperar
+minutos.
+
+Prova: `o-aviso-de-quem-espera-demais`, 77 conferências.
+
+**Duas armadilhas da primeira escrita, e as duas eram da prova:**
+
+- **as duas leituras chegam em tempos diferentes.** A da função é uma ida
+  curta; a das conversas espera a lista. A prova contava no meio do caminho e
+  reprovava dizendo "0 conversas suas", enquanto o título do ícone, lido um
+  instante depois, já dizia 2. Hoje ela espera o número chegar
+  (`esperarValor`);
+- **o telefone que a bancada abre primeiro é o a7.** A cena da conversa aberta
+  clicava numa conversa do a1, que não estava na lista: o clique não fazia
+  nada, e a prova reprovava o painel certo. Hoje a cena confere, pelo nome no
+  alto, que a conversa abriu mesmo.
+
+**35 sabotagens e 35 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma:
+
+- **o resumo e a barra:**
+  - sem o resumo (16 reprovações);
+  - sem o número da barra;
+  - o número sem as minhas;
+  - sem o item no ⋮;
+- **as listas:**
+  - o cliente da colega contando como meu (8 reprovações);
+  - a tela mostrando o cliente da colega;
+  - as minhas com a linha desativada;
+  - as minhas com a arquivada;
+  - as minhas de todo mundo (11);
+  - a régua de dois dias;
+  - a tela sem a seção das minhas;
+- **o aviso:**
+  - sem a janela de 15 minutos;
+  - tocando sempre;
+  - sem marcar antes de tocar;
+  - a chave pela conversa, e não pelo protocolo;
+  - tocando na conversa aberta;
+- **a falha:**
+  - a do banco virando "ninguém sem resposta";
+  - a do banco escondendo o recurso;
+  - o resumo sem o código;
+  - a das minhas virando "nenhuma";
+  - a função que falta perguntada sempre;
+  - o "Tentar de novo" sem reler os clientes sem resposta, e sem reler a
+    minha carteira (a segunda também é pega pela
+    `a-aba-que-falha-diz-que-falhou`);
+- **a cadência:**
+  - a primeira pergunta sem esperar a abertura, pega pela `partida`: a espera
+    da abertura dobra, de 736 para 1440 ms;
+  - as minhas lidas duas vezes por rodada;
+  - as minhas lidas só na primeira;
+- **a tela:**
+  - sem o Esc;
+  - abrir a conversa sem trocar de telefone;
+- **a aba:**
+  - o padrão desenhado por cima da falha;
+  - sem linha valendo desligado;
+  - os minutos fora da faixa sendo salvos;
+  - sem reler depois de gravar;
+  - a recusa com erro calada;
+  - sem semana dizendo "todos os dias fechados";
+- **e a pesca correndo com o canal de pé**, pega pela
+  `a-pesca-enquanto-o-canal-esta-fora` com 5 reprovações, entre elas *"foram
+  29 idas em 6000ms"*: a separação nova não a deixou cega.
+
+**A das minhas de todo mundo também reprova a cadência** ("0 leituras das
+minhas"): sem o filtro do responsável, a consulta muda de forma. É a
+conferência do formato fazendo o que foi feita para fazer.
+
+### A primeira rodada no GitHub reprovou duas provas (01/11)
+
+**Uma era minha.** O "Tentar de novo" da faixa âmbar relê o que acendeu a
+faixa — e não relia as duas leituras novas. Ela ficava de pé até a próxima
+volta do relógio delas, um minuto depois, com a leitura já de volta. Quem
+pegou foi `a-aba-que-falha-diz-que-falhou`: ela quebra a leitura das conversas
+por uns 2,5 s ao trocar de aba, e a das minhas há 3 dias cai bem nessa janela,
+cinco segundos depois de a lista chegar. Hoje o botão relê as duas
+(`sem-resposta` e `minhas-atrasadas`), e a conferência "e a faixa apaga"
+daquela prova passou a dizer o texto da faixa quando reprova: "a faixa não
+apagou", sozinho, manda procurar em todas as leituras.
+
+**E a cena 3 da prova nova ganhou o contraste**, nas duas metades — que vazou
+duas vezes antes de valer:
+
+- **o relógio das leituras estava em 1,2 s em todas as cenas**, e não em um
+  minuto, como dizia o comentário que eu tinha escrito: a próxima volta dele
+  apagava a faixa antes de o botão fazer diferença. A cena 3 roda com o
+  relógio em dez minutos;
+- **a bancada decide se quebra na hora de RESPONDER**, e não na de perguntar.
+  A leitura pedida ao abrir a tela "Esperando resposta" ainda estava no ar
+  quando a cena desfez a quebra, e voltou certa. Hoje a cena espera não haver
+  leitura da carteira no ar (`semCarteiraNoAr`, pelo `fim` do diário) antes de
+  desfazer. **Antes de desfazer uma quebra da bancada, espere as leituras no
+  ar voltarem** — senão quem apaga a faixa é a leitura velha, e não o gesto
+  que se quer medir.
+
+**A outra não era desta PR, e reprovava na `main` também.** A cena 4 de
+`o-periodo-e-a-pessoa-do-painel` planta um "Já tratei" no mês mais antigo da
+lista "Escolher mês", calculado no relógio da MÁQUINA — que no GitHub está na
+hora universal —, enquanto o navegador da prova está no fuso de São Paulo.
+Entre 00h e 03h do dia 1º (das 21h à meia-noite do último dia do mês, em
+Brasília) os dois discordam de mês: a semente caía no penúltimo mês da lista,
+e a cena reprovava seis conferências sem defeito nenhum. A rodada desta PR
+caiu às 00h21 de 01/11. Hoje a semente é contada no calendário de São Paulo.
+**Prova que abre o navegador num fuso e calcula datas no Node calcula no
+fuso do navegador**, e não no da máquina.
+
 ## A resposta automática fora do horário (09/10)
 
 Pedido do Rodrigo, o nº 1 da lista de ideias de 08/10: quem escreve à noite,

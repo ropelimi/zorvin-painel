@@ -13,7 +13,7 @@ import {
   Image as ImageIcon, Video,
   Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote, Volume2,
   ListChecks, Undo2, UserCheck, SquareKanban, BellRing, BellPlus, CircleCheck, RotateCcw,
-  Sparkles, Loader2, Headset
+  Sparkles, Loader2, Headset, Hourglass
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
@@ -47,6 +47,11 @@ import Departamentos from "./Departamentos";
 import PainelNumeros from "./PainelNumeros";
 import Funil from "./Funil";
 import Tarefas from "./Tarefas.jsx";
+import Esperando from "./Esperando.jsx";
+import { RELER_A_CADA_MS as RELER_A_ESPERA_MS, TETO_DAS_ATRASADAS, ESPERA_ANTES_DA_PRIMEIRA_MS, ehParaMim,
+         quemAvisarAgora, marcarAvisadas as marcarEsperasAvisadas, chaveDoAviso as chaveDoAvisoDeEspera,
+         corteDosTresDias, esperaHaTresDias, rotuloDosMinutos, fraseDoLimite, quantosClientes,
+         quantasConversasSuas } from "./esperandoDemais.js";
 import NovaTarefa from "./NovaTarefa.jsx";
 import { situacao, ordenarAbertas, rotuloDaTarefa, fimDeHoje, semATabelaDeTarefas, quemTocaAgora,
          marcarAvisadas, chaveDoAviso } from "./tarefas.js";
@@ -3618,6 +3623,17 @@ export default function Painel({ sessao }) {
   // no dia em que a rede tossisse.
   const [temTarefas, setTemTarefas] = useState(null);
   const [telaTarefas, setTelaTarefas] = useState(false);
+  // ---- QUEM ESTÁ ESPERANDO DEMAIS (31/10) — ver `esperandoDemais.js` ----
+  // `temAvisoDeEspera` tem TRÊS estados, pela régua de `temVantoro.js`: `null`
+  // ainda não perguntou, `false` o banco não tem a função (o script 041 da
+  // ponte não rodou) e `true` tem — OU A PERGUNTA FALHOU por outro motivo, e
+  // aí a lista aparece e diz o erro, em vez de sumir por causa de um tropeço.
+  const [telaEsperando, setTelaEsperando] = useState(false);
+  const [temAvisoDeEspera, setTemAvisoDeEspera] = useState(null);
+  const temAvisoDeEsperaRef = useRef(null);
+  useEffect(() => { temAvisoDeEsperaRef.current = temAvisoDeEspera; }, [temAvisoDeEspera]);
+  const [semResposta, setSemResposta] = useState({ linhas: [], erro: "", lido: false });
+  const [atrasadas, setAtrasadas] = useState({ linhas: [], erro: "", lido: false, cortado: false });
   // AS TAREFAS DA CONVERSA ABERTA: `{ conversaId, carregando, lista, erro }`.
   const [tarefasDaConversa, setTarefasDaConversa] = useState(null);
   // O menu das tarefas tem os dois endereços dos outros menus da linha do
@@ -6329,6 +6345,126 @@ export default function Painel({ sessao }) {
   // agora, e um número que nunca zera se aprende a não ler.
   const tarefasParaAgora = minhasTarefas.filter((t) => situacao(t) !== "proxima").length;
   const tarefasAtrasadas = minhasTarefas.filter((t) => situacao(t) === "atrasada").length;
+
+  // ---- QUEM ESTÁ ESPERANDO DEMAIS (31/10) ----
+  //
+  // Duas leituras, de minuto em minuto, e as duas dizem quando falham — a
+  // armadilha nº 2: "ninguém esperando" no lugar de "não consegui ler" faria
+  // a pessoa ir embora achando que a fila está em dia.
+  //
+  //   - OS CLIENTES SEM RESPOSTA, do banco (`zorvin_clientes_sem_resposta`, o
+  //     script 041 da ponte): quem abriu um atendimento e espera a primeira
+  //     resposta há mais do que o limite do departamento, contado só no
+  //     expediente. É daqui que sai o AVISO — o som, a tarja e a faixa;
+  //   - AS MINHAS ESPERANDO HÁ 3 DIAS OU MAIS: as conversas em que sou o
+  //     responsável, pela régua do rótulo vermelho da lista (`diasDesde`).
+  //
+  // O QUE MUDA A CADA DESENHO ENTRA POR ESPELHO, e não nas dependências (a
+  // lição do relógio órfão, 20/10): `advogadosPermitidos` nasce de novo a cada
+  // desenho, e com ele ali o relógio seria refeito a cada tecla — e cada
+  // refeita perguntaria ao banco na hora.
+  const advogadosPermitidosRef = useRef([]);
+  advogadosPermitidosRef.current = advogadosPermitidos;
+  const podeContarAtrasadas = temEspera === true && temResponsavel === true;
+  const podeContarAtrasadasRef = useRef(false);
+  podeContarAtrasadasRef.current = podeContarAtrasadas;
+  const lerSemResposta = useCallback(async () => {
+    if (!meuId || temAvisoDeEsperaRef.current === false) return;
+    try {
+      const r = await supabase.rpc("zorvin_clientes_sem_resposta");
+      if (r.error) {
+        // SÓ A FUNÇÃO QUE FALTA esconde: o recurso não existe neste banco.
+        // Qualquer outro tropeço é dito, e a lista continua oferecida.
+        if (semAFuncao(r.error)) { setTemAvisoDeEspera(false); limparFalhaDeLeitura("sem-resposta"); return; }
+        setTemAvisoDeEspera(true);
+        anotarFalhaDeLeitura("sem-resposta", "os clientes sem resposta", r.error);
+        setSemResposta((s) => ({ ...s, lido: true,
+          erro: comOCodigo("Não consegui ler os clientes sem resposta.", r.error, "clientes sem resposta") }));
+        return;
+      }
+      setTemAvisoDeEspera(true);
+      limparFalhaDeLeitura("sem-resposta");
+      const linhas = Array.isArray(r.data) ? r.data : [];
+      setSemResposta({ linhas, erro: "", lido: true });
+      const tocar = quemAvisarAgora(linhas, meuId, conversaIdRef.current);
+      if (!tocar.length) return;
+      // MARCA ANTES DE TOCAR: uma segunda aba que leia no mesmo segundo acha a
+      // marca e não toca de novo — a régua do lembrete das tarefas.
+      marcarEsperasAvisadas(tocar.map(chaveDoAvisoDeEspera));
+      tocarAviso();
+      const nomeDe = (l) => nomeDoContato(l.contato) || "Cliente";
+      const telDe = (l) => (advogadosPermitidosRef.current.find((a) => String(a.id) === String(l.advogado_id)) || {}).nome;
+      for (const l of tocar.slice(0, 3)) {
+        notificarDesktop(`Sem resposta há ${rotuloDosMinutos(l.minutos)}`,
+          `${nomeDe(l)}${telDe(l) ? ` — ${telDe(l)}` : ""}. Veja em Esperando resposta, no Zorvin.`,
+          `espera-${chaveDoAvisoDeEspera(l)}`);
+      }
+      mostrarAviso(tocar.length === 1
+        ? `${nomeDe(tocar[0])} está sem resposta há ${rotuloDosMinutos(tocar[0].minutos)} de expediente.`
+        : `${quantosClientes(tocar.length)} sem resposta ${fraseDoLimite(tocar)} de expediente — veja em Esperando resposta.`, 9000);
+    } catch (e) {
+      console.error("Zorvin — clientes sem resposta:", e);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meuId, anotarFalhaDeLeitura, limparFalhaDeLeitura]);
+  const lerAtrasadas = useCallback(async () => {
+    if (!meuId) return;
+    // SEM A ESPERA (004) OU SEM O RESPONSÁVEL (008) não há o que contar, e a
+    // consulta pela coluna que falta morreria com 42703.
+    if (!podeContarAtrasadasRef.current) { setAtrasadas({ linhas: [], erro: "", lido: true, cortado: false }); return; }
+    try {
+      let q = supabase.from("conversas")
+        .select(`id, advogado_id, esperando_desde, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
+        .eq("responsavel_id", meuId).not("esperando_desde", "is", null)
+        .lt("esperando_desde", corteDosTresDias().toISOString())
+        .order("esperando_desde", { ascending: true }).limit(TETO_DAS_ATRASADAS);
+      if (TEM_ARQUIVADA) q = q.eq("arquivada", false);
+      const r = await q;
+      if (r.error) {
+        anotarFalhaDeLeitura("minhas-atrasadas", "as suas conversas que esperam há 3 dias ou mais", r.error);
+        setAtrasadas((s) => ({ ...s, lido: true,
+          erro: comOCodigo("Não consegui ler as suas conversas que esperam há 3 dias ou mais.", r.error, "conversas que esperam") }));
+        return;
+      }
+      limparFalhaDeLeitura("minhas-atrasadas");
+      // A LINHA DESATIVADA FICA DE FORA, pela régua do relatório por
+      // responsável (011): ninguém responde por ela. E a conta é conferida de
+      // novo com `diasDesde`, a régua da lista — o corte do banco é o mesmo, e
+      // a segunda conferência é o que impede os dois de divergirem calados.
+      const ativos = new Set(advogadosPermitidosRef.current.map((a) => String(a.id)));
+      const veio = r.data || [];
+      const linhas = veio.filter((c) => ativos.has(String(c.advogado_id)) && esperaHaTresDias(c.esperando_desde));
+      setAtrasadas({ linhas, erro: "", lido: true, cortado: veio.length >= TETO_DAS_ATRASADAS });
+    } catch (e) {
+      console.error("Zorvin — conversas que esperam:", e);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meuId, anotarFalhaDeLeitura, limparFalhaDeLeitura]);
+  const lerQuemEspera = useCallback(() => { lerSemResposta(); lerAtrasadas(); }, [lerSemResposta, lerAtrasadas]);
+  // DE MINUTO EM MINUTO, depois de a abertura terminar (ver
+  // `ESPERA_ANTES_DA_PRIMEIRA_MS`). `podeContarAtrasadas` entra aqui por ser a
+  // PERGUNTA, e não o estado de onde ela sai (a régua de `ordenarPelaEspera`):
+  // vira `true` uma vez, quando a lista chega, e é aí que a minha carteira
+  // passa a poder ser contada.
+  useEffect(() => {
+    if (!meuId) return undefined;
+    const a = (typeof window !== "undefined" && Number(window.__ESPERA_A_CADA_MS)) || RELER_A_ESPERA_MS;
+    const primeira = (typeof window !== "undefined" && Number(window.__ESPERA_PRIMEIRA_MS)) || ESPERA_ANTES_DA_PRIMEIRA_MS;
+    let relogio = null;
+    const inicio = setTimeout(() => { lerQuemEspera(); relogio = setInterval(lerQuemEspera, a); }, primeira);
+    return () => { clearTimeout(inicio); if (relogio) clearInterval(relogio); };
+  }, [meuId, podeContarAtrasadas, lerQuemEspera]);
+  const meusSemResposta = semResposta.linhas.filter((l) => ehParaMim(l, meuId));
+  const nSemResposta = meusSemResposta.length;
+  const nAtrasadas = atrasadas.linhas.length;
+  const nEsperando = nSemResposta + nAtrasadas;
+  const mostraEsperando = temAvisoDeEspera === true || podeContarAtrasadas;
+  const erroDaEspera = semResposta.erro || atrasadas.erro;
+  const tituloDaEspera = nEsperando
+    ? `Esperando resposta — ${[nSemResposta ? `${quantosClientes(nSemResposta)} sem resposta` : "",
+                               nAtrasadas ? `${quantasConversasSuas(nAtrasadas)} há 3 dias ou mais` : ""].filter(Boolean).join(", ")}`
+    : "Esperando resposta";
+  const abrirEsperando = () => { setTelaEsperando(true); lerQuemEspera(); };
 
   // ---- O filtro "Com tarefa para hoje" ----
   //
@@ -10250,6 +10386,7 @@ export default function Painel({ sessao }) {
       else if (telaPainel) setTelaPainel(false);
       else if (telaFunil) setTelaFunil(false);
       else if (telaTarefas) setTelaTarefas(false);
+      else if (telaEsperando) setTelaEsperando(false);
       else if (configAberta) setConfigAberta(false);
       else if (novaConversaAberta) setNovaConversaAberta(false);
       else if (menuConversa) setMenuConversa(null);
@@ -10277,7 +10414,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, pdfAberto, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, telaFunil, menuEtapa, telaTarefas, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, fichaEmColuna, menuDepartamentos, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada, jaTratei, trateiOcupado, reabrindo, reabrirOcupado, escolhaTelefone]);
+  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, pdfAberto, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, telaFunil, menuEtapa, telaTarefas, telaEsperando, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, fichaEmColuna, menuDepartamentos, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada, jaTratei, trateiOcupado, reabrindo, reabrirOcupado, escolhaTelefone]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -15490,6 +15627,12 @@ export default function Painel({ sessao }) {
                     // de pé até o F5.
                     if (falhasDeLeitura.selos) contarNaoLidasAgora();
                     if (falhasDeLeitura.figurinhas) carregarFigurinhas();
+                    // E QUEM ESTÁ ESPERANDO DEMAIS (31/10): as duas leituras
+                    // acendem esta faixa, e o relógio delas só volta daqui a
+                    // um minuto — a faixa ficaria de pé até lá, com a leitura
+                    // já de volta. Foi a prova da aba que falha que pegou.
+                    if (falhasDeLeitura["sem-resposta"]) lerSemResposta();
+                    if (falhasDeLeitura["minhas-atrasadas"]) lerAtrasadas();
                     carregarTags();
                     carregarTagsConversas();
                     carregarRapidas();
@@ -15742,6 +15885,28 @@ export default function Painel({ sessao }) {
                              fontSize: 10.5, fontWeight: 700, lineHeight: 1, display: "flex", alignItems: "center",
                              justifyContent: "center", border: `2px solid ${C.rail}`, boxSizing: "border-box" }}>
                 {tarefasParaAgora > 99 ? "99+" : tarefasParaAgora}
+              </span>
+            )}
+          </button>
+        )}
+        {/* QUEM ESTÁ ESPERANDO DEMAIS (31/10): os clientes sem resposta além do
+            tempo do departamento e as minhas conversas esperando há 3 dias ou
+            mais. O número é a soma das duas listas da tela — vermelho quando
+            há cliente sem resposta, que é o que pede ação agora. */}
+        {mostraEsperando && (
+          <button data-abrir-esperando onClick={abrirEsperando} title={tituloDaEspera} aria-label={tituloDaEspera}
+                  style={{ position: "relative", width: 40, height: 40, borderRadius: 8, border: "none",
+                           display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+                           color: telaEsperando ? "#fff" : "#aebac1",
+                           background: telaEsperando ? "rgba(255,255,255,.12)" : "transparent" }}>
+            <Hourglass size={21} />
+            {nEsperando > 0 && (
+              <span data-selo-esperando={nEsperando} data-sem-resposta={nSemResposta}
+                    style={{ position: "absolute", top: 1, right: 0, minWidth: 18, height: 18, padding: "0 4px",
+                             borderRadius: 9, background: nSemResposta ? "#d92b20" : "#d99a1e", color: "#fff",
+                             fontSize: 10.5, fontWeight: 700, lineHeight: 1, display: "flex", alignItems: "center",
+                             justifyContent: "center", border: `2px solid ${C.rail}`, boxSizing: "border-box" }}>
+                {nEsperando > 99 ? "99+" : nEsperando}
               </span>
             )}
           </button>
@@ -16097,6 +16262,14 @@ export default function Painel({ sessao }) {
                       <BellRing size={17} color={C.textSecondary} /> <span style={{ flex: 1 }}>Tarefas</span>
                       {tarefasParaAgora > 0 && (
                         <span style={{ fontSize: 12, fontWeight: 700, color: tarefasAtrasadas ? "#d92b20" : "#d99a1e" }}>{tarefasParaAgora}</span>
+                      )}
+                    </button>
+                  )}
+                  {mostraEsperando && (
+                    <button data-abrir-esperando-menu onClick={() => { setMenuTopoAberto(false); abrirEsperando(); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}>
+                      <Hourglass size={17} color={C.textSecondary} /> <span style={{ flex: 1 }}>Esperando resposta</span>
+                      {nEsperando > 0 && (
+                        <span style={{ fontSize: 12, fontWeight: 700, color: nSemResposta ? "#d92b20" : "#d99a1e" }}>{nEsperando}</span>
                       )}
                     </button>
                   )}
@@ -17058,6 +17231,39 @@ export default function Painel({ sessao }) {
             <div style={{ fontSize: 14, maxWidth: 380, textAlign: "center", lineHeight: 1.5 }}>
               Selecione uma conversa à esquerda para começar a atender{advogado ? <> as conversas de <b>{advogado.nome}</b></> : ""}.
             </div>
+            {/* AO ABRIR O ZORVIN (31/10): quem espera demais, antes de escolher
+                uma conversa. Nada quando não há o que dizer — e a falha é dita,
+                para o "nada" nunca querer dizer "não consegui ler". */}
+            {(nSemResposta > 0 || nAtrasadas > 0 || erroDaEspera) && (
+              <div data-resumo-da-espera
+                   style={{ maxWidth: 380, width: "calc(100% - 32px)", boxSizing: "border-box", background: C.panel,
+                            border: `1px solid ${C.divider}`, borderRadius: 12, padding: "12px 14px",
+                            color: C.textPrimary, fontSize: 13.5, lineHeight: 1.5, textAlign: "left" }}>
+                {nSemResposta > 0 && (
+                  <div data-resumo-sem-resposta={nSemResposta} style={{ display: "flex", gap: 8 }}>
+                    <Hourglass size={16} color="#e53935" style={{ flexShrink: 0, marginTop: 2 }} />
+                    <span><b>{quantosClientes(nSemResposta)}</b> sem resposta {fraseDoLimite(meusSemResposta)} de expediente.</span>
+                  </div>
+                )}
+                {nAtrasadas > 0 && (
+                  <div data-resumo-atrasadas={nAtrasadas} style={{ display: "flex", gap: 8, marginTop: nSemResposta ? 6 : 0 }}>
+                    <Clock size={16} color="#d99a1e" style={{ flexShrink: 0, marginTop: 2 }} />
+                    <span><b>{quantasConversasSuas(nAtrasadas)}</b> esperando resposta há 3 dias ou mais.</span>
+                  </div>
+                )}
+                {erroDaEspera && (
+                  <div data-resumo-falhou style={{ display: "flex", gap: 8, marginTop: (nSemResposta || nAtrasadas) ? 6 : 0, color: C.erroTexto }}>
+                    <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+                    <span>{erroDaEspera}</span>
+                  </div>
+                )}
+                <button data-ver-quem-espera onClick={(nSemResposta || nAtrasadas) ? abrirEsperando : lerQuemEspera}
+                        style={{ marginTop: 10, border: "none", background: C.green, color: "#fff", borderRadius: 8,
+                                 padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                  {(nSemResposta || nAtrasadas) ? "Ver quais" : "Tentar de novo"}
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <>
@@ -20107,6 +20313,21 @@ export default function Painel({ sessao }) {
                  }}
                  aoMudou={tarefasMudaram}
                  aoFechar={() => { setTelaTarefas(false); tarefasMudaram(); }} />
+      )}
+
+      {/* A TELA "ESPERANDO RESPOSTA" (31/10). Abrir um cliente é o caminho do
+          histórico, do funil e das tarefas: troca de telefone e abre a
+          conversa, esteja ela em que aba estiver. */}
+      {telaEsperando && (
+        <Esperando C={C} meuId={meuId} advogados={advogadosPermitidos}
+                   semResposta={semResposta} temAvisoDeEspera={temAvisoDeEspera}
+                   atrasadas={atrasadas} podeContarAtrasadas={podeContarAtrasadas}
+                   aoAbrirConversa={(cv) => {
+                     setTelaEsperando(false);
+                     verConversaDoHistorico({ advogadoId: cv.advogado_id, conversaId: cv.id });
+                   }}
+                   aoAtualizar={lerQuemEspera}
+                   aoFechar={() => setTelaEsperando(false)} />
       )}
 
       {/* A JANELA DA TAREFA, no meio da tela — como a de editar a agendada:
