@@ -58,7 +58,7 @@ function paraSlug(nome) {
   return semAcento(nome).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 }
 
-export default function Departamentos({ C, aoFechar, abaInicial, aoSaberDosScripts }) {
+export default function Departamentos({ C, aoFechar, abaInicial, aoSaberDosScripts, meuNome = "" }) {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [departamentos, setDepartamentos] = useState([]);
@@ -376,7 +376,7 @@ export default function Departamentos({ C, aoFechar, abaInicial, aoSaberDosScrip
                   desta seção passava a ser o primeiro da tela — antes do de
                   trazer telefone, que é o gesto de todo dia desta aba.
                   Sem o script, a seção não aparece. */}
-              <EtapasDoFunil cx={cx} C={C} departamentos={departamentos} telefones={telefones} aoAvisar={setErro} />
+              <EtapasDoFunil cx={cx} C={C} departamentos={departamentos} telefones={telefones} aoAvisar={setErro} meuNome={meuNome} />
             </>
           )}
 

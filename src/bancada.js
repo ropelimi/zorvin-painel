@@ -1460,6 +1460,11 @@ const TABELAS = {
   // AS TAREFAS (script 018 da ponte) começam VAZIAS, pela mesma régua: nascem
   // do que se faz na tela ou da `__SEMENTE` de cada prova.
   zorvin_tarefas: [],
+  // AS REGRAS DO ACOMPANHAMENTO POR ETAPA (script 045 da ponte) começam
+  // VAZIAS, como o script as entrega: nenhum lembrete nasce até quem
+  // administra escrever a primeira. Os lembretes em si são tarefas com
+  // `mensagem`, e quem os cria é o banco — aqui, a `__SEMENTE` de cada prova.
+  zorvin_acompanhamentos: [],
   // A RESPOSTA FORA DO HORÁRIO (script 021 da ponte). A configuração começa
   // VAZIA — nenhum departamento ligado, que é como o script a entrega — e o
   // registro também: as linhas dele são da ponte, e cada prova planta as
@@ -1794,6 +1799,52 @@ if (typeof globalThis !== "undefined" && (globalThis.__SEM_IA_DO_FUNIL || global
 const comIaDoFunil = () => !(typeof globalThis !== "undefined"
   && (globalThis.__SEM_IA_DO_FUNIL || globalThis.__SEM_FUNIS_DOS_TELEFONES));
 
+// O BANCO SEM O SCRIPT 045 (o acompanhamento por etapa): a tabela das regras
+// não existe (ver `consulta`), e a coluna da mensagem pronta falta nas
+// tarefas — quem a pede pelo nome ouve 42703, como no Postgres.
+if (typeof globalThis !== "undefined" && globalThis.__SEM_ACOMPANHAMENTO) {
+  const sem = globalThis.__SEM_COLUNAS || (globalThis.__SEM_COLUNAS = {});
+  sem.zorvin_tarefas = [...new Set([...(sem.zorvin_tarefas || []), "mensagem"])];
+  for (const l of TABELAS.zorvin_tarefas || []) delete l.mensagem;
+}
+
+/** O que o banco do 045 faz com as regras de acompanhamento antes de gravar:
+ *  quem administra escreve (os outros: a inserção recusa, a edição e a
+ *  exclusão não acham linha); os dias vão de 1 a 60 e o texto de 1 a 1000;
+ *  uma regra por dias em cada etapa (23505). Devolve o erro, ou `{ vazio:
+ *  true }` para a recusa calada, ou `null`. */
+function conferirAcompanhamento({ gravacao, patch, apagando, linhas }) {
+  const quem = TABELAS.usuarios[0] || {};
+  const admin = Boolean(quem.admin) && quem.ativo !== false;
+  if (!admin) {
+    if (gravacao) {
+      return { erro: { code: "42501",
+        message: 'new row violates row-level security policy for table "zorvin_acompanhamentos"' } };
+    }
+    return { vazio: true };
+  }
+  if (apagando) return null;
+  const regs = gravacao ? (Array.isArray(gravacao.reg) ? gravacao.reg : [gravacao.reg]) : [patch];
+  for (const r of regs) {
+    if ("dias" in r && !(Number.isInteger(Number(r.dias)) && Number(r.dias) >= 1 && Number(r.dias) <= 60)) {
+      return { erro: { code: "23514",
+        message: 'new row for relation "zorvin_acompanhamentos" violates check constraint "zorvin_acompanhamentos_dias_check"' } };
+    }
+    if ("texto" in r && !(String(r.texto || "").trim() && String(r.texto).length <= 1000)) {
+      return { erro: { code: "23514",
+        message: 'new row for relation "zorvin_acompanhamentos" violates check constraint "zorvin_acompanhamentos_texto_check"' } };
+    }
+  }
+  const tab = TABELAS.zorvin_acompanhamentos || [];
+  const bate = (etapa, dias, menos) => tab.some((l) => !menos.includes(l)
+    && String(l.etapa_id) === String(etapa) && Number(l.dias) === Number(dias));
+  const duplicada = { code: "23505",
+    message: 'duplicate key value violates unique constraint "zorvin_acompanhamentos_etapa_dias"' };
+  if (gravacao && regs.some((r) => bate(r.etapa_id, r.dias, []))) return { erro: duplicada };
+  if (patch && "dias" in patch && linhas.some((l) => bate(l.etapa_id, patch.dias, linhas))) return { erro: duplicada };
+  return null;
+}
+
 // DEPOIS DA SEMENTE, e a ordem é o conserto. Tirando a coluna antes, as
 // conversas plantadas entravam COM ela logo em seguida — e o banco "sem o
 // SQL" passava a ter a coluna em metade das linhas. A prova pegou: o rótulo
@@ -1983,6 +2034,11 @@ function consulta(tabela) {
         // AS TAREFAS (script 018) QUE AINDA NÃO RODARAM: "não existe", e não
         // lista vazia — vazia é o estado em que a tela aparece e diz que não há.
         || (tabela === "zorvin_tarefas" && globalThis.__SEM_TAREFAS)
+        // O ACOMPANHAMENTO POR ETAPA (script 045) que ainda não rodou: "não
+        // existe" — e a coluna da mensagem pronta também falta (ver mais
+        // abaixo). Vazia é o banco com o script e nenhuma regra escrita.
+        || (tabela === "zorvin_acompanhamentos"
+            && (globalThis.__SEM_ACOMPANHAMENTO || globalThis.__SEM_FUNIL || globalThis.__SEM_TAREFAS))
         // A RESPOSTA FORA DO HORÁRIO (script 021) que ainda não rodou: as três
         // tabelas respondem "não existe" — vazia é o banco com o script e
         // nenhum departamento configurado, e a tela aparece nesse caso.
@@ -2520,9 +2576,28 @@ function consulta(tabela) {
           if (recusa) return resolver({ data: null, count: null, error: recusa });
         }
       }
+      // AS REGRAS DO ACOMPANHAMENTO (045): a regra de acesso e as conferências
+      // do banco, antes de gravar — um banco que recusa não grava metade.
+      let diasAntes = null;
+      if (tabela === "zorvin_acompanhamentos" && (gravacao || patch || apagando)) {
+        const c = conferirAcompanhamento({ gravacao, patch, apagando, linhas });
+        if (c && c.erro) return resolver({ data: null, count: null, error: c.erro });
+        if (c && c.vazio) return resolver({ data: [], count: 0, error: null });
+        if (patch) diasAntes = new Map(linhas.map((l) => [l, { ...l }]));
+      }
       if (gravacao) {
         eu.gravar(gravacao.reg, gravacao.porOnde);
         if (tabela === "zorvin_tratamentos") for (const n of linhas) situacaoDoClique(n);
+        // O GATILHO DO 045: quem criou, quando, e desde quando a regra vale
+        // são do banco, e não da tela.
+        if (tabela === "zorvin_acompanhamentos") {
+          const agoraRegra = new Date().toISOString();
+          for (const n of linhas) {
+            n.criado_em = agoraRegra; n.vale_desde = agoraRegra;
+            n.criado_por = (TABELAS.usuarios[0] || {}).id || null;
+            n.mudado_em = null; n.mudado_por = null;
+          }
+        }
         // A CONVERSA QUE NASCE pela tela ("Nova conversa", a busca que oferece)
         // ganha o padrão da coluna, como no banco.
         if (tabela === "conversas" && !(typeof globalThis !== "undefined" && globalThis.__SEM_SITUACAO)) {
@@ -2620,6 +2695,16 @@ function consulta(tabela) {
           if (tabela === "zorvin_copiloto") {
             l.atualizado_em = new Date().toISOString();
             l.atualizado_por = (TABELAS.usuarios[0] || {}).id || null;
+          }
+          // O GATILHO DO 045: mudar os dias recomeça a conta da regra
+          // (`vale_desde`), e quem mudou e quando são do banco.
+          if (tabela === "zorvin_acompanhamentos" && diasAntes) {
+            const antes = diasAntes.get(l) || {};
+            const agoraRegra = new Date().toISOString();
+            l.criado_em = antes.criado_em; l.criado_por = antes.criado_por;
+            l.vale_desde = Number(antes.dias) !== Number(l.dias) ? agoraRegra : antes.vale_desde;
+            l.mudado_em = agoraRegra;
+            l.mudado_por = (TABELAS.usuarios[0] || {}).id || null;
           }
         });
         // O CLIQUE DESFEITO, depois de TODAS as linhas da gravação: o gatilho

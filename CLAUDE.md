@@ -4214,9 +4214,184 @@ segunda guarda. É a régua de 25/09, *sabotagem que o resto do sistema
 conserta sozinho não prova nada*. O defeito de verdade é a LEITURA sem o
 recorte, e esse é pego pelo número da barra.
 
-**Ainda em aberto:** tarefa repetida ("toda segunda"), e tarefa que nasce
-sozinha de uma etapa do funil — as duas ficam para quando o Rodrigo usar
-esta.
+**Ainda em aberto:** tarefa repetida ("toda segunda"). ~~E tarefa que nasce
+sozinha de uma etapa do funil.~~ **Feito** — ver "O acompanhamento por etapa
+(02/11)", logo abaixo.
+
+## O acompanhamento por etapa (02/11)
+
+Pedido do Rodrigo: *"acompanhamento por etapa do funil"*, com a escolha
+**"Lembrar a equipe"**. Quando um cliente fica parado numa etapa sem responder
+(por exemplo, 3 dias em "Aguardando cliente"), quem cuida dele recebe uma
+**tarefa com a mensagem de cobrança já escrita**. A pessoa abre, confere e
+manda. **Nada sai para o cliente sem uma pessoa.**
+
+**Quem decide quando o lembrete nasce é o banco** (script 045 da ponte,
+`zorvin_acompanhar_funil`, que ela chama de 10 em 10 minutos). Lá estão o
+relógio do silêncio, a regra que só vale para o que vence depois de existir,
+o expediente, o teto de 20 por pessoa, quem recebe e o lembrete que se fecha
+sozinho — ver o CLAUDE.md da ponte. A tela faz três coisas: escreve as regras,
+mostra o lembrete e leva a mensagem para a caixa.
+
+| onde | o quê |
+|---|---|
+| Departamentos e acessos → Etapas do funil | em cada etapa em uso, **"Lembrete de acompanhamento"** (`AcompanhamentoDaEtapa.jsx`): depois de quantos dias sem resposta do cliente, e com qual mensagem pronta. Mais de um por etapa é a cadência (2 dias, depois 5) |
+| a tela de Tarefas | o lembrete diz **"lembrete automático"**, mostra o começo da mensagem e o botão **"Abrir a conversa com a mensagem pronta"** |
+| o menu de tarefas da conversa | o mesmo, com **"Usar a mensagem pronta"** |
+| o lembrete que se fechou sozinho | diz "fechou sozinho às …: a conversa andou", no lugar de "feita" |
+
+As contas sem tela moram em `src/acompanhamento.js`.
+
+### As regras de cada etapa
+
+- **A mensagem é guardada com as variáveis, nunca preenchida** — a régua das
+  mensagens rápidas: ela vale para todos os clientes da etapa. São os mesmos
+  botões que põem a variável onde está o cursor, a mesma prévia (com a cliente
+  de exemplo em maiúsculas) e o mesmo aviso âmbar da variável que o Zorvin não
+  conhece.
+- **De 1 a 60 dias, e uma regra por dias em cada etapa.** A tela confere antes,
+  e o banco confere de novo (23505): outra pessoa pode ter criado a mesma no
+  meio.
+- **O erro mora ao lado do botão**, e não na faixa do alto da administração: a
+  lista das etapas é longa, e a frase lá em cima ficaria fora da vista — o
+  "Salvar" pareceria não fazer nada.
+- **Quem criou, quem mudou e desde quando a regra vale são do banco** (o
+  gatilho do 045). **Mudar os dias recomeça a conta da regra**: a de 30 dias
+  que vira de 3 não pode lembrar de uma vez todo mundo quieto há mais de 3.
+  Mudar só o texto, não.
+- **Apagar pergunta antes**, e diz que os lembretes que já nasceram continuam
+  nas tarefas.
+- **O Esc fecha só o formulário**: a escada do Esc ouve a janela, e sem o
+  `stopPropagation` ela fecharia junto a administração.
+- **Só nas etapas em uso, e só num funil que tem etapas**: o telefone que usa o
+  funil do departamento não tem lembretes próprios; o que tem funil próprio
+  tem os das etapas dele.
+- **Sem o 045, nada aparece.** A leitura das regras que falha por outro motivo
+  é DITA, com o código e "Tentar de novo", e os lembretes não são desenhados:
+  desenhados vazios, convidariam a escrever de novo um lembrete que existe.
+
+### A mensagem pronta na caixa (`usarMensagemPronta`)
+
+O botão abre a conversa (no telefone dela, pelo caminho do histórico,
+`verConversaDoHistorico`) e põe a mensagem na caixa, **preenchida pela conta
+das rápidas**: o nome do alto da conversa, a saudação pela hora e quem está
+atendendo. **Não manda nada.**
+
+- **A caixa que já tem texto pergunta antes de trocar**, na conversa aberta e
+  no rascunho guardado de uma fechada. "Não" deixa o que estava escrito. Com a
+  mesma mensagem já na caixa, não há o que perguntar.
+- **Uma edição em curso não é trocada**: o texto dela é a correção de uma
+  mensagem que já foi, e o Enter mandaria a cobrança como correção. A tela
+  diz para terminar ou cancelar a edição.
+- **A nota vira mensagem**: a cobrança é para o cliente.
+- **O rascunho de uma conversa fechada só é escrito depois de a linha ser
+  lida** (`antesDeAbrir`, um gancho novo de `verConversaDoHistorico`, que
+  passou a devolver se abriu): a conversa que não abre não fica com uma
+  cobrança esperando na caixa para o dia em que abrir.
+- **O cliente que escreveu por último é dito numa faixa** ("leia a conversa
+  antes de mandar a mensagem do lembrete"). O lembrete nasce também nesse caso
+  — o "ok, mando amanhã" é justamente o "Aguardando cliente" —, e a cobrança
+  não pode sair sem alguém ler o que ele disse. A pergunta é ao banco (a
+  última linha de `mensagens`), e a leitura que falha não avisa nada. É
+  decisão: o aviso é um empurrão a mais, e a conversa está na tela, logo acima
+  da caixa.
+- **O grupo não ganha nome**: "{saudacao}, {nome}!" vira "Bom dia!".
+
+**O lembrete automático é a tarefa com mensagem e sem quem criou**
+(`ehLembreteAutomatico`): só o banco cria tarefa com `mensagem`, e o gatilho do
+018 grava `criada_por` com quem entrou. **E "fechou sozinho" é o lembrete
+concluído sem `feita_por`** (`fechouSozinho`): o que uma pessoa concluiu
+continua dizendo "feita".
+
+**O aviso na hora já servia, sem mudar nada**: o lembrete nasce vencido
+(`vence_em` = agora) para quem o recebe, e o painel dessa pessoa toca,
+notifica e escreve na faixa em até 30 segundos — o caminho de qualquer tarefa.
+**O lembrete sem dono** (a pessoa desativada, ou que não vê o telefone) não
+toca para ninguém, e aparece em "Da equipe".
+
+### A bancada
+
+`zorvin_acompanhamentos` (vazia, como o script a entrega) e
+`__SEM_ACOMPANHAMENTO` (a tabela que falta, e a coluna `mensagem` das tarefas
+recusada com 42703). E o que o banco faz ao gravar uma regra: só quem
+administra (a inserção recusa com 42501; a edição e a exclusão não acham
+linha), as conferências de dias e texto (23514), a regra única por dias
+(23505) e o gatilho (quem criou, `vale_desde`, quem mudou).
+
+Prova: `o-acompanhamento-por-etapa`, 113 conferências, com o relógio fixado às
+9h de São Paulo. As vizinhas passaram de novo: as tarefas, as quatro do funil
+(e a que vigia o funil), a IA no funil, a conversa que se manda abrir, as
+variáveis das rápidas, as duas de editar, o copiloto, a sessão que acaba, as
+duas auditorias, o cabeçalho, os menus que cabem na janela, a pesquisa nos
+menus, a faxina e o aviso de quem espera demais.
+
+**40 sabotagens e 40 pegas**, rodadas em cópias e lidas uma a uma:
+
+- o painel de antes inteiro (63 reprovações — é o pedido reproduzido);
+- **as regras:**
+  - a regra gravada preenchida, e não com a variável;
+  - a variável no fim, e não onde está o cursor;
+  - sem a prévia;
+  - sem o aviso da variável desconhecida;
+  - sem conferir antes de gravar;
+  - o erro fora do formulário (8 reprovações);
+  - os mesmos dias recusados pelo banco ditos como um erro qualquer;
+  - a edição que o banco não deixou lida como salva;
+  - apagar sem perguntar;
+  - apagar que o banco não deixou lido como apagado;
+  - o Esc fechando a administração junto (12);
+  - editar gravando uma linha nova;
+- **a seção das etapas:**
+  - a falha da leitura virando "sem o 045";
+  - a dica aparecendo antes de saber se há o 045 (o piscar);
+  - a falha desenhando os lembretes vazios;
+  - os lembretes na etapa desativada;
+  - o "Tentar de novo" que não relê;
+- **a mensagem pronta:**
+  - a mensagem crua na caixa (7);
+  - o grupo emprestando o nome;
+  - a nota que não vira mensagem;
+  - a edição em curso trocada;
+  - a conversa aberta trocada sem perguntar;
+  - o rascunho da fechada trocado sem perguntar;
+  - a pergunta mesmo com a mesma mensagem na caixa;
+  - o rascunho escrito antes de ler a linha;
+  - sem o aviso de quem escreveu por último;
+  - o aviso sempre, sem olhar quem escreveu;
+  - o menu da conversa sem o botão (9);
+  - o menu que não fecha;
+  - no menu, o que fechou sozinho dito como feita;
+  - a tela de tarefas abrindo a conversa sem a mensagem;
+- **a tela de tarefas:**
+  - sem o botão (19);
+  - o botão no lembrete já fechado;
+  - sem o selo de automático;
+  - o que fechou sozinho dito como feita;
+  - "fechou sozinho" sem olhar quem concluiu;
+- **a bancada:**
+  - sem o gatilho do 045 (mudar os dias não recomeça a conta);
+  - sem a regra dos mesmos dias (23505);
+  - sem a tabela que falta.
+
+**O piscar foi achado relendo o código, com a rodada de sabotagens no meio.**
+A primeira escrita começava a seção como se o 045 existisse, e num banco sem
+ele a dica e os botões apareciam até a primeira resposta. A rodada foi parada,
+as cópias apagadas, e refeita inteira sobre a versão final — a régua de 13/10:
+rodada de sabotagens não convive com edição.
+
+**E a sabotagem que devolvia o piscar VAZOU na primeira rodada.** A bancada
+responde "a tabela não existe" NA HORA, e o piscar durava um desenho só: o
+relógio de 20 ms da prova não o via. Hoje ela vigia cada mudança do documento
+(um `MutationObserver` no próprio `document`, que existe antes do `<html>`), e
+confere o contraste: com o 045, o vigia vê os lembretes. **Na bancada, "não
+existe" é instantâneo; no Supabase, leva o tempo da rede — o que pisca aqui
+por um desenho, lá pisca por um décimo de segundo.**
+
+**E uma armadilha da prova, achada na primeira rodada:** o aviso do gesto
+anterior dura oito segundos, e a conferência de que o gesto seguinte NÃO avisou
+leu de novo o aviso de antes. Hoje ela espera a faixa sumir antes de conferir
+a ausência. **Antes de conferir que algo não apareceu, espere sumir o que
+apareceu antes.**
 
 ## Quem está esperando demais (31/10)
 

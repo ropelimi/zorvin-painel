@@ -3,6 +3,8 @@ import { supabase } from "./supabase.js";
 import { naoGravouNada, comOCodigo, semATabela } from "./gravar.js";
 import { lerFunisDosTelefones, chaveDoFunil, noFunil } from "./funis.js";
 import { IaDoFunil } from "./IaDoFunil.jsx";
+import { AcompanhamentoDaEtapa } from "./AcompanhamentoDaEtapa.jsx";
+import { semOAcompanhamento } from "./acompanhamento.js";
 import { SquareKanban, Plus, Loader2, Check, EyeOff, Eye, ArrowUp, ArrowDown, Sparkles, Smartphone, Undo2, PenLine } from "lucide-react";
 
 // ============================================================
@@ -51,6 +53,15 @@ import { SquareKanban, Plus, Loader2, Check, EyeOff, Eye, ArrowUp, ArrowDown, Sp
 //  enviada" sozinha diz menos do que "mandamos a proposta e esperamos a
 //  resposta do cliente". Sem o 044, nem a chave nem as descrições aparecem:
 //  a coluna que falta é perguntada uma vez, quando a seção abre.
+//
+//  O ACOMPANHAMENTO POR ETAPA (02/11, script 045 da ponte). Cada etapa em uso
+//  ganha os seus LEMBRETES DE ACOMPANHAMENTO (`AcompanhamentoDaEtapa.jsx`):
+//  depois de quantos dias sem resposta do cliente quem cuida dele recebe uma
+//  tarefa com a mensagem pronta. As regras do funil escolhido vêm numa
+//  pergunta só, e são relidas a cada gravação. Sem o 045 a tabela falta, e
+//  nada aparece; a leitura que falha por outro motivo é DITA, e os lembretes
+//  não são desenhados (desenhados vazios, convidariam a escrever de novo um
+//  lembrete que existe).
 // ============================================================
 
 export const ETAPAS_SUGERIDAS = [
@@ -60,7 +71,7 @@ export const ETAPAS_SUGERIDAS = [
 ];
 const CORES = ["#53bdeb", "#00a884", "#ffb02e", "#a78bfa", "#25d366", "#0ea5e9", "#f472b6", "#e5573f", "#8696a0"];
 
-export function EtapasDoFunil({ cx, C, departamentos = [], telefones = [], aoAvisar }) {
+export function EtapasDoFunil({ cx, C, departamentos = [], telefones = [], aoAvisar, meuNome = "" }) {
   const [existe, setExiste] = useState(null);   // null = ainda lendo
   // A ESCOLHA é um par (departamento, telefone): o telefone nulo é o funil do
   // departamento. Um telefone escolhido pode ainda NÃO ter funil próprio — é
@@ -153,6 +164,42 @@ export function EtapasDoFunil({ cx, C, departamentos = [], telefones = [], aoAvi
   comTelefoneRef.current = comTelefone;
 
   useEffect(() => { setEtapas([]); ler(); }, [ler, chaveEscolha, temFunilProprio, comTelefone]);
+
+  // OS LEMBRETES DE ACOMPANHAMENTO (045) das etapas deste funil, numa
+  // pergunta só. São TRÊS ESTADOS em `existe`, pela régua de `temVantoro.js`:
+  // `null` ainda não se sabe (nada aparece — sem isto, num banco sem o 045 o
+  // botão piscaria na tela até a primeira resposta), `false` sem o 045, `true`
+  // com ele. E o que se sabe FICA ao trocar de funil: muda só a `lista`, que é
+  // `null` enquanto a pergunta deste funil não volta. A RESPOSTA MAIS NOVA
+  // VENCE, como as etapas: trocando de funil no meio, os lembretes do de antes
+  // não aparecem sob as etapas do novo.
+  const [regras, setRegras] = useState({ existe: null, lista: null, erro: "" });
+  const pedidoDasRegras = useRef(0);
+  const idsLidos = useRef(null);
+  const idsDasEtapas = etapas.map((e) => e.id).join(",");
+  const lerRegras = useCallback(async () => {
+    const ids = idsDasEtapas ? idsDasEtapas.split(",") : [];
+    const meu = ++pedidoDasRegras.current;
+    // OUTRO FUNIL: os lembretes do de antes saem da tela até a resposta. O
+    // MESMO funil relido (depois de gravar, ou o "Tentar de novo") fica como
+    // está até a resposta — sem piscar a cada gravação.
+    if (idsLidos.current !== idsDasEtapas) {
+      idsLidos.current = idsDasEtapas;
+      setRegras((r) => ({ ...r, lista: null, erro: "" }));
+    }
+    if (!ids.length) return;
+    const { data, error } = await supabase.from("zorvin_acompanhamentos").select("*").in("etapa_id", ids);
+    if (meu !== pedidoDasRegras.current) return;
+    if (error) {
+      if (semOAcompanhamento(error)) { setRegras({ existe: false, lista: null, erro: "" }); return; }
+      setRegras({ existe: true, lista: null,
+                  erro: comOCodigo("Não consegui ler os lembretes de acompanhamento.", error, "lembretes de acompanhamento") });
+      return;
+    }
+    setRegras({ existe: true, lista: data || [], erro: "" });
+  }, [idsDasEtapas]);
+  useEffect(() => { lerRegras(); }, [lerRegras]);
+  const comAcompanhamento = regras.existe === true;
   // A frase do que o banco fez some quando se escolhe OUTRO funil — e não
   // quando a lista dos funis é relida logo depois de criar, que é justamente
   // a hora em que ela tem de ser lida.
@@ -373,6 +420,24 @@ export function EtapasDoFunil({ cx, C, departamentos = [], telefones = [], aoAvi
         </div>
       )}
 
+      {comAcompanhamento && ativas.length > 0 && !usaODoDepartamento && (
+        <div data-dica-do-acompanhamento style={{ fontSize: 12.5, color: C.textSecondary, lineHeight: 1.5, margin: "2px 0 8px" }}>
+          <b style={{ color: C.textPrimary }}>Lembretes de acompanhamento:</b> em cada etapa, depois de quantos dias sem
+          resposta do cliente a equipe é lembrada, e com qual mensagem pronta. Quem cuida do cliente recebe uma tarefa,
+          confere e manda — nada sai para o cliente sozinho.
+          {regras.erro && (
+            <span data-falha-dos-lembretes role="alert" style={{ display: "block", marginTop: 4, color: C.ambarTexto || "#b26a00" }}>
+              {regras.erro}{" "}
+              <button onClick={lerRegras} data-reler-lembretes
+                      style={{ border: "none", background: "transparent", color: C.verdeTexto || C.green, cursor: "pointer",
+                               fontWeight: 600, padding: 0, fontSize: 12.5 }}>
+                Tentar de novo
+              </button>
+            </span>
+          )}
+        </div>
+      )}
+
       {[...ativas, ...fora].map((e) => {
         const posicao = ativas.indexOf(e);
         return (
@@ -449,6 +514,13 @@ export function EtapasDoFunil({ cx, C, departamentos = [], telefones = [], aoAvi
                   <span style={{ fontSize: 11.5, color: C.textSecondary }}>{String(descrevendo.texto || "").length}/500</span>
                 </div>
               </div>
+            )}
+            {/* OS LEMBRETES DESTA ETAPA (045), só nas etapas em uso, e só
+                com a leitura certa: falhando, a dica acima diz por quê. */}
+            {comAcompanhamento && regras.lista && e.ativo !== false && !(editando && editando.id === e.id) && (
+              <AcompanhamentoDaEtapa cx={cx} C={C} etapa={e} meuNome={meuNome}
+                                     regras={regras.lista.filter((r) => String(r.etapa_id) === String(e.id))}
+                                     aoMudou={lerRegras} />
             )}
           </div>
         );

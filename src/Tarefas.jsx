@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, RefreshCw, CircleCheck, RotateCcw, MessageCircle, BellRing, AlertCircle } from "lucide-react";
+import { ArrowLeft, RefreshCw, CircleCheck, RotateCcw, MessageCircle, BellRing, AlertCircle, AlarmClock, Send } from "lucide-react";
 import { supabase } from "./supabase.js";
 import { naoGravouNada, comOCodigo } from "./gravar.js";
 import { nomeDoContato } from "./contato.js";
 import { telefoneLegivel } from "./numeros.js";
 import { situacao, ordenarAbertas, rotuloDaTarefa, semATabelaDeTarefas } from "./tarefas.js";
 import { rotuloDaHora } from "./agenda.js";
+import { ehLembreteAutomatico, fechouSozinho } from "./acompanhamento.js";
 
 // ============================================================
 //  A TELA DE TAREFAS (06/10)
@@ -29,6 +30,13 @@ import { rotuloDaHora } from "./agenda.js";
 //  AS ABERTAS VÊM EM PÁGINAS de mil, até cinco, e passando disso a tela DIZ
 //  que cortou — o PostgREST corta calado, e uma lista cortada se leria como
 //  completa.
+//
+//  O LEMBRETE DE ACOMPANHAMENTO (02/11, script 045 da ponte) é a tarefa que o
+//  Zorvin criou com uma MENSAGEM PRONTA: a linha mostra o começo dela e o
+//  botão "Abrir a conversa com a mensagem pronta", que leva a mensagem para a
+//  caixa de escrever, com o nome do cliente — quem manda é a pessoa. Ele diz
+//  "lembrete automático" (não há quem o criou), e o que se fechou sozinho,
+//  porque a conversa andou, diz isso no lugar de "feita".
 // ============================================================
 
 const PAGINA = 1000;
@@ -50,7 +58,7 @@ const SECOES = [
 ];
 
 export default function Tarefas({
-  C, meuId, pessoas = {}, advogados = [], aoAbrirConversa, aoMudou, aoFechar,
+  C, meuId, pessoas = {}, advogados = [], aoAbrirConversa, aoUsarMensagem, aoMudou, aoFechar,
 }) {
   const [aba, setAba] = useState("minhas");
   const [existe, setExiste] = useState(null);
@@ -213,7 +221,7 @@ export default function Tarefas({
     const corQuando = feita ? C.textSecondary : s === "atrasada" ? "#e53935" : s === "hoje" ? "#d99a1e" : C.textSecondary;
     return (
       <div key={t.id} data-tarefa-da-tela={t.id} data-situacao={feita ? "feita" : s}
-           style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px",
+           style={{ display: "flex", alignItems: "flex-start", flexWrap: "wrap", gap: 10, padding: "10px 12px",
                     borderTop: `1px solid ${C.divider}`, background: C.panel }}>
         <button data-concluir-tarefa={feita ? undefined : t.id} data-reabrir-tarefa={feita ? t.id : undefined}
                 onClick={() => concluir(t, !feita)}
@@ -237,10 +245,39 @@ export default function Tarefas({
             {tel && <span>· {tel.nome}</span>}
             {aba === "equipe" && !feita && <span data-pessoa-da-tarefa>· {nomeDe(t.para_quem)}</span>}
             <span data-quando-da-tarefa style={{ color: corQuando, fontWeight: s === "atrasada" && !feita ? 600 : 400 }}>
-              · {feita ? `feita ${rotuloDaHora(t.feita_em, agora)}` : rotuloDaTarefa(t, agora)}
+              · {feita
+                  ? (fechouSozinho(t) ? `fechou sozinho ${rotuloDaHora(t.feita_em, agora)}: a conversa andou`
+                                      : `feita ${rotuloDaHora(t.feita_em, agora)}`)
+                  : rotuloDaTarefa(t, agora)}
             </span>
+            {ehLembreteAutomatico(t) && (
+              <span data-lembrete-automatico style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                · <AlarmClock size={11} /> lembrete automático
+              </span>
+            )}
           </span>
         </button>
+        {/* A MENSAGEM PRONTA do lembrete de acompanhamento, e o botão que a
+            leva para a caixa da conversa. Fora do botão da linha: são dois
+            gestos, e um botão dentro de outro não é nenhum dos dois. */}
+        {t.mensagem && !feita && cv && (
+          <div data-mensagem-pronta-da-tarefa={t.id}
+               style={{ flexBasis: "100%", marginLeft: 34, display: "flex", flexDirection: "column", gap: 6 }}>
+            <span data-mensagem-pronta
+                  style={{ fontSize: 12.5, color: C.textSecondary, lineHeight: 1.4, whiteSpace: "pre-wrap", wordBreak: "break-word",
+                           display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+              “{t.mensagem}”
+            </span>
+            {aoUsarMensagem && (
+              <button type="button" data-usar-mensagem-pronta={t.id} onClick={() => aoUsarMensagem(cv, t, ct)}
+                      style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6,
+                               border: `1px solid ${C.green}`, background: "transparent", color: C.verdeTexto || C.green,
+                               borderRadius: 8, padding: "6px 10px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                <Send size={14} /> Abrir a conversa com a mensagem pronta
+              </button>
+            )}
+          </div>
+        )}
       </div>
     );
   }
