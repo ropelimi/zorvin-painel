@@ -1874,6 +1874,66 @@ conversa não vinha na lista — a consulta da página pede `mensagens(id)` junt
 e o contador de não lidas do menu ficava em zero com o grupo na tela.
 
 Prova: `o-campo-de-grupos`, 20 conferências, 5 sabotagens e 5 pegas.
+## As etiquetas saíram da lista de conversas (02/11)
+
+Pedido do Rodrigo, com a foto da lista (a etiqueta de três conversas riscada):
+*"As etiquetas não devem mais aparecer na lista de conversas, porque ocupa
+espaço da tela e isso tem incomodado os usuários."*
+
+**Cada linha perdeu a faixa das etiquetas.** Medido na bancada, a faixa custava
+**19 pontos** numa linha com o "esperando há N dias", como as da foto, e 8
+numa linha sem ele (ali quem dá a altura é a foto do contato); etiquetas
+longas, quebrando em duas linhas, custavam o dobro.
+
+| onde | as etiquetas |
+|---|---|
+| a linha da lista | não aparecem, e a linha não guarda o lugar delas |
+| o alto da conversa aberta, no computador | continuam (`data-etiquetas-do-alto`) |
+| o menu "Etiquetas" da conversa | continuam, marcadas |
+| o filtro da seta | continua filtrando por etiqueta |
+| o alto da conversa no celular | como antes: não aparecem (não cabem) |
+
+**No celular, a etiqueta passou a aparecer só no menu "Etiquetas"** da
+conversa: o alto da conversa no celular nunca a mostrou, e a linha da lista
+era o único lugar onde ela se via de relance. Dito ao Rodrigo.
+
+**A leitura das etiquetas da lista continua de pé**, e não é sobra: é dela que
+saem o alto da conversa aberta, o menu e o filtro das conversas já carregadas.
+
+**E a das conversas de fora das páginas (`idsDosExtras`) mudou de serventia.**
+Ela nasceu na auditoria de 27/10 para a linha da conversa achada pela busca ou
+pelo filtro não aparecer sem etiqueta. Sem a etiqueta na linha, ela serve ao
+alto da conversa aberta — e só ao primeiro desenho dele. Abrir uma conversa a
+põe na lista (`abrirConversa`), e a leitura da lista a pegaria um instante
+depois: sem as de fora, o alto nasceria sem a etiqueta e a ganharia logo em
+seguida. **Foi a sabotagem que mostrou isso:** a que tira as de fora da leitura
+passou pela prova inteira enquanto ela conferia o alto um segundo e meio depois
+do clique. Hoje um vigia (`MutationObserver`) anota o alto no PRIMEIRO desenho
+da conversa aberta, e a mesma sabotagem é pega por ali.
+
+**As provas que pediam a etiqueta na linha foram INVERTIDAS, e não apagadas:**
+
+- `as-linhas-de-fora-tem-etiqueta` virou `as-conversas-de-fora-tem-etiqueta`:
+  a linha não escreve a etiqueta, e o alto da conversa aberta escreve, já no
+  primeiro desenho — pelo filtro "Urgente" e pela busca, cada cena numa janela
+  nova (aberta numa cena, a conversa continuaria aberta na seguinte);
+- a cena 13e de `a-auditoria-de-27-10`, do mesmo jeito.
+
+Prova: `as-etiquetas-saem-da-lista`, 18 conferências, com duas conversas
+iguais plantadas — uma com duas etiquetas, outra sem nenhuma — que têm de ter
+a MESMA altura: esconder a etiqueta e deixar a faixa vazia cumpriria a letra
+do pedido, e não o motivo. A cena do computador roda a 1600: com a ficha
+aberta, abaixo disso o botão "Etiquetas" vai para o ⋮ do alto da conversa.
+
+**7 sabotagens e 7 pegas**, todas limpas, rodadas em cópias e lidas uma a uma:
+
+- a linha de antes, com as etiquetas;
+- a faixa escondida, mas guardando o lugar (só a altura pega);
+- as etiquetas por cima da linha, sem ocupar lugar (só o texto pega);
+- as etiquetas de volta só no celular, e só no computador;
+- o alto da conversa sem as etiquetas;
+- a leitura das etiquetas sem as conversas de fora (o primeiro desenho pega).
+
 ## A pesquisa nos menus (23/10)
 
 Pedido do Rodrigo, com a foto do menu da seta: *"quando eu clico na seta e
@@ -6708,7 +6768,9 @@ receber a conversa, todo mundo é avisado.
   etiqueta** — a leitura das etiquetas só conhecia a lista. Hoje ela lê também
   as de fora (`idsDosExtras`), e vale a última pergunta (`geracaoDasTagsRef`):
   as duas leituras podem sair no mesmo instante, e a mais velha não pode
-  apagar o que a mais nova trouxe;
+  apagar o que a mais nova trouxe. (Desde 02/11 a linha não mostra etiqueta,
+  e a leitura das de fora serve ao primeiro desenho do alto da conversa
+  aberta — ver "As etiquetas saíram da lista de conversas".);
 - **a citação e o avatar do alto usavam o nome cru do WhatsApp** ("Deusdete"
   debaixo de um cabeçalho que diz "MARIA DAS GRAÇAS PEREIRA"); hoje o nome da
   casa, como a linha da lista;

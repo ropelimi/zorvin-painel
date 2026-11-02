@@ -5707,6 +5707,11 @@ export default function Painel({ sessao }) {
     // perguntada, e a conversa achada pela busca, pelo filtro de grupos, das
     // minhas ou das tarefas aparecia SEM etiqueta — que se lê como "ninguém
     // etiquetou esta conversa", e não como "não perguntei".
+    // DESDE 02/11 A LINHA NÃO MOSTRA ETIQUETA, e as de fora servem ao ALTO da
+    // conversa aberta: abri-la a põe na lista, e a leitura da lista a pegaria
+    // um instante depois — sem as de fora aqui, o alto nasceria sem a
+    // etiqueta e a ganharia logo em seguida. A prova
+    // `as-conversas-de-fora-tem-etiqueta` confere o primeiro desenho.
     const ids = [...new Set([...conversasRef.current.map((c) => String(c.id)), ...idsDosExtrasRef.current])];
     if (!ids.length) { setTagsPorConversa({}); return; }
     try {
@@ -17492,13 +17497,12 @@ export default function Painel({ sessao }) {
                         : '🗂 ' + achadosCad[c.id]}
                     </div>
                   )}
-                  {tagsDaConversa(c.id).length > 0 && (
-                    <div data-etiquetas-da-linha style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
-                      {tagsDaConversa(c.id).map((t) => (
-                        <span key={t.id} style={{ fontSize: 10.5, fontWeight: 600, color: corDoTextoSobre(t.cor), background: t.cor, borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap" }}>{t.nome}</span>
-                      ))}
-                    </div>
-                  )}
+                  {/* SEM AS ETIQUETAS NA LINHA (02/11), a pedido do Rodrigo:
+                      elas ocupavam uma faixa a mais em cada conversa, e a fila
+                      cabia menos na tela. Elas continuam no alto da conversa
+                      aberta, no menu "Etiquetas" dela e no filtro da seta — é
+                      por isso que a leitura das etiquetas da lista continua de
+                      pé. Ver `carregarTagsConversas` sobre as de fora. */}
                 </div>
                 {/* Botão do menuzinho (sempre visível, realça no hover — funciona no toque) */}
                 {/* O "⌄" das opções da conversa. Era desenhado POR CIMA da linha
@@ -17961,7 +17965,7 @@ export default function Painel({ sessao }) {
                   <div data-linha-das-etiquetas
                        style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, overflow: "hidden", minWidth: 0 }}>
                     {!estreito && tagsDaConversa(conversa.id).length > 0 && (
-                      <div style={{ display: "flex", gap: 4, overflow: "hidden", minWidth: 0, flexShrink: 1 }}>
+                      <div data-etiquetas-do-alto style={{ display: "flex", gap: 4, overflow: "hidden", minWidth: 0, flexShrink: 1 }}>
                         {tagsDaConversa(conversa.id).map((t) => (
                           <span key={t.id} style={{ fontSize: 10.5, fontWeight: 600, color: corDoTextoSobre(t.cor), background: t.cor, borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: t.nome.length > 12 ? 1 : 0 }}>{t.nome}</span>
                         ))}
