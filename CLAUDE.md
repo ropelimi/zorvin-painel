@@ -3914,6 +3914,123 @@ usa. Refeitas como defeitos de verdade, as três pegam. **E o `innerText` de
 um nome com bolinha** (bloco em linha) quebra linhas que a tela não mostra:
 a prova normaliza o espaço antes de comparar frases.
 
+### O funil de cada telefone (02/11)
+
+Pedido do Rodrigo, junto com o funil movido pela IA: *"Haverão etapas
+diferentes no funil de cada departamento, ideal também ter a opção de funil
+para cada telefone."* Medido em 02/11: o Sucesso do Cliente tem cinco
+telefones com trabalhos que não se parecem — SAC (871 clientes), SDC CCR
+(280), Subsídio Emenda (241), Audiências (232) e Sucesso do Cliente (31). Num
+funil só, a jornada de quem recebe um aviso de audiência e a de quem pede a
+segunda via teriam de caber nas mesmas colunas.
+
+**A opção é por telefone, e o padrão é o de sempre**: todo telefone usa o funil
+do departamento até alguém dar a ele um funil próprio. A conta é do script 043
+da ponte (`zorvin_funis` e `advogado_id` nas três tabelas do funil, ver o
+CLAUDE.md dela).
+
+| onde | o que mudou |
+|---|---|
+| a conversa aberta | a etapa é a do funil do telefone, se ele tiver um; senão a do departamento |
+| a tela de colunas | a escolha do alto lista o funil de cada departamento e, logo abaixo, o de cada telefone que tem o seu ("Sucesso do Cliente · Audiências"); abre no funil do telefone aberto na barra |
+| Etapas do funil (administração) | dentro de cada departamento, cada telefone, com "usa o do departamento" ou "funil próprio"; **Criar um funil só para este telefone** e **Voltar a usar o funil do departamento** |
+| o caminho do histórico | um caminho por FUNIL, com o nome dele |
+| o relatório do funil | um bloco por funil |
+
+**Um funil é um par (departamento, telefone)**, e o telefone nulo é o funil do
+departamento. As contas moram em `src/funis.js` (`funilDoTelefone`,
+`telefonesDoFunil`, `listaDeFunis`, `nomeDoFunil`, `noFunil`), e nenhuma tela
+decide sozinha: divergir aqui seria a etapa da conversa ser de um funil e o
+cartão da tela de colunas ser de outro.
+
+**Criar o funil de um telefone** (`zorvin_funil_do_telefone`, pela
+administração): as etapas nascem copiadas das do departamento, e os clientes
+dele no funil do departamento ganham cartão no novo, **na etapa de mesmo
+nome**. Quem foi tirado do funil não volta. O cartão do departamento não é
+apagado: o de quem só fala com aquele telefone fica guardado, sem aparecer, e
+volta se o funil próprio for desligado. **A frase sai do que o banco
+devolveu** ("7 etapas copiadas do departamento, e 2 clientes… ganharam cartão
+nele"), e não de uma conta daqui. Ela fica em verde, na seção, e não na faixa
+de erro da administração.
+
+**Voltar ao funil do departamento não apaga nada**: quem só tinha cartão no
+funil do telefone ganha um no do departamento, e o funil do telefone fica
+guardado, com os cartões, para quando voltar.
+
+**`funilConv` tem três estados**, pela régua de `temVantoro.js`: o funil;
+`null` sem funil (grupo, telefone sem departamento); `undefined` ainda não se
+sabe — a lista dos funis não chegou, ou não deu para ler. **No terceiro, a
+etapa não é lida nem oferecida**: com o funil errado, a conversa das Audiências
+mostraria, e mudaria, o cartão do funil do departamento. A leitura que falha é
+DITA no menu da etapa e na tela de colunas (`data-falha-dos-funis`), e não vira
+"nenhum telefone tem funil próprio".
+
+**Sem o 043, nada muda**: `lerFunisDosTelefones` diz que a tabela não existe, e
+nenhuma consulta menciona a coluna do telefone (`noFunil` só a usa com o 043) —
+num banco sem ela, a consulta morreria com 42703.
+
+**O cartão posto pela conversa nasce no funil que ela mostra**: o do telefone
+leva `advogado_id`. **"Trazer conversas" no funil de um telefone** manda
+`p_telefone`; no do departamento manda só departamento e dias, a chamada que o
+banco de antes também entende. **O clique no cartão** abre a conversa por um
+telefone DESTE funil: no do departamento, nunca pelo telefone que tem o seu.
+
+**Os funis são relidos quando a administração fecha**, como as etapas: é lá
+que um telefone ganha ou perde o funil próprio.
+
+**A bancada aprendeu o 043**: `zorvin_funis`; `__SEM_FUNIS_DOS_TELEFONES` (a
+tabela que falta e a coluna `advogado_id` recusada com 42703 nas três tabelas);
+a regra de leitura que esconde o cartão guardado do departamento (só quando a
+pessoa conversa no departamento SÓ com telefones de funil próprio — o cartão de
+um cliente sem conversa, que as provas de antes plantam, continua aparecendo);
+o movimento com o telefone; o "trazer" com `p_telefone`;
+`zorvin_funil_do_telefone`; e o relatório por funil.
+
+**E a prova pegou um defeito de desenho, no banco, antes da PR.** O histórico
+do funil do departamento sumia junto com o cartão guardado: o caminho de quem
+só fala com as Audiências mostrava só o funil novo. O 043 passou a deixar o
+passo do departamento com a regra do 017 — o cartão guardado some da tela; por
+onde o cliente já passou, não.
+
+**A escolha do funil do departamento continua sendo o número sozinho**
+(`chaveDoFunil`: "3", e "3|<telefone>" o de um telefone). A primeira escrita
+usava "3|" também para o departamento, e a prova `o-funil-de-etapas` reprovou:
+quem escolhe o departamento pelo número, como ela faz, passou a cair noutro
+departamento sem nada dizendo isso.
+
+**Duas mentiras da bancada, achadas nesta rodada:**
+
+- **o cartão posto pela tela nascia sem data.** No banco, `criado_em` e
+  `movido_em` nascem em `now()`, e o gatilho do 017 grava `movido_por`. Na
+  bancada eles ficavam vazios, e o relatório do funil da bancada estourava
+  ("Invalid time value") ao ler a data do cartão que a conversa acabou de pôr
+  no funil. Hoje a bancada dá a eles o padrão do banco;
+- **o filtro `is` não contava como pedir a coluna.** O PostgREST recusa
+  `advogado_id=is.null` com 42703 num banco sem a coluna; a bancada filtrava
+  sem reclamar. A sabotagem que fazia o painel perguntar pelo telefone num
+  banco sem o 043 **vazou** por isso. Hoje `is` e `not` contam como pedir a
+  coluna, como `eq` e `in` já contavam.
+
+Prova: `o-funil-de-cada-telefone`, 58 conferências. **20 sabotagens e 20
+pegas**, todas limpas, rodadas em cópias e lidas uma a uma:
+
+- o painel de antes inteiro (30 reprovações);
+- **a conversa:** a consulta pedindo o telefone mesmo sem o 043 (a que vazou
+  antes de a bancada aprender o `is`); o funil próprio do telefone ignorado
+  (12); a falha dos funis virando "nenhum telefone tem funil próprio"; a falha
+  virando "lendo" para sempre; o cartão posto pela conversa sem o telefone;
+- **a tela de colunas:** abrindo no funil do departamento (8); "Trazer" sem o
+  telefone; o funil do departamento com os telefones de funil próprio; a lista
+  do alto sem os funis dos telefones (8); sem o aviso da falha dos funis;
+- **a administração:** sem os telefones (26); o telefone sem funil próprio sem
+  o aviso de que usa o do departamento (25); a etapa nova do funil do telefone
+  sem o telefone; a frase do que o banco fez apagada ao reler; sem reler os
+  funis ao fechar a administração (13); o funil do departamento escolhido por
+  "3|" (pega pela `o-funil-de-etapas`);
+- **o caminho e o relatório:** o caminho por departamento; o relatório sem o
+  nome do telefone;
+- **e a bancada:** o cartão posto pela tela sem as datas.
+
 ## Tarefas e lembretes (06/10)
 
 Pedido do Rodrigo como terceiro passo para CRM: *"pode começar pelas tarefas

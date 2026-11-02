@@ -1453,6 +1453,10 @@ const TABELAS = {
                                ordem: (i + 1) * 10, ativo: true, criado_em: "2026-10-06T10:00:00Z" }))),
   zorvin_cartoes: [],
   zorvin_movimentos: [],
+  // O FUNIL DE CADA TELEFONE (script 043 da ponte) começa VAZIO, como o
+  // script o entrega: todo telefone usa o funil do departamento até alguém
+  // dar a ele um funil próprio.
+  zorvin_funis: [],
   // AS TAREFAS (script 018 da ponte) começam VAZIAS, pela mesma régua: nascem
   // do que se faz na tela ou da `__SEMENTE` de cada prova.
   zorvin_tarefas: [],
@@ -1763,6 +1767,18 @@ if (typeof globalThis !== "undefined" && globalThis.__SEM_SITUACAO) {
   sem.conversas = [...new Set([...(sem.conversas || []), "situacao", "protocolo"])];
 }
 
+// O BANCO SEM O SCRIPT 043 (o funil de cada telefone): a coluna do telefone
+// falta nas três tabelas do funil, e o filtro ou a gravação que a menciona
+// responde 42703, como no Postgres. A tabela `zorvin_funis` responde "não
+// existe" (ver `consulta`). Sem isto, um painel que pergunta pelo telefone
+// num banco sem a coluna passaria por certo.
+if (typeof globalThis !== "undefined" && globalThis.__SEM_FUNIS_DOS_TELEFONES) {
+  const sem = globalThis.__SEM_COLUNAS || (globalThis.__SEM_COLUNAS = {});
+  for (const t of ["zorvin_etapas", "zorvin_cartoes", "zorvin_movimentos"]) {
+    sem[t] = [...new Set([...(sem[t] || []), "advogado_id"])];
+  }
+}
+
 // DEPOIS DA SEMENTE, e a ordem é o conserto. Tirando a coluna antes, as
 // conversas plantadas entravam COM ela logo em seguida — e o banco "sem o
 // SQL" passava a ter a coluna em metade das linhas. A prova pegou: o rótulo
@@ -1908,6 +1924,23 @@ function tabelasEmbutidas(cols) {
   return achadas;
 }
 
+/** O CARTÃO GUARDADO DO FUNIL DO DEPARTAMENTO (043) sai da lista, como a
+ *  regra de leitura do banco o tira: é o de quem conversa no departamento só
+ *  com telefones que têm funil próprio. O cartão de um cliente sem conversa
+ *  nenhuma — que as provas de antes plantam — fica. */
+function semOGuardadoDoDepartamento(linhas) {
+  const proprios = new Set((TABELAS.zorvin_funis || []).filter((f) => f.ativo && f.advogado_id).map((f) => String(f.advogado_id)));
+  if (!proprios.size || !linhas.length) return linhas;
+  const depDe = new Map((TABELAS.advogados || ADVOGADOS).map((a) => [String(a.id), String(a.departamento_id)]));
+  return linhas.filter((k) => {
+    if (k.advogado_id) return true;
+    const doDep = (TABELAS.conversas || []).filter((c) => String(c.contato_id) === String(k.contato_id)
+      && depDe.get(String(c.advogado_id)) === String(k.departamento_id));
+    if (!doDep.length) return true;
+    return doDep.some((c) => !proprios.has(String(c.advogado_id)));
+  });
+}
+
 /** Uma consulta encadeável que devolve sempre `{data, error}` no final. */
 function consulta(tabela) {
   // A VISTA QUE AINDA NÃO EXISTE. O código sobe antes do script — sempre sobe.
@@ -1929,6 +1962,9 @@ function consulta(tabela) {
         // "não existe", e não lista vazia — "existe e está vazio" é outro
         // estado, em que o funil APARECE e diz que não há ninguém.
         || (/^zorvin_(etapas|cartoes|movimentos)$/.test(tabela) && globalThis.__SEM_FUNIL)
+        // O FUNIL DE CADA TELEFONE (script 043) que ainda não rodou: "não
+        // existe" — e a coluna do telefone também falta (ver mais abaixo).
+        || (tabela === "zorvin_funis" && (globalThis.__SEM_FUNIS_DOS_TELEFONES || globalThis.__SEM_FUNIL))
         // AS TAREFAS (script 018) QUE AINDA NÃO RODARAM: "não existe", e não
         // lista vazia — vazia é o estado em que a tela aparece e diz que não há.
         || (tabela === "zorvin_tarefas" && globalThis.__SEM_TAREFAS)
@@ -1954,6 +1990,12 @@ function consulta(tabela) {
         // não lista vazia — vazia é a conversa que ainda não tem protocolo.
         || (tabela === "zorvin_atendimentos" && globalThis.__SEM_SITUACAO));
   let linhas = faltando ? [] : (TABELAS[tabela] || []).slice();
+  // O CARTÃO GUARDADO DO FUNIL DO DEPARTAMENTO (043): a regra de leitura do
+  // banco (`zorvin_ve_no_funil`) esconde o cartão do departamento de quem só
+  // conversa com telefones que têm funil próprio. A bancada imita — e só
+  // nesse caso: o cartão de um cliente sem conversa nenhuma, que as provas
+  // de antes plantam, continua aparecendo como sempre apareceu.
+  if (tabela === "zorvin_cartoes") linhas = semOGuardadoDoDepartamento(linhas);
   // A SITUAÇÃO DA CONVERSA (script 028) TEM PADRÃO NO BANCO: 'aberto'. A
   // linha que uma prova planta direto na tabela, sem passar pela gravação,
   // não tem a chave — e no Postgres a coluna existiria com o padrão. Sem isto
@@ -2034,7 +2076,12 @@ function consulta(tabela) {
     //
     // MEDIDO: foi isto que fez o "desfazer" do "Já tratei" carimbar zero
     // linhas. O painel estava certo e a bancada mentia.
+    // `is` TAMBÉM CONTA COMO PEDIR A COLUNA (02/11): o PostgREST recusa
+    // `advogado_id=is.null` com 42703 num banco sem a coluna. Sem isto, um
+    // painel que pergunta pelo funil do departamento ("telefone vazio") num
+    // banco sem o 043 passaria por certo — e foi uma sabotagem que mostrou.
     is(col, val) {
+      pedidos.push(col);
       linhas = val === null
         ? linhas.filter((l) => l[col] === null || l[col] === undefined)
         : linhas.filter((l) => l[col] === val);
@@ -2060,6 +2107,7 @@ function consulta(tabela) {
     // certo. Só `is` é usado pelo painel; o resto continua passando, e quem
     // usar outro terá de ensinar a bancada primeiro.
     not(col, op, val) {
+      pedidos.push(col);
       if (op === "is") {
         linhas = val === null
           ? linhas.filter((l) => l[col] !== null && l[col] !== undefined)
@@ -2433,12 +2481,15 @@ function consulta(tabela) {
       // relatório do funil só teria o que a `__SEMENTE` plantou — e a prova
       // passaria com uma tela que nunca registra um movimento de verdade.
       const funil = tabela === "zorvin_cartoes";
+      // A chave do cartão é o cliente NO FUNIL (043): departamento e telefone.
+      const chaveDoCartao = (c) => `${c.contato_id}|${c.departamento_id}|${c.advogado_id || ""}`;
       const etapaAntes = funil
-        ? new Map((TABELAS.zorvin_cartoes || []).map((c) => [`${c.contato_id}|${c.departamento_id}`, c.etapa_id]))
+        ? new Map((TABELAS.zorvin_cartoes || []).map((c) => [chaveDoCartao(c), c.etapa_id]))
         : null;
       const movimento = (c, de, para) => (TABELAS.zorvin_movimentos || (TABELAS.zorvin_movimentos = [])).push({
         id: `zorvin_movimentos-${TABELAS.zorvin_movimentos.length + 1}`, contato_id: c.contato_id,
-        departamento_id: c.departamento_id, de_etapa: de ?? null, para_etapa: para ?? null,
+        departamento_id: c.departamento_id, advogado_id: c.advogado_id || null,
+        de_etapa: de ?? null, para_etapa: para ?? null,
         quem: (TABELAS.usuarios[0] || {}).id || null, quando: new Date().toISOString(),
       });
       // A CONFIGURAÇÃO FORA DO HORÁRIO PASSA PELO GATILHO do script 021: ele
@@ -2464,8 +2515,18 @@ function consulta(tabela) {
           }
         }
         if (funil) {
+          // O CARTÃO QUE NASCE pela tela ganha o padrão das colunas e o que o
+          // gatilho do 017 grava (`criado_em` e `movido_em` em `now()`, e
+          // `movido_por` = quem entrou). Sem isso, o relatório do funil leria
+          // uma data que não existe — no banco ela sempre existe.
+          const agoraCartao = new Date().toISOString();
           for (const n of linhas) {
-            const de = etapaAntes.get(`${n.contato_id}|${n.departamento_id}`);
+            if (n.criado_em === undefined) n.criado_em = agoraCartao;
+            if (n.movido_em === undefined) n.movido_em = agoraCartao;
+            if (n.movido_por === undefined) n.movido_por = (TABELAS.usuarios[0] || {}).id || null;
+          }
+          for (const n of linhas) {
+            const de = etapaAntes.get(chaveDoCartao(n));
             if (de !== n.etapa_id) movimento(n, de, n.etapa_id);
           }
         }
@@ -3562,18 +3623,29 @@ export const supabase = {
       await espera(40);
       const dep = String(args && args.p_departamento);
       const dias = Number((args && args.p_dias) || 30);
+      // O FUNIL DE UM TELEFONE (043): `p_telefone` traz as conversas DELE para
+      // o funil dele; sem o argumento, o funil do departamento traz as dos
+      // telefones que NÃO têm funil próprio.
+      const tel = (args && args.p_telefone) || null;
+      const proprios = new Set((TABELAS.zorvin_funis || []).filter((f) => f.ativo && f.advogado_id).map((f) => String(f.advogado_id)));
+      if (tel && !proprios.has(String(tel))) {
+        return { data: null, error: { code: "22023", message: "Este telefone usa o funil do departamento — traga as conversas por lá." } };
+      }
       const primeira = (TABELAS.zorvin_etapas || [])
-        .filter((e) => String(e.departamento_id) === dep && e.ativo)
+        .filter((e) => (tel ? String(e.advogado_id) === String(tel) : String(e.departamento_id) === dep && !e.advogado_id) && e.ativo)
         .sort((a, b) => a.ordem - b.ordem)[0];
       if (!primeira) {
-        return { data: null, error: { code: "22023", message: "Este departamento ainda não tem etapa ativa no funil." } };
+        return { data: null, error: { code: "22023", message: tel ? "O funil deste telefone ainda não tem etapa ativa."
+                                                                  : "Este departamento ainda não tem etapa ativa no funil." } };
       }
-      const telefones = new Set((TABELAS.advogados || ADVOGADOS)
-        .filter((a) => String(a.departamento_id) === dep).map((a) => String(a.id)));
+      const telefones = new Set(tel ? [String(tel)] : (TABELAS.advogados || ADVOGADOS)
+        .filter((a) => String(a.departamento_id) === dep && !proprios.has(String(a.id))).map((a) => String(a.id)));
       const contato = new Map((TABELAS.contatos || []).map((c) => [String(c.id), c]));
       const desde = Date.now() - dias * 86400000;
       const ja = new Set((TABELAS.zorvin_cartoes || [])
-        .filter((c) => String(c.departamento_id) === dep).map((c) => String(c.contato_id)));
+        .filter((c) => String(c.departamento_id) === String(primeira.departamento_id)
+                       && String(c.advogado_id || "") === String(tel || ""))
+        .map((c) => String(c.contato_id)));
       let n = 0;
       for (const c of TABELAS.conversas || []) {
         if (!telefones.has(String(c.advogado_id))) continue;
@@ -3583,11 +3655,113 @@ export const supabase = {
         ja.add(String(c.contato_id));
         const agora = new Date().toISOString();
         TABELAS.zorvin_cartoes.push({ id: `zorvin_cartoes-t${TABELAS.zorvin_cartoes.length + 1}`,
-          contato_id: c.contato_id, departamento_id: Number(dep), etapa_id: primeira.id,
-          criado_em: agora, movido_em: agora, movido_por: eu.id });
+          contato_id: c.contato_id, departamento_id: primeira.departamento_id, advogado_id: tel || null,
+          etapa_id: primeira.id, criado_em: agora, movido_em: agora, movido_por: eu.id });
         n++;
       }
       return { data: n, error: null };
+    }
+
+    // DAR OU TIRAR O FUNIL PRÓPRIO DE UM TELEFONE (script 043) — as regras da
+    // função do banco, conferidas num Postgres de verdade (seção 90 da prova
+    // da ponte): só quem administra; as etapas nascem copiadas das do
+    // departamento; os clientes do funil do departamento que conversam pelo
+    // telefone ganham cartão NA ETAPA DE MESMO NOME; desligar devolve ao do
+    // departamento quem só estava no do telefone. Imitada porque os NÚMEROS
+    // que ela devolve são o que a tela escreve.
+    if (nome === "zorvin_funil_do_telefone") {
+      if (globalThis.__SEM_FUNIL || globalThis.__SEM_FUNIS_DOS_TELEFONES) {
+        return { data: null, error: { code: "PGRST202", message: "Could not find the function public.zorvin_funil_do_telefone" } };
+      }
+      if (globalThis.__FUNIL_DO_TELEFONE_FALHA) {
+        return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } };
+      }
+      const eu = TABELAS.usuarios[0] || {};
+      if (!eu.admin) {
+        return { data: null, error: { code: "42501", message: "Só quem administra muda o funil de um telefone." } };
+      }
+      await espera(40);
+      const tel = String((args && args.p_telefone) || "");
+      const ligar = !(args && args.p_ligar === false);
+      const adv = (TABELAS.advogados || ADVOGADOS).find((a) => String(a.id) === tel);
+      if (!adv) return { data: null, error: { code: "22023", message: "Este telefone não existe." } };
+      const funis = TABELAS.zorvin_funis || (TABELAS.zorvin_funis = []);
+      let f = funis.find((x) => String(x.advogado_id) === tel);
+      const agora = new Date().toISOString();
+      const etapasDo = (filtro) => (TABELAS.zorvin_etapas || []).filter(filtro);
+      const cartoes = TABELAS.zorvin_cartoes || (TABELAS.zorvin_cartoes = []);
+      const novoCartao = (contatoId, dep, telId, etapaId) => {
+        const c = { id: `zorvin_cartoes-f${cartoes.length + 1}`, contato_id: contatoId, departamento_id: dep,
+                    advogado_id: telId, etapa_id: etapaId, criado_em: agora, movido_em: agora, movido_por: eu.id };
+        cartoes.push(c);
+        (TABELAS.zorvin_movimentos || (TABELAS.zorvin_movimentos = [])).push({
+          id: `zorvin_movimentos-${TABELAS.zorvin_movimentos.length + 1}`, contato_id: contatoId,
+          departamento_id: dep, advogado_id: telId, de_etapa: null, para_etapa: etapaId, quem: eu.id, quando: agora });
+      };
+      const mesmoNome = (lista, nome) => lista.find((e) => e.ativo !== false
+        && String(e.nome).trim().toLowerCase() === String(nome || "").trim().toLowerCase());
+      if (ligar) {
+        let nEtapas = 0, nCartoes = 0;
+        if (!f) {
+          if (adv.departamento_id == null) {
+            return { data: null, error: { code: "22023", message: "Este telefone não tem departamento — ponha-o num departamento antes." } };
+          }
+          f = { id: `zorvin_funis-${funis.length + 1}`, departamento_id: adv.departamento_id, advogado_id: adv.id,
+                ativo: true, criado_em: agora, criado_por: eu.id, mudado_em: agora, mudado_por: eu.id };
+          funis.push(f);
+        } else if (!f.ativo) {
+          Object.assign(f, { ativo: true, mudado_em: agora, mudado_por: eu.id });
+        }
+        const dep = f.departamento_id;
+        if (!etapasDo((e) => String(e.advogado_id) === tel).length) {
+          let base = etapasDo((e) => String(e.departamento_id) === String(dep) && !e.advogado_id && e.ativo !== false);
+          if (!base.length) {
+            base = [["Novo contato", "#53bdeb"], ["Em atendimento", "#00a884"], ["Aguardando cliente", "#ffb02e"],
+                    ["Proposta/acordo enviado", "#a78bfa"], ["Acordo fechado", "#25d366"], ["Em execução", "#0ea5e9"],
+                    ["Encerrado", "#8696a0"]].map(([nome, cor], i) => ({ nome, cor, ordem: (i + 1) * 10 }));
+          }
+          for (const e of base) {
+            TABELAS.zorvin_etapas.push({ id: `et-${dep}-t${tel.slice(-4)}-${TABELAS.zorvin_etapas.length + 1}`,
+              departamento_id: dep, advogado_id: adv.id, nome: e.nome, cor: e.cor, ordem: e.ordem, ativo: true, criado_em: agora });
+            nEtapas++;
+          }
+        }
+        const dele = etapasDo((e) => String(e.advogado_id) === tel && e.ativo !== false).sort((a, b) => a.ordem - b.ordem);
+        if (dele.length) {
+          const etapaPorId = new Map((TABELAS.zorvin_etapas || []).map((e) => [String(e.id), e]));
+          const jaTem = new Set(cartoes.filter((c) => String(c.advogado_id) === tel).map((c) => String(c.contato_id)));
+          const doDep = cartoes.filter((c) => String(c.departamento_id) === String(dep) && !c.advogado_id);
+          for (const k of doDep) {
+            if (jaTem.has(String(k.contato_id))) continue;
+            const fala = (TABELAS.conversas || []).some((c) => String(c.contato_id) === String(k.contato_id) && String(c.advogado_id) === tel);
+            if (!fala) continue;
+            const alvo = mesmoNome(dele, (etapaPorId.get(String(k.etapa_id)) || {}).nome) || dele[0];
+            novoCartao(k.contato_id, dep, adv.id, alvo.id);
+            jaTem.add(String(k.contato_id));
+            nCartoes++;
+          }
+        }
+        return { data: { funil: f.id, ativo: true, etapas: nEtapas, cartoes: nCartoes }, error: null };
+      }
+      if (!f || !f.ativo) return { data: { funil: f ? f.id : null, ativo: false, etapas: 0, cartoes: 0 }, error: null };
+      Object.assign(f, { ativo: false, mudado_em: agora, mudado_por: eu.id });
+      const dep = f.departamento_id;
+      const doDep = etapasDo((e) => String(e.departamento_id) === String(dep) && !e.advogado_id && e.ativo !== false)
+        .sort((a, b) => a.ordem - b.ordem);
+      let nCartoes = 0;
+      if (doDep.length) {
+        const etapaPorId = new Map((TABELAS.zorvin_etapas || []).map((e) => [String(e.id), e]));
+        const jaTem = new Set(cartoes.filter((c) => String(c.departamento_id) === String(dep) && !c.advogado_id)
+          .map((c) => String(c.contato_id)));
+        for (const k of cartoes.filter((c) => String(c.advogado_id) === tel)) {
+          if (jaTem.has(String(k.contato_id))) continue;
+          const alvo = mesmoNome(doDep, (etapaPorId.get(String(k.etapa_id)) || {}).nome) || doDep[0];
+          novoCartao(k.contato_id, dep, null, alvo.id);
+          jaTem.add(String(k.contato_id));
+          nCartoes++;
+        }
+      }
+      return { data: { funil: f.id, ativo: false, etapas: 0, cartoes: nCartoes }, error: null };
     }
 
     // O RELATÓRIO DO FUNIL (script 019). A conta de verdade foi provada num
@@ -3615,9 +3789,28 @@ export const supabase = {
       const depDaConversa = (c) => String((advs.find((a) => String(a.id) === String(c.advogado_id)) || {}).departamento_id);
       const doTelefone = (contato) => !tel || conversas.some((c) => String(c.contato_id) === String(contato)
                                                                && String(c.advogado_id) === String(tel));
-      const deps = DEPARTAMENTOS.filter((d) => etapas.some((e) => String(e.departamento_id) === String(d.id))
-        && (!dep || String(d.id) === dep) && (!tel || String(d.id) === depDoTel)
-        && conversas.some((c) => depDaConversa(c) === String(d.id)));
+      // UM BLOCO POR FUNIL (043): o de cada departamento, com os telefones
+      // que não têm funil próprio, e o de cada telefone que tem o seu.
+      const proprios = new Set((TABELAS.zorvin_funis || []).filter((f) => f.ativo && f.advogado_id).map((f) => String(f.advogado_id)));
+      const telTemFunil = tel && proprios.has(String(tel));
+      const deps = [];
+      for (const d of DEPARTAMENTOS) {
+        if (etapas.some((e) => String(e.departamento_id) === String(d.id) && !e.advogado_id)
+            && (!dep || String(d.id) === dep) && (!tel || (!telTemFunil && String(d.id) === depDoTel))
+            && conversas.some((c) => depDaConversa(c) === String(d.id) && !proprios.has(String(c.advogado_id)))) {
+          deps.push({ id: d.id, nome: d.nome, telefone_id: null, telefone: null });
+        }
+        for (const f of (TABELAS.zorvin_funis || []).filter((x) => x.ativo && x.advogado_id && String(x.departamento_id) === String(d.id))) {
+          const a = advs.find((x) => String(x.id) === String(f.advogado_id));
+          if (!a || !etapas.some((e) => String(e.advogado_id) === String(f.advogado_id))) continue;
+          if (dep && String(d.id) !== dep) continue;
+          if (tel && String(tel) !== String(f.advogado_id)) continue;
+          if (!conversas.some((c) => String(c.advogado_id) === String(f.advogado_id))) continue;
+          deps.push({ id: d.id, nome: d.nome, telefone_id: f.advogado_id, telefone: a.nome });
+        }
+      }
+      const doFunil = (linha, d) => String(linha.departamento_id) === String(d.id)
+        && String(linha.advogado_id || "") === String(d.telefone_id || "");
       const agora = Date.now();
       const mediana = (xs) => {
         if (!xs.length) return null;
@@ -3625,9 +3818,12 @@ export const supabase = {
         return Math.round(o.length % 2 ? o[m] : (o[m - 1] + o[m]) / 2);
       };
       const todosMov = TABELAS.zorvin_movimentos || [];
+      // O cartão guardado do departamento (o de quem só fala com telefones de
+      // funil próprio) não conta: a regra de leitura do banco o esconde.
+      const visiveis = semOGuardadoDoDepartamento((TABELAS.zorvin_cartoes || []).slice());
       const saida = deps.map((d) => {
-        const k = (TABELAS.zorvin_cartoes || []).filter((c) => String(c.departamento_id) === String(d.id) && doTelefone(c.contato_id));
-        const movs = todosMov.filter((m) => String(m.departamento_id) === String(d.id) && doTelefone(m.contato_id)
+        const k = visiveis.filter((c) => doFunil(c, d) && doTelefone(c.contato_id));
+        const movs = todosMov.filter((m) => doFunil(m, d) && doTelefone(m.contato_id)
           && new Date(m.quando).getTime() >= desde && new Date(m.quando).getTime() < ate);
         const passagens = movs.filter((m) => m.de_etapa).map((s) => {
           const chegada = todosMov.filter((c) => c.contato_id === s.contato_id && String(c.departamento_id) === String(s.departamento_id)
@@ -3635,7 +3831,7 @@ export const supabase = {
             .map((c) => new Date(c.quando).getTime()).sort((a, b) => b - a)[0];
           return { etapa: s.de_etapa, s: chegada == null ? null : (new Date(s.quando).getTime() - chegada) / 1000 };
         }).filter((p) => p.s != null);
-        const linhas = etapas.filter((e) => String(e.departamento_id) === String(d.id))
+        const linhas = etapas.filter((e) => doFunil(e, d))
           .sort((a, b) => a.ordem - b.ordem || String(a.nome).localeCompare(String(b.nome)))
           .map((e) => {
             const aqui = k.filter((c) => c.etapa_id === e.id);
@@ -3654,7 +3850,7 @@ export const supabase = {
             };
           })
           .filter((e) => e.ativo || e.agora > 0 || e.entraram > 0 || e.sairam > 0);
-        return { id: d.id, nome: d.nome, agora: k.length,
+        return { id: d.id, nome: d.nome, telefone_id: d.telefone_id, telefone: d.telefone, agora: k.length,
                  entraram_no_funil: movs.filter((m) => !m.de_etapa).length,
                  sairam_do_funil: movs.filter((m) => !m.para_etapa).length,
                  movimentos: movs.length, etapas: linhas };

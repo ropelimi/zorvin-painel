@@ -1908,7 +1908,11 @@ function RelatorioResponsaveis({ C, estilos, cores, fuso, telefone, departamento
 
    SEM A FUNÇÃO ou SEM O SCRIPT 017, quem administra lê qual script falta;
    quem atende não vê nada. COM A FUNÇÃO FALHANDO, a frase vem com o código
-   — falha não é ausência (armadilha nº 2). */
+   — falha não é ausência (armadilha nº 2).
+
+   UM BLOCO POR FUNIL (02/11): desde o script 043 um telefone pode ter o
+   funil dele, e o bloco diz de qual é — "Sucesso do Cliente · Audiências".
+   O banco manda `telefone` nulo no bloco do funil do departamento. */
 function RelatorioFunil({ C, estilos, cores, deIso, ateIso, telefone, departamento, souAdmin }) {
   const [r, setR] = useState(null);
   const [carregando, setCarregando] = useState(true);
@@ -1993,25 +1997,27 @@ function RelatorioFunil({ C, estilos, cores, deIso, ateIso, telefone, departamen
           )}
           {deps.map((d) => {
             const etapas = d.etapas || [];
+            const nomeDoBloco = d.telefone ? `${d.nome} · ${d.telefone}` : d.nome;
+            const chaveDoBloco = `${d.id}|${d.telefone_id || ""}`;
             const maior = Math.max(1, ...etapas.map((e) => Number(e.agora || 0)));
             // O FUNIL SEM NINGUÉM vira uma linha, e não sete linhas de zero: um
             // escritório com quatro departamentos e um funil em uso leria três
             // tabelas zeradas antes de achar a que importa.
             if (!Number(d.agora) && !Number(d.movimentos)) {
               return (
-                <div key={d.id} style={{ ...estilos.cartao, marginBottom: 12, display: "flex", flexWrap: "wrap",
+                <div key={chaveDoBloco} style={{ ...estilos.cartao, marginBottom: 12, display: "flex", flexWrap: "wrap",
                                          alignItems: "baseline", gap: "4px 14px" }}
-                     data-funil-departamento={d.nome} data-funil-vazio>
-                  <div style={{ fontWeight: 700, fontSize: 14.5, color: C.textPrimary }}>{d.nome}</div>
+                     data-funil-departamento={d.nome} data-funil-telefone={d.telefone || ""} data-funil-vazio>
+                  <div style={{ fontWeight: 700, fontSize: 14.5, color: C.textPrimary }}>{nomeDoBloco}</div>
                   <div style={estilos.nota}>Nenhum cliente neste funil agora, e nenhum movimento no período.</div>
                 </div>
               );
             }
             return (
-              <div key={d.id} style={{ ...estilos.cartao, overflowX: "auto", marginBottom: 12 }}
-                   data-funil-departamento={d.nome}>
+              <div key={chaveDoBloco} style={{ ...estilos.cartao, overflowX: "auto", marginBottom: 12 }}
+                   data-funil-departamento={d.nome} data-funil-telefone={d.telefone || ""}>
                 <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 14px", marginBottom: 8 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14.5, color: C.textPrimary }}>{d.nome}</div>
+                  <div data-nome-do-bloco style={{ fontWeight: 700, fontSize: 14.5, color: C.textPrimary }}>{nomeDoBloco}</div>
                   <div style={{ ...estilos.nota }} data-funil-resumo>
                     <b style={{ color: C.textPrimary }} data-funil-agora={d.agora}>{numero(d.agora)}</b>{" "}
                     {Number(d.agora) === 1 ? "cliente" : "clientes"} no funil agora · no período,{" "}

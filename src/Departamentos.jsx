@@ -376,7 +376,7 @@ export default function Departamentos({ C, aoFechar, abaInicial, aoSaberDosScrip
                   desta seção passava a ser o primeiro da tela — antes do de
                   trazer telefone, que é o gesto de todo dia desta aba.
                   Sem o script, a seção não aparece. */}
-              <EtapasDoFunil cx={cx} C={C} departamentos={departamentos} aoAvisar={setErro} />
+              <EtapasDoFunil cx={cx} C={C} departamentos={departamentos} telefones={telefones} aoAvisar={setErro} />
             </>
           )}
 
