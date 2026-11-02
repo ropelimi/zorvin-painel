@@ -69,6 +69,7 @@ import { nomeDoContato } from "./contato.js";
 import { preencherVariaveis, usaVariaveis, variaveisDesconhecidas, VARIAVEIS } from "./variaveis.js";
 import { diasDesde } from "./espera.js";
 import { montarCaminho, duracaoLegivel } from "./caminhoNoFunil.js";
+import { lerFunisDosTelefones, funilDoTelefone, chaveDoFunil, nomeDoFunil, noFunil } from "./funis.js";
 import EscolherHora from "./EscolherHora.jsx";
 import { perguntarOsScripts, fraseDosScriptsParaAFaixa, manterOQueSeSabia } from "./scriptsDoBanco.js";
 import { rotuloDaHora, porQueNaoServe, semAColunaDaAgenda, aindaDaParaEditar } from "./agenda.js";
@@ -3617,9 +3618,13 @@ export default function Painel({ sessao }) {
   // no dia em que a rede tossisse.
   const [temFunil, setTemFunil] = useState(null);
   const [telaFunil, setTelaFunil] = useState(false);
-  // A ETAPA DA CONVERSA ABERTA: `{ chave, carregando, etapas, cartao, erro }`,
-  // e `chave` = contato|departamento — é o que identifica um cartão.
+  // A ETAPA DA CONVERSA ABERTA: `{ chave, funil, carregando, etapas, cartao,
+  // erro }`, e `chave` = contato|departamento|telefone — é o que identifica um
+  // cartão desde o funil de cada telefone (02/11).
   const [funilDaConversa, setFunilDaConversa] = useState(null);
+  // OS FUNIS PRÓPRIOS DOS TELEFONES (script 043): `null` ainda não li;
+  // `{ existe, lista, erro }` depois — ver `lerFunisDosTelefones`.
+  const [funisDosTelefones, setFunisDosTelefones] = useState(null);
   // O menu da etapa tem os DOIS endereços do menu do responsável: "linha" (no
   // computador, pendurado na linha do número) e "menu" (pelo ⋮).
   const [menuEtapa, setMenuEtapa] = useState(false);
@@ -6209,44 +6214,71 @@ export default function Painel({ sessao }) {
     return () => { vivo = false; };
   }, []);
 
+  // ---- O funil de cada telefone (02/11): quais telefones têm o seu ----
+  //
+  // UMA pergunta por abertura, e de novo quando a administração fecha (é lá
+  // que um telefone ganha ou perde o funil próprio). Só depois de saber que
+  // o funil existe: sem o 017 não há o que perguntar.
+  const releFunisDosTelefones = useCallback(async () => {
+    const r = await lerFunisDosTelefones();
+    if (r.erro) console.error("Zorvin — funis dos telefones:", r.erro);
+    setFunisDosTelefones(r);
+    return r;
+  }, []);
+  useEffect(() => { if (temFunil === true) releFunisDosTelefones(); }, [temFunil, releFunisDosTelefones]);
+
   // ---- O funil: a etapa da conversa aberta ----
   //
-  // O CARTÃO É O CLIENTE NO DEPARTAMENTO (decisão do Rodrigo): a conversa
-  // aberta aponta para ele pelo contato e pelo departamento do telefone. Grupo
-  // não é cliente, e telefone sem departamento não tem funil.
+  // O CARTÃO É O CLIENTE NUM FUNIL: o do telefone da conversa, se ele tiver
+  // funil próprio (02/11), e senão o do departamento dele (a decisão de
+  // 06/10). Grupo não é cliente, e telefone sem departamento não tem funil.
+  //
+  // `funilConv` tem TRÊS estados: o funil; `null` não há funil; `undefined`
+  // ainda não se sabe — a lista dos funis dos telefones não chegou, ou não
+  // deu para ler. No terceiro a etapa não é lida nem oferecida: com o funil
+  // errado, a conversa das Audiências mostraria (e mudaria) o cartão do
+  // funil do departamento.
   const contatoDoFunil = conversa && !String(conversa.contato?.numero || "").startsWith("grupo:")
     ? conversa.contato_id : null;
-  const depDoFunil = conversa
-    ? ((advogados.find((a) => String(a.id) === String(conversa.advogado_id)) || {}).departamento_id ?? null)
-    : null;
+  const comTelefoneNoFunil = !!(funisDosTelefones && funisDosTelefones.existe);
+  const comTelefoneNoFunilRef = useRef(comTelefoneNoFunil);
+  comTelefoneNoFunilRef.current = comTelefoneNoFunil;
+  const erroDosFunis = (funisDosTelefones && funisDosTelefones.erro) || "";
+  const funilConv = !conversa || temFunil !== true ? null
+    : (funisDosTelefones === null || erroDosFunis) ? undefined
+    : funilDoTelefone(conversa.advogado_id, advogados, funisDosTelefones.lista);
+  const chaveFunilConv = funilConv === undefined ? "?" : chaveDoFunil(funilConv);
+  const funilConvRef = useRef(funilConv);
+  funilConvRef.current = funilConv;
   // A CHAVE PEDIDA POR ÚLTIMO (auditoria de 27/10). A guarda pela chave do
   // ESTADO não bastava: abrir um grupo, ou uma conversa de telefone sem
   // departamento, põe o estado em nulo — e a resposta atrasada do cliente de
   // antes passava pela guarda (`null && …`) e pintava a etapa dele na
   // conversa nova, com o menu mudando o cartão do cliente errado.
   const funilPedidoRef = useRef(null);
-  const lerFunilDaConversa = useCallback(async (contatoId, depId) => {
-    if (!contatoId || depId == null) { funilPedidoRef.current = null; setFunilDaConversa(null); return; }
-    const chave = `${contatoId}|${depId}`;
+  const lerFunilDaConversa = useCallback(async (contatoId, funil) => {
+    if (!contatoId || !funil) { funilPedidoRef.current = null; setFunilDaConversa(null); return; }
+    const chaveFunil = chaveDoFunil(funil);
+    const chave = `${contatoId}|${chaveFunil}`;
+    const comTelefone = comTelefoneNoFunilRef.current;
     funilPedidoRef.current = chave;
     setFunilDaConversa((f) => (f && f.chave === chave ? f
-      : { chave, carregando: true, etapas: [], cartao: null, erro: null }));
+      : { chave, funil, carregando: true, etapas: [], cartao: null, erro: null }));
     try {
-      let etapas = etapasPorDep.current.get(String(depId));
+      let etapas = etapasPorDep.current.get(chaveFunil);
       const [rc, re] = await Promise.all([
-        supabase.from("zorvin_cartoes").select("*")
-          .eq("contato_id", contatoId).eq("departamento_id", depId).limit(1),
+        noFunil(supabase.from("zorvin_cartoes").select("*").eq("contato_id", contatoId), funil, comTelefone).limit(1),
         etapas ? Promise.resolve(null)
-          : supabase.from("zorvin_etapas").select("*").eq("departamento_id", depId).order("ordem"),
+          : noFunil(supabase.from("zorvin_etapas").select("*"), funil, comTelefone).order("ordem"),
       ]);
       let erro = null;
       if (re && re.error) erro = comOCodigo("Não consegui ler as etapas do funil.", re.error, "etapas");
-      else if (re) { etapas = re.data || []; etapasPorDep.current.set(String(depId), etapas); }
+      else if (re) { etapas = re.data || []; etapasPorDep.current.set(chaveFunil, etapas); }
       if (rc.error) erro = comOCodigo("Não consegui ler a etapa deste cliente.", rc.error, "cartão");
       // A RESPOSTA DE UMA CONVERSA QUE JÁ FOI FECHADA não pinta a de agora.
       if (funilPedidoRef.current !== chave) return;
       setFunilDaConversa((f) => (f && f.chave !== chave ? f : {
-        chave, carregando: false, etapas: etapas || [], erro,
+        chave, funil, carregando: false, etapas: etapas || [], erro,
         // Leitura que falhou NÃO vira "fora do funil": a etapa fica desconhecida
         // e o menu diz por quê (armadilha nº 2).
         cartao: rc.error ? undefined : ((rc.data || [])[0] || null),
@@ -6255,14 +6287,25 @@ export default function Painel({ sessao }) {
       console.error("Zorvin — etapa da conversa:", e);
       if (funilPedidoRef.current !== chave) return;
       setFunilDaConversa((f) => (f && f.chave !== chave ? f
-        : { chave, carregando: false, etapas: [], cartao: undefined, erro: "Não consegui ler a etapa deste cliente." }));
+        : { chave, funil, carregando: false, etapas: [], cartao: undefined, erro: "Não consegui ler a etapa deste cliente." }));
     }
   }, []);
   useEffect(() => {
     setMenuEtapa(false);
-    if (temFunil === true) lerFunilDaConversa(contatoDoFunil, depDoFunil);
-    else setFunilDaConversa(null);
-  }, [temFunil, contatoDoFunil, depDoFunil, lerFunilDaConversa]);
+    if (temFunil !== true) { funilPedidoRef.current = null; setFunilDaConversa(null); return; }
+    const funil = funilConvRef.current;
+    if (funil === undefined) {
+      // AINDA NÃO SE SABE QUAL É O FUNIL deste telefone. Lendo: a etapa espera,
+      // calada, como espera a própria leitura do cartão. Falhou: a etapa fica
+      // desconhecida e o menu diz por quê — e não mostra a do departamento.
+      funilPedidoRef.current = null;
+      setFunilDaConversa(!contatoDoFunil ? null : erroDosFunis
+        ? { chave: `${contatoDoFunil}|?`, funil: null, carregando: false, etapas: [], cartao: undefined, erro: erroDosFunis }
+        : { chave: `${contatoDoFunil}|?`, funil: null, carregando: true, etapas: [], cartao: null, erro: null });
+      return;
+    }
+    lerFunilDaConversa(contatoDoFunil, funil);
+  }, [temFunil, contatoDoFunil, chaveFunilConv, erroDosFunis, lerFunilDaConversa]);
 
   // ---- As tarefas: existem? ----
   //
@@ -14801,16 +14844,21 @@ export default function Painel({ sessao }) {
     setMenuEtapa(false);
     if (!f || !conversa || f.cartao === undefined) return;
     if (f.cartao && String(f.cartao.etapa_id) === String(etapa.id)) return;
-    const [contatoId, depId] = f.chave.split("|");
+    if (!f.funil) return;
+    const contatoId = f.chave.split("|")[0];
+    // O CARTÃO NASCE NO FUNIL QUE A CONVERSA MOSTRA: o do telefone leva o
+    // telefone junto (043); o do departamento, não — e sem o 043 a coluna nem
+    // é mencionada.
     const r = f.cartao
       ? await supabase.from("zorvin_cartoes").update({ etapa_id: etapa.id }).eq("id", f.cartao.id).select("*")
       : await supabase.from("zorvin_cartoes")
-          .insert({ contato_id: contatoId, departamento_id: depDoFunil ?? depId, etapa_id: etapa.id }).select("*");
+          .insert({ contato_id: contatoId, departamento_id: f.funil.departamentoId, etapa_id: etapa.id,
+                    ...(f.funil.telefoneId ? { advogado_id: f.funil.telefoneId } : {}) }).select("*");
     if (r.error) {
       // 23505 = OUTRA PESSOA PÔS ESTE CLIENTE NO FUNIL AGORA (o cartão é único
-      // por cliente e departamento). Não é falha: é a tela atrasada.
+      // por cliente em cada funil). Não é falha: é a tela atrasada.
       if (r.error.code === "23505") {
-        await lerFunilDaConversa(contatoId, depDoFunil);
+        await lerFunilDaConversa(contatoId, f.funil);
         mostrarAviso("Outra pessoa acabou de pôr este cliente no funil — confira a etapa e escolha de novo.", 6000);
         return;
       }
@@ -18960,10 +19008,15 @@ export default function Painel({ sessao }) {
                     </div>
                   )}
                   {f.grupos.map((g) => {
-                    const dep = departamentos.find((d) => String(d.id) === String(g.departamentoId));
+                    // O NOME DO FUNIL (02/11): o do departamento, ou "Sucesso
+                    // do Cliente · Audiências" quando o passo é do funil de um
+                    // telefone — é a única coisa que separa os dois caminhos.
+                    const nomeDoCaminho = nomeDoFunil({ departamentoId: g.departamentoId, telefoneId: g.telefoneId },
+                                                      departamentos, advogados);
                     return (
-                      <div key={g.departamentoId} data-caminho-do-departamento={g.departamentoId} style={{ marginBottom: 12 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{dep?.nome || "Departamento"}</div>
+                      <div key={g.chave || g.departamentoId} data-caminho-do-departamento={g.departamentoId}
+                           data-caminho-do-funil={g.chave || ""} style={{ marginBottom: 12 }}>
+                        <div data-nome-do-caminho style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{nomeDoCaminho}</div>
                         <div data-onde-esta-agora style={{ fontSize: 12.5, color: C.textSecondary, marginBottom: 8, lineHeight: 1.5 }}>
                           {g.atual
                             ? <>Agora em {etapaChip(g.atual)} · há {duracaoLegivel(Date.now() - new Date(g.desde)) || "pouco"}</>
@@ -20503,6 +20556,9 @@ export default function Painel({ sessao }) {
           carregarAssuntos();
           etapasPorDep.current.clear();
           lerDepartamentosETelefones();
+          // UM TELEFONE PODE TER GANHO OU PERDIDO O FUNIL PRÓPRIO lá dentro
+          // (02/11): sem reler, a conversa continuaria no funil de antes.
+          if (temFunil === true) releFunisDosTelefones();
         }} />
       )}
 
@@ -20522,6 +20578,12 @@ export default function Painel({ sessao }) {
       {telaFunil && (
         <Funil C={C} departamentos={departamentosVisiveis} advogados={advogadosPermitidos}
                souAdmin={souAdmin} departamentoInicial={departamentoId} comTarefas={temTarefas === true}
+               funis={(funisDosTelefones && funisDosTelefones.lista) || []}
+               comTelefone={comTelefoneNoFunil} erroDosFunis={erroDosFunis}
+               funilInicial={/* ABRE NO FUNIL DO TELEFONE QUE ESTÁ ABERTO NA BARRA (02/11): o
+                 das Audiências, se ele tiver um; senão o do departamento. */
+                 funisDosTelefones && !erroDosFunis
+                   ? funilDoTelefone(advogadoId, advogadosPermitidos, funisDosTelefones.lista) : null}
                aoAbrirConversa={(cv) => {
                  setTelaFunil(false);
                  verConversaDoHistorico({ advogadoId: cv.advogado_id, conversaId: cv.id });
@@ -20531,7 +20593,7 @@ export default function Painel({ sessao }) {
                  // Quem administra pode ter mexido nas etapas: esquece o
                  // guardado e relê a etapa da conversa aberta.
                  etapasPorDep.current.clear();
-                 if (temFunil === true) lerFunilDaConversa(contatoDoFunil, depDoFunil);
+                 if (temFunil === true && funilConv) lerFunilDaConversa(contatoDoFunil, funilConv);
                }} />
       )}
 

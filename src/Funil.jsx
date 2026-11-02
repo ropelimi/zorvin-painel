@@ -7,6 +7,7 @@ import { telefoneLegivel } from "./numeros.js";
 import { diasDesde } from "./espera.js";
 import { situacao, semATabelaDeTarefas, rotuloDaTarefa, ordenarAbertas } from "./tarefas.js";
 import { casaComAPesquisa } from "./pesquisaNosMenus.js";
+import { chaveDoFunil, listaDeFunis, nomeDoFunil, noFunil, telefonesDoFunil } from "./funis.js";
 
 // ============================================================
 //  O FUNIL DE ETAPAS (06/10)
@@ -19,6 +20,10 @@ import { casaComAPesquisa } from "./pesquisaNosMenus.js";
 //
 //    - UM FUNIL POR DEPARTAMENTO — o SAC e o SDC têm caminhos diferentes, e a
 //      tela abre no departamento que está aberto na barra;
+//    - E, DESDE 02/11, UM FUNIL PRÓPRIO PARA O TELEFONE QUE QUISER (script 043
+//      da ponte): a escolha do alto lista o funil de cada departamento e,
+//      logo abaixo dele, o de cada telefone que tem o seu. A tela abre no
+//      funil do telefone que está aberto na barra;
 //    - O CARTÃO É O CLIENTE, e não a conversa. Enquanto não há a ficha
 //      própria do Zorvin, "cliente" é o CONTATO (um número de WhatsApp): a
 //      mesma pessoa por dois números são dois cartões.
@@ -84,11 +89,26 @@ function haQuanto(iso) {
 export default function Funil({
   C, departamentos = [], advogados = [], souAdmin = false,
   departamentoInicial = null, aoAbrirConversa, aoFechar, comTarefas = false,
+  funis = [], comTelefone = false, erroDosFunis = "", funilInicial = null,
 }) {
-  const [depId, setDepId] = useState(() => {
-    const ini = departamentos.find((d) => String(d.id) === String(departamentoInicial));
-    return (ini || departamentos[0] || {}).id ?? null;
+  // O FUNIL ESCOLHIDO é um par (departamento, telefone), e o telefone nulo é o
+  // funil do departamento (`funis.js`). Começa no funil do telefone aberto na
+  // barra; se ele não estiver entre os que esta pessoa alcança, no do
+  // departamento aberto; e, por último, no primeiro da lista.
+  const opcoes = listaDeFunis(departamentos, advogados, funis);
+  const [escolhido, setEscolhido] = useState(() => {
+    const achar = (f) => f && opcoes.find((o) => chaveDoFunil(o) === chaveDoFunil(f));
+    return achar(funilInicial)
+      || achar(departamentoInicial != null ? { departamentoId: departamentoInicial, telefoneId: null } : null)
+      || opcoes[0] || null;
   });
+  // OS DEPARTAMENTOS CHEGAM DEPOIS da primeira pintura, às vezes: sem isto a
+  // tela ficaria presa em "nenhum funil à vista".
+  useEffect(() => {
+    if (!escolhido && opcoes.length) setEscolhido(opcoes[0]);
+  }, [escolhido, opcoes.length]);  // eslint-disable-line react-hooks/exhaustive-deps
+  const depId = escolhido ? escolhido.departamentoId : null;
+  const chaveEscolhido = chaveDoFunil(escolhido);
   const [existe, setExiste] = useState(null);   // null = lendo; false = sem o script 017
   const [etapas, setEtapas] = useState([]);
   const [cartoes, setCartoes] = useState([]);
@@ -121,11 +141,18 @@ export default function Funil({
   // redesenha o Painel com o funil aberto: pela lista, `ler` era refeita e o
   // quadro esvaziava e relia tudo — "Lendo o funil…", a rolagem de volta ao
   // começo, o arraste morto no meio e o "Mover para…" fechando sozinho.
-  const chaveDosTelefones = advogados.filter((a) => String(a.departamento_id) === String(depId))
-    .map((a) => a.id).join(",");
+  //
+  // OS TELEFONES DO FUNIL (02/11): no funil de um telefone, só ele; no do
+  // departamento, os telefones dele que NÃO têm funil próprio. É deles que
+  // sai a conversa que o clique no cartão abre, e as tarefas do cartão.
+  const chaveDosTelefones = telefonesDoFunil(escolhido, advogados, funis).join(",");
   const telefonesDoDep = useMemo(
-    () => advogados.filter((a) => String(a.departamento_id) === String(depId)).map((a) => a.id),
+    () => (chaveDosTelefones ? chaveDosTelefones.split(",") : []),
     [chaveDosTelefones]);
+  // O funil escolhido, lido por um espelho dentro de `ler`: o objeto muda a
+  // cada desenho, e a chave (texto) é o que entra nas dependências.
+  const escolhidoRef = useRef(escolhido);
+  escolhidoRef.current = escolhido;
 
   const avisar = useCallback((t) => {
     setAviso(t);
@@ -136,12 +163,12 @@ export default function Funil({
   //  A LEITURA — etapas, cartões, e o que o cartão mostra
   // ------------------------------------------------------------
   const ler = useCallback(async (mostrarCarregando = true) => {
-    if (depId == null) return;
+    const funil = escolhidoRef.current;
+    if (!funil) return;
     const minha = ++leitura.current;
     if (mostrarCarregando) setCarregando(true);
     try {
-      const re = await supabase.from("zorvin_etapas").select("*")
-        .eq("departamento_id", depId).order("ordem");
+      const re = await noFunil(supabase.from("zorvin_etapas").select("*"), funil, comTelefone).order("ordem");
       if (minha !== leitura.current) return;
       if (re.error) {
         if (semATabela(re.error)) { setExiste(false); return; }
@@ -160,8 +187,8 @@ export default function Funil({
         // grava todos os cartões num INSERT só, com o mesmo `movido_em`, e o
         // empate não tem ordem garantida de uma consulta para a outra — a
         // página 2 repetia cartões da 1 e deixava outros de fora.
-        const rc = await supabase.from("zorvin_cartoes").select("*")
-          .eq("departamento_id", depId).order("movido_em", { ascending: false }).order("id")
+        const rc = await noFunil(supabase.from("zorvin_cartoes").select("*"), funil, comTelefone)
+          .order("movido_em", { ascending: false }).order("id")
           .range(p * PAGINA, (p + 1) * PAGINA - 1);
         if (minha !== leitura.current) return;
         if (rc.error) {
@@ -174,8 +201,8 @@ export default function Funil({
       }
 
       // O nome e o número de cada cliente, e a conversa mais recente dele
-      // NESTE departamento — é ela que o clique no cartão abre, e é dela que
-      // saem a espera e as não lidas.
+      // NESTE funil — é ela que o clique no cartão abre, e é dela que saem a
+      // espera e as não lidas.
       const ids = [...new Set(todos.map((c) => c.contato_id))];
       const porId = {};
       const conv = {};
@@ -241,12 +268,12 @@ export default function Funil({
     } finally {
       if (minha === leitura.current) setCarregando(false);
     }
-  }, [depId, telefonesDoDep, comTarefas]);
+  }, [chaveEscolhido, telefonesDoDep, comTarefas, comTelefone]);  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // O QUADRO SÓ SE ESVAZIA QUANDO O DEPARTAMENTO MUDA (28/10): é o único caso
-  // em que o que está na tela é de outro funil. Uma releitura do mesmo
-  // departamento troca os cartões quando a resposta chega, sem buraco.
-  useEffect(() => { setCartoes([]); setEtapas([]); }, [depId]);
+  // O QUADRO SÓ SE ESVAZIA QUANDO O FUNIL MUDA (28/10): é o único caso em que
+  // o que está na tela é de outro funil. Uma releitura do mesmo funil troca
+  // os cartões quando a resposta chega, sem buraco.
+  useEffect(() => { setCartoes([]); setEtapas([]); }, [chaveEscolhido]);
   useEffect(() => { ler(true); }, [ler]);
 
   // A RELEITURA SOZINHA, de 30 em 30 segundos enquanto a tela está aberta: é
@@ -345,7 +372,13 @@ export default function Funil({
   async function trazer() {
     setTrazendo(true);
     try {
-      const r = await supabase.rpc("zorvin_funil_trazer", { p_departamento: depId, p_dias: Number(diasTrazer) });
+      // O FUNIL DE UM TELEFONE leva o telefone junto (043); o do departamento
+      // manda só departamento e dias, que é a chamada que o banco de antes
+      // também entende.
+      const r = await supabase.rpc("zorvin_funil_trazer", {
+        p_departamento: depId, p_dias: Number(diasTrazer),
+        ...(escolhido && escolhido.telefoneId ? { p_telefone: escolhido.telefoneId } : {}),
+      });
       if (r.error) {
         avisar(comOCodigo("Não consegui trazer as conversas para o funil.", r.error, "trazer para o funil"));
         return;
@@ -363,7 +396,7 @@ export default function Funil({
   // ------------------------------------------------------------
   //  O DESENHO
   // ------------------------------------------------------------
-  const dep = departamentos.find((d) => String(d.id) === String(depId));
+  const nomeDoEscolhido = nomeDoFunil(escolhido, departamentos, advogados);
   const verde = C.green || "#00a884";
   const total = cartoes.length;
 
@@ -512,13 +545,18 @@ export default function Funil({
           <ArrowLeft size={20} />
         </button>
         <div style={{ fontSize: 17, fontWeight: 700, marginRight: 4 }}>Funil</div>
-        {departamentos.length > 1 ? (
-          <select data-funil-departamento value={depId ?? ""} onChange={(e) => setDepId(Number(e.target.value) || e.target.value)}
-                  aria-label="Departamento"
+        {opcoes.length > 1 ? (
+          <select data-funil-departamento value={chaveEscolhido}
+                  onChange={(e) => setEscolhido(opcoes.find((o) => chaveDoFunil(o) === e.target.value) || null)}
+                  aria-label="Qual funil"
                   style={{ ...botaoFraco, padding: "6px 10px", appearance: "auto" }}>
-            {departamentos.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}
+            {opcoes.map((o) => (
+              <option key={chaveDoFunil(o)} value={chaveDoFunil(o)} data-opcao-de-funil={o.telefoneId ? "telefone" : "departamento"}>
+                {nomeDoFunil(o, departamentos, advogados)}
+              </option>
+            ))}
           </select>
-        ) : dep ? <span style={{ color: C.textSecondary, fontSize: 14 }}>{dep.nome}</span> : null}
+        ) : escolhido ? <span data-nome-do-funil style={{ color: C.textSecondary, fontSize: 14 }}>{nomeDoEscolhido}</span> : null}
         <span data-total-do-funil style={{ fontSize: 13, color: C.textSecondary }}>
           {existe ? `${total} ${total === 1 ? "cliente" : "clientes"}` : ""}
         </span>
@@ -553,8 +591,17 @@ export default function Funil({
         )}
       </div>
 
-      {(aviso || falha || cortado || falhaTarefas) && (
+      {(aviso || falha || cortado || falhaTarefas || erroDosFunis) && (
         <div style={{ padding: "8px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+          {/* SEM SABER QUAIS TELEFONES TÊM FUNIL PRÓPRIO (02/11), a lista do
+              alto mostra só o de cada departamento — e isso é DITO, senão ela
+              se leria como "nenhum telefone tem funil próprio". */}
+          {erroDosFunis && (
+            <div data-falha-dos-funis style={{ background: "#fff4e5", color: "#7a4b00", border: "1px solid #ffd699",
+                                               borderRadius: 8, padding: "8px 12px", fontSize: 13 }}>
+              {erroDosFunis} Os funis próprios dos telefones não estão na lista; feche e abra o funil para tentar de novo.
+            </div>
+          )}
           {falha && (
             <div data-falha-do-funil style={{ background: "#fff4e5", color: "#7a4b00", border: "1px solid #ffd699",
                                               borderRadius: 8, padding: "8px 12px", fontSize: 13 }}>{falha}</div>
@@ -587,11 +634,11 @@ export default function Funil({
             ? "O funil ainda não foi instalado neste banco: falta rodar o script 017 (o funil de etapas) no Supabase."
             : "O funil ainda não está disponível. Avise quem administra o Zorvin."}
         </div>
-      ) : depId == null ? (
+      ) : !escolhido ? (
         <div style={{ padding: 32, color: C.textSecondary }}>Nenhum departamento à vista para mostrar o funil.</div>
       ) : existe && !carregando && !falha && ativas.length === 0 ? (
         <div data-funil-sem-etapas style={{ padding: 32, maxWidth: 560, color: C.textSecondary, lineHeight: 1.5 }}>
-          Este departamento ainda não tem etapas no funil.
+          Este funil ainda não tem etapas.
           {souAdmin ? " Crie as etapas em Menu → Departamentos e acessos → Estrutura." : " Avise quem administra o Zorvin."}
         </div>
       ) : (
