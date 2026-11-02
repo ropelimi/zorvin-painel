@@ -87,6 +87,7 @@ import { padraoSemAcento, casaNaMensagem, semAColunaDaTranscricao, juntarAchados
 import { tipoDoAnexo, caminhoDoAnexoDaRapida, semAColunaDoAnexo, nomeDoAnexo, anexoDoDeposito,
          CACHE_DO_ANEXO_DA_RAPIDA } from "./rapidasComAnexo.js";
 import { ehLembreteAutomatico, fechouSozinho } from "./acompanhamento.js";
+import { tamanhoDosTelefones, TELEFONE_MENOR, TELEFONE_MENOR_NO_CELULAR, ESMAECER, VAO_CSS } from "./barraLateral.js";
 
 // ============================================================
 //  ZORVIN by Ropelimi — Painel real (conectado ao Supabase)
@@ -1669,6 +1670,10 @@ function iniciaisDe(nome) {
 
 function Avatar({ nome, size = 40, foto }) {
   const inicial = iniciaisDe(nome);
+  // O TAMANHO PODE SER UMA CONTA DE CSS (02/11): os telefones da barra lateral
+  // têm o tamanho que cabe na altura da tela, e quem faz essa conta é o
+  // navegador (ver `barraLateral.js`). A letra acompanha a mesma conta.
+  const daLetra = (k) => (typeof size === "number" ? size * k : `calc(${size} * ${k})`);
   const [erroFoto, setErroFoto] = useState(false);
   // Se a foto mudar, tenta de novo (limpa erro anterior).
   useEffect(() => { setErroFoto(false); }, [foto]);
@@ -1689,7 +1694,7 @@ function Avatar({ nome, size = 40, foto }) {
   // iniciais e uma quebra de linha na frente do nome, que o Windows recusa num
   // nome de arquivo (ver "Copiar leva só o texto" no CLAUDE.md).
   return (
-    <div data-avatar-inicial={inicial} style={{ width: size, height: size, borderRadius: "50%", background: corDe(nome), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, fontSize: size * (inicial.length > 1 ? 0.36 : 0.42), letterSpacing: inicial.length > 1 ? "-.02em" : 0, flexShrink: 0, userSelect: "none", WebkitUserSelect: "none" }}>
+    <div data-avatar-inicial={inicial} style={{ width: size, height: size, borderRadius: "50%", background: corDe(nome), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, fontSize: daLetra(inicial.length > 1 ? 0.36 : 0.42), letterSpacing: inicial.length > 1 ? "-.02em" : 0, flexShrink: 0, userSelect: "none", WebkitUserSelect: "none" }}>
       {inicial}
     </div>
   );
@@ -4762,6 +4767,18 @@ export default function Painel({ sessao }) {
   const desativadosVisiveis = souAdmin
     ? advogados.filter((a) => a.ativo === false && a.departamento_id === departamentoId)
     : [];
+  // OS TELEFONES DA BARRA CABEM NA TELA (02/11): o tamanho do círculo é uma
+  // conta que o navegador faz com a altura da lista — ver `barraLateral.js`.
+  // No celular o piso é o alvo de dedo de 40.
+  const circulosNaBarra = advogadosVisiveis.length + desativadosVisiveis.length;
+  const tamanhoNaBarra = tamanhoDosTelefones(circulosNaBarra, {
+    comDivisor: desativadosVisiveis.length > 0,
+    menor: estreito ? TELEFONE_MENOR_NO_CELULAR : TELEFONE_MENOR,
+  });
+  // OS ÍCONES DE BAIXO (sino, ampulheta, mídias, controle, a foto) passaram de
+  // 40 para 36 no computador, mais juntos: são 42 pontos a mais para os
+  // telefones. No celular continuam com 40, o alvo de dedo.
+  const ICONE_DA_BARRA = estreito ? 40 : 36;
   // A conversa aberta é de uma linha desativada? A caixa de escrever some, e no
   // lugar dela vai a explicação — ver `caixaDeEscrever`.
   const linhaDesativada = Boolean(advogado && advogado.ativo === false);
@@ -16152,7 +16169,7 @@ export default function Painel({ sessao }) {
         }
       `}</style>
       {/* Barra lateral */}
-      <div style={{ width: 60, background: C.rail, display: (estreito && conversaId) ? "none" : "flex", flexDirection: "column", alignItems: "center", paddingTop: 8, gap: 8 }}>
+      <div data-barra-lateral style={{ width: 60, background: C.rail, display: (estreito && conversaId) ? "none" : "flex", flexDirection: "column", alignItems: "center", paddingTop: 8, gap: estreito ? 8 : 4 }}>
         {/* Aqui havia um quadrado verde com a letra "Z". Saiu: era a terceira
             vez que a tela dizia o nome do sistema (o "Zorvin" do cabeçalho e o
             do fundo já dizem), e ocupava justo o alto da barra dos telefones,
@@ -16168,8 +16185,14 @@ export default function Painel({ sessao }) {
             avatar — e o primeiro de cada departamento aparecia lascado.
             8px cobrem os 6 do selo e os 2 do anel; a barra cedeu os mesmos 8,
             então o espaçamento visto continua igual ao de antes. */}
-        <div className="sem-scrollbar" style={{ flex: 1, width: "100%", overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, paddingTop: 8, paddingBottom: 8 }}>
-          {advogadosVisiveis.map((a) => {
+        {/* A CAIXA QUE SE MEDE (02/11): `containerType: "size"` faz desta lista
+            a régua de `100cqh`, e `--tam-telefone` é o tamanho que cabe nela
+            (ver `barraLateral.js`). O vão entre os círculos vai como margem de
+            cada um, e não como `gap`: o `gap` é da própria lista, e lá a conta
+            com `cqh` mediria a caixa de fora, e não esta. */}
+        <div className="sem-scrollbar" data-telefones-da-barra={circulosNaBarra}
+             style={{ flex: 1, minHeight: 0, width: "100%", overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 8, containerType: "size", ...(tamanhoNaBarra ? { "--tam-telefone": tamanhoNaBarra } : {}) }}>
+          {advogadosVisiveis.map((a, i) => {
             const n = naoLidasDoAdvogado(a.id);
             const atual = a.id === advogadoId;
             return (
@@ -16178,9 +16201,9 @@ export default function Painel({ sessao }) {
                 onClick={() => trocarAdvogado(a.id)}
                 data-telefone={a.nome}
                 title={`${a.nome}${n > 0 ? ` — ${n} não lida${n > 1 ? "s" : ""}` : ""}`}
-                style={{ position: "relative", border: "none", background: "transparent", cursor: "pointer", padding: 0, display: "flex", borderRadius: "50%", flexShrink: 0, boxShadow: atual ? `0 0 0 2px ${C.green}` : "none", opacity: atual ? 1 : 0.7, transition: "opacity .12s" }}
+                style={{ position: "relative", border: "none", background: "transparent", cursor: "pointer", padding: 0, display: "flex", borderRadius: "50%", flexShrink: 0, width: "var(--tam-telefone)", height: "var(--tam-telefone)", marginTop: i === 0 ? 0 : VAO_CSS, boxShadow: atual ? `0 0 0 2px ${C.green}` : "none", opacity: atual ? 1 : 0.7, transition: "opacity .12s" }}
               >
-                <Avatar nome={a.nome} foto={a.foto_url} size={42} />
+                <Avatar nome={a.nome} foto={a.foto_url} size="var(--tam-telefone)" />
                 {n > 0 && (
                   /* A MARCA LEVA O NÚMERO REAL, e não o que está escrito: acima
                      de 99 a bolinha mostra "99+", que é certo para o olho e
@@ -16202,7 +16225,8 @@ export default function Painel({ sessao }) {
               dizer, sem texto, que aquela linha não está em serviço. */}
           {desativadosVisiveis.length > 0 && (
             <div data-linhas-desativadas={desativadosVisiveis.length}
-                 style={{ width: 32, height: 1, background: C.divider, opacity: 0.6, flexShrink: 0, margin: "2px 0" }} />
+                 style={{ width: 32, height: 1, background: C.divider, opacity: 0.6, flexShrink: 0,
+                          marginTop: `calc(${VAO_CSS} + 2px)`, marginBottom: 2 }} />
           )}
           {desativadosVisiveis.map((a) => {
             const n = naoLidasDoAdvogado(a.id);
@@ -16213,9 +16237,9 @@ export default function Painel({ sessao }) {
                 onClick={() => trocarAdvogado(a.id)}
                 data-telefone-desativado={a.nome}
                 title={`${a.nome} — linha desativada, só leitura`}
-                style={{ position: "relative", border: "none", background: "transparent", cursor: "pointer", padding: 0, display: "flex", borderRadius: "50%", flexShrink: 0, boxShadow: atual ? `0 0 0 2px ${C.textSecondary}` : "none", opacity: atual ? 0.85 : 0.45, filter: "grayscale(1)", transition: "opacity .12s" }}
+                style={{ position: "relative", border: "none", background: "transparent", cursor: "pointer", padding: 0, display: "flex", borderRadius: "50%", flexShrink: 0, width: "var(--tam-telefone)", height: "var(--tam-telefone)", marginTop: VAO_CSS, boxShadow: atual ? `0 0 0 2px ${C.textSecondary}` : "none", opacity: atual ? 0.85 : 0.45, filter: "grayscale(1)", transition: "opacity .12s" }}
               >
-                <Avatar nome={a.nome} foto={a.foto_url} size={42} />
+                <Avatar nome={a.nome} foto={a.foto_url} size="var(--tam-telefone)" />
                 {n > 0 && (
                   <span data-selo-nao-lidas={n} style={{ position: "absolute", top: -4, right: -4, minWidth: 19, height: 19, padding: "0 5px", borderRadius: 10, background: C.textSecondary, color: "#fff", fontSize: 11, fontWeight: 700, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${C.rail}`, boxSizing: "border-box" }}>
                     {n > 99 ? "99+" : n}
@@ -16224,6 +16248,23 @@ export default function Painel({ sessao }) {
               </button>
             );
           })}
+          {/* O PÉ QUE ESMAECE (02/11), quando nem no tamanho menor os telefones
+              cabem. A barra rola sem barra de rolagem à vista, e foi assim que
+              os dois últimos telefones de Acordos ficaram escondidos sem
+              ninguém saber que estavam lá.
+              Ele é o último da lista e GRUDA no pé dela (`sticky`). Com tudo
+              cabendo, fica no lugar dele, depois do último telefone, e
+              esmaece o próprio fundo — não se vê nada. Com telefone escondido
+              embaixo, ele gruda no pé e esmaece o último que aparece; rolando
+              até o fim, volta ao lugar e não cobre mais ninguém. É CSS puro:
+              nenhuma medição, e acerta sozinho quando a janela muda.
+              Ele ocupa o lugar do respiro de baixo que a lista tinha, e entra
+              na conta do tamanho (`ESMAECER`). */}
+          {circulosNaBarra > 0 && (
+            <div data-telefones-continuam aria-hidden="true"
+                 style={{ position: "sticky", bottom: 0, flex: `0 0 ${ESMAECER}px`, height: ESMAECER, width: "100%",
+                          pointerEvents: "none", background: `linear-gradient(to bottom, transparent, ${C.rail})` }} />
+          )}
         </div>
         {/* Um único ícone de Configurações: perfil, aparência, sair e mensagens
             rápidas ficam todos lá dentro. */}
@@ -16236,7 +16277,7 @@ export default function Painel({ sessao }) {
                     ? `Tarefas — ${tarefasParaAgora} para agora${tarefasAtrasadas ? ` (${tarefasAtrasadas} atrasada${tarefasAtrasadas === 1 ? "" : "s"})` : ""}`
                     : "Tarefas e lembretes"}
                   aria-label="Tarefas e lembretes"
-                  style={{ position: "relative", width: 40, height: 40, borderRadius: 8, border: "none",
+                  style={{ position: "relative", width: ICONE_DA_BARRA, height: ICONE_DA_BARRA, borderRadius: 8, border: "none",
                            display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
                            color: telaTarefas ? "#fff" : "#aebac1",
                            background: telaTarefas ? "rgba(255,255,255,.12)" : "transparent" }}>
@@ -16258,7 +16299,7 @@ export default function Painel({ sessao }) {
             há cliente sem resposta, que é o que pede ação agora. */}
         {mostraEsperando && (
           <button data-abrir-esperando onClick={abrirEsperando} title={tituloDaEspera} aria-label={tituloDaEspera}
-                  style={{ position: "relative", width: 40, height: 40, borderRadius: 8, border: "none",
+                  style={{ position: "relative", width: ICONE_DA_BARRA, height: ICONE_DA_BARRA, borderRadius: 8, border: "none",
                            display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
                            color: telaEsperando ? "#fff" : "#aebac1",
                            background: telaEsperando ? "rgba(255,255,255,.12)" : "transparent" }}>
@@ -16279,7 +16320,7 @@ export default function Painel({ sessao }) {
             acervo, e o teclado não chegava até ela. */}
         <button type="button" onClick={() => abrirMidias(midiaAba)} title="Mídias, documentos e links"
              aria-label="Mídias, documentos e links"
-             style={{ width: 40, height: 40, borderRadius: 8, border: "none", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", color: midiasAberta ? "#fff" : "#aebac1", background: midiasAberta ? "rgba(255,255,255,.12)" : "transparent", cursor: "pointer" }}>
+             style={{ width: ICONE_DA_BARRA, height: ICONE_DA_BARRA, borderRadius: 8, border: "none", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", color: midiasAberta ? "#fff" : "#aebac1", background: midiasAberta ? "rgba(255,255,255,.12)" : "transparent", cursor: "pointer" }}>
           <Images size={22} />
         </button>
         {/* O CONTROLE DE ATENDIMENTO DO VANTORO (23/10), pedido do Rodrigo: a
@@ -16294,7 +16335,7 @@ export default function Painel({ sessao }) {
              target="_blank" rel="noopener noreferrer"
              title="Controle de atendimento (abre o Vantoro numa aba nova)"
              aria-label="Controle de atendimento, no Vantoro"
-             style={{ width: 40, height: 40, borderRadius: 8, display: "flex", alignItems: "center",
+             style={{ width: ICONE_DA_BARRA, height: ICONE_DA_BARRA, borderRadius: 8, display: "flex", alignItems: "center",
                       justifyContent: "center", color: "#aebac1", textDecoration: "none", flexShrink: 0 }}>
             <Headset size={22} />
           </a>
@@ -16312,8 +16353,8 @@ export default function Painel({ sessao }) {
         <div onClick={abrirConfig} role="button" tabIndex={0}
              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrirConfig(); } }}
              title={`${meuNome} — configurações`}
-             style={{ cursor: "pointer", marginTop: 4, marginBottom: 14, borderRadius: "50%", display: "flex",
-                      minWidth: 40, minHeight: 40, alignItems: "center", justifyContent: "center",
+             style={{ cursor: "pointer", marginTop: estreito ? 4 : 2, marginBottom: estreito ? 14 : 10, borderRadius: "50%", display: "flex",
+                      minWidth: ICONE_DA_BARRA, minHeight: ICONE_DA_BARRA, alignItems: "center", justifyContent: "center",
                       boxShadow: configAberta ? `0 0 0 2px ${C.green}` : "none" }}>
           <Avatar nome={meuNome} foto={minhaFoto} size={36} />
         </div>
