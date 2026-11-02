@@ -224,7 +224,6 @@ console.log("\n1. Ao abrir: o resumo, o número da barra e a lista");
 
   await clicar(page, "[data-ver-quem-espera]");
   ok("“Ver quais” abre a tela Esperando resposta", await esperar(page, '[data-tela="esperando"]', 3000));
-  await esperar(page, "[data-atrasada-linha]", 4000);
   await esperar(page, "[data-sem-resposta-linha]", 4000);
   const linhasA = await page.locator("[data-sem-resposta-linha]").evaluateAll((els) => els.map((e) => e.getAttribute("data-sem-resposta-linha")));
   ok("a seção dos clientes sem resposta lista os dois meus, e não o da colega",
@@ -234,6 +233,10 @@ console.log("\n1. Ao abrir: o resumo, o número da barra e a lista");
      await texto(page, '[data-sem-resposta-linha="a3-c2"]'));
   ok("e o sem dono diz que está sem responsável",
      /sem responsável/.test(await texto(page, '[data-sem-resposta-linha="a1-c0"]')), await texto(page, '[data-sem-resposta-linha="a1-c0"]'));
+  // AS MINHAS MORAM NA OUTRA ABA (02/11): a tela abre nos clientes sem
+  // resposta, e as minhas ficam a um clique. Ver `as-abas-da-tela-esperando`.
+  ok("as minhas estão na outra aba, a um clique", await clicar(page, '[data-aba-da-espera="atrasadas"]'));
+  await esperar(page, "[data-atrasada-linha]", 4000);
   const linhasB = await page.locator("[data-atrasada-linha]").evaluateAll((els) => els.map((e) => e.getAttribute("data-atrasada-linha")));
   ok("a seção das minhas lista as duas, a que espera há mais tempo primeiro",
      JSON.stringify(linhasB) === JSON.stringify(["esp-a1", "esp-a3"]), JSON.stringify(linhasB));
@@ -351,8 +354,12 @@ console.log("\n3. A falha é dita, e nunca vira “ninguém esperando”");
   ok("e não diz “nenhum cliente sem resposta”",
      !/Nenhum cliente sem resposta/.test(await texto(page, '[data-secao-da-espera="sem-resposta"]')),
      await texto(page, '[data-secao-da-espera="sem-resposta"]'));
-  ok("nem conta zero no título da seção",
-     !/\(0\)/.test(await texto(page, '[data-secao-da-espera="sem-resposta"] header')), await texto(page, '[data-secao-da-espera="sem-resposta"] header'));
+  // O NÚMERO MORA NA ABA desde 02/11, e era no título da seção: a régua é a
+  // mesma — a aba que não carregou diz que falhou, e não conta zero.
+  ok("nem conta zero na aba",
+     (await contar(page, '[data-aba-da-espera="sem-resposta"] [data-contagem-da-espera]')) === 0
+     && (await contar(page, '[data-aba-da-espera="sem-resposta"] [data-aba-da-espera-falhou]')) === 1,
+     await texto(page, '[data-aba-da-espera="sem-resposta"]'));
   // O CONTRASTE: com a leitura de volta, o "Tentar de novo" da faixa relê os
   // clientes sem resposta — e a faixa apaga agora, e não na próxima volta do
   // relógio desta leitura (que esta cena pôs em dez minutos).

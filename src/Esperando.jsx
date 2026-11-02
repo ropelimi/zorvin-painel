@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, RefreshCw, Hourglass, MessageCircle, AlertCircle } from "lucide-react";
 import { nomeDoContato } from "./contato.js";
 import { telefoneLegivel } from "./numeros.js";
@@ -13,7 +13,8 @@ import { ehParaMim, rotuloDosMinutos, fraseDoLimite } from "./esperandoDemais.js
 //  do resumo que aparece ao abrir o Zorvin. Ver "Quem está esperando demais"
 //  no CLAUDE.md.
 //
-//  DUAS PERGUNTAS, e por isso duas seções:
+//  DUAS PERGUNTAS, e por isso duas ABAS (eram duas seções, uma embaixo da
+//  outra, até 02/11 — ver "As duas abas da tela Esperando resposta"):
 //
 //    - "Clientes sem resposta" — quem escreveu e ainda não recebeu NENHUMA
 //      resposta, além do tempo do departamento (30 minutos de expediente, se
@@ -32,6 +33,36 @@ import { ehParaMim, rotuloDosMinutos, fraseDoLimite } from "./esperandoDemais.js
 //  pessoa ir embora achando que a fila está em dia.
 // ============================================================
 
+/** EM QUAL ABA A TELA ABRE: na primeira que tem o que mostrar.
+ *
+ *  Os clientes sem resposta vêm primeiro, porque são o que pede ação agora
+ *  (é deles o vermelho do número da barra). Se não há nenhum, a tela abre nas
+ *  suas conversas, quando há alguma. E A FALHA CONTA COMO TER O QUE MOSTRAR: a
+ *  aba que não carregou abre dizendo isso, em vez de a tela abrir na outra e a
+ *  falha ficar escondida atrás de um clique.
+ *
+ *  `null` é "ainda não dá para saber": uma das leituras não chegou. A tela
+ *  mostra a primeira aba enquanto isso, e decide quando as respostas chegarem
+ *  — se ninguém tiver escolhido uma aba antes. Decidir antes erraria do jeito
+ *  que importa: com as suas conversas lidas e os clientes ainda a caminho, a
+ *  tela abriria nas suas conversas e esconderia o cliente sem resposta.
+ *
+ *  `temAvisoDeEspera` tem três estados (a régua de `temVantoro.js`): `null` é
+ *  "ainda não sei se o recurso existe", e conta como uma leitura a caminho. */
+export function abaDeComeco({ temAvisoDeEspera, semResposta, nSemResposta, podeContarAtrasadas, atrasadas, nAtrasadas }) {
+  const temSR = temAvisoDeEspera === true;
+  const temAT = Boolean(podeContarAtrasadas);
+  const srProntos = temAvisoDeEspera === false || (temSR && Boolean(semResposta?.erro || semResposta?.lido));
+  const atProntas = !temAT || Boolean(atrasadas?.erro || atrasadas?.lido);
+  const srTem = temSR && Boolean(semResposta?.erro || nSemResposta > 0);
+  const atTem = temAT && Boolean(atrasadas?.erro || nAtrasadas > 0);
+  if (srTem) return "sem-resposta";
+  if (!srProntos) return null;
+  if (atTem) return "atrasadas";
+  if (!atProntas) return null;
+  return temSR ? "sem-resposta" : temAT ? "atrasadas" : null;
+}
+
 export default function Esperando({
   C, meuId, advogados = [], semResposta, temAvisoDeEspera, atrasadas, podeContarAtrasadas,
   aoAbrirConversa, aoAtualizar, aoFechar,
@@ -41,13 +72,46 @@ export default function Esperando({
   const meusSemResposta = (semResposta?.linhas || []).filter((l) => ehParaMim(l, meuId));
   const minhas = atrasadas?.linhas || [];
 
-  const secao = (id, titulo, cor, n, filhos) => (
-    <section data-secao-da-espera={id}
-             style={{ border: `1px solid ${C.divider}`, borderRadius: 12, overflow: "hidden", marginBottom: 16 }}>
-      <header style={{ padding: "9px 12px", fontSize: 12.5, fontWeight: 700, letterSpacing: 0.3,
-                       color: cor, background: C.headerBar }}>
-        {titulo.toUpperCase()}{n !== null && <span data-contagem-da-espera style={{ fontWeight: 600 }}> ({n})</span>}
-      </header>
+  // AS ABAS. O número de cada uma só aparece com a leitura feita: "0"
+  // enquanto ela vem, ou depois de ela falhar, diria que não há ninguém.
+  const abas = [
+    temAvisoDeEspera === true && {
+      id: "sem-resposta", titulo: "Clientes sem resposta", forte: "#e53935", texto: C.erroTexto || "#e53935",
+      falhou: Boolean(semResposta?.erro), n: semResposta?.erro || !semResposta?.lido ? null : meusSemResposta.length,
+    },
+    podeContarAtrasadas && {
+      id: "atrasadas", titulo: "Suas conversas esperando há 3 dias ou mais", forte: "#d99a1e", texto: C.ambarTexto || "#d99a1e",
+      falhou: Boolean(atrasadas?.erro), n: atrasadas?.erro || !atrasadas?.lido ? null : minhas.length,
+    },
+  ].filter(Boolean);
+
+  // A ABA ESCOLHIDA: a de começo (ver `abaDeComeco`), ou a que a pessoa
+  // clicou. Decidida, ela não muda sozinha: uma lista que esvazia na leitura
+  // de minuto em minuto não pode tirar a pessoa da aba em que ela está.
+  const dados = { temAvisoDeEspera, semResposta, nSemResposta: meusSemResposta.length,
+                  podeContarAtrasadas, atrasadas, nAtrasadas: minhas.length };
+  const [escolhida, setEscolhida] = useState(() => abaDeComeco(dados));
+  const decidida = abaDeComeco(dados);
+  useEffect(() => {
+    if (escolhida == null && decidida) setEscolhida(decidida);
+  }, [escolhida, decidida]);
+  const ativa = abas.some((a) => a.id === escolhida) ? escolhida : abas[0]?.id;
+
+  // AS SETAS DO TECLADO andam entre as abas, como em qualquer fileira de abas.
+  const andarComAsSetas = (e) => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    const i = abas.findIndex((a) => a.id === ativa);
+    if (i < 0) return;
+    const proxima = abas[(i + (e.key === "ArrowRight" ? 1 : abas.length - 1)) % abas.length];
+    e.preventDefault();
+    setEscolhida(proxima.id);
+    const el = document.getElementById(`aba-espera-${proxima.id}`);
+    if (el) el.focus();
+  };
+
+  const painel = (id, filhos) => (
+    <section role="tabpanel" id={`painel-espera-${id}`} aria-labelledby={`aba-espera-${id}`} data-secao-da-espera={id}
+             style={{ border: `1px solid ${C.divider}`, borderRadius: 12, overflow: "hidden" }}>
       {filhos}
     </section>
   );
@@ -108,10 +172,52 @@ export default function Esperando({
         </button>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto" }}>
+      {/* AS ABAS (02/11), fora da parte que rola: a lista de um dia cheio passa
+          da altura da tela, e a outra aba tem de continuar a um clique.
+          Cada aba diz quantos há nela, para a pessoa saber, sem clicar, se a
+          outra tem alguém. E o nome não é cortado: no celular ele quebra em
+          linhas (três, a 360), e a aba cresce. */}
+      {abas.length > 0 && (
+        <div style={{ background: C.headerBar, borderBottom: `1px solid ${C.divider}` }}>
+          <div data-abas-da-espera role="tablist" aria-label="O que está esperando resposta" onKeyDown={andarComAsSetas}
+               style={{ maxWidth: 760, margin: "0 auto", padding: "0 16px", display: "flex", gap: 6 }}>
+            {abas.map((a) => {
+              const sel = a.id === ativa;
+              return (
+                <button key={a.id} type="button" role="tab" id={`aba-espera-${a.id}`} aria-selected={sel}
+                        aria-controls={`painel-espera-${a.id}`} tabIndex={sel ? 0 : -1}
+                        data-aba-da-espera={a.id} data-aba-ativa={sel ? "sim" : undefined}
+                        onClick={() => setEscolhida(a.id)}
+                        style={{ flex: "1 1 auto", minWidth: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                                 gap: 8, border: "none", borderBottom: `3px solid ${sel ? a.forte : "transparent"}`,
+                                 background: "transparent", color: sel ? a.texto : C.textSecondary, fontSize: 12.5,
+                                 fontWeight: 700, letterSpacing: 0.3, lineHeight: 1.3, textAlign: "center",
+                                 padding: "11px 4px 8px", marginBottom: -1, cursor: sel ? "default" : "pointer" }}>
+                  <span data-nome-da-aba-da-espera style={{ minWidth: 0 }}>{a.titulo.toUpperCase()}</span>
+                  {a.falhou ? (
+                    <AlertCircle data-aba-da-espera-falhou size={16} color="#e53935" style={{ flexShrink: 0 }}
+                                 aria-label="não carregou" />
+                  ) : a.n != null && (
+                    <span data-contagem-da-espera={a.n}
+                          style={{ flexShrink: 0, minWidth: 22, height: 20, padding: "0 6px", borderRadius: 10, boxSizing: "border-box",
+                                   display: "inline-flex", alignItems: "center", justifyContent: "center",
+                                   fontSize: 11.5, fontWeight: 700, letterSpacing: 0,
+                                   background: a.n > 0 ? a.forte : C.divider, color: a.n > 0 ? "#fff" : C.textSecondary }}>
+                      {a.n}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* A CHAVE É A ABA: trocar de aba começa a lista do alto, e não da
+          altura em que a outra estava rolada. */}
+      <div key={ativa || "nenhuma"} style={{ flex: 1, overflowY: "auto" }}>
         <div style={{ maxWidth: 760, margin: "0 auto", padding: "14px 16px 40px" }}>
-          {temAvisoDeEspera === true && secao("sem-resposta", "Clientes sem resposta", "#e53935",
-            semResposta?.erro ? null : meusSemResposta.length, <>
+          {ativa === "sem-resposta" && painel("sem-resposta", <>
               {nota(<>Quem escreveu e ainda não recebeu <b>nenhuma</b> resposta, {meusSemResposta.length
                 ? fraseDoLimite(meusSemResposta) : "além do tempo do departamento"} de expediente. Os que têm
                 outra pessoa como responsável aparecem só para ela.</>, { borderBottom: "none" })}
@@ -124,8 +230,7 @@ export default function Esperando({
                     `escreveu ${rotuloDaHora(l.aberto_em, agora)}${l.responsavel_id ? "" : " · sem responsável"}`))}
             </>)}
 
-          {podeContarAtrasadas && secao("atrasadas", "Suas conversas esperando há 3 dias ou mais", "#d99a1e",
-            atrasadas?.erro ? null : minhas.length, <>
+          {ativa === "atrasadas" && painel("atrasadas", <>
               {nota("As conversas em que você é o responsável e o cliente espera resposta há 3 dias ou mais.")}
               {atrasadas?.erro ? falha("data-espera-falhou-atrasadas", atrasadas.erro)
                 : !atrasadas?.lido ? nota("Procurando…")
@@ -138,7 +243,7 @@ export default function Esperando({
               {atrasadas?.cortado && nota(`Mostrando as ${minhas.length} que esperam há mais tempo.`, { borderTop: `1px solid ${C.divider}` })}
             </>)}
 
-          {temAvisoDeEspera !== true && !podeContarAtrasadas && (
+          {abas.length === 0 && (
             <div data-espera-sem-recurso style={{ fontSize: 14, color: C.textSecondary, padding: 16 }}>
               Esta contagem ainda não está instalada neste banco.
             </div>

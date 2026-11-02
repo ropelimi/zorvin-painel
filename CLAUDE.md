@@ -4523,7 +4523,7 @@ responsável (17 pessoas, de 1 a 56 cada).
 | ao abrir, sem conversa escolhida | o resumo na tela da direita (`data-resumo-da-espera`): *"2 clientes sem resposta há mais de 30 min de expediente"*, *"12 conversas suas esperando resposta há 3 dias ou mais"*, e **Ver quais** |
 | a barra lateral | a ampulheta (`data-abrir-esperando`), com a soma das duas listas — **vermelha** quando há cliente sem resposta, **âmbar** quando são só as suas |
 | o ⋮ do topo | "Esperando resposta", com o mesmo número: no celular a tela da direita não aparece ao abrir, e a barra e o ⋮ são o caminho |
-| a tela | `Esperando.jsx` (`data-tela="esperando"`), com as duas seções; clicar abre a conversa no telefone dela, pelo caminho do histórico (`verConversaDoHistorico`) |
+| a tela | `Esperando.jsx` (`data-tela="esperando"`), com uma aba para cada lista (02/11, ver "As duas abas da tela Esperando resposta", mais abaixo); clicar abre a conversa no telefone dela, pelo caminho do histórico (`verConversaDoHistorico`) |
 | o aviso | o som escolhido, a tarja (pela chave de `notificarDesktop`) e a faixa |
 | a administração | a aba **Aviso de espera**, em Departamentos e acessos (`AvisoDeEspera.jsx`) |
 
@@ -4740,6 +4740,111 @@ e a cena reprovava seis conferências sem defeito nenhum. A rodada desta PR
 caiu às 00h21 de 01/11. Hoje a semente é contada no calendário de São Paulo.
 **Prova que abre o navegador num fuso e calcula datas no Node calcula no
 fuso do navegador**, e não no da máquina.
+
+### Cada pessoa conta só os telefones que atende (conferido em 02/11)
+
+Pergunta do Rodrigo, com a foto do resumo (*"22 clientes sem resposta há mais
+de 30 min de expediente"*): *"quero que apareça para cada usuário apenas os
+números referente aos telefones que o usuário tem acesso, é assim que
+funciona? Se não for, faça essa correção."*
+
+**Já era assim, e nada mudou.** As duas contas passam pela regra de acesso de
+`conversas` (`meus_telefones()`, que lê `permissoes` por departamento e por
+telefone): a função do 041 é `security invoker`, e a leitura das suas
+conversas é uma leitura de `conversas` como qualquer outra. **Medido no banco,
+no papel de cada pessoa, só contando:**
+
+| quem | a função devolveu | o resumo contava | de telefone que ela não atende |
+|---|---|---|---|
+| uma atendente com 5 telefones | 30 | 16 (os sem responsável e os dela) | nenhum |
+| uma atendente com 1 telefone | 0 | 0 | — |
+| quem administra (a foto) | 35 | 22 | — |
+
+**Quem administra vê todos os telefones** (`zorvin_admin()` passa pela regra
+de `conversas`), e foi isso que a foto mostrou: os 22 eram de 6 telefones, de
+3 departamentos. Contar só o departamento aberto, para quem administra, ficou
+oferecido a ele, e não foi feito.
+
+### As duas abas da tela "Esperando resposta" (02/11)
+
+Pedido do Rodrigo, junto com a pergunta acima: *"na tela 'Esperando
+resposta', precisa ter duas abas para mudar entre 'CLIENTES SEM RESPOSTA' e
+'SUAS CONVERSAS ESPERANDO HÁ 3 DIAS OU MAIS'"*. Eram duas seções, uma embaixo
+da outra: num dia com muitos clientes sem resposta, as suas conversas ficavam
+depois da rolagem.
+
+| | |
+|---|---|
+| as abas | os dois nomes do pedido, em maiúsculas, cada um com o número da sua lista (vermelho nos clientes, âmbar nas suas conversas, cinza no zero) |
+| a escolhida | um traço embaixo e o nome na cor dela; só a lista dela fica à vista |
+| onde ficam | fora da parte que rola (`data-abas-da-espera`): com a lista rolada até o fim, a outra aba continua a um clique |
+| trocar de aba | a lista começa do alto: a parte que rola leva a aba como chave |
+| o teclado | as setas andam entre as abas, e o foco vai junto (`role="tab"`, `aria-selected`, `aria-controls`) |
+| no celular | os nomes quebram em linhas e não são cortados, e a tela não rola de lado |
+
+**Em qual aba a tela abre** (`abaDeComeco`, em `Esperando.jsx`): nos clientes
+sem resposta, se há algum; senão, nas suas conversas, se há alguma; senão, na
+primeira. **A falha conta como ter o que mostrar**: a aba que não carregou
+abre dizendo isso, em vez de a tela abrir na outra com a falha escondida atrás
+de um clique.
+
+**A escolha espera as duas leituras.** A dos clientes é uma função do banco, e
+a das suas conversas uma leitura da lista, e elas chegam em tempos diferentes.
+Decidindo com a primeira que chegasse, a tela abriria nas suas conversas e
+esconderia o cliente sem resposta que chega um instante depois. Enquanto não
+se sabe, a tela mostra a primeira aba que existe.
+
+**Decidida, ela não muda sozinha**: a leitura de minuto em minuto que esvazia
+a lista não tira a pessoa da aba em que ela está. E quem clicou numa aba antes
+de a decisão chegar continua nela.
+
+**O número só aparece com a leitura feita.** "0" enquanto ela vem diria que
+não há ninguém antes de a pergunta voltar. A aba que falhou leva o ícone de
+alerta no lugar do número.
+
+**Sem o script 041, só a aba das suas conversas**, pela régua dos três
+estados: só a função que FALTA esconde a aba dos clientes.
+
+A prova `o-aviso-de-quem-espera-demais` acompanhou: as conferências das suas
+conversas clicam antes na aba delas, e a do "(0) no título da seção" virou
+*"nem conta zero na aba"*.
+
+Prova: `as-abas-da-tela-esperando`, 79 conferências em 8 cenas. **26
+sabotagens e 26 pegas**, todas limpas, rodadas em cópias e lidas uma a uma:
+
+- a tela de antes inteira (46 reprovações — é o pedido reproduzido);
+- **as abas:** as duas listas à vista ao mesmo tempo; sem a fileira de abas;
+  o nome em minúsculas; o nome da segunda aba encurtado; as abas na ordem
+  trocada; o número sem aparecer; a aba sem dizer qual lista controla; a
+  escolhida sem parecer escolhida;
+- **em qual aba a tela abre:** sempre nos clientes; as suas conversas na
+  frente dos clientes; decidindo antes de saber se há a contagem dos
+  clientes; a falha dos clientes sem contar como ter o que mostrar, e a das
+  suas conversas; a decisão valendo de novo a cada mudança; o clique sem
+  trocar de aba;
+- **o número:** a aba dos clientes que falhou dizendo 0; a das suas conversas
+  dizendo 0 enquanto a lista vem; a das suas conversas que falhou sem a
+  marca;
+- **a rolagem e o teclado:** as abas dentro da parte que rola; sem a chave que
+  zera a rolagem; sem as setas; as setas sem levar o foco;
+- **o celular:** o nome sem quebrar; as abas sem encolher;
+- **e sem o 041:** a aba dos clientes aparecendo assim mesmo.
+
+**Uma pegou por menos conferências do que devia, e a culpa era da cena.** A
+decisão que vale de novo a cada mudança foi pega pela cena 5 e passou pela 6,
+que existe só para ela: a cena esvaziava a lista com as suas conversas ainda a
+caminho e conferia antes de elas voltarem — e a tela sabotada só trocaria de
+aba depois da conferência. Hoje a cena espera as duas contagens na tela antes
+de esvaziar e depois (`esperarContagens`), e a rodada foi refeita inteira na
+versão final. **Sabotagem pega por menos conferências do que devia é
+informação**: aqui, a de que a cena conferia antes da hora.
+
+**E para provar que trocar de aba começa a lista do alto, as DUAS listas têm
+de ser longas.** Com a das suas conversas curta, trocar para ela leva a
+rolagem a zero sozinho (o navegador encolhe a rolagem até onde a lista curta
+deixa), e voltar à longa a deixa lá. **Medido:** com 2 conversas suas no lugar
+de 16, as duas conferências da rolagem passam com a sabotagem que tira a
+chave. A cena planta 16 de cada.
 
 ## A faxina da fila (01/11)
 
