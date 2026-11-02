@@ -4318,8 +4318,74 @@ administra (a inserção recusa com 42501; a edição e a exclusão não acham
 linha), as conferências de dias e texto (23514), a regra única por dias
 (23505) e o gatilho (quem criou, `vale_desde`, quem mudou).
 
-Prova: `o-acompanhamento-por-etapa`, 111 conferências, com o relógio fixado às
-9h de São Paulo. <<SABOTAGENS>>
+Prova: `o-acompanhamento-por-etapa`, 113 conferências, com o relógio fixado às
+9h de São Paulo. As vizinhas passaram de novo: as tarefas, as quatro do funil
+(e a que vigia o funil), a IA no funil, a conversa que se manda abrir, as
+variáveis das rápidas, as duas de editar, o copiloto, a sessão que acaba, as
+duas auditorias, o cabeçalho, os menus que cabem na janela, a pesquisa nos
+menus, a faxina e o aviso de quem espera demais.
+
+**40 sabotagens e 40 pegas**, rodadas em cópias e lidas uma a uma:
+
+- o painel de antes inteiro (63 reprovações — é o pedido reproduzido);
+- **as regras:**
+  - a regra gravada preenchida, e não com a variável;
+  - a variável no fim, e não onde está o cursor;
+  - sem a prévia;
+  - sem o aviso da variável desconhecida;
+  - sem conferir antes de gravar;
+  - o erro fora do formulário (8 reprovações);
+  - os mesmos dias recusados pelo banco ditos como um erro qualquer;
+  - a edição que o banco não deixou lida como salva;
+  - apagar sem perguntar;
+  - apagar que o banco não deixou lido como apagado;
+  - o Esc fechando a administração junto (12);
+  - editar gravando uma linha nova;
+- **a seção das etapas:**
+  - a falha da leitura virando "sem o 045";
+  - a dica aparecendo antes de saber se há o 045 (o piscar);
+  - a falha desenhando os lembretes vazios;
+  - os lembretes na etapa desativada;
+  - o "Tentar de novo" que não relê;
+- **a mensagem pronta:**
+  - a mensagem crua na caixa (7);
+  - o grupo emprestando o nome;
+  - a nota que não vira mensagem;
+  - a edição em curso trocada;
+  - a conversa aberta trocada sem perguntar;
+  - o rascunho da fechada trocado sem perguntar;
+  - a pergunta mesmo com a mesma mensagem na caixa;
+  - o rascunho escrito antes de ler a linha;
+  - sem o aviso de quem escreveu por último;
+  - o aviso sempre, sem olhar quem escreveu;
+  - o menu da conversa sem o botão (9);
+  - o menu que não fecha;
+  - no menu, o que fechou sozinho dito como feita;
+  - a tela de tarefas abrindo a conversa sem a mensagem;
+- **a tela de tarefas:**
+  - sem o botão (19);
+  - o botão no lembrete já fechado;
+  - sem o selo de automático;
+  - o que fechou sozinho dito como feita;
+  - "fechou sozinho" sem olhar quem concluiu;
+- **a bancada:**
+  - sem o gatilho do 045 (mudar os dias não recomeça a conta);
+  - sem a regra dos mesmos dias (23505);
+  - sem a tabela que falta.
+
+**O piscar foi achado relendo o código, com a rodada de sabotagens no meio.**
+A primeira escrita começava a seção como se o 045 existisse, e num banco sem
+ele a dica e os botões apareciam até a primeira resposta. A rodada foi parada,
+as cópias apagadas, e refeita inteira sobre a versão final — a régua de 13/10:
+rodada de sabotagens não convive com edição.
+
+**E a sabotagem que devolvia o piscar VAZOU na primeira rodada.** A bancada
+responde "a tabela não existe" NA HORA, e o piscar durava um desenho só: o
+relógio de 20 ms da prova não o via. Hoje ela vigia cada mudança do documento
+(um `MutationObserver` no próprio `document`, que existe antes do `<html>`), e
+confere o contraste: com o 045, o vigia vê os lembretes. **Na bancada, "não
+existe" é instantâneo; no Supabase, leva o tempo da rede — o que pisca aqui
+por um desenho, lá pisca por um décimo de segundo.**
 
 **E uma armadilha da prova, achada na primeira rodada:** o aviso do gesto
 anterior dura oito segundos, e a conferência de que o gesto seguinte NÃO avisou

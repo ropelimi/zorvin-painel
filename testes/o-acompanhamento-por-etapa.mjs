@@ -142,8 +142,7 @@ const SEMENTE_DO_TELEFONE = {
   zorvin_funis: [{ id: "fn-tel", departamento_id: DEP, advogado_id: ADV, ativo: true, ia_ligada: false }],
 };
 
-async function abrirPainel({ semente = SEMENTE, semAcompanhamento = false, recusarLeitura = [], largura = 1920,
-                             atrasoDasRegras = 0 } = {}) {
+async function abrirPainel({ semente = SEMENTE, semAcompanhamento = false, recusarLeitura = [], largura = 1920 } = {}) {
   const ctx = await nav.newContext({ viewport: { width: largura, height: 900 }, timezoneId: "America/Sao_Paulo" });
   const page = await ctx.newPage();
   const estouros = [];
@@ -164,14 +163,18 @@ async function abrirPainel({ semente = SEMENTE, semAcompanhamento = false, recus
     globalThis.__ESCRITA_SEM_EFEITO = [];
     globalThis.__ERRO_NA_GRAVACAO = {};
     globalThis.__SOU_ADMIN = true;
-    globalThis.__ATRASO_POR_TABELA = d.atrasoDasRegras ? { zorvin_acompanhamentos: d.atrasoDasRegras } : {};
     try { localStorage.setItem("zorvin_ficha_fixa", "nao"); } catch (_) { /* sem armazenamento */ }
-    // O FILME DOS LEMBRETES NA TELA DAS ETAPAS: num banco sem o 045, eles não
-    // podem aparecer nem por um instante (enquanto a pergunta não volta).
+    // OS LEMBRETES NA TELA DAS ETAPAS, vigiados a cada mudança do documento
+    // (e não de tempos em tempos): num banco sem o 045 eles não podem aparecer
+    // nem por um instante. A bancada responde "a tabela não existe" na hora, e
+    // o piscar dura um desenho só — um relógio de 20 ms não o veria. O
+    // documento existe desde já, e é nele que se vigia: o `<html>` ainda não.
     globalThis.__VIU_LEMBRETES = false;
-    setInterval(() => {
-      if (document.querySelector("[data-acomp-novo], [data-dica-do-acompanhamento]")) globalThis.__VIU_LEMBRETES = true;
-    }, 20);
+    new MutationObserver(() => {
+      if (!globalThis.__VIU_LEMBRETES && document.querySelector("[data-acomp-novo], [data-dica-do-acompanhamento]")) {
+        globalThis.__VIU_LEMBRETES = true;
+      }
+    }).observe(document, { childList: true, subtree: true });
     // A NOTIFICAÇÃO É ESPIONADA, e não desligada.
     globalThis.__NOTIFICACOES = [];
     globalThis.Notification = class {
@@ -187,7 +190,7 @@ async function abrirPainel({ semente = SEMENTE, semAcompanhamento = false, recus
       const v = globalThis.__AVISOS_VISTOS;
       if (t && v[v.length - 1] !== t) v.push(t);
     }, 50);
-  }, { semente, semAcompanhamento, recusarLeitura, atrasoDasRegras });
+  }, { semente, semAcompanhamento, recusarLeitura });
   await page.route("**/ponte-de-mentira/**", async (rota) => {
     const url = new URL(rota.request().url());
     const json = (status, corpo) => rota.fulfill({ status, contentType: "application/json", body: JSON.stringify(corpo) });
@@ -273,9 +276,7 @@ const ESCREVEU_POR_ULTIMO = /O cliente escreveu por último: leia a conversa ant
 // ------------------------------------------------------------------
 console.log("\n1. Sem o 045, nada aparece, e nada quebra");
 {
-  // A PERGUNTA DAS REGRAS DEMORA 800 ms: é nesse intervalo que um botão
-  // desenhado antes de saber piscaria.
-  const { ctx, page, estouros } = await abrirPainel({ semAcompanhamento: true, atrasoDasRegras: 800 });
+  const { ctx, page, estouros } = await abrirPainel({ semAcompanhamento: true });
   ok("abriu a administração", await abrirAdmin(page));
   await escolherFunil(page, String(DEP));
   await page.waitForTimeout(1200);
@@ -312,6 +313,9 @@ console.log("\n2. Escrever, conferir, editar e apagar um lembrete");
   ok("cada etapa EM USO oferece um lembrete", (await page.locator("[data-acomp-novo]").count()) === 6,
      String(await page.locator("[data-acomp-novo]").count()));
   ok("a desativada não", (await blocoDa(page, "Encerrado").count()) === 0);
+  // E O VIGIA DA CENA 1 VÊ: com o 045 os lembretes aparecem, e ele diz que
+  // viu. Sem isto, um vigia que nunca dispara aprovaria qualquer piscar.
+  ok("o vigia do piscar vê os lembretes quando eles existem", (await page.evaluate(() => globalThis.__VIU_LEMBRETES)) === true);
   ok("o lembrete que já existe aparece na etapa dele",
      /Depois de 10 dias sem resposta do cliente.*Seguimos à disposição/s.test(await texto(blocoDa(page, "Proposta/acordo enviado"))),
      await texto(blocoDa(page, "Proposta/acordo enviado")));
