@@ -24,7 +24,7 @@
 // OS CLIENTES SÃO PLANTADOS num telefone DESCOBERTO, e não escolhido a dedo —
 // ver `o-funil-de-etapas`. Os movimentos levam data de dias atrás, como o
 // gatilho do 017 teria deixado.
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+import { abrirNavegador, ENDERECO, abrirATela } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -133,10 +133,13 @@ async function clicar(loc) {
   try { await loc.first().click({ timeout: 3000 }); } catch (_) { return false; }
   return true;
 }
-async function irAoPainel(page) {
-  await clicar(page.getByRole("button", { name: "Menu", exact: true }));
-  await clicar(page.getByRole("button", { name: "Painel" }));
-  await page.waitForSelector('[data-tela="painel"]').catch(() => {});
+// O PAINEL ABRE NUMA GUIA PRÓPRIA desde 02/11 (`?tela=painel`): esta prova
+// mede a tela, e abre o endereço dela na própria página — o gesto do menu é
+// provado em `as-telas-abrem-numa-guia-nova`. A cena do caminho inteiro LEVA
+// as tabelas que a conversa gravou (`levar`): em produção as duas guias leem
+// o mesmo banco, e a bancada mora na memória de cada página.
+async function irAoPainel(page, levar = []) {
+  await abrirATela(page, "painel", { levar });
   await page.waitForTimeout(1500);
 }
 
@@ -284,7 +287,7 @@ console.log("\nO caminho inteiro: mudar a etapa na conversa e ver no relatório"
   const noBanco = await page.evaluate(() => (globalThis.__TABELAS.zorvin_movimentos || [])
     .filter((m) => m.contato_id === "ct-r5").length);
   ok("e o movimento foi registrado, como o gatilho faz", noBanco === 2, String(noBanco));
-  await irAoPainel(page);
+  await irAoPainel(page, ["zorvin_cartoes", "zorvin_movimentos"]);
   const at = await etapa(page, "Em atendimento");
   ok("Em atendimento passou a 2 agora, e 3 entraram", at?.agora === "2" && at?.entraram === "3", JSON.stringify(at));
   const novo = await etapa(page, "Novo contato");

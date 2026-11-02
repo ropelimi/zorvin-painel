@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, RefreshCw, Search, Download, X, MessageCircle, Sparkles } from "lucide-react";
+import { RefreshCw, Search, Download, X, MessageCircle, Sparkles } from "lucide-react";
 import { supabase } from "./supabase.js";
 import { naoGravouNada, comOCodigo, semATabela } from "./gravar.js";
 import { nomeDoContato } from "./contato.js";
@@ -90,6 +90,10 @@ export default function Funil({
   C, departamentos = [], advogados = [], souAdmin = false,
   departamentoInicial = null, aoAbrirConversa, aoFechar, comTarefas = false,
   funis = [], comTelefone = false, erroDosFunis = "", funilInicial = null,
+  // O QUE ESTA TELA MUDOU (02/11): mover, tirar e trazer avisam quem a abriu.
+  // A tela mora numa guia própria, e a guia das conversas relê a etapa da
+  // conversa aberta — era o que fechar a tela fazia quando abria por cima.
+  aoMudou = null,
 }) {
   // O FUNIL ESCOLHIDO é um par (departamento, telefone), e o telefone nulo é o
   // funil do departamento (`funis.js`). Começa no funil do telefone aberto na
@@ -338,6 +342,7 @@ export default function Funil({
         return;
       }
       avisar(`${nomeDoContato(contatos[cartao.contato_id])} foi para “${destino ? destino.nome : "outra etapa"}”.`);
+      if (aoMudou) aoMudou();
     } finally {
       movendo.current--;
       // A leitura descartada acima não apaga o "carregando" que ela acendeu.
@@ -365,6 +370,7 @@ export default function Funil({
       }
       setCartoes((l) => l.filter((c) => c.id !== cartao.id));
       avisar(`${nome} saiu do funil.`);
+      if (aoMudou) aoMudou();
     } finally {
       movendo.current--;
       // A leitura descartada acima não apaga o "carregando" que ela acendeu.
@@ -390,6 +396,7 @@ export default function Funil({
       avisar(n === 0
         ? `Nenhum cliente novo: quem conversou nos últimos ${diasTrazer} dias já está no funil.`
         : `${n} ${n === 1 ? "cliente entrou" : "clientes entraram"} em “${ativas[0] ? ativas[0].nome : "a primeira etapa"}”.`);
+      if (n > 0 && aoMudou) aoMudou();
       await ler(false);
     } finally {
       setTrazendo(false);
@@ -555,10 +562,13 @@ export default function Funil({
       {/* ================= A BARRA DO ALTO ================= */}
       <div style={{ background: C.panel, borderBottom: `1px solid ${C.divider}`, padding: "10px 16px",
                     display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <button onClick={aoFechar} title="Voltar" aria-label="Voltar"
+        {/* A TELA É UMA GUIA (02/11): o botão fecha a guia, e o navegador volta
+            para a das conversas. Era a seta "Voltar", de quando a tela abria por
+            cima delas. */}
+        <button onClick={aoFechar} title="Fechar esta guia" aria-label="Fechar esta guia" data-fechar-a-guia
                 style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex",
                          padding: 6, marginLeft: -6, borderRadius: 8, color: C.textSecondary }}>
-          <ArrowLeft size={20} />
+          <X size={20} />
         </button>
         <div style={{ fontSize: 17, fontWeight: 700, marginRight: 4 }}>Funil</div>
         {opcoes.length > 1 ? (

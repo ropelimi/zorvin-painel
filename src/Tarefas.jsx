@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, RefreshCw, CircleCheck, RotateCcw, MessageCircle, BellRing, AlertCircle, AlarmClock, Send } from "lucide-react";
+import { X, RefreshCw, CircleCheck, RotateCcw, MessageCircle, BellRing, AlertCircle, AlarmClock, Send } from "lucide-react";
 import { supabase } from "./supabase.js";
 import { naoGravouNada, comOCodigo } from "./gravar.js";
 import { nomeDoContato } from "./contato.js";
@@ -294,9 +294,12 @@ export default function Tarefas({
                                       display: "flex", flexDirection: "column", color: C.textPrimary }}>
       <div style={{ background: C.headerBar, borderBottom: `1px solid ${C.divider}`, padding: "10px 16px",
                     display: "flex", alignItems: "center", gap: 14 }}>
-        <button onClick={aoFechar} title="Voltar às conversas" aria-label="Voltar às conversas"
+        {/* A TELA É UMA GUIA (02/11): o botão fecha a guia, e o navegador volta
+            para a das conversas. Era a seta "Voltar", de quando a tela abria por
+            cima delas. */}
+        <button onClick={aoFechar} title="Fechar esta guia" aria-label="Fechar esta guia" data-fechar-a-guia
                 style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", padding: 6, borderRadius: "50%" }}>
-          <ArrowLeft size={20} color={C.textSecondary} />
+          <X size={20} color={C.textSecondary} />
         </button>
         <BellRing size={20} color={C.green} />
         <span style={{ fontSize: 17, fontWeight: 700, flex: 1 }}>Tarefas</span>

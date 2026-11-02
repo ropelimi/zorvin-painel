@@ -10,7 +10,7 @@
 //   cartões, nos gráficos, nas tabelas —, que os quatro filtros recortem, que
 //   quem não administra não consiga sair do próprio recorte, e que os gráficos
 //   e as tabelas contem a mesma história.
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+import { abrirNavegador, ENDERECO, abrirATela } from "./navegador.mjs";
 
 const URL = ENDERECO;
 let falhas = 0, feitas = 0;
@@ -23,10 +23,11 @@ const ok = (nome, cond, detalhe = "") => {
 /** Só os dígitos de um texto, como número. "1.234" -> 1234 */
 const so = (t) => Number(String(t || "").replace(/[^\d]/g, "")) || 0;
 
+// O PAINEL ABRE NUMA GUIA PRÓPRIA desde 02/11 (`?tela=painel`): esta prova
+// mede a tela, e abre o endereço dela na própria página — o gesto do menu é
+// provado em `as-telas-abrem-numa-guia-nova`.
 async function abrirPainel(page) {
-  await page.getByRole("button", { name: "Menu" }).click();
-  await page.getByRole("button", { name: "Painel" }).click();
-  await page.waitForSelector('[data-tela="painel"]');
+  await abrirATela(page, "painel");
   await page.waitForSelector('[data-teste="escopo"]', { timeout: 15000 });
 }
 
@@ -341,10 +342,7 @@ const navegador = await abrirNavegador();
   const ctx = await navegador.newContext();
   await ctx.addInitScript(() => { globalThis.__TEM_FUNCAO_PAINEL = false; });
   const page = await ctx.newPage();
-  await page.goto(URL);
-  await page.getByRole("button", { name: "Menu" }).click();
-  await page.getByRole("button", { name: "Painel" }).click();
-  await page.waitForSelector('[data-tela="painel"]');
+  await abrirATela(page, "painel");
   await page.waitForTimeout(700);
   const texto = await page.locator('[data-tela="painel"]').innerText();
   ok("diz o que falta rodar", /Falta um passo no banco/i.test(texto));

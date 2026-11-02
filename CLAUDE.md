@@ -396,6 +396,202 @@ celular via. A rodada foi parada, a prova consertada (o passo de rolar é
 guardado), e a rodada refeita inteira: *rodada de sabotagens não convive com
 edição*.
 
+## As telas abrem numa guia nova (02/11)
+
+Pedido do Rodrigo: *"Com exceção de "Configurações" e "Departamentos e
+acessos" que abrem como popup, todas as outras opções ao clicar devem ser
+abertas em uma nova guia."* E duas respostas dele, perguntadas antes: a
+conversa clicada dentro de uma tela abre **noutra guia, já nela**; e o sino e
+a ampulheta da barra lateral **vão junto com o menu**.
+
+| o quê | abre |
+|---|---|
+| Funil, Tarefas, Esperando resposta, Faxina da fila e Painel, no menu ⋮ do topo | cada um numa guia nova |
+| o sino (Tarefas) e a ampulheta (Esperando resposta), na barra lateral | idem |
+| o "Ver quais" do resumo do alto | a guia do Esperando resposta |
+| a conversa clicada dentro de uma tela (o cartão do funil, a tarefa, o cliente que espera, a linha da faxina) | noutra guia, já nela |
+| Configurações e Departamentos e acessos | por cima, nesta guia, como antes |
+| Mídias, "Marcar todas como lidas" e "Desconectar" | como antes: não são telas |
+
+**O endereço diz o que a guia é** (`src/guias.js`), e é por isso que o F5 de
+uma guia de tela continua na tela:
+
+- `?tela=funil&linha=<telefone>` — uma tela (a `linha` só no Funil: é o funil
+  do telefone aberto na barra da guia que o abriu);
+- `?conversa=<id>&linha=<telefone>` — uma conversa;
+- `?conversa=…&linha=…&tarefa=<id>` — a conversa com a mensagem pronta do
+  lembrete na caixa de escrever.
+
+Os nomes não batem com os do link do Vantoro (`telefone`, `numero`, `nome`):
+aquele diz com QUEM falar, e estes dizem QUAL conversa ou tela abrir. Um nome
+que não é de tela nenhuma abre as conversas, e não uma guia em branco.
+
+**Cada item é um link de verdade** (`<a target="_blank" rel="noopener">`), e
+não um botão que chama `window.open`: o Ctrl+clique, o clique do meio e o
+"abrir em nova guia" do botão direito funcionam como em qualquer link. O
+`noopener` deixa a guia nova sem alcançar esta, e uma guia pesada não trava a
+outra. **No celular, os links ganharam os 40 pontos de alvo de dedo**
+(`[data-abre-guia]`): virando link, eles tinham ficado com 39, e a regra dos
+botões não os via.
+
+### A guia de uma tela é o Zorvin inteiro, só que mais leve
+
+A tela tira do Zorvin os telefones, a equipe, os assuntos e o que o banco
+tem, e por isso a guia monta o painel inteiro (`TELA_DA_GUIA`, uma constante
+lida do endereço: o endereço de uma guia não muda enquanto ela vive). Mas:
+
+- **não assina o tempo real.** Cada guia assinada recebe cada gravação do
+  escritório, e o limite do Supabase é por segundo, somado entre todas — o
+  entupimento de 20/10. Nenhuma tela usa o tempo real: o Funil e as Tarefas
+  se releem sozinhos, e a Faxina confere antes de cada finalização;
+- **não toca aviso nenhum, não pergunta a saúde do sistema nem os lembretes
+  das tarefas**: quem avisa é a guia das conversas, e duas guias avisando
+  seriam dois sons por mensagem;
+- **só a do Esperando resposta pergunta pelos clientes sem resposta, e na
+  hora**: a espera de cinco segundos existe para não atrasar a lista de
+  conversas, que aquela guia não mostra;
+- **abre no telefone do endereço, e não o guarda** como o "último usado":
+  senão o F5 da guia das conversas abriria no telefone que o funil escolheu.
+  E com duas guias de conversas em telefones diferentes, o Funil clicado numa
+  delas é o do telefone DELA;
+- **o título é o da tela** ("Funil · Ropelimi Zorvin"), sem o número de não
+  lidas: com três guias abertas, é o nome que diz qual é qual;
+- **enquanto não dá para saber se o banco tem a tela, ela diz que está
+  abrindo** (`data-guia-abrindo="abrindo"`), e sem o recurso no banco (o
+  Funil sem o 017) diz que este Zorvin não tem a tela (`"indisponivel"`), em
+  vez de desenhar uma tela vazia — que se leria como "ninguém no funil".
+
+**O botão do alto de cada tela fecha a guia** (`fecharAGuia`,
+`data-fechar-a-guia`), com um X no lugar da seta "Voltar". O navegador só
+deixa fechar a guia que nasceu de um clique e não navegou para lugar nenhum;
+recusando (o endereço aberto à mão, um favorito), a guia vira o Zorvin de
+sempre, e o botão continua levando de volta às conversas. **O Esc não tira a
+tela**: ele a fechava quando ela abria por cima das conversas, e numa guia
+própria a tela É a guia — um Esc sem querer no meio da faxina ou de um
+arraste no funil fecharia tudo.
+
+### Um aviso só, com quantas guias estiverem abertas
+
+Cada guia de conversa é um Zorvin inteiro, com o tempo real assinado: a
+mensagem do cliente chega a TODAS, e todas tocariam o som e mostrariam a
+tarja. São duas guardas:
+
+1. **quem chega primeiro avisa** (`reivindicarAviso`). A marca de cada aviso
+   fica no armazenamento do navegador, que as guias dividem, e a conferência
+   é feita sob a trava do navegador (`navigator.locks`), que deixa uma guia
+   por vez entre "olhei" e "marquei". **A marca é da MENSAGEM**, e não da
+   conversa: a próxima mensagem avisa de novo;
+2. **a conversa que outra guia está mostrando não avisa** (`outraGuiaVendo`).
+   Cada guia diz, enquanto está À VISTA, qual conversa mostra, e o anúncio
+   vence em 90 segundos (renovado de 30 em 30): a guia que cai sem se
+   despedir não cala ninguém para sempre. **A guia escondida atrás de outra
+   não conta** — ela não está mostrando nada a ninguém, e uma guia esquecida
+   aberta numa conversa calaria os avisos dela enquanto existisse.
+
+### O que uma guia muda, as outras releem
+
+Quando a tela abria por cima das conversas, fechá-la relia o número das
+tarefas e a etapa da conversa aberta. Em guias separadas não há "fechar" que
+leve a notícia: a guia que muda AVISA (`avisarAsOutrasGuias`, num
+`BroadcastChannel`), e as outras releem só o que é delas. A tarefa concluída
+na guia das Tarefas sai do número do sino; o cartão movido na guia do Funil
+muda a etapa da conversa aberta na guia das conversas.
+
+### A conversa que se manda abrir
+
+A guia nova de uma conversa espera o primeiro telefone ser escolhido, como o
+link do Vantoro, abre a conversa pelo caminho do histórico
+(`verConversaDoHistorico`, que já levava a aba e a pasta de arquivadas) e
+**limpa o endereço**: o F5 dela, depois de a pessoa ir para outra conversa,
+não pode voltar sozinho para esta. Com `tarefa`, ela lê o lembrete pelo
+NÚMERO — a mensagem no endereço ficaria no histórico do navegador — e põe a
+mensagem pronta na caixa (`usarMensagemPronta`, com as perguntas de sempre).
+**O lembrete que não veio é dito** (*"A mensagem do lembrete não veio — a
+conversa abriu sem ela."*): calado, a caixa vazia se leria como "o lembrete
+não tinha mensagem".
+
+### O que mudou dentro das telas
+
+- **a Faxina deixou de guardar a escolha** (`ULTIMA_ESCOLHA`): ela existia
+  para quem abria uma conversa e voltava, e hoje a conversa abre noutra guia;
+- **as duas abas do Esperando resposta aparecem desde o primeiro desenho**,
+  sem número e dizendo "Procurando…", e a tela não se decide pela leitura que
+  chega primeiro (`abaDeComeco`: `podeContarAtrasadas` nulo é "ainda não
+  sei"). A guia nasce antes de as duas leituras chegarem, e a aba que
+  chegasse depois empurraria a outra debaixo do dedo.
+
+### A bancada aprendeu a abrir guias
+
+**A bancada mora na memória de cada guia: duas guias são dois bancos.** As
+cenas que dependem do banco que as guias dividem em produção copiam as
+tabelas de uma guia para a outra antes do aviso entre elas (`bancoDividido`
+e `copiarTabelas`, em `navegador.mjs`). E ganharam: `guiaQueAbre` (a guia que
+um clique abre), `abrirATela` e `levarParaAsGuias`; a contagem dos canais do
+tempo real (`__CANAIS`); e o atraso só da leitura das minhas que esperam
+(`__ATRASO_DAS_QUE_ESPERAM`).
+
+**As provas que abriam telas foram adaptadas, com as conferências
+INVERTIDAS, e não apagadas** — o clique na tarefa fechava a tela e abria a
+conversa por baixo, e hoje a conversa abre noutra guia e a tela fica; o Esc
+fechava a tela, e hoje não a tira. São 23: `a-auditoria-de-07-10`,
+`a-auditoria-de-27-10`, `a-contabilizacao-dos-atendimentos`,
+`a-conversa-do-historico-abre`, `a-faxina-da-fila`, `a-ia-move-o-funil`,
+`a-ia-sugere-o-assunto`, `a-pesquisa-nos-menus`, `as-abas-da-tela-esperando`,
+`celular`, `o-acompanhamento-por-etapa`, `o-aviso-de-quem-espera-demais`,
+`o-funil-de-cada-telefone`, `o-funil-de-etapas`,
+`o-funil-nao-se-desmancha-sozinho`, `o-periodo-e-a-pessoa-do-painel`,
+`o-relatorio-do-funil`, `o-relatorio-do-ja-tratei`,
+`o-relatorio-por-responsavel`, `os-rotulos-do-grafico-se-leem`, `painel`,
+`tarefas-e-lembretes` e `telas`.
+
+**Fica de fora, e é decisão:** a trava das guias (`navigator.locks`) não é
+provada. A corrida que ela fecha — duas guias recebendo a mesma mensagem no
+mesmo milissegundo — dura microssegundos, e a prova não a reproduz. Sem a
+trava, o pior caso é um aviso dobrado, como era antes das guias.
+
+Prova: `as-telas-abrem-numa-guia-nova`, 102 conferências em 10 cenas. **31
+sabotagens e 31 pegas**, todas limpas, rodadas em cópias e lidas uma a uma:
+
+- o painel de antes inteiro (41 reprovações — é o pedido reproduzido);
+- **os links:** a Faxina sem guia nova (9); o Funil sem o `noopener`; o Funil
+  sem o telefone no endereço; o sino sem guia nova (4); o "Ver quais" sem
+  guia nova (pega pela `o-aviso-de-quem-espera-demais`); o celular sem os 40
+  pontos nos links (pega pela `celular`);
+- **a guia de uma tela é leve:** assinando o tempo real; perguntando a saúde
+  do sistema; a das Tarefas perguntando os clientes sem resposta; a do
+  Esperando esperando os cinco segundos da abertura (4, pega pela
+  `as-abas-da-tela-esperando`); guardando o telefone; ignorando o telefone do
+  endereço;
+- **fechar:** o X sem o encosto; o Esc fechando a guia;
+- **um aviso só:** as guias avisando todas (3); a conversa à vista noutra
+  guia avisando (2); o anúncio sem olhar a vista;
+- **o que uma guia muda:** a guia do funil sem avisar as outras; a das
+  conversas sem ouvir o funil; a das Tarefas sem avisar (pega pela
+  `tarefas-e-lembretes`);
+- **a conversa que se manda abrir:** abrindo na própria guia da tela (2); sem
+  a tarefa no endereço (8, pega pela `o-acompanhamento-por-etapa`); o
+  endereço sem limpar; o lembrete que não veio, calado;
+- **o endereço e o título:** o título sem o nome da tela (6); qualquer nome
+  virando tela; a guia do funil sem o 017 tentando desenhar (pega pela
+  `o-funil-de-etapas`);
+- **as abas do Esperando resposta:** a dos clientes só depois de saber (3); a
+  das suas conversas só depois de saber (31); a tela decidindo a aba antes de
+  saber das suas conversas (4).
+
+**A primeira rodada achou dois defeitos da PROVA, e não do painel, e foi
+refeita inteira** depois do conserto:
+
+- **o Esc que fecha a guia estourava a prova.** A guia fechava no meio do
+  `keyboard.press`, e a prova parava ali sem dizer qual conferência viu o
+  defeito. Hoje o `press` é guardado, e a conferência diz "a guia fechou";
+- **"o X da tela existe" corria com o fechamento.** A conferência era o
+  próprio clique, e o Playwright pode dar como falho o clique que fecha a
+  página no meio dele — que é justamente o certo. Com três cópias rodando ao
+  mesmo tempo, duas sabotagens que nem mexiam no X reprovaram ali. Hoje a
+  existência do X é perguntada antes do clique. **Conferir um gesto pelo
+  sucesso do clique, num clique que fecha a página, é medir a pressa da
+  máquina.**
+
 ## A ficha virou uma coluna fixa — e antes ela ESCONDIA a lista
 
 Pedido do Rodrigo em 28/09, com a tela do DataCrazy ao lado: o cadastro à
@@ -3921,7 +4117,7 @@ conversas dele).
 
 | | |
 |---|---|
-| **a tela de colunas** | menu ⋮ do topo → **Funil** (`Funil.jsx`, `data-tela="funil"`) |
+| **a tela de colunas** | menu ⋮ do topo → **Funil** (`Funil.jsx`, `data-tela="funil"`), numa guia nova desde 02/11 (ver "As telas abrem numa guia nova") |
 | **a etapa da conversa aberta** | na linha do número, ao lado do responsável — clicar troca a etapa, ou **"Pôr no funil"** |
 | no celular | a linha só diz a etapa — escrita onde cabe, e a bolinha da cor dela quando não cabe (27/10) —; trocar é pelo ⋮ ("Etapa no funil") |
 | **as etapas** | administração → aba Estrutura → *Etapas do funil* (`EtapasDoFunil.jsx`) |
@@ -3933,7 +4129,8 @@ funil que só se move com mouse deixa metade da equipe sem mexer nele.
 **O cartão mostra o que decide o próximo passo**: nome, número, não lidas,
 *"nesta etapa há N dias"* e o *"esperando há N dias"* da lista, com a mesma
 cor. Clicar abre a conversa — no telefone dela, mesmo que não seja o aberto
-(`verConversaDoHistorico`).
+(`verConversaDoHistorico`). **Desde 02/11 ela abre noutra guia**, e o funil
+fica onde estava.
 
 **O cartão numa etapa DESATIVADA não some**: vai para a coluna *"Em etapas
 desativadas"*, no fim, até alguém movê-lo. Escondê-lo seria o cliente sumindo
@@ -4298,7 +4495,7 @@ quatro contas divergiriam.
 |---|---|
 | **criar e ver as da conversa** | na linha do número, depois da etapa: o selo diz a PRÓXIMA (vermelho atrasada, âmbar hoje) ou oferece **"Lembrar"**; no celular a linha só diz a próxima — escrita onde cabe, e o sino quando não cabe (27/10) —, e criar é pelo ⋮ |
 | **a janela** | `NovaTarefa.jsx` — o que fazer, para quem (começa em você), quando; o mesmo desenho da janela de agendar |
-| **a tela** | o **sino da barra lateral**, com o número de atrasadas + hoje (vermelho se alguma atrasou); também no menu ⋮ do topo |
+| **a tela** | o **sino da barra lateral**, com o número de atrasadas + hoje (vermelho se alguma atrasou); também no menu ⋮ do topo. Abre numa guia nova desde 02/11 |
 | **o filtro** | "Com tarefa para hoje", na gaveta da fita — de qualquer pessoa, porque quem vê a conversa vê as tarefas dela |
 | **o funil** | o cartão diz a tarefa aberta mais urgente do cliente |
 
@@ -4404,7 +4601,7 @@ mostra o lembrete e leva a mensagem para a caixa.
 | onde | o quê |
 |---|---|
 | Departamentos e acessos → Etapas do funil | em cada etapa em uso, **"Lembrete de acompanhamento"** (`AcompanhamentoDaEtapa.jsx`): depois de quantos dias sem resposta do cliente, e com qual mensagem pronta. Mais de um por etapa é a cadência (2 dias, depois 5) |
-| a tela de Tarefas | o lembrete diz **"lembrete automático"**, mostra o começo da mensagem e o botão **"Abrir a conversa com a mensagem pronta"** |
+| a tela de Tarefas | o lembrete diz **"lembrete automático"**, mostra o começo da mensagem e o botão **"Abrir a conversa com a mensagem pronta"** — que, desde 02/11, abre a conversa noutra guia, com a mensagem na caixa (`?tarefa=`, ver "As telas abrem numa guia nova") |
 | o menu de tarefas da conversa | o mesmo, com **"Usar a mensagem pronta"** |
 | o lembrete que se fechou sozinho | diz "fechou sozinho às …: a conversa andou", no lugar de "feita" |
 
@@ -4583,7 +4780,7 @@ responsável (17 pessoas, de 1 a 56 cada).
 | ao abrir, sem conversa escolhida | o resumo na tela da direita (`data-resumo-da-espera`): *"2 clientes sem resposta há mais de 30 min de expediente"*, *"12 conversas suas esperando resposta há 2 dias ou mais"* (eram 3 até 02/11), e **Ver quais** |
 | a barra lateral | a ampulheta (`data-abrir-esperando`), com a soma das duas listas — **vermelha** quando há cliente sem resposta, **âmbar** quando são só as suas |
 | o ⋮ do topo | "Esperando resposta", com o mesmo número: no celular a tela da direita não aparece ao abrir, e a barra e o ⋮ são o caminho |
-| a tela | `Esperando.jsx` (`data-tela="esperando"`), com uma aba para cada lista (02/11, ver "As duas abas da tela Esperando resposta", mais abaixo); clicar abre a conversa no telefone dela, pelo caminho do histórico (`verConversaDoHistorico`) |
+| a tela | `Esperando.jsx` (`data-tela="esperando"`), com uma aba para cada lista (02/11, ver "As duas abas da tela Esperando resposta", mais abaixo). Abre numa guia nova desde 02/11, e clicar num cliente abre a conversa noutra guia, já no telefone dela |
 | o aviso | o som escolhido, a tarja (pela chave de `notificarDesktop`) e a faixa |
 | a administração | a aba **Aviso de espera**, em Departamentos e acessos (`AvisoDeEspera.jsx`) |
 
@@ -4853,7 +5050,11 @@ de um clique.
 a das suas conversas uma leitura da lista, e elas chegam em tempos diferentes.
 Decidindo com a primeira que chegasse, a tela abriria nas suas conversas e
 esconderia o cliente sem resposta que chega um instante depois. Enquanto não
-se sabe, a tela mostra a primeira aba que existe.
+se sabe, a tela mostra a primeira aba. **E desde 02/11 as duas abas aparecem
+enquanto não se sabe**, sem número e dizendo "Procurando…": a tela abre numa
+guia nova e nasce antes de saber se o banco tem a função e a espera, e a aba
+que chegasse um segundo depois empurraria a outra. Só some a aba do que o
+banco NÃO tem. Ver "As telas abrem numa guia nova (02/11)".
 
 **Decidida, ela não muda sozinha**: a leitura de minuto em minuto que esvazia
 a lista não tira a pessoa da aba em que ela está. E quem clicou numa aba antes
@@ -5018,7 +5219,7 @@ faxinar. A prova tem uma cena só para ele.
 | | |
 |---|---|
 | a entrada | o ⋮ do topo → **Faxina da fila** (`data-abrir-faxina`), antes de "Painel" |
-| a tela | `Faxina.jsx` (`data-tela="faxina"`), por cima de tudo, como as Tarefas |
+| a tela | `Faxina.jsx` (`data-tela="faxina"`), numa guia nova desde 02/11 (era por cima de tudo, como as Tarefas) |
 | as contas sem tela | `faxina.js` |
 | quem grava | o painel, `finalizarDaFaxina` — a mesma montagem do Finalizar da conversa (`linhasDoTratamento`) |
 
@@ -5059,8 +5260,8 @@ mensagem com quem a escreveu e quando** — o anexo com o rótulo
 
 - **Ver as últimas mensagens**: as oito últimas, ali mesmo, sem sair da tela.
   É o bastante para saber se o "ok" do fim encerrou alguma coisa;
-- **Abrir a conversa**: fecha a faxina e abre a conversa no telefone dela,
-  pelo caminho do histórico (`verConversaDoHistorico`);
+- **Abrir a conversa**: abre a conversa noutra guia, já no telefone dela, e
+  a faxina fica onde estava (desde 02/11; antes, fechava a faxina);
 - **Finalizar**.
 
 **O responsável que não está na lista da equipe vira "alguém da equipe"**, e
@@ -5125,11 +5326,13 @@ uma conversa parada pularia sem nunca aparecer. Hoje a posição desconta as
 que saíram do recorte (`foraDoRecorteRef`). Achado relendo o código antes da
 PR, e não por relato; a cena 8 da prova o reproduz.
 
-### A escolha fica na memória da aba
+### ~~A escolha fica na memória da aba~~
 
-Quem abre uma conversa para conferir e volta pelo ⋮ encontra a faxina como a
+~~Quem abre uma conversa para conferir e volta pelo ⋮ encontra a faxina como a
 deixou: o grupo, o telefone, o responsável e os dias (`ULTIMA_ESCOLHA`, no
-módulo). Recarregar a página volta ao padrão.
+módulo). Recarregar a página volta ao padrão.~~ **Saiu em 02/11**: a faxina
+mora numa guia própria, e a conversa aberta para conferir abre noutra — a
+faxina continua como estava, sem precisar lembrar de nada.
 
 ### O que fica de fora, e é decisão
 
@@ -7728,6 +7931,12 @@ tinha 5965 linhas, e as 965 do começo não vieram. Essas dez foram medidas aqui
 e escaladas para a soma que o log mostrava (7min18s, do começo do passo até a
 11ª prova). A máquina da sessão tem quase a velocidade da do GitHub: 17,9 s
 contra 17,3 na mesma prova.
+
+**Medido em 02/11: a rodada passou a levar uns 38 minutos**, e não os ~23 da
+conta de 23/10. Na da #304 as três partes levaram 35, 37 e 37 minutos no
+passo das provas — equilibradas: quem cresceu foi a suíte, de ~68 para ~110
+minutos somados em dez dias. As seis rodadas de 01 e 02/11 levaram de 37 a 40
+minutos do começo ao fim, e cada parte continua longe do teto de 90.
 
 Prova: `as-provas-em-partes`, 40 conferências. Ela chama o próprio `rodar.mjs`,
 **sempre com `--listar`**, e confere as partes, cada máquina, as recusas, a

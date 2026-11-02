@@ -21,7 +21,7 @@
 //      falta e quem atende não vê nada; com a função FALHANDO, a tela diz,
 //      com o código;
 //   8. e o caminho inteiro: assumir uma conversa na tela e vê-la na carteira.
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+import { abrirNavegador, ENDERECO, abrirATela } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -113,10 +113,13 @@ async function abrirPainel({ admin = true, semFuncao = false, falha = false, sem
   return { ctx, page, estouros };
 }
 
-async function irAoPainel(page) {
-  await page.getByRole("button", { name: "Menu" }).click();
-  await page.getByRole("button", { name: "Painel" }).click();
-  await page.waitForSelector('[data-tela="painel"]');
+// O PAINEL ABRE NUMA GUIA PRÓPRIA desde 02/11 (`?tela=painel`): esta prova
+// mede a tela, e abre o endereço dela na própria página — o gesto do menu é
+// provado em `as-telas-abrem-numa-guia-nova`. A cena do caminho inteiro LEVA
+// as tabelas que a conversa gravou (`levar`): em produção as duas guias leem
+// o mesmo banco, e a bancada mora na memória de cada página.
+async function irAoPainel(page, levar = []) {
+  await abrirATela(page, "painel", { levar });
   await page.waitForTimeout(1500);
 }
 
@@ -245,7 +248,7 @@ console.log("\nO caminho inteiro: assumir na tela e ver na carteira");
     }
   }
   ok("assumi a conversa do Sérgio", assumiu);
-  await irAoPainel(page);
+  await irAoPainel(page, ["conversas"]);
   const eu = await linhaDe(page, "Rodrigo Sousa");
   ok("a minha carteira passou a 4", eu?.conversas === "4", JSON.stringify(eu));
   ok("e 3 esperando", eu?.esperando === "3");

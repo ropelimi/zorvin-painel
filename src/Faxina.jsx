@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, RefreshCw, Eraser, AlertCircle, ChevronDown, ChevronUp, Loader2, Users } from "lucide-react";
+import { X, RefreshCw, Eraser, AlertCircle, ChevronDown, ChevronUp, Loader2, Users } from "lucide-react";
 import { supabase } from "./supabase.js";
 import { comOCodigo } from "./gravar.js";
 import { nomeDoContato } from "./contato.js";
@@ -32,10 +32,10 @@ import { PAGINA_DA_FAXINA, DIAS_DA_FAXINA, DIAS_PADRAO_DA_FAXINA, PAUSA_ENTRE_FI
 
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// A ESCOLHA DA ÚLTIMA VISITA, na memória da aba (e não no navegador): quem abre
-// uma conversa para conferir e volta pelo ⋮ encontra a faxina como a deixou —
-// o grupo, o telefone, o responsável e os dias. Recarregar volta ao padrão.
-const ULTIMA_ESCOLHA = { grupo: "cliente", telefone: "", responsavel: "todas", dias: DIAS_PADRAO_DA_FAXINA };
+// A ESCOLHA MORA NA GUIA DA FAXINA (02/11). Abrir uma conversa para conferir
+// abre OUTRA guia, e a da faxina continua como estava — o grupo, o telefone, o
+// responsável e os dias. A memória da última visita, que existia para quem
+// voltava pelo ⋮ depois de a tela fechar, saiu com ela: a tela não fecha mais.
 
 export default function Faxina({
   C, estreito, meuId, advogados = [], nomeDaPessoa, assuntos = [], erroDosAssuntos = "",
@@ -46,16 +46,10 @@ export default function Faxina({
   // cinquenta clientes que a IA não leu.
   sugerirAssunto = null,
 }) {
-  const [grupo, setGrupo] = useState(ULTIMA_ESCOLHA.grupo);
-  // O TELEFONE GUARDADO SÓ VALE se a pessoa ainda o vê: a permissão pode ter
-  // mudado desde a última visita.
-  const [telefone, setTelefone] = useState(() => (advogados.some((a) => String(a.id) === ULTIMA_ESCOLHA.telefone)
-    ? ULTIMA_ESCOLHA.telefone : ""));
-  const [responsavel, setResponsavel] = useState(ULTIMA_ESCOLHA.responsavel);
-  const [dias, setDias] = useState(ULTIMA_ESCOLHA.dias);
-  useEffect(() => {
-    Object.assign(ULTIMA_ESCOLHA, { grupo, telefone, responsavel, dias });
-  }, [grupo, telefone, responsavel, dias]);
+  const [grupo, setGrupo] = useState("cliente");
+  const [telefone, setTelefone] = useState("");
+  const [responsavel, setResponsavel] = useState("todas");
+  const [dias, setDias] = useState(DIAS_PADRAO_DA_FAXINA);
   const [lista, setLista] = useState({ linhas: [], carregando: true, erro: "", temMais: false });
   const [contagens, setContagens] = useState({ cliente: null, equipe: null, erro: "" });
   const [marcadas, setMarcadas] = useState(() => new Set());
@@ -436,10 +430,13 @@ export default function Faxina({
                                      display: "flex", flexDirection: "column", color: C.textPrimary }}>
       <div style={{ background: C.headerBar, borderBottom: `1px solid ${C.divider}`, padding: "10px 16px",
                     display: "flex", alignItems: "center", gap: 14 }}>
-        <button onClick={() => { if (!progresso) aoFechar(); }} title="Voltar às conversas" aria-label="Voltar às conversas"
+        {/* A TELA É UMA GUIA (02/11): o botão fecha a guia, e o navegador volta
+            para a das conversas. Era a seta "Voltar", de quando a tela abria por
+            cima delas. */}
+        <button onClick={() => { if (!progresso) aoFechar(); }} title="Fechar esta guia" aria-label="Fechar esta guia" data-fechar-a-guia
                 disabled={Boolean(progresso)}
                 style={{ border: "none", background: "transparent", cursor: progresso ? "not-allowed" : "pointer", display: "flex", padding: 6, borderRadius: "50%" }}>
-          <ArrowLeft size={20} color={C.textSecondary} />
+          <X size={20} color={C.textSecondary} />
         </button>
         <Eraser size={20} color={C.green} />
         <span style={{ fontSize: 17, fontWeight: 700, flex: 1 }}>Faxina da fila</span>

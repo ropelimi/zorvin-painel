@@ -25,7 +25,13 @@
 //   7. no celular, os dois nomes inteiros, sem a tela rolar de lado, e as
 //      abas com o alvo de dedo;
 //   8. sem o script 041, só a aba das suas conversas.
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+//
+// DESDE 02/11 A TELA ABRE NUMA GUIA NOVA (`src/guias.js`), pelo ícone da
+// barra ou pelo "Ver quais" do resumo, e o cliente clicado abre a conversa
+// noutra. As bandeiras vão no CONTEXTO, para a guia nova nascer com elas, e
+// a guia da tela lê as duas listas assim que abre (ver `TELA_DA_GUIA` no
+// `Painel.jsx`).
+import { abrirNavegador, ENDERECO, guiaQueAbre } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -73,10 +79,9 @@ const MUITAS_MINHAS = { conversas: Array.from({ length: 16 }, (_, i) => minha(`e
 /** Abre o painel com TODAS as bandeiras escritas — `addInitScript` acumula. */
 async function abrir(o = {}) {
   const ctx = await nav.newContext({ viewport: o.viewport || { width: 1360, height: 700 } });
-  const page = await ctx.newPage();
   const estouros = [];
-  page.on("pageerror", (e) => estouros.push(e.message));
-  await page.addInitScript((d) => {
+  ctx.on("page", (p) => p.on("pageerror", (e) => estouros.push(e.message)));
+  await ctx.addInitScript((d) => {
     globalThis.__DIARIO = [];
     globalThis.__ESPERA_PRIMEIRA_MS = d.primeira;
     globalThis.__ESPERA_A_CADA_MS = d.aCada;
@@ -90,6 +95,7 @@ async function abrir(o = {}) {
   }, { primeira: o.primeira || 300, aCada: o.aCada || 600000, semResposta: o.semResposta || [],
        semFuncao: o.semFuncao, quebrar: o.quebrar, quebrarAtrasadas: o.quebrarAtrasadas,
        atrasoDaFuncao: o.atrasoDaFuncao || 0, semente: o.semente || MINHAS });
+  const page = await ctx.newPage();
   await page.goto(ENDERECO);
   await page.waitForSelector("[data-conversa-nome]", { timeout: 60000 }).catch(() => {});
   return { ctx, page, estouros };
@@ -158,20 +164,40 @@ async function esperarContagens(page, esperadas, ms = 8000) {
   }
   return false;
 }
-async function abrirATela(page) {
-  await esperar(page, "[data-abrir-esperando]", 15000);
-  await clicar(page, "[data-abrir-esperando]");
-  return esperar(page, '[data-tela="esperando"]', 4000);
+/** Espera as abas terem o que dizer: cada uma com o seu número, ou a marca de
+ *  que não carregou. A guia nova lê as duas listas ao abrir (02/11), e elas
+ *  chegam em tempos diferentes — a da função antes, a das suas conversas
+ *  depois da lista. */
+async function esperarAsLeituras(page, ms = 10000) {
+  for (let t = 0; t < ms; t += 150) {
+    const as = await abas(page);
+    if (as.length && as.every((a) => a.n !== null || a.falhou)) return true;
+    await page.waitForTimeout(150);
+  }
+  return false;
+}
+/** Abre a tela pelo ícone da barra (ou pelo "Ver quais" do resumo), como
+ *  quem clica: ela abre numa GUIA NOVA (02/11), e é ela que volta — ou `null`.
+ *  Espera as duas leituras, menos na cena que mede o caminho até elas. */
+async function abrirAEspera(ctx, page, marca = "[data-abrir-esperando]", { comAsLeituras = true } = {}) {
+  await esperar(page, marca, 15000);
+  if (!(await contar(page, marca))) return null;
+  const guia = await guiaQueAbre(ctx, () => clicar(page, marca));
+  if (!guia) return null;
+  if (!(await esperar(guia, '[data-tela="esperando"]', 15000))) return null;
+  if (comAsLeituras) await esperarAsLeituras(guia);
+  return guia;
 }
 
 // ------------------------------------------------------------------
 console.log("\n1. As duas abas: os nomes do pedido, o número de cada uma, e só a escolhida à vista");
 {
-  const { ctx, page, estouros } = await abrir({ semResposta: DOIS_CLIENTES });
+  const { ctx, page: conversas, estouros } = await abrir({ semResposta: DOIS_CLIENTES });
+  let page = conversas;
   await esperar(page, "[data-resumo-atrasadas]", 15000);
   await esperar(page, "[data-resumo-sem-resposta]", 15000);
-  await clicar(page, "[data-ver-quem-espera]");
-  ok("“Ver quais” abre a tela", await esperar(page, '[data-tela="esperando"]', 4000));
+  page = (await abrirAEspera(ctx, conversas, "[data-ver-quem-espera]")) || conversas;
+  ok("“Ver quais” abre a tela, numa guia nova", page !== conversas && await esperar(page, '[data-tela="esperando"]', 4000));
   await esperar(page, "[data-sem-resposta-linha]", 4000);
   const as = await abas(page);
   ok("são duas abas, nesta ordem", as.map((a) => a.id).join(",") === "sem-resposta,atrasadas", JSON.stringify(as.map((a) => a.id)));
@@ -221,16 +247,21 @@ console.log("\n1. As duas abas: os nomes do pedido, o número de cada uma, e só
   // A LINHA DE UM CLIENTE ABRE A CONVERSA, como antes das abas.
   await clicar(page, '[data-aba-da-espera="sem-resposta"]');
   await esperar(page, '[data-sem-resposta-linha="a3-c2"]', 3000);
-  await clicar(page, '[data-sem-resposta-linha="a3-c2"]');
-  await esperar(page, '[data-conversa-id="a3-c2"]', 4000);
+  // INVERTIDA EM 02/11: o clique fechava a tela e abria a conversa por baixo
+  // dela. Hoje a conversa abre noutra guia, e a tela fica onde estava.
+  const tela = page;
+  const daConversa = await guiaQueAbre(ctx, () => clicar(tela, '[data-sem-resposta-linha="a3-c2"]'));
+  page = daConversa || tela;
+  await esperar(page, '[data-conversa-id="a3-c2"]', 15000);
   await page.waitForTimeout(600);
   // O NOME QUE A CONVERSA TEM NA BANCADA é o da linha da lista: o da linha
   // da tela "Esperando resposta" é o que a função do banco devolveu.
   const nomeDaConversa = await attr(page, '[data-conversa-id="a3-c2"]', "data-conversa-nome");
-  ok("clicar num cliente sem resposta fecha a tela e abre a conversa dele, no telefone dela",
-     (await contar(page, '[data-tela="esperando"]')) === 0 && Boolean(nomeDaConversa)
+  ok("clicar num cliente sem resposta abre a conversa dele numa guia nova, no telefone dela",
+     Boolean(daConversa) && Boolean(nomeDaConversa)
      && (await texto(page, "[data-topo-conversa]")).includes(nomeDaConversa),
      `${nomeDaConversa} | ${(await texto(page, "[data-topo-conversa]")).slice(0, 80)}`);
+  ok("e a tela continua na guia dela", (await contar(tela, '[data-tela="esperando"]')) === 1);
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
@@ -241,10 +272,11 @@ console.log("\n1b. Um dia cheio: as abas continuam à vista com a lista rolada, 
   // AS DUAS LISTAS LONGAS: com a das suas conversas curta, trocar para ela
   // levaria a rolagem a zero sozinho (o navegador encolhe a rolagem até onde
   // a lista curta deixa), e a conferência passaria sem medir a troca.
-  const { ctx, page, estouros } = await abrir({ semResposta: MUITOS_CLIENTES, semente: MUITAS_MINHAS,
+  const { ctx, page: conversas, estouros } = await abrir({ semResposta: MUITOS_CLIENTES, semente: MUITAS_MINHAS,
                                                 viewport: { width: 1360, height: 600 } });
+  let page = conversas;
   await esperar(page, "[data-resumo-sem-resposta]", 15000);
-  await abrirATela(page);
+  page = (await abrirAEspera(ctx, conversas)) || conversas;
   await esperar(page, "[data-sem-resposta-linha]", 4000);
   ok("os 16 clientes estão na lista", (await contar(page, "[data-sem-resposta-linha]")) === 16);
   const rolou = await rolarAteOFim(page, "sem-resposta");
@@ -272,9 +304,10 @@ console.log("\n1b. Um dia cheio: as abas continuam à vista com a lista rolada, 
 // ------------------------------------------------------------------
 console.log("\n2. Sem cliente sem resposta, a tela abre nas suas conversas");
 {
-  const { ctx, page, estouros } = await abrir({ semResposta: [] });
+  const { ctx, page: conversas, estouros } = await abrir({ semResposta: [] });
+  let page = conversas;
   await esperar(page, "[data-resumo-atrasadas]", 15000);
-  await abrirATela(page);
+  page = (await abrirAEspera(ctx, conversas)) || conversas;
   ok("abre na aba das suas conversas", await esperarAba(page, "atrasadas"));
   await esperar(page, "[data-atrasada-linha]", 3000);
   ok("mostrando as duas", (await contar(page, "[data-atrasada-linha]")) === 2);
@@ -288,8 +321,9 @@ console.log("\n2. Sem cliente sem resposta, a tela abre nas suas conversas");
 // ------------------------------------------------------------------
 console.log("\n3. Nada nas duas: abre na primeira, dizendo que não há ninguém");
 {
-  const { ctx, page, estouros } = await abrir({ semResposta: [], semente: NENHUMA_MINHA });
-  await abrirATela(page);
+  const { ctx, page: conversas, estouros } = await abrir({ semResposta: [], semente: NENHUMA_MINHA });
+  let page = conversas;
+  page = (await abrirAEspera(ctx, conversas)) || conversas;
   await page.waitForTimeout(800);
   ok("abre nos clientes sem resposta", await esperarAba(page, "sem-resposta"));
   ok("e diz que não há nenhum", /Nenhum cliente sem resposta/.test(await texto(page, '[data-secao-da-espera="sem-resposta"]')),
@@ -310,10 +344,11 @@ console.log("\n3. Nada nas duas: abre na primeira, dizendo que não há ninguém
 // ------------------------------------------------------------------
 console.log("\n4. A aba que não carregou diz que falhou, e não conta zero");
 {
-  const { ctx, page, estouros } = await abrir({ quebrar: true });
+  const { ctx, page: conversas, estouros } = await abrir({ quebrar: true });
+  let page = conversas;
   await esperar(page, "[data-resumo-falhou]", 15000);
   await esperar(page, "[data-resumo-atrasadas]", 15000);
-  await abrirATela(page);
+  page = (await abrirAEspera(ctx, conversas)) || conversas;
   ok("a tela abre na aba que falhou, e não na outra", await esperarAba(page, "sem-resposta"));
   ok("e diz que falhou, com o código", /57014/.test(await texto(page, "[data-espera-falhou-sem-resposta]")),
      await texto(page, '[data-secao-da-espera="sem-resposta"]'));
@@ -325,9 +360,10 @@ console.log("\n4. A aba que não carregou diz que falhou, e não conta zero");
   await ctx.close();
 }
 {
-  const { ctx, page, estouros } = await abrir({ quebrarAtrasadas: true, semResposta: DOIS_CLIENTES });
+  const { ctx, page: conversas, estouros } = await abrir({ quebrarAtrasadas: true, semResposta: DOIS_CLIENTES });
+  let page = conversas;
   await esperar(page, "[data-resumo-falhou]", 15000);
-  await abrirATela(page);
+  page = (await abrirAEspera(ctx, conversas)) || conversas;
   ok("com clientes sem resposta, a tela abre neles mesmo com a outra aba falhando", await esperarAba(page, "sem-resposta"));
   const as = await abas(page);
   ok("e a aba das suas conversas leva a marca da falha, sem número",
@@ -344,9 +380,10 @@ console.log("\n4. A aba que não carregou diz que falhou, e não conta zero");
 {
   // SEM CLIENTE SEM RESPOSTA, E A OUTRA LEITURA FALHANDO: a tela abre na
   // falha, e não num "nenhum cliente" que esconderia que a outra aba não veio.
-  const { ctx, page, estouros } = await abrir({ quebrarAtrasadas: true, semResposta: [] });
+  const { ctx, page: conversas, estouros } = await abrir({ quebrarAtrasadas: true, semResposta: [] });
+  let page = conversas;
   await esperar(page, "[data-resumo-falhou]", 15000);
-  await abrirATela(page);
+  page = (await abrirAEspera(ctx, conversas)) || conversas;
   ok("sem cliente sem resposta, a tela abre na aba que falhou", await esperarAba(page, "atrasadas"));
   ok("e diz que falhou", await esperar(page, "[data-espera-falhou-atrasadas]", 3000),
      await texto(page, '[data-secao-da-espera="atrasadas"]'));
@@ -360,11 +397,34 @@ console.log("\n5. A escolha de começo espera as duas leituras");
   // A TELA ABERTA ANTES DA PRIMEIRA PERGUNTA, e a dos clientes demorando:
   // as suas conversas chegam primeiro. Decidir ali seria abrir nas suas
   // conversas e esconder os dois clientes que chegam logo depois.
-  const { ctx, page, estouros } = await abrir({ semResposta: DOIS_CLIENTES, primeira: 600000, atrasoDaFuncao: 2500 });
-  ok("a tela abriu antes de a função responder", await abrirATela(page));
-  await esperar(page, "[data-atrasada-linha]", 3000);
-  ok("as suas conversas chegaram antes", (await contar(page, "[data-atrasada-linha]")) === 2
-     && (await contar(page, '[data-aba-da-espera="sem-resposta"]')) === 0);
+  const { ctx, page: conversas, estouros } = await abrir({ semResposta: DOIS_CLIENTES, primeira: 600000, atrasoDaFuncao: 2500 });
+  let page = conversas;
+  page = (await abrirAEspera(ctx, conversas, undefined, { comAsLeituras: false })) || conversas;
+  ok("a tela abriu, numa guia nova, antes de a função responder", page !== conversas);
+  // AS DUAS ABAS DESDE O PRIMEIRO DESENHO (02/11): a guia nova nasce antes
+  // de saber se o banco tem a função e a espera, e a aba que chegasse depois
+  // empurraria a outra.
+  const primeiras = await abas(page);
+  ok("as duas abas aparecem desde o começo, sem número: a fileira não pula quando as leituras chegam",
+     primeiras.length === 2 && primeiras.every((a) => a.n === null && !a.falhou),
+     JSON.stringify(primeiras.map((a) => [a.id, a.n, a.falhou])));
+  // DESDE 02/11 AS DUAS ABAS APARECEM ENQUANTO NÃO SE SABE, e a tela fica na
+  // primeira, procurando: as suas conversas chegam, e a tela não se decide
+  // por elas — mostrá-las e trocar de aba quando os clientes chegassem seria
+  // a tela mudando debaixo de quem já estava lendo.
+  let chegaram = false;
+  for (let t = 0; t < 4000 && !chegaram; t += 150) {
+    chegaram = ((await abas(page)).find((a) => a.id === "atrasadas") || {}).n === "2";
+    if (!chegaram) await page.waitForTimeout(150);
+  }
+  const antes = await abas(page);
+  ok("as suas conversas chegaram antes: a aba delas já diz 2, e a dos clientes ainda não diz nada",
+     chegaram && antes.length === 2 && antes[0].id === "sem-resposta" && antes[0].n === null,
+     JSON.stringify(antes.map((a) => [a.id, a.n])));
+  ok("e a tela não se decidiu por elas: continua na primeira, procurando",
+     (await contar(page, "[data-atrasada-linha]")) === 0
+     && /Procurando/.test(await texto(page, '[data-secao-da-espera="sem-resposta"]')),
+     await texto(page, '[data-secao-da-espera="sem-resposta"]'));
   ok("e, quando os clientes chegam, a tela abre neles", await esperarAba(page, "sem-resposta", 8000));
   ok("mostrando os dois", await esperar(page, "[data-sem-resposta-linha]", 3000)
      && (await contar(page, "[data-sem-resposta-linha]")) === 2);
@@ -373,11 +433,12 @@ console.log("\n5. A escolha de começo espera as duas leituras");
 }
 {
   // E QUEM ESCOLHEU UMA ABA ANTES DE A DECISÃO CHEGAR fica nela.
-  const { ctx, page, estouros } = await abrir({ semResposta: DOIS_CLIENTES, primeira: 600000, atrasoDaFuncao: 2500 });
-  await abrirATela(page);
-  await esperar(page, "[data-atrasada-linha]", 3000);
+  const { ctx, page: conversas, estouros } = await abrir({ semResposta: DOIS_CLIENTES, primeira: 600000, atrasoDaFuncao: 2500 });
+  let page = conversas;
+  page = (await abrirAEspera(ctx, conversas, undefined, { comAsLeituras: false })) || conversas;
+  await esperar(page, '[data-aba-da-espera="atrasadas"] [data-contagem-da-espera]', 4000);
   await clicar(page, '[data-aba-da-espera="atrasadas"]');
-  await esperar(page, '[data-aba-da-espera="sem-resposta"]', 8000);
+  await esperar(page, '[data-aba-da-espera="sem-resposta"] [data-contagem-da-espera]', 8000);
   await page.waitForTimeout(600);
   ok("quem clicou nas suas conversas antes de os clientes chegarem continua nelas", await escolhida(page) === "atrasadas");
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
@@ -388,11 +449,17 @@ console.log("\n5. A escolha de começo espera as duas leituras");
   // ENQUANTO A LISTA VEM, A ABA NÃO DIZ 0. "0" ali diria que não há conversa
   // sua esperando, antes de a pergunta voltar — e quem lê de passagem vai
   // embora achando que está em dia.
-  const { ctx, page, estouros } = await abrir({ semResposta: DOIS_CLIENTES, primeira: 600000 });
-  await esperar(page, "[data-abrir-esperando]", 15000);
-  await page.evaluate(() => { globalThis.__ATRASO_POR_TABELA = { conversas: 3000 }; });
-  await clicar(page, "[data-abrir-esperando]");
+  const { ctx, page: conversas, estouros } = await abrir({ semResposta: DOIS_CLIENTES, primeira: 600000 });
+  let page = conversas;
+  // SÓ A PERGUNTA DAS SUAS CONVERSAS DEMORA, e só na guia da tela: lá ela sai
+  // quase junto com a lista (02/11), e o atraso da tabela inteira atrasaria as
+  // duas — a aba delas nem apareceria.
+  await ctx.addInitScript(() => {
+    if (/[?&]tela=esperando/.test(location.search)) globalThis.__ATRASO_DAS_QUE_ESPERAM = 3000;
+  });
+  page = (await abrirAEspera(ctx, conversas, undefined, { comAsLeituras: false })) || conversas;
   await esperar(page, '[data-aba-da-espera="sem-resposta"] [data-contagem-da-espera]', 3000);
+  await esperar(page, '[data-aba-da-espera="atrasadas"]', 3000);
   const durante = await abas(page);
   ok("com as suas conversas ainda a caminho, a aba delas não diz número nenhum, nem 0",
      durante.length === 2 && durante[1].id === "atrasadas" && durante[1].n === null && !durante[1].falhou,
@@ -420,10 +487,11 @@ console.log("\n6. Decidida, a aba não muda sozinha quando a lista esvazia");
   // só trocaria de aba DEPOIS da conferência, e a sabotagem passava por esta
   // cena. Com as duas contagens na tela ("0" e "2"), a escolha de começo já
   // diria "as suas conversas" — e é aí que a aba tem de ficar onde está.
-  const { ctx, page, estouros } = await abrir({ semResposta: DOIS_CLIENTES });
+  const { ctx, page: conversas, estouros } = await abrir({ semResposta: DOIS_CLIENTES });
+  let page = conversas;
   await esperar(page, "[data-resumo-sem-resposta]", 15000);
   await esperar(page, "[data-resumo-atrasadas]", 15000);
-  await abrirATela(page);
+  page = (await abrirAEspera(ctx, conversas)) || conversas;
   ok("(as duas leituras chegaram: 2 e 2)", await esperarContagens(page, ["2", "2"]), JSON.stringify((await abas(page)).map((a) => a.n)));
   ok("(a tela abriu nos clientes sem resposta)", await esperarAba(page, "sem-resposta"));
   await page.evaluate(() => { globalThis.__SEM_RESPOSTA = []; });
@@ -444,9 +512,10 @@ console.log("\n6. Decidida, a aba não muda sozinha quando a lista esvazia");
 // ------------------------------------------------------------------
 console.log("\n7. No celular: os dois nomes inteiros, sem a tela rolar de lado");
 for (const largura of [390, 360]) {
-  const { ctx, page, estouros } = await abrir({ semResposta: DOIS_CLIENTES, viewport: { width: largura, height: 800 } });
+  const { ctx, page: conversas, estouros } = await abrir({ semResposta: DOIS_CLIENTES, viewport: { width: largura, height: 800 } });
+  let page = conversas;
   await esperar(page, "[data-selo-esperando]", 15000);
-  await abrirATela(page);
+  page = (await abrirAEspera(ctx, conversas)) || conversas;
   await esperar(page, "[data-sem-resposta-linha]", 4000);
   const as = await abas(page);
   ok(`a ${largura}: as duas abas aparecem, pintadas`, as.length === 2 && as.every((a) => a.pintada),
@@ -467,9 +536,10 @@ for (const largura of [390, 360]) {
 // ------------------------------------------------------------------
 console.log("\n8. Sem o script 041: só a aba das suas conversas");
 {
-  const { ctx, page, estouros } = await abrir({ semFuncao: true });
+  const { ctx, page: conversas, estouros } = await abrir({ semFuncao: true });
+  let page = conversas;
   await esperar(page, "[data-resumo-atrasadas]", 15000);
-  await abrirATela(page);
+  page = (await abrirAEspera(ctx, conversas)) || conversas;
   await esperar(page, "[data-atrasada-linha]", 3000);
   const as = await abas(page);
   ok("uma aba só, a das suas conversas", as.length === 1 && as[0].id === "atrasadas" && as[0].escolhida,

@@ -10,7 +10,7 @@
 // Esta prova mede em pixels, e não de olho. Ela existe para que a próxima
 // coisa acrescentada ao cabeçalho reprove aqui em vez de reprovar no celular
 // de alguém, no meio do expediente.
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+import { abrirNavegador, ENDERECO, guiaQueAbre } from "./navegador.mjs";
 
 // O aparelho de referência. 390×844 é o iPhone 13/14/15 em pé — o mais comum
 // no escritório. Quem tiver um menor (o SE tem 375) fica pior, então medir
@@ -46,8 +46,8 @@ await page.waitForTimeout(1200);
  *  Rolagem horizontal no celular é o defeito que ninguém relata e todo mundo
  *  sente: o dedo desliza para cima e a tela anda de lado, o texto some pela
  *  direita, e a pessoa acha que "travou". */
-async function naoRolaDeLado(onde) {
-  const m = await page.evaluate(() => ({
+async function naoRolaDeLado(onde, p = page) {
+  const m = await p.evaluate(() => ({
     conteudo: document.documentElement.scrollWidth,
     tela: window.innerWidth,
   }));
@@ -62,10 +62,14 @@ async function naoRolaDeLado(onde) {
  *  Configurações, os campos dos Departamentos, o X que fecha cada painel. No
  *  monitor a diferença some; no aparelho é a diferença entre acertar e abrir
  *  outra coisa. */
-async function dedosCabem(onde) {
-  const pequenos = await page.evaluate(() => {
+//  O LINK QUE ABRE UMA TELA NUMA GUIA NOVA (`data-abre-guia`, 02/11) entra
+//  na conta: o Funil, as Tarefas, a Faxina e o Painel do menu ⋮ eram botões, e
+//  virando link saíram da régua do painel e desta varredura ao mesmo tempo —
+//  ficaram com 39 sem ninguém ver.
+async function dedosCabem(onde, p = page) {
+  const pequenos = await p.evaluate(() => {
     const vistos = new Set(), fora = [];
-    for (const el of document.querySelectorAll('button, [role="button"], select, input, textarea')) {
+    for (const el of document.querySelectorAll('button, [role="button"], [data-abre-guia], select, input, textarea')) {
       if (el.type === "file" || el.type === "checkbox" || el.type === "radio") continue;
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) continue;          // escondido
@@ -94,8 +98,8 @@ async function dedosCabem(onde) {
  *
  *  Um número, e não uma olhada: o próximo campo criado com 14px reprova aqui
  *  em vez de reprovar no celular de alguém. */
-async function semZoomAoTocar(onde) {
-  const pequenos = await page.evaluate(() => {
+async function semZoomAoTocar(onde, p = page) {
+  const pequenos = await p.evaluate(() => {
     const fora = [], vistos = new Set();
     for (const el of document.querySelectorAll("input, textarea, select")) {
       if (["file", "checkbox", "radio", "hidden"].includes(el.type)) continue;
@@ -437,7 +441,32 @@ console.log("\nAs telas de dentro, uma a uma");
     return true;
   }
 
-  for (const tela of ["Painel", "Departamentos e acessos", "Configurações"]) {
+  // O PAINEL ABRE NUMA GUIA PRÓPRIA (02/11), como o Funil, as Tarefas, a
+  // Espera e a Faxina: o item do menu é um link, e a medida é feita na guia
+  // nova, que tem a largura do aparelho como esta.
+  {
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(250);
+    const m = page.getByRole("button", { name: "Menu" });
+    let guia = null;
+    if (await m.count()) {
+      await m.first().click();
+      await page.waitForTimeout(300);
+      const link = page.locator("[data-abrir-painel]");
+      if (await link.count()) guia = await guiaQueAbre(ctx, () => link.first().click());
+      else await page.keyboard.press("Escape");
+    }
+    const abriu = !!guia && await guia.waitForSelector('[data-tela="painel"]', { timeout: 30000 })
+      .then(() => true).catch(() => false);
+    ok("Painel: abre no celular, numa guia nova", abriu);
+    if (abriu) {
+      await guia.waitForTimeout(800);
+      await naoRolaDeLado("Painel", guia); await dedosCabem("Painel", guia); await semZoomAoTocar("Painel", guia);
+    }
+    if (guia) await guia.close();
+  }
+
+  for (const tela of ["Departamentos e acessos", "Configurações"]) {
     const abriu = await abrirPeloMenuDoTopo(tela);
     ok(`${tela}: abre no celular`, abriu);
     if (abriu) { await naoRolaDeLado(tela); await dedosCabem(tela); await semZoomAoTocar(tela); }
@@ -479,6 +508,13 @@ console.log("\n\"Juntar duas conversas\" não existe mais");
     const corpo = await page.locator("body").innerText();
     ok("o menu do topo não oferece mais juntar conversas",
        !/Juntar duas conversas/i.test(corpo));
+    // E O MENU ABERTO TAMBÉM SE TOCA (02/11): é nele que moram os links das
+    // telas que abrem numa guia nova, e a varredura da lista roda com ele
+    // fechado — os links de 39 passariam por ela sem ser vistos.
+    ok("e o menu aberto mostra os links das telas, para haver o que medir",
+       await page.locator("[data-abre-guia]:visible").count() >= 3,
+       "sem os links à vista, a conferência de baixo não mediria nada");
+    await dedosCabem("menu do topo aberto");
     await page.keyboard.press("Escape");
   }
 }

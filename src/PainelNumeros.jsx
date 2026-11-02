@@ -68,7 +68,7 @@ import { nomeDoContato } from "./contato.js";
 import { telefoneLegivel } from "./numeros.js";
 import { diasDesde } from "./espera.js";
 import {
-  ArrowLeft, RefreshCw, AlertCircle, Table2, BarChart3, Info, Calendar,
+  RefreshCw, AlertCircle, Table2, BarChart3, Info, Calendar,
   ChevronLeft, ChevronRight, ChevronDown, Check, X, Users, Phone, Building2,
   ListChecks, Download, UserCheck, SquareKanban, Ticket,
 } from "lucide-react";
@@ -374,11 +374,14 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
                     borderBottom: `1px solid ${C.divider}`, boxShadow: sombra }}>
         <div style={{ maxWidth: 1180, margin: "0 auto", padding: "12px 18px",
                       display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <button onClick={aoFechar} title="Voltar" aria-label="Voltar"
+          {/* A TELA É UMA GUIA (02/11): o botão fecha a guia, e o navegador
+              volta para a das conversas. Era a seta "Voltar", de quando a tela
+              abria por cima delas. */}
+          <button onClick={aoFechar} title="Fechar esta guia" aria-label="Fechar esta guia" data-fechar-a-guia
                   style={{ border: "none", background: "transparent", cursor: "pointer",
                            display: "flex", alignItems: "center", padding: 6, marginLeft: -6,
                            borderRadius: 8, color: C.textSecondary }}>
-            <ArrowLeft size={20} />
+            <X size={20} />
           </button>
           <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: -0.2, marginRight: 4 }}>Painel</div>
 

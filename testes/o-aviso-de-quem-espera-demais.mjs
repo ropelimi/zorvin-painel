@@ -21,7 +21,7 @@
 // O SOM E A TARJA SÃO ESPIONADOS, e não silenciados — a régua de
 // `o-aviso-de-mensagem-nova`: uma bancada que os desligasse aprovaria um
 // painel que nunca avisa ninguém.
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+import { abrirNavegador, ENDERECO, guiaQueAbre } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -59,10 +59,11 @@ const semResposta = (conversa_id, advogado_id, protocolo, minutos, extra = {}) =
  *  uma bandeira de uma cena não pode valer na seguinte. */
 async function abrir(opcoes = {}) {
   const ctx = opcoes.ctx || await nav.newContext({ viewport: opcoes.viewport || { width: 1360, height: 900 } });
-  const page = await ctx.newPage();
   const estouros = [];
-  page.on("pageerror", (e) => estouros.push(e.message));
-  await page.addInitScript((o) => {
+  // NO CONTEXTO: desde 02/11 a tela "Esperando resposta" abre numa guia nova,
+  // e a conversa clicada nela noutra — as duas nascem com as bandeiras.
+  ctx.on("page", (p) => p.on("pageerror", (e) => estouros.push(e.message)));
+  await ctx.addInitScript((o) => {
     globalThis.__AVISOS = [];
     globalThis.__DIARIO = [];
     globalThis.__ESPERA_PRIMEIRA_MS = 300;
@@ -94,6 +95,7 @@ async function abrir(opcoes = {}) {
     // a prova escolhe o som sintetizado, que é o de toda máquina nova.
     try { if (!localStorage.getItem("zorvin_som_do_aviso")) localStorage.setItem("zorvin_som_do_aviso", "toque"); } catch (_) { /* */ }
   }, { aCada: A_CADA, ...opcoes, ctx: undefined });
+  const page = await ctx.newPage();
   await page.goto(ENDERECO);
   await page.waitForSelector("[data-conversa-nome]", { timeout: 60000 });
   return { ctx, page, estouros };
@@ -162,6 +164,23 @@ async function esperarValor(page, sel, nome, valor, ms = 6000) {
     await page.waitForTimeout(150);
   }
   return false;
+}
+
+/** As abas da tela, cada uma com o seu número ou a marca da falha. */
+const abasProntas = (page) => page.evaluate(() => {
+  const as = [...document.querySelectorAll("[data-aba-da-espera]")];
+  return as.length > 0 && as.every((b) => b.querySelector("[data-contagem-da-espera], [data-aba-da-espera-falhou]"));
+});
+/** Abre a tela por um link (o ícone da barra, o "Ver quais", o item do ⋮),
+ *  como quem clica: ela abre numa GUIA NOVA (02/11), que lê as duas listas
+ *  ao abrir — e volta com elas lidas, ou `null`. */
+async function abrirAEspera(ctx, page, marca = "[data-abrir-esperando]") {
+  if (!(await contar(page, marca))) return null;
+  const guia = await guiaQueAbre(ctx, () => clicar(page, marca));
+  if (!guia) return null;
+  if (!(await esperar(guia, '[data-tela="esperando"]', 15000))) return null;
+  for (let t = 0; t < 10000 && !(await abasProntas(guia)); t += 150) await guia.waitForTimeout(150);
+  return guia;
 }
 
 const SEMENTE_DAS_MINHAS = {
@@ -235,56 +254,62 @@ console.log("\n1. Ao abrir: o resumo, o número da barra e a lista");
   ok("e o título da ampulheta diz “3 conversas suas há 2 dias ou mais”",
      /3 conversas suas há 2 dias ou mais/.test(tituloDaAmpulheta), tituloDaAmpulheta);
 
-  await clicar(page, "[data-ver-quem-espera]");
-  ok("“Ver quais” abre a tela Esperando resposta", await esperar(page, '[data-tela="esperando"]', 3000));
-  await esperar(page, "[data-sem-resposta-linha]", 4000);
-  const linhasA = await page.locator("[data-sem-resposta-linha]").evaluateAll((els) => els.map((e) => e.getAttribute("data-sem-resposta-linha")));
-  ok("a seção dos clientes sem resposta lista os dois meus, e não o da colega",
-     linhasA.length === 2 && linhasA.includes("a1-c0") && linhasA.includes("a3-c2") && !linhasA.includes("a1-c1"), JSON.stringify(linhasA));
-  ok("cada um diz quanto espera, em expediente: “sem resposta há 1 h 35 min de expediente”",
-     /sem resposta há 1 h 35 min de expediente/.test(await texto(page, '[data-sem-resposta-linha="a3-c2"]')),
-     await texto(page, '[data-sem-resposta-linha="a3-c2"]'));
-  ok("e o sem dono diz que está sem responsável",
-     /sem responsável/.test(await texto(page, '[data-sem-resposta-linha="a1-c0"]')), await texto(page, '[data-sem-resposta-linha="a1-c0"]'));
-  // AS MINHAS MORAM NA OUTRA ABA (02/11): a tela abre nos clientes sem
-  // resposta, e as minhas ficam a um clique. Ver `as-abas-da-tela-esperando`.
-  ok("as minhas estão na outra aba, a um clique", await clicar(page, '[data-aba-da-espera="atrasadas"]'));
-  await esperar(page, "[data-atrasada-linha]", 4000);
-  const linhasB = await page.locator("[data-atrasada-linha]").evaluateAll((els) => els.map((e) => e.getAttribute("data-atrasada-linha")));
-  ok("a seção das minhas lista as três, a que espera há mais tempo primeiro — a de 2 dias por último, e a de 1 dia não",
-     JSON.stringify(linhasB) === JSON.stringify(["esp-a1", "esp-a3", "esp-2dias"]), JSON.stringify(linhasB));
-  ok("e a de 2 dias diz “esperando há 2 dias”",
-     /esperando há 2 dias/.test(await texto(page, '[data-atrasada-linha="esp-2dias"]')), await texto(page, '[data-atrasada-linha="esp-2dias"]'));
-  // A COR É A DA LISTA: âmbar com 2 dias, vermelho a partir de 3. Toda linha
-  // daqui era vermelha quando a aba começava nos 3 dias.
-  const corDoDetalhe = (id) => page.locator(`[data-atrasada-linha="${id}"] [data-detalhe-da-espera]`).first()
-    .evaluate((e) => getComputedStyle(e).color).catch(() => "");
-  const cor2 = await corDoDetalhe("esp-2dias"), cor5 = await corDoDetalhe("esp-a1");
-  ok("e a de 2 dias é âmbar, como na lista, e a de 5 dias vermelha",
-     cor2 !== "" && cor5 === "rgb(229, 57, 53)" && cor2 !== cor5, `2 dias: ${cor2} · 5 dias: ${cor5}`);
-  const notaDasMinhas = await texto(page, '[data-secao-da-espera="atrasadas"]');
-  ok("e a aba explica a régua: “… espera resposta há 2 dias ou mais.”, sem 3 dias em lugar nenhum",
-     /espera resposta há 2 dias ou mais\./.test(notaDasMinhas) && !/3 dias ou mais/i.test(notaDasMinhas), notaDasMinhas.slice(0, 200));
-  ok("e cada uma diz há quantos dias: “esperando há 5 dias”",
-     /esperando há 5 dias/.test(await texto(page, '[data-atrasada-linha="esp-a1"]')), await texto(page, '[data-atrasada-linha="esp-a1"]'));
+  const conversas = page;
+  // A TELA ABRE NUMA GUIA NOVA (02/11): dentro deste bloco, `page` é a guia
+  // da tela, e `conversas` a das conversas.
+  {
+    const tela = await abrirAEspera(ctx, conversas, "[data-ver-quem-espera]");
+    ok("“Ver quais” abre a tela Esperando resposta, numa guia nova", Boolean(tela));
+    const page = tela || conversas;
+    await esperar(page, "[data-sem-resposta-linha]", 4000);
+    const linhasA = await page.locator("[data-sem-resposta-linha]").evaluateAll((els) => els.map((e) => e.getAttribute("data-sem-resposta-linha")));
+    ok("a seção dos clientes sem resposta lista os dois meus, e não o da colega",
+       linhasA.length === 2 && linhasA.includes("a1-c0") && linhasA.includes("a3-c2") && !linhasA.includes("a1-c1"), JSON.stringify(linhasA));
+    ok("cada um diz quanto espera, em expediente: “sem resposta há 1 h 35 min de expediente”",
+       /sem resposta há 1 h 35 min de expediente/.test(await texto(page, '[data-sem-resposta-linha="a3-c2"]')),
+       await texto(page, '[data-sem-resposta-linha="a3-c2"]'));
+    ok("e o sem dono diz que está sem responsável",
+       /sem responsável/.test(await texto(page, '[data-sem-resposta-linha="a1-c0"]')), await texto(page, '[data-sem-resposta-linha="a1-c0"]'));
+    // AS MINHAS MORAM NA OUTRA ABA (02/11): a tela abre nos clientes sem
+    // resposta, e as minhas ficam a um clique. Ver `as-abas-da-tela-esperando`.
+    ok("as minhas estão na outra aba, a um clique", await clicar(page, '[data-aba-da-espera="atrasadas"]'));
+    await esperar(page, "[data-atrasada-linha]", 4000);
+    const linhasB = await page.locator("[data-atrasada-linha]").evaluateAll((els) => els.map((e) => e.getAttribute("data-atrasada-linha")));
+    ok("a seção das minhas lista as três, a que espera há mais tempo primeiro — a de 2 dias por último, e a de 1 dia não",
+       JSON.stringify(linhasB) === JSON.stringify(["esp-a1", "esp-a3", "esp-2dias"]), JSON.stringify(linhasB));
+    ok("e a de 2 dias diz “esperando há 2 dias”",
+       /esperando há 2 dias/.test(await texto(page, '[data-atrasada-linha="esp-2dias"]')), await texto(page, '[data-atrasada-linha="esp-2dias"]'));
+    // A COR É A DA LISTA: âmbar com 2 dias, vermelho a partir de 3. Toda linha
+    // daqui era vermelha quando a aba começava nos 3 dias.
+    const corDoDetalhe = (id) => page.locator(`[data-atrasada-linha="${id}"] [data-detalhe-da-espera]`).first()
+      .evaluate((e) => getComputedStyle(e).color).catch(() => "");
+    const cor2 = await corDoDetalhe("esp-2dias"), cor5 = await corDoDetalhe("esp-a1");
+    ok("e a de 2 dias é âmbar, como na lista, e a de 5 dias vermelha",
+       cor2 !== "" && cor5 === "rgb(229, 57, 53)" && cor2 !== cor5, `2 dias: ${cor2} · 5 dias: ${cor5}`);
+    const notaDasMinhas = await texto(page, '[data-secao-da-espera="atrasadas"]');
+    ok("e a aba explica a régua: “… espera resposta há 2 dias ou mais.”, sem 3 dias em lugar nenhum",
+       /espera resposta há 2 dias ou mais\./.test(notaDasMinhas) && !/3 dias ou mais/i.test(notaDasMinhas), notaDasMinhas.slice(0, 200));
+    ok("e cada uma diz há quantos dias: “esperando há 5 dias”",
+       /esperando há 5 dias/.test(await texto(page, '[data-atrasada-linha="esp-a1"]')), await texto(page, '[data-atrasada-linha="esp-a1"]'));
 
-  // ABRIR UMA DELAS, de outro telefone: a tela fecha, o telefone troca e a
-  // conversa abre — o caminho do histórico (`verConversaDoHistorico`).
-  await clicar(page, '[data-atrasada-linha="esp-a3"]');
-  await page.waitForTimeout(1500);
-  ok("clicar numa conversa de outro telefone fecha a tela", (await contar(page, '[data-tela="esperando"]')) === 0);
-  ok("e abre a conversa, no telefone dela",
-     /CLIENTE ESP-A3/.test(await texto(page, "[data-topo-conversa]")), (await texto(page, "[data-topo-conversa]")).slice(0, 120));
+    // ABRIR UMA DELAS, de outro telefone: a conversa abre NUMA GUIA NOVA
+    // (02/11), já no telefone dela — o caminho do histórico
+    // (`verConversaDoHistorico`) —, e a tela continua na guia dela. Era a
+    // tela fechando e a conversa abrindo por baixo.
+    const daConversa = await guiaQueAbre(ctx, () => clicar(page, '[data-atrasada-linha="esp-a3"]'));
+    if (daConversa) await esperar(daConversa, "[data-topo-conversa]", 15000);
+    ok("clicar numa conversa de outro telefone abre uma guia nova, e a tela fica",
+       Boolean(daConversa) && (await contar(page, '[data-tela="esperando"]')) === 1);
+    const topo = daConversa ? await texto(daConversa, "[data-topo-conversa]") : "";
+    ok("e a guia nova abre a conversa, no telefone dela", /CLIENTE ESP-A3/.test(topo), topo.slice(0, 120));
 
-  // O Esc fecha a tela, e não a conversa que está atrás dela.
-  if (await contar(page, '[data-tela="esperando"]')) await page.keyboard.press("Escape");
-  await page.waitForTimeout(300);
-  await clicar(page, "[data-abrir-esperando]");
-  await esperar(page, '[data-tela="esperando"]', 3000);
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(400);
-  ok("o Esc fecha a tela Esperando resposta", (await contar(page, '[data-tela="esperando"]')) === 0);
-  ok("e a conversa continua aberta atrás dela", /CLIENTE ESP-A3/.test(await texto(page, "[data-topo-conversa]")));
+    // O ESC NÃO TIRA A TELA DA GUIA DELA (02/11): ele fechava a tela que abria
+    // por cima das conversas, e numa guia própria a tela é a guia.
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(400);
+    ok("o Esc não tira a tela da guia dela", (await contar(page, '[data-tela="esperando"]')) === 1);
+    ok("e a conversa continua aberta na guia dela", Boolean(daConversa) && /CLIENTE ESP-A3/.test(await texto(daConversa, "[data-topo-conversa]")));
+  }
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
@@ -373,22 +398,25 @@ console.log("\n3. A falha é dita, e nunca vira “ninguém esperando”");
   ok("e a faixa âmbar diz o que não carregou",
      /clientes sem resposta/.test(await texto(page, "[data-falha-de-leitura]")), await texto(page, "[data-falha-de-leitura]"));
   ok("as minhas, que vieram, continuam no resumo", await esperarValor(page, "[data-resumo-atrasadas]", "data-resumo-atrasadas", "3"));
-  await clicar(page, "[data-abrir-esperando]");
-  await esperar(page, '[data-tela="esperando"]', 3000);
-  ok("na tela, a seção diz que falhou", await visivel(page, "[data-espera-falhou-sem-resposta]"));
-  ok("e não diz “nenhum cliente sem resposta”",
-     !/Nenhum cliente sem resposta/.test(await texto(page, '[data-secao-da-espera="sem-resposta"]')),
-     await texto(page, '[data-secao-da-espera="sem-resposta"]'));
-  // O NÚMERO MORA NA ABA desde 02/11, e era no título da seção: a régua é a
-  // mesma — a aba que não carregou diz que falhou, e não conta zero.
-  ok("nem conta zero na aba",
-     (await contar(page, '[data-aba-da-espera="sem-resposta"] [data-contagem-da-espera]')) === 0
-     && (await contar(page, '[data-aba-da-espera="sem-resposta"] [data-aba-da-espera-falhou]')) === 1,
-     await texto(page, '[data-aba-da-espera="sem-resposta"]'));
+  {
+    // A TELA ABRE NUMA GUIA NOVA (02/11), e lê as duas listas lá.
+    const tela = await abrirAEspera(ctx, page);
+    const t = tela || page;
+    ok("na tela, a seção diz que falhou", Boolean(tela) && await visivel(t, "[data-espera-falhou-sem-resposta]"));
+    ok("e não diz “nenhum cliente sem resposta”",
+       !/Nenhum cliente sem resposta/.test(await texto(t, '[data-secao-da-espera="sem-resposta"]')),
+       await texto(t, '[data-secao-da-espera="sem-resposta"]'));
+    // O NÚMERO MORA NA ABA desde 02/11, e era no título da seção: a régua é a
+    // mesma — a aba que não carregou diz que falhou, e não conta zero.
+    ok("nem conta zero na aba",
+       (await contar(t, '[data-aba-da-espera="sem-resposta"] [data-contagem-da-espera]')) === 0
+       && (await contar(t, '[data-aba-da-espera="sem-resposta"] [data-aba-da-espera-falhou]')) === 1,
+       await texto(t, '[data-aba-da-espera="sem-resposta"]'));
+    if (tela) await tela.close();
+  }
   // O CONTRASTE: com a leitura de volta, o "Tentar de novo" da faixa relê os
   // clientes sem resposta — e a faixa apaga agora, e não na próxima volta do
   // relógio desta leitura (que esta cena pôs em dez minutos).
-  await page.keyboard.press("Escape");
   ok("antes de a leitura voltar, a faixa ainda diz que ela não carregou",
      /clientes sem resposta/.test(await texto(page, "[data-falha-de-leitura]")), await texto(page, "[data-falha-de-leitura]"));
   await page.evaluate(() => { globalThis.__QUEBRAR_FUNCAO = []; });
@@ -405,14 +433,16 @@ console.log("\n3. A falha é dita, e nunca vira “ninguém esperando”");
   ok("a minha carteira que não carrega também é dita, com o código", apareceu
      && /Não consegui ler as suas conversas que esperam há 2 dias ou mais/.test(await texto(page, "[data-resumo-falhou]"))
      && /57014/.test(await texto(page, "[data-resumo-falhou]")), await texto(page, "[data-resumo-da-espera]"));
-  await clicar(page, "[data-abrir-esperando]");
-  await esperar(page, '[data-tela="esperando"]', 3000);
-  ok("e na tela não vira “nenhuma conversa sua”", await visivel(page, "[data-espera-falhou-atrasadas]")
-     && !/Nenhuma conversa sua/.test(await texto(page, '[data-secao-da-espera="atrasadas"]')),
-     await texto(page, '[data-secao-da-espera="atrasadas"]'));
+  {
+    const tela = await abrirAEspera(ctx, page);
+    const t = tela || page;
+    ok("e na tela não vira “nenhuma conversa sua”", Boolean(tela) && await visivel(t, "[data-espera-falhou-atrasadas]")
+       && !/Nenhuma conversa sua/.test(await texto(t, '[data-secao-da-espera="atrasadas"]')),
+       await texto(t, '[data-secao-da-espera="atrasadas"]'));
+    if (tela) await tela.close();
+  }
   // E O MESMO CONTRASTE para a minha carteira — foi esta leitura que a prova
   // `a-aba-que-falha-diz-que-falhou` pegou, na primeira rodada da PR #294.
-  await page.keyboard.press("Escape");
   ok("antes de a carteira voltar, nenhuma leitura dela está no ar", await semCarteiraNoAr(page));
   ok("e a faixa ainda diz que ela não carregou",
      /esperam há 2 dias/.test(await texto(page, "[data-falha-de-leitura]")), await texto(page, "[data-falha-de-leitura]"));
@@ -438,10 +468,13 @@ console.log("\n4. Sem o script 041: o aviso não existe, e as minhas continuam")
   ok("e a função que não existe é perguntada uma vez só", chamadas === 1, String(chamadas));
   ok("o número da barra é o das minhas, em âmbar", await attr(page, "[data-selo-esperando]", "data-selo-esperando") === "3"
      && await attr(page, "[data-selo-esperando]", "data-sem-resposta") === "0");
-  await clicar(page, "[data-abrir-esperando]");
-  await esperar(page, '[data-tela="esperando"]', 3000);
-  ok("e a tela não oferece a seção dos clientes sem resposta", (await contar(page, '[data-secao-da-espera="sem-resposta"]')) === 0
-     && (await contar(page, '[data-secao-da-espera="atrasadas"]')) === 1);
+  {
+    const tela = await abrirAEspera(ctx, page);
+    const t = tela || page;
+    ok("e a tela (numa guia nova) não oferece a seção dos clientes sem resposta", Boolean(tela)
+       && (await contar(t, '[data-secao-da-espera="sem-resposta"]')) === 0
+       && (await contar(t, '[data-secao-da-espera="atrasadas"]')) === 1);
+  }
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
@@ -458,9 +491,9 @@ console.log("\n5. No celular: a barra e o ⋮ levam à mesma tela");
   await page.waitForTimeout(300);
   ok("o ⋮ tem “Esperando resposta”, com o número", /Esperando resposta\s*4/.test(await texto(page, "[data-abrir-esperando-menu]")),
      await texto(page, "[data-abrir-esperando-menu]"));
-  await clicar(page, "[data-abrir-esperando-menu]");
-  ok("e abre a tela", await esperar(page, '[data-tela="esperando"]', 3000));
-  const larguras = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, tela: innerWidth }));
+  const tela = await abrirAEspera(ctx, page, "[data-abrir-esperando-menu]");
+  ok("e abre a tela, numa guia nova", Boolean(tela));
+  const larguras = await (tela || page).evaluate(() => ({ doc: document.documentElement.scrollWidth, tela: innerWidth }));
   ok("a tela não rola de lado no celular", larguras.doc <= larguras.tela, JSON.stringify(larguras));
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();

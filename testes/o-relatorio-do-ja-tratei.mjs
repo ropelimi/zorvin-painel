@@ -20,7 +20,7 @@
 //   7. e o caminho inteiro: marcar um "Já tratei" na conversa e vê-lo no
 //      relatório. Sem esta cena, a prova passaria com a bancada inventando
 //      números que a tela nunca gravou.
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+import { abrirNavegador, ENDERECO, abrirATela } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -127,10 +127,13 @@ async function abrirPainel({ admin = true, semRelatorio = false, falha = false }
   return { ctx, page, estouros };
 }
 
-async function irAoPainel(page) {
-  await page.getByRole("button", { name: "Menu" }).click();
-  await page.getByRole("button", { name: "Painel" }).click();
-  await page.waitForSelector('[data-tela="painel"]');
+// O PAINEL ABRE NUMA GUIA PRÓPRIA desde 02/11 (`?tela=painel`): esta prova
+// mede a tela, e abre o endereço dela na própria página — o gesto do menu é
+// provado em `as-telas-abrem-numa-guia-nova`. A cena do caminho inteiro LEVA
+// as tabelas que a conversa gravou (`levar`): em produção as duas guias leem
+// o mesmo banco, e a bancada mora na memória de cada página.
+async function irAoPainel(page, levar = []) {
+  await abrirATela(page, "painel", { levar });
   await page.waitForTimeout(1500);
 }
 
@@ -293,7 +296,7 @@ console.log("\nO caminho inteiro: marcar na conversa e ver no relatório");
   }
   ok("(o “Já tratei” foi gravado pela tela)", await page.evaluate(() =>
     (globalThis.__TABELAS.zorvin_tratamentos || []).filter((x) => x.conversa_id === "cv-r4").length === 2));
-  await irAoPainel(page);
+  await irAoPainel(page, ["zorvin_tratamentos", "conversas"]);
   ok("o relatório passa a contar 3 — o clique novo conta UM, com dois assuntos",
      (await cartao(page, "Vezes “Já tratei”")) === "3", await cartao(page, "Vezes “Já tratei”"));
   ok("e ele é o primeiro da lista", (await nomesDosRegistros(page))[0] === "RENATO QUE ESPERA",

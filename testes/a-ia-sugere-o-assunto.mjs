@@ -29,7 +29,7 @@
 //  14. uma mensagem nova na conversa pede de novo (a guardada falaria de uma
 //      conversa que já não é aquela);
 //  15. a lista de assuntos que não carregou não pede à IA.
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+import { abrirNavegador, ENDERECO, guiaQueAbre } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -144,18 +144,19 @@ let pedidos = [];
 async function abrirPagina({ largura = 1400, altura = 900, semColunas = {}, semSituacao = false, quebrar = [] } = {}) {
   pedidos = [];
   const ctx = await nav.newContext({ viewport: { width: largura, height: altura }, timezoneId: "America/Sao_Paulo" });
-  const page = await ctx.newPage();
   const estouros = [];
-  page.on("pageerror", (e) => estouros.push(e.message));
+  // NO CONTEXTO: desde 02/11 a faxina abre numa guia nova, e ela nasce com
+  // a semente, as bandeiras e a ponte de mentira.
+  ctx.on("page", (p) => p.on("pageerror", (e) => estouros.push(e.message)));
   // TODAS AS BANDEIRAS, SEMPRE — `addInitScript` acumula entre cenários.
-  await page.addInitScript((b) => {
+  await ctx.addInitScript((b) => {
     globalThis.__SEMENTE = b.semente;
     globalThis.__SEM_COLUNAS = b.semColunas;
     globalThis.__SEM_SITUACAO = b.semSituacao;
     globalThis.__QUEBRAR = b.quebrar;
     globalThis.__AVISOS_DA_FAIXA = [];
   }, { semente: SEMENTE, semColunas, semSituacao, quebrar });
-  await page.route("**/ponte-de-mentira/**", async (rota) => {
+  await ctx.route("**/ponte-de-mentira/**", async (rota) => {
     const url = new URL(rota.request().url());
     const json = (status, corpo) => rota.fulfill({ status, contentType: "application/json", body: JSON.stringify(corpo) });
     if (url.pathname.endsWith("/copiloto/estado")) return json(ponte.estado.status, ponte.estado.corpo);
@@ -170,6 +171,7 @@ async function abrirPagina({ largura = 1400, altura = 900, semColunas = {}, semS
     if (url.pathname.endsWith("/vantoro/status")) return json(200, { ok: true, configurado: false });
     return json(404, {});
   });
+  const page = await ctx.newPage();
   await page.goto(ENDERECO);
   await page.waitForSelector("[data-conversa-nome]", { timeout: 90000 });
   await page.waitForTimeout(1300);
@@ -446,10 +448,16 @@ console.log("\n8. Fechar e abrir de novo não paga outra ida à IA");
 console.log("\n9. Na faxina: uma conversa pede e grava; o lote não pede");
 {
   ponte.assunto = () => SUGESTAO([ACORDOS]);
-  const { ctx, page, estouros } = await abrirPagina({ largura: 1360 });
-  await clicar(page.locator('button[aria-label="Menu"]'));
-  await page.waitForTimeout(250);
-  ok("a faxina abriu", await clicar(page.locator("[data-abrir-faxina]")));
+  const { ctx, page: conversas, estouros } = await abrirPagina({ largura: 1360 });
+  await clicar(conversas.locator('button[aria-label="Menu"]'));
+  await conversas.waitForTimeout(250);
+  // A FAXINA ABRE NUMA GUIA NOVA (02/11).
+  const faxina = (await conversas.locator("[data-abrir-faxina]").count())
+    ? await guiaQueAbre(ctx, () => clicar(conversas.locator("[data-abrir-faxina]"))) : null;
+  ok("a faxina abriu, numa guia nova", Boolean(faxina));
+  const page = faxina || conversas;
+  page.setDefaultTimeout(8000);
+  await page.waitForSelector('[data-tela="faxina"]', { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(1200);
   const tem = await page.locator('[data-faxina-telefone] option[value="a8"]').count();
   if (tem) await page.locator("[data-faxina-telefone]").first().selectOption("a8");

@@ -25,7 +25,7 @@
 // AS CENAS SÃO PLANTADAS NO TELEFONE a8 (Acordos 2), que na bancada não tem
 // nenhuma conversa parada: o a7 tem cinco e o a13 (o das 1.200) tem centenas,
 // e é nele que a prova mede a página e a conta.
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+import { abrirNavegador, ENDERECO, guiaQueAbre } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -98,10 +98,11 @@ const SEMENTE = {
 /** Abre o painel com TODAS as bandeiras escritas — `addInitScript` acumula. */
 async function abrir(opcoes = {}) {
   const ctx = await nav.newContext({ viewport: opcoes.viewport || { width: 1360, height: 900 } });
-  const page = await ctx.newPage();
   const estouros = [];
-  page.on("pageerror", (e) => estouros.push(e.message));
-  await page.addInitScript((o) => {
+  // NO CONTEXTO: desde 02/11 a faxina abre numa guia nova, e a conversa
+  // aberta por ela noutra — as duas nascem com a semente e as bandeiras.
+  ctx.on("page", (p) => p.on("pageerror", (e) => estouros.push(e.message)));
+  await ctx.addInitScript((o) => {
     globalThis.__SEMENTE = o.semente;
     globalThis.__SEM_SITUACAO = Boolean(o.semSituacao);
     globalThis.__SEM_ASSUNTOS = Boolean(o.semAssuntos);
@@ -114,6 +115,7 @@ async function abrir(opcoes = {}) {
     globalThis.__DIARIO = o.diario ? [] : undefined;
   }, { semente: opcoes.semente === undefined ? SEMENTE : opcoes.semente, semSituacao: opcoes.semSituacao, semAssuntos: opcoes.semAssuntos,
        atrasoUniforme: opcoes.atrasoUniforme, diario: opcoes.diario });
+  const page = await ctx.newPage();
   await page.goto(ENDERECO);
   await page.waitForSelector("[data-conversa-nome]", { timeout: 60000 });
   return { ctx, page, estouros };
@@ -162,12 +164,17 @@ async function assentar(page) {
 /** Botão desligado? Sem o elemento, `isDisabled` esperaria 30 segundos e
  *  derrubaria a prova inteira — e a prova que estoura não diz o que viu. */
 const desligado = async (page, sel) => ((await contar(page, sel)) ? page.locator(sel).first().isDisabled() : null);
-async function abrirFaxina(page) {
+/** Abre a faxina pelo ⋮ do topo, como quem clica: ela abre numa GUIA NOVA
+ *  (02/11), e é ela que volta, com a primeira leitura feita — ou `null`. */
+async function abrirFaxina(ctx, page) {
   await clicar(page, 'button[aria-label="Menu"]');
   await page.waitForTimeout(250);
-  const tem = await clicar(page, "[data-abrir-faxina]");
-  if (tem) { await esperar(page, '[data-tela="faxina"]', 4000); await assentar(page); }
-  return tem;
+  if (!(await contar(page, "[data-abrir-faxina]"))) return null;
+  const guia = await guiaQueAbre(ctx, () => clicar(page, "[data-abrir-faxina]"));
+  if (!guia) return null;
+  if (!(await esperar(guia, '[data-tela="faxina"]', 15000))) return null;
+  await assentar(guia);
+  return guia;
 }
 async function escolher(page, sel, valor) {
   if (!(await contar(page, sel))) return false;
@@ -190,8 +197,9 @@ async function marcarAssunto(page, nome) {
 // ------------------------------------------------------------------
 console.log("\n1. O que aparece, e o que não aparece");
 {
-  const { ctx, page, estouros } = await abrir();
-  ok("o ⋮ do topo tem “Faxina da fila”, e ela abre", await abrirFaxina(page));
+  const { ctx, page: conversas, estouros } = await abrir();
+  const page = (await abrirFaxina(ctx, conversas)) || conversas;
+  ok("o ⋮ do topo tem “Faxina da fila”, e ela abre numa guia nova", page !== conversas);
   await escolher(page, "[data-faxina-telefone]", "a8");
   ok("abre no grupo do cliente que espera resposta", (await attr(page, '[data-faxina-grupo="cliente"]', "aria-selected")) === "true");
   const cli = await linhas(page);
@@ -242,8 +250,8 @@ console.log("\n1. O que aparece, e o que não aparece");
 // ------------------------------------------------------------------
 console.log("\n2. As últimas mensagens, sem sair da tela");
 {
-  const { ctx, page, estouros } = await abrir();
-  await abrirFaxina(page);
+  const { ctx, page: conversas, estouros } = await abrir();
+  const page = (await abrirFaxina(ctx, conversas)) || conversas;
   await escolher(page, "[data-faxina-telefone]", "a8");
   await clicar(page, '[data-faxina-ver="fx-cli-1"]');
   await esperar(page, '[data-faxina-mensagens="fx-cli-1"] [data-faxina-mensagem]', 4000);
@@ -262,8 +270,8 @@ console.log("\n2. As últimas mensagens, sem sair da tela");
 // ------------------------------------------------------------------
 console.log("\n3. Finalizar uma: a marcação continua obrigatória, e o banco finaliza");
 {
-  const { ctx, page, estouros } = await abrir();
-  await abrirFaxina(page);
+  const { ctx, page: conversas, estouros } = await abrir();
+  const page = (await abrirFaxina(ctx, conversas)) || conversas;
   await escolher(page, "[data-faxina-telefone]", "a8");
   await clicar(page, '[data-faxina-finalizar="fx-cli-1"]');
   ok("abre a janela do Finalizar, de uma conversa", await esperar(page, "[data-ja-tratei-janela]", 3000)
@@ -298,8 +306,8 @@ console.log("\n3. Finalizar uma: a marcação continua obrigatória, e o banco f
 // ------------------------------------------------------------------
 console.log("\n4. A conversa que recebeu mensagem depois da lista não é finalizada");
 {
-  const { ctx, page, estouros } = await abrir();
-  await abrirFaxina(page);
+  const { ctx, page: conversas, estouros } = await abrir();
+  const page = (await abrirFaxina(ctx, conversas)) || conversas;
   await escolher(page, "[data-faxina-telefone]", "a8");
   // O CLIENTE ESCREVE enquanto a lista está aberta: a ponte grava a mensagem,
   // e o gatilho do banco põe a hora dela na conversa.
@@ -347,8 +355,8 @@ console.log("\n4. A conversa que recebeu mensagem depois da lista não é finali
 // ------------------------------------------------------------------
 console.log("\n5. Finalizar várias: o mesmo registro, uma de cada vez, conferidas");
 {
-  const { ctx, page, estouros } = await abrir();
-  await abrirFaxina(page);
+  const { ctx, page: conversas, estouros } = await abrir();
+  const page = (await abrirFaxina(ctx, conversas)) || conversas;
   await escolher(page, "[data-faxina-telefone]", "a8");
   await grupo(page, "equipe");
   ok("sem nada marcado, não há o botão de finalizar várias", (await contar(page, "[data-faxina-finalizar-marcadas]")) === 0);
@@ -404,8 +412,8 @@ console.log("\n5b. O lote grande: no máximo 50, uma de cada vez, e o Parar para
   // ATRASO ZERO NA BANCADA: o tempo entre uma finalização e a seguinte passa
   // a ser só a pausa da faxina, e é ela que esta cena mede — pelo diário, que
   // anota quando cada gravação começou.
-  const { ctx, page, estouros } = await abrir({ atrasoUniforme: 0, diario: true });
-  await abrirFaxina(page);
+  const { ctx, page: conversas, estouros } = await abrir({ atrasoUniforme: 0, diario: true });
+  const page = (await abrirFaxina(ctx, conversas)) || conversas;
   await escolher(page, "[data-faxina-telefone]", "a13");
   await grupo(page, "equipe");
   await depoisDeLer(page, () => clicar(page, "[data-faxina-mais]"));
@@ -448,8 +456,8 @@ console.log("\n5b. O lote grande: no máximo 50, uma de cada vez, e o Parar para
 // ------------------------------------------------------------------
 console.log("\n6. O banco que recusa é dito, e nada some");
 {
-  const { ctx, page, estouros } = await abrir();
-  await abrirFaxina(page);
+  const { ctx, page: conversas, estouros } = await abrir();
+  const page = (await abrirFaxina(ctx, conversas)) || conversas;
   await escolher(page, "[data-faxina-telefone]", "a8");
   await page.evaluate(() => {
     globalThis.__ERRO_NA_GRAVACAO = { zorvin_tratamentos: { code: "42501", message: "new row violates row-level security policy" } };
@@ -476,8 +484,8 @@ console.log("\n6. O banco que recusa é dito, e nada some");
 // ------------------------------------------------------------------
 console.log("\n7. A leitura que falha é dita, e não vira “nenhuma conversa parada”");
 {
-  const { ctx, page, estouros } = await abrir();
-  await abrirFaxina(page);
+  const { ctx, page: conversas, estouros } = await abrir();
+  const page = (await abrirFaxina(ctx, conversas)) || conversas;
   await escolher(page, "[data-faxina-telefone]", "a8");
   await page.evaluate(() => { globalThis.__QUEBRAR = ["conversas"]; });
   await depoisDeLer(page, () => clicar(page, "[data-atualizar-faxina]"));
@@ -496,8 +504,8 @@ console.log("\n7. A leitura que falha é dita, e não vira “nenhuma conversa p
 // ------------------------------------------------------------------
 console.log("\n8. A página de 50, a conta do banco e abrir a conversa");
 {
-  const { ctx, page, estouros } = await abrir();
-  await abrirFaxina(page);
+  const { ctx, page: conversas, estouros } = await abrir();
+  const page = (await abrirFaxina(ctx, conversas)) || conversas;
   ok("o telefone das 1.200 conversas está entre os filtros", await escolher(page, "[data-faxina-telefone]", "a13"));
   await grupo(page, "equipe");
   // A CONTA ESPERADA sai das linhas da própria bancada, pela mesma régua.
@@ -535,20 +543,22 @@ console.log("\n8. A página de 50, a conta do banco e abrir a conversa");
   l = await linhas(page);
   ok("“Carregar mais” traz as 50 seguintes, sem repetir", l.length === 100 && new Set(l).size === 100
      && JSON.stringify(l.slice(50)) === JSON.stringify(ordem.slice(50, 100)), `${l.length} · ${l[50]} contra ${ordem[50]}`);
-  // ABRIR UMA CONVERSA do a8 com o telefone a7 aberto: a tela fecha, e a conversa abre no telefone dela.
+  // ABRIR UMA CONVERSA do a8 com o telefone a7 aberto: a conversa abre NUMA
+  // GUIA NOVA (02/11), no telefone dela. Era a tela fechando e a conversa
+  // abrindo por baixo.
   await escolher(page, "[data-faxina-telefone]", "a8");
   await grupo(page, "cliente");
   await escolher(page, "[data-faxina-responsavel]", "sem");
-  await clicar(page, '[data-faxina-abrir="fx-cli-1"]');
-  await page.waitForTimeout(1500);
-  ok("abrir a conversa fecha a faxina", (await contar(page, '[data-tela="faxina"]')) === 0);
-  ok("e abre a conversa, no telefone dela", /CLIENTE FX-CLI-1/.test(await texto(page, "[data-topo-conversa]")),
-     (await texto(page, "[data-topo-conversa]")).slice(0, 80));
-  // E A FAXINA VOLTA COMO FICOU: quem abre uma conversa para conferir e volta
-  // pelo ⋮ não recomeça do zero.
-  await abrirFaxina(page);
-  ok("voltando pelo ⋮, a faxina está como ficou: o telefone e o responsável",
-     (await valor(page, "[data-faxina-telefone]")) === "a8" && (await valor(page, "[data-faxina-responsavel]")) === "sem",
+  const daConversa = await guiaQueAbre(ctx, () => clicar(page, '[data-faxina-abrir="fx-cli-1"]'));
+  if (daConversa) await esperar(daConversa, "[data-topo-conversa]", 15000);
+  const topo = daConversa ? await texto(daConversa, "[data-topo-conversa]") : "";
+  ok("abrir a conversa abre uma guia nova, já nela, no telefone dela", /CLIENTE FX-CLI-1/.test(topo), topo.slice(0, 80));
+  // E A FAXINA CONTINUA COMO FICOU, na guia dela: quem abre uma conversa
+  // para conferir volta para a faxina sem recomeçar do zero. Era a memória
+  // da última visita que fazia isso, quando a tela fechava.
+  ok("e a faxina continua na guia dela, como ficou: o telefone e o responsável",
+     (await contar(page, '[data-tela="faxina"]')) === 1
+     && (await valor(page, "[data-faxina-telefone]")) === "a8" && (await valor(page, "[data-faxina-responsavel]")) === "sem",
      `${await valor(page, "[data-faxina-telefone]")} · ${await valor(page, "[data-faxina-responsavel]")}`);
   ok("e a lista é a desse recorte", JSON.stringify(await linhas(page)) === JSON.stringify(["fx-cli-2", "fx-cli-1"]),
      JSON.stringify(await linhas(page)));
@@ -559,8 +569,9 @@ console.log("\n8. A página de 50, a conta do banco e abrir a conversa");
 // ------------------------------------------------------------------
 console.log("\n9. No celular, e sem o 028 ou sem os assuntos");
 {
-  const { ctx, page, estouros } = await abrir({ viewport: { width: 390, height: 844 } });
-  ok("no celular, o ⋮ também tem a faxina", await abrirFaxina(page));
+  const { ctx, page: conversas, estouros } = await abrir({ viewport: { width: 390, height: 844 } });
+  const page = (await abrirFaxina(ctx, conversas)) || conversas;
+  ok("no celular, o ⋮ também tem a faxina, e ela abre numa guia nova", page !== conversas);
   await escolher(page, "[data-faxina-telefone]", "a8");
   const largura = await page.evaluate(() => document.documentElement.scrollWidth);
   ok("a tela não rola de lado", largura <= 390, String(largura));
