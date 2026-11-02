@@ -22,7 +22,7 @@
 //   8. "Voltar para a fila" desfaz só o ÚLTIMO "Já tratei", e não os antigos;
 //   9. o atalho "7 dias" do Painel cobre 7 dias, e não 8;
 //  10. uma tarefa atrasada se edita sem trocar a hora — e a hora fica a mesma.
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+import { abrirNavegador, ENDERECO, abrirATela } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -279,8 +279,9 @@ console.log("\n9. O atalho “7 dias” cobre 7 dias");
 {
   const { ctx, page } = await abrir();
   await pronto(page);
-  await clicar(page.getByRole("button", { name: "Menu", exact: true }));
-  await clicar(page.getByRole("button", { name: "Painel" }));
+  // O PAINEL ABRE NUMA GUIA PRÓPRIA desde 02/11 (`?tela=painel`): a cena mede
+  // o período, e abre o endereço da tela na própria página.
+  await abrirATela(page, "painel");
   await page.waitForTimeout(1000);
   await clicar(page.locator('[data-teste="abrir-periodo"]'));
   await page.waitForTimeout(200);

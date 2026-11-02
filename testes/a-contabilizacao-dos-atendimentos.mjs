@@ -37,7 +37,7 @@
 //   A9  GIL      no OUTRO telefone: o cliente em 12, a Jenifer responde em 1 h
 //   A7  HELO     40 dias atrás, atendida — o período anterior
 //   A8  IVO      100 dias atrás — fora dos dois
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+import { abrirNavegador, ENDERECO, abrirATela } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -172,10 +172,13 @@ async function abrirPainel({ admin = true, semFuncao = false, semSituacao = fals
   return { ctx, page, estouros };
 }
 
-async function irAoPainel(page) {
-  await page.getByRole("button", { name: "Menu" }).click({ timeout: 5000 }).catch(() => {});
-  await page.getByRole("button", { name: "Painel" }).click({ timeout: 5000 }).catch(() => {});
-  await page.waitForSelector('[data-tela="painel"]', { timeout: 10000 }).catch(() => {});
+// O PAINEL ABRE NUMA GUIA PRÓPRIA desde 02/11 (`?tela=painel`): esta prova
+// mede a tela, e abre o endereço dela na própria página — o gesto do menu é
+// provado em `as-telas-abrem-numa-guia-nova`. A cena do caminho inteiro LEVA
+// as tabelas que a conversa gravou (`levar`): em produção as duas guias leem
+// o mesmo banco, e a bancada mora na memória de cada página.
+async function irAoPainel(page, levar = []) {
+  await abrirATela(page, "painel", { levar, prazo: 10000 });
   await page.waitForTimeout(1500);
 }
 
@@ -402,7 +405,7 @@ console.log("\nO caminho inteiro: finalizar o protocolo que esperava e vê-lo en
   await page.waitForTimeout(1800);
   const fim = await page.evaluate((p) => (globalThis.__TABELAS.zorvin_atendimentos || []).find((a) => a.protocolo === p)?.finalizado_em || null, P.A3);
   ok("(o protocolo do CAIO foi finalizado pela tela)", Boolean(fim), String(fim));
-  await irAoPainel(page);
+  await irAoPainel(page, ["zorvin_atendimentos", "zorvin_tratamentos", "conversas"]);
   ok("o total passa a 7: finalizar é a equipe começando (e terminando)",
      (await cartao(page, "Total de atendimentos")) === "7" && (await cartao(page, "Finalizados")) === "4",
      `${await cartao(page, "Total de atendimentos")} / ${await cartao(page, "Finalizados")}`);

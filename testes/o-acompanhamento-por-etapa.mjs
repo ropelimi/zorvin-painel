@@ -21,22 +21,26 @@
 //   4. o funil próprio de um telefone tem os lembretes das etapas dele, e o
 //      telefone que usa o funil do departamento não tem nenhum;
 //   5. na tela de Tarefas, o lembrete diz que é automático e mostra a mensagem
-//      pronta; o botão abre a conversa com a mensagem na caixa, PREENCHIDA
-//      (o nome do alto da conversa, a saudação pela hora) e sem mandar nada;
-//      o cliente que escreveu por último é dito; o grupo não ganha nome; a
-//      conversa de outro telefone troca o telefone; o lembrete que se fechou
-//      sozinho diz isso;
+//      pronta; o botão abre a conversa NUMA GUIA NOVA (02/11) com a mensagem
+//      na caixa, PREENCHIDA (o nome do alto da conversa, a saudação pela hora)
+//      e sem mandar nada; o cliente que escreveu por último é dito; o grupo
+//      não ganha nome; a conversa de outro telefone troca o telefone; o
+//      lembrete que se fechou sozinho diz isso;
 //   6. a caixa que já tem texto pergunta antes de trocar, e "não" guarda o que
-//      estava escrito;
+//      estava escrito; a guia nova da tela de Tarefas nasce sem rascunho;
 //   7. na conversa aberta, a nota vira mensagem, e uma edição em curso não é
 //      trocada;
 //   8. a conversa que não abre não fica com a mensagem esperando na caixa;
 //   9. no celular, o botão do menu de tarefas da conversa funciona.
 //
-// O RELÓGIO É FIXADO (`page.clock`), no fuso de São Paulo, às 9h de uma
-// terça: a saudação depende da hora — a régua de
-// `as-variaveis-das-respostas-rapidas`.
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+// O RELÓGIO É FIXADO (`clock`), no fuso de São Paulo, às 9h de uma terça: a
+// saudação depende da hora — a régua de `as-variaveis-das-respostas-rapidas`.
+// O relógio vale para o CONTEXTO inteiro, e as guias novas nascem com ele.
+//
+// DESDE 02/11 A TELA DE TAREFAS ABRE NUMA GUIA NOVA, e a mensagem pronta abre
+// a conversa noutra (`src/guias.js`). A semente, as bandeiras e a ponte de
+// mentira vão no contexto, para essas guias nascerem com elas.
+import { abrirNavegador, ENDERECO, guiaQueAbre } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -144,19 +148,21 @@ const SEMENTE_DO_TELEFONE = {
 
 async function abrirPainel({ semente = SEMENTE, semAcompanhamento = false, recusarLeitura = [], largura = 1920 } = {}) {
   const ctx = await nav.newContext({ viewport: { width: largura, height: 900 }, timezoneId: "America/Sao_Paulo" });
-  const page = await ctx.newPage();
   const estouros = [];
   const dialogos = [];
-  page.on("pageerror", (e) => estouros.push(e.message));
-  // A RESPOSTA ÀS PERGUNTAS DA TELA (`window.confirm`) é escolhida por cena.
-  page.__responder = "aceitar";
-  page.on("dialog", (d) => {
-    dialogos.push(d.message());
-    if (page.__responder === "aceitar") d.accept(); else d.dismiss();
+  // EM TODA GUIA DO CONTEXTO. A RESPOSTA ÀS PERGUNTAS DA TELA
+  // (`window.confirm`) é escolhida por cena, guia por guia.
+  ctx.on("page", (p) => {
+    p.on("pageerror", (e) => estouros.push(e.message));
+    p.__responder = "aceitar";
+    p.on("dialog", (d) => {
+      dialogos.push(d.message());
+      if (p.__responder === "aceitar") d.accept(); else d.dismiss();
+    });
   });
-  await page.clock.setFixedTime(new Date(AGORA));
+  await ctx.clock.setFixedTime(new Date(AGORA));
   // TODAS AS BANDEIRAS EM TODA ABERTURA — `addInitScript` acumula.
-  await page.addInitScript((d) => {
+  await ctx.addInitScript((d) => {
     globalThis.__SEMENTE = d.semente;
     globalThis.__SEM_ACOMPANHAMENTO = d.semAcompanhamento;
     globalThis.__RECUSAR_LEITURA = d.recusarLeitura;
@@ -191,13 +197,14 @@ async function abrirPainel({ semente = SEMENTE, semAcompanhamento = false, recus
       if (t && v[v.length - 1] !== t) v.push(t);
     }, 50);
   }, { semente, semAcompanhamento, recusarLeitura });
-  await page.route("**/ponte-de-mentira/**", async (rota) => {
+  await ctx.route("**/ponte-de-mentira/**", async (rota) => {
     const url = new URL(rota.request().url());
     const json = (status, corpo) => rota.fulfill({ status, contentType: "application/json", body: JSON.stringify(corpo) });
     // SEM VANTORO: a ficha fixa estreitaria a conversa sem nada a ver com isto.
     if (url.pathname.endsWith("/vantoro/status")) return json(200, { ok: true, configurado: false });
     return json(404, {});
   });
+  const page = await ctx.newPage();
   await page.goto(ENDERECO);
   await page.waitForSelector("[data-conversa-nome]");
   await page.waitForTimeout(1500);
@@ -239,10 +246,26 @@ async function escolherFunil(page, chave) {
 const blocoDa = (page, etapa) => page.locator(`[data-acompanhamento-da-etapa="${etapa}"]`);
 const regras = (page) => page.evaluate(() => (globalThis.__TABELAS.zorvin_acompanhamentos || []).map((r) => ({ ...r })));
 const erroDoBloco = (page, etapa) => texto(blocoDa(page, etapa).locator("[data-acomp-erro]"));
-async function abrirTarefas(page) {
-  if (!(await clicar(page.locator("[data-abrir-tarefas]")))) return false;
-  await page.waitForTimeout(1300);
-  return (await page.locator('[data-tela="tarefas"]').count()) === 1;
+/** Abre a tela de tarefas pelo sino da barra, como quem clica: ela abre numa
+ *  GUIA NOVA (02/11), e é ela que volta, já desenhada — ou `null`. */
+async function abrirTarefas(ctx, page) {
+  if (!(await page.locator("[data-abrir-tarefas]").count())) return null;
+  const guia = await guiaQueAbre(ctx, () => clicar(page.locator("[data-abrir-tarefas]")));
+  if (!guia) return null;
+  if (!(await guia.waitForSelector('[data-tela="tarefas"]', { timeout: 20000 }).then(() => true).catch(() => false))) return null;
+  await guia.waitForTimeout(800);
+  return guia;
+}
+/** O botão da mensagem pronta na tela de tarefas: devolve a GUIA NOVA em que a
+ *  conversa abriu, com o tempo de a mensagem chegar à caixa — ou `null`. */
+async function usarNaGuiaNova(ctx, tarefas, id) {
+  const botao = tarefas.locator(`[data-usar-mensagem-pronta="${id}"]`);
+  if (!(await botao.count())) return null;
+  const guia = await guiaQueAbre(ctx, () => clicar(botao));
+  if (!guia) return null;
+  await guia.waitForSelector("[data-topo-conversa]", { timeout: 20000 }).catch(() => {});
+  await guia.waitForTimeout(1800);
+  return guia;
 }
 async function abrirConversa(page, k) {
   await clicar(page.locator(`[data-conversa-id="cv-ac${k}"]`));
@@ -286,10 +309,12 @@ console.log("\n1. Sem o 045, nada aparece, e nada quebra");
   ok("nem por um instante, enquanto a pergunta não voltava", (await page.evaluate(() => globalThis.__VIU_LEMBRETES)) === false);
   await clicar(page.locator('button[aria-label="Fechar"]'));
   await page.waitForTimeout(600);
-  ok("a tela de tarefas abre", await abrirTarefas(page));
-  ok("e mostra as tarefas", (await page.locator('[data-tarefa-da-tela="t-acj"]').count()) === 1);
-  ok("sem o botão da mensagem pronta", (await page.locator("[data-usar-mensagem-pronta]").count()) === 0);
-  ok("nem o selo de lembrete automático", (await page.locator("[data-lembrete-automatico]").count()) === 0);
+  const tarefas = await abrirTarefas(ctx, page);
+  ok("a tela de tarefas abre, numa guia nova", Boolean(tarefas));
+  const t = tarefas || page;
+  ok("e mostra as tarefas", (await t.locator('[data-tarefa-da-tela="t-acj"]').count()) === 1);
+  ok("sem o botão da mensagem pronta", (await t.locator("[data-usar-mensagem-pronta]").count()) === 0);
+  ok("nem o selo de lembrete automático", (await t.locator("[data-lembrete-automatico]").count()) === 0);
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
@@ -507,10 +532,12 @@ console.log("\n4. O funil de cada telefone");
 // ------------------------------------------------------------------
 console.log("\n5. O lembrete na tela de Tarefas, e a mensagem pronta na caixa");
 {
-  const { ctx, page, estouros } = await abrirPainel();
-  const notifs = await page.evaluate(() => (globalThis.__NOTIFICACOES || []).map((n) => n.titulo));
+  const { ctx, page: conversas, estouros } = await abrirPainel();
+  const notifs = await conversas.evaluate(() => (globalThis.__NOTIFICACOES || []).map((n) => n.titulo));
   ok("o lembrete que venceu tocou para quem o recebeu", notifs.some((t) => t.includes(TEXTO_DO_LEMBRETE)), JSON.stringify(notifs));
-  ok("a tela de tarefas abre", await abrirTarefas(page));
+  const tarefas = await abrirTarefas(ctx, conversas);
+  ok("a tela de tarefas abre, numa guia nova", Boolean(tarefas));
+  const page = tarefas || conversas;
   const lj = page.locator('[data-tarefa-da-tela="t-acj"]');
   ok("o lembrete diz que é automático", (await lj.locator("[data-lembrete-automatico]").count()) === 1);
   ok("e mostra a mensagem pronta, como foi escrita", (await texto(lj.locator("[data-mensagem-pronta]"))).includes(MSG.j),
@@ -532,40 +559,44 @@ console.log("\n5. O lembrete na tela de Tarefas, e a mensagem pronta na caixa");
      /^· feita /.test((await texto(page.locator('[data-tarefa-da-tela="t-pessoa-feita"] [data-quando-da-tarefa]'))).trim()),
      await texto(page.locator('[data-tarefa-da-tela="t-pessoa-feita"] [data-quando-da-tarefa]')));
 
+  // CADA GUIA NOVA NASCE DA SEMENTE, com a fila de envio de lá: "nada foi
+  // mandado" é a fila da guia da conversa continuar do tamanho da semente.
   const naFila = await fila(page);
-  await zerarFilme(page);
-  ok("o botão está lá", await clicar(page.locator('[data-usar-mensagem-pronta="t-acj"]')));
-  await page.waitForTimeout(1800);
-  ok("a tela de tarefas fecha", (await page.locator('[data-tela="tarefas"]').count()) === 0);
-  ok("e a conversa da Joana abre", (await topo(page)).includes(NOMES.j), await topo(page));
-  const c1 = await caixa(page);
+  ok("o botão está lá", (await page.locator('[data-usar-mensagem-pronta="t-acj"]').count()) === 1);
+  // INVERTIDA EM 02/11: o botão fechava a tela de tarefas e abria a conversa
+  // por baixo. Hoje a conversa abre noutra guia, e a tela fica.
+  const gj = await usarNaGuiaNova(ctx, page, "t-acj");
+  ok("o botão abre a conversa numa guia nova", Boolean(gj));
+  ok("e a tela de tarefas continua na guia dela", (await page.locator('[data-tela="tarefas"]').count()) === 1);
+  const j = gj || page;
+  ok("a conversa da Joana abre", (await topo(j)).includes(NOMES.j), await topo(j));
+  const c1 = await caixa(j);
   ok("com a mensagem na caixa, PREENCHIDA", c1 && c1.texto === ESPERADO.j, JSON.stringify(c1));
   ok("na caixa de mensagem, e não na de nota", c1 && c1.modo === "mensagem", JSON.stringify(c1));
-  ok("e nada foi mandado", (await fila(page)) === naFila, `${naFila} → ${await fila(page)}`);
-  ok("o cliente que escreveu por último é dito", ESCREVEU_POR_ULTIMO.test(await filme(page)), await filme(page));
+  ok("e nada foi mandado", (await fila(j)) === naFila, `${naFila} → ${await fila(j)}`);
+  ok("o cliente que escreveu por último é dito", ESCREVEU_POR_ULTIMO.test(await filme(j)), await filme(j));
 
   // COM O RENATO, FOMOS NÓS POR ÚLTIMO: sem o aviso.
-  await esperarAFaixaSumir(page);
-  await abrirTarefas(page);
-  await zerarFilme(page);
-  await clicar(page.locator('[data-usar-mensagem-pronta="t-acr"]'));
-  await page.waitForTimeout(1800);
-  ok("a conversa do Renato abre com a mensagem dele", (await caixa(page))?.texto === ESPERADO.r, JSON.stringify(await caixa(page)));
-  ok("e sem o aviso de quem escreveu por último", !ESCREVEU_POR_ULTIMO.test(await filme(page)), await filme(page));
+  const gr = await usarNaGuiaNova(ctx, page, "t-acr");
+  ok("a conversa do Renato abre, noutra guia, com a mensagem dele", Boolean(gr) && (await caixa(gr))?.texto === ESPERADO.r,
+     gr ? JSON.stringify(await caixa(gr)) : "(nenhuma guia abriu)");
+  ok("e sem o aviso de quem escreveu por último", Boolean(gr) && !ESCREVEU_POR_ULTIMO.test(await filme(gr)),
+     gr ? await filme(gr) : "");
 
   // O GRUPO não tem "o cliente": o nome sai, levando a vírgula.
-  await abrirTarefas(page);
-  await clicar(page.locator('[data-usar-mensagem-pronta="t-acg"]'));
-  await page.waitForTimeout(1800);
-  ok("no grupo, a mensagem sai sem nome", (await caixa(page))?.texto === ESPERADO.g, JSON.stringify(await caixa(page)));
+  const gg = await usarNaGuiaNova(ctx, page, "t-acg");
+  ok("no grupo, a mensagem sai sem nome", Boolean(gg) && (await caixa(gg))?.texto === ESPERADO.g,
+     gg ? JSON.stringify(await caixa(gg)) : "(nenhuma guia abriu)");
 
   // A CONVERSA DE OUTRO TELEFONE: o telefone troca, e a mensagem vai junto.
-  await abrirTarefas(page);
-  await clicar(page.locator('[data-usar-mensagem-pronta="t-aco"]'));
-  await page.waitForTimeout(2200);
-  ok("a conversa de outro telefone abre", (await topo(page)).includes(NOMES.o), await topo(page));
-  ok("com a mensagem dela na caixa", (await caixa(page))?.texto === ESPERADO.o, JSON.stringify(await caixa(page)));
-  ok("e nada foi mandado em nenhuma das quatro", (await fila(page)) === naFila);
+  const go = await usarNaGuiaNova(ctx, page, "t-aco");
+  if (go) await go.waitForTimeout(400);
+  ok("a conversa de outro telefone abre", Boolean(go) && (await topo(go)).includes(NOMES.o), go ? await topo(go) : "");
+  ok("com a mensagem dela na caixa", Boolean(go) && (await caixa(go))?.texto === ESPERADO.o,
+     go ? JSON.stringify(await caixa(go)) : "(nenhuma guia abriu)");
+  const filas = [];
+  for (const g of [gj, gr, gg, go]) filas.push(g ? await fila(g) : null);
+  ok("e nada foi mandado em nenhuma das quatro", filas.every((n) => n === naFila) && filas.length === 4, JSON.stringify(filas));
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
@@ -579,23 +610,28 @@ console.log("\n6. A caixa que já tem texto pergunta antes de trocar");
   await preencher(page.locator("[data-campo]"), ESCRITO);
   await abrirConversa(page, "j");   // o que estava escrito vira o rascunho do Renato
   ok("o rascunho do Renato ficou guardado", (await caixa(page))?.texto === "");
-  await abrirTarefas(page);
+  // PELO MENU DE TAREFAS DA CONVERSA, que é onde a pergunta mora desde 02/11:
+  // a tela de tarefas abre a conversa numa guia nova, que nasce sem rascunho
+  // (a última parte desta cena confere isso).
+  await abrirConversa(page, "r");
+  ok("e volta com a conversa dele", (await caixa(page))?.texto === ESCRITO, JSON.stringify(await caixa(page)));
   page.__responder = "recusar";
-  const d0 = dialogos.length;
-  await clicar(page.locator('[data-usar-mensagem-pronta="t-acr"]'));
-  await page.waitForTimeout(1800);
-  ok("a pergunta aparece", dialogos.length === d0 + 1 && /Trocar pela mensagem do lembrete/.test(dialogos[dialogos.length - 1] || ""),
-     JSON.stringify(dialogos.slice(d0)));
-  ok("\"não\": a conversa abre com o que estava escrito", (await topo(page)).includes(NOMES.r)
-     && (await caixa(page))?.texto === ESCRITO, JSON.stringify(await caixa(page)));
-  // DE NOVO, PELO MENU DE TAREFAS DA CONVERSA ABERTA, e agora "sim".
-  page.__responder = "aceitar";
   ok("o menu de tarefas da conversa abre", await menuDasTarefas(page));
   const item = page.locator('[data-tarefa-da-conversa-item="t-acr"]');
   ok("o lembrete diz que é automático, ali também", (await item.locator("[data-lembrete-automatico]").count()) === 1);
   ok("e mostra a mensagem pronta", (await texto(item.locator("[data-mensagem-pronta]"))).includes(MSG.r));
-  const d1 = dialogos.length;
+  const d0 = dialogos.length;
   await clicar(item.locator("[data-usar-mensagem-pronta]"));
+  await page.waitForTimeout(900);
+  ok("a pergunta aparece", dialogos.length === d0 + 1 && /Trocar pela mensagem do lembrete/.test(dialogos[dialogos.length - 1] || ""),
+     JSON.stringify(dialogos.slice(d0)));
+  ok("\"não\": a caixa fica com o que estava escrito", (await topo(page)).includes(NOMES.r)
+     && (await caixa(page))?.texto === ESCRITO, JSON.stringify(await caixa(page)));
+  // DE NOVO, e agora "sim".
+  page.__responder = "aceitar";
+  await menuDasTarefas(page);
+  const d1 = dialogos.length;
+  await clicar(page.locator('[data-tarefa-da-conversa-item="t-acr"] [data-usar-mensagem-pronta]'));
   await page.waitForTimeout(900);
   ok("pergunta de novo, e \"sim\" troca", dialogos.length === d1 + 1 && (await caixa(page))?.texto === ESPERADO.r,
      JSON.stringify(await caixa(page)));
@@ -611,6 +647,19 @@ console.log("\n6. A caixa que já tem texto pergunta antes de trocar");
   ok("no menu, o que se fechou sozinho diz isso",
      /fechou sozinho .*: a conversa andou/.test(await texto(page.locator('[data-tarefa-da-conversa-item="t-acfeito"] [data-quando-da-tarefa]'))),
      await texto(page.locator('[data-tarefa-da-conversa-item="t-acfeito"] [data-quando-da-tarefa]')));
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+  // A GUIA NOVA DA TELA DE TAREFAS NASCE SEM RASCUNHO (02/11): o rascunho
+  // mora na memória de cada guia. O que está escrito nesta fica nesta — e lá
+  // não há o que perguntar.
+  await preencher(page.locator("[data-campo]"), ESCRITO);
+  const tarefas = await abrirTarefas(ctx, page);
+  const d3 = dialogos.length;
+  const guiaDoRenato = tarefas ? await usarNaGuiaNova(ctx, tarefas, "t-acr") : null;
+  ok("pela tela de tarefas, a guia nova abre com a mensagem, sem perguntar",
+     Boolean(guiaDoRenato) && dialogos.length === d3 && (await caixa(guiaDoRenato))?.texto === ESPERADO.r,
+     guiaDoRenato ? `${JSON.stringify(dialogos.slice(d3))} ${JSON.stringify(await caixa(guiaDoRenato))}` : "(nenhuma guia abriu)");
+  ok("e a caixa desta guia continua com o que estava escrito", (await caixa(page))?.texto === ESCRITO, JSON.stringify(await caixa(page)));
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
@@ -652,18 +701,42 @@ console.log("\n7. Na conversa aberta: a nota vira mensagem, e a edição não é
 // ------------------------------------------------------------------
 console.log("\n8. A conversa que não abre não fica com a mensagem esperando");
 {
-  const { ctx, page, estouros } = await abrirPainel();
-  await abrirTarefas(page);
-  await page.evaluate(() => { globalThis.__RECUSAR_LEITURA = ["conversas"]; });
-  await zerarFilme(page);
-  await clicar(page.locator('[data-usar-mensagem-pronta="t-aco"]'));
-  await page.waitForTimeout(1500);
+  const { ctx, page: conversas, estouros } = await abrirPainel();
+  const tarefas = await abrirTarefas(ctx, conversas);
+  ok("a tela de tarefas abre, numa guia nova", Boolean(tarefas));
+  // A GUIA DA CONVERSA NASCE SEM CONSEGUIR LER AS CONVERSAS — só ela: a regra
+  // olha o endereço da guia que o botão vai abrir (desde 02/11 a mensagem
+  // pronta abre a conversa numa guia nova).
+  await ctx.addInitScript(() => {
+    if (/[?&]tarefa=t-aco(&|$)/.test(location.search)) globalThis.__RECUSAR_LEITURA = ["conversas"];
+  });
+  const nova = tarefas ? await guiaQueAbre(ctx, () => clicar(tarefas.locator('[data-usar-mensagem-pronta="t-aco"]'))) : null;
+  ok("o botão abre uma guia nova", Boolean(nova));
+  const page = nova || conversas;
+  await page.waitForTimeout(2500);
   ok("a falha ao abrir é dita", /Não consegui abrir esta conversa/.test(await filme(page)), await filme(page));
-  ok("e o telefone não trocou", !(await topo(page)).includes(NOMES.o), await topo(page));
+  ok("e a conversa não abriu", !(await topo(page)).includes(NOMES.o), await topo(page));
+  // ABERTA DEPOIS, NA MESMA GUIA, pelo caminho de sempre: o telefone na barra
+  // e a conversa na lista. É aqui que uma cobrança escrita antes de a linha
+  // ser lida estaria esperando na caixa.
   await page.evaluate(() => { globalThis.__RECUSAR_LEITURA = []; });
-  await abrirTarefas(page);
-  await clicar(page.locator('[data-tarefa-da-tela="t-aco"] [data-abrir-tarefa]'));
-  await page.waitForTimeout(2200);
+  // O OUTRO TELEFONE PODE SER DE OUTRO DEPARTAMENTO: primeiro o departamento,
+  // depois o telefone, como quem procura.
+  const outro = await page.evaluate((id) => {
+    const a = (globalThis.__TABELAS.advogados || []).find((x) => String(x.id) === String(id)) || {};
+    const d = (globalThis.__TABELAS.departamentos || []).find((x) => String(x.id) === String(a.departamento_id)) || {};
+    return { nome: a.nome || "", dep: d.nome || "" };
+  }, ADV2);
+  if (!(await page.locator(`[data-telefone="${outro.nome}"]`).count())) {
+    await clicar(page.locator('button[title="Trocar de departamento"]'));
+    await page.waitForTimeout(300);
+    await clicar(page.locator('[role="listbox"] button[role="option"]', { hasText: outro.dep }));
+    await page.waitForTimeout(1200);
+  }
+  await clicar(page.locator(`[data-telefone="${outro.nome}"]`));
+  await page.waitForTimeout(1500);
+  await clicar(page.locator('[data-conversa-id="cv-aco"]'));
+  await page.waitForTimeout(1500);
   ok("aberta depois, pelo caminho de sempre", (await topo(page)).includes(NOMES.o), await topo(page));
   ok("a caixa está vazia: nenhuma cobrança ficou esperando", (await caixa(page))?.texto === "", JSON.stringify(await caixa(page)));
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));

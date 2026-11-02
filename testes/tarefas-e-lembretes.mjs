@@ -26,7 +26,7 @@
 //
 // OS CLIENTES E AS TAREFAS SÃO PLANTADOS (`__SEMENTE`), num telefone
 // descoberto — ver `o-funil-de-etapas`.
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+import { abrirNavegador, ENDERECO, guiaQueAbre, bancoDividido } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -102,12 +102,15 @@ async function abrirPainel({ semTarefas = false, semEfeito = [], erroNaGravacao 
                              largura = 1920, altura = 900, avisadas = null, semente = SEMENTE,
                              ficha = "nao" } = {}) {
   const ctx = await nav.newContext({ viewport: { width: largura, height: altura } });
-  const page = await ctx.newPage();
   const estouros = [];
-  page.on("pageerror", (e) => estouros.push(e.message));
-  page.on("dialog", (d) => d.accept());
+  // EM TODA GUIA DO CONTEXTO: desde 02/11 a tela de tarefas, o funil e a
+  // conversa aberta por eles são guias novas, e nascem com a semente.
+  ctx.on("page", (p) => {
+    p.on("pageerror", (e) => estouros.push(e.message));
+    p.on("dialog", (d) => d.accept());
+  });
   // TODAS AS BANDEIRAS EM TODA ABERTURA — `addInitScript` acumula.
-  await page.addInitScript((d) => {
+  await ctx.addInitScript((d) => {
     globalThis.__SEMENTE = d.semente;
     globalThis.__SEM_TAREFAS = d.semTarefas;
     globalThis.__ESCRITA_SEM_EFEITO = d.semEfeito;
@@ -115,9 +118,14 @@ async function abrirPainel({ semTarefas = false, semEfeito = [], erroNaGravacao 
     globalThis.__RECUSAR_LEITURA = d.recusarLeitura;
     try {
       localStorage.setItem("zorvin_ficha_fixa", d.ficha);
-      if (d.avisadas) localStorage.setItem("zorvin-tarefas-avisadas", JSON.stringify(d.avisadas));
-      else if (!sessionStorage.getItem("ja-abri")) localStorage.removeItem("zorvin-tarefas-avisadas");
-      sessionStorage.setItem("ja-abri", "1");
+      // SÓ NA GUIA DAS CONVERSAS: a guia nova (`?tela=`, `?conversa=`) tem um
+      // `sessionStorage` só dela, e apagaria as marcas do que já tocou — que
+      // o armazenamento divide entre as guias.
+      if (!/[?&](tela|conversa)=/.test(location.search)) {
+        if (d.avisadas) localStorage.setItem("zorvin-tarefas-avisadas", JSON.stringify(d.avisadas));
+        else if (!sessionStorage.getItem("ja-abri")) localStorage.removeItem("zorvin-tarefas-avisadas");
+        sessionStorage.setItem("ja-abri", "1");
+      }
     } catch (_) { /* sem armazenamento */ }
     // A NOTIFICAÇÃO É ESPIONADA, e não desligada: uma bancada que a calasse
     // aprovaria um painel que nunca avisa ninguém.
@@ -135,6 +143,7 @@ async function abrirPainel({ semTarefas = false, semEfeito = [], erroNaGravacao 
       if (t && v[v.length - 1] !== t) v.push(t);
     }, 50);
   }, { semente, semTarefas, semEfeito, erroNaGravacao, recusarLeitura, avisadas, ficha });
+  const page = await ctx.newPage();
   await page.goto(ENDERECO);
   await page.waitForSelector("[data-conversa-nome]");
   await page.waitForTimeout(1500);
@@ -170,6 +179,27 @@ const tarefaNoBanco = (page, id) => page.evaluate((i) =>
 const tarefasNoBanco = (page) => page.evaluate(() => (globalThis.__TABELAS.zorvin_tarefas || []).slice());
 const avisosVistos = (page) => page.evaluate(() => (globalThis.__AVISOS_VISTOS || []).join(" | "));
 const notificacoes = (page) => page.evaluate(() => (globalThis.__NOTIFICACOES || []).map((n) => n.titulo));
+/** Abre a tela de tarefas pelo sino da barra, como quem clica: ela abre numa
+ *  GUIA NOVA (02/11), e é ela que volta, já desenhada — ou `null`. */
+async function abrirTarefas(ctx, page) {
+  if (!(await page.locator("[data-abrir-tarefas]").count())) return null;
+  const guia = await guiaQueAbre(ctx, () => clicar(page.locator("[data-abrir-tarefas]")));
+  if (!guia) return null;
+  await guia.waitForSelector('[data-tela="tarefas"]', { timeout: 20000 }).catch(() => {});
+  await guia.waitForTimeout(800);
+  return guia;
+}
+/** O número do sino da barra, esperando até `prazo` que ele valha `quanto`. */
+async function seloQuandoValer(page, quanto, prazo = 5000) {
+  const fim = Date.now() + prazo;
+  let n = -1;
+  while (Date.now() < fim) {
+    n = Number(await page.locator("[data-selo-tarefas]").getAttribute("data-selo-tarefas", { timeout: 1000 }).catch(() => -1));
+    if (n === quanto) return n;
+    await page.waitForTimeout(200);
+  }
+  return n;
+}
 /** "Amanhã às 9h" no relógio do navegador, como ISO — para comparar com o banco. */
 const amanhaAs9 = (page) => page.evaluate(() => {
   const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return d.toISOString();
@@ -361,9 +391,13 @@ console.log("\n5. O número da barra e o aviso na hora");
 // ------------------------------------------------------------------
 console.log("\n6. A tela de tarefas");
 {
-  const { ctx, page, estouros } = await abrirPainel();
-  await clicar(page.locator("[data-abrir-tarefas]"));
-  await page.waitForTimeout(1200);
+  const { ctx, page: conversas, estouros } = await abrirPainel();
+  // A TELA ABRE NUMA GUIA NOVA (02/11), e o que ela grava chega à guia das
+  // conversas antes do aviso entre as guias — o banco é um só.
+  await bancoDividido(ctx, conversas, ["zorvin_tarefas"]);
+  const guia = await abrirTarefas(ctx, conversas);
+  ok("o sino da barra abre a tela numa guia nova", Boolean(guia));
+  const page = guia || conversas;
   ok("a tela abre", (await page.locator('[data-tela="tarefas"]').count()) === 1);
   const minhas = await page.locator("[data-tarefa-da-tela]").evaluateAll((els) => els.map((e) => e.getAttribute("data-tarefa-da-tela")));
   ok("Minhas: as minhas abertas", minhas.includes("tf-1") && minhas.includes("tf-2") && minhas.includes("tf-4"),
@@ -395,32 +429,45 @@ console.log("\n6. A tela de tarefas");
   ok("concluir pela tela grava", !!(await tarefaNoBanco(page, "tf-4")).feita_em);
   ok("e diz", /Tarefa concluída/.test(await page.locator("[data-aviso-das-tarefas]").innerText().catch(() => "")));
 
-  await clicar(page.locator('[data-tarefa-da-tela="tf-1"] [data-abrir-tarefa]'));
-  await page.waitForTimeout(1500);
-  ok("clicar na tarefa abre a conversa", (await page.locator('[data-tela="tarefas"]').count()) === 0
-     && (await page.locator("[data-topo-conversa]").innerText().catch(() => "")).includes(NOMES.a));
-  const n = Number(await page.locator("[data-selo-tarefas]").getAttribute("data-selo-tarefas").catch(() => -1));
-  ok("e o número da barra já desceu", n === (TEM_HOJE ? 2 : 1), String(n));
+  // O NÚMERO DA BARRA MORA NA GUIA DAS CONVERSAS, e ela relê os lembretes
+  // quando a guia das tarefas avisa que concluiu um (02/11). Era o que fechar
+  // a tela fazia quando ela abria por cima das conversas.
+  const n = await seloQuandoValer(conversas, TEM_HOJE ? 2 : 1);
+  ok("e o número da barra, na guia das conversas, já desceu", n === (TEM_HOJE ? 2 : 1), String(n));
+  // INVERTIDA EM 02/11: clicar na tarefa fechava a tela e abria a conversa
+  // por baixo. Hoje a conversa abre noutra guia, e a tela fica.
+  const guiaDaConversa = await guiaQueAbre(ctx, () => clicar(page.locator('[data-tarefa-da-tela="tf-1"] [data-abrir-tarefa]')));
+  const topo = guiaDaConversa
+    ? await guiaDaConversa.waitForSelector("[data-topo-conversa]", { timeout: 20000 })
+        .then(() => guiaDaConversa.locator("[data-topo-conversa]").innerText()).catch(() => "")
+    : "";
+  ok("clicar na tarefa abre a conversa numa guia nova", topo.includes(NOMES.a), topo.slice(0, 80));
+  ok("e a tela de tarefas continua na guia dela", (await page.locator('[data-tela="tarefas"]').count()) === 1);
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
 {
-  const { ctx, page } = await abrirPainel({ recusarLeitura: ["zorvin_tarefas"] });
-  await clicar(page.locator("[data-abrir-tarefas]"));
-  await page.waitForTimeout(1000);
+  const { ctx, page: conversas } = await abrirPainel({ recusarLeitura: ["zorvin_tarefas"] });
+  const guia = await abrirTarefas(ctx, conversas);
+  ok("a tela abre numa guia nova", Boolean(guia));
+  const page = guia || conversas;
   const t = await page.locator("[data-falha-das-tarefas]").innerText().catch(() => "");
   ok("a leitura que falha diz que falhou", /Não consegui ler as tarefas/.test(t), t);
   ok("com o código", /PGRST301/.test(t), t);
   ok("e não diz 'nenhuma tarefa'", (await page.locator("[data-sem-tarefas]").count()) === 0);
+  // INVERTIDA EM 02/11: o Esc fechava a tela, que abria por cima das
+  // conversas. Numa guia própria a tela É a guia, e o Esc não a esvazia.
   await page.keyboard.press("Escape");
   await page.waitForTimeout(300);
-  ok("Esc fecha a tela", (await page.locator('[data-tela="tarefas"]').count()) === 0);
-  const ambar = await page.locator("[data-falha-de-leitura]").innerText().catch(() => "");
-  ok("e a faixa âmbar diz que os lembretes não vieram", /lembretes/.test(ambar), ambar);
-  await abrirConversa(page, NOMES.a);
-  await menuDasTarefas(page);
+  ok("o Esc não tira a tela da guia dela", page !== conversas && (await page.locator('[data-tela="tarefas"]').count()) === 1);
+  // A FAIXA ÂMBAR É DA GUIA DAS CONVERSAS: é lá que o número da barra diz
+  // os lembretes, e é lá que ele ficaria parado sem dizer por quê.
+  const ambar = await conversas.locator("[data-falha-de-leitura]").innerText().catch(() => "");
+  ok("e a faixa âmbar, na guia das conversas, diz que os lembretes não vieram", /lembretes/.test(ambar), ambar);
+  await abrirConversa(conversas, NOMES.a);
+  await menuDasTarefas(conversas);
   ok("na conversa, o menu diz a falha, e não 'nenhuma'",
-     (await page.locator("[data-erro-das-tarefas]").count()) === 1 && (await page.locator("[data-sem-tarefas-na-conversa]").count()) === 0);
+     (await conversas.locator("[data-erro-das-tarefas]").count()) === 1 && (await conversas.locator("[data-sem-tarefas-na-conversa]").count()) === 0);
   await ctx.close();
 }
 
@@ -454,9 +501,13 @@ console.log("\n8. O cartão do funil diz a tarefa do cliente");
     { id: "cartao-tb", contato_id: "ct-tb", departamento_id: DEP, etapa_id: `et-${DEP}-1`,
       criado_em: iso(agora), movido_em: iso(agora), movido_por: "u1" },
   ] };
-  const { ctx, page, estouros } = await abrirPainel({ semente: sem });
-  await clicar(page.getByRole("button", { name: "Menu", exact: true }));
-  await clicar(page.locator("[data-abrir-funil]"));
+  const { ctx, page: conversas, estouros } = await abrirPainel({ semente: sem });
+  await clicar(conversas.getByRole("button", { name: "Menu", exact: true }));
+  // O FUNIL ABRE NUMA GUIA NOVA (02/11).
+  const funil = await guiaQueAbre(ctx, () => clicar(conversas.locator("[data-abrir-funil]")));
+  ok("o funil abre numa guia nova", Boolean(funil));
+  const page = funil || conversas;
+  await page.waitForSelector('[data-tela="funil"]', { timeout: 20000 }).catch(() => {});
   await page.waitForTimeout(1200);
   ok("o cartão com tarefa atrasada diz", (await page.locator('[data-cartao-do-funil="ct-ta"] [data-tarefa-no-cartao="atrasada"]').count()) === 1);
   ok("o de amanhã diz que é para depois", (await page.locator('[data-cartao-do-funil="ct-tb"] [data-tarefa-no-cartao="proxima"]').count()) === 1);

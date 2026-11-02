@@ -30,7 +30,7 @@
 //      telefone, nem a janela aberta: um clique mudo é indistinguível de um
 //      clique quebrado.
 // ------------------------------------------------------------
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+import { abrirNavegador, ENDERECO, guiaQueAbre } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -142,18 +142,19 @@ const ENVIO = { id: "m-equipe", texto: "Recebemos, obrigado", criado_em: H(30),
  *  cliente que ninguém do escritório respondeu ainda, em telefone nenhum. */
 async function abrirPainel(s, { largura = 1920, altura = 1000, tarefas = [], semResposta = false } = {}) {
   const ctx = await nav.newContext({ viewport: { width: largura, height: altura } });
-  const page = await ctx.newPage();
   const estouros = [];
-  page.on("pageerror", (e) => estouros.push(e.message));
+  // NO CONTEXTO: desde 02/11 a tela de Tarefas abre numa guia nova, e a
+  // conversa da tarefa noutra — as duas nascem com a semente e a ponte.
+  ctx.on("page", (p) => p.on("pageerror", (e) => estouros.push(e.message)));
   // TODAS AS BANDEIRAS EM TODA ABERTURA — `addInitScript` acumula.
-  await page.addInitScript((d) => {
+  await ctx.addInitScript((d) => {
     globalThis.__SEMENTE = { ...d.semente, zorvin_tarefas: d.tarefas };
     globalThis.__SEM_SITUACAO = false;
     globalThis.__QUEBRAR = [];
     globalThis.__QUEBRAR_SO_A_LEITURA = [];
     globalThis.__RECUSAR_LEITURA = [];
   }, { semente: s, tarefas });
-  await page.route("**/ponte-de-mentira/**", async (rota) => {
+  await ctx.route("**/ponte-de-mentira/**", async (rota) => {
     const url = new URL(rota.request().url());
     const m = url.pathname.match(/\/historico\/contato\/([^/]+)(\/quantas)?$/);
     if (m) {
@@ -174,6 +175,7 @@ async function abrirPainel(s, { largura = 1920, altura = 1000, tarefas = [], sem
     }
     rota.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
   });
+  const page = await ctx.newPage();
   await page.goto(ENDERECO);
   await page.waitForSelector("[data-conversa-nome]", { timeout: 20000 }).catch(() => {});
   await page.waitForTimeout(1500);
@@ -369,14 +371,19 @@ console.log("\nA tarefa da tela de Tarefas abre a conversa finalizada do outro t
 {
   const tarefa = { id: "tf-clara", conversa_id: "cv-c2", texto: "Confirmar o acordo da Clara", vence_em: H(-24),
                    para_quem: "u1", criada_por: "u1", criada_em: H(2), feita_em: null, feita_por: null };
-  const { ctx, page, estouros } = await abrirPainel(semente({ situacao: "finalizado" }), { tarefas: [tarefa] });
-  let chegou = await clicar(page, "[data-abrir-tarefas]");
+  const { ctx, page: conversas, estouros } = await abrirPainel(semente({ situacao: "finalizado" }), { tarefas: [tarefa] });
+  // DESDE 02/11 A TELA DE TAREFAS ABRE NUMA GUIA NOVA, e a conversa da tarefa
+  // abre noutra — nela, e não por baixo da tela.
+  const tarefas = (await conversas.locator("[data-abrir-tarefas]").count())
+    ? await guiaQueAbre(ctx, () => clicar(conversas, "[data-abrir-tarefas]")) : null;
+  if (tarefas) await tarefas.waitForSelector('[data-tarefa-da-tela="tf-clara"]', { timeout: 20000 }).catch(() => {});
+  const chegou = Boolean(tarefas) && (await tarefas.locator('[data-tarefa-da-tela="tf-clara"] [data-abrir-tarefa]').count()) > 0;
+  ok("cheguei à tarefa na tela de Tarefas, numa guia nova", chegou);
+  const nova = chegou ? await guiaQueAbre(ctx, () => clicar(tarefas, '[data-tarefa-da-tela="tf-clara"] [data-abrir-tarefa]')) : null;
+  ok("a tarefa abre a conversa numa guia nova", Boolean(nova));
+  const page = nova || conversas;
+  await page.waitForSelector("[data-topo-conversa]", { timeout: 20000 }).catch(() => {});
   await page.waitForTimeout(1500);
-  if (chegou) {
-    chegou = await clicar(page, '[data-tarefa-da-tela="tf-clara"] [data-abrir-tarefa]');
-    await page.waitForTimeout(2500);
-  }
-  ok("cheguei à tarefa na tela de Tarefas", chegou);
   const e = await estado(page);
   ok("a conversa da tarefa ABRE", e.doOutro && /CLARA/.test(e.topo), `topo: “${e.topo.slice(0, 60)}”`);
   ok("no telefone dela", e.telefone === TEL.outro);

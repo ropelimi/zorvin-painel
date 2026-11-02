@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, RefreshCw, Hourglass, MessageCircle, AlertCircle } from "lucide-react";
+import { X, RefreshCw, Hourglass, MessageCircle, AlertCircle } from "lucide-react";
 import { nomeDoContato } from "./contato.js";
 import { telefoneLegivel } from "./numeros.js";
 import { rotuloDaHora } from "./agenda.js";
@@ -54,7 +54,11 @@ export function abaDeComeco({ temAvisoDeEspera, semResposta, nSemResposta, podeC
   const temSR = temAvisoDeEspera === true;
   const temAT = Boolean(podeContarAtrasadas);
   const srProntos = temAvisoDeEspera === false || (temSR && Boolean(semResposta?.erro || semResposta?.lido));
-  const atProntas = !temAT || Boolean(atrasadas?.erro || atrasadas?.lido);
+  // `podeContarAtrasadas` NULO É "AINDA NÃO SEI" (02/11), como o
+  // `temAvisoDeEspera`: a tela que abre numa guia nova nasce antes de a lista
+  // de conversas dizer se o banco tem a espera e o responsável, e "não tenho"
+  // ali abriria a tela nos clientes e esconderia as suas conversas.
+  const atProntas = podeContarAtrasadas === null ? false : !temAT || Boolean(atrasadas?.erro || atrasadas?.lido);
   const srTem = temSR && Boolean(semResposta?.erro || nSemResposta > 0);
   const atTem = temAT && Boolean(atrasadas?.erro || nAtrasadas > 0);
   if (srTem) return "sem-resposta";
@@ -75,12 +79,18 @@ export default function Esperando({
 
   // AS ABAS. O número de cada uma só aparece com a leitura feita: "0"
   // enquanto ela vem, ou depois de ela falhar, diria que não há ninguém.
+  //
+  // E A ABA APARECE ENQUANTO NÃO SE SABE (02/11). Numa guia nova a tela nasce
+  // antes de saber se o banco tem a função dos clientes e a espera das suas
+  // conversas, e a aba que chegasse um segundo depois empurraria a outra — a
+  // fileira pulando debaixo do dedo de quem já ia clicar. Aberta enquanto não
+  // se sabe, ela diz "Procurando…". Só some a aba do que este banco NÃO tem.
   const abas = [
-    temAvisoDeEspera === true && {
+    temAvisoDeEspera !== false && {
       id: "sem-resposta", titulo: "Clientes sem resposta", forte: "#e53935", texto: C.erroTexto || "#e53935",
       falhou: Boolean(semResposta?.erro), n: semResposta?.erro || !semResposta?.lido ? null : meusSemResposta.length,
     },
-    podeContarAtrasadas && {
+    podeContarAtrasadas !== false && {
       id: "atrasadas", titulo: `Suas conversas esperando ${HA_DIAS_OU_MAIS}`, forte: "#d99a1e", texto: C.ambarTexto || "#d99a1e",
       falhou: Boolean(atrasadas?.erro), n: atrasadas?.erro || !atrasadas?.lido ? null : minhas.length,
     },
@@ -161,9 +171,12 @@ export default function Esperando({
                                         display: "flex", flexDirection: "column", color: C.textPrimary }}>
       <div style={{ background: C.headerBar, borderBottom: `1px solid ${C.divider}`, padding: "10px 16px",
                     display: "flex", alignItems: "center", gap: 14 }}>
-        <button onClick={aoFechar} title="Voltar às conversas" aria-label="Voltar às conversas"
+        {/* A TELA É UMA GUIA (02/11): o botão fecha a guia, e o navegador volta
+            para a das conversas. Era a seta "Voltar", de quando a tela abria por
+            cima delas. */}
+        <button onClick={aoFechar} title="Fechar esta guia" aria-label="Fechar esta guia" data-fechar-a-guia
                 style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", padding: 6, borderRadius: "50%" }}>
-          <ArrowLeft size={20} color={C.textSecondary} />
+          <X size={20} color={C.textSecondary} />
         </button>
         <Hourglass size={20} color={C.green} />
         <span style={{ fontSize: 17, fontWeight: 700, flex: 1 }}>Esperando resposta</span>

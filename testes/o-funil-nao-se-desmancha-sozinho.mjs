@@ -18,15 +18,15 @@
 //    (`__EMPATE_SEM_ORDEM`): com a ordem estável dela, o defeito passava.
 //
 // O QUE ESTA PROVA GUARDA:
-//   - mensagens do tempo real chegando com o funil aberto não esvaziam o
-//     quadro (o filme de 30 em 30 ms nunca vê zero cartões nem "Lendo o
-//     funil…"), não voltam a rolagem e não releem o banco — com o contraste
-//     de que "Atualizar" relê, senão a contagem de leituras não mediria nada;
+//   - o Painel se redesenhando com o funil aberto não esvazia o quadro (o
+//     filme de 30 em 30 ms nunca vê zero cartões nem "Lendo o funil…"), não
+//     volta a rolagem e não relê o banco — com o contraste de que "Atualizar"
+//     relê, senão a contagem de leituras não mediria nada;
 //   - trocar de departamento ainda limpa o quadro na hora (o de antes não
 //     fica à vista enquanto o novo carrega), e só ela: a releitura do mesmo
 //     funil (a resposta das tarefas que chega depois) não esvazia o quadro;
 //   - 1.200 cartões empatados aparecem todos, cada um uma vez.
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+import { abrirNavegador, ENDERECO, abrirATela } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -108,10 +108,12 @@ async function abrirPainel(semente, { empateSemOrdem = [], atraso = {} } = {}) {
   await page.waitForTimeout(1300);
   return { ctx, page, estouros };
 }
+// O FUNIL ABRE NUMA GUIA PRÓPRIA desde 02/11 (`?tela=funil&linha=…`): esta
+// prova mede a tela, e abre o endereço dela na própria página, com o telefone
+// que o painel abre — o gesto do menu é provado em
+// `as-telas-abrem-numa-guia-nova`.
 async function abrirFunil(page) {
-  await page.getByRole("button", { name: "Menu", exact: true }).click();
-  await page.locator("[data-abrir-funil]").click();
-  await page.waitForSelector('[data-tela="funil"]');
+  await abrirATela(page, "funil", { linha: ADV });
   // O QUADRO PRONTO, e mais um pouco: as respostas que chegam depois da
   // abertura (a das tarefas, que liga o aviso nos cartões) relêem uma vez,
   // e é de propósito.
@@ -129,7 +131,14 @@ const leiturasDasEtapas = (page) => page.evaluate(() =>
   (globalThis.__DIARIO || []).filter((m) => m.tabela === "zorvin_etapas").length);
 
 // ==================================================================
-console.log("\n1. Mensagens do tempo real com o funil aberto não desmancham o quadro");
+// O QUE REDESENHA O PAINEL MUDOU EM 02/11: na guia do funil não há tempo
+// real (a guia de uma tela não assina o canal), e a mensagem do cliente não
+// chega mais a ela. O defeito continua possível por qualquer outro desenho —
+// uma resposta que chega depois, a janela que muda de largura —, porque o
+// Painel ainda passa `advogados={advogadosPermitidos}`, um `.filter()` novo a
+// cada desenho. A cena redesenha o Painel pela LARGURA DA JANELA, que ele
+// acompanha num estado próprio, e não mais pelas mensagens.
+console.log("\n1. O Painel se redesenhando com o funil aberto não desmancha o quadro");
 {
   const { ctx, page, estouros } = await abrirPainel(SEMENTE_PEQUENA);
   await abrirFunil(page);
@@ -160,13 +169,18 @@ console.log("\n1. Mensagens do tempo real com o funil aberto não desmancham o q
     }, 30);
   });
   const antes = await leiturasDasEtapas(page);
-  // TRÊS MENSAGENS PELA PONTE, como chegam no escritório: a bancada grava e
-  // avisa pelo tempo real, e o Painel se redesenha a cada uma.
-  for (const k of ["g0", "g2", "g4"]) {
-    await page.evaluate((id) => globalThis.__MENSAGEM_PELA_PONTE(id, "contato", "oi, chegou agora"), `cv-${k}`);
-    await page.waitForTimeout(400);
+  // TRÊS LARGURAS DE JANELA, todas acima de 768 (o desenho do computador
+  // continua o mesmo): o Painel guarda a largura num estado e se redesenha a
+  // cada uma. A espera entre elas passa do tempo em que ele espera a pessoa
+  // parar de arrastar.
+  for (const largura of [1380, 1360, 1400]) {
+    await page.setViewportSize({ width: largura, height: 900 });
+    await page.waitForTimeout(700);
   }
-  await page.waitForTimeout(1500);
+  // QUE O PAINEL SE REDESENHA A CADA LARGURA quem prova é a sabotagem que
+  // devolve o defeito (o quadro relendo a cada `advogados` novo): com ela,
+  // esta cena reprova.
+  await page.waitForTimeout(1000);
   const filme = await page.evaluate(() => { clearInterval(globalThis.__FILMANDO); return globalThis.__FILME_DO_FUNIL; });
   const depois = await leiturasDasEtapas(page);
   ok("o filme tem quadros", filme.length > 20, String(filme.length));
@@ -176,7 +190,7 @@ console.log("\n1. Mensagens do tempo real com o funil aberto não desmancham o q
      `${filme.filter((f) => f.lendo).length} quadros lendo`);
   const rolagem = await page.evaluate(() => document.querySelector("[data-prova-quadro]")?.scrollLeft ?? null);
   ok("a rolagem ficou onde eu deixei", rolagem === 300, String(rolagem));
-  ok("e o banco não foi relido por causa das mensagens", depois === antes, `${antes} → ${depois} leituras das etapas`);
+  ok("e o banco não foi relido por causa dos desenhos", depois === antes, `${antes} → ${depois} leituras das etapas`);
 
   // O CONTRASTE: "Atualizar" relê. Sem ele, a conferência de cima passaria
   // com um diário que não anota nada.
@@ -213,14 +227,15 @@ console.log("\n2. A resposta das tarefas que chega depois relê sem esvaziar o q
   // — mas o quadro é o mesmo funil, e não pode sumir enquanto a resposta
   // não chega (aqui ela demora 4 s, como a ponte que acorda).
   const { ctx, page, estouros } = await abrirPainel(SEMENTE_PEQUENA, { atraso: { zorvin_tarefas: 4000 } });
-  await page.evaluate(() => {
+  // O FILME COMEÇA COM A PÁGINA: a guia do funil nasce junto com o Painel, e
+  // o quadro pode aparecer antes de qualquer `evaluate` daqui chegar a ela.
+  await page.addInitScript(() => {
     globalThis.__FILME_DO_FUNIL = [];
     globalThis.__FILMANDO = setInterval(() => {
       globalThis.__FILME_DO_FUNIL.push(document.querySelectorAll("[data-cartao-do-funil]").length);
     }, 30);
   });
-  await page.getByRole("button", { name: "Menu", exact: true }).click();
-  await page.locator("[data-abrir-funil]").click();
+  await abrirATela(page, "funil", { linha: ADV });
   await page.waitForTimeout(11000);
   const filme = await page.evaluate(() => { clearInterval(globalThis.__FILMANDO); return globalThis.__FILME_DO_FUNIL; });
   const primeiro = filme.findIndex((n) => n > 0);

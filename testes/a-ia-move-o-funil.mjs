@@ -18,7 +18,7 @@
 //      o motivo;
 //   8. a conversa diz que foi a IA, e o menu da etapa diz o porquê;
 //   9. o caminho do histórico diz "A IA moveu", com o porquê.
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+import { abrirNavegador, ENDERECO, guiaQueAbre } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -100,12 +100,15 @@ const ESTADO = {
 
 async function abrirPainel({ semIa = false, semente = SEMENTE, estado = ESTADO.atual, largura = 1920 } = {}) {
   const ctx = await nav.newContext({ viewport: { width: largura, height: 900 } });
-  const page = await ctx.newPage();
   const estouros = [];
-  page.on("pageerror", (e) => estouros.push(e.message));
-  page.on("dialog", (d) => d.accept());
+  // NO CONTEXTO, e não na página: desde 02/11 o funil abre numa guia nova, e
+  // ela precisa nascer com a semente, as bandeiras e a ponte de mentira.
+  ctx.on("page", (p) => {
+    p.on("pageerror", (e) => estouros.push(e.message));
+    p.on("dialog", (d) => d.accept());
+  });
   // TODAS AS BANDEIRAS EM TODA ABERTURA — `addInitScript` acumula.
-  await page.addInitScript((d) => {
+  await ctx.addInitScript((d) => {
     globalThis.__SEMENTE = d.semente;
     globalThis.__SEM_IA_DO_FUNIL = d.semIa;
     globalThis.__SEM_FUNIS_DOS_TELEFONES = false;
@@ -116,7 +119,7 @@ async function abrirPainel({ semIa = false, semente = SEMENTE, estado = ESTADO.a
     globalThis.__ERRO_NA_GRAVACAO = {};
     globalThis.__CHAMADAS_IA_DO_FUNIL = [];
   }, { semente, semIa });
-  await page.route("**/ponte-de-mentira/**", async (rota) => {
+  await ctx.route("**/ponte-de-mentira/**", async (rota) => {
     const url = new URL(rota.request().url());
     const json = (status, corpo) => rota.fulfill({ status, contentType: "application/json", body: JSON.stringify(corpo) });
     if (url.pathname.endsWith("/copiloto/estado")) return json(200, estado);
@@ -124,6 +127,7 @@ async function abrirPainel({ semIa = false, semente = SEMENTE, estado = ESTADO.a
     if (url.pathname.endsWith("/vantoro/status")) return json(200, { ok: true, configurado: false });
     return json(404, {});
   });
+  const page = await ctx.newPage();
   await page.goto(ENDERECO);
   await page.waitForSelector("[data-conversa-nome]");
   await page.waitForTimeout(1300);
@@ -150,11 +154,16 @@ const texto = async (loc) => ((await loc.count()) ? loc.first().innerText().catc
 async function abrirMenuTopo(page) {
   return clicar(page.getByRole("button", { name: "Menu", exact: true }));
 }
-async function abrirFunil(page) {
-  if (!(await abrirMenuTopo(page))) return false;
-  if (!(await clicar(page.locator("[data-abrir-funil]")))) return false;
-  await page.waitForTimeout(1000);
-  return true;
+/** Abre o funil pelo menu, como quem clica: ele abre numa GUIA NOVA (02/11),
+ *  e é ela que volta, já desenhada — ou `null`. */
+async function abrirFunil(ctx, page) {
+  if (!(await abrirMenuTopo(page))) return null;
+  if (!(await page.locator("[data-abrir-funil]").count())) return null;
+  const funil = await guiaQueAbre(ctx, () => clicar(page.locator("[data-abrir-funil]")));
+  if (!funil) return null;
+  if (!(await funil.waitForSelector('[data-tela="funil"]', { timeout: 20000 }).then(() => true).catch(() => false))) return null;
+  await funil.waitForTimeout(1000);
+  return funil;
 }
 async function abrirAdmin(page) {
   if (!(await abrirMenuTopo(page))) return false;
@@ -183,10 +192,12 @@ console.log("\n1. Sem o 044, nada da IA aparece, e nada quebra");
   ok("e sem descrever etapa", (await page.locator("[data-etapa-descrever]").count()) === 0);
   await clicar(page.locator('button[aria-label="Fechar"]'));
   await page.waitForTimeout(800);
-  ok("abriu o funil", await abrirFunil(page));
-  ok("o cartão não diz IA", (await page.locator("[data-cartao-pela-ia]").count()) === 0);
-  await clicar(page.getByRole("button", { name: "Voltar" }));
-  await page.waitForTimeout(500);
+  const funil = await abrirFunil(ctx, page);
+  ok("abriu o funil", Boolean(funil));
+  ok("o cartão não diz IA", Boolean(funil) && (await funil.locator("[data-cartao-pela-ia]").count()) === 0);
+  // O FUNIL ABRE NUMA GUIA NOVA (02/11): a conversa se abre na guia das
+  // conversas, que ficou onde estava.
+  if (funil) await funil.close();
   await abrirConversa(page, NOMES.p1);
   ok("a conversa não diz IA", (await page.locator("[data-etapa-pela-ia]").count()) === 0);
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
@@ -303,8 +314,10 @@ console.log("\n5. A descrição da etapa");
 // ------------------------------------------------------------------
 console.log("\n6. O cartão que a IA pôs diz IA e o porquê; uma pessoa que o move apaga o motivo");
 {
-  const { ctx, page, estouros } = await abrirPainel();
-  ok("abriu o funil", await abrirFunil(page));
+  const { ctx, page: conversas, estouros } = await abrirPainel();
+  const funil = await abrirFunil(ctx, conversas);
+  ok("abriu o funil", Boolean(funil));
+  const page = funil || conversas;
   await page.locator("[data-funil-departamento]").selectOption(String(DEP)).catch(() => {});
   await page.waitForTimeout(900);
   const p1 = page.locator('[data-cartao-do-funil="ct-p1"]');

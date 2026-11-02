@@ -17,7 +17,7 @@
 // e, no computador (1320px), O GRÁFICO NÃO MUDA: o mesmo número de rótulos
 // de antes (um a cada três dias nos 30 dias), cada um centrado na sua
 // coluna, como era.
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+import { abrirNavegador, ENDERECO, abrirATela } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -35,12 +35,10 @@ async function abrirPainel(largura) {
   const estouros = [];
   page.on("pageerror", (e) => estouros.push(e.message));
   await page.addInitScript(() => { globalThis.__TEM_FUNCAO_PAINEL = true; globalThis.__SOU_ADMIN = true; });
-  await page.goto(ENDERECO);
-  await page.getByRole("button", { name: "Menu" }).first().waitFor({ timeout: 15000 });
-  await page.waitForTimeout(1200);
-  await page.getByRole("button", { name: "Menu" }).first().click();
-  await page.waitForTimeout(300);
-  await page.getByRole("button", { name: "Painel" }).first().click();
+  // O PAINEL ABRE NUMA GUIA PRÓPRIA desde 02/11 (`?tela=painel`): esta prova
+  // mede a tela, e abre o endereço dela na própria página — o gesto do menu é
+  // provado em `as-telas-abrem-numa-guia-nova`.
+  await abrirATela(page, "painel");
   await page.waitForSelector('[data-teste="escopo"]', { timeout: 15000 });
   await page.waitForTimeout(1500);
   return { ctx, page, estouros };

@@ -33,7 +33,7 @@
 //      rápido do que escrever;
 //  11. e as outras duas pesquisas que mudaram de conta: a do Funil e a da
 //      equipe, em Departamentos e acessos.
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+import { abrirNavegador, ENDERECO, guiaQueAbre } from "./navegador.mjs";
 import { PESQUISA_A_PARTIR_DE, chaveDaPesquisa, casaComAPesquisa, nadaComAPesquisa }
   from "../src/pesquisaNosMenus.js";
 
@@ -181,6 +181,8 @@ async function abrirPainel({ largura = 1920, altura = 1000, comMuitos = true } =
   const page = await ctx.newPage();
   const estouros = [];
   page.on("pageerror", (e) => estouros.push(e.message));
+  // E NAS GUIAS QUE ESTA ABRIR (o Funil abre numa guia nova desde 02/11).
+  ctx.on("page", (p) => p.on("pageerror", (e) => estouros.push(e.message)));
   // A ETIQUETA DA CONVERSA VAI PELA PONTE (`/etiqueta/contato`, ver
   // `o-cliente-e-um-so`): a de mentira guarda o pedido e responde que deu.
   const etiquetados = [];
@@ -190,8 +192,10 @@ async function abrirPainel({ largura = 1920, altura = 1000, comMuitos = true } =
     etiquetados.push(corpo);
     await rota.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
   });
-  // TODAS AS BANDEIRAS EM TODA ABERTURA — `addInitScript` acumula.
-  await page.addInitScript((d) => {
+  // TODAS AS BANDEIRAS EM TODA ABERTURA — `addInitScript` acumula. NO
+  // CONTEXTO, e não na página: desde 02/11 o Funil abre numa guia nova, e ela
+  // precisa nascer com a mesma semente.
+  await ctx.addInitScript((d) => {
     globalThis.__SEMENTE = d.comMuitos ? d.semente : {};
   }, { semente: { ...SEMENTE, tags: ETIQUETAS, usuarios: PESSOAS, mensagens_rapidas: RAPIDAS }, comMuitos });
   await page.goto(ENDERECO);
@@ -627,18 +631,21 @@ console.log("\n10. A pesquisa do Funil e a da equipe, pela mesma conta");
 {
   const { ctx, page, estouros } = await abrirPainel({ largura: 1400, altura: 900 });
   ok("abri o menu do topo", await clicar(page, 'button[aria-label="Menu"]'));
-  ok("e o Funil", await clicar(page, "[data-abrir-funil]"));
-  await page.waitForTimeout(600);
-  const busca = page.locator("[data-busca-no-funil]");
+  // O FUNIL ABRE NUMA GUIA NOVA (02/11), e a pesquisa é feita lá.
+  const funil = await guiaQueAbre(ctx, () => clicar(page, "[data-abrir-funil]"));
+  ok("e o Funil, numa guia nova", Boolean(funil));
+  const f = funil || page;
+  await f.waitForSelector('[data-tela="funil"]', { timeout: 20000 }).catch(() => {});
+  await f.waitForTimeout(900);
+  const busca = f.locator("[data-busca-no-funil]");
   ok("(os dois cartões estão no funil)",
-     (await page.locator('[data-cartao-do-funil="ct-funil-joao"]').count()) === 1
-       && (await page.locator('[data-cartao-do-funil="ct-funil-maria"]').count()) === 1);
-  if (await busca.count()) { await busca.first().fill("funil joao"); await page.waitForTimeout(400); }
+     (await f.locator('[data-cartao-do-funil="ct-funil-joao"]').count()) === 1
+       && (await f.locator('[data-cartao-do-funil="ct-funil-maria"]').count()) === 1);
+  if (await busca.count()) { await busca.first().fill("funil joao"); await f.waitForTimeout(400); }
   ok("“funil joao”, sem acento e fora de ordem, acha o JOÃO DO FUNIL",
-     (await page.locator('[data-cartao-do-funil="ct-funil-joao"]').count()) === 1);
-  ok("e só ele", (await page.locator('[data-cartao-do-funil="ct-funil-maria"]').count()) === 0);
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(400);
+     (await f.locator('[data-cartao-do-funil="ct-funil-joao"]').count()) === 1);
+  ok("e só ele", (await f.locator('[data-cartao-do-funil="ct-funil-maria"]').count()) === 0);
+  if (funil) await funil.close();
 
   // A EQUIPE, em Departamentos e acessos → Atendentes. A lista vem da ponte
   // (`/permissoes/atendentes`), e a de mentira responde a equipe que a cena

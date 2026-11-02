@@ -1601,6 +1601,32 @@ for (const c of TABELAS.conversas || []) {
 }
 
 // ============================================================
+//  O RETRATO DE OUTRA GUIA (02/11)
+//
+//  Funil, Tarefas, Esperando resposta, Faxina e Painel abrem numa GUIA
+//  PRÓPRIA (`guias.js`), e esta bancada mora na memória de cada página: a guia
+//  nova começa da semente, e não do que a guia das conversas acabou de gravar.
+//  Em produção as duas guias leem o MESMO banco — o "Já tratei" marcado numa
+//  aparece no relatório da outra.
+//
+//  `__RETRATO = { tabela: [linhas] }`, posto antes de a página abrir, TROCA o
+//  conteúdo daquelas tabelas pelo que a prova trouxe da outra guia (lido de
+//  `__TABELAS` lá). É a prova que leva as linhas, e por escrito: o caminho
+//  inteiro continua sendo "o que a conversa gravou é o que a tela lê", e não
+//  "o que a bancada inventou". Troca NO LUGAR, para quem guardou o array
+//  continuar olhando o mesmo; e só tabela que é lista (a `equipe` é uma conta
+//  sobre `usuarios`, e não se troca).
+// ============================================================
+if (typeof globalThis !== "undefined" && globalThis.__RETRATO && typeof globalThis.__RETRATO === "object") {
+  for (const [nome, linhas] of Object.entries(globalThis.__RETRATO)) {
+    const d = Object.getOwnPropertyDescriptor(TABELAS, nome);
+    if (!d || !Array.isArray(d.value) || !Array.isArray(linhas)) continue;
+    d.value.length = 0;
+    d.value.push(...linhas.map((l) => ({ ...l })));
+  }
+}
+
+// ============================================================
 //  OS GATILHOS DO SCRIPT 028, imitados
 //
 //  A situação da conversa e o protocolo são do BANCO: a tela nunca os grava,
@@ -2466,6 +2492,16 @@ function consulta(tabela) {
         ? (encomendado.length > 1 ? encomendado.shift() : encomendado[0])
         : encomendado;
       if (extra && await esperaOuAborto(extra, sinal)) return resolver(respostaAbortada());
+      // SÓ A PERGUNTA DAS MINHAS ESPERANDO HÁ 3 DIAS OU MAIS DEMORA (02/11).
+      // Na guia nova do "Esperando resposta" a lista e essa pergunta saem
+      // quase juntas, e o atraso da tabela inteira atrasaria as duas: a aba das
+      // suas conversas nem apareceria enquanto a lista não chegasse, e a cena
+      // "enquanto a lista vem, a aba não diz 0" não teria o que medir. A marca
+      // da pergunta é a de `__QUEBRAR_AS_QUE_ESPERAM`.
+      const atrasoDasQueEsperam = Number(globalThis.__ATRASO_DAS_QUE_ESPERAM) || 0;
+      if (atrasoDasQueEsperam && tabela === "conversas" && !gravacao && !patch && !apagando
+          && pedidos.includes("responsavel_id") && /esperando_desde/.test(String(colunas || ""))
+          && await esperaOuAborto(atrasoDasQueEsperam, sinal)) return resolver(respostaAbortada());
       // A PÁGINA QUE DEMORA (28/10). `__ATRASO_DA_PAGINA = { conversas: {
       // aPartirDe: 300, ms: 3000 } }` atrasa só as leituras paginadas desta
       // tabela que começam daquela linha em diante: é a página 2 da lista em

@@ -37,7 +37,7 @@
 //  13h. o pré-cadastro criado não mostrava os telefones dele, e "conversar por
 //      este" colava "55" em dígitos que já tinham o 55;
 //  13i. o rascunho da ficha aparecia para a próxima pessoa que entrasse.
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+import { abrirNavegador, ENDERECO, abrirATela } from "./navegador.mjs";
 import { campoDaPlanilha } from "../src/planilha.js";
 
 let falhas = 0, feitas = 0;
@@ -595,10 +595,10 @@ if (vale("12c")) for (const [L, celular] of [[1400, false], [390, true]]) {
 
 // ==================================================================
 if (vale("12")) console.log("\n12. O Painel de números");
+// O PAINEL ABRE NUMA GUIA PRÓPRIA desde 02/11 (`?tela=painel`): a cena mede
+// a tela, e abre o endereço dela na própria página.
 async function irAoPainel(page) {
-  await page.getByRole("button", { name: "Menu" }).click();
-  await page.getByRole("button", { name: "Painel" }).click();
-  await page.waitForSelector('[data-tela="painel"]');
+  await abrirATela(page, "painel");
   await page.waitForTimeout(1200);
 }
 const rotuloDoPeriodo = (page) => page.locator('[data-teste="abrir-periodo"]').innerText();

@@ -10,7 +10,8 @@
 //   4. mover pela lista grava a etapa nova, e o arraste também;
 //   5. o banco que recusa (calado ou com código) faz o cartão VOLTAR e a frase
 //      dizer por quê — nunca "foi para…";
-//   6. clicar no cartão abre a conversa do cliente;
+//   6. clicar no cartão abre a conversa do cliente NUMA GUIA NOVA, e o funil
+//      continua na guia dele (02/11);
 //   7. a etapa aparece na linha do número da conversa, e escolher outra grava;
 //      a conversa de quem não está no funil oferece "Pôr no funil";
 //   8. "Trazer conversas" (só quem administra) põe na primeira etapa quem
@@ -20,7 +21,13 @@
 //
 // OS CLIENTES DO FUNIL SÃO PLANTADOS (`__SEMENTE`), num telefone descoberto, e
 // não escolhido a dedo — ver `o-responsavel-pela-conversa`.
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+//
+// DESDE 02/11 O FUNIL ABRE NUMA GUIA NOVA (`src/guias.js`), e o cartão clicado
+// abre a conversa noutra. A semente e as bandeiras vão no CONTEXTO
+// (`ctx.addInitScript`), e não na página: é assim que a guia nova nasce com
+// elas. A bancada de cada guia começa da semente — o que se move no funil fica
+// no `__TABELAS` da guia do funil, e é lá que a prova confere.
+import { abrirNavegador, ENDERECO, guiaQueAbre } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -80,12 +87,15 @@ const SEMENTE = {
 async function abrirPainel({ semFunil = false, semEfeito = [], erroNaGravacao = {}, recusarLeitura = [],
                              souAdmin = true, largura = 1400 } = {}) {
   const ctx = await nav.newContext({ viewport: { width: largura, height: 900 } });
-  const page = await ctx.newPage();
   const estouros = [];
-  page.on("pageerror", (e) => estouros.push(e.message));
-  page.on("dialog", (d) => d.accept());
+  // EM TODA GUIA DO CONTEXTO, e não só na primeira: o funil e a conversa
+  // aberta por ele são guias novas.
+  ctx.on("page", (p) => {
+    p.on("pageerror", (e) => estouros.push(e.message));
+    p.on("dialog", (d) => d.accept());
+  });
   // TODAS AS BANDEIRAS EM TODA ABERTURA — `addInitScript` acumula.
-  await page.addInitScript((d) => {
+  await ctx.addInitScript((d) => {
     globalThis.__SEMENTE = d.semente;
     globalThis.__SEM_FUNIL = d.semFunil;
     globalThis.__ESCRITA_SEM_EFEITO = d.semEfeito;
@@ -105,6 +115,7 @@ async function abrirPainel({ semFunil = false, semEfeito = [], erroNaGravacao = 
           // tela vazia em vez do funil de quem atende este departamento.
           : { ...SEMENTE, permissoes: [{ id: 901, usuario_id: "u1", departamento_id: DEP, telefone_id: null }] },
         semFunil, semEfeito, erroNaGravacao, recusarLeitura, souAdmin });
+  const page = await ctx.newPage();
   await page.goto(ENDERECO);
   await page.waitForSelector("[data-conversa-nome]");
   await page.waitForTimeout(1300);
@@ -120,11 +131,17 @@ async function clicar(loc) {
 async function abrirMenuTopo(page) {
   return clicar(page.getByRole("button", { name: "Menu", exact: true }));
 }
-async function abrirFunil(page) {
-  if (!(await abrirMenuTopo(page))) return false;
-  if (!(await clicar(page.locator("[data-abrir-funil]")))) return false;
-  await page.waitForTimeout(900);
-  return true;
+/** Abre o funil pelo menu do topo, como quem clica. Devolve a GUIA NOVA em
+ *  que ele abriu (02/11), já desenhada, ou `null`. */
+async function abrirFunil(ctx, page) {
+  if (!(await abrirMenuTopo(page))) return null;
+  if (!(await page.locator("[data-abrir-funil]").count())) return null;
+  const funil = await guiaQueAbre(ctx, () => clicar(page.locator("[data-abrir-funil]")));
+  if (!funil) return null;
+  const desenhou = await funil.waitForSelector('[data-tela="funil"]', { timeout: 20000 }).then(() => true).catch(() => false);
+  if (!desenhou) return null;
+  await funil.waitForTimeout(900);
+  return funil;
 }
 const colunaDe = (page, k) => page.locator(`[data-cartao-do-funil="ct-${k}"]`).first()
   .evaluate((el) => el.closest("[data-coluna-do-funil]")?.getAttribute("data-coluna-do-funil")).catch(() => null);
@@ -142,19 +159,32 @@ console.log("\n1. Sem o script 017, nada do funil aparece");
   const { ctx, page } = await abrirPainel({ semFunil: true });
   await abrirMenuTopo(page);
   ok("o menu do topo não oferece o Funil", (await page.locator("[data-abrir-funil]").count()) === 0);
+  // O PAINEL É UM LINK DESDE 02/11 (abre numa guia nova): procurá-lo como
+  // botão daria zero, e a conferência diria que o menu nem abriu.
   ok("e o menu abriu de verdade (o Painel está lá)",
-     (await page.getByRole("button", { name: "Painel", exact: true }).count()) > 0);
+     (await page.locator("[data-abrir-painel]").count()) > 0);
   await page.keyboard.press("Escape");
   await abrirConversa(page, NOMES.f1);
   ok("a conversa não mostra etapa", (await page.locator("[data-etapa-da-conversa]").count()) === 0);
+  // O ENDEREÇO DA GUIA DO FUNIL ABERTO À MÃO (um favorito, ou a guia que
+  // ficou aberta num Zorvin sem o 017): a guia diz que este Zorvin não tem o
+  // funil, e não desenha um funil vazio — que se leria como "ninguém no funil".
+  await page.goto(`${ENDERECO}?tela=funil`);
+  const indisponivel = await page.waitForSelector('[data-guia-abrindo="indisponivel"]', { timeout: 15000 })
+    .then(() => true).catch(() => false);
+  ok("a guia do funil aberta à mão diz que este Zorvin não tem o funil", indisponivel,
+     await page.locator("[data-tela-da-guia]").innerText().catch(() => "(nada)"));
+  ok("e não desenha o funil", (await page.locator('[data-tela="funil"]').count()) === 0);
   await ctx.close();
 }
 
 // ------------------------------------------------------------------
 console.log("\n2. O funil: as etapas ativas são as colunas, e cada cartão na sua");
 {
-  const { ctx, page, estouros } = await abrirPainel();
-  ok("abriu o funil pelo menu", await abrirFunil(page));
+  const { ctx, page: conversas, estouros } = await abrirPainel();
+  const page = await abrirFunil(ctx, conversas);
+  ok("abriu o funil pelo menu, numa guia nova", Boolean(page));
+  if (!page) { await ctx.close(); await nav.close(); process.exit(1); }
   const colunas = await page.locator("[data-coluna-do-funil]").evaluateAll((els) =>
     els.map((e) => e.getAttribute("data-coluna-do-funil")));
   ok("as sete etapas sugeridas, na ordem, e a das desativadas no fim",
@@ -199,12 +229,19 @@ console.log("\n2. O funil: as etapas ativas são as colunas, e cada cartão na s
   ok("Bruno arrastado para Em atendimento", (await colunaDe(page, "f2")) === "Em atendimento", await colunaDe(page, "f2"));
   ok("e no banco", (await etapaNoBanco(page, "f2")) === ET(2), await etapaNoBanco(page, "f2"));
 
-  console.log("\n5. Clicar no cartão abre a conversa do cliente");
-  await clicar(page.locator('[data-cartao-do-funil="ct-f2"] [data-abrir-cartao]'));
-  await page.waitForTimeout(1200);
-  ok("o funil fechou", (await page.locator('[data-tela="funil"]').count()) === 0);
-  const topo = await page.locator("[data-topo-conversa]").innerText().catch(() => "");
-  ok("e a conversa do Bruno está aberta", topo.includes(NOMES.f2), topo.slice(0, 80));
+  console.log("\n5. Clicar no cartão abre a conversa do cliente numa guia nova");
+  // INVERTIDA EM 02/11: o clique fechava o funil e abria a conversa por baixo
+  // dele. Hoje a conversa abre noutra guia, e o funil continua na sua — a
+  // resposta do Rodrigo à pergunta de como abrir a conversa de uma tela.
+  const guiaDaConversa = await guiaQueAbre(ctx, () => clicar(page.locator('[data-cartao-do-funil="ct-f2"] [data-abrir-cartao]')));
+  ok("o clique abriu uma guia nova", Boolean(guiaDaConversa));
+  await page.waitForTimeout(300);
+  ok("o funil continua na guia dele", (await page.locator('[data-tela="funil"]').count()) === 1);
+  const topo = guiaDaConversa
+    ? await guiaDaConversa.waitForSelector("[data-topo-conversa]", { timeout: 20000 })
+        .then(() => guiaDaConversa.locator("[data-topo-conversa]").innerText()).catch(() => "")
+    : "";
+  ok("e a guia nova abriu já na conversa do Bruno", topo.includes(NOMES.f2), topo.slice(0, 80));
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
@@ -212,9 +249,9 @@ console.log("\n2. O funil: as etapas ativas são as colunas, e cada cartão na s
 // ------------------------------------------------------------------
 console.log("\n6. O banco que recusa: o cartão VOLTA, e a frase diz por quê");
 {
-  const { ctx, page } = await abrirPainel({ semEfeito: ["zorvin_cartoes"] });
-  await abrirFunil(page);
-  await page.locator('[data-cartao-do-funil="ct-f1"] [data-mover-cartao]').selectOption({ label: "Encerrado" });
+  const { ctx, page: conversas } = await abrirPainel({ semEfeito: ["zorvin_cartoes"] });
+  const page = (await abrirFunil(ctx, conversas)) || conversas;
+  await page.locator('[data-cartao-do-funil="ct-f1"] [data-mover-cartao]').selectOption({ label: "Encerrado" }, { timeout: 3000 }).catch(() => {});
   await page.waitForTimeout(700);
   ok("recusa calada: Ana voltou para Novo contato", (await colunaDe(page, "f1")) === "Novo contato", await colunaDe(page, "f1"));
   const t = await textoDoAvisoDoFunil(page);
@@ -223,9 +260,9 @@ console.log("\n6. O banco que recusa: o cartão VOLTA, e a frase diz por quê");
   await ctx.close();
 }
 {
-  const { ctx, page } = await abrirPainel({ erroNaGravacao: { zorvin_cartoes: { code: "42501", message: "permission denied" } } });
-  await abrirFunil(page);
-  await page.locator('[data-cartao-do-funil="ct-f1"] [data-mover-cartao]').selectOption({ label: "Encerrado" });
+  const { ctx, page: conversas } = await abrirPainel({ erroNaGravacao: { zorvin_cartoes: { code: "42501", message: "permission denied" } } });
+  const page = (await abrirFunil(ctx, conversas)) || conversas;
+  await page.locator('[data-cartao-do-funil="ct-f1"] [data-mover-cartao]').selectOption({ label: "Encerrado" }, { timeout: 3000 }).catch(() => {});
   await page.waitForTimeout(700);
   ok("recusa com erro: Ana voltou para Novo contato", (await colunaDe(page, "f1")) === "Novo contato");
   const t = await textoDoAvisoDoFunil(page);
@@ -275,8 +312,8 @@ console.log("\n7. A etapa na conversa — e escolher outra grava");
 // ------------------------------------------------------------------
 console.log("\n9. Trazer conversas: só quem administra, e diz quantos");
 {
-  const { ctx, page } = await abrirPainel();
-  await abrirFunil(page);
+  const { ctx, page: conversas } = await abrirPainel();
+  const page = (await abrirFunil(ctx, conversas)) || conversas;
   const antes = await page.evaluate(() => (globalThis.__TABELAS.zorvin_cartoes || []).length);
   ok("quem administra vê o botão", (await page.locator("[data-trazer-para-o-funil]").count()) === 1);
   await clicar(page.locator("[data-trazer-para-o-funil]"));
@@ -291,8 +328,8 @@ console.log("\n9. Trazer conversas: só quem administra, e diz quantos");
   await ctx.close();
 }
 {
-  const { ctx, page } = await abrirPainel({ souAdmin: false });
-  await abrirFunil(page);
+  const { ctx, page: conversas } = await abrirPainel({ souAdmin: false });
+  const page = (await abrirFunil(ctx, conversas)) || conversas;
   ok("quem não administra abre o funil", (await page.locator('[data-tela="funil"]').count()) === 1);
   ok("mas não vê o botão de trazer", (await page.locator("[data-trazer-para-o-funil]").count()) === 0);
   ok("e vê os cartões do departamento que atende", (await page.locator("[data-cartao-do-funil]").count()) >= 2,
@@ -303,16 +340,20 @@ console.log("\n9. Trazer conversas: só quem administra, e diz quantos");
 // ------------------------------------------------------------------
 console.log("\n10. A leitura que falha diz que falhou, e não vira 'ninguém'");
 {
-  const { ctx, page } = await abrirPainel({ recusarLeitura: ["zorvin_cartoes"] });
-  await abrirFunil(page);
+  const { ctx, page: conversas } = await abrirPainel({ recusarLeitura: ["zorvin_cartoes"] });
+  const page = (await abrirFunil(ctx, conversas)) || conversas;
   const t = await page.locator("[data-falha-do-funil]").innerText().catch(() => "");
   ok("a faixa diz que não leu", /Não consegui ler/.test(t), t);
   ok("com o código", /\(erro /.test(t), t);
   ok("e não diz que o funil está vazio", (await page.locator("[data-funil-vazio]").count()) === 0);
+  // INVERTIDA EM 02/11: o Esc fechava o funil, que abria POR CIMA das
+  // conversas. Numa guia própria, o funil É a guia: o Esc não a esvazia (quem
+  // fecha a guia é o X, ou o navegador). A lista de conversas mora na outra
+  // guia, e continua lá.
   await page.keyboard.press("Escape");
   await page.waitForTimeout(300);
-  ok("Esc fecha o funil", (await page.locator('[data-tela="funil"]').count()) === 0);
-  ok("e a lista de conversas continua lá", (await page.locator("[data-conversa-nome]").count()) > 0);
+  ok("o Esc não tira o funil da guia dele", page !== conversas && (await page.locator('[data-tela="funil"]').count()) === 1);
+  ok("e a lista de conversas continua na guia das conversas", (await conversas.locator("[data-conversa-nome]").count()) > 0);
   await ctx.close();
 }
 

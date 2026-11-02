@@ -88,6 +88,9 @@ import { tipoDoAnexo, caminhoDoAnexoDaRapida, semAColunaDoAnexo, nomeDoAnexo, an
          CACHE_DO_ANEXO_DA_RAPIDA } from "./rapidasComAnexo.js";
 import { ehLembreteAutomatico, fechouSozinho } from "./acompanhamento.js";
 import { tamanhoDosTelefones, TELEFONE_MENOR, TELEFONE_MENOR_NO_CELULAR, ESMAECER, VAO_CSS } from "./barraLateral.js";
+import { TELAS_DA_GUIA, telaDaGuia, linhaDaGuia, conversaDaGuia, enderecoDaTela, enderecoDaConversa,
+         abrirNumaGuia, fecharAGuia, reivindicarAviso, naVezDasGuias, anunciarConversaVista, outraGuiaVendo,
+         RENOVAR_A_VISTA_MS, avisarAsOutrasGuias, ouvirAsOutrasGuias } from "./guias.js";
 
 // ============================================================
 //  ZORVIN by Ropelimi — Painel real (conectado ao Supabase)
@@ -593,6 +596,30 @@ const ESPERA_DA_DISTRIBUICAO_MS = 2500;
 
 const CARENCIA_TEMPO_REAL_MS =
   (typeof globalThis !== "undefined" && globalThis.__CARENCIA_TEMPO_REAL) || 10000;
+
+// ============================================================
+//  ESTA GUIA É UMA TELA? (02/11) — ver `guias.js`
+//
+//  Funil, Tarefas, Esperando resposta, Faxina da fila e Painel abrem cada uma
+//  numa guia própria (`/?tela=funil`). A guia de uma tela monta o Zorvin
+//  inteiro — é dele que a tela tira os telefones, a equipe, os assuntos e o
+//  que o banco tem —, mas MAIS LEVE, e isso não é enfeite:
+//
+//    - NÃO ASSINA O TEMPO REAL. Cada guia assinada recebe cada gravação do
+//      escritório, e o limite do Supabase é por segundo, somado entre todas
+//      (o entupimento de 20/10). Nenhuma tela usa o tempo real: o Funil e as
+//      Tarefas se releem sozinhos, a Faxina confere antes de cada finalização;
+//    - NÃO TOCA AVISO NENHUM e não pergunta a saúde do sistema: quem avisa é a
+//      guia das conversas. Duas guias avisando seriam dois sons por mensagem;
+//    - NÃO ABRE CONVERSA: a conversa clicada numa tela abre noutra guia, já
+//      nela (`abrirConversaNumaGuia`), e o telefone aberto aqui não é guardado
+//      como o "último usado" — senão o F5 da guia das conversas abriria no
+//      telefone que o funil escolheu.
+//
+//  Uma constante, e não um estado: o endereço de uma guia não muda enquanto
+//  ela vive (nada aqui navega), e o F5 a lê de novo.
+// ============================================================
+const TELA_DA_GUIA = telaDaGuia();
 
 // QUANDO A CONVERSA É RELIDA SE A BOLHA ENVIADA NÃO FOR CONFIRMADA PELO TEMPO
 // REAL (20/10) — ver `agendarConferenciaDoEnvio`. A ponte manda um texto em
@@ -3279,8 +3306,11 @@ export default function Painel({ sessao }) {
   const saberDosScripts = useCallback((estado) => {
     setScriptsDoBanco((antes) => manterOQueSeSabia(antes, estado));
   }, []);
-  // O Painel de números (quanto se falou, por telefone e por atendente).
-  const [telaPainel, setTelaPainel] = useState(false);
+  // O Painel de números (quanto se falou, por telefone e por atendente). Desde
+  // 02/11 ele, o Funil, as Tarefas, o Esperando resposta e a Faxina abrem numa
+  // GUIA PRÓPRIA (ver `TELA_DA_GUIA`): nesta guia a tela é o que o endereço
+  // diz, e nunca se abre por cima das conversas.
+  const telaPainel = TELA_DA_GUIA === "painel";
   // JUNTAR DUAS CONVERSAS SAIU DO PAINEL — a pedido de quem administra.
   //
   // Era um item de menu que apagava uma conversa inteira em duas escolhas:
@@ -3623,7 +3653,7 @@ export default function Painel({ sessao }) {
   // consegui saber — esconder por falha de rede sumiria com o funil inteiro
   // no dia em que a rede tossisse.
   const [temFunil, setTemFunil] = useState(null);
-  const [telaFunil, setTelaFunil] = useState(false);
+  const telaFunil = TELA_DA_GUIA === "funil";
   // A ETAPA DA CONVERSA ABERTA: `{ chave, funil, carregando, etapas, cartao,
   // erro }`, e `chave` = contato|departamento|telefone — é o que identifica um
   // cartão desde o funil de cada telefone (02/11).
@@ -3642,16 +3672,16 @@ export default function Painel({ sessao }) {
   // saber — esconder por falha de rede sumiria com os lembretes de todo mundo
   // no dia em que a rede tossisse.
   const [temTarefas, setTemTarefas] = useState(null);
-  const [telaTarefas, setTelaTarefas] = useState(false);
+  const telaTarefas = TELA_DA_GUIA === "tarefas";
   // ---- QUEM ESTÁ ESPERANDO DEMAIS (31/10) — ver `esperandoDemais.js` ----
   // `temAvisoDeEspera` tem TRÊS estados, pela régua de `temVantoro.js`: `null`
   // ainda não perguntou, `false` o banco não tem a função (o script 041 da
   // ponte não rodou) e `true` tem — OU A PERGUNTA FALHOU por outro motivo, e
   // aí a lista aparece e diz o erro, em vez de sumir por causa de um tropeço.
-  const [telaEsperando, setTelaEsperando] = useState(false);
+  const telaEsperando = TELA_DA_GUIA === "esperando";
   // A FAXINA DA FILA (01/11) — ver `Faxina.jsx`. Só existe com o 028 (as
   // abas) e com o "Finalizar" de pé: é ele que a faxina usa.
-  const [telaFaxina, setTelaFaxina] = useState(false);
+  const telaFaxina = TELA_DA_GUIA === "faxina";
   const [temAvisoDeEspera, setTemAvisoDeEspera] = useState(null);
   const temAvisoDeEsperaRef = useRef(null);
   useEffect(() => { temAvisoDeEsperaRef.current = temAvisoDeEspera; }, [temAvisoDeEspera]);
@@ -4779,6 +4809,12 @@ export default function Painel({ sessao }) {
   // 40 para 36 no computador, mais juntos: são 42 pontos a mais para os
   // telefones. No celular continuam com 40, o alvo de dedo.
   const ICONE_DA_BARRA = estreito ? 40 : 36;
+  // O ITEM DO MENU ⋮ QUE ABRE UMA GUIA (02/11): o desenho dos botões vizinhos,
+  // num link — sem o sublinhado, e com a caixa contando o recheio, que um
+  // botão já conta sozinho.
+  const ITEM_QUE_ABRE_GUIA = { width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 10,
+                               padding: "11px 14px", textDecoration: "none", background: "transparent", cursor: "pointer",
+                               color: C.textPrimary, fontSize: 14, textAlign: "left" };
   // A conversa aberta é de uma linha desativada? A caixa de escrever some, e no
   // lugar dela vai a explicação — ver `caixaDeEscrever`.
   const linhaDesativada = Boolean(advogado && advogado.ativo === false);
@@ -4909,9 +4945,13 @@ export default function Painel({ sessao }) {
       const lista = filtrarPermitidos(tel.data || [], perm.data || [], ehAdmin, perm.error);
       if (lista.length) {
         // Mantém o telefone que estava selecionado antes de atualizar a página.
+        // A GUIA DE UMA TELA (02/11) abre no telefone que o endereço trouxe —
+        // o que estava aberto na barra da guia que a abriu (é o funil dele que
+        // o Funil mostra primeiro).
         let salvo = null;
-        try { salvo = localStorage.getItem("zorvin_advogado"); } catch (_) { /* ignora */ }
-        const advSalvo = salvo && lista.find((a) => a.id === salvo);
+        if (TELA_DA_GUIA) salvo = linhaDaGuia();
+        if (!salvo) { try { salvo = localStorage.getItem("zorvin_advogado"); } catch (_) { /* ignora */ } }
+        const advSalvo = salvo && lista.find((a) => String(a.id) === String(salvo));
         const escolhido = advSalvo || lista[0];
         setDepartamentoId(escolhido.departamento_id || null);
         setAdvogadoId(escolhido.id);
@@ -4942,8 +4982,10 @@ export default function Painel({ sessao }) {
   }).catch((e) => anotarFalhaDeLeitura("telefones", "os telefones", e)), [anotarFalhaDeLeitura, limparFalhaDeLeitura]);
 
   // Salva o advogado selecionado para reabrir nele após atualizar a página.
+  // A GUIA DE UMA TELA NÃO SALVA (02/11): o telefone dela veio do endereço, e
+  // guardá-lo faria o F5 da guia das conversas abrir no telefone do funil.
   useEffect(() => {
-    if (!advogadoId) return;
+    if (!advogadoId || TELA_DA_GUIA) return;
     try { localStorage.setItem("zorvin_advogado", advogadoId); } catch (_) { /* ignora */ }
   }, [advogadoId]);
 
@@ -5623,6 +5665,10 @@ export default function Painel({ sessao }) {
   //  calada, e o silêncio dela é justamente o que significa "está tudo bem".
   // ------------------------------------------------------------
   useEffect(() => {
+    // A GUIA DE UMA TELA NÃO PERGUNTA (02/11): a faixa vermelha fica por baixo
+    // da tela, e quem avisa que algo parou é a guia das conversas. Seria uma
+    // pergunta por minuto, por guia aberta, para ninguém ler a resposta.
+    if (TELA_DA_GUIA) return undefined;
     let vivo = true;
     let temAFuncao = true;
     const perguntar = async () => {
@@ -6393,7 +6439,10 @@ export default function Painel({ sessao }) {
   // pela mesma chave (`notificarDesktop`): quem desligou as tarjas não é
   // interrompido por elas aqui também.
   const lerMinhasTarefas = useCallback(async () => {
-    if (!meuId) return;
+    // A GUIA DE UMA TELA NÃO LÊ AS MINHAS (02/11): elas servem ao número da
+    // barra lateral e ao aviso na hora, e esta guia não tem barra nem avisa —
+    // a tela de tarefas lê as dela.
+    if (!meuId || TELA_DA_GUIA) return;
     try {
       const r = await supabase.from("zorvin_tarefas").select("*")
         .eq("para_quem", meuId).is("feita_em", null)
@@ -6407,11 +6456,16 @@ export default function Painel({ sessao }) {
       limparFalhaDeLeitura("minhas-tarefas");
       const lista = r.data || [];
       setMinhasTarefas(lista);
-      const tocar = quemTocaAgora(lista, meuId);
-      if (!tocar.length) return;
       // MARCA ANTES DE TOCAR: uma segunda aba que leia no mesmo segundo acha
-      // a marca e não toca de novo.
-      marcarAvisadas(tocar.map(chaveDoAviso));
+      // a marca e não toca de novo. NA VEZ DAS GUIAS (02/11): a conferência e
+      // a marca, uma guia por vez — com as telas abrindo em guias, duas guias
+      // de conversa lendo no mesmo instante passou a ser o comum.
+      const tocar = await naVezDasGuias(() => {
+        const t = quemTocaAgora(lista, meuId);
+        if (t.length) marcarAvisadas(t.map(chaveDoAviso));
+        return t;
+      });
+      if (!tocar.length) return;
       tocarAviso();
       for (const t of tocar.slice(0, 3)) {
         const cv = conversasRef.current.find((c) => String(c.id) === String(t.conversa_id));
@@ -6460,6 +6514,10 @@ export default function Painel({ sessao }) {
   const podeContarAtrasadas = temEspera === true && temResponsavel === true;
   const podeContarAtrasadasRef = useRef(false);
   podeContarAtrasadasRef.current = podeContarAtrasadas;
+  // SE O BANCO TEM A ESPERA E O RESPONSÁVEL, quem diz é a lista de conversas:
+  // antes de ela chegar, "não posso contar" é "ainda não sei", e não "nenhuma".
+  const sabeSePodeContarRef = useRef(false);
+  sabeSePodeContarRef.current = temEspera !== null && temResponsavel !== null;
   const lerSemResposta = useCallback(async () => {
     if (!meuId || temAvisoDeEsperaRef.current === false) return;
     try {
@@ -6478,11 +6536,21 @@ export default function Painel({ sessao }) {
       limparFalhaDeLeitura("sem-resposta");
       const linhas = Array.isArray(r.data) ? r.data : [];
       setSemResposta({ linhas, erro: "", lido: true });
-      const tocar = quemAvisarAgora(linhas, meuId, conversaIdRef.current);
-      if (!tocar.length) return;
+      // A GUIA DE UMA TELA NÃO AVISA (02/11): quem avisa é a das conversas.
+      if (TELA_DA_GUIA) return;
       // MARCA ANTES DE TOCAR: uma segunda aba que leia no mesmo segundo acha a
-      // marca e não toca de novo — a régua do lembrete das tarefas.
-      marcarEsperasAvisadas(tocar.map(chaveDoAvisoDeEspera));
+      // marca e não toca de novo — a régua do lembrete das tarefas. E A
+      // CONFERÊNCIA E A MARCA SÃO FEITAS NA VEZ DAS GUIAS (02/11): com as
+      // telas abrindo em guias, duas guias de conversa abertas é o comum, e
+      // "no mesmo segundo" passou a ser "no mesmo milissegundo".
+      const tocar = await naVezDasGuias(() => {
+        // A CONVERSA QUE OUTRA GUIA ESTÁ MOSTRANDO também não toca: é a régua
+        // da conversa aberta nesta tela, valendo para as guias vizinhas.
+        const t = quemAvisarAgora(linhas.filter((l) => !outraGuiaVendo(l.conversa_id)), meuId, conversaIdRef.current);
+        if (t.length) marcarEsperasAvisadas(t.map(chaveDoAvisoDeEspera));
+        return t;
+      });
+      if (!tocar.length) return;
       tocarAviso();
       const nomeDe = (l) => nomeDoContato(l.contato) || "Cliente";
       const telDe = (l) => (advogadosPermitidosRef.current.find((a) => String(a.id) === String(l.advogado_id)) || {}).nome;
@@ -6503,7 +6571,15 @@ export default function Painel({ sessao }) {
     if (!meuId) return;
     // SEM A ESPERA (004) OU SEM O RESPONSÁVEL (008) não há o que contar, e a
     // consulta pela coluna que falta morreria com 42703.
-    if (!podeContarAtrasadasRef.current) { setAtrasadas({ linhas: [], erro: "", lido: true, cortado: false }); return; }
+    //
+    // MAS SÓ DEPOIS DE SABER (02/11): antes de a lista de conversas chegar,
+    // não poder contar é "ainda não sei", e marcar "lido, nenhuma" ali faria
+    // a tela que abre numa guia nova dizer "0" das suas conversas — e decidir
+    // a aba de começo com isso.
+    if (!podeContarAtrasadasRef.current) {
+      if (sabeSePodeContarRef.current) setAtrasadas({ linhas: [], erro: "", lido: true, cortado: false });
+      return;
+    }
     try {
       let q = supabase.from("conversas")
         .select(`id, advogado_id, esperando_desde, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
@@ -6541,8 +6617,14 @@ export default function Painel({ sessao }) {
   // passa a poder ser contada.
   useEffect(() => {
     if (!meuId) return undefined;
+    // NA GUIA DE UMA TELA (02/11), só a do "Esperando resposta" lê — as outras
+    // telas não mostram estas listas — e ela lê NA HORA: a guia é a tela, e
+    // a espera de cinco segundos existe para não atrasar a lista de conversas,
+    // que esta guia não mostra.
+    if (TELA_DA_GUIA && TELA_DA_GUIA !== "esperando") return undefined;
     const a = (typeof window !== "undefined" && Number(window.__ESPERA_A_CADA_MS)) || RELER_A_ESPERA_MS;
-    const primeira = (typeof window !== "undefined" && Number(window.__ESPERA_PRIMEIRA_MS)) || ESPERA_ANTES_DA_PRIMEIRA_MS;
+    const primeira = TELA_DA_GUIA ? 0
+      : (typeof window !== "undefined" && Number(window.__ESPERA_PRIMEIRA_MS)) || ESPERA_ANTES_DA_PRIMEIRA_MS;
     let relogio = null;
     const inicio = setTimeout(() => { lerQuemEspera(); relogio = setInterval(lerQuemEspera, a); }, primeira);
     return () => { clearTimeout(inicio); if (relogio) clearInterval(relogio); };
@@ -6560,7 +6642,6 @@ export default function Painel({ sessao }) {
     ? `Esperando resposta — ${[nSemResposta ? `${quantosClientes(nSemResposta)} sem resposta` : "",
                                nAtrasadas ? `${quantasConversasSuas(nAtrasadas)} ${HA_DIAS_OU_MAIS}` : ""].filter(Boolean).join(", ")}`
     : "Esperando resposta";
-  const abrirEsperando = () => { setTelaEsperando(true); lerQuemEspera(); };
 
   // ---- O filtro "Com tarefa para hoje" ----
   //
@@ -6638,11 +6719,18 @@ export default function Painel({ sessao }) {
   // DEPOIS DE CRIAR, CONCLUIR OU APAGAR, tudo o que conta tarefas é relido: a
   // conversa, o número da barra e o filtro. Sem isso o número diria o que era
   // verdade antes do clique.
-  const tarefasMudaram = useCallback(() => {
+  const releTarefasDestaGuia = useCallback(() => {
     lerTarefasDaConversa(conversaIdRef.current);
     lerMinhasTarefas();
     if (filtroRef.current === "tarefas" && advogadoIdRef.current) lerFiltroDeTarefas(advogadoIdRef.current);
   }, [lerTarefasDaConversa, lerMinhasTarefas, lerFiltroDeTarefas]);
+  // E AVISA AS OUTRAS GUIAS (02/11): a tarefa concluída na guia das Tarefas
+  // tem de sair do número da barra e do selo da conversa na guia das
+  // conversas — era o que fechar a tela fazia quando ela abria por cima.
+  const tarefasMudaram = useCallback(() => {
+    releTarefasDestaGuia();
+    avisarAsOutrasGuias("tarefas");
+  }, [releTarefasDestaGuia]);
   // As etiquetas seguem a LISTA: quando ela troca de telefone ou chega uma
   // conversa nova, são outras conversas para etiquetar.
   //
@@ -7483,6 +7571,45 @@ export default function Painel({ sessao }) {
     carregarContatos(buscaContato);
     await abrirConversaContato(cont);
   }
+
+  // ---- A GUIA ABERTA NUMA CONVERSA: ?conversa=…&linha=…[&tarefa=…] (02/11) ----
+  //
+  // É o que a tela de uma guia faz ao clicar numa conversa
+  // (`abrirConversaNumaGuia`): esta guia nasce e abre a conversa pelo caminho
+  // do histórico (`verConversaDoHistorico`), que lê a linha primeiro, troca de
+  // telefone e leva a lista à aba dela. Com a tarefa, a mensagem pronta do
+  // lembrete vai para a caixa (`usarMensagemPronta`), lida do banco pelo
+  // número da tarefa — e não pelo endereço, onde ficaria no histórico do
+  // navegador.
+  //
+  // ESPERA O PRIMEIRO TELEFONE SER ESCOLHIDO, como o link do Vantoro logo
+  // abaixo: é quando a pessoa e os telefones dela já chegaram. E o endereço
+  // é limpo, pela mesma razão daquele: o F5 desta guia, depois de a pessoa ir
+  // para outra conversa, não pode voltar sozinho para esta.
+  const pedidoDaGuia = useRef(TELA_DA_GUIA ? null : conversaDaGuia());
+  useEffect(() => {
+    const pedido = pedidoDaGuia.current;
+    if (!pedido || !advogadoId) return;
+    pedidoDaGuia.current = null;
+    try { window.history.replaceState({}, "", window.location.pathname); } catch (_) { /* segue */ }
+    (async () => {
+      if (pedido.tarefaId) {
+        const { data, error } = await supabase.from("zorvin_tarefas").select("id, conversa_id, mensagem")
+          .eq("id", pedido.tarefaId).maybeSingle();
+        if (!error && data && String(data.conversa_id) === String(pedido.conversaId) && String(data.mensagem || "").trim()) {
+          await usarMensagemPronta({ conversaId: pedido.conversaId, advogadoId: pedido.advogadoId, mensagem: data.mensagem });
+          return;
+        }
+        // A CONVERSA ABRE ASSIM MESMO, e a frase diz o que faltou: sem ela a
+        // caixa vazia se leria como "o lembrete não tinha mensagem".
+        mostrarAviso(error
+          ? comOCodigo("Não consegui ler a mensagem do lembrete — a conversa abriu sem ela.", error, "mensagem do lembrete")
+          : "A mensagem do lembrete não veio — a conversa abriu sem ela.", 8000);
+      }
+      await verConversaDoHistorico({ advogadoId: pedido.advogadoId, conversaId: pedido.conversaId });
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [advogadoId]);
 
   // ---- ABRIR A CONVERSA A PARTIR DO ENDEREÇO: ?telefone=55… ----
   //
@@ -9055,6 +9182,12 @@ export default function Painel({ sessao }) {
   // mensagem que caísse numa delas simplesmente não aparecia até alguém
   // recarregar a página.
   useEffect(() => {
+    // A GUIA DE UMA TELA NÃO ASSINA O TEMPO REAL (02/11) — ver `TELA_DA_GUIA`.
+    // Cada guia assinada recebe cada gravação do escritório, e o limite do
+    // Supabase é por segundo, somado entre todas: foi o que entupiu o canal em
+    // 20/10. Sem o canal, também não há pesca nem aviso de mensagem nova
+    // nesta guia — quem avisa é a das conversas.
+    if (TELA_DA_GUIA) return undefined;
     let carencia = null;
     let vigia = null;
     // O RELÓGIO DA PESCA — ver CADENCIA_DA_PESCA_MS.
@@ -9179,11 +9312,21 @@ export default function Painel({ sessao }) {
         // ------------------------------------------------------------
         if (nova.origem === "contato" && !ehHistoricoChegando(nova)
             && (document.hidden || nova.conversa_id !== conversaIdRef.current)) {
-          esteAvisoMeInteressa(nova.conversa_id).then((paraMim) => {
+          esteAvisoMeInteressa(nova.conversa_id).then(async (paraMim) => {
             if (!paraMim) return;
             // ABERTA NESSE MEIO-TEMPO, a conversa não avisa: a pessoa já está
             // vendo a mensagem.
             if (!document.hidden && nova.conversa_id === conversaIdRef.current) return;
+            // ABERTA NOUTRA GUIA, À VISTA (02/11): a régua de cima, valendo
+            // para as guias vizinhas. Com as telas abrindo conversas em guias
+            // novas, a pessoa lê a conversa numa guia enquanto a das conversas
+            // fica escondida atrás — e ela tocaria o aviso da conversa que a
+            // pessoa está lendo.
+            if (outraGuiaVendo(nova.conversa_id)) return;
+            // UMA GUIA SÓ AVISA (02/11): a mensagem chega a todas as guias do
+            // Zorvin abertas na máquina, e cada uma tocaria o seu som. A
+            // primeira que pedir fica com o aviso — ver `reivindicarAviso`.
+            if (!(await reivindicarAviso(`mensagem:${nova.id}`))) return;
             tocarAviso();
             // O NOME DE QUEM ESCREVEU, e não "Nova mensagem". Com a etiqueta
             // por conversa, dois clientes escrevendo viram dois avisos — e dois
@@ -9675,6 +9818,47 @@ export default function Painel({ sessao }) {
     // de "O CANAL QUE JÁ SAIU NÃO FALA MAIS". As outras três não mudam.
   }, [carregarNaoLidasPorAdv, carregarTags, carregarTagsConversas]);
 
+  // ---- AS GUIAS VIZINHAS (02/11) — ver `guias.js` ----
+  //
+  // ESTA GUIA DIZ ÀS OUTRAS QUAL CONVERSA ESTÁ MOSTRANDO, enquanto está à
+  // vista: é o que cala o aviso de mensagem nova da conversa que a pessoa
+  // está lendo noutra guia (`outraGuiaVendo`). Renovado de tempos em tempos
+  // porque o anúncio vence sozinho — a guia que cai sem se despedir não pode
+  // calar os avisos daquela conversa para sempre.
+  useEffect(() => {
+    if (TELA_DA_GUIA) return undefined;
+    const anunciar = () => anunciarConversaVista(conversaIdRef.current);
+    anunciarConversaVista(conversaId);
+    document.addEventListener("visibilitychange", anunciar);
+    const relogio = setInterval(anunciar, RENOVAR_A_VISTA_MS);
+    const aoSair = () => anunciarConversaVista(null);
+    window.addEventListener("pagehide", aoSair);
+    return () => {
+      document.removeEventListener("visibilitychange", anunciar);
+      clearInterval(relogio);
+      window.removeEventListener("pagehide", aoSair);
+      anunciarConversaVista(null);
+    };
+  }, [conversaId]);
+
+  // O QUE OUTRA GUIA MUDOU, ESTA RELÊ — só o que é dela. Quando as telas
+  // abriam por cima das conversas, fechá-las relia o número das tarefas e a
+  // etapa da conversa aberta; em guias separadas, é este aviso que leva a
+  // notícia. A versão de agora das leituras entra pelo espelho, e o ouvido é
+  // um só por guia.
+  const releDasGuiasRef = useRef({});
+  releDasGuiasRef.current = {
+    tarefas: releTarefasDestaGuia,
+    funil: () => {
+      etapasPorDep.current.clear();
+      if (temFunil === true && funilConv) lerFunilDaConversa(contatoDoFunil, funilConv);
+    },
+  };
+  useEffect(() => ouvirAsOutrasGuias((tipo) => {
+    const reler = releDasGuiasRef.current[tipo];
+    if (reler) reler();
+  }), []);
+
   // Ao abrir uma conversa, começa no fim (mensagens mais recentes).
   // A ficha do cliente fecha junto: ela é o cadastro de QUEM está na conversa,
   // e deixá-la aberta ao trocar de contato mostraria os dados da pessoa errada.
@@ -9991,6 +10175,12 @@ export default function Painel({ sessao }) {
     // ARQUIVADA não conta. Uma conversa arquivada com não lidas deixava o
     // título da aba com número para sempre: ele existia e não havia nada na
     // lista para clicar e zerar.
+    //
+    // A GUIA DE UMA TELA (02/11) se chama pela tela — "Funil · Ropelimi
+    // Zorvin" —, e sem número: com três guias abertas, é o nome que diz qual é
+    // qual na fileira de guias, e o número de não lidas é da guia das
+    // conversas (a lista desta fica por baixo da tela).
+    if (TELA_DA_GUIA) { document.title = `${TELAS_DA_GUIA[TELA_DA_GUIA]} · ${NOME_DA_ABA}`; return; }
     const total = conversas.filter((c) => !c.arquivada && (c.nao_lidas || 0) > 0).length;
     document.title = total > 0 ? `(${total}) ${NOME_DA_ABA}` : NOME_DA_ABA;
   }, [conversas]);
@@ -10484,11 +10674,13 @@ export default function Painel({ sessao }) {
       // A pessoa fechava as Mídias e a conversa tinha sumido.
       else if (midiasAberta) setMidiasAberta(false);
       else if (telaAdmin) setTelaAdmin(false);
-      else if (telaPainel) setTelaPainel(false);
-      else if (telaFunil) setTelaFunil(false);
-      else if (telaTarefas) setTelaTarefas(false);
-      else if (telaEsperando) setTelaEsperando(false);
-      else if (telaFaxina) setTelaFaxina(false);
+      // A GUIA DE UMA TELA (02/11) NÃO FECHA COM ESC: a tela é a guia
+      // inteira, e um Esc sem querer no meio da faxina ou de um arraste no
+      // funil fecharia a guia. Fecha-se pelo botão da tela ou pelo X da guia.
+      // O degrau fica AQUI, e não no fim: o que está acima dele (as janelas, as
+      // Mídias) continua fechando, e o que está abaixo é das conversas, que
+      // nesta guia ficam por baixo da tela.
+      else if (TELA_DA_GUIA) { /* nada */ }
       else if (configAberta) setConfigAberta(false);
       else if (novaConversaAberta) setNovaConversaAberta(false);
       else if (menuConversa) setMenuConversa(null);
@@ -10519,7 +10711,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, pdfAberto, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, telaPainel, telaFunil, menuEtapa, telaTarefas, telaEsperando, telaFaxina, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, fichaEmColuna, menuDepartamentos, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada, jaTratei, trateiOcupado, reabrindo, reabrirOcupado, escolhaTelefone, resumos]);
+  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, pdfAberto, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, menuEtapa, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, fichaEmColuna, menuDepartamentos, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada, jaTratei, trateiOcupado, reabrindo, reabrirOcupado, escolhaTelefone, resumos]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -13347,11 +13539,17 @@ export default function Painel({ sessao }) {
   // ------------------------------------------------------------
   async function usarMensagemPronta({ conversaId: alvo, advogadoId, mensagem, contato }) {
     if (!alvo || !String(mensagem || "").trim()) return false;
-    const grupo = String(contato?.numero || "").startsWith("grupo:");
-    const texto = preencherVariaveis(mensagem, {
-      cliente: contato && !grupo ? nomeDoContato(contato) : "", atendente: meuNome, agora: new Date(),
-    });
-    const outroTexto = (t) => Boolean(String(t || "").trim()) && String(t).trim() !== texto.trim();
+    // O NOME SAI DO CONTATO DA CONVERSA. Quem chama manda o que já tem; a
+    // guia aberta só com o número da tarefa (02/11) não tem contato nenhum, e
+    // usa o da linha lida ao abrir a conversa (`antesDeAbrir`).
+    const textoPara = (ct) => {
+      const grupo = String(ct?.numero || "").startsWith("grupo:");
+      return preencherVariaveis(mensagem, {
+        cliente: ct && !grupo ? nomeDoContato(ct) : "", atendente: meuNome, agora: new Date(),
+      });
+    };
+    const texto = textoPara(contato);
+    const outroTexto = (t, alvoTexto = texto) => Boolean(String(t || "").trim()) && String(t).trim() !== alvoTexto.trim();
     const PERGUNTA = "A caixa desta conversa já tem um texto escrito. Trocar pela mensagem do lembrete?";
     if (String(conversaIdRef.current || "") === String(alvo)) {
       if (editandoRef.current) {
@@ -13363,10 +13561,11 @@ export default function Painel({ sessao }) {
       colocarNaCaixa(texto);
     } else {
       const abriu = await verConversaDoHistorico({ advogadoId, conversaId: alvo }, {
-        antesDeAbrir: () => {
+        antesDeAbrir: (linha) => {
+          const t = contato ? texto : textoPara(linha && linha.contato);
           const guardado = rascunhosRef.current[alvo];
-          if (guardado && outroTexto(guardado.texto) && !window.confirm(PERGUNTA)) return;
-          rascunhosRef.current[alvo] = { texto, nota: false };
+          if (guardado && outroTexto(guardado.texto, t) && !window.confirm(PERGUNTA)) return;
+          rascunhosRef.current[alvo] = { texto: t, nota: false };
         },
       });
       if (!abriu) return false;
@@ -14970,6 +15169,7 @@ export default function Painel({ sessao }) {
     setFunilDaConversa((x) => (x && x.chave === f.chave ? { ...x, cartao: novo } : x));
     mostrarAviso(f.cartao ? `Etapa: ${etapa.nome}.` : `Entrou no funil, em “${etapa.nome}”.`);
     releCaminhoDoHistorico(contatoId);
+    avisarAsOutrasGuias("funil");
   }
   async function tirarDoFunilDaConversa() {
     const f = funilDaConversa;
@@ -14982,6 +15182,7 @@ export default function Painel({ sessao }) {
     setFunilDaConversa((x) => (x && x.chave === f.chave ? { ...x, cartao: null } : x));
     mostrarAviso("Saiu do funil.");
     releCaminhoDoHistorico(f.chave.split("|")[0]);
+    avisarAsOutrasGuias("funil");
   }
   const listaDeEtapas = !conversa || !funilDaConversa ? null : (() => {
     const f = funilDaConversa;
@@ -15945,6 +16146,49 @@ export default function Painel({ sessao }) {
   );
   })();
 
+  // ------------------------------------------------------------
+  //  A GUIA DE UMA TELA ESPERA O QUE A TELA PRECISA (02/11)
+  //
+  //  Quando a tela abria por cima das conversas, tudo o que ela recebe — os
+  //  telefones, se a pessoa administra, o que o banco tem — já tinha chegado.
+  //  Numa guia nova a tela nasce junto com o Zorvin, e desenhada antes disso
+  //  ela decidiria com metade das respostas: o Painel leria "os seus números"
+  //  de quem administra, o Funil abriria no funil do departamento em vez do
+  //  telefone. São TRÊS respostas: `null` ainda não dá para saber (a guia diz
+  //  que está abrindo), `false` este banco não tem a tela (e a guia diz isso,
+  //  com o caminho de volta às conversas) e `true` desenha.
+  // ------------------------------------------------------------
+  const guiaPronta = !TELA_DA_GUIA ? null : (() => {
+    if (!acessoConferido) return null;
+    if (TELA_DA_GUIA === "funil") {
+      if (temFunil === null) return null;
+      if (temFunil === false) return false;
+      return funisDosTelefones === null ? null : true;
+    }
+    if (TELA_DA_GUIA === "tarefas") return temTarefas === null ? null : temTarefas === true;
+    if (TELA_DA_GUIA === "faxina") {
+      if (temSituacao === false || temTratada === false || temAssuntos === false) return false;
+      return temSituacao === null || temTratada === null || temAssuntos === null ? null : true;
+    }
+    if (TELA_DA_GUIA === "esperando") {
+      // A tela sabe esperar as duas leituras (`abaDeComeco`), e as abas
+      // aparecem conforme cada uma chega. Só não há tela quando NENHUMA das
+      // duas existe neste banco.
+      const semAsMinhas = temEspera === false || temResponsavel === false;
+      return temAvisoDeEspera === false && semAsMinhas ? false : true;
+    }
+    return true;
+  })();
+  const nomeDaTelaDaGuia = TELA_DA_GUIA ? TELAS_DA_GUIA[TELA_DA_GUIA] : "";
+
+  // A CONVERSA CLICADA NUMA TELA ABRE NOUTRA GUIA, já nela (decisão do
+  // Rodrigo, 02/11): a guia da tela continua onde estava, e cada clique é uma
+  // guia — como o "abrir em nova guia" de qualquer lista do navegador.
+  const abrirConversaNumaGuia = (cv, tarefaId = null) => {
+    if (!cv || !cv.id) return;
+    abrirNumaGuia(enderecoDaConversa({ conversaId: cv.id, advogadoId: cv.advogado_id, tarefaId }));
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", maxHeight: "100dvh", fontFamily: "'Segoe UI', Helvetica, Arial, sans-serif", background: C.headerBar, color: C.textPrimary }}>
       {/* A FAIXA DO QUE NÃO CARREGOU.
@@ -16124,6 +16368,11 @@ export default function Painel({ sessao }) {
              ganham largura — um botão com texto já é largo, e forçar largura
              onde o que falta é largura seria trocar um defeito por outro. */
           button:has(> svg:only-child) { min-width: 40px !important; }
+          /* O LINK QUE ABRE UMA TELA NUMA GUIA NOVA (02/11) é, para o dedo, um
+             botão como os outros. O Funil, as Tarefas, a Faxina e o Painel do
+             menu ⋮ eram botões e ganhavam os 40 aqui em cima; virando link
+             (data-abre-guia), ficaram com 39, e a regra não os via. */
+          [data-abre-guia] { min-height: 40px !important; }
           [data-compacto], [data-compacto] button, [data-compacto] input { min-height: 0 !important; }
           [data-compacto] button:has(> svg:only-child) { min-width: 0 !important; }
         }
@@ -16278,16 +16527,18 @@ export default function Painel({ sessao }) {
         {/* AS TAREFAS, com o número do que pede ação AGORA (atrasadas e de
             hoje). Na barra, e não na linha da marca: aquela linha tem a conta
             de largura medida em 16/09, e um ícone a mais cortaria a marca. */}
+        {/* UM LINK, e não um botão (02/11): a tela de tarefas abre numa GUIA
+            PRÓPRIA, como as outras do menu ⋮ — ver `TELA_DA_GUIA`. Sendo
+            link, o clique do meio e o "abrir em nova janela" também servem. */}
         {temTarefas === true && (
-          <button data-abrir-tarefas onClick={() => setTelaTarefas(true)}
-                  title={tarefasParaAgora > 0
+          <a data-abrir-tarefas data-abre-guia href={enderecoDaTela("tarefas")} target="_blank" rel="noopener"
+                  title={`${tarefasParaAgora > 0
                     ? `Tarefas — ${tarefasParaAgora} para agora${tarefasAtrasadas ? ` (${tarefasAtrasadas} atrasada${tarefasAtrasadas === 1 ? "" : "s"})` : ""}`
-                    : "Tarefas e lembretes"}
+                    : "Tarefas e lembretes"} (abre numa guia nova)`}
                   aria-label="Tarefas e lembretes"
-                  style={{ position: "relative", width: ICONE_DA_BARRA, height: ICONE_DA_BARRA, borderRadius: 8, border: "none",
+                  style={{ position: "relative", width: ICONE_DA_BARRA, height: ICONE_DA_BARRA, borderRadius: 8, flexShrink: 0,
                            display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
-                           color: telaTarefas ? "#fff" : "#aebac1",
-                           background: telaTarefas ? "rgba(255,255,255,.12)" : "transparent" }}>
+                           color: "#aebac1", textDecoration: "none" }}>
             <BellRing size={22} />
             {tarefasParaAgora > 0 && (
               <span data-selo-tarefas={tarefasParaAgora} data-atrasadas={tarefasAtrasadas}
@@ -16298,7 +16549,7 @@ export default function Painel({ sessao }) {
                 {tarefasParaAgora > 99 ? "99+" : tarefasParaAgora}
               </span>
             )}
-          </button>
+          </a>
         )}
         {/* QUEM ESTÁ ESPERANDO DEMAIS (31/10): os clientes sem resposta além do
             tempo do departamento e as minhas conversas esperando há 2 dias ou
@@ -16306,11 +16557,11 @@ export default function Painel({ sessao }) {
             tela — vermelho quando há cliente sem resposta, que é o que pede
             ação agora. */}
         {mostraEsperando && (
-          <button data-abrir-esperando onClick={abrirEsperando} title={tituloDaEspera} aria-label={tituloDaEspera}
-                  style={{ position: "relative", width: ICONE_DA_BARRA, height: ICONE_DA_BARRA, borderRadius: 8, border: "none",
+          <a data-abrir-esperando data-abre-guia href={enderecoDaTela("esperando")} target="_blank" rel="noopener"
+                  title={`${tituloDaEspera} (abre numa guia nova)`} aria-label={tituloDaEspera}
+                  style={{ position: "relative", width: ICONE_DA_BARRA, height: ICONE_DA_BARRA, borderRadius: 8, flexShrink: 0,
                            display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
-                           color: telaEsperando ? "#fff" : "#aebac1",
-                           background: telaEsperando ? "rgba(255,255,255,.12)" : "transparent" }}>
+                           color: "#aebac1", textDecoration: "none" }}>
             <Hourglass size={21} />
             {nEsperando > 0 && (
               <span data-selo-esperando={nEsperando} data-sem-resposta={nSemResposta}
@@ -16321,7 +16572,7 @@ export default function Painel({ sessao }) {
                 {nEsperando > 99 ? "99+" : nEsperando}
               </span>
             )}
-          </button>
+          </a>
         )}
         {/* MÍDIAS de todas as conversas — o mesmo lugar do WhatsApp Web.
             UM BOTÃO, e não um `div` (auditoria de 28/10): é a única entrada do
@@ -16663,36 +16914,51 @@ export default function Painel({ sessao }) {
                       inteiros, e o recorte é feito no banco (`painel_dashboard`
                       ignora o "quem" que o navegador manda quando quem chama
                       não é administrador). */}
+                  {/* AS TELAS ABREM NUMA GUIA NOVA (02/11), pedido do Rodrigo:
+                      "com exceção de Configurações e Departamentos e acessos,
+                      que abrem como popup, todas as outras opções devem ser
+                      abertas em uma nova guia". São LINKS, e não botões: o
+                      clique do meio e o "abrir em nova janela" do navegador
+                      também servem, e o endereço é o da tela (`guias.js`).
+                      "Marcar todas como lidas" e "Desconectar" continuam
+                      botões: são ações, e não telas. */}
                   {/* O FUNIL DE ETAPAS (script 017). Só aparece com o script
                       rodado: sem ele, o botão abriria uma tela que diz "falta
-                      rodar o 017" para quem não pode fazer nada a respeito. */}
+                      rodar o 017" para quem não pode fazer nada a respeito.
+                      Leva o telefone aberto na barra: a guia abre no funil
+                      DELE, como a tela abria quando era por cima da lista. */}
                   {temFunil === true && (
-                    <button data-abrir-funil onClick={() => { setMenuTopoAberto(false); setTelaFunil(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><SquareKanban size={17} color={C.textSecondary} /> Funil</button>
+                    <a data-abrir-funil data-abre-guia href={enderecoDaTela("funil", { linha: advogadoId })} target="_blank" rel="noopener"
+                       onClick={() => setMenuTopoAberto(false)} style={ITEM_QUE_ABRE_GUIA}><SquareKanban size={17} color={C.textSecondary} /> Funil</a>
                   )}
                   {temTarefas === true && (
-                    <button data-abrir-tarefas-menu onClick={() => { setMenuTopoAberto(false); setTelaTarefas(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}>
+                    <a data-abrir-tarefas-menu data-abre-guia href={enderecoDaTela("tarefas")} target="_blank" rel="noopener"
+                       onClick={() => setMenuTopoAberto(false)} style={ITEM_QUE_ABRE_GUIA}>
                       <BellRing size={17} color={C.textSecondary} /> <span style={{ flex: 1 }}>Tarefas</span>
                       {tarefasParaAgora > 0 && (
                         <span style={{ fontSize: 12, fontWeight: 700, color: tarefasAtrasadas ? "#d92b20" : "#d99a1e" }}>{tarefasParaAgora}</span>
                       )}
-                    </button>
+                    </a>
                   )}
                   {mostraEsperando && (
-                    <button data-abrir-esperando-menu onClick={() => { setMenuTopoAberto(false); abrirEsperando(); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}>
+                    <a data-abrir-esperando-menu data-abre-guia href={enderecoDaTela("esperando")} target="_blank" rel="noopener"
+                       onClick={() => setMenuTopoAberto(false)} style={ITEM_QUE_ABRE_GUIA}>
                       <Hourglass size={17} color={C.textSecondary} /> <span style={{ flex: 1 }}>Esperando resposta</span>
                       {nEsperando > 0 && (
                         <span style={{ fontSize: 12, fontWeight: 700, color: nSemResposta ? "#d92b20" : "#d99a1e" }}>{nEsperando}</span>
                       )}
-                    </button>
+                    </a>
                   )}
                   {/* A FAXINA DA FILA (01/11): as conversas paradas há mais de
                       um mês, com o Finalizar na linha. Ver `Faxina.jsx`. */}
                   {podeFaxina && (
-                    <button data-abrir-faxina onClick={() => { setMenuTopoAberto(false); setTelaFaxina(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}>
+                    <a data-abrir-faxina data-abre-guia href={enderecoDaTela("faxina")} target="_blank" rel="noopener"
+                       onClick={() => setMenuTopoAberto(false)} style={ITEM_QUE_ABRE_GUIA}>
                       <Eraser size={17} color={C.textSecondary} /> Faxina da fila
-                    </button>
+                    </a>
                   )}
-                  <button onClick={() => { setMenuTopoAberto(false); setTelaPainel(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><BarChart3 size={17} color={C.textSecondary} /> Painel</button>
+                  <a data-abrir-painel data-abre-guia href={enderecoDaTela("painel")} target="_blank" rel="noopener"
+                     onClick={() => setMenuTopoAberto(false)} style={ITEM_QUE_ABRE_GUIA}><BarChart3 size={17} color={C.textSecondary} /> Painel</a>
                   {/* Quem administra no Vantoro administra aqui. Esconder o botão
                       é cortesia, não segurança: quem não é admin esbarra nas
                       regras do banco de qualquer forma. */}
@@ -17675,11 +17941,23 @@ export default function Painel({ sessao }) {
                     <span>{erroDaEspera}</span>
                   </div>
                 )}
-                <button data-ver-quem-espera onClick={(nSemResposta || nAtrasadas) ? abrirEsperando : lerQuemEspera}
-                        style={{ marginTop: 10, border: "none", background: C.green, color: "#fff", borderRadius: 8,
-                                 padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                  {(nSemResposta || nAtrasadas) ? "Ver quais" : "Tentar de novo"}
-                </button>
+                {/* "VER QUAIS" ABRE A TELA NUMA GUIA NOVA (02/11), como o
+                    ampulheta e o menu ⋮. "Tentar de novo" continua aqui: ele
+                    relê, e não abre tela nenhuma. */}
+                {(nSemResposta || nAtrasadas) ? (
+                  <a data-ver-quem-espera data-abre-guia href={enderecoDaTela("esperando")} target="_blank" rel="noopener"
+                     title="Ver quais (abre numa guia nova)"
+                     style={{ display: "inline-flex", alignItems: "center", marginTop: 10, background: C.green, color: "#fff", borderRadius: 8,
+                              padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", textDecoration: "none" }}>
+                    Ver quais
+                  </a>
+                ) : (
+                  <button data-ver-quem-espera onClick={lerQuemEspera}
+                          style={{ marginTop: 10, border: "none", background: C.green, color: "#fff", borderRadius: 8,
+                                   padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                    Tentar de novo
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -20736,89 +21014,116 @@ export default function Painel({ sessao }) {
         }} />
       )}
 
+      {/* A GUIA DE UMA TELA ENQUANTO ELA NÃO PODE SER DESENHADA (02/11) — ver
+          `guiaPronta`. Diz que está abrindo, ou que este Zorvin não tem a
+          tela; e diz o que não carregou, porque a faixa âmbar das conversas
+          fica por baixo desta: sem isto, uma leitura que falhou deixaria a
+          guia dizendo "abrindo" para sempre, sem uma palavra do porquê. */}
+      {TELA_DA_GUIA && guiaPronta !== true && (
+        <div data-tela-da-guia={TELA_DA_GUIA} data-guia-abrindo={guiaPronta === false ? "indisponivel" : "abrindo"}
+             style={{ position: "fixed", inset: 0, zIndex: 200, background: C.bg || C.headerBar, color: C.textPrimary,
+                      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                      gap: 14, padding: 24, textAlign: "center" }}>
+          <Marca tamanho={20} cor={C.textPrimary} corFraca={C.textSecondary} />
+          <div style={{ fontSize: 15, maxWidth: 420, lineHeight: 1.5 }}>
+            {guiaPronta === false
+              ? <>Este Zorvin não tem a tela <b>{nomeDaTelaDaGuia}</b>.</>
+              : <>Abrindo <b>{nomeDaTelaDaGuia}</b>…</>}
+          </div>
+          {guiaPronta !== false && (erroDoAcesso || Object.keys(falhasDeLeitura).length > 0) && (
+            <div data-guia-nao-carregou role="alert"
+                 style={{ maxWidth: 440, fontSize: 13.5, lineHeight: 1.5, color: C.erroTexto || "#e53935" }}>
+              Não consegui carregar {erroDoAcesso || Object.values(falhasDeLeitura).map((f) => f.oQue).join(", ")}.
+              {(() => {
+                const codigos = [...new Set(Object.values(falhasDeLeitura).map((f) => f.codigo).filter(Boolean))];
+                return codigos.length ? ` Código do banco: ${codigos.join(", ")}.` : "";
+              })()}
+              {" "}
+              <button onClick={() => window.location.reload()}
+                      style={{ border: "none", background: "transparent", color: C.verdeTexto || C.green, cursor: "pointer",
+                               fontWeight: 600, fontSize: 13.5, padding: 0 }}>
+                Tentar de novo
+              </button>
+            </div>
+          )}
+          {guiaPronta === false && (
+            <a href={window.location.pathname} style={{ color: C.verdeTexto || C.green, fontWeight: 600, fontSize: 14 }}>
+              Abrir as conversas
+            </a>
+          )}
+        </div>
+      )}
+
       {/* O Painel recebe os telefones e os departamentos já carregados: são os
           nomes das linhas do relatório, e refazer as consultas aqui daria uma
           segunda lista que pode divergir da que está na tela. */}
-      {telaPainel && (
+      {telaPainel && guiaPronta === true && (
         <PainelNumeros C={C} modo={modo} advogados={advogados} departamentos={departamentos}
                        souAdmin={souAdmin} meuId={sessao?.user?.id || null} meuNome={meuNome}
-                       aoFechar={() => setTelaPainel(false)} />
+                       aoFechar={fecharAGuia} />
       )}
 
       {/* O FUNIL. Recebe os telefones e departamentos que esta pessoa
           ALCANÇA — um funil de um departamento que ela não atende abriria
-          vazio, e vazio se lê como "ninguém". Abrir um cartão é o mesmo
-          caminho do histórico: troca de telefone e abre a conversa. */}
-      {telaFunil && (
+          vazio, e vazio se lê como "ninguém". Abrir um cartão abre a conversa
+          NOUTRA GUIA (02/11). Mover um cartão avisa as outras guias: a guia
+          das conversas relê a etapa da conversa aberta — era o que fechar a
+          tela fazia quando ela abria por cima das conversas. */}
+      {telaFunil && guiaPronta === true && (
         <Funil C={C} departamentos={departamentosVisiveis} advogados={advogadosPermitidos}
                souAdmin={souAdmin} departamentoInicial={departamentoId} comTarefas={temTarefas === true}
                funis={(funisDosTelefones && funisDosTelefones.lista) || []}
                comTelefone={comTelefoneNoFunil} erroDosFunis={erroDosFunis}
-               funilInicial={/* ABRE NO FUNIL DO TELEFONE QUE ESTÁ ABERTO NA BARRA (02/11): o
-                 das Audiências, se ele tiver um; senão o do departamento. */
+               funilInicial={/* ABRE NO FUNIL DO TELEFONE QUE ESTAVA ABERTO NA BARRA (02/11): o
+                 das Audiências, se ele tiver um; senão o do departamento. A guia
+                 recebe o telefone no endereço (`linha`). */
                  funisDosTelefones && !erroDosFunis
                    ? funilDoTelefone(advogadoId, advogadosPermitidos, funisDosTelefones.lista) : null}
-               aoAbrirConversa={(cv) => {
-                 setTelaFunil(false);
-                 verConversaDoHistorico({ advogadoId: cv.advogado_id, conversaId: cv.id });
-               }}
-               aoFechar={() => {
-                 setTelaFunil(false);
-                 // Quem administra pode ter mexido nas etapas: esquece o
-                 // guardado e relê a etapa da conversa aberta.
-                 etapasPorDep.current.clear();
-                 if (temFunil === true && funilConv) lerFunilDaConversa(contatoDoFunil, funilConv);
-               }} />
+               aoAbrirConversa={(cv) => abrirConversaNumaGuia(cv)}
+               aoMudou={() => avisarAsOutrasGuias("funil")}
+               aoFechar={fecharAGuia} />
       )}
 
-      {/* A TELA DE TAREFAS (script 018). Abrir uma tarefa é o caminho do
-          histórico e do funil: troca de telefone e abre a conversa. */}
-      {telaTarefas && (
+      {/* A TELA DE TAREFAS (script 018). Abrir uma tarefa abre a conversa
+          NOUTRA GUIA (02/11); a mensagem pronta do lembrete vai junto, pelo
+          número da tarefa, e a guia nova a põe na caixa (`conversaDaGuia`). */}
+      {telaTarefas && guiaPronta === true && (
         <Tarefas C={C} meuId={meuId} pessoas={equipe.porId} advogados={advogadosPermitidos}
-                 aoAbrirConversa={(cv) => {
-                   setTelaTarefas(false);
-                   verConversaDoHistorico({ advogadoId: cv.advogado_id, conversaId: cv.id });
-                 }}
-                 aoUsarMensagem={(cv, t, ct) => {
-                   setTelaTarefas(false);
-                   usarMensagemPronta({ conversaId: cv.id, advogadoId: cv.advogado_id,
-                                        mensagem: t.mensagem, contato: ct || cv.contato });
-                 }}
+                 aoAbrirConversa={(cv) => abrirConversaNumaGuia(cv)}
+                 aoUsarMensagem={(cv, t) => abrirConversaNumaGuia(cv, t.id)}
                  aoMudou={tarefasMudaram}
-                 aoFechar={() => { setTelaTarefas(false); tarefasMudaram(); }} />
+                 aoFechar={fecharAGuia} />
       )}
 
-      {/* A TELA "ESPERANDO RESPOSTA" (31/10). Abrir um cliente é o caminho do
-          histórico, do funil e das tarefas: troca de telefone e abre a
-          conversa, esteja ela em que aba estiver. */}
-      {telaEsperando && (
+      {/* A TELA "ESPERANDO RESPOSTA" (31/10). Abrir um cliente abre a conversa
+          NOUTRA GUIA (02/11), esteja ela em que aba estiver.
+          `podeContarAtrasadas` vai com TRÊS estados: `null` é "a lista ainda
+          não disse se o banco tem a espera e o responsável" — numa guia nova
+          a tela nasce antes dessa resposta, e decidir a aba de começo com ela
+          faltando abriria nos clientes e esconderia as suas conversas. */}
+      {telaEsperando && guiaPronta === true && (
         <Esperando C={C} meuId={meuId} advogados={advogadosPermitidos}
                    semResposta={semResposta} temAvisoDeEspera={temAvisoDeEspera}
-                   atrasadas={atrasadas} podeContarAtrasadas={podeContarAtrasadas}
-                   aoAbrirConversa={(cv) => {
-                     setTelaEsperando(false);
-                     verConversaDoHistorico({ advogadoId: cv.advogado_id, conversaId: cv.id });
-                   }}
+                   atrasadas={atrasadas}
+                   podeContarAtrasadas={temEspera === null || temResponsavel === null ? null : podeContarAtrasadas}
+                   aoAbrirConversa={(cv) => abrirConversaNumaGuia(cv)}
                    aoAtualizar={lerQuemEspera}
-                   aoFechar={() => setTelaEsperando(false)} />
+                   aoFechar={fecharAGuia} />
       )}
 
-      {/* A FAXINA DA FILA (01/11). Abrir a conversa é o caminho do histórico,
-          como nas Tarefas; finalizar passa pela gravação do Finalizar. */}
-      {telaFaxina && (
+      {/* A FAXINA DA FILA (01/11). Abrir a conversa abre NOUTRA GUIA (02/11);
+          finalizar passa pela gravação do Finalizar. */}
+      {telaFaxina && guiaPronta === true && (
         <Faxina C={C} estreito={estreito} meuId={meuId} advogados={advogadosPermitidos} nomeDaPessoa={nomeDaPessoa}
                 assuntos={assuntos} erroDosAssuntos={erroAssuntos}
                 colunasContato={colunasDoContato("nome, numero, foto_url")} temArquivada={TEM_ARQUIVADA}
                 rotularMidia={(tipo) => rotuloMidia(tipo, null, false)}
-                aoAbrirConversa={(cv) => {
-                  setTelaFaxina(false);
-                  verConversaDoHistorico({ advogadoId: cv.advogado_id, conversaId: cv.id });
-                }}
+                aoAbrirConversa={(cv) => abrirConversaNumaGuia(cv)}
                 aoFinalizar={finalizarDaFaxina}
                 sugerirAssunto={podeSugerirAssunto ? pedirSugestaoDeAssunto : null}
                 aoTerminarLote={agendarContagemDasAbas}
                 aoAvisar={mostrarAviso}
-                aoFechar={() => setTelaFaxina(false)} />
+                aoFechar={fecharAGuia} />
       )}
 
       {/* A JANELA DA TAREFA, no meio da tela — como a de editar a agendada:

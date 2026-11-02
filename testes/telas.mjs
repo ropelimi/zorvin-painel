@@ -4,7 +4,7 @@
 // mata a ÁRVORE onde aconteceu. Na prática, um botão para de responder e mais
 // nada acontece — não há mensagem, não há aviso. É o tipo de defeito que só
 // aparece quando alguém reclama semanas depois.
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+import { abrirNavegador, ENDERECO, guiaQueAbre } from "./navegador.mjs";
 
 const URL = ENDERECO;
 let falhas = 0, feitas = 0;
@@ -20,6 +20,11 @@ const page = await ctx.newPage();
 const erros = [];
 page.on("console", (m) => { if (m.type() === "error") erros.push(m.text()); });
 page.on("pageerror", (e) => erros.push("pageerror: " + e.message));
+// E O DAS GUIAS QUE ESTA ABRIR: desde 02/11 o Painel abre numa guia nova.
+ctx.on("page", (p) => {
+  p.on("console", (m) => { if (m.type() === "error") erros.push(m.text()); });
+  p.on("pageerror", (e) => erros.push("pageerror: " + e.message));
+});
 
 await page.goto(URL);
 await page.waitForSelector('input[placeholder*="Buscar por nome"]');
@@ -87,9 +92,19 @@ await page.keyboard.press("Escape");
 await tela("menu do topo",
   () => page.getByRole("button", { name: "Menu" }).click());
 
-await tela("Painel",
-  () => page.getByRole("button", { name: "Painel" }).click(),
-  '[data-tela="painel"]');
+// O PAINEL ABRE NUMA GUIA NOVA (02/11): a conferência olha a guia que abriu,
+// e não esta — que continua nas conversas.
+{
+  const antes = erros.length;
+  const guia = await guiaQueAbre(ctx, () => page.locator("[data-abrir-painel]").first().click());
+  const apareceu = guia
+    ? await guia.waitForSelector('[data-tela="painel"]', { timeout: 20000 }).then(() => true).catch(() => false) : false;
+  if (guia) await guia.waitForTimeout(900);
+  const novos = erros.slice(antes);
+  ok("Painel (numa guia nova)", apareceu && novos.length === 0,
+     !guia ? "nenhuma guia abriu" : !apareceu ? "não apareceu na tela" : novos.slice(0, 2).join(" | "));
+  if (guia) await guia.close();
+}
 await page.keyboard.press("Escape");
 await page.waitForTimeout(600);
 

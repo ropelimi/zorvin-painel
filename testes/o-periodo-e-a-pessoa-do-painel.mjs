@@ -23,7 +23,7 @@
 // pela bancada em `__FUNCOES_CHAMADAS`, porque o rótulo não mostra o
 // milissegundo), o rótulo do botão, e o nome e as frases da pessoa
 // escolhida — com o contraste de quem escolhe a si mesmo.
-import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+import { abrirNavegador, ENDERECO, abrirATela } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -53,12 +53,10 @@ async function abrirPainel({ semente = null } = {}) {
     globalThis.__TEM_FUNCAO_PAINEL = true;
     globalThis.__FUNCOES_CHAMADAS = [];
   }, semente);
-  await page.goto(ENDERECO);
-  await page.waitForSelector("[data-conversa-nome]");
-  await page.waitForTimeout(1000);
-  await page.getByRole("button", { name: "Menu" }).click();
-  await page.getByRole("button", { name: "Painel" }).click();
-  await page.waitForSelector('[data-tela="painel"]');
+  // O PAINEL ABRE NUMA GUIA PRÓPRIA desde 02/11 (`?tela=painel`): esta prova
+  // mede a tela, e abre o endereço dela na própria página — o gesto do menu é
+  // provado em `as-telas-abrem-numa-guia-nova`.
+  await abrirATela(page, "painel");
   await page.waitForSelector('[data-teste="escopo"]', { timeout: 15000 });
   return { ctx, page, estouros };
 }
