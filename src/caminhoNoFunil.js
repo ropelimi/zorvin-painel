@@ -43,6 +43,10 @@ export function montarCaminho(movimentos) {
       tipo: de == null ? "entrou" : (para == null ? "saiu" : "moveu"),
       de, para,
       quem: m.quem ?? null,
+      // O PASSO DA IA (044): `quem` é nulo, como o do cliente que entrou
+      // sozinho; o que separa os dois é `pela_ia`, e o porquê vai junto.
+      pelaIa: m.pela_ia === true,
+      motivo: m.pela_ia === true && m.motivo ? String(m.motivo) : null,
       quando: m.quando,
       ficouMs: chegada ? new Date(m.quando) - new Date(chegada) : null,
     });

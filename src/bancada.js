@@ -1779,6 +1779,21 @@ if (typeof globalThis !== "undefined" && globalThis.__SEM_FUNIS_DOS_TELEFONES) {
   }
 }
 
+// O BANCO SEM O SCRIPT 044 (a IA que move o funil): as colunas da IA faltam,
+// e quem as pede pelo nome — a chave do funil, a descrição da etapa — ouve
+// 42703, como no Postgres. Sem o 043 também não há 044.
+if (typeof globalThis !== "undefined" && (globalThis.__SEM_IA_DO_FUNIL || globalThis.__SEM_FUNIS_DOS_TELEFONES)) {
+  const sem = globalThis.__SEM_COLUNAS || (globalThis.__SEM_COLUNAS = {});
+  const faltam = { zorvin_funis: ["ia_ligada", "ia_mudada_em", "ia_mudada_por"], zorvin_etapas: ["descricao"],
+                   zorvin_cartoes: ["ia_leu_ate", "ia_motivo"], zorvin_movimentos: ["pela_ia", "motivo"] };
+  for (const [t, cols] of Object.entries(faltam)) {
+    sem[t] = [...new Set([...(sem[t] || []), ...cols])];
+    for (const l of TABELAS[t] || []) for (const c of cols) delete l[c];
+  }
+}
+const comIaDoFunil = () => !(typeof globalThis !== "undefined"
+  && (globalThis.__SEM_IA_DO_FUNIL || globalThis.__SEM_FUNIS_DOS_TELEFONES));
+
 // DEPOIS DA SEMENTE, e a ordem é o conserto. Tirando a coluna antes, as
 // conversas plantadas entravam COM ela logo em seguida — e o banco "sem o
 // SQL" passava a ter a coluna em metade das linhas. A prova pegou: o rótulo
@@ -2491,6 +2506,8 @@ function consulta(tabela) {
         departamento_id: c.departamento_id, advogado_id: c.advogado_id || null,
         de_etapa: de ?? null, para_etapa: para ?? null,
         quem: (TABELAS.usuarios[0] || {}).id || null, quando: new Date().toISOString(),
+        // O PASSO DE GENTE (044): a tela é sempre gente, e nunca a IA.
+        ...(comIaDoFunil() ? { pela_ia: false, motivo: null } : {}),
       });
       // A CONFIGURAÇÃO FORA DO HORÁRIO PASSA PELO GATILHO do script 021: ele
       // recusa em português (ligar sem texto, sem dia aberto, fechar antes de
@@ -2524,6 +2541,9 @@ function consulta(tabela) {
             if (n.criado_em === undefined) n.criado_em = agoraCartao;
             if (n.movido_em === undefined) n.movido_em = agoraCartao;
             if (n.movido_por === undefined) n.movido_por = (TABELAS.usuarios[0] || {}).id || null;
+            // O QUE A IA FEZ, SÓ A PONTE ESCREVE (044): o gatilho desfaz o que
+            // a tela mandar nessas duas colunas.
+            if (comIaDoFunil()) { n.ia_motivo = null; n.ia_leu_ate = null; }
           }
           for (const n of linhas) {
             const de = etapaAntes.get(chaveDoCartao(n));
@@ -2581,8 +2601,15 @@ function consulta(tabela) {
         const desfeitoAntes = tabela === "zorvin_tratamentos" ? new Map(linhas.map((l) => [l, l.desfeito_em])) : null;
         linhas.forEach((l) => {
           const de = l.etapa_id;
+          const iaAntes = { motivo: l.ia_motivo, leu: l.ia_leu_ate };
           Object.assign(l, patch);
           if (reabertas && reabertas.has(l)) l.protocolo = reabertas.get(l);
+          // O GATILHO DO 044: a tela é gente, e gente não escreve o motivo
+          // nem a leitura da IA; e quem muda a etapa apaga o motivo dela.
+          if (funil && comIaDoFunil()) {
+            l.ia_leu_ate = iaAntes.leu ?? null;
+            l.ia_motivo = de !== l.etapa_id ? null : (iaAntes.motivo ?? null);
+          }
           if (funil && "etapa_id" in patch && de !== l.etapa_id) {
             l.movido_em = new Date().toISOString();
             movimento(l, de, l.etapa_id);
@@ -3669,6 +3696,60 @@ export const supabase = {
     // telefone ganham cartão NA ETAPA DE MESMO NOME; desligar devolve ao do
     // departamento quem só estava no do telefone. Imitada porque os NÚMEROS
     // que ela devolve são o que a tela escreve.
+    // LIGAR A IA NUM FUNIL (script 044) — as regras da função do banco, que
+    // tem as conferências num Postgres de verdade (seção 91 da prova da
+    // ponte): só quem administra; o funil de um telefone tem de estar em uso;
+    // com menos de duas etapas não liga; o funil do departamento ganha a sua
+    // linha; ligar (vindo de desligado) e "ler de novo" zeram a leitura; e o
+    // número de clientes sai daqui. As chamadas ficam em
+    // `__CHAMADAS_IA_DO_FUNIL`.
+    if (nome === "zorvin_ia_do_funil") {
+      (globalThis.__CHAMADAS_IA_DO_FUNIL || (globalThis.__CHAMADAS_IA_DO_FUNIL = [])).push({ ...(args || {}) });
+      if (!comIaDoFunil()) {
+        return { data: null, error: { code: "PGRST202", message: "Could not find the function public.zorvin_ia_do_funil" } };
+      }
+      if (globalThis.__IA_DO_FUNIL_FALHA) {
+        return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } };
+      }
+      const eu = TABELAS.usuarios[0] || {};
+      if (!eu.admin) return { data: null, error: { code: "42501", message: "Só quem administra liga a IA no funil." } };
+      await espera(40);
+      const dep = args && args.p_departamento;
+      const tel = (args && args.p_telefone) || null;
+      const ligar = !(args && args.p_ligar === false);
+      const deNovo = !!(args && args.p_de_novo);
+      const funis = TABELAS.zorvin_funis || (TABELAS.zorvin_funis = []);
+      let f = tel ? funis.find((x) => String(x.advogado_id) === String(tel) && x.ativo !== false)
+                  : funis.find((x) => String(x.departamento_id) === String(dep) && !x.advogado_id);
+      if (tel && !f) {
+        return { data: null, error: { code: "22023", message: "Este telefone usa o funil do departamento — ligue a IA por lá." } };
+      }
+      const depDoFunil = f ? f.departamento_id : dep;
+      const doFunil = (l) => String(l.departamento_id) === String(depDoFunil)
+        && String(l.advogado_id || "") === String(tel || "");
+      if (ligar && (TABELAS.zorvin_etapas || []).filter((e) => doFunil(e) && e.ativo !== false).length < 2) {
+        return { data: null, error: { code: "22023",
+          message: "Este funil precisa de pelo menos duas etapas em uso para a IA ter para onde mover." } };
+      }
+      if (!f) {
+        f = { id: `fn-dep-${dep}`, departamento_id: dep, advogado_id: null, ativo: true, ia_ligada: false };
+        funis.push(f);
+      }
+      const antes = !!f.ia_ligada;
+      f.ia_ligada = ligar; f.ia_mudada_em = new Date().toISOString(); f.ia_mudada_por = eu.id || null;
+      const cartoes = (TABELAS.zorvin_cartoes || []).filter(doFunil);
+      if (ligar && (!antes || deNovo)) for (const k of cartoes) k.ia_leu_ate = null;
+      const comFunil = new Set(funis.filter((x) => x.ativo !== false && x.advogado_id).map((x) => String(x.advogado_id)));
+      const advs = TABELAS.advogados || ADVOGADOS;
+      const telefonesDoFunil = new Set((tel ? [String(tel)]
+        : advs.filter((a) => String(a.departamento_id) === String(depDoFunil) && !comFunil.has(String(a.id))).map((a) => String(a.id))));
+      const grupo = (ct) => String(((TABELAS.contatos || []).find((c) => c.id === ct) || {}).numero || "").startsWith("grupo:");
+      const clientes = ligar ? cartoes.filter((k) => !k.ia_leu_ate && !grupo(k.contato_id)
+        && (TABELAS.conversas || []).some((c) => c.contato_id === k.contato_id && telefonesDoFunil.has(String(c.advogado_id)))).length : 0;
+      globalThis.__ULTIMA_IA_DO_FUNIL = { ligada: ligar, clientes };
+      return { data: { ligada: ligar, clientes }, error: null };
+    }
+
     if (nome === "zorvin_funil_do_telefone") {
       if (globalThis.__SEM_FUNIL || globalThis.__SEM_FUNIS_DOS_TELEFONES) {
         return { data: null, error: { code: "PGRST202", message: "Could not find the function public.zorvin_funil_do_telefone" } };

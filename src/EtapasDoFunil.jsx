@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "./supabase.js";
 import { naoGravouNada, comOCodigo, semATabela } from "./gravar.js";
 import { lerFunisDosTelefones, chaveDoFunil, noFunil } from "./funis.js";
-import { SquareKanban, Plus, Loader2, Check, EyeOff, Eye, ArrowUp, ArrowDown, Sparkles, Smartphone, Undo2 } from "lucide-react";
+import { IaDoFunil } from "./IaDoFunil.jsx";
+import { SquareKanban, Plus, Loader2, Check, EyeOff, Eye, ArrowUp, ArrowDown, Sparkles, Smartphone, Undo2, PenLine } from "lucide-react";
 
 // ============================================================
 //  AS ETAPAS DO FUNIL — na aba Estrutura da administração (06/10)
@@ -42,6 +43,14 @@ import { SquareKanban, Plus, Loader2, Check, EyeOff, Eye, ArrowUp, ArrowDown, Sp
 //
 //  Sem o 043 a escolha é a de antes, só os departamentos — e nenhuma
 //  consulta menciona a coluna do telefone.
+//
+//  A IA QUE MOVE O FUNIL (02/11, script 044 da ponte). Cada funil de verdade
+//  (o do departamento, ou o de um telefone com funil próprio) ganha a chave
+//  "A IA move os clientes de etapa" (`IaDoFunil.jsx`), e cada etapa ganha uma
+//  DESCRIÇÃO: o que ela quer dizer. É o que a IA lê para decidir — "Proposta
+//  enviada" sozinha diz menos do que "mandamos a proposta e esperamos a
+//  resposta do cliente". Sem o 044, nem a chave nem as descrições aparecem:
+//  a coluna que falta é perguntada uma vez, quando a seção abre.
 // ============================================================
 
 export const ETAPAS_SUGERIDAS = [
@@ -66,6 +75,19 @@ export function EtapasDoFunil({ cx, C, departamentos = [], telefones = [], aoAvi
   // OS FUNIS DOS TELEFONES (043): `null` lendo; `{ existe, lista, erro }`.
   const [funis, setFunis] = useState(null);
   const [feito, setFeito] = useState("");   // a frase do que o banco fez, em verde, e não na faixa de erro
+  // AS DESCRIÇÕES DAS ETAPAS (044): `null` perguntando; `false` sem a coluna.
+  const [comDescricao, setComDescricao] = useState(null);
+  const [descrevendo, setDescrevendo] = useState(null);   // { id, texto }
+  useEffect(() => {
+    let vivo = true;
+    supabase.from("zorvin_etapas").select("descricao").limit(1).then(({ error }) => {
+      if (!vivo) return;
+      // SÓ A COLUNA QUE FALTA esconde: um tropeço qualquer mostra, e a
+      // gravação dirá o que houver (a régua dos três estados).
+      setComDescricao(!(error && (String(error.code) === "42703" || /descricao/.test(String(error.message || "")))));
+    });
+    return () => { vivo = false; };
+  }, []);
 
   // Os departamentos chegam depois da primeira pintura (Departamentos lê o
   // banco): sem isto a seção ficaria presa em "nenhum departamento".
@@ -134,7 +156,7 @@ export function EtapasDoFunil({ cx, C, departamentos = [], telefones = [], aoAvi
   // A frase do que o banco fez some quando se escolhe OUTRO funil — e não
   // quando a lista dos funis é relida logo depois de criar, que é justamente
   // a hora em que ela tem de ser lida.
-  useEffect(() => { setFeito(""); }, [chaveEscolha]);
+  useEffect(() => { setFeito(""); setDescrevendo(null); }, [chaveEscolha]);
 
   const recusado = "o banco não deixou. Só quem administra o Zorvin pode mexer nas etapas.";
 
@@ -180,6 +202,16 @@ export function EtapasDoFunil({ cx, C, departamentos = [], telefones = [], aoAvi
       return;
     }
     if (await gravar(editando.id, { nome }, "renomear a etapa")) { setEditando(null); ler(false); }
+  }
+
+  // A DESCRIÇÃO VAZIA VAI COMO NULA: "sem descrição" é uma coisa só, e a IA
+  // lê só o nome.
+  async function salvarDescricao() {
+    const texto = String(descrevendo.texto || "").replace(/\s+/g, " ").trim();
+    if (texto.length > 500) { aoAvisar("A descrição pode ter até 500 caracteres."); return; }
+    if (await gravar(descrevendo.id, { descricao: texto || null }, "salvar a descrição da etapa")) {
+      setDescrevendo(null); ler(false);
+    }
   }
 
   // SUBIR/DESCER troca a `ordem` com a vizinha ATIVA: as desativadas não são
@@ -293,6 +325,18 @@ export function EtapasDoFunil({ cx, C, departamentos = [], telefones = [], aoAvi
         </div>
       )}
 
+      {/* A CHAVE DA IA, só num funil de verdade: o telefone que usa o do
+          departamento não tem funil para a IA cuidar. */}
+      {existe && !usaODoDepartamento && escolha && (
+        <IaDoFunil cx={cx} C={C} aoAvisar={aoAvisar}
+                   funil={{ departamentoId: depId, telefoneId: escolha.telefoneId || null }}
+                   nomeDoFunil={(() => {
+                     const d = departamentos.find((x) => String(x.id) === String(depId));
+                     const nd = d ? d.nome : "este departamento";
+                     return escolha.telefoneId ? `${nd} · ${telefoneEscolhido ? telefoneEscolhido.nome : "este telefone"}` : nd;
+                   })()} />
+      )}
+
       {usaODoDepartamento && (
         <div data-telefone-usa-o-do-departamento
              style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", flexWrap: "wrap" }}>
@@ -349,10 +393,15 @@ export function EtapasDoFunil({ cx, C, departamentos = [], telefones = [], aoAvi
             ) : (
               <>
                 <span style={{ width: 10, height: 10, borderRadius: "50%", background: e.cor || C.green, flexShrink: 0 }} />
-                <span style={{ flex: 1, fontSize: 13.5, textDecoration: e.ativo !== false ? "none" : "line-through", minWidth: 120 }}>
-                  {e.nome}
+                <span style={{ flex: 1, fontSize: 13.5, minWidth: 120 }}>
+                  <span style={{ textDecoration: e.ativo !== false ? "none" : "line-through" }}>{e.nome}</span>
                   {e.ativo === false && <span style={{ marginLeft: 8, fontSize: 11.5, color: C.textSecondary }}>fora de uso</span>}
                   {posicao === 0 && <span style={{ marginLeft: 8, fontSize: 11.5, color: C.textSecondary }}>onde os novos entram</span>}
+                  {comDescricao && e.descricao && (
+                    <span data-etapa-descricao style={{ display: "block", fontSize: 12, color: C.textSecondary, lineHeight: 1.45, marginTop: 2 }}>
+                      {e.descricao}
+                    </span>
+                  )}
                 </span>
                 {e.ativo !== false && (
                   <>
@@ -370,6 +419,12 @@ export function EtapasDoFunil({ cx, C, departamentos = [], telefones = [], aoAvi
                         data-etapa-renomear style={botaoFraco}>
                   Renomear
                 </button>
+                {comDescricao && e.ativo !== false && (
+                  <button onClick={() => setDescrevendo({ id: e.id, texto: e.descricao || "" })} disabled={ocupado}
+                          data-etapa-descrever style={botaoFraco} title="O que esta etapa quer dizer — é o que a IA lê">
+                    <PenLine size={14} /> {e.descricao ? "Descrição" : "Descrever"}
+                  </button>
+                )}
                 <button onClick={async () => {
                           if (await gravar(e.id, { ativo: e.ativo === false }, e.ativo !== false ? "parar de usar a etapa" : "voltar a usar a etapa")) ler(false);
                         }}
@@ -378,6 +433,22 @@ export function EtapasDoFunil({ cx, C, departamentos = [], telefones = [], aoAvi
                   {e.ativo !== false ? "Parar de usar" : "Voltar a usar"}
                 </button>
               </>
+            )}
+            {descrevendo && descrevendo.id === e.id && (
+              <div style={{ flexBasis: "100%", display: "flex", flexDirection: "column", gap: 6, paddingLeft: 18 }}>
+                <textarea value={descrevendo.texto} autoFocus rows={2} maxLength={500} data-etapa-descricao-editando
+                          placeholder="O que esta etapa quer dizer. Ex.: mandamos a proposta e esperamos a resposta do cliente."
+                          onChange={(ev) => setDescrevendo({ ...descrevendo, texto: ev.target.value })}
+                          onKeyDown={(ev) => { if (ev.key === "Escape") setDescrevendo(null); }}
+                          style={{ ...cx.campo, resize: "vertical", minHeight: 52, fontFamily: "inherit" }} />
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button style={cx.botao} onClick={salvarDescricao} disabled={ocupado} data-etapa-descricao-salvar>
+                    <Check size={15} /> Salvar
+                  </button>
+                  <button onClick={() => setDescrevendo(null)} style={botaoFraco}>Cancelar</button>
+                  <span style={{ fontSize: 11.5, color: C.textSecondary }}>{String(descrevendo.texto || "").length}/500</span>
+                </div>
+              </div>
             )}
           </div>
         );

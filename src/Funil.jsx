@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, RefreshCw, Search, Download, X, MessageCircle } from "lucide-react";
+import { ArrowLeft, RefreshCw, Search, Download, X, MessageCircle, Sparkles } from "lucide-react";
 import { supabase } from "./supabase.js";
 import { naoGravouNada, comOCodigo, semATabela } from "./gravar.js";
 import { nomeDoContato } from "./contato.js";
@@ -322,13 +322,16 @@ export default function Funil({
     // o segundo "tirar" ouvia "o banco não deixou". Avançar o número da
     // leitura faz a que está em voo ser descartada.
     leitura.current++;
+    // O MOTIVO DA IA SAI JUNTO (044): quem moveu agora foi uma pessoa, e o
+    // gatilho do banco o apaga na mesma gravação. Na recusa, ele volta.
+    const motivoAntes = cartao.ia_motivo;
     setCartoes((l) => l.map((c) => (c.id === cartao.id
-      ? { ...c, etapa_id: etapaId, movido_em: new Date().toISOString() } : c)));
+      ? { ...c, etapa_id: etapaId, movido_em: new Date().toISOString(), ia_motivo: null } : c)));
     try {
       const r = await supabase.from("zorvin_cartoes").update({ etapa_id: etapaId })
         .eq("id", cartao.id).select("id");
       if (r.error || naoGravouNada(r)) {
-        setCartoes((l) => l.map((c) => (c.id === cartao.id ? { ...c, etapa_id: antes } : c)));
+        setCartoes((l) => l.map((c) => (c.id === cartao.id ? { ...c, etapa_id: antes, ia_motivo: motivoAntes } : c)));
         avisar(r.error
           ? comOCodigo("Não consegui mover o cartão — ele voltou para onde estava.", r.error, "mover cartão")
           : "Não consegui mover o cartão: o banco não deixou. Ele voltou para onde estava.");
@@ -456,6 +459,19 @@ export default function Funil({
           )}
           {!cv && <span>· <MessageCircle size={11} style={{ verticalAlign: -1 }} /> sem conversa à vista</span>}
         </div>
+        {/* A IA PÔS AQUI (044): o porquê dela, em até duas linhas, e inteiro
+            no `title`. Uma pessoa que move o cartão apaga o motivo — ele
+            só fala da etapa que a IA escolheu. */}
+        {c.ia_motivo && (
+          <div data-cartao-pela-ia title={`A IA pôs aqui: ${c.ia_motivo}`}
+               style={{ marginTop: 6, display: "flex", gap: 5, alignItems: "flex-start", fontSize: 11.5,
+                        color: C.textSecondary, lineHeight: 1.4 }}>
+            <Sparkles size={12} color={verde} style={{ flexShrink: 0, marginTop: 2 }} />
+            <span style={{ overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+              <b>IA:</b> {c.ia_motivo}
+            </span>
+          </div>
+        )}
         {tarefa && (
           <div data-tarefa-no-cartao={situacao(tarefa)} title={tarefa.texto}
                style={{ marginTop: 6, fontSize: 11.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis",
