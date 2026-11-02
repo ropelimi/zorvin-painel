@@ -288,6 +288,114 @@ provada. `VITE_VANTORO_WEB` é lida quando o Vite serve a página, e a bancada
 sobe sem ela; provar a troca pediria um servidor só para isso, como o do
 `entrar-sem-vantoro`.
 
+## Os telefones da barra lateral cabem na tela (02/11)
+
+Pedido do Rodrigo, com a foto da barra: *"Diminua esses ícones da lateral,
+para que fiquem todos à mostra sem precisar fazer a rolagem. Por exemplo, são
+8 telefones do departamento "Acordos" e nesse print só estão aparecendo 6
+deles, tendo que rolar para ter acesso aos outros 2."*
+
+**A barra rolava sem barra de rolagem à vista** (`sem-scrollbar`): quem não
+sabia que havia mais telefones embaixo não os achava. Medido na foto (a tela
+dele é de 150%): a barra tem **585 pontos** de altura, os ícones de baixo e os
+respiros levavam **266**, e sobravam **319** para a lista — onde os 8
+telefones pediam **436** (círculos de 42, com 12 entre eles). Cabiam 6.
+
+| | antes | agora |
+|---|---|---|
+| o círculo do telefone | 42 | o que couber, **de 26 a 42** — na tela dele, **34** |
+| o vão entre os telefones | 12 | na mesma proporção — na tela dele, 9,7 |
+| os ícones de baixo (sino, ampulheta, mídias, controle) | 40 | 36 |
+| o vão entre os ícones de baixo | 8 | 4 |
+| a foto de quem entrou: margem de cima e de baixo | 4 e 14 | 2 e 10 |
+| no celular | | como era: ícones de 40, e nenhum círculo abaixo de 40 |
+
+**O tamanho sai da altura, e não de um número menor fixo**
+(`src/barraLateral.js`). Com 34 fixos, a conta fecharia hoje e abriria de
+novo no dia em que Acordos ganhar mais um telefone, ou numa janela que não
+está maximizada. O círculo encolhe só o necessário para caber TODOS, e nunca
+passa de 42: numa tela que já cabia, nada muda — a 1360×900, com os três
+telefones de Acordos da bancada, continuam 42 e 12, e a prova confere.
+
+**Quem faz a conta é o navegador, e não o React.** A lista dos telefones é
+uma caixa que se mede (`container-type: size`), `100cqh` é a altura dela, e
+`--tam-telefone` é `clamp(26px, (100cqh − o fixo) / K, 42px)`, com K os
+círculos mais os vãos, na proporção de 12 para 42. A conta se refaz sozinha
+quando a janela muda de tamanho e quando a faixa vermelha de aviso aparece no
+alto e encolhe a barra (na tela dele, aí ficam 30,6) — sem medir nada por
+JavaScript, e sem o círculo piscar grande e depois pequeno.
+
+**O vão vai como margem de cada círculo, e não como `gap` da lista.** A caixa
+que se mede vale para os de DENTRO: o `cqh` numa propriedade da própria lista
+procura uma caixa que se mede FORA dela, não acha, e cai na altura da janela.
+A sabotagem que põe o vão no `gap` reproduz isso: o vão volta a 12 com os
+círculos em 34, e a lista rola.
+
+**O piso é 26.** Abaixo disso a foto deixa de ser reconhecível e as iniciais
+ficam miúdas demais. Na tela dele cabem até **10 telefones**; com 11, a barra
+rola, como antes — e aí o pé da lista **esmaece** (`data-telefones-continuam`,
+um degradê que gruda no pé com `sticky`) enquanto houver telefone escondido
+embaixo. Rolando até o fim, ele volta ao lugar e não cobre mais ninguém; com
+tudo cabendo, esmaece o próprio fundo e não se vê. Ele ocupa o lugar do
+respiro de baixo que a lista tinha.
+
+**No celular, nada abaixo de 40.** Lá todo botão tem 40 pontos de alvo de
+dedo (a regra do `@media` do painel), e um círculo menor do que o botão
+viraria uma oval. Os ícones de baixo também continuam com 40. O celular rola
+a barra: a tela é alta, e o dedo rola sem pensar.
+
+**As linhas desativadas e o traço entram na conta** (quem administra vê,
+embaixo, as linhas desativadas do departamento, depois de um traço).
+
+**As iniciais acompanham o círculo**: o `Avatar` aceita o tamanho como conta
+de CSS, e a letra é a mesma conta vezes 0,36 (duas letras) ou 0,42 (uma).
+
+**Fica de fora, e é decisão:** o ponto de folga da conta (`FOLGA`) não é
+provado. Ele existe para os arredondamentos de cada caixa, somados, não
+passarem da altura e criarem uma rolagem de meio ponto — e nas alturas da
+prova eles não chegam a isso.
+
+Prova: `os-telefones-cabem-na-barra`, 46 conferências em sete cenas:
+
+- a tela dele, com os 8 de Acordos: todos inteiros e PINTADOS
+  (`elementFromPoint`), o desenho do tamanho do botão, o selo do primeiro sem
+  corte, os ícones de baixo e a foto dentro da tela, e o último escolhido com
+  o mouse no ponto onde está desenhado, sem a lista rolar;
+- a tela alta, onde nada muda;
+- a janela que encolhe, e a faixa vermelha que encolhe a barra;
+- a linha desativada e o traço;
+- 16 telefones: a lista rola e o pé esmaece;
+- e o celular, com 16.
+
+**18 sabotagens e 18 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma:
+
+- o painel de antes inteiro (44 reprovações), e o leiaute de antes só com as
+  marcas que a prova procura (17) — é o pedido reproduzido: *"436 de conteúdo
+  em 319"*, com "Acordos 7" e "Arquivo" fora da vista;
+- **a conta:** o tamanho fixo de 42; sem o teto de 42 (os três telefones da
+  tela alta ficam com 183); o piso de 26 também no celular (o círculo vira uma
+  oval de 27×40); o vão como `gap` da lista; o vão fixo de 12; sem a caixa que
+  se mede; a conta sem o vão do traço; a conta sem o pé que esmaece;
+- **o pé:** sem ele; com margem negativa (pinta por cima do último telefone
+  mesmo com tudo cabendo); sem o `sticky`;
+- **o resto:** sem o respiro de cima da lista (o selo do primeiro telefone é
+  cortado); o `Avatar` sem saber de conta (um desenho de 42 dentro de um botão
+  de 34); as iniciais sem acompanhar; os ícones de baixo de volta a 40 no
+  computador; e com 36 também no celular.
+
+**A cena do celular tem 16 telefones, e não 8, por causa do piso.** Num
+celular alto, 8 telefones cabem com os 42 inteiros, e ali o piso não decide
+nada: com a primeira escrita da cena, a sabotagem do piso de 26 no celular não
+teria o que mostrar. Com 16, a conta pediria uns 27, e o piso tem de valer.
+
+**E a primeira rodada de sabotagens achou um defeito da prova, e não do
+painel:** com o painel de antes, a cena dos 16 telefones estourava ao rolar a
+lista que não existia, e a prova parava ali — sem dizer o que a cena do
+celular via. A rodada foi parada, a prova consertada (o passo de rolar é
+guardado), e a rodada refeita inteira: *rodada de sabotagens não convive com
+edição*.
+
 ## A ficha virou uma coluna fixa — e antes ela ESCONDIA a lista
 
 Pedido do Rodrigo em 28/09, com a tela do DataCrazy ao lado: o cadastro à
