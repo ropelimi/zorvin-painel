@@ -29,7 +29,9 @@
 //      falhavam calados — e o "Tentar de novo" passou a refazê-los;
 //  13c. a aba que não veio ficava em "Carregando…" para sempre;
 //  13d. a releitura da administração acendia a faixa e nunca a apagava;
-//  13e. a conversa que o filtro traz de fora da lista vinha sem etiqueta;
+//  13e. a conversa que o filtro traz de fora da lista vinha sem etiqueta
+//      (desde 02/11 a linha não mostra etiqueta, e quem a mostra é o alto da
+//      conversa aberta);
 //  13f. a citação e o avatar do alto usavam o nome cru do WhatsApp;
 //  13g. o nome salvo pela agenda sumia na mensagem seguinte do cliente;
 //  13h. o pré-cadastro criado não mostrava os telefones dele, e "conversar por
@@ -918,11 +920,17 @@ if (vale("13e")) {
   await page.waitForTimeout(3000);
   const linhas = await page.evaluate((ids) => ids.map((id) => {
     const el = document.querySelector(`[data-conversa-id="${id}"]`);
-    const chips = el && el.querySelector("[data-etiquetas-da-linha]");
-    return { id, na: Boolean(el), etiquetas: chips ? chips.innerText : "" };
+    return { id, na: Boolean(el), urgente: Boolean(el && /\bUrgente\b/.test(el.innerText || "")) };
   }), longe);
   ok("as três aparecem pelo filtro", linhas.every((l) => l.na) && linhas.length === 3, JSON.stringify(linhas));
-  ok("e com a etiqueta na linha", linhas.length === 3 && linhas.every((l) => /Urgente/.test(l.etiquetas)), JSON.stringify(linhas));
+  // A LINHA NÃO MOSTRA MAIS ETIQUETA (02/11, a pedido do Rodrigo). A leitura
+  // das de fora continua valendo para o ALTO da conversa aberta — é ele que
+  // esta cena passou a conferir. Invertida, e não apagada.
+  ok("e a linha não escreve a etiqueta (02/11)", linhas.length === 3 && linhas.every((l) => !l.urgente), JSON.stringify(linhas));
+  ok("abri a de mais longe", await abrirConversa(page, "a13-c1150", 1500));
+  const alto = (await page.locator("[data-etiquetas-do-alto]").count())
+    ? await page.locator("[data-etiquetas-do-alto]").first().innerText() : "";
+  ok("e o alto da conversa aberta diz “Urgente”", /\bUrgente\b/.test(alto), alto);
   await ctx.close();
 }
 
