@@ -4580,7 +4580,7 @@ responsável (17 pessoas, de 1 a 56 cada).
 
 | | |
 |---|---|
-| ao abrir, sem conversa escolhida | o resumo na tela da direita (`data-resumo-da-espera`): *"2 clientes sem resposta há mais de 30 min de expediente"*, *"12 conversas suas esperando resposta há 3 dias ou mais"*, e **Ver quais** |
+| ao abrir, sem conversa escolhida | o resumo na tela da direita (`data-resumo-da-espera`): *"2 clientes sem resposta há mais de 30 min de expediente"*, *"12 conversas suas esperando resposta há 2 dias ou mais"* (eram 3 até 02/11), e **Ver quais** |
 | a barra lateral | a ampulheta (`data-abrir-esperando`), com a soma das duas listas — **vermelha** quando há cliente sem resposta, **âmbar** quando são só as suas |
 | o ⋮ do topo | "Esperando resposta", com o mesmo número: no celular a tela da direita não aparece ao abrir, e a barra e o ⋮ são o caminho |
 | a tela | `Esperando.jsx` (`data-tela="esperando"`), com uma aba para cada lista (02/11, ver "As duas abas da tela Esperando resposta", mais abaixo); clicar abre a conversa no telefone dela, pelo caminho do histórico (`verConversaDoHistorico`) |
@@ -4600,11 +4600,12 @@ esperando, ou com uma leitura que falhou.
   feriado. **São "meus" os sem responsável e os de que sou o responsável**
   (`ehParaMim`), a régua do aviso de mensagem nova: o cliente da colega
   aparece só para ela.
-- **As minhas há 3 dias ou mais** — as conversas em que sou o responsável e a
-  espera começou antes da meia-noite de anteontem (`corteDosTresDias`), que é a
-  régua do rótulo vermelho da lista (`diasDesde`). A tela confere de novo com
-  `diasDesde`: o corte do banco é o mesmo, e a segunda conferência é o que
-  impede os dois de divergirem calados. **Sem a linha desativada** (a régua do
+- **As minhas há 2 dias ou mais** (eram 3 até 02/11 — ver "Os 3 dias viraram
+  2", mais abaixo) — as conversas em que sou o responsável e a espera começou
+  antes da meia-noite de ontem (`corteDasAtrasadas`), pela conta de dias da
+  lista (`diasDesde`). A tela confere de novo com `diasDesde`: o corte do
+  banco é o mesmo, e a segunda conferência é o que impede os dois de
+  divergirem calados. **Sem a linha desativada** (a régua do
   relatório por responsável) **e sem a arquivada**; até 500, e a tela diz
   quando cortou.
 
@@ -4905,6 +4906,84 @@ rolagem a zero sozinho (o navegador encolhe a rolagem até onde a lista curta
 deixa), e voltar à longa a deixa lá. **Medido:** com 2 conversas suas no lugar
 de 16, as duas conferências da rolagem passam com a sabotagem que tira a
 chave. A cena planta 16 de cada.
+
+### Os 3 dias viraram 2 (02/11)
+
+Pedido do Rodrigo, logo depois das abas: *"Ao invés de ser o cliente
+esperando resposta há 3 dias ou mais, altere para há 2 dias ou mais."*
+
+**Um número só**, `DIAS_DAS_ATRASADAS` (em `esperandoDemais.js`), e as frases
+saem dele (`HA_DIAS_OU_MAIS`, "há 2 dias ou mais"). Eram cinco frases com o 3
+escrito à mão, e a conta noutro lugar; o próximo ajuste deixaria uma frase
+dizendo um número e a conta usando outro. Os nomes deixaram de ter número:
+`corteDosTresDias` virou `corteDasAtrasadas`, e `esperaHaTresDias` virou
+`ehAtrasada`.
+
+| onde | agora |
+|---|---|
+| o resumo do alto | *"3 conversas suas esperando resposta há 2 dias ou mais"* |
+| a aba da tela Esperando resposta | "SUAS CONVERSAS ESPERANDO HÁ 2 DIAS OU MAIS", a nota de dentro e a aba vazia |
+| a ampulheta e o ⋮ | o número conta as de 2 dias, e o título diz a régua |
+| a frase de quando a leitura falha | *"Não consegui ler as suas conversas que esperam há 2 dias ou mais."* |
+
+**O corte vai ao banco** como antes, agora a meia-noite de ONTEM (era a de
+anteontem): quem espera desde antes disso espera há 2 dias de calendário ou
+mais. A conta continua sendo de dias de calendário, como a do rótulo da
+lista: quem escreveu anteontem às 23h entra hoje.
+
+**O que NÃO mudou, e é decisão** (dito ao Rodrigo): o pedido foi sobre esta
+lista.
+
+- **o rótulo "esperando há N dias" da lista de conversas** continua âmbar com
+  1 e 2 dias e vermelho a partir de 3;
+- **o relatório por responsável do Painel de números** continua com a coluna
+  "Há 3+ dias", contada no banco (script 011 da ponte). Mudar para 2 pede um
+  script novo na ponte.
+
+**E a cor das linhas da aba passou a ser a da lista.** Com os 3 dias, toda
+linha da aba era vermelha, e estava certo: todas tinham 3 ou mais. Com os 2,
+a de 2 dias sairia vermelha na aba e âmbar na lista — a mesma espera mais
+grave numa tela do que na outra. Hoje a régua do vermelho é uma constante só,
+`DIAS_DO_VERMELHO` (em `espera.js`), lida pelo rótulo da lista e pelas linhas
+da aba. **O rótulo da lista não tem prova própria da cor**; a constante é
+coberta pela conferência da aba (a de 2 dias âmbar, a de 5 vermelha).
+
+**Medido no banco em 02/11, só contando** (conversas com responsável, não
+arquivadas, de linhas ativas): 243 esperando há 2 dias ou mais contra 241 há
+3 ou mais — só 2 a mais, porque era segunda-feira de feriado e o sábado tinha
+tido 2 conversas. Num dia de semana a diferença é o dia de anteontem: entre
+17 e 29 conversas por dia na semana de 26 a 30/10, espalhadas por 17 pessoas.
+
+**As provas foram INVERTIDAS, e não apagadas.** `o-aviso-de-quem-espera-demais`
+pedia "sem as de 1 e 2 dias"; hoje a semente é a mesma, e a fronteira é o que
+ela guarda: a conversa de 2 dias ENTRA, a de 1 dia não. Os números da prova
+subiram junto (3 minhas, 5 na ampulheta). E ganharam conferência as frases
+que nenhuma prova lia: o título da ampulheta, a nota da aba e a aba vazia
+(esta em `as-abas-da-tela-esperando`, cena 3).
+
+Provas: `o-aviso-de-quem-espera-demais` (82 conferências) e
+`as-abas-da-tela-esperando` (80). **15 sabotagens, 14 pegas e uma que vaza
+com razão**, todas rodadas em cópias e lidas uma a uma:
+
+- o painel de antes inteiro (19 reprovações — é o pedido reproduzido);
+- a régua de volta a 3, na constante (19);
+- a conta com 2 e as frases com 3 (9);
+- o corte do banco um dia antes (12);
+- a conferência da tela com `>` no lugar de `>=` (12);
+- o corte de hoje, sem a segunda conferência da tela (10);
+- cada frase escrita à mão com 3, uma por vez: o título da aba (3), a nota
+  da aba, a aba vazia, o resumo, o título da ampulheta e a frase da falha;
+- as linhas da aba todas vermelhas, a cor de antes;
+- o vermelho a partir de 2 dias;
+- **e a que vaza:** o corte de hoje com a segunda conferência no lugar. O
+  banco devolve também as de 1 dia, e a tela as tira (`ehAtrasada`): é para
+  isso que a segunda conferência existe, e é a régua de 25/09. O que esse
+  corte custaria é uma ida maior ao banco, e o teto de 500 alcançado antes.
+
+**A rodada foi parada no meio, e refeita inteira.** A cor das linhas da aba
+foi achada com ela em andamento; consertar com as cópias rodando faria metade
+da rodada provar um código e metade outro. A régua de 13/10: *rodada de
+sabotagens não convive com edição*.
 
 ## A faxina da fila (01/11)
 

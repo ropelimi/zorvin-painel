@@ -7,6 +7,13 @@
 // mora aqui. As regras (dias corridos, por data de calendário) estão
 // explicadas em `diasEsperando`, no Painel.
 
+/** A PARTIR DE QUANTOS DIAS o "esperando há N dias" fica VERMELHO — abaixo
+ *  disso, âmbar. Vale para o rótulo da lista e para as linhas da tela
+ *  Esperando resposta: desde 02/11 aquela tela mostra também as de 2 dias
+ *  (`DIAS_DAS_ATRASADAS`, em `esperandoDemais.js`), e uma cor diferente lá
+ *  diria que a mesma espera é mais grave numa tela do que na outra. */
+export const DIAS_DO_VERMELHO = 3;
+
 /** Quantos dias de calendário vão de `iso` até hoje. Zero para vazio ou data
  *  inválida. */
 export function diasDesde(iso) {

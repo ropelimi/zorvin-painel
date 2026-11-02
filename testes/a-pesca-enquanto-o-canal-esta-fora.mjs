@@ -74,7 +74,7 @@ const levantar = async () => {
  *  duas contas desta prova.
  *
  *  É a única outra leitura de `conversas` com relógio próprio: as minhas
- *  conversas esperando há 3 dias ou mais, cinco segundos depois de a lista
+ *  conversas esperando há 2 dias ou mais, cinco segundos depois de a lista
  *  chegar e depois de minuto em minuto — com o canal de pé ou fora, porque ela
  *  não tem nada a ver com ele. Contada aqui, a cena 4 reprovava dizendo "1 ida
  *  a mais com tudo funcionando", sobre um recurso que não é a pesca. A

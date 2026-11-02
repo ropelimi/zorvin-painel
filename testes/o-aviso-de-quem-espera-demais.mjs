@@ -6,6 +6,12 @@
 // botão que mostra quais. E um aviso quando um cliente novo passa de X
 // minutos sem resposta no expediente."
 //
+// E OS 3 DIAS VIRARAM 2 (02/11): "Ao invés de ser o cliente esperando
+// resposta há 3 dias ou mais, altere para há 2 dias ou mais." A semente tem
+// uma conversa de 2 dias e outra de 1, e é a fronteira entre as duas que esta
+// prova guarda: a de 2 dias ENTRA, a de 1 dia não. As conferências que pediam
+// "sem as de 1 e 2 dias" foram INVERTIDAS, e não apagadas.
+//
 // OS MINUTOS DE EXPEDIENTE SÃO DO BANCO (script 041 da ponte, conferido num
 // Postgres de verdade na seção 86 de lá). Aqui a prova DITA o que a função
 // `zorvin_clientes_sem_resposta` responde (`__SEM_RESPOSTA`) e mede o que a
@@ -108,7 +114,7 @@ const avisos = (page) => page.evaluate(() => globalThis.__AVISOS || []);
 const notificacoes = async (page) => (await avisos(page)).filter((a) => a.o === "notificacao");
 const sons = async (page) => (await avisos(page)).filter((a) => a.o === "som").length;
 const perguntas = (page) => page.evaluate(() => globalThis.__PERGUNTAS_DA_ESPERA || 0);
-/** Quantas vezes as MINHAS que esperam há 3 dias ou mais foram lidas, pelo
+/** Quantas vezes as MINHAS que esperam há 2 dias ou mais foram lidas, pelo
  *  diário da bancada. É o MESMO formato que a prova da pesca usa para deixar
  *  esta leitura de fora da conta dela (`a-pesca-enquanto-o-canal-esta-fora`):
  *  se a consulta mudar de forma, a cadência daqui reprova dizendo zero — e é
@@ -194,12 +200,12 @@ console.log("\n1. Ao abrir: o resumo, o número da barra e a lista");
   ok("e a frase diz o limite: “2 clientes sem resposta há mais de 30 min de expediente”",
      /2 clientes\s+sem resposta há mais de 30 min de expediente/.test(await texto(page, "[data-resumo-sem-resposta]")),
      await texto(page, "[data-resumo-sem-resposta]"));
-  ok("e as 2 conversas minhas esperando há 3 dias ou mais (sem as de 1 e 2 dias, a da colega, a arquivada e a da linha desativada)",
-     await attr(page, "[data-resumo-atrasadas]", "data-resumo-atrasadas") === "2"
-     && /2 conversas suas\s+esperando resposta há 3 dias ou mais/.test(await texto(page, "[data-resumo-atrasadas]")),
+  ok("e as 3 conversas minhas esperando há 2 dias ou mais — a de 2 dias entra; a de 1 dia, a da colega, a arquivada e a da linha desativada não",
+     await attr(page, "[data-resumo-atrasadas]", "data-resumo-atrasadas") === "3"
+     && /3 conversas suas\s+esperando resposta há 2 dias ou mais/.test(await texto(page, "[data-resumo-atrasadas]")),
      await texto(page, "[data-resumo-atrasadas]"));
-  ok("o número da barra é a soma das duas listas (4), vermelho porque há cliente sem resposta",
-     await attr(page, "[data-selo-esperando]", "data-selo-esperando") === "4"
+  ok("o número da barra é a soma das duas listas (5), vermelho porque há cliente sem resposta",
+     await attr(page, "[data-selo-esperando]", "data-selo-esperando") === "5"
      && await attr(page, "[data-selo-esperando]", "data-sem-resposta") === "2",
      String(await attr(page, "[data-selo-esperando]", "data-selo-esperando")));
   const corDoSelo = await page.locator("[data-selo-esperando]").first().evaluate((e) => getComputedStyle(e).backgroundColor).catch(() => "");
@@ -207,7 +213,7 @@ console.log("\n1. Ao abrir: o resumo, o número da barra e a lista");
   ok("nada tocou: quem passou do limite há muito tempo está na lista, e não no susto",
      (await sons(page)) === 0 && (await notificacoes(page)).length === 0, JSON.stringify(await avisos(page)));
 
-  // A CADÊNCIA: UMA LEITURA DE CADA POR RODADA, E NÃO MAIS. As minhas há 3
+  // A CADÊNCIA: UMA LEITURA DE CADA POR RODADA, E NÃO MAIS. As minhas há 2
   // dias são a única leitura de `conversas` com relógio próprio, e a prova da
   // pesca a deixa de fora da conta dela — então é AQUI que o custo dela é
   // conferido. Uma leitura a mais por rodada, ou uma por desenho, seria a
@@ -218,9 +224,16 @@ console.log("\n1. Ao abrir: o resumo, o número da barra e a lista");
     await rodadas(page, 3);
     const nb = (await leiturasDasMinhas(page)) - b0, np = (await perguntas(page)) - p0;
     ok("a pergunta ao banco anda de rodada em rodada", np >= 3, `${np} perguntas em 3 rodadas`);
-    ok("e as minhas há 3 dias são lidas uma vez por rodada — nem a mais, nem nunca",
+    ok("e as minhas há 2 dias são lidas uma vez por rodada — nem a mais, nem nunca",
        nb === np, `${nb} leituras das minhas para ${np} perguntas`);
   }
+
+  // O TÍTULO DA AMPULHETA DIZ A RÉGUA DE AGORA (02/11): as frases saem do
+  // mesmo número da conta, e uma frase que dissesse 3 sobre uma lista de 2
+  // seria a tela mentindo para quem confia nela.
+  const tituloDaAmpulheta = String(await attr(page, "[data-abrir-esperando]", "title"));
+  ok("e o título da ampulheta diz “3 conversas suas há 2 dias ou mais”",
+     /3 conversas suas há 2 dias ou mais/.test(tituloDaAmpulheta), tituloDaAmpulheta);
 
   await clicar(page, "[data-ver-quem-espera]");
   ok("“Ver quais” abre a tela Esperando resposta", await esperar(page, '[data-tela="esperando"]', 3000));
@@ -238,8 +251,20 @@ console.log("\n1. Ao abrir: o resumo, o número da barra e a lista");
   ok("as minhas estão na outra aba, a um clique", await clicar(page, '[data-aba-da-espera="atrasadas"]'));
   await esperar(page, "[data-atrasada-linha]", 4000);
   const linhasB = await page.locator("[data-atrasada-linha]").evaluateAll((els) => els.map((e) => e.getAttribute("data-atrasada-linha")));
-  ok("a seção das minhas lista as duas, a que espera há mais tempo primeiro",
-     JSON.stringify(linhasB) === JSON.stringify(["esp-a1", "esp-a3"]), JSON.stringify(linhasB));
+  ok("a seção das minhas lista as três, a que espera há mais tempo primeiro — a de 2 dias por último, e a de 1 dia não",
+     JSON.stringify(linhasB) === JSON.stringify(["esp-a1", "esp-a3", "esp-2dias"]), JSON.stringify(linhasB));
+  ok("e a de 2 dias diz “esperando há 2 dias”",
+     /esperando há 2 dias/.test(await texto(page, '[data-atrasada-linha="esp-2dias"]')), await texto(page, '[data-atrasada-linha="esp-2dias"]'));
+  // A COR É A DA LISTA: âmbar com 2 dias, vermelho a partir de 3. Toda linha
+  // daqui era vermelha quando a aba começava nos 3 dias.
+  const corDoDetalhe = (id) => page.locator(`[data-atrasada-linha="${id}"] [data-detalhe-da-espera]`).first()
+    .evaluate((e) => getComputedStyle(e).color).catch(() => "");
+  const cor2 = await corDoDetalhe("esp-2dias"), cor5 = await corDoDetalhe("esp-a1");
+  ok("e a de 2 dias é âmbar, como na lista, e a de 5 dias vermelha",
+     cor2 !== "" && cor5 === "rgb(229, 57, 53)" && cor2 !== cor5, `2 dias: ${cor2} · 5 dias: ${cor5}`);
+  const notaDasMinhas = await texto(page, '[data-secao-da-espera="atrasadas"]');
+  ok("e a aba explica a régua: “… espera resposta há 2 dias ou mais.”, sem 3 dias em lugar nenhum",
+     /espera resposta há 2 dias ou mais\./.test(notaDasMinhas) && !/3 dias ou mais/i.test(notaDasMinhas), notaDasMinhas.slice(0, 200));
   ok("e cada uma diz há quantos dias: “esperando há 5 dias”",
      /esperando há 5 dias/.test(await texto(page, '[data-atrasada-linha="esp-a1"]')), await texto(page, '[data-atrasada-linha="esp-a1"]'));
 
@@ -347,7 +372,7 @@ console.log("\n3. A falha é dita, e nunca vira “ninguém esperando”");
      && /57014/.test(await texto(page, "[data-resumo-falhou]")), await texto(page, "[data-resumo-da-espera]"));
   ok("e a faixa âmbar diz o que não carregou",
      /clientes sem resposta/.test(await texto(page, "[data-falha-de-leitura]")), await texto(page, "[data-falha-de-leitura]"));
-  ok("as minhas, que vieram, continuam no resumo", await esperarValor(page, "[data-resumo-atrasadas]", "data-resumo-atrasadas", "2"));
+  ok("as minhas, que vieram, continuam no resumo", await esperarValor(page, "[data-resumo-atrasadas]", "data-resumo-atrasadas", "3"));
   await clicar(page, "[data-abrir-esperando]");
   await esperar(page, '[data-tela="esperando"]', 3000);
   ok("na tela, a seção diz que falhou", await visivel(page, "[data-espera-falhou-sem-resposta]"));
@@ -378,7 +403,7 @@ console.log("\n3. A falha é dita, e nunca vira “ninguém esperando”");
   const { ctx, page, estouros } = await abrir({ quebrarAtrasadas: true, semente: SEMENTE_DAS_MINHAS, aCada: 600000 });
   const apareceu = await esperar(page, "[data-resumo-falhou]");
   ok("a minha carteira que não carrega também é dita, com o código", apareceu
-     && /Não consegui ler as suas conversas que esperam há 3 dias ou mais/.test(await texto(page, "[data-resumo-falhou]"))
+     && /Não consegui ler as suas conversas que esperam há 2 dias ou mais/.test(await texto(page, "[data-resumo-falhou]"))
      && /57014/.test(await texto(page, "[data-resumo-falhou]")), await texto(page, "[data-resumo-da-espera]"));
   await clicar(page, "[data-abrir-esperando]");
   await esperar(page, '[data-tela="esperando"]', 3000);
@@ -390,11 +415,11 @@ console.log("\n3. A falha é dita, e nunca vira “ninguém esperando”");
   await page.keyboard.press("Escape");
   ok("antes de a carteira voltar, nenhuma leitura dela está no ar", await semCarteiraNoAr(page));
   ok("e a faixa ainda diz que ela não carregou",
-     /esperam há 3 dias/.test(await texto(page, "[data-falha-de-leitura]")), await texto(page, "[data-falha-de-leitura]"));
+     /esperam há 2 dias/.test(await texto(page, "[data-falha-de-leitura]")), await texto(page, "[data-falha-de-leitura]"));
   await page.evaluate(() => { globalThis.__QUEBRAR_AS_QUE_ESPERAM = false; });
   ok("com a carteira de volta, apertei “Tentar de novo”", await clicarGuardado(page, "[data-tentar-leituras]"));
   ok("e a faixa apaga sem esperar o relógio da leitura", await faixaApagou(page), await texto(page, "[data-falha-de-leitura]"));
-  ok("e o resumo volta a contar as minhas", await esperarValor(page, "[data-resumo-atrasadas]", "data-resumo-atrasadas", "2", 4000),
+  ok("e o resumo volta a contar as minhas", await esperarValor(page, "[data-resumo-atrasadas]", "data-resumo-atrasadas", "3", 4000),
      await texto(page, "[data-resumo-da-espera]"));
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
@@ -406,12 +431,12 @@ console.log("\n4. Sem o script 041: o aviso não existe, e as minhas continuam")
   const { ctx, page, estouros } = await abrir({ semFuncao: true, semente: SEMENTE_DAS_MINHAS });
   await esperar(page, "[data-resumo-atrasadas]");
   await page.waitForTimeout(A_CADA * 3);
-  ok("as minhas esperando há 3 dias ou mais aparecem assim mesmo", await attr(page, "[data-resumo-atrasadas]", "data-resumo-atrasadas") === "2");
+  ok("as minhas esperando há 2 dias ou mais aparecem assim mesmo", await attr(page, "[data-resumo-atrasadas]", "data-resumo-atrasadas") === "3");
   ok("sem frase de falha e sem faixa âmbar (a função que falta não é um tropeço)",
      (await contar(page, "[data-resumo-falhou]")) === 0 && !/clientes sem resposta/.test(await texto(page, "[data-falha-de-leitura]")));
   const chamadas = await page.evaluate(() => (globalThis.__FUNCOES_CHAMADAS || []).filter((c) => c.nome === "zorvin_clientes_sem_resposta").length);
   ok("e a função que não existe é perguntada uma vez só", chamadas === 1, String(chamadas));
-  ok("o número da barra é o das minhas, em âmbar", await attr(page, "[data-selo-esperando]", "data-selo-esperando") === "2"
+  ok("o número da barra é o das minhas, em âmbar", await attr(page, "[data-selo-esperando]", "data-selo-esperando") === "3"
      && await attr(page, "[data-selo-esperando]", "data-sem-resposta") === "0");
   await clicar(page, "[data-abrir-esperando]");
   await esperar(page, '[data-tela="esperando"]', 3000);
@@ -426,12 +451,12 @@ console.log("\n5. No celular: a barra e o ⋮ levam à mesma tela");
 {
   const { ctx, page, estouros } = await abrir({ viewport: { width: 390, height: 844 }, semente: SEMENTE_DAS_MINHAS,
     semResposta: [semResposta("a1-c0", "a1", "P-CEL", 50)] });
-  ok("a ampulheta da barra aparece com o número (1 sem resposta + 2 minhas)",
-     await esperarValor(page, "[data-selo-esperando]", "data-selo-esperando", "3"),
+  ok("a ampulheta da barra aparece com o número (1 sem resposta + 3 minhas)",
+     await esperarValor(page, "[data-selo-esperando]", "data-selo-esperando", "4"),
      String(await attr(page, "[data-selo-esperando]", "data-selo-esperando")));
   await page.getByRole("button", { name: "Menu" }).first().click().catch(() => {});
   await page.waitForTimeout(300);
-  ok("o ⋮ tem “Esperando resposta”, com o número", /Esperando resposta\s*3/.test(await texto(page, "[data-abrir-esperando-menu]")),
+  ok("o ⋮ tem “Esperando resposta”, com o número", /Esperando resposta\s*4/.test(await texto(page, "[data-abrir-esperando-menu]")),
      await texto(page, "[data-abrir-esperando-menu]"));
   await clicar(page, "[data-abrir-esperando-menu]");
   ok("e abre a tela", await esperar(page, '[data-tela="esperando"]', 3000));
