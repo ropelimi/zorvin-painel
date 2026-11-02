@@ -13,7 +13,7 @@ import {
   Image as ImageIcon, Video,
   Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote, Volume2,
   ListChecks, Undo2, UserCheck, SquareKanban, BellRing, BellPlus, CircleCheck, RotateCcw,
-  Sparkles, Loader2, Headset, Hourglass, Eraser, ScrollText
+  Sparkles, Loader2, Headset, Hourglass, Eraser, ScrollText, AlarmClock
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
@@ -86,6 +86,7 @@ import { padraoSemAcento, casaNaMensagem, semAColunaDaTranscricao, juntarAchados
          TETO_DA_BUSCA_NA_CONVERSA } from "./buscaNaConversa.js";
 import { tipoDoAnexo, caminhoDoAnexoDaRapida, semAColunaDoAnexo, nomeDoAnexo, anexoDoDeposito,
          CACHE_DO_ANEXO_DA_RAPIDA } from "./rapidasComAnexo.js";
+import { ehLembreteAutomatico, fechouSozinho } from "./acompanhamento.js";
 
 // ============================================================
 //  ZORVIN by Ropelimi — Painel real (conectado ao Supabase)
@@ -7844,19 +7845,24 @@ export default function Painel({ sessao }) {
   // mensagens dela, e isso o banco não entrega a quem não alcança o telefone.
   // Em vez de trocar de telefone e cair numa lista vazia — o que pareceria
   // defeito —, o botão nem aparece, e a linha diz por quê.
-  async function verConversaDoHistorico(l) {
+  // `antesDeAbrir` roda depois de a linha ser lida e antes de qualquer troca
+  // na tela: é onde a mensagem pronta do lembrete vira o rascunho da conversa
+  // que vai abrir (`usarMensagemPronta`). Devolve se abriu.
+  async function verConversaDoHistorico(l, { antesDeAbrir } = {}) {
     const adv = advogadosPermitidos.find((a) => String(a.id) === String(l.advogadoId));
-    if (!adv) { mostrarAviso("Você não tem acesso a este telefone."); return; }
+    if (!adv) { mostrarAviso("Você não tem acesso a este telefone."); return false; }
     // A LINHA PRIMEIRO: a que não se consegue ler não troca o telefone, e a
     // pessoa continua onde estava, com o aviso do porquê.
     const linha = await lerConversaParaAbrir(l.conversaId);
-    if (!linha) return;
+    if (!linha) return false;
+    if (antesDeAbrir) antesDeAbrir(linha);
     setHistorico(null);
     if (adv.departamento_id) setDepartamentoId(adv.departamento_id);
     setAdvogadoId(adv.id);
     // A MESMA PORTA DO LINK: a conversa pode morar noutra aba, na pasta de
     // arquivadas, ou depois da primeira página — ver `abrirNaAbaDela`.
     await abrirNaAbaDela(adv.id, linha);
+    return true;
   }
 
   // Abre a conversa do link, criando o contato só se ele ainda não existir.
@@ -13293,6 +13299,72 @@ export default function Painel({ sessao }) {
   }
 
   // ------------------------------------------------------------
+  //  A MENSAGEM PRONTA DO LEMBRETE DE ACOMPANHAMENTO (02/11)
+  //
+  //  O lembrete que o Zorvin cria (script 045 da ponte) traz a mensagem de
+  //  cobrança já escrita, e este é o gesto que a leva para a caixa de escrever
+  //  da conversa — com as variáveis preenchidas pela conta das mensagens
+  //  rápidas (o nome do alto da conversa, a saudação pela hora, quem está
+  //  atendendo) e SEM MANDAR NADA. Quem manda é a pessoa, depois de ler.
+  //
+  //  - A CAIXA QUE JÁ TEM TEXTO PERGUNTA ANTES de trocar, na conversa aberta e
+  //    no rascunho guardado de uma fechada: trocar calado apagaria o que
+  //    alguém começou a escrever para aquele cliente.
+  //  - UMA EDIÇÃO EM CURSO NÃO É TROCADA: o texto dela é a correção de uma
+  //    mensagem que já foi, e o Enter mandaria a cobrança como correção.
+  //  - A NOTA VIRA MENSAGEM: a cobrança é para o cliente, e na caixa de nota
+  //    ela seria guardada só para a equipe.
+  //  - O RASCUNHO DE UMA CONVERSA FECHADA SÓ É ESCRITO DEPOIS DE A LINHA SER
+  //    LIDA (`antesDeAbrir`): a conversa que não abre não fica com uma cobrança
+  //    esperando na caixa para o dia em que abrir.
+  //  - O CLIENTE QUE ESCREVEU POR ÚLTIMO É DITO: o lembrete nasce também nesse
+  //    caso ("ok, mando amanhã" é justamente o "Aguardando cliente"), e a
+  //    cobrança não pode sair sem alguém ler o que ele disse.
+  // ------------------------------------------------------------
+  async function usarMensagemPronta({ conversaId: alvo, advogadoId, mensagem, contato }) {
+    if (!alvo || !String(mensagem || "").trim()) return false;
+    const grupo = String(contato?.numero || "").startsWith("grupo:");
+    const texto = preencherVariaveis(mensagem, {
+      cliente: contato && !grupo ? nomeDoContato(contato) : "", atendente: meuNome, agora: new Date(),
+    });
+    const outroTexto = (t) => Boolean(String(t || "").trim()) && String(t).trim() !== texto.trim();
+    const PERGUNTA = "A caixa desta conversa já tem um texto escrito. Trocar pela mensagem do lembrete?";
+    if (String(conversaIdRef.current || "") === String(alvo)) {
+      if (editandoRef.current) {
+        mostrarAviso("Termine ou cancele a edição da mensagem antes de usar a mensagem do lembrete.", 7000);
+        return false;
+      }
+      if (outroTexto(rascunhoRef.current) && !window.confirm(PERGUNTA)) return false;
+      setModoNota(false);
+      colocarNaCaixa(texto);
+    } else {
+      const abriu = await verConversaDoHistorico({ advogadoId, conversaId: alvo }, {
+        antesDeAbrir: () => {
+          const guardado = rascunhosRef.current[alvo];
+          if (guardado && outroTexto(guardado.texto) && !window.confirm(PERGUNTA)) return;
+          rascunhosRef.current[alvo] = { texto, nota: false };
+        },
+      });
+      if (!abriu) return false;
+    }
+    avisarSeOClienteEscreveuPorUltimo(alvo);
+    return true;
+  }
+
+  // A PERGUNTA É AO BANCO (a última linha de `mensagens` da conversa), e não à
+  // tela: a conversa que acabou de abrir ainda está carregando. A leitura que
+  // falha não avisa nada, e é decisão: o aviso é um empurrão a mais, e a
+  // conversa está na tela, logo acima da caixa — é ela quem diz.
+  async function avisarSeOClienteEscreveuPorUltimo(alvo) {
+    const { data, error } = await supabase.from("mensagens").select("origem")
+      .eq("conversa_id", alvo).order("criado_em", { ascending: false }).limit(1);
+    if (error) { console.error("lembrete: não consegui ver quem escreveu por último", error); return; }
+    if (data && data[0] && data[0].origem === "contato") {
+      mostrarAviso("O cliente escreveu por último: leia a conversa antes de mandar a mensagem do lembrete.", 8000);
+    }
+  }
+
+  // ------------------------------------------------------------
   //  "RESUMIR" — o resumo da conversa pela IA (01/11)
   //
   //  O que o cliente quer, o que já foi combinado e o que falta. Quem pede à
@@ -15051,9 +15123,40 @@ export default function Painel({ sessao }) {
               {String(t.para_quem || "") === String(meuId) ? "Você" : primeiroNome(nomeDaPessoa(t.para_quem)) || "Sem pessoa"}
               {" · "}
               <span data-quando-da-tarefa style={{ color: feita ? C.textSecondary : corDaSituacao(s), fontWeight: s === "atrasada" && !feita ? 600 : 400 }}>
-                {feita ? `feita ${rotuloDaHora(t.feita_em)}` : rotuloDaTarefa(t)}
+                {feita
+                  ? (fechouSozinho(t) ? `fechou sozinho ${rotuloDaHora(t.feita_em)}: a conversa andou` : `feita ${rotuloDaHora(t.feita_em)}`)
+                  : rotuloDaTarefa(t)}
               </span>
+              {ehLembreteAutomatico(t) && (
+                <span data-lembrete-automatico style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                  {" · "}<AlarmClock size={11} /> lembrete automático
+                </span>
+              )}
             </div>
+            {/* A MENSAGEM PRONTA do lembrete de acompanhamento (script 045 da
+                ponte): o começo dela, e o gesto que a leva para a caixa desta
+                conversa, com o nome do cliente. Não manda nada. */}
+            {t.mensagem && !feita && (
+              <div data-mensagem-pronta-da-tarefa={t.id} style={{ marginTop: 5, display: "flex", flexDirection: "column", gap: 5 }}>
+                <span data-mensagem-pronta
+                      style={{ fontSize: 12, color: C.textSecondary, lineHeight: 1.35, whiteSpace: "pre-wrap", wordBreak: "break-word",
+                               display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                  “{t.mensagem}”
+                </span>
+                <button type="button" data-usar-mensagem-pronta={t.id}
+                        onClick={() => {
+                          setMenuTarefa(false);
+                          usarMensagemPronta({ conversaId: conversa.id, advogadoId: conversa.advogado_id,
+                                               mensagem: t.mensagem, contato: conversa.contato });
+                        }}
+                        style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 5,
+                                 border: `1px solid ${C.green}`, background: "transparent", color: C.verdeTexto,
+                                 borderRadius: 8, padding: "4px 9px", fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+                                 minHeight: 28 }}>
+                  <Send size={13} /> Usar a mensagem pronta
+                </button>
+              </div>
+            )}
           </div>
           {!feita && (
             <button data-editar-tarefa={t.id} onClick={() => abrirNovaTarefa(t)} title="Editar" aria-label="Editar tarefa" style={ICONE}>
@@ -20571,7 +20674,7 @@ export default function Painel({ sessao }) {
       )}
 
       {telaAdmin && (
-        <Departamentos C={C} abaInicial={abaDaAdmin} aoSaberDosScripts={saberDosScripts} aoFechar={() => {
+        <Departamentos C={C} meuNome={meuNome} abaInicial={abaDaAdmin} aoSaberDosScripts={saberDosScripts} aoFechar={() => {
           setTelaAdmin(false);
           // O QUE A ADMINISTRAÇÃO MEXE É RELIDO: os assuntos do "Já tratei" e
           // as etapas do funil eram lidos uma vez por sessão, e a mudança só
@@ -20627,6 +20730,11 @@ export default function Painel({ sessao }) {
                  aoAbrirConversa={(cv) => {
                    setTelaTarefas(false);
                    verConversaDoHistorico({ advogadoId: cv.advogado_id, conversaId: cv.id });
+                 }}
+                 aoUsarMensagem={(cv, t, ct) => {
+                   setTelaTarefas(false);
+                   usarMensagemPronta({ conversaId: cv.id, advogadoId: cv.advogado_id,
+                                        mensagem: t.mensagem, contato: ct || cv.contato });
                  }}
                  aoMudou={tarefasMudaram}
                  aoFechar={() => { setTelaTarefas(false); tarefasMudaram(); }} />
