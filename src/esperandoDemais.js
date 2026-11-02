@@ -2,9 +2,10 @@
 //  QUEM ESTÁ ESPERANDO DEMAIS (31/10) — as contas da tela, num lugar só
 //
 //  Pedido do Rodrigo, da lista de recomendações de 31/10: ao abrir o Zorvin,
-//  cada pessoa vê quantas conversas dela esperam há 3 dias ou mais, com um
-//  botão que mostra quais; e um aviso quando um cliente passa de 30 minutos
-//  de expediente sem resposta. Ver "Quem está esperando demais" no CLAUDE.md.
+//  cada pessoa vê quantas conversas dela esperam há 2 dias ou mais (eram 3
+//  até 02/11 — ver `DIAS_DAS_ATRASADAS`), com um botão que mostra quais; e
+//  um aviso quando um cliente passa de 30 minutos de expediente sem resposta.
+//  Ver "Quem está esperando demais" no CLAUDE.md.
 //
 //  OS MINUTOS DE EXPEDIENTE SÃO DO BANCO (`zorvin_clientes_sem_resposta`, o
 //  script 041 da ponte), pela régua do horário que decide a resposta fora do
@@ -21,14 +22,14 @@ import { diasDesde } from "./espera.js";
 export const RELER_A_CADA_MS = 60 * 1000;
 
 /** A PRIMEIRA PERGUNTA ESPERA a abertura do painel terminar. Ela vai à tabela
- *  de conversas (as minhas esperando há 3 dias ou mais), e na partida as idas a
+ *  de conversas (as minhas que esperam há dias demais), e na partida as idas a
  *  essa tabela saem todas juntas, numa rodada só — a prova `partida` mede isso,
  *  e uma consulta a mais no meio voltaria a fazer a abertura esperar em fila.
  *  Cinco segundos é depois de a lista aparecer, e antes de alguém ter escolhido
  *  a primeira conversa. */
 export const ESPERA_ANTES_DA_PRIMEIRA_MS = 5 * 1000;
 
-/** As minhas esperando há 3 dias ou mais vêm até este teto, as que esperam há
+/** As minhas que esperam há dias demais vêm até este teto, as que esperam há
  *  mais tempo primeiro, e a tela diz quando cortou. A maior carteira do
  *  escritório tinha 56 em 31/10. */
 export const TETO_DAS_ATRASADAS = 500;
@@ -91,18 +92,39 @@ export function quemAvisarAgora(linhas, meuId, conversaAberta, avisadas = lerAvi
   });
 }
 
-// ---- As conversas que esperam há 3 dias ou mais ----
+// ---- As minhas que esperam há dias demais ----
 
-/** O começo do dia de anteontem, no relógio do navegador. Quem espera desde
- *  ANTES disso espera há 3 dias ou mais pela régua de `diasDesde` — a mesma do
- *  rótulo "esperando há N dias" da lista, que fica vermelho a partir de três.
- *  É o corte que vai ao banco; a tela confere de novo com `diasDesde`. */
-export function corteDosTresDias(agora = new Date()) {
-  return new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() - 2);
+/** A PARTIR DE QUANTOS DIAS de espera a conversa entra na carteira de quem
+ *  responde por ela: no resumo do alto, na aba "Suas conversas esperando…" da
+ *  tela Esperando resposta e no número da ampulheta. ERAM 3, E PASSARAM A 2
+ *  EM 02/11, a pedido do Rodrigo: "Ao invés de ser o cliente esperando
+ *  resposta há 3 dias ou mais, altere para há 2 dias ou mais."
+ *
+ *  UM NÚMERO SÓ, e as frases saem dele (`HA_DIAS_OU_MAIS`): escrito em cada
+ *  tela, o próximo ajuste deixaria uma frase dizendo um número e a conta
+ *  usando outro — e quem lê a frase confia nela.
+ *
+ *  NÃO É MAIS A RÉGUA DO VERMELHO DA LISTA, e é decisão: o pedido foi sobre
+ *  esta lista. O rótulo "esperando há N dias" das conversas continua âmbar
+ *  até 2 e vermelho a partir de 3, e o relatório por responsável do Painel
+ *  de números continua contando "há 3 dias ou mais" (a conta dele é do banco,
+ *  script 011 da ponte). A conta dos dias é a mesma (`diasDesde`). */
+export const DIAS_DAS_ATRASADAS = 2;
+
+/** "há 2 dias ou mais" — a frase das telas, tirada do mesmo número da conta. */
+export const HA_DIAS_OU_MAIS = `há ${DIAS_DAS_ATRASADAS} dias ou mais`;
+
+/** O começo do dia de onde a conta parte, no relógio do navegador: quem espera
+ *  desde ANTES disso espera há `DIAS_DAS_ATRASADAS` dias ou mais pela régua de
+ *  `diasDesde`. Com 2, é a meia-noite de ontem (com 3 era a de anteontem). É o
+ *  corte que vai ao banco; a tela confere de novo com `diasDesde`. */
+export function corteDasAtrasadas(agora = new Date()) {
+  return new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() - (DIAS_DAS_ATRASADAS - 1));
 }
 
-export function esperaHaTresDias(iso) {
-  return diasDesde(iso) >= 3;
+/** A conversa que espera desde `iso` já entra na carteira? */
+export function ehAtrasada(iso) {
+  return diasDesde(iso) >= DIAS_DAS_ATRASADAS;
 }
 
 // ---- As frases ----

@@ -2,7 +2,8 @@
 //
 // Pedido do Rodrigo: "na tela 'Esperando resposta', precisa ter duas abas para
 // mudar entre 'CLIENTES SEM RESPOSTA' e 'SUAS CONVERSAS ESPERANDO HÁ 3 DIAS OU
-// MAIS'". Eram duas seções, uma embaixo da outra: com os clientes sem resposta
+// MAIS'". (E os 3 dias viraram 2, a pedido dele, no mesmo dia: a aba diz hoje
+// "HÁ 2 DIAS OU MAIS".) Eram duas seções, uma embaixo da outra: com os clientes sem resposta
 // de um dia cheio, as suas conversas ficavam lá embaixo, depois da rolagem.
 //
 // O que esta prova confere:
@@ -175,8 +176,8 @@ console.log("\n1. As duas abas: os nomes do pedido, o número de cada uma, e só
   const as = await abas(page);
   ok("são duas abas, nesta ordem", as.map((a) => a.id).join(",") === "sem-resposta,atrasadas", JSON.stringify(as.map((a) => a.id)));
   ok("a primeira diz “CLIENTES SEM RESPOSTA”", as[0] && as[0].nome === "CLIENTES SEM RESPOSTA", as[0] && as[0].nome);
-  ok("a segunda diz “SUAS CONVERSAS ESPERANDO HÁ 3 DIAS OU MAIS”",
-     as[1] && as[1].nome === "SUAS CONVERSAS ESPERANDO HÁ 3 DIAS OU MAIS", as[1] && as[1].nome);
+  ok("a segunda diz “SUAS CONVERSAS ESPERANDO HÁ 2 DIAS OU MAIS”",
+     as[1] && as[1].nome === "SUAS CONVERSAS ESPERANDO HÁ 2 DIAS OU MAIS", as[1] && as[1].nome);
   ok("cada aba diz quantos há nela: 2 clientes sem resposta (o da colega não) e 2 conversas suas",
      as.length === 2 && as[0].n === "2" && as[1].n === "2", JSON.stringify(as.map((a) => a.n)));
   ok("a tela abre nos clientes sem resposta, que é o que pede ação agora", await escolhida(page) === "sem-resposta");
@@ -295,6 +296,13 @@ console.log("\n3. Nada nas duas: abre na primeira, dizendo que não há ninguém
      await texto(page, '[data-secao-da-espera="sem-resposta"]'));
   const as = await abas(page);
   ok("as duas abas dizem 0", as.length === 2 && as.every((a) => a.n === "0"), JSON.stringify(as.map((a) => [a.id, a.n])));
+  // A FRASE DA ABA VAZIA DIZ A RÉGUA DE AGORA (02/11): os 3 dias viraram 2,
+  // e as frases saem do mesmo número da conta (`HA_DIAS_OU_MAIS`).
+  await clicar(page, '[data-aba-da-espera="atrasadas"]');
+  await page.waitForTimeout(300);
+  ok("e a aba das suas conversas, vazia, diz “Nenhuma conversa sua esperando há 2 dias ou mais.”",
+     /Nenhuma conversa sua esperando há 2 dias ou mais\./.test(await texto(page, '[data-secao-da-espera="atrasadas"]')),
+     await texto(page, '[data-secao-da-espera="atrasadas"]'));
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
@@ -444,7 +452,7 @@ for (const largura of [390, 360]) {
   ok(`a ${largura}: as duas abas aparecem, pintadas`, as.length === 2 && as.every((a) => a.pintada),
      JSON.stringify(as.map((a) => [a.id, a.pintada])));
   ok(`a ${largura}: os dois nomes inteiros, sem corte (o comprido quebra em linhas)`,
-     as.length === 2 && as.every((a) => a.nomeInteiro) && as[1].nome === "SUAS CONVERSAS ESPERANDO HÁ 3 DIAS OU MAIS",
+     as.length === 2 && as.every((a) => a.nomeInteiro) && as[1].nome === "SUAS CONVERSAS ESPERANDO HÁ 2 DIAS OU MAIS",
      JSON.stringify(as.map((a) => [a.nome, a.nomeInteiro, Math.round(a.w)])));
   ok(`a ${largura}: as abas têm o alvo de dedo (40 de altura)`, as.length === 2 && as.every((a) => a.h >= 39.5),
      JSON.stringify(as.map((a) => Math.round(a.h))));

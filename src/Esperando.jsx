@@ -3,8 +3,8 @@ import { ArrowLeft, RefreshCw, Hourglass, MessageCircle, AlertCircle } from "luc
 import { nomeDoContato } from "./contato.js";
 import { telefoneLegivel } from "./numeros.js";
 import { rotuloDaHora } from "./agenda.js";
-import { diasDesde } from "./espera.js";
-import { ehParaMim, rotuloDosMinutos, fraseDoLimite } from "./esperandoDemais.js";
+import { diasDesde, DIAS_DO_VERMELHO } from "./espera.js";
+import { ehParaMim, rotuloDosMinutos, fraseDoLimite, HA_DIAS_OU_MAIS } from "./esperandoDemais.js";
 
 // ============================================================
 //  A TELA "ESPERANDO RESPOSTA" (31/10)
@@ -19,10 +19,11 @@ import { ehParaMim, rotuloDosMinutos, fraseDoLimite } from "./esperandoDemais.js
 //    - "Clientes sem resposta" — quem escreveu e ainda não recebeu NENHUMA
 //      resposta, além do tempo do departamento (30 minutos de expediente, se
 //      ninguém mudou). É o cliente novo esperando a primeira palavra;
-//    - "Suas conversas esperando há 3 dias ou mais" — as conversas em que
-//      VOCÊ é o responsável e o cliente espera há 3 dias de calendário ou
-//      mais: a régua do rótulo vermelho da lista e do relatório por
-//      responsável.
+//    - "Suas conversas esperando há 2 dias ou mais" — as conversas em que
+//      VOCÊ é o responsável e o cliente espera há 2 dias de calendário ou
+//      mais. Eram 3 até 02/11, a régua do vermelho da lista; o número mora
+//      em `DIAS_DAS_ATRASADAS` (`esperandoDemais.js`), e as frases daqui saem
+//      dele.
 //
 //  OS DADOS SÃO DO PAINEL, e esta tela só desenha: o número da barra, o
 //  resumo e esta lista têm de dizer a mesma coisa, e três leituras
@@ -80,7 +81,7 @@ export default function Esperando({
       falhou: Boolean(semResposta?.erro), n: semResposta?.erro || !semResposta?.lido ? null : meusSemResposta.length,
     },
     podeContarAtrasadas && {
-      id: "atrasadas", titulo: "Suas conversas esperando há 3 dias ou mais", forte: "#d99a1e", texto: C.ambarTexto || "#d99a1e",
+      id: "atrasadas", titulo: `Suas conversas esperando ${HA_DIAS_OU_MAIS}`, forte: "#d99a1e", texto: C.ambarTexto || "#d99a1e",
       falhou: Boolean(atrasadas?.erro), n: atrasadas?.erro || !atrasadas?.lido ? null : minhas.length,
     },
   ].filter(Boolean);
@@ -231,14 +232,19 @@ export default function Esperando({
             </>)}
 
           {ativa === "atrasadas" && painel("atrasadas", <>
-              {nota("As conversas em que você é o responsável e o cliente espera resposta há 3 dias ou mais.")}
+              {nota(`As conversas em que você é o responsável e o cliente espera resposta ${HA_DIAS_OU_MAIS}.`)}
               {atrasadas?.erro ? falha("data-espera-falhou-atrasadas", atrasadas.erro)
                 : !atrasadas?.lido ? nota("Procurando…")
-                : minhas.length === 0 ? nota("Nenhuma conversa sua esperando há 3 dias ou mais.", { borderTop: `1px solid ${C.divider}` })
+                : minhas.length === 0 ? nota(`Nenhuma conversa sua esperando ${HA_DIAS_OU_MAIS}.`, { borderTop: `1px solid ${C.divider}` })
                 : minhas.map((cv) => {
                     const d = diasDesde(cv.esperando_desde);
+                    // A COR É A DO RÓTULO DA LISTA (02/11): âmbar com 2 dias,
+                    // vermelho a partir de 3 (`DIAS_DO_VERMELHO`). Com os 3 dias
+                    // da aba, toda linha daqui era vermelha; com os 2, a de 2
+                    // dias seria vermelha aqui e âmbar na lista.
                     return linha(`at-${cv.id}`, { "data-atrasada-linha": cv.id }, cv, cv.contato,
-                      `esperando há ${d} dia${d === 1 ? "" : "s"}`, "#e53935", null);
+                      `esperando há ${d} dia${d === 1 ? "" : "s"}`,
+                      d >= DIAS_DO_VERMELHO ? "#e53935" : (C.ambarTexto || "#d99a1e"), null);
                   })}
               {atrasadas?.cortado && nota(`Mostrando as ${minhas.length} que esperam há mais tempo.`, { borderTop: `1px solid ${C.divider}` })}
             </>)}

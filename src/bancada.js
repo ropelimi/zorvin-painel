@@ -2774,7 +2774,7 @@ function consulta(tabela) {
         return resolver({ data: null, count: null,
           error: { code: "57014", message: "canceling statement due to statement timeout" } });
       }
-      // SÓ A PERGUNTA DAS MINHAS ESPERANDO HÁ 3 DIAS OU MAIS (31/10) — a
+      // SÓ A PERGUNTA DAS MINHAS QUE ESPERAM HÁ DIAS DEMAIS (31/10) — a
       // lista de conversas continua de pé. É o caso em que o resumo e a tela
       // têm de dizer que não conseguiram contar, em vez de "nenhuma".
       if (tabela === "conversas" && !gravacao && !patch && !apagando && typeof globalThis !== "undefined"

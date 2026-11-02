@@ -56,7 +56,7 @@ import Faxina from "./Faxina.jsx";
 import { mudouDesdeALista } from "./faxina.js";
 import { RELER_A_CADA_MS as RELER_A_ESPERA_MS, TETO_DAS_ATRASADAS, ESPERA_ANTES_DA_PRIMEIRA_MS, ehParaMim,
          quemAvisarAgora, marcarAvisadas as marcarEsperasAvisadas, chaveDoAviso as chaveDoAvisoDeEspera,
-         corteDosTresDias, esperaHaTresDias, rotuloDosMinutos, fraseDoLimite, quantosClientes,
+         corteDasAtrasadas, ehAtrasada, HA_DIAS_OU_MAIS, rotuloDosMinutos, fraseDoLimite, quantosClientes,
          quantasConversasSuas } from "./esperandoDemais.js";
 import NovaTarefa from "./NovaTarefa.jsx";
 import { situacao, ordenarAbertas, rotuloDaTarefa, fimDeHoje, semATabelaDeTarefas, quemTocaAgora,
@@ -67,7 +67,7 @@ import JaTratei from "./JaTratei.jsx";
 import Reabrir from "./Reabrir.jsx";
 import { nomeDoContato } from "./contato.js";
 import { preencherVariaveis, usaVariaveis, variaveisDesconhecidas, VARIAVEIS } from "./variaveis.js";
-import { diasDesde } from "./espera.js";
+import { diasDesde, DIAS_DO_VERMELHO } from "./espera.js";
 import { montarCaminho, duracaoLegivel } from "./caminhoNoFunil.js";
 import { lerFunisDosTelefones, funilDoTelefone, chaveDoFunil, nomeDoFunil, noFunil } from "./funis.js";
 import EscolherHora from "./EscolherHora.jsx";
@@ -6447,8 +6447,9 @@ export default function Painel({ sessao }) {
   //     script 041 da ponte): quem abriu um atendimento e espera a primeira
   //     resposta há mais do que o limite do departamento, contado só no
   //     expediente. É daqui que sai o AVISO — o som, a tarja e a faixa;
-  //   - AS MINHAS ESPERANDO HÁ 3 DIAS OU MAIS: as conversas em que sou o
-  //     responsável, pela régua do rótulo vermelho da lista (`diasDesde`).
+  //   - AS MINHAS ESPERANDO HÁ 2 DIAS OU MAIS (eram 3 até 02/11): as
+  //     conversas em que sou o responsável, pela conta de dias da lista
+  //     (`diasDesde`). O número mora em `DIAS_DAS_ATRASADAS`.
   //
   // O QUE MUDA A CADA DESENHO ENTRA POR ESPELHO, e não nas dependências (a
   // lição do relógio órfão, 20/10): `advogadosPermitidos` nasce de novo a cada
@@ -6507,24 +6508,25 @@ export default function Painel({ sessao }) {
       let q = supabase.from("conversas")
         .select(`id, advogado_id, esperando_desde, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
         .eq("responsavel_id", meuId).not("esperando_desde", "is", null)
-        .lt("esperando_desde", corteDosTresDias().toISOString())
+        .lt("esperando_desde", corteDasAtrasadas().toISOString())
         .order("esperando_desde", { ascending: true }).limit(TETO_DAS_ATRASADAS);
       if (TEM_ARQUIVADA) q = q.eq("arquivada", false);
       const r = await q;
       if (r.error) {
-        anotarFalhaDeLeitura("minhas-atrasadas", "as suas conversas que esperam há 3 dias ou mais", r.error);
+        anotarFalhaDeLeitura("minhas-atrasadas", `as suas conversas que esperam ${HA_DIAS_OU_MAIS}`, r.error);
         setAtrasadas((s) => ({ ...s, lido: true,
-          erro: comOCodigo("Não consegui ler as suas conversas que esperam há 3 dias ou mais.", r.error, "conversas que esperam") }));
+          erro: comOCodigo(`Não consegui ler as suas conversas que esperam ${HA_DIAS_OU_MAIS}.`, r.error, "conversas que esperam") }));
         return;
       }
       limparFalhaDeLeitura("minhas-atrasadas");
       // A LINHA DESATIVADA FICA DE FORA, pela régua do relatório por
       // responsável (011): ninguém responde por ela. E a conta é conferida de
-      // novo com `diasDesde`, a régua da lista — o corte do banco é o mesmo, e
-      // a segunda conferência é o que impede os dois de divergirem calados.
+      // novo com `diasDesde`, a conta de dias da lista — o corte do banco é o
+      // mesmo, e a segunda conferência é o que impede os dois de divergirem
+      // calados.
       const ativos = new Set(advogadosPermitidosRef.current.map((a) => String(a.id)));
       const veio = r.data || [];
-      const linhas = veio.filter((c) => ativos.has(String(c.advogado_id)) && esperaHaTresDias(c.esperando_desde));
+      const linhas = veio.filter((c) => ativos.has(String(c.advogado_id)) && ehAtrasada(c.esperando_desde));
       setAtrasadas({ linhas, erro: "", lido: true, cortado: veio.length >= TETO_DAS_ATRASADAS });
     } catch (e) {
       console.error("Zorvin — conversas que esperam:", e);
@@ -6556,7 +6558,7 @@ export default function Painel({ sessao }) {
   const erroDaEspera = semResposta.erro || atrasadas.erro;
   const tituloDaEspera = nEsperando
     ? `Esperando resposta — ${[nSemResposta ? `${quantosClientes(nSemResposta)} sem resposta` : "",
-                               nAtrasadas ? `${quantasConversasSuas(nAtrasadas)} há 3 dias ou mais` : ""].filter(Boolean).join(", ")}`
+                               nAtrasadas ? `${quantasConversasSuas(nAtrasadas)} ${HA_DIAS_OU_MAIS}` : ""].filter(Boolean).join(", ")}`
     : "Esperando resposta";
   const abrirEsperando = () => { setTelaEsperando(true); lerQuemEspera(); };
 
@@ -16299,9 +16301,10 @@ export default function Painel({ sessao }) {
           </button>
         )}
         {/* QUEM ESTÁ ESPERANDO DEMAIS (31/10): os clientes sem resposta além do
-            tempo do departamento e as minhas conversas esperando há 3 dias ou
-            mais. O número é a soma das duas listas da tela — vermelho quando
-            há cliente sem resposta, que é o que pede ação agora. */}
+            tempo do departamento e as minhas conversas esperando há 2 dias ou
+            mais (eram 3 até 02/11). O número é a soma das duas listas da
+            tela — vermelho quando há cliente sem resposta, que é o que pede
+            ação agora. */}
         {mostraEsperando && (
           <button data-abrir-esperando onClick={abrirEsperando} title={tituloDaEspera} aria-label={tituloDaEspera}
                   style={{ position: "relative", width: ICONE_DA_BARRA, height: ICONE_DA_BARRA, borderRadius: 8, border: "none",
@@ -17481,7 +17484,7 @@ export default function Painel({ sessao }) {
                     <div data-espera={espera}
                          title={`Sem resposta desde ${new Date(c.esperando_desde).toLocaleDateString("pt-BR")}`}
                          style={{ marginTop: 3, fontSize: 11.5, fontWeight: 600,
-                                  color: espera >= 3 ? "#e5573f"
+                                  color: espera >= DIAS_DO_VERMELHO ? "#e5573f"
                                        : (modo === "escuro" ? "#e0a400" : "#8a6d00") }}>
                       esperando há {espera} {espera === 1 ? "dia" : "dias"}
                     </div>
@@ -17663,7 +17666,7 @@ export default function Painel({ sessao }) {
                 {nAtrasadas > 0 && (
                   <div data-resumo-atrasadas={nAtrasadas} style={{ display: "flex", gap: 8, marginTop: nSemResposta ? 6 : 0 }}>
                     <Clock size={16} color="#d99a1e" style={{ flexShrink: 0, marginTop: 2 }} />
-                    <span><b>{quantasConversasSuas(nAtrasadas)}</b> esperando resposta há 3 dias ou mais.</span>
+                    <span><b>{quantasConversasSuas(nAtrasadas)}</b> esperando resposta {HA_DIAS_OU_MAIS}.</span>
                   </div>
                 )}
                 {erroDaEspera && (
