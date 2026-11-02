@@ -14912,6 +14912,18 @@ export default function Painel({ sessao }) {
         {f.erro && (
           <div data-erro-da-etapa style={{ padding: "8px 12px", fontSize: 12.5, color: C.erroTexto }}>{f.erro}</div>
         )}
+        {/* A IA PÔS AQUI (044): o porquê dela, e o aviso de que escolher
+            outra etapa o apaga — o motivo só fala da etapa que ela escolheu. */}
+        {f.cartao && f.cartao.ia_motivo && (
+          <div data-motivo-da-ia style={{ padding: "8px 12px", fontSize: 12.5, color: C.textSecondary, lineHeight: 1.45,
+                                          borderBottom: `1px solid ${C.divider}`, display: "flex", gap: 6 }}>
+            <Sparkles size={13} color={C.green} style={{ flexShrink: 0, marginTop: 2 }} />
+            <span>
+              <b style={{ color: C.textPrimary }}>A IA pôs aqui:</b> {f.cartao.ia_motivo}
+              <span style={{ display: "block", fontSize: 11.5, marginTop: 2 }}>Escolher outra etapa apaga este motivo.</span>
+            </span>
+          </div>
+        )}
         {f.cartao !== undefined && ativas.map((e) => (
           <button key={e.id} data-escolher-etapa={e.nome} role="option" aria-selected={atual === String(e.id)}
                   onClick={() => escolherEtapa(e)} style={ITEM}>
@@ -17712,7 +17724,8 @@ export default function Painel({ sessao }) {
                                   data-selo-compacto={selosCompactos ? "sim" : "nao"}
                                   onClick={() => setMenuEtapa((v) => (v === "linha" ? false : "linha"))}
                                   aria-expanded={menuEtapa === "linha"} aria-haspopup="listbox"
-                                  title={etapaAtualDaConversa ? `Etapa no funil: ${etapaAtualDaConversa.nome} — clique para mudar`
+                                  title={etapaAtualDaConversa ? `Etapa no funil: ${etapaAtualDaConversa.nome}${
+                                      funilDaConversa.cartao && funilDaConversa.cartao.ia_motivo ? " (a IA pôs aqui)" : ""} — clique para mudar`
                                     : "Este cliente não está no funil — clique para pôr"}
                                   style={{ border: "none", background: "transparent", cursor: "pointer",
                                            display: "flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden",
@@ -17728,6 +17741,9 @@ export default function Painel({ sessao }) {
                                   ? etapaAtualDaConversa.nome + (etapaAtualDaConversa.ativo === false ? " (desativada)" : "")
                                   : funilDaConversa.cartao === null ? "Pôr no funil" : "Etapa"}
                               </span>
+                            )}
+                            {!selosCompactos && funilDaConversa.cartao && funilDaConversa.cartao.ia_motivo && (
+                              <Sparkles data-etapa-pela-ia size={11} color={C.green} style={{ flexShrink: 0 }} aria-label="a IA pôs aqui" />
                             )}
                             {!selosCompactos && <ChevronDown size={12} style={{ flexShrink: 0, opacity: .7 }} />}
                           </button>
@@ -19026,16 +19042,23 @@ export default function Painel({ sessao }) {
                           <div key={p.id} data-passo-no-caminho={p.tipo}
                                style={{ display: "flex", gap: 9, marginBottom: 10 }}>
                             <div style={{ marginTop: 2 }}>
-                              <Avatar nome={quemFoi(p.quem)} foto={p.quem ? equipe.porId[String(p.quem)]?.foto : undefined} size={24} />
+                              <Avatar nome={p.pelaIa ? "A IA" : quemFoi(p.quem)} foto={p.quem ? equipe.porId[String(p.quem)]?.foto : undefined} size={24} />
                             </div>
                             <div style={{ minWidth: 0, flex: 1, fontSize: 13, lineHeight: 1.5 }}>
                               {p.tipo === "entrou" && (
-                                p.quem == null
+                                p.quem == null && !p.pelaIa
                                   ? <>Entrou no funil em {etapaChip(p.para)}, sozinho, quando escreveu pela primeira vez</>
+                                  : p.pelaIa ? <><b>A IA</b> pôs no funil em {etapaChip(p.para)}</>
                                   : <><b>{quemFoi(p.quem)}</b> pôs no funil em {etapaChip(p.para)}</>
                               )}
                               {p.tipo === "moveu" && (
-                                <><b>{quemFoi(p.quem)}</b> moveu de {etapaChip(p.de)} para {etapaChip(p.para)}</>
+                                <><b>{p.pelaIa ? "A IA" : quemFoi(p.quem)}</b> moveu de {etapaChip(p.de)} para {etapaChip(p.para)}</>
+                              )}
+                              {p.pelaIa && p.motivo && (
+                                <div data-motivo-no-caminho style={{ fontSize: 12, color: C.textSecondary, display: "flex", gap: 5 }}>
+                                  <Sparkles size={12} color={C.green} style={{ flexShrink: 0, marginTop: 3 }} />
+                                  <span>{p.motivo}</span>
+                                </div>
                               )}
                               {p.tipo === "saiu" && (
                                 <><b>{quemFoi(p.quem)}</b> tirou do funil, de {etapaChip(p.de)}</>

@@ -4031,6 +4031,82 @@ pegas**, todas limpas, rodadas em cópias e lidas uma a uma:
   nome do telefone;
 - **e a bancada:** o cartão posto pela tela sem as datas.
 
+### A IA move o funil (02/11)
+
+Pedido do Rodrigo, junto com o funil de cada telefone: *"funil movido pela
+IA"*. Decidido com ele: a IA muda a etapa **sozinha**, o cartão diz que foi
+ela e por quê, e qualquer pessoa desfaz arrastando de volta. Por enquanto, só
+no Sucesso do Cliente. **Quem lê e decide é a ponte** (script 044 e a rodada
+`moverOFunilComAIA`, ver o CLAUDE.md dela); a tela liga, desliga e mostra.
+
+| onde | o quê |
+|---|---|
+| Etapas do funil (administração) | a chave **"A IA move os clientes de … de etapa"**, por funil (`IaDoFunil.jsx`, `data-ia-do-funil`), com **Ler todos de novo**; e a **descrição** de cada etapa (`data-etapa-descrever`) |
+| o cartão do funil | "**IA:** o porquê", em até duas linhas (`data-cartao-pela-ia`) |
+| a conversa | a marca da IA no selo da etapa (`data-etapa-pela-ia`), e o porquê no menu dela (`data-motivo-da-ia`) |
+| o caminho do histórico | "**A IA** moveu de X para Y", com o porquê (`data-motivo-no-caminho`) |
+
+**A chave é de cada funil de verdade**: o do departamento, ou o de um
+telefone com funil próprio. O telefone que usa o funil do departamento não
+tem chave. A frase de ligar diz o número que o **banco** devolveu ("a IA vai
+ler os 871 clientes deste funil"), e não uma conta daqui. A falha é dita com o
+código, e a chave fica como estava.
+
+**A descrição da etapa é o que a IA lê** para saber o que a etapa quer dizer:
+"Proposta enviada" sozinha diz menos do que "mandamos a proposta e esperamos
+a resposta do cliente". Até 500 caracteres, numa linha; vazia vira nula.
+
+**A ponte que não move o funil é DITA, e a chave fica**, e é a régua daqui —
+ao contrário do "Resumir", que some. `avisoDaIaDoFunil` (em `copiloto.js`)
+diz qual é o caso: a ponte de antes desta função (respondeu sem falar do
+funil), a ponte sem a chave da Anthropic, ou `FUNIL_IA=desligada`. Esconder a
+chave deixaria quem administra sem saber por que nada acontece — e ela fica
+guardada, valendo assim que a ponte puder. A dúvida (a pergunta que falhou)
+não vira aviso.
+
+**O motivo da IA só fala da etapa que ela escolheu.** Uma pessoa que move o
+cartão apaga o motivo: no banco é o gatilho do 044 que apaga; na tela, o
+quadro já o tira junto com a etapa, e o menu da conversa avisa ("escolher
+outra etapa apaga este motivo"). E quem escreve o motivo é só a ponte: o
+gatilho desfaz o que a tela mandar.
+
+**Sem o 044, nada aparece**: a chave pergunta pela coluna `ia_ligada` (a que
+falta, ou a tabela, sem o 043, é o único "não tem"), e as descrições
+perguntam por `descricao` uma vez, quando a seção abre. Os cartões e o caminho
+só mostram o "IA" quando o banco manda o motivo.
+
+**A bancada aprendeu o 044**: as colunas (com `__SEM_IA_DO_FUNIL` tirando
+todas, e sem o 043 também não há 044); o gatilho que não deixa a tela escrever
+o que é da IA e apaga o motivo quando a tela muda a etapa; o passo de gente
+com `pela_ia: false`; e `zorvin_ia_do_funil`, com as regras da função do
+banco (quem administra, o funil do telefone em uso, duas etapas, a linha do
+departamento, ler de novo, o número de clientes). As chamadas ficam em
+`__CHAMADAS_IA_DO_FUNIL`.
+
+Prova: `a-ia-move-o-funil`, 57 conferências, com a ponte fingida pela prova
+(a de agora, a de antes, a sem a chave da Anthropic e a com
+`FUNIL_IA=desligada`). As vizinhas passam sem mudança: as quatro do funil, as
+tarefas, o copiloto, o resumo, o assunto do Finalizar, a auditoria de 27/10,
+o cabeçalho e os menus que cabem na janela.
+
+**21 sabotagens e 21 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma:
+
+- o painel de antes inteiro, o da PR #299 (31 reprovações);
+- **a chave:** a coluna que falta virando falha (a chave aparece sem o 044);
+  a chave que some quando a ponte não move o funil (6); a ponte de antes não
+  dita; a ponte que não fala do funil lida como "move o funil"; ligar sem o
+  telefone; a frase com um número que não é o do banco; "ler de novo" sem
+  pedir de novo; a falha deixando a chave no que se pediu; a chave no telefone
+  que usa o funil do departamento;
+- **a descrição:** descrever sem o 044; sem arrumar os espaços; a vazia
+  gravada como texto vazio;
+- **o cartão e a conversa:** o cartão sem o "IA"; mover pelo quadro sem apagar
+  o motivo na tela; o menu da etapa sem o porquê; o selo sem a marca da IA;
+- **o caminho:** sem saber que foi a IA; sem o porquê;
+- **e a bancada:** sem o gatilho do 044 (a pessoa que move não apaga o
+  motivo); o passo de gente dito da IA.
+
 ## Tarefas e lembretes (06/10)
 
 Pedido do Rodrigo como terceiro passo para CRM: *"pode começar pelas tarefas

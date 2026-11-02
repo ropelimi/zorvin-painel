@@ -48,6 +48,16 @@ import { BRIDGE_URL, chamarPonte } from "./ponte.js";
 //  A ponte que sabe sugerir o assunto diz `assunto: true`. A de antes não diz
 //  nada, e aí a janela do Finalizar abre como sempre abriu, sem pedir à IA —
 //  a mesma régua do resumo.
+//
+//  ------------------------------------------------------------
+//  A IA QUE MOVE O FUNIL (02/11) também
+//
+//  A ponte que move o funil diz `funil: true` (e `funil: false` com
+//  FUNIL_IA=desligada lá). A de antes não diz nada. Aqui a régua é OUTRA, e
+//  de propósito: a chave de cada funil fica na tela de quem administra
+//  sempre, e o que muda é uma frase dizendo por que a IA não vai mover nada
+//  agora (`avisoDaIaDoFunil`). Esconder a chave deixaria quem administra sem
+//  saber por quê — e ela vale assim que a ponte puder.
 // ============================================================
 
 const ESPERA_DO_ESTADO_MS = 8000;
@@ -87,12 +97,13 @@ function perguntarDeNovoDepois() {
   }, DE_NOVO_EM_MS);
 }
 
-/** `{ ligado, modelo, resumo, assunto }`. `ligado`, `resumo` e `assunto` são
- *  `null` quando não deu para perguntar. */
+/** `{ ligado, modelo, resumo, assunto, funil }`. `ligado`, `resumo`,
+ *  `assunto` e `funil` são `null` quando não deu para perguntar; `funil` é
+ *  "antiga" quando a ponte respondeu sem falar do funil. */
 export function perguntarOCopiloto() {
   if (promessa) return promessa;
   if (!BRIDGE_URL) {
-    promessa = Promise.resolve({ ligado: null, modelo: null, resumo: null, assunto: null });
+    promessa = Promise.resolve({ ligado: null, modelo: null, resumo: null, assunto: null, funil: null });
     return promessa;
   }
   const relogio = new AbortController();
@@ -110,9 +121,11 @@ export function perguntarOCopiloto() {
         resumo: respondeu ? corpo.resumo === true : null,
         // NEM DO ASSUNTO: é a de antes de 01/11 (a mesma régua).
         assunto: respondeu ? corpo.assunto === true : null,
+        // E DO FUNIL (02/11): três respostas, e a ponte de antes é a terceira.
+        funil: !respondeu ? null : corpo.funil === true ? true : corpo.funil === false ? false : "antiga",
       };
     })
-    .catch(() => ({ ligado: null, modelo: null, resumo: null, assunto: null }))
+    .catch(() => ({ ligado: null, modelo: null, resumo: null, assunto: null, funil: null }))
     .then((r) => {
       // "NÃO CONSEGUI" MOSTRA, e não fica guardado (28/10).
       if (r.ligado === null) {
@@ -150,6 +163,23 @@ export const resumoAparece = (estado) => copilotoAparece(estado) && estado.resum
 /** A janela do Finalizar pede a sugestão do assunto? A mesma régua do resumo:
  *  só a ponte que respondeu sem a rota (a de antes de 01/11) não pede. */
 export const assuntoAparece = (estado) => copilotoAparece(estado) && estado.assunto !== false;
+
+/** Por que a IA NÃO vai mover o funil agora, numa frase — ou `""` quando ela
+ *  vai (ou quando não deu para perguntar: a dúvida não vira aviso). A chave
+ *  do funil continua na tela nos dois casos (ver o alto deste arquivo). */
+export function avisoDaIaDoFunil(estado) {
+  if (!estado || estado.ligado === null) return "";
+  if (estado.ligado === false) {
+    return "A ponte está sem a chave da Anthropic (a variável ANTHROPIC_API_KEY, na Render): enquanto ela faltar, a IA não move ninguém. A chave fica guardada e vale assim que a variável existir.";
+  }
+  if (estado.funil === "antiga") {
+    return "A ponte no ar ainda é de antes desta função. A chave fica guardada, e a IA começa a mover quando a ponte nova for publicada — confira em Atualizações do banco.";
+  }
+  if (estado.funil === false) {
+    return "A IA do funil está desligada na ponte (FUNIL_IA=desligada, na Render): enquanto for assim, ela não move ninguém, em funil nenhum.";
+  }
+  return "";
+}
 
 /** Pede a sugestão de uma conversa. Devolve o texto CRU, com os marcadores
  *  ({saudacao}, {nome}, {atendente}) — quem chama os preenche com as regras
