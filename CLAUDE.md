@@ -1480,7 +1480,8 @@ calaria a pessoa errada.
 #### A corrida, e a espera de 2,5 segundos
 
 A ponte grava a mensagem e **só depois** pergunta ao banco quem a recebe
-(antes disso ela ainda desarquiva a conversa). A primeira mensagem de um
+(até 04/11 ela ainda desarquivava a conversa no meio; desde então a conversa
+arquivada continua arquivada — ver o CLAUDE.md da ponte). A primeira mensagem de um
 cliente novo chega aos painéis **antes do dono** — e sem cuidado ela avisaria
 todo mundo, que é exatamente o que o pedido quer calar.
 
@@ -1492,8 +1493,9 @@ ligada**: sem ela o dono não vem, e esperar atrasaria à toa o aviso de todo
 cliente novo.
 
 **Os 2,5 s são estimados, e não medidos em produção**: entre a mensagem e o
-dono a ponte faz duas idas ao banco (desarquivar e distribuir), de ~100 a
-300 ms cada. Errando para menos, o custo é um som a mais para a equipe — o
+dono a ponte fazia duas idas ao banco (desarquivar e distribuir), de ~100 a
+300 ms cada; desde 04/11 é uma só (a distribuição), e os 2,5 s ficaram, com
+mais folga. Errando para menos, o custo é um som a mais para a equipe — o
 comportamento de antes —, e não um aviso calado.
 
 **A decisão corre POR FORA do tratador do tempo real**, e sai **antes** da
@@ -4180,6 +4182,97 @@ perderia o alvo de dedo. Não perde: a regra do celular vale para
 `[role="button"]` também, e ele ganha os 40 pontos assim mesmo. O que um
 `span` perde é o TECLADO — não recebe o foco, e o Enter não o abre. A prova
 ganhou essa conferência, e a mesma sabotagem, rodada de novo, é pega.
+
+## Quem saiu não aparece para escolher (04/11)
+
+Relato do Rodrigo, com a foto do menu "Passar para": *"A Gabriely Mota está
+desativada, ela já foi desligada da empresa e não deve mais aparecer no
+Zorvin. Ela já não está mais ativa no Vantoro, precisa ter essa comunicação
+entre ambos sistemas."*
+
+**A comunicação já existia, e funcionou.** A ponte desliga no Zorvin quem sai
+do Vantoro (`desligarQuemSaiuDoVantoro`, auditoria de 27/10). Medido no banco
+em 04/11: ela estava com `usuarios.ativo = false`, sem nenhuma permissão e com
+a entrada bloqueada no Auth. Era a única desativada, sem nenhuma conversa nem
+tarefa no nome dela. **O que faltava era a TELA saber:** as listas de escolher
+pessoa saem da vista `equipe`, que tinha só id, nome e foto, e `usuarios` é
+fechada para quem atende. O script 047 da ponte pôs `ativo` na vista.
+
+| onde | quem saiu |
+|---|---|
+| "Passar para", no menu do responsável | não é oferecido |
+| o "para quem" da tarefa nova (a mesma lista) | não é oferecido |
+| o seletor de responsáveis, no alto da lista | não é oferecido, **a menos que já esteja escolhido** |
+| a mensagem que a pessoa escreveu, o "quem participou" | o nome continua: é história |
+| a conversa que ainda está com ela | o menu diz "Fulana desde …", com "Assumir" e "Passar para" |
+| a tarefa dela, aberta para editar | "Pessoa que não está mais na equipe" (a frase já existia em `NovaTarefa.jsx`) |
+| o filtro de atendente do Painel de números | continua: é dos números de quem atendeu no período |
+| o filtro "Quem participou da conversa" | continua: sai do histórico das mensagens |
+
+**ESCOLHER é dar trabalho a alguém**, e quem saiu não recebe trabalho. O
+nome continua onde é história, porque apagá-lo não muda o passado, só o deixa
+sem dono. As contas moram em `src/quemSaiu.js`.
+
+**No seletor, quem está escolhido continua à vista.** Escondida e marcada, a
+pessoa recortaria a lista sem nada na tela dizendo por quê, e não haveria onde
+desmarcá-la. Acontece com quem sai no meio do dia: a equipe é relida quando a
+sessão se renova (o efeito depende de `sessao`), e a escolha vale até a página
+recarregar.
+
+**Só o `false` escrito diz que saiu.** Num banco sem o 047, a leitura que pede
+`ativo` pelo nome é recusada (42703), e a lista é lida de novo sem ele: todo
+mundo pode ser escolhido, como sempre pôde. `TEM_ATIVO_NA_EQUIPE` guarda isso
+no módulo, e a falta da coluna não acende a faixa âmbar.
+
+**A leitura de novo decide pelo que ELA pediu, e não pela bandeira.** A
+primeira escrita perguntava a bandeira do módulo, e a prova pegou: no
+desenvolvimento o React monta tudo duas vezes, as duas leituras saem pedindo
+`ativo`, e a primeira que volta baixa a bandeira. A segunda, vendo a bandeira
+já baixa, achava que tinha lido sem a coluna e desistia — e a lista da equipe
+não chegava: "Passar para" ficava vazio. A mesma corrida acontece em produção
+quando a sessão se renova com uma leitura no ar.
+
+**A bancada passou a projetar a `equipe`** (`COM_PROJECAO`). Sem isso, o banco
+sem o 047 recusaria a primeira leitura e a segunda, sem a coluna, receberia o
+`ativo` assim mesmo: a tela esconderia quem saiu num banco que nem sabe quem
+saiu, e a prova aprovaria.
+
+**O que fica perguntado ao Rodrigo, e não foi feito:**
+
+- as conversas e as tarefas abertas de quem sai voltarem sozinhas para "Sem
+  responsável". Hoje elas continuam no nome da pessoa até alguém as assumir
+  ou passar adiante, e o aviso de mensagem nova da conversa com responsável
+  vai só para o responsável;
+- tirar quem saiu também do filtro "Quem participou da conversa".
+
+Prova: `quem-saiu-nao-aparece-para-escolher`, 38 conferências em três cenas:
+o banco com o 047 (as três listas, e o nome onde é história), o banco sem ele
+(todo mundo continua podendo ser escolhido), e quem sai no meio do dia (a
+renovação da sessão relê a equipe, com `__ENTRADA_DA_BIBLIOTECA`, que troca o
+objeto da sessão como a renovação de hora em hora da biblioteca).
+
+**12 sabotagens e 12 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma:
+
+- o painel de antes inteiro, com a bancada nova (7 reprovações — é o pedido
+  reproduzido);
+- **as listas:** "Passar para" sem tirar quem saiu (5: a tarefa usa a mesma
+  lista); o seletor sem tirar quem saiu; o seletor sem o encosto de quem está
+  escolhido; a tarefa com uma lista própria, sem tirar quem saiu;
+- **a leitura:** sem pedir `ativo` (7); sem ler de novo quando falta a coluna;
+  ler de novo pela bandeira do módulo (a corrida da primeira escrita); `ativo`
+  só verdadeiro quando o banco diz (sem a coluna, todo mundo some); a falta
+  da coluna nunca reconhecida; a equipe lida só uma vez por abertura (a
+  renovação da sessão não relê);
+- **e a bancada** sem projetar a `equipe` (a tela esconde quem saiu num banco
+  sem o 047).
+
+**Duas foram rodadas de novo**, a 1 (o controle) e a 2: elas começaram antes
+de um ajuste de forma numa conferência da prova (um `.every` sobre uma lista
+escrita ali, que o vigia `provas-que-reprovam` apontou, virou a conta escrita
+por extenso). O ajuste não mudava o que a conferência mede, e as duas deram o
+mesmo de novo — mas a régua de 13/10 vale também para a prova: *rodada de
+sabotagens não convive com edição*.
 
 ## A mensagem agendada (02/10)
 
@@ -7332,7 +7425,8 @@ monta o pacote de produção e confere que os dados de mentira não estão nele.
 ### O que ficou como sugestão
 
 O Encaminhar só lista as conversas da aba aberta; "Passar para" oferece a
-equipe inteira (inclusive quem não vê o telefone); a busca da lista recomeça a
+equipe inteira (inclusive quem não vê o telefone; quem saiu do escritório
+deixou de ser oferecido em 04/11); a busca da lista recomeça a
 cada conversa nova que chega; a releitura da conversa aberta troca a lista
 inteira; colar do Excel abre a prévia de anexo; os colegas não veem ao vivo a
 edição e a exclusão; a prévia de mídia só olha as 300 mais recentes; no

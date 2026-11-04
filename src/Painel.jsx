@@ -84,6 +84,7 @@ import { padraoSemAcento, casaNaMensagem, semAColunaDaTranscricao, juntarAchados
 import { tipoDoAnexo, caminhoDoAnexoDaRapida, semAColunaDoAnexo, nomeDoAnexo, anexoDoDeposito,
          CACHE_DO_ANEXO_DA_RAPIDA } from "./rapidasComAnexo.js";
 import { ehLembreteAutomatico, fechouSozinho } from "./acompanhamento.js";
+import { podeSerEscolhida, semAColunaAtivoDaEquipe } from "./quemSaiu.js";
 import { tamanhoDosTelefones, TELEFONE_MENOR, TELEFONE_MENOR_NO_CELULAR, ESMAECER, VAO_CSS } from "./barraLateral.js";
 import { TELAS_DA_GUIA, telaDaGuia, linhaDaGuia, conversaDaGuia, enderecoDaTela, enderecoDaConversa,
          abrirNumaGuia, fecharAGuia, reivindicarAviso, naVezDasGuias, anunciarConversaVista, outraGuiaVendo,
@@ -499,6 +500,10 @@ let TEM_NOME_DO_CADASTRO = true;
 let TEM_BUSCA_DO_CONTATO = true;
 // `conversas.arquivada` também é de um SQL que pode não ter sido rodado.
 let TEM_ARQUIVADA = true;
+// `equipe.ativo` — quem saiu do escritório (script 047 da ponte, 04/11). Num
+// banco sem ele, o primeiro "não existe" faz a lista ser lida sem a coluna, e
+// todo mundo pode ser escolhido, como sempre pôde (`quemSaiu.js`).
+let TEM_ATIVO_NA_EQUIPE = true;
 // A contagem dos selos numa ida só (`nao_lidas_por_telefone`) é outro SQL. Onde
 // ele não foi rodado, o painel conta telefone a telefone como sempre contou.
 let TEM_CONTAGEM_NO_BANCO = true;
@@ -584,10 +589,11 @@ const CADENCIA_DA_PESCA_MS =
   (typeof globalThis !== "undefined" && globalThis.__CADENCIA_DA_PESCA) || 20000;
 
 // QUANTO O AVISO DO CLIENTE NOVO ESPERA PELA DISTRIBUIÇÃO (13/10). A ponte
-// grava a mensagem e SÓ DEPOIS pergunta ao banco quem a recebe: no meio há
+// grava a mensagem e SÓ DEPOIS pergunta ao banco quem a recebe: no meio havia
 // duas idas ao banco (desarquivar e distribuir), de ~100 a 300 ms cada —
-// ESTIMADO, e não medido em produção. Dois segundos e meio cobrem uma ponte
-// lenta com folga; passando disso o aviso sai para todo mundo, que é o erro
+// ESTIMADO, e não medido em produção —, e desde 04/11 há uma só (a conversa
+// arquivada continua arquivada). Dois segundos e meio cobrem uma ponte lenta
+// com folga; passando disso o aviso sai para todo mundo, que é o erro
 // barato (um som a mais), e não o caro (ninguém avisado).
 const ESPERA_DA_DISTRIBUICAO_MS = 2500;
 
@@ -4704,9 +4710,13 @@ export default function Painel({ sessao }) {
   useEffect(() => {
     let vivo = true;
     (async () => {
-      // `equipe` é uma vista com três colunas — id, nome, foto. A tabela
-      // `usuarios` continua fechada: ninguém lê o e-mail nem o "é admin" de
-      // ninguém por aqui.
+      // `equipe` é uma vista com id, nome, foto e, desde o script 047 da ponte
+      // (04/11), se a pessoa está ativa. A tabela `usuarios` continua fechada:
+      // ninguém lê o e-mail nem o "é admin" de ninguém por aqui.
+      //
+      // QUEM SAIU CONTINUA NA LISTA, com `ativo` falso: as mensagens antigas
+      // dele precisam de nome. Quem não o oferece para escolher são as listas
+      // de escolher pessoa (`podeSerEscolhida`, em `quemSaiu.js`).
       //
       // DE MIL EM MIL, com `order` fixo. O PostgREST corta em mil linhas e não
       // avisa — a resposta chega com cara de resposta inteira. Hoje o
@@ -4714,10 +4724,25 @@ export default function Painel({ sessao }) {
       // aconteceria sem isto não é um erro na tela, é meia dúzia de pessoas
       // voltando a aparecer com o nome antigo, sem nada explicando por quê.
       const linhas = [];
+      // O QUE ESTA LEITURA PEDIU, e não o que a bandeira diz agora: duas
+      // leituras podem estar no ar ao mesmo tempo (a montagem dupla do
+      // desenvolvimento, a renovação da sessão), e a que voltasse depois de a
+      // outra baixar a bandeira desistiria, achando que já tinha lido sem a
+      // coluna — e a lista da equipe não chegaria.
+      let comAtivo = TEM_ATIVO_NA_EQUIPE;
       for (let pagina = 0; pagina < 20; pagina++) {
         const { data, error } = await supabase.from("equipe")
-          .select("id, nome, foto_url")
+          .select(comAtivo ? "id, nome, foto_url, ativo" : "id, nome, foto_url")
           .order("id").range(pagina * 1000, (pagina + 1) * 1000 - 1);
+        // O BANCO SEM O 047: a coluna falta em todas as páginas, então a falta
+        // aparece na primeira, e a lista é lida de novo sem ela.
+        if (error && comAtivo && semAColunaAtivoDaEquipe(error)) {
+          TEM_ATIVO_NA_EQUIPE = false;
+          comAtivo = false;
+          linhas.length = 0;
+          pagina = -1;
+          continue;
+        }
         if (error) return;          // sem a vista no banco: fica como era antes
         linhas.push(...(data || []));
         if (!data || data.length < 1000) break;
@@ -4725,7 +4750,8 @@ export default function Painel({ sessao }) {
       if (!vivo) return;
       const porId = {}, porNome = {};
       for (const u of linhas) {
-        const q = { id: String(u.id), nome: u.nome || null, foto: u.foto_url || null };
+        // `ativo` só é falso quando o banco diz: sem a coluna, todo mundo está.
+        const q = { id: String(u.id), nome: u.nome || null, foto: u.foto_url || null, ativo: u.ativo !== false };
         porId[q.id] = q;
         if (q.nome) porNome[chaveDeNome(q.nome)] = q;
       }
@@ -15243,9 +15269,15 @@ export default function Painel({ sessao }) {
   //
   //  E O MENU DIZ QUEM PASSOU. "Quem me deu isto?" é a primeira pergunta de
   //  quem recebe um cliente no meio do caminho.
+  //
+  //  QUEM SAIU DO ESCRITÓRIO NÃO RECEBE CONVERSA (04/11): passar a conversa é
+  //  dar trabalho, e a pessoa desligada não o veria. A mesma lista serve o
+  //  "para quem" da tarefa, pela mesma razão. O nome dela continua no menu
+  //  quando ela ainda é a responsável ("com Fulana"): é história, e tirar
+  //  a conversa dela é o "Assumir" ou um "Passar para" daqui.
   // ------------------------------------------------------------------
   const pessoasParaPassar = Object.values(equipe.porId)
-    .filter((p) => p.nome && String(p.id) !== String(meuId))
+    .filter((p) => p.nome && podeSerEscolhida(p) && String(p.id) !== String(meuId))
     .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
   // ---- A ETAPA DO FUNIL, a partir da conversa ----
   //
@@ -15658,8 +15690,11 @@ export default function Painel({ sessao }) {
   //  uma margem negativa devolve a altura à linha: sem ela, o alto da lista
   //  cresceria 20 pontos por causa de um botão de uma palavra.
   // ------------------------------------------------------------------
+  //  QUEM SAIU DO ESCRITÓRIO NÃO É OFERECIDO (04/11) — a menos que já esteja
+  //  escolhido: escondido e marcado, ele recortaria a lista sem nada na tela
+  //  dizendo por quê, e não haveria onde desmarcá-lo.
   const pessoasDoSeletor = Object.values(equipe.porId)
-    .filter((p) => p.nome)
+    .filter((p) => p.nome && (podeSerEscolhida(p) || escolhidosDaLista.includes(String(p.id))))
     .sort((a, b) => {
       if (meuId && String(a.id) === String(meuId)) return -1;
       if (meuId && String(b.id) === String(meuId)) return 1;

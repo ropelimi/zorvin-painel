@@ -1522,8 +1522,13 @@ const TABELAS = {
   // Um `get`, e não uma cópia: no banco ela é uma vista, então enxerga na hora
   // o que mudar em `usuarios`. Uma cópia congelada aqui faria o teste de
   // trocar a foto passar sem que a troca tivesse chegado a lugar nenhum.
+  // `ativo` é do script 047 da ponte (04/11): quem saiu continua na vista, com
+  // `ativo` falso. A linha plantada sem a chave está ativa, como no banco
+  // (`usuarios.ativo` nasce verdadeiro). `__SEM_COLUNAS = { equipe: ["ativo"] }`
+  // é o banco sem o 047.
   get equipe() {
-    return this.usuarios.map((u) => ({ id: u.id, nome: u.nome, foto_url: u.foto_url ?? null }));
+    return this.usuarios.map((u) => ({ id: u.id, nome: u.nome, foto_url: u.foto_url ?? null,
+                                       ativo: u.ativo === undefined ? true : u.ativo }));
   },
 };
 
@@ -1980,7 +1985,12 @@ function comparar(a, b) {
 // AS TABELAS EM QUE A BANCADA RESPEITA A LISTA DE COLUNAS PEDIDA — ver onde
 // ela é usada, em `then`. Poucas de propósito: nas outras o painel pede `*` ou
 // junções, e projetar ali seria reescrever o PostgREST.
-const COM_PROJECAO = new Set(["zorvin_assuntos"]);
+//
+// `equipe` entrou em 04/11, com o `ativo` do script 047: sem a projeção, o
+// banco sem o 047 (`__SEM_COLUNAS = { equipe: ["ativo"] }`) recusaria a
+// primeira leitura e a segunda, sem a coluna, receberia o `ativo` assim mesmo
+// — e a tela esconderia quem saiu num banco que nem sabe quem saiu.
+const COM_PROJECAO = new Set(["zorvin_assuntos", "equipe"]);
 
 // AS COLUNAS `not null` SEM PADRÃO, como no banco do escritório — ver onde a
 // lista é usada, em `then`. Só as conferidas lá: inventar uma restrição aqui
