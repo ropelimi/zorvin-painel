@@ -41,10 +41,6 @@ const COLUNAS_QUE_FALTAM_EM_NOTAS = new Set();
 // para `nome_zorvin`, e numa base sem essa coluna ela é tirada do pedido uma
 // vez só nesta sessão — ver `gravarNomeDaAgenda`.
 const COLUNAS_QUE_FALTAM_EM_CONTATOS = new Set();
-// E EM `zorvin_tratamentos` (01/11): a sugestão da IA vai junto do clique do
-// Finalizar (`sugestao_ia`, script 042 da ponte), e num banco sem a coluna ela
-// sai do pedido uma vez só nesta sessão — ver `gravarTratamento`.
-const COLUNAS_QUE_FALTAM_EM_TRATAMENTOS = new Set();
 import { ZOOM_MIN, ZOOM_MAX, ZOOM_PARADO, ZOOM_DO_TOQUE_DUPLO, degrauSeguinte,
          porcentagem, limitarPosicao, zoomAncorado, distancia } from "./zoom.js";
 import Departamentos from "./Departamentos";
@@ -73,8 +69,7 @@ import { lerFunisDosTelefones, funilDoTelefone, chaveDoFunil, nomeDoFunil, noFun
 import EscolherHora from "./EscolherHora.jsx";
 import { perguntarOsScripts, fraseDosScriptsParaAFaixa, manterOQueSeSabia } from "./scriptsDoBanco.js";
 import { rotuloDaHora, porQueNaoServe, semAColunaDaAgenda, aindaDaParaEditar } from "./agenda.js";
-import { useEstadoDoCopiloto, copilotoAparece, pedirSugestao, resumoAparece, pedirResumo,
-         assuntoAparece, pedirSugestaoDeAssunto } from "./copiloto.js";
+import { useEstadoDoCopiloto, copilotoAparece, pedirSugestao, resumoAparece, pedirResumo } from "./copiloto.js";
 import ResumoDaConversa from "./ResumoDaConversa.jsx";
 import { mensagensDepoisDoResumo, textoDoResumo } from "./resumoDaConversa.js";
 import { ABAS_DA_SITUACAO, NOME_DA_SITUACAO } from "./abasDaSituacao.js";
@@ -3929,11 +3924,6 @@ export default function Painel({ sessao }) {
   //  voltando para A ela tem de ver que o pedido ainda está andando.
   // ============================================================
   const estadoDoCopiloto = useEstadoDoCopiloto();
-  // A JANELA DO FINALIZAR PEDE A SUGESTÃO DO ASSUNTO (01/11) — quando a ponte
-  // sabe sugerir (a régua dos três estados, em `copiloto.js`) e há assunto
-  // ativo para a IA escolher. Sem lista, a ponte responderia "nenhum assunto"
-  // a cada abertura, e a janela já diz isso sozinha.
-  const podeSugerirAssunto = assuntoAparece(estadoDoCopiloto) && (assuntos || []).some((a) => a.ativo);
   const [copiloto, setCopiloto] = useState({});
   // O RESUMO DA CONVERSA (01/11) — "Resumir". Também POR CONVERSA:
   // { [conversaId]: { fase: "pensando" | "pronto" | "erro", pedido, ... } }.
@@ -11808,23 +11798,7 @@ export default function Painel({ sessao }) {
     }));
   }
 
-  // A GRAVAÇÃO DO CLIQUE, numa escrita só para a conversa e a faxina (01/11).
-  // A sugestão da IA vai em TODAS as linhas do clique (`sugestao_ia`, script
-  // 042 da ponte), igual em cada uma: um clique são as linhas de um mesmo
-  // insert, e é por elas juntas que o acerto é contado.
-  //
-  // SEM O 042, O CLIQUE É GRAVADO SEM A COLUNA, e a sugestão some do registro
-  // calada: ela não é uma escolha da pessoa — os assuntos são, e eles vão. A
-  // régua de `gravarSemAsQueFaltam`: só a coluna que o banco disse que falta
-  // sai, e só ela pode sair.
-  function gravarTratamento(linhas, sugestaoIa) {
-    const gravar = (extra) => supabase.from("zorvin_tratamentos")
-      .insert(linhas.map((l) => ({ ...l, ...extra }))).select("id");
-    return gravarSemAsQueFaltam(gravar, sugestaoIa ? { sugestao_ia: sugestaoIa } : {},
-                                ["sugestao_ia"], COLUNAS_QUE_FALTAM_EM_TRATAMENTOS);
-  }
-
-  async function confirmarJaTratei(ids, descricao, sugestaoIa = null) {
+  async function confirmarJaTratei(ids, descricao) {
     const conv = jaTratei;
     if (!conv || !ids.length) return;
     setTrateiOcupado(true); setTrateiErro("");
@@ -11832,7 +11806,7 @@ export default function Painel({ sessao }) {
     const linhas = linhasDoTratamento(conv, ids, descricao);
     // NO 028 O CLIQUE É A FINALIZAÇÃO, e a frase da falha diz isso.
     const finalizando = temSituacao === true && Object.prototype.hasOwnProperty.call(conv, "situacao");
-    const reg = await gravarTratamento(linhas, sugestaoIa);
+    const reg = await supabase.from("zorvin_tratamentos").insert(linhas).select("id");
     if (reg.error || naoGravouNada(reg)) {
       setTrateiOcupado(false);
       setTrateiErro(naoGravouNada(reg)
@@ -11925,7 +11899,7 @@ export default function Painel({ sessao }) {
   //  (com `mudou` quando chegou mensagem). Quem diz à pessoa é a faxina,
   //  linha por linha.
   // ============================================================
-  async function finalizarDaFaxina(conv, ids, descricao, sugestaoIa = null) {
+  async function finalizarDaFaxina(conv, ids, descricao) {
     const NADA = "Nada foi gravado.";
     let agora;
     try {
@@ -11944,7 +11918,7 @@ export default function Painel({ sessao }) {
     }
     let reg;
     try {
-      reg = await gravarTratamento(linhasDoTratamento(agora, ids, descricao), sugestaoIa);
+      reg = await supabase.from("zorvin_tratamentos").insert(linhasDoTratamento(agora, ids, descricao)).select("id");
     } catch (e) {
       return { ok: false, erro: comOCodigo("Não consegui registrar o que foi tratado. A conversa não foi finalizada.", e, "registrar tratamento") };
     }
@@ -21407,7 +21381,6 @@ export default function Painel({ sessao }) {
                 rotularMidia={(tipo) => rotuloMidia(tipo, null, false)}
                 aoAbrirConversa={(cv) => abrirConversaNumaGuia(cv)}
                 aoFinalizar={finalizarDaFaxina}
-                sugerirAssunto={podeSugerirAssunto ? pedirSugestaoDeAssunto : null}
                 aoTerminarLote={agendarContagemDasAbas}
                 aoAvisar={mostrarAviso}
                 aoFechar={fecharAGuia} />
@@ -21443,7 +21416,6 @@ export default function Painel({ sessao }) {
                   ocupado={trateiOcupado}
                   erro={trateiErro}
                   aoConfirmar={confirmarJaTratei}
-                  sugerir={podeSugerirAssunto ? () => pedirSugestaoDeAssunto(jaTratei) : null}
                   aoFechar={() => { if (!trateiOcupado) { setJaTratei(null); setTrateiErro(""); } }} />
       )}
 
