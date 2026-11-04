@@ -720,6 +720,17 @@ console.log("\n10. A pesquisa no menu, o Esc em degraus e o clique fora");
   await page.mouse.click(900, 600);
   await page.waitForTimeout(300);
   ok("o clique fora fecha o menu", !(await retrato(page)).menu);
+  // PELO TECLADO: o seletor é um botão de verdade — recebe o foco e abre com
+  // Enter. Um `span` com `role="button"` ganharia os 40 pontos de dedo pela
+  // regra do celular (que vale para `[role="button"]`) e perderia o teclado,
+  // sem nada na tela dizer: foi a sabotagem que vazou na primeira escrita.
+  const botao = page.locator("[data-responsaveis-botao]");
+  const focou = (await botao.count())
+    ? await botao.first().evaluate((e) => { e.focus(); return document.activeElement === e; }).catch(() => false) : false;
+  if (focou) { await page.keyboard.press("Enter"); await page.waitForTimeout(300); }
+  ok("pelo teclado, o seletor recebe o foco e abre com Enter", focou && (await retrato(page)).menu, JSON.stringify({ focou }));
+  await page.mouse.click(900, 600);
+  await page.waitForTimeout(300);
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }

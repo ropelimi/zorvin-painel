@@ -4128,14 +4128,58 @@ a conta das abas aprendeu os responsáveis, as chamadas dela ficam guardadas
 ATENDENDO COMO"* virou *"e ela não diz mais"*, e o nome do telefone passou a
 ser conferido sem o que o seletor escreve.
 
-Prova: `o-seletor-de-responsaveis`, 139 conferências: o alto da lista; uma
+Prova: `o-seletor-de-responsaveis`, 141 conferências: o alto da lista; uma
 pessoa (a lista, cada aba e "Não lidas"); a conta que demora (a aba não fica
 com o número de todos enquanto a da Jenifer não chega, com
 `__ATRASO_DA_CONTAGEM`); várias e as sem responsável; só você; o telefone de
 1200 conversas; a carteira de 301 conversas com "Não lidas"; a busca; o
 tempo real; abrir de fora; a lista vazia e o "Carregando" da troca; a
-pesquisa e o Esc; o F5; o celular a 360 e a 390; o banco sem o 046 e o banco
-sem o 008.
+pesquisa, o Esc e o teclado; o F5; o celular a 360 e a 390; o banco sem o
+046 e o banco sem o 008.
+
+**32 sabotagens e 32 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma:
+
+- o painel de antes inteiro (75 reprovações — é o pedido reproduzido), e o
+  "ATENDENDO COMO" de volta ao lado do seletor (9);
+- **o recorte:** a lista sem o recorte do banco (só a tela recortando); sem
+  o recorte da tela; "Não lidas" sem o recorte do banco (o teto de 200 corta
+  o telefone inteiro); as sem responsável por `in`, e não por `is.null`;
+- **a conta das abas:** sem os responsáveis (15); as abas mostrando a conta
+  de outra escolha; sem o 046, as abas com o número do telefone inteiro; sem
+  o 046, a faixa âmbar acendendo;
+- **o tempo real:** o dono anotado só com uma escolha feita; sem reler a
+  página quando a conversa entra na escolha; sem recontar quando o dono muda;
+  recontando sem escolha;
+- **o menu e o rótulo:** marcar fechando o menu; "Todos os responsáveis" sem
+  fechar; você sem vir primeiro; o rótulo com o seu nome, e não "Você"; o
+  rótulo sem o "+N"; o menu sem a pesquisa; o Esc sem o degrau do menu; sem
+  o clique fora;
+- **a escolha:** guardada no navegador; limpa ao trocar de telefone (7); a
+  busca sem atravessar a escolha; abrir de fora sem tirar a escolha, e
+  tirando sempre; a lista vazia sem dizer o que está escolhido; sem o
+  "Carregando" ao trocar;
+- **o celular e o teclado:** sem a margem negativa (a linha do telefone
+  cresce para 40); o seletor sem ser botão;
+- **sem o 008:** o seletor aparecendo.
+
+**A primeira rodada teve duas que vazaram, e as duas eram da prova.** A
+rodada foi parada, a prova consertada, e a rodada refeita inteira:
+
+- **"Não lidas" sem o recorte do banco passava**, porque a cena rolava a
+  lista até o fim, e rolar pede a página seguinte — recortada pelo banco.
+  Hoje ela confere o total do rodapé SEM rolar: com o defeito, ele diz 200;
+- **sem recontar quando o dono muda passava**, porque a conta pedida pela
+  troca anterior (a da Ivone, 2,5 s antes) levava a da Joana de carona. Hoje
+  a cena espera essa conta passar e exige uma conta NOVA, pedida pela troca
+  da Joana.
+
+**E a segunda rodada teve uma que vazou, e ensinou o teclado.** A sabotagem
+trocava o botão por um `span role="button"`, e o rótulo dela dizia que ele
+perderia o alvo de dedo. Não perde: a regra do celular vale para
+`[role="button"]` também, e ele ganha os 40 pontos assim mesmo. O que um
+`span` perde é o TECLADO — não recebe o foco, e o Enter não o abre. A prova
+ganhou essa conferência, e a mesma sabotagem, rodada de novo, é pega.
 
 ## A mensagem agendada (02/10)
 
