@@ -78,6 +78,8 @@ import { useEstadoDoCopiloto, copilotoAparece, pedirSugestao, resumoAparece, ped
 import ResumoDaConversa from "./ResumoDaConversa.jsx";
 import { mensagensDepoisDoResumo, textoDoResumo } from "./resumoDaConversa.js";
 import { ABAS_DA_SITUACAO, NOME_DA_SITUACAO } from "./abasDaSituacao.js";
+import { SEM_RESPONSAVEL, chaveDosResponsaveis, daChave, passaNosResponsaveis, recortarPelosResponsaveis,
+         argumentosDaContagem, rotuloDosResponsaveis, fraseDosResponsaveis } from "./responsaveisDaLista.js";
 import { pareceAcessoVencido, pedirConferenciaDaSessao, marcarSaidaPedida, foiSaidaPedida } from "./vigiaDaSessao.js";
 import { rascunhosDe, guardarRascunho } from "./rascunhos.js";
 import CampoDePesquisa, { ComPesquisa } from "./CampoDePesquisa.jsx";
@@ -784,9 +786,14 @@ function faltaAFuncao(erro) {
 // `perguntasDoFiltro`). A pasta de arquivadas só entra na chave dos filtros que
 // ela muda: as minhas, os grupos, as tarefas e a etiqueta perguntam igual
 // dentro e fora dela.
-function chaveDoFiltro(filtro, arquivadas, advId) {
+//
+// E OS RESPONSÁVEIS ESCOLHIDOS NO ALTO (04/11) entram na chave dos mesmos
+// filtros que a pasta: os que perguntam pelas não lidas, as favoritas e as
+// arquivadas, e só eles mandam a escolha ao banco. Nos outros, a chave com a
+// escolha ficaria esperando uma resposta que nunca sai.
+function chaveDoFiltro(filtro, arquivadas, advId, responsaveis = "") {
   const pelaPasta = filtro === "tudo" || filtro === "naolidas" || filtro === "favoritas";
-  return `${filtro}|${pelaPasta && arquivadas ? "arquivadas" : ""}|${advId || ""}`;
+  return `${filtro}|${pelaPasta && arquivadas ? "arquivadas" : ""}|${advId || ""}|${pelaPasta ? responsaveis : ""}`;
 }
 
 const RECURSOS = { atendendo: true, digitando: true };
@@ -3638,6 +3645,42 @@ export default function Painel({ sessao }) {
   const [temResponsavel, setTemResponsavel] = useState(null);
   const temResponsavelRef = useRef(null);
   useEffect(() => { temResponsavelRef.current = temResponsavel; }, [temResponsavel]);
+  // ============================================================
+  //  OS RESPONSÁVEIS DA LISTA (04/11) — o seletor ao lado do número, no alto
+  //  da coluna, que tomou o lugar do "ATENDENDO COMO". As contas moram em
+  //  `responsaveisDaLista.js`.
+  //
+  //  A ESCOLHA VAI AO BANCO, como a aba: a lista vem em páginas, e recortar
+  //  só o que está carregado mostraria "as da Jenifer entre as 200 mais
+  //  recentes" com cara de "as da Jenifer". E o número de cada aba vem do
+  //  banco recortado do mesmo jeito (`zorvin_contar_situacoes`, script 046
+  //  da ponte).
+  //
+  //  NÃO É GUARDADA NO NAVEGADOR, pela régua da aba: escolhida ontem e
+  //  esquecida, ela abriria hoje uma lista com as conversas de uma pessoa só,
+  //  e quem chega concluiria que o telefone não tem mais nada.
+  //
+  //  E ATRAVESSA A TROCA DE TELEFONE, ao contrário do filtro de quem
+  //  participou: aquele oferece quem escreveu POR ESTE telefone; este, a
+  //  equipe inteira — a pergunta "o que está com a Jenifer?" vale em todo
+  //  telefone, e o seletor continua à vista, ao lado do número.
+  //
+  //  SÓ COM A COLUNA DO 008: sem ela não há o que recortar, e o seletor nem
+  //  aparece. `responsaveisDaLista` é a PERGUNTA (uma chave de texto), e é ela
+  //  que entra nas dependências de quem lê a lista — a lição de 25/09.
+  // ============================================================
+  const [responsaveisEscolhidos, setResponsaveisEscolhidos] = useState([]);
+  const [menuResponsaveis, setMenuResponsaveis] = useState(false);
+  const responsaveisMenuRef = useRef(null);
+  const responsaveisDaLista = temResponsavel === true ? chaveDosResponsaveis(responsaveisEscolhidos) : "";
+  const responsaveisDaListaRef = useRef(responsaveisDaLista);
+  useEffect(() => { responsaveisDaListaRef.current = responsaveisDaLista; }, [responsaveisDaLista]);
+  const escolhidosDaLista = useMemo(() => daChave(responsaveisDaLista), [responsaveisDaLista]);
+  // DE QUAIS RESPONSÁVEIS É A LISTA que está em `conversas` — a régua de
+  // `abaDasConversas`: entre a escolha e a resposta do banco, a lista ainda
+  // é a da escolha de antes, e o recorte da tela a esconde. Sem isto, a
+  // lista diria "nenhuma conversa" durante a ida ao banco.
+  const [responsaveisDasConversas, setResponsaveisDasConversas] = useState("");
   const [menuResponsavel, setMenuResponsavel] = useState(false);
   const responsavelRef = useRef(null);
   const [assuntos, setAssuntos] = useState([]);
@@ -4158,25 +4201,37 @@ export default function Painel({ sessao }) {
   // tempo real deste telefone, com uma espera de 2,5 s — os avisos chegam em
   // rajada (vinte fotos são vinte), e cada um pedindo a conta seriam vinte
   // contas iguais.
+  //
+  // E COM OS RESPONSÁVEIS ESCOLHIDOS NO ALTO (04/11), a conta é a deles
+  // (script 046 da ponte), e a resposta leva a escolha que a pediu: o número
+  // de "todos" ao lado da lista da Jenifer seria a aba dizendo uma coisa e a
+  // lista outra. Sem escolha, a chamada é a de antes, só com o telefone.
   const contarAbas = useCallback(async (advId) => {
     if (!advId || SITUACAO_NO_BANCO === false) return;
+    const escolha = responsaveisDaListaRef.current;
     let resposta;
     try {
-      resposta = await supabase.rpc("zorvin_contar_situacoes", { p_telefone: advId });
+      resposta = await supabase.rpc("zorvin_contar_situacoes",
+        { p_telefone: advId, ...argumentosDaContagem(daChave(escolha)) });
     } catch (e) { resposta = { error: e }; }
     const { data, error } = resposta || {};
-    if (advogadoIdRef.current !== advId) return;
+    if (advogadoIdRef.current !== advId || responsaveisDaListaRef.current !== escolha) return;
     if (error) {
       // SEM A FUNÇÃO, as abas ficam sem número — e não com um número
       // inventado. A falha de verdade vai para a faixa âmbar: um número
       // velho na aba se lê como a conta de agora.
+      //
+      // E O BANCO SEM O 046 é o mesmo caso, com um responsável escolhido: a
+      // função de antes não aceita os responsáveis, e o PostgREST responde
+      // que não acha a função. A aba fica sem número — e não com o do
+      // telefone inteiro, que seria um número que se sabe maior.
       if (faltaAFuncao(error)) { setContagemDasAbas(null); return; }
       setContagemDasAbas(null);
       anotarFalhaDeLeitura("contagem-das-abas", "o número de cada aba", error);
       return;
     }
     limparFalhaDeLeitura("contagem-das-abas");
-    setContagemDasAbas({ de: advId, ...(data || {}) });
+    setContagemDasAbas({ de: advId, responsaveis: escolha, ...(data || {}) });
   }, [anotarFalhaDeLeitura, limparFalhaDeLeitura]);
   const contarAbasRef = useRef(contarAbas);
   useEffect(() => { contarAbasRef.current = contarAbas; }, [contarAbas]);
@@ -4200,6 +4255,9 @@ export default function Painel({ sessao }) {
   // E O QUE OS SELOS DA BARRA CONTAM DELA, pelo mesmo caminho — ver
   // `seloDaConversa`, no tratador das conversas.
   const selosVistosRef = useRef(new Map());
+  // E O DONO DELA, pelo mesmo caminho: com responsáveis escolhidos no alto,
+  // passar a conversa adiante muda o número das abas (04/11).
+  const responsaveisVistosRef = useRef(new Map());
   // A CONVERSA DE FORA DA LISTA QUE ENTROU NA ABA ABERTA — finalizada por um
   // colega com "Finalizados" na tela, reaberta, desfeita. A lista vem do banco
   // recortada pela aba, então ela só aparece relendo a página. A releitura é
@@ -5102,7 +5160,10 @@ export default function Painel({ sessao }) {
     // a consulta: a primeira resposta "não existe" baixa a bandeira, e a
     // leitura é refeita sem ele logo abaixo.
     const filtroDaAba = SITUACAO_NO_BANCO !== false ? abaDaLista : null;
-    const daAba = (q) => (filtroDaAba ? q.eq("situacao", filtroDaAba) : q);
+    // OS RESPONSÁVEIS ESCOLHIDOS, NO BANCO — ver `responsaveisDaLista`. Vão
+    // junto com a aba, nas três consultas que montam a lista.
+    const escolhidos = daChave(responsaveisDaLista);
+    const daAba = (q) => recortarPelosResponsaveis(filtroDaAba ? q.eq("situacao", filtroDaAba) : q, escolhidos);
     const porOrdem = (q) => (ordenarPelaEspera
       // QUEM NÃO ESPERA VAI PARA O FIM.
       //
@@ -5256,6 +5317,9 @@ export default function Painel({ sessao }) {
     // E TROQUEI DE ABA? A resposta da aba de antes não pode encher a de agora:
     // a pessoa clicaria em "Finalizados" e veria as conversas em aberto.
     if (abaDaListaRef.current !== abaDaLista) return;
+    // E TROQUEI DE RESPONSÁVEL? Pela mesma razão: a resposta da escolha de
+    // antes encheria a lista da Jenifer com as conversas de todo mundo.
+    if (responsaveisDaListaRef.current !== responsaveisDaLista) return;
     // As FIXADAS sobem, e entre elas continua valendo a ordem de sempre. A
     // ordenação é feita aqui e não no banco porque a coluna pode ainda não
     // existir: pedi-la no `order` faria a consulta inteira falhar, e a lista de
@@ -5419,8 +5483,9 @@ export default function Painel({ sessao }) {
     // A lista e o dono dela mudam JUNTOS — é o que garante que ninguém leia
     // esta lista como sendo de outro telefone.
     setConversasDe(advId);
-    // E a aba dela, pela mesma razão.
+    // E a aba dela, pela mesma razão. E os responsáveis.
     setAbaDasConversas(filtroDaAba);
+    setResponsaveisDasConversas(responsaveisDaLista);
     // As três que ficavam aqui saíram na frente, lá em cima: elas precisam só
     // do `advId`, e esperar a lista para pedi-las era o que fazia a terceira
     // rodada de rede.
@@ -5431,8 +5496,8 @@ export default function Painel({ sessao }) {
     // esta função é outra e o efeito recarrega. Uma ida a mais, só para quem
     // escolheu essa ordem, e só uma vez por sessão — que é o que o comentário
     // anterior PROMETIA e o código não cumpria.
-  }, [ordem, ordenarPelaEspera, abaDaLista, carregarAtendimentos, carregarUltimasMidias, carregarDigitando,
-      anotarFalhaDeLeitura, limparFalhaDeLeitura]);
+  }, [ordem, ordenarPelaEspera, abaDaLista, responsaveisDaLista, carregarAtendimentos, carregarUltimasMidias,
+      carregarDigitando, anotarFalhaDeLeitura, limparFalhaDeLeitura]);
 
   useEffect(() => { carregarConversas(advogadoId); }, [advogadoId, carregarConversas]);
   useEffect(() => { carregarConversasRef.current = carregarConversas; }, [carregarConversas]);
@@ -6201,12 +6266,15 @@ export default function Painel({ sessao }) {
       return;
     }
     const advId = advogadoId;
-    const chave = chaveDoFiltro(filtro, verArquivadas, advId);
+    const chave = chaveDoFiltro(filtro, verArquivadas, advId, responsaveisDaLista);
     marcarPergunta(chave, "procurando");
     (async () => {
-      let q = supabase.from("conversas")
+      // COM OS RESPONSÁVEIS ESCOLHIDOS NO ALTO (04/11): o teto de 500 corta
+      // as conversas DELES, e não as do telefone inteiro — cortado antes do
+      // recorte, as não lidas da Jenifer da posição 600 não viriam.
+      let q = recortarPelosResponsaveis(supabase.from("conversas")
         .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
-        .eq("advogado_id", advId);
+        .eq("advogado_id", advId), escolhidosDaLista);
       if (verArquivadas) q = q.eq("arquivada", true);
       if (filtro === "naolidas") q = q.gt("nao_lidas", 0);
       if (filtro === "favoritas") q = q.eq("favorita", true);
@@ -6227,7 +6295,7 @@ export default function Painel({ sessao }) {
     })();
     return () => { cancelado = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtro, verArquivadas, advogadoId, ordem, tentativaDosFiltros]);
+  }, [filtro, verArquivadas, advogadoId, ordem, responsaveisDaLista, tentativaDosFiltros]);
 
   useEffect(() => { carregarTags(); }, [carregarTags]);
 
@@ -7508,6 +7576,13 @@ export default function Painel({ sessao }) {
     const abaDela = arquivada ? null
       : (NOME_DA_SITUACAO[linha.situacao] ? linha.situacao : abaSituacaoRef.current);
     const listaMuda = abaDela !== abaDaListaRef.current;
+    // A ESCOLHA DE RESPONSÁVEIS QUE ESCONDERIA A CONVERSA SAI (04/11), pela
+    // régua do filtro da fita, logo abaixo: abrir uma conversa da Lídia com a
+    // Jenifer escolhida no alto a deixaria aberta à direita e fora da lista à
+    // esquerda. A que a mostra fica.
+    const escolhaSai = Boolean(responsaveisDaListaRef.current)
+      && !passaNosResponsaveis(linha, daChave(responsaveisDaListaRef.current));
+    if (escolhaSai) setResponsaveisEscolhidos([]);
     setVerArquivadas(arquivada);
     setBusca("");
     setFiltro("tudo");
@@ -7518,12 +7593,13 @@ export default function Painel({ sessao }) {
     // ref é declarado antes do que recarrega a lista — no mesmo desenho, ele
     // roda primeiro.
     setConversaId(convId);
-    if (listaMuda) {
+    if (listaMuda || escolhaSai) {
       // A troca de aba — ou de pasta — recarrega a lista sozinha (`abaDaLista`
       // é dependência de `carregarConversas`). Carregar aqui também seria
       // pedir a aba ANTIGA — esta função ainda enxerga a de antes — e a
       // resposta dela podia chegar por último e pôr a lista errada debaixo do
-      // nome da aba nova.
+      // nome da aba nova. A troca da escolha de responsáveis, pela mesma
+      // razão (`responsaveisDaLista` também é dependência).
       if (abaDela) setAbaSituacao(abaDela);
       return;
     }
@@ -9355,11 +9431,24 @@ export default function Painel({ sessao }) {
         // quase não aparecia. Agora que a conversa sem mensagem fica de fora, é
         // exatamente por aqui que ela volta quando alguém fala pela primeira
         // vez — e "alguém" inclui o escritório, não só o cliente.
+        let deOutroResponsavel = false;
         if (!doAdvogadoAtual && advogadoIdRef.current) {
+          // O RESPONSÁVEL VEM JUNTO só com a coluna do 008: pedi-la num banco
+          // sem ela derrubaria a pergunta inteira, e a conversa nova de um
+          // cliente novo não entraria na lista.
+          const colunas = ["advogado_id", SITUACAO_NO_BANCO ? "situacao" : null,
+                           temResponsavelRef.current === true ? "responsavel_id" : null].filter(Boolean).join(", ");
           const { data } = await supabase.from("conversas")
-            .select(SITUACAO_NO_BANCO ? "advogado_id, situacao" : "advogado_id")
+            .select(colunas)
             .eq("id", nova.conversa_id).maybeSingle();
           doAdvogadoAtual = !!data && data.advogado_id === advogadoIdRef.current;
+          // DE OUTRO RESPONSÁVEL, com responsáveis escolhidos no alto (04/11):
+          // pela régua da aba logo abaixo. Ela não está na lista DE
+          // PROPÓSITO, e reler a página a cada mensagem dela seria reler a
+          // cada mensagem de toda conversa que não é da Jenifer.
+          deOutroResponsavel = doAdvogadoAtual && Boolean(responsaveisDaListaRef.current)
+            && Object.prototype.hasOwnProperty.call(data, "responsavel_id")
+            && !passaNosResponsaveis(data, daChave(responsaveisDaListaRef.current));
           // DE OUTRA ABA? Ela não está na lista DE PROPÓSITO (a lista vem do
           // banco recortada pela aba), e reler a página por causa dela seria
           // reler a cada mensagem de qualquer conversa das outras duas abas —
@@ -9385,7 +9474,7 @@ export default function Painel({ sessao }) {
         // está na lista). Conversas que já estão na lista são atualizadas no
         // lugar pelo handler de UPDATE de conversas — sem re-buscar tudo, que
         // era o que fazia a tela "recarregar sozinha".
-        if (doAdvogadoAtual && !jaNaLista && !deOutraAba) carregarConversasRef.current(advogadoIdRef.current);
+        if (doAdvogadoAtual && !jaNaLista && !deOutraAba && !deOutroResponsavel) carregarConversasRef.current(advogadoIdRef.current);
         // Selos do rail de todos os advogados — só pela mensagem do CLIENTE,
         // que é a que acende "não lida" (20/10). A nossa não acende nada, e o
         // selo que ela apaga chega pelo aviso da conversa, que conta sozinho.
@@ -9458,8 +9547,42 @@ export default function Painel({ sessao }) {
           if (antes !== agora) {
             if (cv.advogado_id === advogadoIdRef.current) agendarContagemDasAbas();
             if (cv.id === conversaIdRef.current) relerMarcosRef.current(cv.id);
+            // E SÓ SE ELA PASSA PELOS RESPONSÁVEIS ESCOLHIDOS (04/11): a de
+            // outro responsável a releitura não traria, e seria uma ida ao
+            // banco por nada.
             if (!velha && cv.advogado_id === advogadoIdRef.current && abaDaListaRef.current
-                && cv.situacao === abaDaListaRef.current) agendarReleituraPelaAba();
+                && cv.situacao === abaDaListaRef.current
+                && passaNosResponsaveis(cv, daChave(responsaveisDaListaRef.current))) agendarReleituraPelaAba();
+          }
+        }
+        // O RESPONSÁVEL MUDOU, com responsáveis escolhidos no alto (04/11). O
+        // número das abas é o deles, e a conversa pode ter ENTRADO na escolha
+        // — passada à Jenifer com a Jenifer escolhida —, e a que não está na
+        // lista só aparece relendo a página. A que SAIU, o recorte da tela
+        // esconde sozinho. Sem escolha, nada disto: a troca de dono não muda
+        // número nenhum, e cada uma pedindo a conta seria ida ao banco à toa.
+        // O "antes" é o da lista; da conversa que não está nela, o do último
+        // aviso — e da que nunca passou por aqui não se sabe: aí quem pede a
+        // conta é a passagem da situação, logo acima.
+        //
+        // O ÚLTIMO AVISO É ANOTADO SEMPRE, e não só com uma escolha feita: a
+        // conversa que avisou antes de alguém escolher a Jenifer já passou
+        // pela situação, logo acima, e ali não conta mais como nova. Sem a
+        // anotação, passada à Jenifer depois, ela não teria "antes" em lugar
+        // nenhum — e só apareceria na lista da Jenifer na próxima releitura.
+        if (Object.prototype.hasOwnProperty.call(cv, "responsavel_id")) {
+          const velha = conversasRef.current.find((c) => c.id === cv.id);
+          const donoAgora = String(cv.responsavel_id || "");
+          const donoAntes = velha ? String(velha.responsavel_id || "") : responsaveisVistosRef.current.get(cv.id);
+          responsaveisVistosRef.current.set(cv.id, donoAgora);
+          if (responsaveisDaListaRef.current && donoAntes !== undefined && donoAntes !== donoAgora
+              && cv.advogado_id === advogadoIdRef.current) {
+            agendarContagemDasAbas();
+            const naAbaAberta = !abaDaListaRef.current || !Object.prototype.hasOwnProperty.call(cv, "situacao")
+              || cv.situacao === abaDaListaRef.current;
+            if (!velha && naAbaAberta && passaNosResponsaveis(cv, daChave(responsaveisDaListaRef.current))) {
+              agendarReleituraPelaAba();
+            }
           }
         }
         // Atualiza "digitando…" e "quem está atendendo" localmente (leve).
@@ -10688,6 +10811,7 @@ export default function Painel({ sessao }) {
       else if (menuOrdem) setMenuOrdem(false);
       else if (menuTopoAberto) setMenuTopoAberto(false);
       else if (menuQuem) setMenuQuem(false);
+      else if (menuResponsaveis) setMenuResponsaveis(false);
       else if (quemParticipou) setQuemParticipou(false);
       else if (menuEtiquetas) setMenuEtiquetas(false);
       else if (menuDepartamentos) setMenuDepartamentos(false);
@@ -10711,13 +10835,14 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, pdfAberto, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, menuEtapa, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, fichaEmColuna, menuDepartamentos, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada, jaTratei, trateiOcupado, reabrindo, reabrirOcupado, escolhaTelefone, resumos]);
+  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, pdfAberto, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, menuEtapa, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, menuResponsaveis, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, fichaEmColuna, menuDepartamentos, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada, jaTratei, trateiOcupado, reabrindo, reabrirOcupado, escolhaTelefone, resumos]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
     function aoClicar(e) {
       if (menuEtiquetas && etiquetasRef.current && !etiquetasRef.current.contains(e.target)) setMenuEtiquetas(false);
       if (menuQuem && quemRef.current && !quemRef.current.contains(e.target)) setMenuQuem(false);
+      if (menuResponsaveis && responsaveisMenuRef.current && !responsaveisMenuRef.current.contains(e.target)) setMenuResponsaveis(false);
       // NO CELULAR AS DUAS LISTINHAS PENDEM DO ⋮, e não dos botões que as
       // abriam no computador — esses saíram do cabeçalho. Sem contar o ⋮ como
       // "dentro", o próprio clique que abre a listinha já a fechava.
@@ -10762,7 +10887,7 @@ export default function Painel({ sessao }) {
     }
     document.addEventListener("mousedown", aoClicar);
     return () => document.removeEventListener("mousedown", aoClicar);
-  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas, menuQuem, quemParticipou, menuDaConversa, menuOrdem, menuDepartamentos, menuResponsavel, menuEtapa, menuTarefa]);
+  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas, menuQuem, menuResponsaveis, quemParticipou, menuDaConversa, menuOrdem, menuDepartamentos, menuResponsavel, menuEtapa, menuTarefa]);
 
   // Fecha o menuzinho da conversa (marcar não lida) ao clicar em qualquer lugar.
   useEffect(() => {
@@ -13366,7 +13491,8 @@ export default function Painel({ sessao }) {
   // E SEM NÚMERO enquanto a conta da aba não veio: o do telefone no lugar
   // dela seria um número que se sabe maior.
   const contagemDaAbaAberta = temSituacao === true && !verArquivadas ? (contagemDasAbas
-    && contagemDasAbas.de === advogadoId && contagemDasAbas.nao_lidas ? contagemDasAbas : null) : undefined;
+    && contagemDasAbas.de === advogadoId && contagemDasAbas.responsaveis === responsaveisDaLista
+    && contagemDasAbas.nao_lidas ? contagemDasAbas : null) : undefined;
   const totalNaoLidasLista = contagemDaAbaAberta === undefined ? naoLidasPorAdv[advogadoId]
     : contagemDaAbaAberta && Number.isFinite(Number(contagemDaAbaAberta.nao_lidas[abaSituacao]))
       ? Number(contagemDaAbaAberta.nao_lidas[abaSituacao]) : null;
@@ -14537,11 +14663,20 @@ export default function Painel({ sessao }) {
   // trazem do banco.
   const naAba = (c) => buscandoTexto || verArquivadas || temSituacao !== true
     || !Object.prototype.hasOwnProperty.call(c, "situacao") || c.situacao === abaSituacao;
+  // OS RESPONSÁVEIS ESCOLHIDOS NO ALTO RECORTAM COMO A ABA (04/11), e pela
+  // mesma régua: com busca escrita, não. Procurar um cliente e não achá-lo
+  // porque ele é da Jenifer, com a Jenifer fora da escolha, seria o "nada
+  // encontrado" que faz a pessoa concluir que ele não está no Zorvin — e a
+  // linha mostra o rosto do responsável. A lista já vem do banco recortada;
+  // isto vale para o que chega por fora dela: a conversa passada adiante pelo
+  // tempo real, e as que os filtros trazem do banco.
+  const naResponsavel = (c) => buscandoTexto || passaNosResponsaveis(c, escolhidosDaLista);
 
   const conversasFiltradas = (() => {
     const daLista = conversasNaTela.filter((c) =>
       naPasta(c) &&
       naAba(c) &&
+      naResponsavel(c) &&
       casaNaBusca(c) &&
       passaNoFiltro(c)
     );
@@ -14562,7 +14697,7 @@ export default function Painel({ sessao }) {
     const naLista = new Set(conversasNaTela.map((c) => String(c.id)));
     const doBanco = busca.trim()
       ? extras.filter((c) => !jaTem.has(String(c.id))
-          && naPasta(c) && naAba(c) && passaNoFiltro(c))
+          && naPasta(c) && naAba(c) && naResponsavel(c) && passaNoFiltro(c))
       // As da etiqueta não passam por `passaNoFiltro`: elas vieram do banco
       // JUSTAMENTE por carregarem a etiqueta escolhida, e `tagsPorConversa` só
       // conhece as conversas da lista — perguntar a ele por uma conversa que a
@@ -14577,7 +14712,7 @@ export default function Painel({ sessao }) {
             const id = String(c.id);
             if (naLista.has(id)) return false;
             naLista.add(id);
-            return naPasta(c) && naAba(c) && passaNoFiltro(c);
+            return naPasta(c) && naAba(c) && naResponsavel(c) && passaNoFiltro(c);
           });
     if (!doBanco.length) return daLista;
     return [...daLista, ...doBanco].sort(compararConversas(ordem, ordenarPelaEspera));
@@ -14677,6 +14812,8 @@ export default function Painel({ sessao }) {
   // ------------------------------------------------------------------
   // A ABA ESCOLHIDA AINDA NÃO VOLTOU DO BANCO — ver `abaDasConversas`.
   const trocandoDeAba = temSituacao === true && listaEhDoTelefoneAberto && abaDasConversas !== abaDaLista;
+  // E OS RESPONSÁVEIS ESCOLHIDOS AINDA NÃO VOLTARAM DO BANCO, pela mesma régua.
+  const trocandoDeResponsavel = listaEhDoTelefoneAberto && responsaveisDasConversas !== responsaveisDaLista;
   // A FRASE DA ABA VAZIA diz qual é a aba, e o que mora nela: "nenhuma
   // conversa ainda" em "Finalizados" se leria como "o telefone não tem
   // conversa nenhuma", com a lista cheia na aba ao lado.
@@ -14691,7 +14828,7 @@ export default function Painel({ sessao }) {
   const filtroPerguntaAoBanco = filtro === "minhas" || filtro === "grupos" || filtro === "tarefas"
     || filtro === "naolidas" || filtro === "favoritas" || filtro.startsWith("tag:") || (verArquivadas && filtro === "tudo");
   const perguntaDaLista = filtroPerguntaAoBanco
-    ? perguntasDoFiltro[chaveDoFiltro(filtro, verArquivadas, advogadoId)] || { estado: "procurando", codigo: "", cortou: 0 }
+    ? perguntasDoFiltro[chaveDoFiltro(filtro, verArquivadas, advogadoId, responsaveisDaLista)] || { estado: "procurando", codigo: "", cortou: 0 }
     : null;
   const oQueOFiltroProcura = verArquivadas && filtro === "tudo" ? "as conversas arquivadas"
     : filtro === "minhas" ? "as suas conversas" : filtro === "grupos" ? "os grupos"
@@ -14713,7 +14850,7 @@ export default function Painel({ sessao }) {
     // condição de cima pede a lista vazia: com a leitura falhando, a tela
     // ficava em "Carregando as conversas…" para sempre, debaixo de uma faixa
     // dizendo que não carregou.
-    : falhasDeLeitura.conversas && trocandoDeAba && !busca.trim()
+    : falhasDeLeitura.conversas && (trocandoDeAba || trocandoDeResponsavel) && !busca.trim()
       ? ["falhou-aba", `Não consegui carregar as conversas desta aba${falhasDeLeitura.conversas.codigo
           ? ` (código ${falhasDeLeitura.conversas.codigo})` : ""}. Use "Tentar de novo", no alto.`]
     // E A PASTA QUE NÃO VEIO (auditoria de 28/10). Sem o script 028 não há
@@ -14726,6 +14863,7 @@ export default function Painel({ sessao }) {
       ? listaQueFalhou
     : trocandoDeTelefone ? ["trocando", "Carregando as conversas…"]
     : trocandoDeAba && !busca.trim() ? ["trocando-de-aba", "Carregando as conversas…"]
+    : trocandoDeResponsavel && !busca.trim() ? ["trocando-de-responsavel", "Carregando as conversas…"]
     : buscando ? ["procurando", "Procurando…"]
     : vendoNoCadastro && busca.trim()
       ? ["cadastro", "Nas conversas, nada. Vendo no cadastro do Vantoro…"]
@@ -14760,6 +14898,15 @@ export default function Painel({ sessao }) {
     : temSituacao === true && filtro === "tudo" && ABA_VAZIA[abaSituacao]
       ? [`sem-conversa-${abaSituacao}`, ABA_VAZIA[abaSituacao]]
     : ["sem-conversa", "Nenhuma conversa ainda."];
+  // A LISTA VAZIA DIZ QUE ESTÁ RECORTADA PELOS RESPONSÁVEIS (04/11). "Nenhuma
+  // conversa em atendimento" com a Jenifer escolhida no alto se leria como "o
+  // telefone não tem nada em atendimento" — a segunda frase diz o que está
+  // escolhido, e é ali que a pessoa vê onde mexer. Só nas frases de "nenhuma":
+  // "Carregando…" e a falha falam de outra coisa.
+  const fraseDaEscolha = fraseDosResponsaveis(escolhidosDaLista, nomeDaPessoa, meuId);
+  const recadoDaLista = fraseDaEscolha && !busca.trim() && /^sem-|^arquivadas$/.test(recadoDaListaVazia[0])
+    ? [recadoDaListaVazia[0], `${recadoDaListaVazia[1]} Mostrando só as conversas ${fraseDaEscolha}.`]
+    : recadoDaListaVazia;
 
   // O "+" no rodapé quer dizer "o banco tem mais do que isto". Com uma busca
   // ou uma etiqueta escolhida, ele NÃO tem: as duas já perguntaram ao banco e
@@ -15517,6 +15664,134 @@ export default function Painel({ sessao }) {
   // título: marcar é escolher várias, o menu continua aberto entre um clique e
   // outro, e o campo tem de continuar à vista depois de a lista rolar. O que
   // foi escrito também continua — marcar uma etiqueta não apaga a pesquisa.
+  // ------------------------------------------------------------------
+  //  O SELETOR DE RESPONSÁVEIS, AO LADO DO NÚMERO (04/11)
+  //
+  //  Tomou o lugar do "ATENDENDO COMO", a pedido do Rodrigo. Escolher uma
+  //  pessoa (ou várias, ou as sem responsável) recorta a lista, o número de
+  //  cada aba e o da pílula "Não lidas" — ver `responsaveisDaLista`.
+  //
+  //  A EQUIPE INTEIRA, e não só quem já tem conversa aqui: perguntar quem é
+  //  responsável por alguma conversa deste telefone seria uma ida ao banco a
+  //  cada telefone aberto, e a pessoa que não tem nenhuma responde "nenhuma"
+  //  na própria lista. Você vem primeiro, e "Sem responsável" logo depois:
+  //  é a fila de onde todo mundo puxa trabalho.
+  //
+  //  MARCAR NÃO FECHA O MENU: escolher várias pessoas é o pedido. "Todos os
+  //  responsáveis" desfaz a escolha e fecha.
+  //
+  //  NO CELULAR o botão ganha os 40 pontos de alvo de dedo pela regra geral, e
+  //  uma margem negativa devolve a altura à linha: sem ela, o alto da lista
+  //  cresceria 20 pontos por causa de um botão de uma palavra.
+  // ------------------------------------------------------------------
+  const pessoasDoSeletor = Object.values(equipe.porId)
+    .filter((p) => p.nome)
+    .sort((a, b) => {
+      if (meuId && String(a.id) === String(meuId)) return -1;
+      if (meuId && String(b.id) === String(meuId)) return 1;
+      return a.nome.localeCompare(b.nome, "pt-BR");
+    });
+  const escolhaAtiva = escolhidosDaLista.length > 0;
+  const rotuloDaEscolha = rotuloDosResponsaveis(escolhidosDaLista, nomeDaPessoa, meuId);
+  const alternarResponsavel = (id) => setResponsaveisEscolhidos((atual) => {
+    const chave = String(id);
+    return atual.map(String).includes(chave) ? atual.filter((x) => String(x) !== chave) : [...atual, chave];
+  });
+  const seletorDeResponsaveis = temResponsavel !== true ? null : (
+    <span ref={responsaveisMenuRef} data-seletor-de-responsaveis
+          style={{ position: "relative", display: "flex", marginLeft: "auto", flexShrink: 0, maxWidth: 150, minWidth: 0 }}>
+      <button data-responsaveis-botao={escolhaAtiva ? "escolhidos" : "todos"} aria-haspopup="listbox"
+              aria-expanded={menuResponsaveis} onClick={() => setMenuResponsaveis((v) => !v)}
+              aria-label={escolhaAtiva ? `Responsável: ${rotuloDaEscolha}` : "Filtrar pelo responsável da conversa"}
+              title={escolhaAtiva
+                ? `Mostrando só as conversas ${fraseDosResponsaveis(escolhidosDaLista, nomeDaPessoa, meuId)}.`
+                : "Mostrar só as conversas de um ou mais responsáveis"}
+              style={{ display: "flex", alignItems: "center", gap: 4, maxWidth: "100%", minWidth: 0,
+                       minHeight: 20, padding: "0 6px 0 7px", borderRadius: 10, cursor: "pointer",
+                       fontSize: 11.5, fontWeight: 600, lineHeight: "18px",
+                       border: `1px solid ${escolhaAtiva ? C.greenDark : C.divider}`,
+                       background: escolhaAtiva ? C.greenDark : "transparent",
+                       color: escolhaAtiva ? "#fff" : C.textSecondary,
+                       ...(estreito ? { margin: "-10px 0" } : {}) }}>
+        <UserCheck size={13} style={{ flexShrink: 0 }} />
+        <span data-responsaveis-rotulo style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {rotuloDaEscolha}
+        </span>
+        <ChevronDown size={13} style={{ flexShrink: 0, transform: menuResponsaveis ? "rotate(180deg)" : "none", transition: "transform .12s" }} />
+      </button>
+      {menuResponsaveis && (
+        <ComPesquisa>{(pesquisa, setPesquisa) => {
+          // A PESQUISA (23/10) vale aqui como nos outros menus de pessoas: a
+          // equipe passa de vinte nomes. "Sem responsável" entra na pesquisa
+          // como mais um nome; "Todos os responsáveis" fica sempre.
+          const comPesquisa = pessoasDoSeletor.length + 1 >= PESQUISA_A_PARTIR_DE;
+          const achadas = comPesquisa ? pessoasDoSeletor.filter((p) => casaComAPesquisa(pesquisa, p.nome)) : pessoasDoSeletor;
+          const semAparece = !comPesquisa || casaComAPesquisa(pesquisa, "Sem responsável");
+          const marcado = (id) => escolhidosDaLista.includes(String(id));
+          const caixa = (sim) => (
+            <span style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                           border: `1.5px solid ${sim ? C.green : C.divider}`, background: sim ? C.green : "transparent" }}>
+              {sim && <Check size={12} color="#fff" />}
+            </span>
+          );
+          const ITEM = { width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "8px 12px", border: "none",
+                         background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left",
+                         minHeight: estreito ? 44 : 36 };
+          return (
+            <div data-menu-responsaveis role="listbox" aria-multiselectable="true" ref={encaixarNaJanela}
+                 style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 60, width: 272,
+                          maxHeight: 420, overflowY: "auto", whiteSpace: "normal", fontWeight: 400,
+                          background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10,
+                          boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
+              <div style={{ padding: "10px 12px 8px", borderBottom: `1px solid ${C.divider}`, position: "sticky", top: 0, zIndex: 1, background: C.panel }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3 }}>MOSTRAR AS CONVERSAS DE</div>
+                {comPesquisa && (
+                  <div style={{ marginTop: 8 }}>
+                    <CampoDePesquisa C={C} valor={pesquisa} aoMudar={setPesquisa} rotulo="Pesquisar pessoa"
+                                     focar={!estreito} nome="responsaveis" />
+                  </div>
+                )}
+              </div>
+              <button data-responsaveis-todos role="option" aria-selected={!escolhaAtiva}
+                      onClick={() => { setResponsaveisEscolhidos([]); setMenuResponsaveis(false); }}
+                      style={{ ...ITEM, fontWeight: 600, borderBottom: `1px solid ${C.divider}` }}>
+                <Users size={16} color={C.textSecondary} style={{ flexShrink: 0 }} />
+                <span style={{ flex: 1 }}>Todos os responsáveis</span>
+                {!escolhaAtiva && <Check size={16} color={C.green} />}
+              </button>
+              {semAparece && (
+                <button data-responsavel-opcao={SEM_RESPONSAVEL} role="option" aria-selected={marcado(SEM_RESPONSAVEL)}
+                        onClick={() => alternarResponsavel(SEM_RESPONSAVEL)} style={ITEM}>
+                  {caixa(marcado(SEM_RESPONSAVEL))}
+                  <span style={{ flex: 1, minWidth: 0 }}>Sem responsável</span>
+                </button>
+              )}
+              {achadas.map((p) => {
+                const sim = marcado(p.id);
+                const souEu = meuId && String(p.id) === String(meuId);
+                return (
+                  <button key={p.id} data-responsavel-opcao={p.id} role="option" aria-selected={sim}
+                          onClick={() => alternarResponsavel(p.id)} style={ITEM}>
+                    {caixa(sim)}
+                    <Avatar nome={p.nome} foto={p.foto} size={22} />
+                    <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {p.nome}{souEu ? " (você)" : ""}
+                    </span>
+                  </button>
+                );
+              })}
+              {comPesquisa && !achadas.length && !semAparece && (
+                <div data-nada-com-a-pesquisa style={{ padding: "14px 12px", fontSize: 13, color: C.textSecondary, textAlign: "center" }}>
+                  {nadaComAPesquisa("Ninguém", pesquisa)}
+                </div>
+              )}
+            </div>
+          );
+        }}</ComPesquisa>
+      )}
+    </span>
+  );
+
   const listaDeEtiquetas = !conversa ? null : (
     <ComPesquisa>{(pesquisa, setPesquisa) => {
       const comPesquisa = tags.length >= PESQUISA_A_PARTIR_DE;
@@ -17062,10 +17337,17 @@ export default function Painel({ sessao }) {
 
               Sem telefone escolhido não há "atendendo como": o traço solto
               embaixo do rótulo parecia dado faltando, e não escolha pendente. */}
-          <div data-atendendo-como style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
-            <span style={{ fontSize: 10.5, color: C.textSecondary, fontWeight: 700, letterSpacing: 0.3, flexShrink: 0 }}>
-              {advogado ? "ATENDENDO COMO" : "ESCOLHA UM NÚMERO ABAIXO"}
-            </span>
+          {/* E O RÓTULO SAIU (04/11), a pedido do Rodrigo: o nome e o número
+              dizem sozinhos qual telefone está aberto, e o lugar dele virou o
+              seletor de responsáveis (`seletorDeResponsaveis`), na ponta
+              direita da mesma linha. Sem telefone escolhido, a frase que diz
+              o que fazer continua. */}
+          <div data-atendendo-como style={{ display: "flex", alignItems: "center", gap: 7, minHeight: 20 }}>
+            {!advogado && (
+              <span style={{ fontSize: 10.5, color: C.textSecondary, fontWeight: 700, letterSpacing: 0.3, flexShrink: 0 }}>
+                ESCOLHA UM NÚMERO ABAIXO
+              </span>
+            )}
             {advogado && (<>
               {/* Quem encolhe é o NOME (`minWidth: 0` com reticências); o
                   número fica inteiro (`flexShrink: 0`) porque é o dado que se
@@ -17079,6 +17361,7 @@ export default function Painel({ sessao }) {
                   {numeroBonito(advogado.numero)}
                 </span>
               )}
+              {seletorDeResponsaveis}
             </>)}
           </div>
         </div>
@@ -17124,7 +17407,10 @@ export default function Painel({ sessao }) {
             NA PASTA DE ARQUIVADAS NÃO HÁ ABA: lá moram as arquivadas das três,
             e a aba não recorta. */}
         {temSituacao === true && !verArquivadas && (() => {
-          const contagem = contagemDasAbas && contagemDasAbas.de === advogadoId ? contagemDasAbas : null;
+          // A CONTA DESTE TELEFONE E DESTA ESCOLHA DE RESPONSÁVEIS: a de outra
+          // escolha, chegando atrasada, não escreve número nas abas desta.
+          const contagem = contagemDasAbas && contagemDasAbas.de === advogadoId
+            && contagemDasAbas.responsaveis === responsaveisDaLista ? contagemDasAbas : null;
           // A PÍLULA DO NÚMERO, uma escrita só: a de verdade e o lugar guardado
           // dela no celular (ver lá embaixo) têm de ter o mesmo tamanho.
           const pilulaDoNumero = { minWidth: estreito ? 16 : 18, height: estreito ? 16 : 18, padding: "0 4px",
@@ -17622,10 +17908,11 @@ export default function Painel({ sessao }) {
           )}
           {conversasFiltradas.length === 0 && !erroBusca && semConversa.length === 0 && (
             // A marca e a frase vêm de `recadoDaListaVazia`, uma escolha só —
-            // o porquê de cada uma está lá em cima, junto dela.
-            <div data-recado-da-lista={recadoDaListaVazia[0]}
+            // o porquê de cada uma está lá em cima, junto dela. (E a frase dos
+            // responsáveis escolhidos, quando há, vem em `recadoDaLista`.)
+            <div data-recado-da-lista={recadoDaLista[0]}
                  style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>
-              {recadoDaListaVazia[1]}
+              {recadoDaLista[1]}
             </div>
           )}
           {conversasFiltradas.slice(0, quantasNaLista).map((c) => {

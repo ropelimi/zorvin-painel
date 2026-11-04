@@ -9,8 +9,8 @@ import { supabase } from "./supabase.js";
 //  de uma profissão que não é a deles.
 //
 //  ONDE ELAS FICAM, medido: Configurações → Importar histórico e Configurações
-//  → Contatos. NÃO na primeira tela — ela diz "ATENDENDO COMO" e lista nomes
-//  de telefone. A prova foi escrita supondo o contrário e reprovou três vezes,
+//  → Contatos. NÃO na primeira tela — ela dizia "ATENDENDO COMO" (até 04/11,
+//  quando o lugar virou o seletor de responsáveis) e lista nomes de telefone. A prova foi escrita supondo o contrário e reprovou três vezes,
 //  falando de um rótulo que não existe lá.
 //
 //  UMA DELAS QUASE FICOU PARA TRÁS: "No celular do advogado: …". Um extrator
