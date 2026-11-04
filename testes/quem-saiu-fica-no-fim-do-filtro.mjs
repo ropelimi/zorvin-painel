@@ -102,7 +102,9 @@ ok("aprendi qual telefone o painel abre", Boolean(descoberta.adv));
 ok("e o que o filtro mostra nele, sem ninguém que saiu", descoberta.menu.itens.length >= 3, JSON.stringify(descoberta.menu.itens));
 if (!descoberta.adv || descoberta.menu.itens.length < 3) { await nav.close(); process.exit(1); }
 
-const contagem = (it) => Number((it.texto.match(/(\d+)$/) || [])[1] || 0);
+// GUARDADA: o item que não existe (a sabotagem que tira quem saiu) é zero, e
+// não um estouro que esconde quais conferências viram o defeito.
+const contagem = (it) => Number((String((it && it.texto) || "").match(/(\d+)$/) || [])[1] || 0);
 const MAIOR = Math.max(...descoberta.menu.itens.map(contagem));
 const ISABELA = descoberta.menu.itens.find((i) => i.nome === "ISABELA GUEDES");
 ok("a ISABELA está no filtro deste telefone (a pesquisa da cena 1 depende dela)", Boolean(ISABELA),
@@ -113,7 +115,15 @@ ok("o telefone tem conversas para as duas", descoberta.conversas.length >= N_ZU 
    `${descoberta.conversas.length} conversas, preciso de ${N_ZU + N_IS}`);
 const CONVERSAS_DA_ZU = descoberta.conversas.slice(0, N_ZU);
 const CONVERSAS_DA_IS = descoberta.conversas.slice(N_ZU, N_ZU + N_IS);
-const DE_HOJE = nomes(descoberta.menu.itens);        // a ordem do banco, sem quem saiu
+const DE_HOJE = nomes(descoberta.menu.itens);        // quem atende hoje, sem quem saiu
+// A ORDEM DO BANCO, CALCULADA AQUI pela regra da função (quem participou de
+// mais conversas primeiro, e o nome desempata) — e não lida do menu da
+// descoberta: lida de lá, ela viria do mesmo painel que está sendo provado, e
+// um painel que reordenasse as pessoas de hoje passaria pela conferência
+// (foi a sabotagem que mostrou).
+const ORDEM_DO_BANCO = [...descoberta.menu.itens]
+  .sort((a, b) => contagem(b) - contagem(a) || String(a.nome).localeCompare(String(b.nome)))
+  .map((i) => i.nome);
 
 function semente({ zuAtiva = false, comIsadora = true, isAtiva = false } = {}) {
   const usuarios = [{ id: ZU, admin: false, nome: NOME_ZU, foto_url: null, ativo: zuAtiva }];
@@ -166,7 +176,8 @@ console.log("\n1. Com o 047: quem saiu continua no filtro, no fim e marcado");
   ok("entre quem saiu, a ordem é a do banco: quem participou de mais conversas primeiro",
      posZu >= 0 && posIs > posZu, JSON.stringify(lista));
   ok("as pessoas de hoje na ordem do banco, como antes",
-     JSON.stringify(lista.filter((n) => DE_HOJE.includes(n))) === JSON.stringify(DE_HOJE), JSON.stringify(lista));
+     JSON.stringify(lista.filter((n) => DE_HOJE.includes(n))) === JSON.stringify(ORDEM_DO_BANCO),
+     `${JSON.stringify(lista)}, e o banco diz ${JSON.stringify(ORDEM_DO_BANCO)}`);
 
   const marcados = m.itens.filter((i) => i.saiu).map((i) => i.nome);
   ok("as duas que saíram são marcadas, e só elas",
