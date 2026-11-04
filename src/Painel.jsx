@@ -600,6 +600,14 @@ const ESPERA_DA_DISTRIBUICAO_MS = 2500;
 const CARENCIA_TEMPO_REAL_MS =
   (typeof globalThis !== "undefined" && globalThis.__CARENCIA_TEMPO_REAL) || 10000;
 
+// DE QUANTO EM QUANTO A LISTA DA EQUIPE É RELIDA (04/11) — ver o efeito da
+// equipe. A renovação da sessão já a relia, mas só de hora em hora: quem sai no
+// meio do dia continuaria contando como "da equipe" no aviso de mensagem nova
+// por até uma hora, e o cliente que só ela atendia ficaria sem aviso nenhum.
+// Dez minutos são uma leitura de umas vinte linhas por guia.
+const RELER_A_EQUIPE_MS =
+  (typeof globalThis !== "undefined" && globalThis.__RELER_A_EQUIPE_MS) || 10 * 60 * 1000;
+
 // ============================================================
 //  ESTA GUIA É UMA TELA? (02/11) — ver `guias.js`
 //
@@ -3449,6 +3457,9 @@ export default function Painel({ sessao }) {
   //  ao banco.
   // ============================================================
   const deQuemEhAConversa = useRef(new Map());
+  // QUEM SAIU DO ESCRITÓRIO (04/11), em espelho: o aviso é decidido fora do
+  // desenho, e lê o de agora. Preenchido pelo efeito da equipe, mais abaixo.
+  const quemSaiuRef = useRef(new Set());
 
   const temVantoro = useTemVantoro();
   // COMO ESTA INSTALAÇÃO CHAMA QUEM É DONO DE UM TELEFONE. No escritório é
@@ -4631,8 +4642,17 @@ export default function Painel({ sessao }) {
       } else {
         // SÓ AGORA A SEGUNDA PERGUNTA, e não sempre: para quem participou —
         // que é o caso comum de quem atende — uma ida à rede basta.
-        const { data: deOutro, error: e2 } = await supabase.from("mensagens")
-          .select("id").eq("conversa_id", convId).not("enviado_por_id", "is", null).limit(1);
+        //
+        // QUEM SAIU NÃO CONTA (04/11). A conversa em que só uma colega que saiu
+        // do escritório respondeu não é "de outra pessoa": ninguém da equipe a
+        // está atendendo, e sem isto o cliente dela escreveria sem ninguém ser
+        // avisado — a ponte devolve a conversa para "Sem responsável" (script
+        // 048), e a regra da participação calaria o aviso assim mesmo.
+        let deOutroQuery = supabase.from("mensagens")
+          .select("id").eq("conversa_id", convId).not("enviado_por_id", "is", null);
+        const sairam = [...quemSaiuRef.current];
+        if (sairam.length) deOutroQuery = deOutroQuery.not("enviado_por_id", "in", `(${sairam.join(",")})`);
+        const { data: deOutro, error: e2 } = await deOutroQuery.limit(1);
         if (e2) return null;
         part = { minha: false, orfa: !deOutro || !deOutro.length };
       }
@@ -4658,7 +4678,11 @@ export default function Painel({ sessao }) {
     if (!part) return true;
     if (part.minha) return true;
     if (quem.falhou) return true;
-    if (quem.dono) return String(quem.dono) === String(eu);
+    // O DONO QUE SAIU DO ESCRITÓRIO vale como sem dono (04/11). Com o script
+    // 048 da ponte isto não acontece — a conversa volta para "Sem responsável"
+    // no instante em que a pessoa é desligada —, e esta é a segunda guarda:
+    // num banco sem o 048, o aviso iria só para quem não entra mais.
+    if (quem.dono && !quemSaiuRef.current.has(String(quem.dono))) return String(quem.dono) === String(eu);
     if (!part.orfa) return false;
     if (quem.telefone && await distribuicaoLigadaNoTelefone(quem.telefone)) {
       await new Promise((r) => setTimeout(r, ESPERA_DA_DISTRIBUICAO_MS));
@@ -4709,7 +4733,7 @@ export default function Painel({ sessao }) {
 
   useEffect(() => {
     let vivo = true;
-    (async () => {
+    const ler = async () => {
       // `equipe` é uma vista com id, nome, foto e, desde o script 047 da ponte
       // (04/11), se a pessoa está ativa. A tabela `usuarios` continua fechada:
       // ninguém lê o e-mail nem o "é admin" de ninguém por aqui.
@@ -4797,9 +4821,29 @@ export default function Painel({ sessao }) {
         if (!porNome[chave]) porNome[chave] = alvo;
       }
       setEquipe({ porId, porNome });
-    })();
-    return () => { vivo = false; };
+    };
+    ler();
+    // RELIDA DE DEZ EM DEZ MINUTOS (04/11), além de a cada renovação da sessão
+    // — ver `RELER_A_EQUIPE_MS`.
+    const relogio = setInterval(ler, RELER_A_EQUIPE_MS);
+    return () => { vivo = false; clearInterval(relogio); };
   }, [sessao]);
+
+  // QUEM SAIU, para o aviso de mensagem nova (04/11). Mudando, o guardado da
+  // participação é refeito: ele dizia "outra pessoa participou" contando quem
+  // agora saiu. O que é MEU fica — é só meu, e uma resposta minha ainda na fila
+  // de envio não estaria no banco para ser lida de novo.
+  useEffect(() => {
+    const sairam = new Set(Object.values(equipe.porId)
+      .filter((p) => p && p.ativo === false).map((p) => String(p.id)));
+    const antes = quemSaiuRef.current;
+    const mudou = sairam.size !== antes.size || [...sairam].some((id) => !antes.has(id));
+    quemSaiuRef.current = sairam;
+    if (!mudou) return;
+    for (const [convId, part] of deQuemEhAConversa.current) {
+      if (!part || !part.minha) deQuemEhAConversa.current.delete(convId);
+    }
+  }, [equipe]);
 
   /** A pessoa de hoje, a partir do id (ou, sem id, do nome que ficou gravado).
    *

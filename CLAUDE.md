@@ -1121,7 +1121,7 @@ quem estava **atendendo**.
 |---|---|---|
 | Eu já respondi nessa conversa | **sim**, em qualquer telefone | é o pedido |
 | **A conversa tem responsável** | **só o responsável** | é dele; ver "O aviso vai para o responsável (13/10)", mais abaixo |
-| Outra pessoa atende | não | aviso que não pede ação de quem lê se aprende a ignorar, e aí o próximo passa batido junto |
+| Outra pessoa atende | não | aviso que não pede ação de quem lê se aprende a ignorar, e aí o próximo passa batido junto. **Quem saiu do escritório não conta** (04/11): a conversa em que só ela respondeu avisa todo mundo — ver "E quem sai devolve as conversas, e o aviso a esquece" |
 | **Ninguém atendeu ainda, e sem responsável** | **sim, todo mundo** | é a primeira mensagem de um lead: sem dono, e sem aviso ela fica sem resposta |
 
 A última é o **contrapeso**, decidida pelo Rodrigo: "só as minhas" ao pé da
@@ -4237,13 +4237,15 @@ sem o 047 recusaria a primeira leitura e a segunda, sem a coluna, receberia o
 `ativo` assim mesmo: a tela esconderia quem saiu num banco que nem sabe quem
 saiu, e a prova aprovaria.
 
-**O que fica perguntado ao Rodrigo, e não foi feito:**
+**O que ficou perguntado ao Rodrigo, e as respostas:**
 
-- as conversas e as tarefas abertas de quem sai voltarem sozinhas para "Sem
-  responsável". Hoje elas continuam no nome da pessoa até alguém as assumir
-  ou passar adiante, e o aviso de mensagem nova da conversa com responsável
-  vai só para o responsável;
-- tirar quem saiu também do filtro "Quem participou da conversa".
+- ~~as conversas e as tarefas abertas de quem sai voltarem sozinhas para "Sem
+  responsável"~~ **Feito, a pedido dele** — ver "E quem sai devolve as
+  conversas, e o aviso a esquece (04/11)", logo abaixo;
+- tirar quem saiu também do filtro "Quem participou da conversa". Ele pediu a
+  recomendação, e ela foi **manter**, com o nome marcado como "saiu" e no fim
+  da lista: o filtro é o jeito de achar os clientes que a pessoa atendia, e é
+  histórico, e não escolha. **Ainda não feito**: esperando a resposta dele.
 
 Prova: `quem-saiu-nao-aparece-para-escolher`, 38 conferências em três cenas:
 o banco com o 047 (as três listas, e o nome onde é história), o banco sem ele
@@ -4273,6 +4275,69 @@ escrita ali, que o vigia `provas-que-reprovam` apontou, virou a conta escrita
 por extenso). O ajuste não mudava o que a conferência mede, e as duas deram o
 mesmo de novo — mas a régua de 13/10 vale também para a prova: *rodada de
 sabotagens não convive com edição*.
+
+### E quem sai devolve as conversas, e o aviso a esquece (04/11)
+
+Resposta do Rodrigo: *"Quando alguém sai, as conversas e tarefas abertas devem
+voltar para 'Sem responsável'."* **Quem devolve é o banco** (script 048 da
+ponte): no instante em que a pessoa é desligada, toda conversa em que ela é a
+responsável — as finalizadas e as arquivadas também, porque o cliente que
+escreve as traz de volta — fica sem responsável, e toda tarefa aberta dela
+fica sem dono. Religada, ela recebe de volta o que ninguém pegou. A tela não
+grava nada disso: o tempo real traz a conversa sem dono para a lista de todo
+mundo, pelo caminho de sempre.
+
+**Devolver não bastava, por causa do aviso de mensagem nova.** As perguntas
+dele, em ordem, são: participei? → tem responsável? → **outra pessoa
+participou?** → ninguém e sem dono. A conversa em que só a pessoa que saiu
+tinha respondido caía na terceira — "de outra pessoa" — e não avisava
+ninguém: sem dono, sem aviso, o cliente dela escrevendo para o vazio. Então,
+no painel:
+
+| | antes | agora |
+|---|---|---|
+| a conversa em que só quem saiu respondeu | "de outra pessoa": não avisa ninguém | **avisa todo mundo**, como a de um cliente novo |
+| a conversa em que uma colega ativa também respondeu | de outra pessoa | igual: avisa só quem participou |
+| o dono que saiu (num banco sem o 048) | avisa só ele, que não entra mais | **vale como sem dono** — a segunda guarda |
+
+- **"Outra pessoa participou?" pergunta ao banco sem quem saiu**
+  (`lerParticipacao`, com `not.in` sobre os ids de `quemSaiuRef`): uma ida só,
+  como antes. Sem ninguém desligado, a pergunta é a mesma de sempre.
+- **A equipe é relida de dez em dez minutos** (`RELER_A_EQUIPE_MS`), além de a
+  cada renovação da sessão, que é de hora em hora. Sem isso, quem sai no meio
+  do dia continuaria contando como "da equipe" por até uma hora, e o cliente
+  que só ela atendia ficaria sem aviso nesse tempo. São umas vinte linhas por
+  guia, de dez em dez minutos.
+- **Mudando quem saiu, o guardado da participação é refeito**
+  (`deQuemEhAConversa`): ele dizia "outra pessoa participou" contando quem
+  agora saiu. **O que é meu fica**: uma resposta minha ainda na fila de envio
+  não estaria no banco para ser lida de novo.
+- **Num banco sem o 047** o painel não sabe quem saiu, e tudo continua como
+  antes.
+
+**O que fica de fora, e é decisão:** a distribuição (023) não pega de volta
+as conversas de quem saiu. Elas ficam em "Sem responsável", que foi o pedido,
+e quem responder primeiro assume, como sempre.
+
+Prova: `o-aviso-esquece-quem-saiu`, com o aviso espionado, em quatro cenas: a
+conversa em que só quem saiu respondeu (e o contraste da colega ativa); o
+dono que saiu; quem sai no meio do dia, com a releitura encurtada
+(`__RELER_A_EQUIPE_MS`) e sem recarregar a página nem renovar a sessão; e o
+banco sem o 047. A bancada aprendeu o `not.in` (só sabia `is`): sem ele, a
+pergunta de quem participou passaria inteira, e a prova mediria a bancada.
+17 conferências, **9 sabotagens e 9 pegas**, todas limpas, rodadas em cópias
+e lidas uma a uma:
+
+- o painel de antes inteiro (3 reprovações — é o pedido reproduzido);
+- **a participação:** contando quem saiu; sem a pergunta de quem participou
+  (sem dono, avisa sempre); todo mundo contando como quem saiu (o contraste
+  da colega ativa pega);
+- **o dono:** o dono que saiu ainda valendo; o dono que saiu avisando todo
+  mundo, sem olhar a participação (a conversa que a Jenifer também atendeu
+  pega);
+- **quem sai no meio do dia:** sem refazer o guardado da participação; sem a
+  releitura de dez em dez minutos;
+- **e a bancada** sem o `not.in`.
 
 ## A mensagem agendada (02/10)
 
