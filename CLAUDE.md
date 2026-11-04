@@ -4207,7 +4207,7 @@ fechada para quem atende. O script 047 da ponte pôs `ativo` na vista.
 | a conversa que ainda está com ela | o menu diz "Fulana desde …", com "Assumir" e "Passar para" |
 | a tarefa dela, aberta para editar | "Pessoa que não está mais na equipe" (a frase já existia em `NovaTarefa.jsx`) |
 | o filtro de atendente do Painel de números | continua: é dos números de quem atendeu no período |
-| o filtro "Quem participou da conversa" | continua: sai do histórico das mensagens |
+| o filtro "Quem participou da conversa" | continua, **no fim da lista e marcado "saiu"** (ver "E no filtro "Quem participou"…", mais abaixo) |
 
 **ESCOLHER é dar trabalho a alguém**, e quem saiu não recebe trabalho. O
 nome continua onde é história, porque apagá-lo não muda o passado, só o deixa
@@ -4243,9 +4243,10 @@ saiu, e a prova aprovaria.
   responsável"~~ **Feito, a pedido dele** — ver "E quem sai devolve as
   conversas, e o aviso a esquece (04/11)", logo abaixo;
 - tirar quem saiu também do filtro "Quem participou da conversa". Ele pediu a
-  recomendação, e ela foi **manter**, com o nome marcado como "saiu" e no fim
-  da lista: o filtro é o jeito de achar os clientes que a pessoa atendia, e é
-  histórico, e não escolha. **Ainda não feito**: esperando a resposta dele.
+  recomendação — **manter**, com o nome marcado como "saiu" e no fim da lista
+  — e respondeu *"Pode fazer como você recomendou no filtro"*. **Feito** — ver
+  "E no filtro "Quem participou", quem saiu fica no fim, marcado (04/11)",
+  mais abaixo.
 
 Prova: `quem-saiu-nao-aparece-para-escolher`, 38 conferências em três cenas:
 o banco com o 047 (as três listas, e o nome onde é história), o banco sem ele
@@ -4338,6 +4339,76 @@ e lidas uma a uma:
 - **quem sai no meio do dia:** sem refazer o guardado da participação; sem a
   releitura de dez em dez minutos;
 - **e a bancada** sem o `not.in`.
+
+### E no filtro "Quem participou", quem saiu fica no fim, marcado (04/11)
+
+A segunda pergunta: tirar quem saiu também do filtro "Quem participou da
+conversa", no alto da lista? A recomendação foi **manter**, e o Rodrigo
+respondeu: *"Pode fazer como você recomendou no filtro"*. O filtro é o jeito
+de achar os clientes que a pessoa atendia. E ele é história, e não escolha:
+marcar alguém ali não dá trabalho a ninguém.
+
+**Medido no banco em 04/11, só contando:** uma pessoa saiu, e ela escreveu em
+32 conversas. É ela que aparece hoje no fim da lista, marcada.
+
+| | antes | agora |
+|---|---|---|
+| a ordem | a do banco: quem participou de mais conversas primeiro — com muitas conversas, quem saiu ficava no alto | as pessoas de hoje na ordem do banco, e **depois** quem saiu, na mesma ordem entre elas |
+| a marca | nenhuma | **"saiu"**, escrito, entre o nome e a contagem |
+| a contagem | ao lado | continua ao lado: é o "quanto vou ver se marcar?" |
+| marcar quem saiu | filtrava as conversas dela | igual |
+
+- **Quem decide quem saiu é a equipe de agora** (`equipe.porId`, que o 047
+  trouxe), e não a lista do banco: `atendentes_do_telefone` não sabe quem
+  saiu. Quem sai no meio do dia vai para o fim quando a equipe é relida (a
+  renovação da sessão, ou os dez minutos de `RELER_A_EQUIPE_MS`), sem outra
+  ida ao banco.
+- **Só o `false` escrito diz que saiu** (`saiuDoEscritorio`, em `quemSaiu.js`,
+  o contrário de `podeSerEscolhida`). Num banco sem o 047 ninguém é marcado, e
+  a ordem é a de sempre.
+- **A conta que a equipe não conhece não ganha a marca.** É o id gravado nas
+  mensagens que não acha ninguém em `usuarios` — na bancada, "Rodrigo ADMIN",
+  a conta apagada. Ela pode ser a de quem juntou duas contas e continua no
+  escritório (o de-para). Medido em 04/11: no banco do escritório não há
+  nenhuma.
+- **A marca fica FORA do nome**, que encolhe com reticências: o nome comprido
+  perde letras, e a marca não.
+- **A pesquisa do menu corre sobre a lista já com quem saiu no fim**, e o
+  achado guarda a mesma ordem.
+- **O rastro na fita não muda**: com quem saiu marcado, ele diz o nome dela,
+  como diria de qualquer pessoa.
+
+Prova: `quem-saiu-fica-no-fim-do-filtro`, 38 conferências em três cenas: o
+banco com o 047 (com quem saiu tendo participado de mais conversas do que
+todo mundo; a ordem; a marca PINTADA no nome comprido; a pesquisa; e o filtro
+por ela), o banco sem o 047 (o contraste: a mesma lista, com quem saiu no
+alto) e quem sai no meio do dia, numa lista curta, sem o campo de pesquisa.
+
+**13 sabotagens e 13 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma:
+
+- o painel de antes inteiro (10 reprovações — é o pedido reproduzido);
+- **a ordem:** quem saiu sem ir para o fim; em ordem invertida; as pessoas de
+  hoje em ordem alfabética; a ordem guardada sem olhar a equipe (quem sai no
+  meio do dia não desce);
+- **a marca:** sem ela; sem a palavra; dentro do nome, que encolhe com
+  reticências (pega pelo que está pintado);
+- **a pesquisa e o menu curto:** a pesquisa sobre a lista do banco; o menu sem
+  pesquisa sobre a lista do banco;
+- **quem conta como quem saiu:** a conta que a equipe não conhece; e, sem o
+  047, todo mundo;
+- **e o que o Rodrigo não escolheu:** quem saiu sumindo do filtro.
+
+**A rodada foi feita três vezes, e as duas primeiras ensinaram:**
+
+- **a sabotagem que tira quem saiu do filtro foi pega estourando.** A prova
+  lia a contagem de um item que a sabotagem tinha tirado, e parou ali sem
+  dizer as outras conferências. Hoje a leitura é guardada;
+- **a das pessoas de hoje em ordem alfabética passou pela cena 1.** A ordem
+  "certa" com que a prova comparava vinha do menu da descoberta — do mesmo
+  painel que estava sendo provado. Hoje ela é calculada na prova, pela regra
+  do banco (quem participou de mais conversas primeiro, e o nome desempata).
+  **A referência de uma conferência não pode sair do código que ela confere.**
 
 ## A mensagem agendada (02/10)
 
