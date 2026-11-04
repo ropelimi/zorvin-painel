@@ -4098,6 +4098,16 @@ negativa devolve a altura à linha: sem ela, o alto da lista cresceria 20
 pontos por causa de um botão de uma palavra. Quem encolhe é o nome do
 telefone; o número fica inteiro.
 
+### O que fica de fora, e é decisão
+
+- **o número da linha "Arquivadas"** conta o telefone inteiro. Ele vem da
+  mesma função do banco que os selos da barra lateral
+  (`nao_lidas_por_telefone`), e recortá-lo pediria outra atualização no
+  banco. Ele é a PORTA da pasta: lá dentro a lista é recortada, e a lista
+  vazia diz o que está escolhido;
+- **o selo de cada telefone na barra lateral** também conta o telefone
+  inteiro: lá a pergunta é outra (a régua de 19/10).
+
 ### O banco sem o 046, e sem o 008
 
 - **sem o 046** (a ponte que ainda não subiu): a lista recorta assim mesmo, e
@@ -4111,18 +4121,21 @@ telefone; o número fica inteiro.
 
 O `or()` aprendeu `in.(…)` e `is.null` (as sem responsável junto com pessoas),
 a conta das abas aprendeu os responsáveis, as chamadas dela ficam guardadas
-(`__CONTAGENS_PEDIDAS`), e `__SEM_CONTAGEM_POR_RESPONSAVEL` é o banco sem o
-046.
+(`__CONTAGENS_PEDIDAS`), `__ATRASO_DA_CONTAGEM` faz a conta demorar, e
+`__SEM_CONTAGEM_POR_RESPONSAVEL` é o banco sem o 046.
 
 **`o-topo-mais-baixo` foi INVERTIDA, e não apagada**: *"e ela ainda diz
 ATENDENDO COMO"* virou *"e ela não diz mais"*, e o nome do telefone passou a
 ser conferido sem o que o seletor escreve.
 
-Prova: `o-seletor-de-responsaveis`, 128 conferências em 15 cenas: o alto da
-lista, uma pessoa (a lista, cada aba e "Não lidas"), várias e as sem
-responsável, só você, o telefone de 1200 conversas, a busca, o tempo real,
-abrir de fora, a lista vazia, a pesquisa e o Esc, o F5, o celular a 360 e a
-390, o banco sem o 046 e o banco sem o 008.
+Prova: `o-seletor-de-responsaveis`, 139 conferências: o alto da lista; uma
+pessoa (a lista, cada aba e "Não lidas"); a conta que demora (a aba não fica
+com o número de todos enquanto a da Jenifer não chega, com
+`__ATRASO_DA_CONTAGEM`); várias e as sem responsável; só você; o telefone de
+1200 conversas; a carteira de 301 conversas com "Não lidas"; a busca; o
+tempo real; abrir de fora; a lista vazia e o "Carregando" da troca; a
+pesquisa e o Esc; o F5; o celular a 360 e a 390; o banco sem o 046 e o banco
+sem o 008.
 
 ## A mensagem agendada (02/10)
 

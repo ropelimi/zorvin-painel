@@ -474,19 +474,18 @@ console.log("\n5b. A carteira grande: “Não lidas” pergunta ao banco já rec
   ok("o número de “Em Atendimento” é o da carteira dela, 301", r.abas.aberto === 301, JSON.stringify(r.abas));
   ok("e “Não lidas” conta as dela por ler, 201", r.naoLidas === "Não lidas 201", r.naoLidas);
   await clicar(page, '[data-aba="naolidas"]');
-  await page.waitForTimeout(2000);
-  let achou = false;
-  for (let i = 0; i < 25 && !achou; i++) {
-    achou = await page.evaluate(() => {
-      if (document.querySelector('[data-conversa-id="a13-c1150"]')) return true;
-      const alvo = [...document.querySelectorAll("div")]
-        .find((d) => d.scrollHeight > d.clientHeight + 200 && d.querySelector("[data-conversa-nome]"));
-      if (alvo) alvo.scrollTop = alvo.scrollHeight;
-      return false;
-    });
-    if (!achou) await page.waitForTimeout(400);
-  }
-  ok("com “Não lidas”, a da posição 1150 está na lista", achou);
+  // O TOTAL DA LISTA, NO RODAPÉ ("40 de 201 conversas"), e SEM ROLAR: rolar
+  // até o fim pede a página seguinte da lista, que vem recortada pelo banco e
+  // traria a da posição 1150 por outro caminho. A sabotagem que tira o recorte
+  // da pergunta das não lidas passou assim na primeira rodada.
+  const rodape = await esperarAte(page, () => {
+    const t = [...document.querySelectorAll("div")].map((d) => d.textContent || "")
+      .find((x) => /^\d+ de \d+\+? conversas$/.test(x.trim()));
+    const m = t && t.trim().match(/^\d+ de (\d+)/);
+    return { pronto: Boolean(m && m[1] === "201"), total: m ? Number(m[1]) : null };
+  }, null, 8000);
+  ok("com “Não lidas”, a lista tem as 201 dela por ler — com a da posição 1150, que só a pergunta recortada traz",
+     rodape.total === 201, `total no rodapé: ${rodape.total}`);
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
@@ -554,6 +553,12 @@ console.log("\n7. O tempo real: a conversa passada à Jenifer entra, e a que ela
   ok("a Ivone, passada à Jenifer por uma colega, ENTRA na lista dela", v.lista.includes(P.ivone.nome), JSON.stringify(v.lista));
   ok("e o número de “Em Atendimento” vira 2", v.n === "2", `número: ${v.n}`);
 
+  // A CONTA QUE O PASSO DA IVONE AGENDOU sai 2,5 s depois dele. Passando a
+  // Joana antes disso, aquela conta apanharia a Joana de carona, e a prova
+  // não saberia dizer se a troca de dono da Joana pediu a sua. A sabotagem
+  // que tira essa conta passou assim na primeira rodada.
+  await page.waitForTimeout(3200);
+  const contasAntesDaJoana = (await pedidas(page)).length;
   await passar(P.joana.id, ISA);
   v = await esperarAte(page, (nome) => {
     const lista = [...document.querySelectorAll("[data-conversa-nome]")].map((e) => e.getAttribute("data-conversa-nome"));
@@ -562,6 +567,8 @@ console.log("\n7. O tempo real: a conversa passada à Jenifer entra, e a que ela
   }, P.joana.nome, 9000);
   ok("a Joana, passada à Isabela, SAI da lista da Jenifer", !v.lista.includes(P.joana.nome), JSON.stringify(v.lista));
   ok("e o número volta a 1", v.n === "1", `número: ${v.n}`);
+  ok("pedido pela troca de dono da Joana, e não por carona", (await pedidas(page)).length > contasAntesDaJoana,
+     `${contasAntesDaJoana} contas antes, ${(await pedidas(page)).length} depois`);
 
   // A CONVERSA QUE AVISOU ANTES DA ESCOLHA: o Rafael já passou pelo tempo
   // real lá em cima, e não conta mais como novo para esta tela.
