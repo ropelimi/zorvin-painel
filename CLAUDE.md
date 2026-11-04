@@ -4248,7 +4248,31 @@ saiu, e a prova aprovaria.
 Prova: `quem-saiu-nao-aparece-para-escolher`, 38 conferências em três cenas:
 o banco com o 047 (as três listas, e o nome onde é história), o banco sem ele
 (todo mundo continua podendo ser escolhido), e quem sai no meio do dia (a
-renovação da sessão relê a equipe).
+renovação da sessão relê a equipe, com `__ENTRADA_DA_BIBLIOTECA`, que troca o
+objeto da sessão como a renovação de hora em hora da biblioteca).
+
+**12 sabotagens e 12 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma:
+
+- o painel de antes inteiro, com a bancada nova (7 reprovações — é o pedido
+  reproduzido);
+- **as listas:** "Passar para" sem tirar quem saiu (5: a tarefa usa a mesma
+  lista); o seletor sem tirar quem saiu; o seletor sem o encosto de quem está
+  escolhido; a tarefa com uma lista própria, sem tirar quem saiu;
+- **a leitura:** sem pedir `ativo` (7); sem ler de novo quando falta a coluna;
+  ler de novo pela bandeira do módulo (a corrida da primeira escrita); `ativo`
+  só verdadeiro quando o banco diz (sem a coluna, todo mundo some); a falta
+  da coluna nunca reconhecida; a equipe lida só uma vez por abertura (a
+  renovação da sessão não relê);
+- **e a bancada** sem projetar a `equipe` (a tela esconde quem saiu num banco
+  sem o 047).
+
+**Duas foram rodadas de novo**, a 1 (o controle) e a 2: elas começaram antes
+de um ajuste de forma numa conferência da prova (um `.every` sobre uma lista
+escrita ali, que o vigia `provas-que-reprovam` apontou, virou a conta escrita
+por extenso). O ajuste não mudava o que a conferência mede, e as duas deram o
+mesmo de novo — mas a régua de 13/10 vale também para a prova: *rodada de
+sabotagens não convive com edição*.
 
 ## A mensagem agendada (02/10)
 
