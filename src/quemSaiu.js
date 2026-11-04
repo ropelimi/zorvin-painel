@@ -21,6 +21,26 @@ export function podeSerEscolhida(pessoa) {
   return Boolean(pessoa) && pessoa.ativo !== false;
 }
 
+/** Saiu do escritório? A pessoa de hoje (a da equipe, ou nada). O contrário de
+ *  `podeSerEscolhida`, com a mesma régua: só o `false` escrito diz que saiu.
+ *  Quem a equipe não conhece (`undefined`) NÃO saiu, para esta conta: pode ser
+ *  a conta apagada de quem juntou duas, e a pessoa continua no escritório. */
+export function saiuDoEscritorio(pessoa) {
+  return Boolean(pessoa) && !podeSerEscolhida(pessoa);
+}
+
+/** O FILTRO "QUEM PARTICIPOU DA CONVERSA" (04/11), a recomendação aceita pelo
+ *  Rodrigo: quem saiu CONTINUA nele — é o jeito de achar os clientes que a
+ *  pessoa atendia, e é história, e não escolha —, mas vai para o FIM da
+ *  lista, marcado, para não ficar no alto, entre as pessoas que atendem hoje.
+ *  A ordem dentro de cada grupo é a que veio do banco (quem participou de mais
+ *  conversas primeiro). `saiu(pessoa)` diz quem saiu. */
+export function quemSaiuNoFim(pessoas, saiu) {
+  const ficam = [], sairam = [];
+  for (const p of pessoas || []) (saiu(p) ? sairam : ficam).push(p);
+  return [...ficam, ...sairam];
+}
+
 /** O banco sem o 047 responde 42703 à leitura que pede `ativo` pelo nome. É a
  *  falta da COLUNA, e não uma falha: a lista é lida de novo sem ela. Pelo
  *  código e pelo nome, como `semAColunaDoAnexo`: um 42703 de outra coluna

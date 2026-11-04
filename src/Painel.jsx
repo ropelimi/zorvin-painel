@@ -84,7 +84,7 @@ import { padraoSemAcento, casaNaMensagem, semAColunaDaTranscricao, juntarAchados
 import { tipoDoAnexo, caminhoDoAnexoDaRapida, semAColunaDoAnexo, nomeDoAnexo, anexoDoDeposito,
          CACHE_DO_ANEXO_DA_RAPIDA } from "./rapidasComAnexo.js";
 import { ehLembreteAutomatico, fechouSozinho } from "./acompanhamento.js";
-import { podeSerEscolhida, semAColunaAtivoDaEquipe } from "./quemSaiu.js";
+import { podeSerEscolhida, quemSaiuNoFim, saiuDoEscritorio, semAColunaAtivoDaEquipe } from "./quemSaiu.js";
 import { tamanhoDosTelefones, TELEFONE_MENOR, TELEFONE_MENOR_NO_CELULAR, ESMAECER, VAO_CSS } from "./barraLateral.js";
 import { TELAS_DA_GUIA, telaDaGuia, linhaDaGuia, conversaDaGuia, enderecoDaTela, enderecoDaConversa,
          abrirNumaGuia, fecharAGuia, reivindicarAviso, naVezDasGuias, anunciarConversaVista, outraGuiaVendo,
@@ -15053,6 +15053,14 @@ export default function Painel({ sessao }) {
     return [...porNomeVisivel.values()].sort((a, b) => b.quantas - a.quantas);
   })();
 
+  // QUEM SAIU, NO FILTRO "QUEM PARTICIPOU DA CONVERSA" (04/11): continua nele,
+  // no FIM da lista e marcado — a recomendação aceita pelo Rodrigo. O filtro é
+  // o jeito de achar os clientes que a pessoa atendia, e é história, e não
+  // escolha (`quemSaiu.js`). Pela equipe de AGORA, e não pela lista do banco:
+  // `atendentes_do_telefone` não sabe quem saiu, e quem sai no meio do dia vai
+  // para o fim quando a equipe é relida, sem esperar outra ida ao banco.
+  const atendentesNoFiltro = quemSaiuNoFim(atendentes, (a) => saiuDoEscritorio(equipe.porId[String(a.id)]));
+
   // Os nomes de quem está marcado no filtro de atendentes, na ordem em que
   // aparecem na lista — para o rastro que fica na fita de filtros.
   const nomesQuemFiltra = quemFiltra
@@ -17136,8 +17144,10 @@ export default function Painel({ sessao }) {
                   // nomes. Ela filtra só os NOMES — a regra ("Qualquer um" ou
                   // "Todos juntos") fica no alto, que é onde se decide antes.
                   // E quem já está marcado continua marcado ao pesquisar outro.
+                  // A pesquisa corre sobre a lista JÁ com quem saiu no fim, e
+                  // por isso o achado guarda a mesma ordem.
                   const comPesquisa = atendentes.length >= PESQUISA_A_PARTIR_DE;
-                  const achados = comPesquisa ? atendentes.filter((a) => casaComAPesquisa(pesquisa, a.nome)) : atendentes;
+                  const achados = comPesquisa ? atendentesNoFiltro.filter((a) => casaComAPesquisa(pesquisa, a.nome)) : atendentesNoFiltro;
                   return (
                 <div data-menu-quem style={{ position: "absolute", top: 38, right: 0, zIndex: 50, width: 272, maxHeight: comPesquisa ? 440 : 380, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
                   {/* O TÍTULO ficou necessário quando o botão virou só um
@@ -17189,8 +17199,9 @@ export default function Painel({ sessao }) {
 
                   {achados.map((a) => {
                     const marcado = quemFiltra.includes(a.id);
+                    const saiu = saiuDoEscritorio(equipe.porId[String(a.id)]);
                     return (
-                      <button key={a.id} data-quem={a.nome}
+                      <button key={a.id} data-quem={a.nome} data-quem-saiu={saiu ? "sim" : undefined}
                               onClick={() => setQuemFiltra((atual) =>
                                 marcado ? atual.filter((x) => x !== a.id) : [...atual, a.id])}
                               style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
@@ -17199,6 +17210,15 @@ export default function Painel({ sessao }) {
                           {marcado && <Check size={12} color="#fff" />}
                         </span>
                         <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nome}</span>
+                        {/* QUEM SAIU, com a PALAVRA, e não só uma cor. Fora do
+                            nome, que encolhe com reticências: o nome comprido
+                            perde letras, e a marca não. */}
+                        {saiu && (
+                          <span data-marca-saiu style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 600, color: C.textSecondary,
+                                                         border: `1px solid ${C.divider}`, borderRadius: 9, padding: "0 6px", lineHeight: "15px" }}>
+                            saiu
+                          </span>
+                        )}
                         {/* Quantas conversas cada um tem: responde "quanto vou ver
                             se marcar este?" antes de marcar. Zero também é
                             resposta — é o "não participei de nenhuma aqui". */}
