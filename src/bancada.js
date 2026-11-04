@@ -2211,14 +2211,23 @@ function consulta(tabela) {
     // `.not("enviado_por_id", "is", null)`; devolvendo tudo, a mensagem do
     // próprio cliente contava como resposta da equipe, e o cliente novo —
     // que é quem mais precisa do aviso — deixava de avisar. O painel estava
-    // certo. Só `is` é usado pelo painel; o resto continua passando, e quem
-    // usar outro terá de ensinar a bancada primeiro.
+    // certo. O painel usa `is` e, desde 04/11, `in` (as mensagens de quem
+    // saiu do escritório não contam como "alguém da equipe já escreveu"); o
+    // resto continua passando, e quem usar outro terá de ensinar a bancada
+    // primeiro.
+    //
+    // `in` vem como o PostgREST o recebe, "(a,b)". E o nulo fica de fora, como
+    // no Postgres: `not (col in (...))` com `col` nulo é nulo, e não verdadeiro.
     not(col, op, val) {
       pedidos.push(col);
       if (op === "is") {
         linhas = val === null
           ? linhas.filter((l) => l[col] !== null && l[col] !== undefined)
           : linhas.filter((l) => l[col] !== val);
+      } else if (op === "in") {
+        const fora = new Set(String(val || "").replace(/^\(|\)$/g, "").split(",")
+          .map((x) => x.trim().replace(/^"|"$/g, "")).filter(Boolean));
+        linhas = linhas.filter((l) => l[col] !== null && l[col] !== undefined && !fora.has(String(l[col])));
       }
       return eu;
     },
