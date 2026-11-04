@@ -215,9 +215,20 @@ console.log("\nE NADA do que o topo dizia deixou de ser dito");
   const linhaDoTelefone = page.locator("[data-atendendo-como]");
   ok("a linha do telefone existe", await linhaDoTelefone.count() === 1);
   const doTelefone = (await linhaDoTelefone.innerText()).replace(/\s+/g, " ");
-  ok("e ela ainda diz ATENDENDO COMO", /ATENDENDO COMO/i.test(doTelefone), doTelefone);
+  // O RÓTULO SAIU EM 04/11, a pedido do Rodrigo, e o lugar dele virou o
+  // seletor de responsáveis (prova `o-seletor-de-responsaveis`). A
+  // conferência foi INVERTIDA, e não apagada: é ela que impede o rótulo de
+  // voltar numa limpeza futura. O que ela protegia — a linha dizer qual
+  // telefone está aberto — continua conferido logo abaixo, pelo nome e pelo
+  // número, sem contar o que o seletor escreve.
+  ok("e ela não diz mais ATENDENDO COMO", !/ATENDENDO COMO/i.test(doTelefone), doTelefone);
+  const semOSeletor = await linhaDoTelefone.evaluate((el) => {
+    const copia = el.cloneNode(true);
+    copia.querySelectorAll("[data-seletor-de-responsaveis]").forEach((s) => s.remove());
+    return (copia.textContent || "").replace(/\s+/g, " ").trim();
+  });
   ok("e o nome do telefone continua escrito",
-     doTelefone.replace(/ATENDENDO COMO/i, "").trim().length > 2, doTelefone);
+     semOSeletor.replace(/\(\d{2}\)[\d\s-]*$/, "").trim().length > 2, semOSeletor);
   ok("e o número continua escrito, com DDD",
      /\(\d{2}\)\s*\d/.test(doTelefone), doTelefone);
 

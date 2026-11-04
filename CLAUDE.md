@@ -66,7 +66,7 @@ Manual Deploy é o conserto quando ELA diz isso. Ver "Qual ponte está no ar".
 ## Como o painel funciona
 
 - **Autenticação**: Supabase Auth (e-mail/senha). Usuários criados manualmente em Authentication → Users. "Confirm email" está desligado.
-- **Seletor de advogado** no topo da coluna esquerda ("ATENDENDO COMO") — troca qual advogado está sendo atendido; a lista de conversas recarrega.
+- **Seletor de advogado** na barra lateral (um círculo por telefone) — troca qual advogado está sendo atendido; a lista de conversas recarrega. No alto da lista, ao lado do número, o **seletor de responsáveis** (04/11), que dizia "ATENDENDO COMO" até então.
 - **Lista de conversas**: `conversas` do advogado, ordenadas por `ultima_atividade`, com prévia e contador de não lidas.
 - **Conversa aberta**: `mensagens` em ordem cronológica, bolhas verdes à direita (`origem = 'advogado'`) e brancas à esquerda (`origem = 'contato'`).
 - **Realtime**: canal Supabase escuta INSERT em `mensagens` e UPDATE em `conversas` — mensagens novas aparecem sem recarregar.
@@ -1060,8 +1060,8 @@ uma clínica, uma imobiliária ou uma equipe de vendas, o programa fala de uma
 profissão que não é a deles.
 
 **Onde elas ficam, medido em 15/09:** Configurações → *Importar histórico* e
-Configurações → *Contatos*. **Não na primeira tela** — ela diz "ATENDENDO COMO"
-e lista nomes de telefone. Escrevi a prova supondo o contrário e ela reprovou
+Configurações → *Contatos*. **Não na primeira tela** — ela dizia "ATENDENDO COMO"
+(até 04/11) e lista nomes de telefone. Escrevi a prova supondo o contrário e ela reprovou
 três vezes, falando de um rótulo que não existe lá. Ao mexer nisso, **olhe onde
 a palavra aparece de verdade antes de escrever a conferência.**
 
@@ -1877,7 +1877,7 @@ De onde saíam os 283:
 | O que | Antes | Agora | Por quê |
 |---|---|---|---|
 | Fita de filtros | 78 | 37 | cinco pílulas não cabem em 357px — a ordem saiu |
-| "ATENDENDO COMO" + nome + número | 37 | 15 | rótulo e valor na MESMA linha |
+| "ATENDENDO COMO" + nome + número | 37 | 15 | rótulo e valor na MESMA linha (o rótulo saiu em 04/11, e o lugar virou o seletor de responsáveis) |
 | Traço horizontal dentro do bloco | 1 + folgas | 0 | o bloco já termina num traço |
 | Recheios e alturas | — | −30 | aperto, sem tirar nada |
 
@@ -4002,6 +4002,184 @@ virando tabela vazia; o filtro de telefone ignorado; a seção sem dizer que é
 agora; a atrasada sem vermelho; a minha linha sem o "você"). E três no SQL,
 num Postgres de verdade (a arquivada contando, o recorte de quem não
 administra tirado, a régua dos três dias trocada), as três pegas.
+
+## O seletor de responsáveis, no lugar do "ATENDENDO COMO" (04/11)
+
+Pedido do Rodrigo, com a foto do alto da lista: *"Excluir a mensagem
+"ATENDENDO COMO" e ao lado no número de telefone colocar uma opção de
+selecionar o responsável pela conversa. Ao selecionar o responsável, aparecer
+apenas as conversas do responsável, mostrando em "Novos", "Em atendimento",
+"Finalizados" e "Não lidas" apenas as conversas correspondentes ao responsável
+selecionado. Precisa ter a possibilidade de selecionar mais de um
+responsável."*
+
+**O rótulo saiu, e o seletor tomou o lugar dele**, na linha do telefone, à
+direita do número (`data-seletor-de-responsaveis`). O nome e o número dizem
+sozinhos qual telefone está aberto. Sem escolha ele diz "Responsável"; com uma
+pessoa, o primeiro nome dela ("Você", se for quem está na tela); com várias,
+"Jenifer +2". O `title` diz por extenso.
+
+| | |
+|---|---|
+| o menu | "MOSTRAR AS CONVERSAS DE": Todos os responsáveis, Sem responsável, você, e a equipe pelo nome |
+| marcar | não fecha o menu: escolher várias é o pedido. "Todos os responsáveis" desfaz a escolha e fecha |
+| o que recorta | a lista, o número de cada aba e o da pílula "Não lidas" |
+| a pesquisa | a partir de 7 itens, como nos outros menus de pessoas (23/10) |
+
+**A equipe inteira, e não só quem tem conversa no telefone.** Perguntar quem é
+responsável por alguma conversa dali seria uma ida ao banco a cada telefone
+aberto, e a pessoa sem nenhuma responde "nenhuma" na própria lista. **"Sem
+responsável" vem primeiro**: é a fila de onde todo mundo puxa trabalho.
+
+**As contas moram em `src/responsaveisDaLista.js`**: a escolha como chave, o
+recorte da tela, o do banco, os argumentos da conta das abas, o rótulo e a
+frase. Escrita em cada lugar, a regra divergiria, e divergir aqui é a aba
+dizer um número e a lista mostrar outra coisa.
+
+**"Minhas conversas", na gaveta da fita, continua.** Escolher "Você" no seletor
+mostra as mesmas conversas, e recorta também os números das abas.
+
+### Quem recorta é o banco
+
+- **a lista vai ao banco recortada** (`recortarPelosResponsaveis`): a página,
+  as fixadas e as releituras. Recortar só o que está carregado seria "as da
+  Jenifer entre as 200 mais recentes" com cara de "as da Jenifer" — a
+  armadilha do filtro de grupos. As sem responsável vão por `is.null`, e não
+  por um `in` com o nulo dentro: no Postgres o nulo não casa com `in`;
+- **o número de cada aba e o das não lidas** vêm de `zorvin_contar_situacoes`
+  com os responsáveis (script 046 da ponte). Sem escolha, a chamada é a de
+  antes, só com o telefone. A resposta leva a escolha que a pediu, e a de
+  outra escolha, chegando atrasada, não escreve número nas abas desta;
+- **os filtros que perguntam ao banco** (Não lidas, Favoritas, Arquivadas)
+  recortam lá também; os outros (etiqueta, grupos, minhas, tarefas, quem
+  participou) passam pelo recorte da tela.
+
+**O que entra nas dependências de `carregarConversas` é a chave**
+(`responsaveisDaLista`, um texto), e não a lista, que seria um objeto novo a
+cada desenho — a lição de 25/09. Ela começa vazia, e a abertura do painel não
+ganha releitura nenhuma (a prova `partida` mede).
+
+**Trocar a escolha diz "Carregando as conversas…"**
+(`trocando-de-responsavel`), e não a lista de antes recortada pela tela, que
+se leria como a resposta.
+
+### O que a escolha faz com o resto
+
+- **vale até a página recarregar**, e não é guardada: quem deixou "Jenifer"
+  ontem abriria hoje uma lista curta sem lembrar por quê. **Trocando de
+  telefone, ela fica**: é a pergunta de quem cobra a fila de uma pessoa em
+  todos os telefones;
+- **a busca atravessa a escolha**, como atravessa a aba. Procurar um cliente e
+  não achá-lo porque ele é de outra pessoa seria o "nada encontrado" que faz
+  concluir que ele não está no Zorvin;
+- **abrir de fora** (o histórico, a "Nova conversa", o funil, a tarefa, o
+  link) uma conversa que a escolha esconderia **tira a escolha**
+  (`abrirNaAbaDela`), pela régua do filtro da fita. A que a escolha mostra
+  fica;
+- **a lista vazia diz o que está escolhido**: *"Nenhum cliente novo. … Mostrando
+  só as conversas em que o responsável é Jenifer."* Sem a segunda frase, ela se
+  leria como "o telefone não tem nada";
+- **o tempo real**: a conversa passada a quem está escolhido ENTRA (relendo a
+  página, porque ela não estava na lista), a que saiu da escolha some, e o
+  número da aba é pedido de novo. Sem escolha, trocar o dono não pede conta
+  nenhuma.
+
+**O último dono de cada conversa é anotado em todo aviso**
+(`responsaveisVistosRef`), e não só com uma escolha feita. Achado relendo o
+código antes da prova: a conversa que avisou antes de alguém escolher a
+Jenifer já não conta como nova para esta tela (a régua da situação, de 19/10),
+e, passada à Jenifer depois, não teria "antes" em lugar nenhum. Ela só
+apareceria na lista da Jenifer na releitura seguinte.
+
+### No celular
+
+O botão ganha os 40 pontos de alvo de dedo pela regra geral, e uma margem
+negativa devolve a altura à linha: sem ela, o alto da lista cresceria 20
+pontos por causa de um botão de uma palavra. Quem encolhe é o nome do
+telefone; o número fica inteiro.
+
+### O que fica de fora, e é decisão
+
+- **o número da linha "Arquivadas"** conta o telefone inteiro. Ele vem da
+  mesma função do banco que os selos da barra lateral
+  (`nao_lidas_por_telefone`), e recortá-lo pediria outra atualização no
+  banco. Ele é a PORTA da pasta: lá dentro a lista é recortada, e a lista
+  vazia diz o que está escolhido;
+- **o selo de cada telefone na barra lateral** também conta o telefone
+  inteiro: lá a pergunta é outra (a régua de 19/10).
+
+### O banco sem o 046, e sem o 008
+
+- **sem o 046** (a ponte que ainda não subiu): a lista recorta assim mesmo, e
+  **as abas ficam sem número**. O PostgREST não acha a função com os
+  argumentos novos (PGRST202). Sem número, e não com o do telefone inteiro,
+  que seria um número que se sabe maior. **E a faixa âmbar não acende**: não é
+  falha, é o banco de antes;
+- **sem o 008**, nada aparece.
+
+### A bancada
+
+O `or()` aprendeu `in.(…)` e `is.null` (as sem responsável junto com pessoas),
+a conta das abas aprendeu os responsáveis, as chamadas dela ficam guardadas
+(`__CONTAGENS_PEDIDAS`), `__ATRASO_DA_CONTAGEM` faz a conta demorar, e
+`__SEM_CONTAGEM_POR_RESPONSAVEL` é o banco sem o 046.
+
+**`o-topo-mais-baixo` foi INVERTIDA, e não apagada**: *"e ela ainda diz
+ATENDENDO COMO"* virou *"e ela não diz mais"*, e o nome do telefone passou a
+ser conferido sem o que o seletor escreve.
+
+Prova: `o-seletor-de-responsaveis`, 141 conferências: o alto da lista; uma
+pessoa (a lista, cada aba e "Não lidas"); a conta que demora (a aba não fica
+com o número de todos enquanto a da Jenifer não chega, com
+`__ATRASO_DA_CONTAGEM`); várias e as sem responsável; só você; o telefone de
+1200 conversas; a carteira de 301 conversas com "Não lidas"; a busca; o
+tempo real; abrir de fora; a lista vazia e o "Carregando" da troca; a
+pesquisa, o Esc e o teclado; o F5; o celular a 360 e a 390; o banco sem o
+046 e o banco sem o 008.
+
+**32 sabotagens e 32 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma:
+
+- o painel de antes inteiro (75 reprovações — é o pedido reproduzido), e o
+  "ATENDENDO COMO" de volta ao lado do seletor (9);
+- **o recorte:** a lista sem o recorte do banco (só a tela recortando); sem
+  o recorte da tela; "Não lidas" sem o recorte do banco (o teto de 200 corta
+  o telefone inteiro); as sem responsável por `in`, e não por `is.null`;
+- **a conta das abas:** sem os responsáveis (15); as abas mostrando a conta
+  de outra escolha; sem o 046, as abas com o número do telefone inteiro; sem
+  o 046, a faixa âmbar acendendo;
+- **o tempo real:** o dono anotado só com uma escolha feita; sem reler a
+  página quando a conversa entra na escolha; sem recontar quando o dono muda;
+  recontando sem escolha;
+- **o menu e o rótulo:** marcar fechando o menu; "Todos os responsáveis" sem
+  fechar; você sem vir primeiro; o rótulo com o seu nome, e não "Você"; o
+  rótulo sem o "+N"; o menu sem a pesquisa; o Esc sem o degrau do menu; sem
+  o clique fora;
+- **a escolha:** guardada no navegador; limpa ao trocar de telefone (7); a
+  busca sem atravessar a escolha; abrir de fora sem tirar a escolha, e
+  tirando sempre; a lista vazia sem dizer o que está escolhido; sem o
+  "Carregando" ao trocar;
+- **o celular e o teclado:** sem a margem negativa (a linha do telefone
+  cresce para 40); o seletor sem ser botão;
+- **sem o 008:** o seletor aparecendo.
+
+**A primeira rodada teve duas que vazaram, e as duas eram da prova.** A
+rodada foi parada, a prova consertada, e a rodada refeita inteira:
+
+- **"Não lidas" sem o recorte do banco passava**, porque a cena rolava a
+  lista até o fim, e rolar pede a página seguinte — recortada pelo banco.
+  Hoje ela confere o total do rodapé SEM rolar: com o defeito, ele diz 200;
+- **sem recontar quando o dono muda passava**, porque a conta pedida pela
+  troca anterior (a da Ivone, 2,5 s antes) levava a da Joana de carona. Hoje
+  a cena espera essa conta passar e exige uma conta NOVA, pedida pela troca
+  da Joana.
+
+**E a segunda rodada teve uma que vazou, e ensinou o teclado.** A sabotagem
+trocava o botão por um `span role="button"`, e o rótulo dela dizia que ele
+perderia o alvo de dedo. Não perde: a regra do celular vale para
+`[role="button"]` também, e ele ganha os 40 pontos assim mesmo. O que um
+`span` perde é o TECLADO — não recebe o foco, e o Enter não o abre. A prova
+ganhou essa conferência, e a mesma sabotagem, rodada de novo, é pega.
 
 ## A mensagem agendada (02/10)
 

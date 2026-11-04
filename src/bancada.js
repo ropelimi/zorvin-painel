@@ -2261,6 +2261,18 @@ function consulta(tabela) {
         const valor = resto.join(".");
         if (op === "ilike") return comoIlike(valor).test(String(valorDaColuna(l, col) ?? ""));
         if (op === "eq") return String(valorDaColuna(l, col) ?? "") === valor;
+        // `in.(a,b)` e `is.null` (04/11): os responsáveis escolhidos no alto
+        // da lista, com as conversas sem responsável junto. No Postgres o nulo
+        // não casa com nenhum `in`, e é por isso que ele vai pelo `is`.
+        if (op === "in") {
+          const v = valorDaColuna(l, col);
+          if (v === null || v === undefined) return false;
+          return valor.replace(/^\(|\)$/g, "").split(",").map((x) => x.replace(/^"|"$/g, "")).includes(String(v));
+        }
+        if (op === "is") {
+          const v = valorDaColuna(l, col);
+          return valor === "null" ? v === null || v === undefined : String(v) === valor;
+        }
         return false;
       };
       const colunasCitadas = (p) => (p.startsWith("and(") || p.startsWith("or(")
@@ -3417,11 +3429,29 @@ export const supabase = {
         await espera(40);
         return { data: globalThis.__CONTAGEM_DAS_ABAS_FIXA, error: null };
       }
-      await espera(40);
+      // OS RESPONSÁVEIS ESCOLHIDOS NO ALTO (script 046, 04/11). O banco sem o
+      // 046 tem só a função de um argumento, e o PostgREST recusa a chamada
+      // que manda os outros dois: não acha a função com esses nomes.
+      const pelosResponsaveis = args && (Object.prototype.hasOwnProperty.call(args, "p_responsaveis")
+        || Object.prototype.hasOwnProperty.call(args, "p_sem_responsavel"));
+      if (pelosResponsaveis && globalThis.__SEM_CONTAGEM_POR_RESPONSAVEL) {
+        return { data: null, error: { code: "PGRST202", message: "Could not find the function public.zorvin_contar_situacoes(p_responsaveis, p_sem_responsavel, p_telefone) in the schema cache" } };
+      }
+      const donos = (args && args.p_responsaveis) || [];
+      const semDono = Boolean(args && args.p_sem_responsavel);
+      const recorta = donos.length > 0 || semDono;
+      // `__ATRASO_DA_CONTAGEM`: a conta que demora, como num banco ocupado — é
+      // nesse intervalo que a aba não pode ficar com o número de outra escolha.
+      await espera(40 + (Number(globalThis.__ATRASO_DA_CONTAGEM) || 0));
       globalThis.__CONTAGENS_DAS_ABAS = (globalThis.__CONTAGENS_DAS_ABAS || 0) + 1;
+      globalThis.__CONTAGENS_PEDIDAS = [...(globalThis.__CONTAGENS_PEDIDAS || []), { ...(args || {}) }];
       const r = { aguardando: 0, aberto: 0, finalizado: 0, nao_lidas: { aguardando: 0, aberto: 0, finalizado: 0 } };
       for (const c of TABELAS.conversas || []) {
         if (String(c.advogado_id) !== String(args && args.p_telefone) || c.arquivada) continue;
+        if (recorta) {
+          const dono = c.responsavel_id === null || c.responsavel_id === undefined ? "" : String(c.responsavel_id);
+          if (!(dono ? donos.map(String).includes(dono) : semDono)) continue;
+        }
         if (!(TABELAS.mensagens || []).some((m) => String(m.conversa_id) === String(c.id))) continue;
         // A LINHA SEM A CHAVE conta como o padrão da coluna — ver `valorDaColuna`.
         const sit = c.situacao === undefined ? "aberto" : c.situacao;

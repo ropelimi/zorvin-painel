@@ -7,8 +7,9 @@
 // deles.
 //
 // ONDE ELAS FICAM, medido: em Configurações → Importar histórico e
-// Configurações → Contatos. NÃO na primeira tela — ela diz "ATENDENDO COMO" e
-// lista nomes de telefone. Escrevi esta prova supondo o contrário e ela
+// Configurações → Contatos. NÃO na primeira tela — ela dizia "ATENDENDO COMO"
+// (até 04/11, quando o lugar virou o seletor de responsáveis) e lista nomes de
+// telefone. Escrevi esta prova supondo o contrário e ela
 // reprovou três vezes, falando de um rótulo que não existe lá.
 //
 // E O QUE NÃO SE TROCA: `origem === "advogado"` aparece vinte vezes no
@@ -59,8 +60,8 @@ async function abrirPainel(palavras, { admin = true, recusarEscrita = false } = 
 /** Abre Configurações → Importar histórico.
  *
  *  É ALI QUE A PALAVRA MORA, e não na barra lateral. Eu tinha escrito esta
- *  prova procurando "ADVOGADO" na tela principal — ela diz "ATENDENDO COMO" e
- *  lista nomes de telefone, então as três conferências reprovaram falando de um
+ *  prova procurando "ADVOGADO" na tela principal — ela dizia "ATENDENDO COMO"
+ *  (até 04/11) e lista nomes de telefone, então as três conferências reprovaram falando de um
  *  rótulo que não existe lá. Foi a prova que me corrigiu, e de quebra mostrou
  *  que eu tinha deixado uma frase para trás ("No celular do advogado: …"),
  *  escondida do meu primeiro extrator por um `<b>` no meio dela. */
