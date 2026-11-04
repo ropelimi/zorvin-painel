@@ -41,10 +41,6 @@ export default function Faxina({
   C, estreito, meuId, advogados = [], nomeDaPessoa, assuntos = [], erroDosAssuntos = "",
   colunasContato = "nome, numero, foto_url", temArquivada = true, rotularMidia,
   aoAbrirConversa, aoFinalizar, aoTerminarLote, aoAvisar, aoFechar,
-  // A SUGESTÃO DO ASSUNTO PELA IA (01/11): `(conversa) => promessa`, ou nada.
-  // Só na finalização de UMA conversa: no lote, uma sugestão valeria para
-  // cinquenta clientes que a IA não leu.
-  sugerirAssunto = null,
 }) {
   const [grupo, setGrupo] = useState("cliente");
   const [telefone, setTelefone] = useState("");
@@ -249,7 +245,7 @@ export default function Faxina({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dialogo, progresso, ocupado]);
 
-  async function confirmar(ids, descricao, sugestaoIa = null) {
+  async function confirmar(ids, descricao) {
     const alvo = dialogo ? dialogo.conversas : [];
     if (!alvo.length || !ids.length) return;
     // UMA SÓ: a janela fica aberta até o banco responder, e o erro aparece
@@ -257,7 +253,7 @@ export default function Faxina({
     if (alvo.length === 1) {
       const c = alvo[0];
       setOcupado(true); setErroDoDialogo("");
-      const r = await aoFinalizar(c, ids, descricao, sugestaoIa);
+      const r = await aoFinalizar(c, ids, descricao);
       if (!montadoRef.current) return;
       setOcupado(false);
       if (r && r.ok) {
@@ -571,8 +567,6 @@ export default function Faxina({
                   protocolo={dialogo.conversas.length === 1 ? dialogo.conversas[0].protocolo : null}
                   assuntos={assuntos} erroDosAssuntos={erroDosAssuntos}
                   ocupado={ocupado} erro={erroDoDialogo}
-                  sugerir={dialogo.conversas.length === 1 && sugerirAssunto
-                    ? () => sugerirAssunto(dialogo.conversas[0]) : null}
                   aoConfirmar={confirmar} aoFechar={fecharDialogo} />
       )}
     </div>

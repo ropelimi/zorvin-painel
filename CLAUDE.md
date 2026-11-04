@@ -6024,7 +6024,40 @@ e os tiques num `<span>`, e por isso não é "folha". A conferência do que est�
 pintado procurava a última mensagem entre os elementos sem filhos, e não a
 achava. Hoje ela procura o elemento que tem o texto como filho direto.
 
-## O assunto do Finalizar — a IA sugere (01/11)
+## O assunto do Finalizar — a IA sugere (01/11) — SAIU EM 04/11
+
+**Saiu em 04/11, a pedido do Rodrigo:** *"A sugestão da IA no Finalizar, pode
+remover. Não gostamos do uso dela, está mais atrapalhando do que ajudando."*
+
+- **a janela do Finalizar voltou a ser a de antes de 01/11**: abre com nada
+  marcado, sem a caixa da sugestão, sem o selo "IA" nos itens e sem o botão
+  *Marcar a sugestão*. Vale para a conversa, para a faxina e para o "Já
+  tratei" de antes do 028;
+- **saíram** `assuntoAparece` e `pedirSugestaoDeAssunto` (`copiloto.js`), o
+  `assunto` do estado do copiloto, a prop `sugerir` de `JaTratei.jsx`, a
+  `sugerirAssunto` de `Faxina.jsx` e `gravarTratamento` (o clique voltou a
+  ser o `insert` de antes, sem mencionar `sugestao_ia`);
+- **a ponte saiu primeiro** (a rota e o `assunto: true` do estado, na PR
+  dela): o painel publicado antes desta limpeza já deixava de pedir, porque
+  `assuntoAparece` lia a falta da chave como "esta ponte não sugere";
+- **fica no banco o que já foi gravado**: a coluna `sugestao_ia` (script 042)
+  e os cliques de 01 a 04/11 que a levam. Nada foi apagado. A conta do acerto
+  escrita abaixo continua servindo para ler esses cliques;
+- **a prova foi INVERTIDA, e não apagada**: `a-ia-sugere-o-assunto` virou
+  `a-ia-nao-sugere-o-assunto`, e roda contra o pior caso — a ponte de ANTES
+  da remoção, que ainda diz `assunto: true` e ainda responde a rota com uma
+  sugestão. Ela confere, na conversa, na faxina, sem o 028 e no celular, que
+  a janela não pede nada, não marca nada e não mostra nada da IA, e que o
+  clique não leva a coluna da sugestão. **5 sabotagens e 5 pegas**: o painel
+  de antes inteiro (20 reprovações); a sugestão de volta só na conversa (17 —
+  a cena da faxina passa, e é ela que mostra que cada cena vê por si); a
+  janela marcando o primeiro assunto sozinha (13); e o clique levando
+  `sugestao_ia: null`, na conversa e na faxina (uma cada) — num banco sem o
+  042, esse `null` daria 42703 e o Finalizar morreria. **Com a ponte de
+  agora, o painel de antes também não pede**: é a falta do `assunto` que
+  desligou a sugestão no ar antes desta limpeza.
+
+O que está escrito abaixo é a história de como ela funcionava.
 
 Pedido do Rodrigo, da lista de recomendações de 31/10: *"Siga para a
 recomendação 5"* — *"A IA sugere o assunto no Finalizar. A lista já abre com o
