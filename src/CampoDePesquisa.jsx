@@ -44,6 +44,7 @@ export default function CampoDePesquisa({ C, valor, aoMudar, rotulo = "Pesquisar
                   borderRadius: 8, padding: "0 4px 0 9px" }}>
       <Search size={15} color={C.textSecondary} style={{ flexShrink: 0 }} aria-hidden="true" />
       <input ref={ref} type="text" value={valor} placeholder={rotulo} aria-label={rotulo}
+             data-nao-segura-a-atualizacao=""
              autoComplete="off" spellCheck={false}
              onChange={(e) => aoMudar(e.target.value)}
              onKeyDown={(e) => {

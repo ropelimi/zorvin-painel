@@ -53,8 +53,11 @@ Build: `npm install && npm run build` · Publish directory: `dist`
 `main` recebe o merge — não há passo manual, e dizer ao Rodrigo para ir em
 "Manual Deploy → Deploy latest commit" é mandá-lo fazer o que já foi feito.
 Dito por ele em 25/09, depois de quatro entregas seguidas terminarem com esse
-recado. Mesclou, está no ar; o que resta a pedir, quando faz diferença, é o
-**Ctrl+Shift+R** — o navegador pode estar com a versão velha em cache.
+recado. Mesclou, está no ar. ~~O que resta a pedir, quando faz diferença, é o
+**Ctrl+Shift+R** — o navegador pode estar com a versão velha em cache.~~
+**Desde 05/11 nem isso:** a aba aberta se atualiza sozinha em poucos minutos,
+e a versão (v1.N, com N o número da PR) aparece no pé do menu ⋮. É ela que vai
+no recado da entrega. Ver "O Zorvin se atualiza sozinho, e diz a versão".
 
 **Com uma exceção medida em 14/10:** naquele dia a Render não publicou três
 PRs da PONTE, e ninguém soube até a manhã seguinte. A regra continua — não
@@ -62,6 +65,126 @@ mande o Rodrigo fazer o Manual Deploy por rotina —, mas agora há onde
 conferir: a aba **Atualizações do banco** diz qual versão da ponte está no ar,
 e a faixa vermelha avisa quem administra quando a Render não publicou. O
 Manual Deploy é o conserto quando ELA diz isso. Ver "Qual ponte está no ar".
+
+## O Zorvin se atualiza sozinho, e diz a versão (05/11)
+
+Pedido do Rodrigo: *"Preciso de alguma forma o Zorvin atualizar sozinho para
+todos os usuários, porque é ruim ficar pedindo toda hora para todos os
+usuários ficarem apertando o Ctrl+Shift+R"*. E: *"veja se dá para em algum
+lugar colocar a informação de qual é a versão atual do Zorvin, algo como
+'v1.2'"*.
+
+**Por que precisava do Ctrl+Shift+R.** A Render publica sozinha, mas a aba
+aberta continua rodando o código que baixou quando abriu, e o painel passa o
+dia aberto. E a aba velha quebra aos poucos: os pedaços de código buscados
+depois (o pdf.js da prévia) mudam de nome a cada publicação, e o de nome velho
+deixa de existir no site.
+
+| | |
+|---|---|
+| a versão | no pé do menu ⋮ (`data-versao-do-zorvin`) e na tela de entrada: "Zorvin v1.313" |
+| o número | o da PR que entrou por último: o GitHub termina a mensagem do commit da mesclagem em "(#313)" |
+| a conferência | a aba pergunta pelo `versao.json` de 5 em 5 minutos, e quando volta à frente |
+| a recarga | sozinha, com a tela parada há 2 minutos (ou a aba escondida) e nada que se perca |
+| a volta | a conversa aberta reabre, pelo endereço da guia de uma conversa (`?conversa=…&linha=…`); a guia de uma tela recarrega nela |
+| enquanto não é seguro | a faixa verde-escura `data-versao-nova`, com "Atualizar agora" |
+| depois | a faixa `data-zorvin-atualizado` ("O Zorvin foi atualizado para a v1.313"), que some 45 segundos depois do primeiro gesto |
+
+**A faixa não pede nada de ninguém**: a versão nova entra sozinha na primeira
+pausa. Ela diz que há uma, e oferece entrar agora para quem não quer esperar.
+
+**A montagem escreve a versão em dois lugares** (`vite.config.js`), a partir da
+mesma conta: dentro do código (`__ZORVIN_VERSAO__`) e no arquivo `versao.json`.
+
+- **o identificador é o commit publicado**: `RENDER_GIT_COMMIT` na Render, o
+  do `git` fora dela, e sem os dois, a hora da montagem;
+- **o rótulo sai da mensagem do commit** (`git log -1`). Sem o número da PR, vai
+  o começo do commit ("v1 · 0123456");
+- **a hora da montagem fica só no arquivo**: dentro do código, ela mudaria o
+  pacote a cada montagem do mesmo commit;
+- **no servidor de desenvolvimento**, o mesmo arquivo é servido por uma rota, e
+  nunca guardado.
+
+**O que segura a recarga** (`motivosParaEsperar`, em `src/atualizacao.js`).
+Cada tela diz o que é dela (`useMotivoParaEsperar`):
+
+- **o Painel:** o texto na caixa de escrever (ou a edição de uma mensagem), o
+  rascunho de outra conversa, o áudio gravando ou gravado, os anexos escolhidos
+  e a mensagem que ainda está saindo;
+- **a ficha:** as alterações por salvar, pela mesma conta do botão de salvar;
+- **a faxina:** o lote finalizando conversas;
+- **e, sem cada janela precisar dizer, o texto que a pessoa DIGITOU** num campo
+  (pelo `beforeinput`), enquanto ele diz outra coisa que não o que dizia antes
+  da primeira tecla. O campo preenchido pelo próprio painel não segura nada
+  sozinho. A ficha fica de fora desta conta (ela diz por si), e os campos de
+  procurar também (`data-nao-segura-a-atualizacao`): a busca esquecida na caixa
+  seguraria a atualização o dia inteiro;
+- **e um áudio tocando.**
+
+**"Atualizar agora" pergunta antes, dizendo o que se perde** ("Atualizar agora
+apaga o texto na caixa de escrever…"). Com a ficha por salvar, o navegador não
+pergunta de novo: o `beforeunload` da ficha lê `recargaPedida`.
+
+**A recarga confere antes se o site responde**: um `fetch` do endereço de volta,
+com `cache: "reload"`, que também renova o que o navegador guardou daquele
+endereço. Sem rede, recarregar trocaria o Zorvin pela página de erro do
+navegador.
+
+**A recarga que não trouxe a versão nova não vira um círculo.** Antes de
+recarregar, a aba anota para qual versão foi (`sessionStorage`, só nesta guia).
+
+- **Voltando com o código velho** (o site ainda serviu o arquivo antigo), ela
+  não recarrega sozinha de novo para a mesma versão por uma hora.
+- **A faixa âmbar `data-versao-nao-carregou`** pede o Ctrl+Shift+R, que aí é o
+  que resta. O "Tentar de novo" dela pede o endereço com um carimbo (`v=`).
+- **Sem conseguir anotar, não há recarga sozinha.**
+
+**O que se perde numa recarga sozinha, e é decisão:** a escolha do seletor de
+responsáveis, os filtros da fita e o ponto da rolagem. Nada disso é trabalho,
+e tudo volta num clique.
+
+**Fica de fora da prova, e é decisão:** o áudio gravando, a mensagem saindo e a
+faxina em lote. Os três seguram a recarga por segundos, e montar a cena de cada
+um custaria mais do que o defeito que ela pegaria.
+
+**Para quem conta as entregas ao Rodrigo:** não peça mais o Ctrl+Shift+R. A
+versão nova entra sozinha em poucos minutos, e o número dela aparece no pé do
+menu ⋮: é ele que vai no recado ("entrou no ar a v1.313").
+
+Prova: `o-zorvin-se-atualiza-sozinho`, 82 conferências em 15 cenas. Ela finge
+a publicação: o `versao.json` que a aba pergunta é trocado pela prova, e a
+versão que a aba "roda" é dita por `__VERSAO_EM_USO` (o servidor da bancada
+não remonta o código). A cena 14 monta o pacote de verdade, com o
+`RENDER_GIT_COMMIT` que a Render daria, e confere o arquivo e o código.
+
+**23 sabotagens e 23 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma:
+
+- o painel de antes inteiro (39 reprovações — é o pedido reproduzido);
+- **a conferência e a pausa:** sem perguntar pela versão (27); recarregando
+  sem esperar a tela parar; o mouse andando sem contar como gesto; a aba
+  escondida sem contar como parada;
+- **o que segura:** o rascunho de outra conversa; o anexo escolhido; a ficha
+  por salvar; o texto digitado numa janela; a busca escrita segurando; o texto
+  na caixa de escrever (pego só pela frase da pergunta, ver abaixo);
+- **a recarga:** sem a marca (a recarga em círculo, 6); sem voltar para a
+  conversa aberta; "Atualizar agora" sem perguntar (7); a ficha perguntando
+  de novo; a segunda tentativa sem o carimbo; recarregando sem conferir se o
+  site responde (a aba vira a página de erro do navegador);
+- **o aviso e a versão:** o "atualizado" sumindo antes de alguém voltar; sem a
+  versão no menu; sem a versão na entrada; a montagem sem o `versao.json` (6);
+  o código e o arquivo discordando (a aba recarregaria a cada pergunta); a
+  hora da montagem dentro do código.
+
+**O texto na caixa de escrever é pego por uma conferência só, e com razão:**
+sem o motivo do Painel, a conta do texto digitado segura a recarga do mesmo
+jeito (a caixa é um campo onde se digitou), e o que muda é a frase da
+pergunta, que passa a dizer "um texto digitado na tela". As duas guardas se
+cobrem; é a régua de 25/09.
+
+**A rodada foi interrompida no meio** (a máquina reiniciou depois da quinta
+sabotagem) e retomada da sexta, sem nada ter mudado no código entre as duas
+metades.
 
 ## Como o painel funciona
 
@@ -8540,7 +8663,8 @@ com `ps` que nada ficou rodando.**
   quer dizer: as provas verdes no último commit da PR, sem conflito com a
   `main`, e nenhum comentário ou revisão esperando resposta. Com PR nos dois
   repositórios, **a da ponte entra primeiro**. Mesclou, conta-se a ele o que
-  entrou no ar (e o Ctrl+Shift+R, quando faz diferença).
+  entrou no ar, e a versão que o leva (v1.N, no pé do menu ⋮). ~~E o
+  Ctrl+Shift+R, quando faz diferença~~: desde 05/11 a aba se atualiza sozinha.
 - **O que continua sendo dele é a decisão sobre o conteúdo**, e não o merge:
   o som que ele precisa ouvir antes (ver "A galinha — e a quinta tentativa de
   sintetizar bicho (01/10)"), e o script que reescreve dado de produção sem

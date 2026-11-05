@@ -77,6 +77,8 @@ import { SEM_RESPONSAVEL, chaveDosResponsaveis, daChave, passaNosResponsaveis, r
          argumentosDaContagem, rotuloDosResponsaveis, fraseDosResponsaveis } from "./responsaveisDaLista.js";
 import { pareceAcessoVencido, pedirConferenciaDaSessao, marcarSaidaPedida, foiSaidaPedida } from "./vigiaDaSessao.js";
 import { rascunhosDe, guardarRascunho } from "./rascunhos.js";
+import { useAtualizacao, useMotivoParaEsperar, registrarEnderecoDeVolta, atualizarAgora, rotuloDaVersao,
+         esquecerQueAtualizou } from "./atualizacao.js";
 import CampoDePesquisa, { ComPesquisa } from "./CampoDePesquisa.jsx";
 import { PESQUISA_A_PARTIR_DE, casaComAPesquisa, nadaComAPesquisa, chaveDaPesquisa } from "./pesquisaNosMenus.js";
 import { padraoSemAcento, casaNaMensagem, semAColunaDaTranscricao, juntarAchados,
@@ -4518,6 +4520,60 @@ export default function Painel({ sessao }) {
   }
   const advogado = advogados.find((a) => a.id === advogadoId) || null;
   const conversa = conversas.find((c) => c.id === conversaId) || null;
+
+  // ------------------------------------------------------------
+  //  A ATUALIZAÇÃO SOZINHA (05/11) — o que esta tela tem que se perderia numa
+  //  recarga, e para onde voltar depois dela. Ver `atualizacao.js`.
+  //
+  //  - a caixa de escrever, o rascunho de outra conversa e a edição de uma
+  //    mensagem: o que a atendente escreveu para um cliente;
+  //  - o áudio gravando ou gravado, e os anexos escolhidos;
+  //  - a bolha que ainda está saindo: o anexo pode estar subindo, e a mensagem
+  //    só existe nesta aba até entrar na fila.
+  //
+  //  A FUNÇÃO É CHAMADA NA HORA DE DECIDIR, e não no desenho: o rascunho de
+  //  outra conversa mora num objeto que não pede desenho nenhum.
+  // ------------------------------------------------------------
+  useMotivoParaEsperar(() => {
+    const lista = [];
+    if (rascunho.trim()) lista.push(editando ? "a edição de uma mensagem" : "o texto na caixa de escrever");
+    const guardados = Object.entries(rascunhosRef.current || {})
+      .filter(([id, r]) => String(id) !== String(conversaId) && r && String(r.texto || "").trim()).length;
+    if (guardados) lista.push(guardados === 1 ? "o rascunho de outra conversa" : `os rascunhos de ${guardados} conversas`);
+    if (gravando) lista.push("o áudio que está sendo gravado");
+    if (audioPronto) lista.push("o áudio gravado e não enviado");
+    if (anexosPendentes.length) lista.push(anexosPendentes.length === 1 ? "o anexo escolhido e não enviado" : "os anexos escolhidos e não enviados");
+    if (mensagens.some((m) => m && m._status === "enviando" && String(m.id).startsWith("temp-"))) {
+      lista.push("a mensagem que ainda está saindo");
+    }
+    return lista;
+  });
+  // A CONVERSA ABERTA VOLTA ABERTA, pelo endereço da guia de uma conversa —
+  // o caminho que já leva a lista à aba dela e reabre a conversa. A guia de
+  // uma tela recarrega no endereço dela, que já diz qual tela é.
+  const voltaRef = useRef(null);
+  voltaRef.current = !TELA_DA_GUIA && conversaId
+    ? { conversaId, advogadoId: (conversa && conversa.advogado_id) || advogadoId }
+    : null;
+  useEffect(() => registrarEnderecoDeVolta(() => (voltaRef.current ? enderecoDaConversa(voltaRef.current) : null)), []);
+  const atualizacao = useAtualizacao();
+  // O "ATUALIZADO" SOME 45 SEGUNDOS DEPOIS DO PRIMEIRO GESTO, e não da recarga:
+  // a aba recarregou com a tela parada, e é quando a pessoa volta que ela
+  // precisa ler por que a tela piscou.
+  useEffect(() => {
+    if (!atualizacao.atualizadoPara) return undefined;
+    let relogio = null;
+    const gestos = ["pointerdown", "pointermove", "keydown", "touchstart"];
+    const aoPrimeiroGesto = () => {
+      gestos.forEach((t) => window.removeEventListener(t, aoPrimeiroGesto, true));
+      relogio = setTimeout(esquecerQueAtualizou, Number(globalThis.__AVISO_DE_ATUALIZADO_MS) || 45000);
+    };
+    gestos.forEach((t) => window.addEventListener(t, aoPrimeiroGesto, true));
+    return () => {
+      gestos.forEach((t) => window.removeEventListener(t, aoPrimeiroGesto, true));
+      clearTimeout(relogio);
+    };
+  }, [atualizacao.atualizadoPara]);
   // O NOME VEM DO CADASTRO DO VANTORO. A ordem abaixo é essa por um motivo:
   // `usuarios.nome` é reescrito a cada login com o que está no Vantoro, então
   // é a cópia mais nova que existe aqui. O `user_metadata` vem logo atrás
@@ -16749,6 +16805,77 @@ export default function Painel({ sessao }) {
           </div>
         );
       })()}
+
+      {/* A VERSÃO NOVA DO ZORVIN (05/11) — ver `atualizacao.js`.
+          A faixa NÃO PEDE NADA de ninguém: a versão nova entra sozinha na
+          primeira pausa, quando nada na tela se perderia. Ela diz que há uma,
+          e oferece entrar agora para quem não quer esperar. Some com a
+          recarga. Verde-escura, e não âmbar nem vermelha: não é falha. */}
+      {(atualizacao.recarregando || (atualizacao.pendente && !atualizacao.naoPegou)) && (
+        <div data-versao-nova={atualizacao.recarregando ? "atualizando" : "esperando"}
+             style={{ background: "#005c4b", color: "#fff", padding: "8px 14px", fontSize: 13.5,
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+                      flexWrap: "wrap", boxShadow: "0 2px 8px rgba(0,0,0,.25)" }}>
+          {atualizacao.recarregando ? (
+            <span>Atualizando o Zorvin…</span>
+          ) : (<>
+            <span>
+              Há uma versão nova do Zorvin{atualizacao.pendente.rotulo ? ` (${atualizacao.pendente.rotulo})` : ""}.
+              {" "}Ela entra sozinha quando a tela ficar parada por uns minutos.
+            </span>
+            <button data-atualizar-agora
+                    onClick={async () => {
+                      const r = await atualizarAgora();
+                      if (!r.ok && r.erro) mostrarAviso(r.erro, 6000);
+                    }}
+                    style={{ border: "1px solid rgba(255,255,255,.6)", background: "transparent",
+                             color: "#fff", borderRadius: 8, padding: "5px 14px",
+                             fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
+              Atualizar agora
+            </button>
+          </>)}
+        </div>
+      )}
+      {/* A RECARGA QUE NÃO TROUXE A VERSÃO NOVA: o site ainda serviu o código
+          antigo. A aba não recarrega de novo sozinha (recarregaria em círculo),
+          e aqui o Ctrl+Shift+R é o que resta. Âmbar: pede um gesto. */}
+      {atualizacao.naoPegou && !atualizacao.recarregando && (
+        <div data-versao-nao-carregou
+             style={{ background: "#8a5a00", color: "#fff", padding: "8px 14px", fontSize: 13.5,
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+                      flexWrap: "wrap", boxShadow: "0 2px 8px rgba(0,0,0,.25)" }}>
+          <span>
+            A versão nova do Zorvin{atualizacao.naoPegou.rotulo ? ` (${atualizacao.naoPegou.rotulo})` : ""} ainda
+            {" "}não carregou nesta aba. Se continuar assim, aperte Ctrl+Shift+R.
+          </span>
+          <button data-atualizar-agora
+                  onClick={async () => {
+                    const r = await atualizarAgora();
+                    if (!r.ok && r.erro) mostrarAviso(r.erro, 6000);
+                  }}
+                  style={{ border: "1px solid rgba(255,255,255,.6)", background: "transparent",
+                           color: "#fff", borderRadius: 8, padding: "5px 14px",
+                           fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
+            Tentar de novo
+          </button>
+        </div>
+      )}
+      {/* E A RECARGA QUE DEU CERTO DIZ POR QUE A TELA PISCOU. */}
+      {atualizacao.atualizadoPara && !atualizacao.pendente && (
+        <div data-zorvin-atualizado
+             style={{ background: "#005c4b", color: "#fff", padding: "8px 14px", fontSize: 13.5,
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+                      flexWrap: "wrap", boxShadow: "0 2px 8px rgba(0,0,0,.25)" }}>
+          <CheckCheck size={15} style={{ flexShrink: 0 }} />
+          <span>O Zorvin foi atualizado para a {atualizacao.atualizadoPara}.</span>
+          <button data-fechar-atualizado onClick={esquecerQueAtualizou}
+                  aria-label="Fechar o aviso de atualização" title="Fechar"
+                  style={{ border: "none", background: "transparent", color: "#fff", cursor: "pointer",
+                           display: "flex", padding: 2 }}>
+            <X size={16} />
+          </button>
+        </div>
+      )}
       </div>
       {/* A FILA DE COLUNAS — barra lateral, lista, conversa e ficha.
           `minHeight: 0` não é enfeite: sem ele um filho que rola (a lista de
@@ -17403,6 +17530,19 @@ export default function Painel({ sessao }) {
                   )}
                   <div style={{ height: 1, background: C.divider }} />
                   <button onClick={() => { setMenuTopoAberto(false); sair(); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: "#e5573f", fontSize: 14, fontWeight: 600, textAlign: "left" }}><LogOut size={17} /> Desconectar</button>
+                  {/* A VERSÃO DO ZORVIN (05/11), pedido do Rodrigo: "em algum
+                      lugar colocar a informação de qual é a versão atual". No
+                      pé do menu, miúda: é para conferir quando alguém pergunta
+                      "a sua já atualizou?", e não para ler todo dia. O número
+                      depois do ponto é o da última entrega (PR) que entrou no
+                      ar — ver `atualizacao.js`. */}
+                  {rotuloDaVersao() && (
+                    <div data-versao-do-zorvin
+                         style={{ padding: "7px 14px 9px", borderTop: `1px solid ${C.divider}`, fontSize: 11.5,
+                                  color: C.textSecondary, fontVariantNumeric: "tabular-nums" }}>
+                      Zorvin {rotuloDaVersao()}
+                    </div>
+                  )}
                 </div>
               )}
             </span>
@@ -17548,6 +17688,10 @@ export default function Painel({ sessao }) {
                      ? (estreito ? "Buscar por nome, CPF…" : "Buscar por nome, mensagem, CPF ou processo")
                      : (estreito ? "Buscar por nome, número…" : "Buscar por nome, mensagem ou número")}
                    aria-label="Buscar conversas"
+                   // O QUE SE ESCREVEU PARA PROCURAR NÃO SEGURA A ATUALIZAÇÃO
+                   // SOZINHA (05/11): não é trabalho que se perde, e uma busca
+                   // esquecida na caixa a seguraria o dia inteiro.
+                   data-nao-segura-a-atualizacao=""
                    style={{ border: "none", outline: "none", background: "transparent", fontSize: 14, flex: 1, minWidth: 0, color: C.textPrimary }} />
           </div>
         </div>

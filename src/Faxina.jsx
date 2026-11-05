@@ -10,6 +10,7 @@ import { NOME_DA_SITUACAO } from "./abasDaSituacao.js";
 import JaTratei from "./JaTratei.jsx";
 import { PAGINA_DA_FAXINA, DIAS_DA_FAXINA, DIAS_PADRAO_DA_FAXINA, PAUSA_ENTRE_FINALIZACOES_MS, GRUPOS_DA_FAXINA,
          corteDaFaxina, diasParada, ehGrupoDaFaxina, quantasConversas, resumoDoLote } from "./faxina.js";
+import { useMotivoParaEsperar } from "./atualizacao.js";
 
 // ============================================================
 //  A TELA "FAXINA DA FILA" (01/11) — ver `faxina.js` e o CLAUDE.md
@@ -55,6 +56,9 @@ export default function Faxina({
   const [ocupado, setOcupado] = useState(false);
   const [erroDoDialogo, setErroDoDialogo] = useState("");
   const [progresso, setProgresso] = useState(null); // { feitas, total }
+  // A ATUALIZAÇÃO SOZINHA ESPERA O LOTE (05/11): a recarga no meio dele
+  // pararia a faxina sem ninguém ter apertado "Parar". Ver `atualizacao.js`.
+  useMotivoParaEsperar(() => (progresso ? "a faxina que está finalizando conversas" : null));
   // QUANTAS LEITURAS TERMINARAM (a página e os números juntos). Vai escrito na
   // lista (`data-faxina-leituras`): entre o clique num filtro e a resposta, a
   // tela ainda mostra a lista de antes, e quem confere precisa saber que a
