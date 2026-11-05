@@ -85,6 +85,7 @@ import { tipoDoAnexo, caminhoDoAnexoDaRapida, semAColunaDoAnexo, nomeDoAnexo, an
          CACHE_DO_ANEXO_DA_RAPIDA } from "./rapidasComAnexo.js";
 import { ehLembreteAutomatico, fechouSozinho } from "./acompanhamento.js";
 import { podeSerEscolhida, quemSaiuNoFim, saiuDoEscritorio, semAColunaAtivoDaEquipe } from "./quemSaiu.js";
+import { ehDeOutroTelefone, aBuscaAlcanca, oTelefoneAbertoPrimeiro } from "./buscaEmTodosOsTelefones.js";
 import { tamanhoDosTelefones, TELEFONE_MENOR, TELEFONE_MENOR_NO_CELULAR, ESMAECER, VAO_CSS } from "./barraLateral.js";
 import { TELAS_DA_GUIA, telaDaGuia, linhaDaGuia, conversaDaGuia, enderecoDaTela, enderecoDaConversa,
          abrirNumaGuia, fecharAGuia, reivindicarAviso, naVezDasGuias, anunciarConversaVista, outraGuiaVendo,
@@ -520,6 +521,12 @@ let SITUACAO_NO_BANCO = null;
 // existe" a faz procurar só no texto, calada, e não se pergunta de novo
 // nesta sessão (a régua de `TEM_NOME_DO_CADASTRO`).
 let TRANSCRICAO_NO_BANCO = true;
+// A BUSCA EM TODOS OS TELEFONES (script 049 da ponte, 04/11) — a função do
+// banco aceita `p_todos_os_telefones`? `null` enquanto não se sabe. Num banco
+// sem o 049 o PostgREST não acha a função com o argumento novo (PGRST202): a
+// busca pergunta de novo sem ele, só no telefone aberto, como era, e não se
+// pergunta de novo nesta sessão (a régua de `TEM_NOME_DO_CADASTRO`).
+let BUSCA_EM_TODOS_NO_BANCO = null;
 
 // AVISOS DE FALHA JÁ DISPENSADOS, GUARDADOS AQUI NO APARELHO.
 //
@@ -6639,6 +6646,11 @@ export default function Painel({ sessao }) {
   // refeita perguntaria ao banco na hora.
   const advogadosPermitidosRef = useRef([]);
   advogadosPermitidosRef.current = advogadosPermitidos;
+  // AS LINHAS DESATIVADAS QUE ESTA PESSOA ABRE: as de todos os departamentos,
+  // só para quem administra (`desativadosVisiveis` é a fatia de um
+  // departamento delas). A busca em todos os telefones as alcança (04/11).
+  const linhasDesativadasRef = useRef([]);
+  linhasDesativadasRef.current = souAdmin ? advogados.filter((a) => a.ativo === false) : [];
   const podeContarAtrasadas = temEspera === true && temResponsavel === true;
   const podeContarAtrasadasRef = useRef(false);
   podeContarAtrasadasRef.current = podeContarAtrasadas;
@@ -8136,7 +8148,12 @@ export default function Painel({ sessao }) {
   // na tela: é onde a mensagem pronta do lembrete vira o rascunho da conversa
   // que vai abrir (`usarMensagemPronta`). Devolve se abriu.
   async function verConversaDoHistorico(l, { antesDeAbrir } = {}) {
-    const adv = advogadosPermitidos.find((a) => String(a.id) === String(l.advogadoId));
+    // A LINHA DESATIVADA ABRE PARA QUEM ADMINISTRA (04/11): ela é só leitura,
+    // e é quem administra que a vê na barra. A busca em todos os telefones a
+    // alcança, e o clique não pode dizer "sem acesso" a quem a abre pela
+    // barra com um clique.
+    const adv = advogadosPermitidos.find((a) => String(a.id) === String(l.advogadoId))
+      || (souAdmin ? advogados.find((a) => a.ativo === false && String(a.id) === String(l.advogadoId)) : null);
     if (!adv) { mostrarAviso("Você não tem acesso a este telefone."); return false; }
     // A LINHA PRIMEIRO: a que não se consegue ler não troca o telefone, e a
     // pessoa continua onde estava, com o aviso do porquê.
@@ -13968,9 +13985,12 @@ export default function Painel({ sessao }) {
     const nomePorCt = new Map(contatos.map((c) => [String(c.id), nomeDoContato(c)]));
     try {
       for (let i = 0; i < idsCt.length; i += 150) {
+        // EM TODOS OS TELEFONES (04/11), e não só no aberto: o lead que só
+        // conversa com o SAC tem de aparecer a quem procura das Audiências. A
+        // regra de acesso de `conversas` recorta pelos telefones da pessoa, e
+        // a tela tira o que um clique não abre (`aBuscaAlcanca`).
         const { data, error } = await supabase.from("conversas")
           .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
-          .eq("advogado_id", advId)
           .abortSignal(sinal)
           .in("contato_id", idsCt.slice(i, i + 150));
         if (error) return { encontradas, porNome, falhou: !foiAbortada(error) };
@@ -14050,11 +14070,18 @@ export default function Painel({ sessao }) {
       if (!porChave.size) return { porCad, novas, semConversa: [] };
 
       const candidatas = [...conversasRef.current, ...encontradas];
+      // "JÁ TEM CONVERSA" É NESTE TELEFONE (04/11). A busca acha as conversas
+      // de todos os telefones, e o nome do cadastro vai em todas elas; mas a
+      // oferta lá de baixo — "ainda sem conversa por este número", com o
+      // "Começar conversa" — é sobre o telefone aberto. O cliente que só
+      // conversa com o SAC, procurado das Audiências, aparece com a conversa
+      // do SAC E com a oferta de começar uma pelas Audiências, como antes.
+      const desteTelefone = (c) => !ehDeOutroTelefone(c, advId);
       const jaCasou = new Set();
       candidatas.forEach((c) => {
         const num = String(c.contato?.numero || "");
         porChave.forEach((nome, k) => {
-          if (num.endsWith(k)) { porCad[c.id] = nome; jaCasou.add(k); }
+          if (num.endsWith(k)) { porCad[c.id] = nome; if (desteTelefone(c)) jaCasou.add(k); }
         });
       });
 
@@ -14089,15 +14116,15 @@ export default function Painel({ sessao }) {
         .limit(200);
       const idsCt = (cts || []).map((c) => c.id);
       for (let i = 0; i < idsCt.length; i += 150) {
+        // Em todos os telefones, como a busca por nome (04/11).
         const { data } = await supabase.from("conversas")
           .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
-          .eq("advogado_id", advId)
           .abortSignal(sinal)
           .in("contato_id", idsCt.slice(i, i + 150));
         (data || []).forEach((c) => {
           const num = String(c.contato?.numero || "");
           porChave.forEach((nome, k) => {
-            if (num.endsWith(k)) { porCad[c.id] = nome; jaCasou.add(k); }
+            if (num.endsWith(k)) { porCad[c.id] = nome; if (desteTelefone(c)) jaCasou.add(k); }
           });
           novas.push(c);
         });
@@ -14194,11 +14221,21 @@ export default function Painel({ sessao }) {
       // PELO ESPELHO, e não por `conversas` (auditoria de 28/10) — ver as
       // dependências, lá no fim.
       const jaNaLista = new Set(conversasRef.current.map((c) => String(c.id)));
+      // E TIRA O QUE UM CLIQUE NÃO ABRE (04/11): a busca procura em todos os
+      // telefones, e a conversa de uma linha desativada, para quem não
+      // administra, seria um resultado que leva a "Você não tem acesso a este
+      // telefone" — ver `aBuscaAlcanca`.
+      const alcance = {
+        telefoneAberto: advId,
+        permitidos: advogadosPermitidosRef.current,
+        desativadas: linhasDesativadasRef.current,
+      };
       const peneirar = (lista) => {
         const vistos = new Set();
         return lista.filter((c) => {
           const id = String(c.id);
           if (jaNaLista.has(id) || vistos.has(id)) return false;
+          if (!aBuscaAlcanca(c, alcance)) return false;
           vistos.add(id);
           return true;
         });
@@ -14302,7 +14339,11 @@ export default function Painel({ sessao }) {
       //  PRIMEIRO, A FUNÇÃO DO BANCO
       //
       //  Ela responde as três perguntas de uma vez — nome, número e o que foi
-      //  dito dentro da conversa —, sem acento e recortada NESTE telefone.
+      //  dito dentro da conversa —, sem acento e, desde 04/11 (script 049 da
+      //  ponte), em todos os telefones que a pessoa enxerga, com as deste
+      //  telefone primeiro. Até ali ela era recortada NESTE telefone, e o lead
+      //  que só conversa com o SAC não aparecia a quem procurava das
+      //  Audiências.
       //
       //  As duas coisas que ela conserta não davam para consertar aqui:
       //
@@ -14320,9 +14361,26 @@ export default function Painel({ sessao }) {
       //  Enquanto o SQL não for rodado, o caminho antigo continua valendo — a
       //  busca fica como estava, e não pior.
       if (temBuscaNoBanco !== false) {
-        const { data: achados, error } = await supabase.rpc("buscar_conversas", {
-          p_advogado: advId, p_termo: termo, p_limite: 80,
-        }).abortSignal(sinal);
+        // EM TODOS OS TELEFONES (script 049 da ponte, 04/11): o banco procura
+        // nos telefones que a pessoa enxerga e devolve as do telefone aberto
+        // primeiro. Num banco sem o 049, a função com o argumento novo não é
+        // achada (PGRST202), e a busca pergunta de novo como antes, só neste
+        // telefone — e lá embaixo `funcaoNaoExiste` só vale para a segunda
+        // resposta, a da função que não existe de jeito nenhum.
+        const pedirABusca = (emTodos) => supabase.rpc("buscar_conversas", emTodos
+          ? { p_advogado: advId, p_termo: termo, p_limite: 80, p_todos_os_telefones: true }
+          : { p_advogado: advId, p_termo: termo, p_limite: 80 }).abortSignal(sinal);
+        const emTodos = BUSCA_EM_TODOS_NO_BANCO !== false;
+        let { data: achados, error } = await pedirABusca(emTodos);
+        if (emTodos && error && funcaoNaoExiste(error) && !sinal.aborted) {
+          ({ data: achados, error } = await pedirABusca(false));
+          // SÓ A SEGUNDA QUE RESPONDE DIZ que é o banco sem o 049: com ela
+          // também sem a função, é o banco sem busca nenhuma, e com ela caindo
+          // por outro motivo, não se sabe.
+          if (!error) BUSCA_EM_TODOS_NO_BANCO = false;
+        } else if (emTodos && !error) {
+          BUSCA_EM_TODOS_NO_BANCO = true;
+        }
         if (!meu()) return;
 
         if (!error) {
@@ -14350,9 +14408,10 @@ export default function Painel({ sessao }) {
           // encontrado" sobre o que o banco tinha acabado de achar.
           let faltouTrazer = false;
           for (let i = 0; i < ids.length; i += 150) {
+            // Pelos ids que a função achou, em qualquer telefone (04/11): ela
+            // já recortou pelo que a pessoa enxerga.
             const { data, error: erroLote } = await supabase.from("conversas")
               .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
-              .eq("advogado_id", advId)
               .abortSignal(sinal)
               .in("id", ids.slice(i, i + 150));
             if (erroLote && !sinal.aborted) { faltouTrazer = true; console.error("[zorvin] busca: conversas achadas", erroLote); }
@@ -14460,8 +14519,8 @@ export default function Painel({ sessao }) {
       // ---- 3) dentro das MENSAGENS ----
       //
       // Uma consulta só, e não uma por lote de conversas: as regras do banco já
-      // limitam o que cada pessoa enxerga, e o que vier de outro telefone é
-      // descartado aqui. A versão anterior pedia em lotes de 150 conversas com
+      // limitam o que cada pessoa enxerga. O que vier de outro telefone era
+      // descartado aqui; desde 04/11 ele entra, como na função do banco. A versão anterior pedia em lotes de 150 conversas com
       // teto de 300 mensagens por lote — e um termo comum estourava esse teto,
       // fazendo sumir conversas que TINHAM a palavra.
       const porMsg = {};
@@ -14492,9 +14551,9 @@ export default function Painel({ sessao }) {
         .filter((id) => !conversasRef.current.some((c) => String(c.id) === String(id))
                      && !encontradas.some((c) => String(c.id) === String(id)));
       for (let i = 0; i < faltando.length; i += 150) {
+        // Em todos os telefones, como a função do banco (04/11).
         const { data, error: erroLote } = await supabase.from("conversas")
           .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
-          .eq("advogado_id", advId)
           .abortSignal(sinal)
           .in("id", faltando.slice(i, i + 150));
         if (erroLote && !sinal.aborted) { falhouMensagem = true; contarFalha("conversas achadas no texto", erroLote); }
@@ -14606,6 +14665,18 @@ export default function Painel({ sessao }) {
     naoLidasRef.current = c.nao_lidas || 0;
     const achado = alvoDaBusca[c.id];
     alvoParaAbrirRef.current = achado ? { conversa: c.id, ...achado } : null;
+
+    // A CONVERSA DE OUTRO TELEFONE ABRE NELE (04/11). A busca procura em todos
+    // os telefones, e esta conversa fala por outro número do escritório:
+    // aberta aqui, a caixa de escrever ficaria debaixo do telefone errado. Vai
+    // pela mesma porta do histórico de atendimento (`verConversaDoHistorico`):
+    // lê a linha, troca de telefone e leva a lista à aba dela. O alvo da
+    // mensagem achada fica de pé — ele vale pelo id da conversa, e não pelo
+    // telefone (`alvoDe`).
+    if (ehDeOutroTelefone(c, advogadoId)) {
+      verConversaDoHistorico({ advogadoId: c.advogado_id, conversaId: c.id });
+      return;
+    }
 
     // A CONVERSA QUE A BUSCA TROUXE ENTRA NA LISTA ANTES DE ABRIR.
     //
@@ -14759,7 +14830,11 @@ export default function Painel({ sessao }) {
             return naPasta(c) && naAba(c) && naResponsavel(c) && passaNoFiltro(c);
           });
     if (!doBanco.length) return daLista;
-    return [...daLista, ...doBanco].sort(compararConversas(ordem, ordenarPelaEspera));
+    const juntas = [...daLista, ...doBanco].sort(compararConversas(ordem, ordenarPelaEspera));
+    // NA BUSCA, AS DESTE TELEFONE PRIMEIRO (04/11): ela procura em todos, e a
+    // conversa daqui não pode ser empurrada para baixo por uma de outro
+    // telefone só por ser mais recente — ver `oTelefoneAbertoPrimeiro`.
+    return busca.trim() ? oTelefoneAbertoPrimeiro(juntas, advogadoId) : juntas;
   })();
 
   // ============================================================
@@ -14804,11 +14879,25 @@ export default function Painel({ sessao }) {
   //  telefone de ninguém — escrevê-lo na linha seria trocar um nome repetido
   //  por um código que não quer dizer nada.
   // ============================================================
+  //  ------------------------------------------------------------
+  //  E NA BUSCA EM TODOS OS TELEFONES (04/11), O SELO DO TELEFONE CONTA
+  //
+  //  Durante a busca a lista mostra conversas de vários telefones, e o mesmo
+  //  cliente pode aparecer duas vezes — uma no SAC, outra nas Audiências, pelo
+  //  MESMO número. As duas linhas não escrevem a mesma coisa: a de fora leva o
+  //  selo do telefone. Pela régua do que se vê, o selo entra na chave, e o
+  //  número só aparece onde ele é o que separa duas linhas — inclusive duas de
+  //  um mesmo telefone de fora.
+  const chaveDoQueSeVe = (c) => {
+    const nome = nomeDoContato(c.contato).trim().toLocaleLowerCase("pt-BR");
+    if (!nome) return "";
+    return buscandoTexto && ehDeOutroTelefone(c, advogadoId) ? `${nome}\u0000${c.advogado_id}` : nome;
+  };
   const nomesRepetidosNaLista = (() => {
     const quantos = new Map();
     for (const c of conversasFiltradas) {
       if (ehGrupo(c)) continue;
-      const chave = nomeDoContato(c.contato).trim().toLocaleLowerCase("pt-BR");
+      const chave = chaveDoQueSeVe(c);
       if (!chave) continue;
       quantos.set(chave, (quantos.get(chave) || 0) + 1);
     }
@@ -14818,8 +14907,7 @@ export default function Painel({ sessao }) {
   })();
 
   /** Esta linha precisa dizer por qual telefone ela fala? */
-  const precisaMostrarONumero = (c) => !ehGrupo(c)
-    && nomesRepetidosNaLista.has(nomeDoContato(c.contato).trim().toLocaleLowerCase("pt-BR"));
+  const precisaMostrarONumero = (c) => !ehGrupo(c) && nomesRepetidosNaLista.has(chaveDoQueSeVe(c));
 
   // ------------------------------------------------------------------
   //  O QUE A LISTA VAZIA DIZ — a marca e a frase, de uma escolha só
@@ -17955,17 +18043,6 @@ export default function Painel({ sessao }) {
               {erroBusca}
             </div>
           )}
-          {/* NO TETO, A BUSCA DIZ QUE PODE HAVER MAIS (26/10). Sem a nota, as
-              80 conversas que a função devolve se liam como todas — e quem
-              não acha o cliente entre elas conclui que ele não está aqui. */}
-          {corteDaBusca && busca.trim().length >= 3 && (
-            <div data-corte-da-busca style={{ margin: "8px 14px 4px", padding: "8px 12px", borderRadius: 10,
-                                              background: C.listActive, color: C.textSecondary,
-                                              fontSize: 12.5, lineHeight: 1.45 }}>
-              Mostrando as 80 conversas mais recentes que casam com a busca — pode haver outras.
-              {" "}Escreva mais palavras para afinar.
-            </div>
-          )}
           {/* E O FILTRO NO TETO TAMBÉM DIZ (auditoria de 28/10): as minhas, as
               tarefas de hoje, as não lidas e o filtro de atendentes perguntam
               ao banco com um teto, e a resposta que chega nele se lia como
@@ -18035,6 +18112,28 @@ export default function Painel({ sessao }) {
                           {numeroBonito(c.contato?.numero)}
                         </span>
                       )}
+                      {/* DE QUAL TELEFONE ELA É, e a linha diz (04/11): a
+                          busca procura em todos os telefones, e o clique numa
+                          conversa de outro leva a ele. Sem o selo, a pessoa
+                          clicaria achando que fala pelo telefone aberto — e
+                          responder pelo número errado não tem desfazer. Só
+                          durante a busca: fora dela a lista é de um telefone
+                          só, o aberto. Vem antes dos outros selos porque é o
+                          que muda o que o clique faz. */}
+                      {buscandoTexto && ehDeOutroTelefone(c, advogadoId) && (() => {
+                        const tel = advogados.find((a) => String(a.id) === String(c.advogado_id));
+                        const nomeTel = tel ? tel.nome : "outro telefone";
+                        return (
+                          <span data-selo-do-telefone={nomeTel}
+                                title={`Esta conversa é do telefone ${nomeTel}${tel && tel.ativo === false ? " (linha desativada)" : ""} — o clique abre lá`}
+                                style={{ flexShrink: 0, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis",
+                                         whiteSpace: "nowrap", fontSize: 10.5, fontWeight: 600,
+                                         color: C.verdeTexto, border: `1px solid ${C.verdeTexto}`,
+                                         borderRadius: 5, padding: "1px 5px", lineHeight: 1.5 }}>
+                            {nomeTel}
+                          </span>
+                        );
+                      })()}
                       {/* ESTÁ ARQUIVADA, E A LINHA DIZ.
                           Só durante a busca, e só fora da pasta: lá dentro
                           todas são, e repetir o selo em cada linha não informa
@@ -18183,6 +18282,25 @@ export default function Painel({ sessao }) {
                 {Math.min(quantasNaLista, conversasFiltradas.length)} de {conversasFiltradas.length}
                 {temMaisConversas && listaPodeCrescer ? "+" : ""} conversas
               </div>
+            </div>
+          )}
+
+          {/* NO TETO, A BUSCA DIZ QUE PODE HAVER MAIS (26/10). Sem a nota, as
+              80 conversas que a função devolve se liam como todas — e quem
+              não acha o cliente entre elas conclui que ele não está aqui.
+              DEPOIS DAS CONVERSAS, e não antes (04/11): a nota chega com a
+              resposta completa, depois de a dos nomes já ter desenhado a
+              conversa achada, e no alto ela a empurrava 100 pontos para baixo
+              debaixo do olho de quem já a via — a régua de 16/09, da oferta
+              do cadastro logo abaixo. Procurando em todos os telefones, uma
+              palavra comum chega às 80 muito mais vezes. E é aqui que ela é
+              lida: por quem correu a lista e não achou o cliente. */}
+          {corteDaBusca && busca.trim().length >= 3 && (
+            <div data-corte-da-busca style={{ margin: "8px 14px 4px", padding: "8px 12px", borderRadius: 10,
+                                              background: C.listActive, color: C.textSecondary,
+                                              fontSize: 12.5, lineHeight: 1.45 }}>
+              Mostrando as 80 conversas mais recentes que casam com a busca, as deste telefone primeiro — pode haver outras.
+              {" "}Escreva mais palavras para afinar.
             </div>
           )}
 
