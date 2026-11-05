@@ -3,6 +3,7 @@ import { supabase } from "./supabase.js";
 import { naoGravouNada, comOCodigo } from "./gravar.js";
 import { useEstadoDoCopiloto } from "./copiloto.js";
 import { Sparkles, Loader2 } from "lucide-react";
+import { LicoesDoCopiloto, NotasDoCopiloto, useNomesDaEquipe } from "./AprendizadoDoCopiloto.jsx";
 
 // ============================================================
 //  O MANUAL DO COPILOTO — a aba "Copiloto" de Departamentos e acessos
@@ -25,6 +26,9 @@ import { Sparkles, Loader2 } from "lucide-react";
 //  SALVAR RELÊ DO BANCO: o que a tela mostra depois é o que ficou guardado,
 //  e não o que foi digitado. E a recusa calada da RLS (zero linhas, sem
 //  erro) é dita como recusa — a armadilha de 24/09.
+//
+//  E, DESDE 05/11, O QUE ELE APRENDEU: as lições da equipe e as notas de cada
+//  departamento e telefone (`AprendizadoDoCopiloto.jsx`, script 050).
 // ============================================================
 
 const TETO = 8000;
@@ -36,8 +40,9 @@ function quandoFoi(iso) {
                                      hour: "2-digit", minute: "2-digit" });
 }
 
-export function ManualDoCopiloto({ cx, C }) {
+export function ManualDoCopiloto({ cx, C, departamentos = [], telefones = [] }) {
   const estado = useEstadoDoCopiloto();
+  const nomes = useNomesDaEquipe();
   // null = lendo; { instrucoes, atualizado_em } = lido; { erro } = falhou.
   const [lido, setLido] = useState(null);
   const [texto, setTexto] = useState("");
@@ -106,9 +111,11 @@ export function ManualDoCopiloto({ cx, C }) {
         </div>
         <div style={{ ...cx.dica, marginBottom: 0 }}>
           Ao clicar em <b>Sugerir resposta</b>, o copiloto lê as últimas 40 mensagens da
-          conversa aberta (os áudios, pela transcrição), as mensagens rápidas da equipe e o
-          manual abaixo, e escreve uma resposta na caixa. <b>Nada sai sozinho</b>: quem atende
-          lê, corrige se precisar e só então envia. As notas internas não vão para o copiloto.
+          conversa aberta (os áudios, pela transcrição), as mensagens rápidas da equipe, o
+          manual abaixo, as lições que a equipe ensinou e o que ele aprendeu lendo as conversas
+          daquele telefone e daquele departamento — e escreve uma resposta na caixa. <b>Nada sai
+          sozinho</b>: quem atende lê, pede uma mudança se precisar e só então envia. As notas
+          internas não vão para o copiloto.
         </div>
       </div>
 
@@ -160,6 +167,10 @@ export function ManualDoCopiloto({ cx, C }) {
           )}
         </>)}
       </div>
+
+      <LicoesDoCopiloto cx={cx} C={C} nomes={nomes} />
+      <NotasDoCopiloto cx={cx} C={C} departamentos={departamentos} telefones={telefones}
+                       estado={estado} nomes={nomes} />
     </div>
   );
 }

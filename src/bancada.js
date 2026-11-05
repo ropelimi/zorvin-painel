@@ -1489,6 +1489,12 @@ const TABELAS = {
   // lê e grava.
   zorvin_copiloto: [{ id: true, atualizado_em: "2026-10-01T12:00:00Z", atualizado_por: null,
     instrucoes: "QUEM SOMOS\nSomos a equipe de atendimento de um escritório de advocacia." }],
+  // O QUE O COPILOTO APRENDEU (script 050 da ponte): as lições da equipe e as
+  // notas de cada telefone e departamento. Começam VAZIAS: quem lê as
+  // conversas e grava as lições é a ponte, e cada prova planta o que precisa
+  // por `__SEMENTE`. `__SEM_COPILOTO_QUE_APRENDE` é o banco sem o 050.
+  zorvin_copiloto_licoes: [],
+  zorvin_copiloto_aprendido: [],
   zorvin_feriados: [
     ["2026-10-12", "Nossa Senhora Aparecida"], ["2026-11-02", "Finados"],
     ["2026-11-15", "Proclamação da República"], ["2026-11-20", "Consciência Negra"],
@@ -2089,6 +2095,9 @@ function consulta(tabela) {
         // e a aba de administração some — o botão continua, porque quem decide
         // se ele aparece é a ponte, e ela sugere sem o manual.
         || (tabela === "zorvin_copiloto" && globalThis.__SEM_COPILOTO)
+        // O COPILOTO QUE APRENDE (script 050) que ainda não rodou: as duas
+        // tabelas respondem "não existe", e as seções da aba somem.
+        || (/^zorvin_copiloto_(licoes|aprendido)$/.test(tabela) && globalThis.__SEM_COPILOTO_QUE_APRENDE)
         // O AVISO DE CLIENTE SEM RESPOSTA (script 041) que ainda não rodou:
         // "não existe", e a aba some. Vazia é o banco com o script e ninguém
         // tendo mexido — vale o padrão, e a aba aparece.
@@ -2744,6 +2753,7 @@ function consulta(tabela) {
         linhas.forEach((l) => {
           const de = l.etapa_id;
           const iaAntes = { motivo: l.ia_motivo, leu: l.ia_leu_ate };
+          const textoAntes = l.texto;
           Object.assign(l, patch);
           if (reabertas && reabertas.has(l)) l.protocolo = reabertas.get(l);
           // O GATILHO DO 044: a tela é gente, e gente não escreve o motivo
@@ -2762,6 +2772,22 @@ function consulta(tabela) {
           if (tabela === "zorvin_copiloto") {
             l.atualizado_em = new Date().toISOString();
             l.atualizado_por = (TABELAS.usuarios[0] || {}).id || null;
+          }
+          // OS GATILHOS DO 050: quem corrigiu à mão e quando são do banco. As
+          // notas mudam `atualizado_em` a cada gravação (é por ele que a ponte
+          // sabe que alguém corrigiu no meio da leitura); a lição só ganha
+          // quem a corrigiu.
+          if (tabela === "zorvin_copiloto_aprendido") {
+            const agoraNotas = new Date().toISOString();
+            l.atualizado_em = agoraNotas;
+            if ("texto" in patch && patch.texto !== textoAntes) {
+              l.editado_por = (TABELAS.usuarios[0] || {}).id || null;
+              l.editado_em = agoraNotas;
+            }
+          }
+          if (tabela === "zorvin_copiloto_licoes" && "texto" in patch && patch.texto !== textoAntes) {
+            l.editada_por = (TABELAS.usuarios[0] || {}).id || null;
+            l.editada_em = new Date().toISOString();
           }
           // O GATILHO DO 045: mudar os dias recomeça a conta da regra
           // (`vale_desde`), e quem mudou e quando são do banco.
@@ -3943,6 +3969,29 @@ export const supabase = {
         && (TABELAS.conversas || []).some((c) => c.contato_id === k.contato_id && telefonesDoFunil.has(String(c.advogado_id)))).length : 0;
       globalThis.__ULTIMA_IA_DO_FUNIL = { ligada: ligar, clientes };
       return { data: { ligada: ligar, clientes }, error: null };
+    }
+
+    // "LER TUDO DE NOVO" (050): só quem administra; apaga as notas da linha,
+    // volta a leitura ao começo e limpa quem corrigiu. Devolve se achou a
+    // linha. As chamadas ficam em `__CHAMADAS_LER_DE_NOVO`.
+    if (nome === "zorvin_copiloto_ler_de_novo") {
+      (globalThis.__CHAMADAS_LER_DE_NOVO || (globalThis.__CHAMADAS_LER_DE_NOVO = [])).push({ ...(args || {}) });
+      if (globalThis.__SEM_COPILOTO_QUE_APRENDE) {
+        return { data: null, error: { code: "PGRST202", message: "Could not find the function public.zorvin_copiloto_ler_de_novo" } };
+      }
+      if (globalThis.__LER_DE_NOVO_FALHA) {
+        return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } };
+      }
+      const eu = TABELAS.usuarios[0] || {};
+      if (!eu.admin) {
+        return { data: null, error: { code: "42501", message: "Só quem administra pede para o copiloto ler tudo de novo." } };
+      }
+      await espera(40);
+      const l = (TABELAS.zorvin_copiloto_aprendido || []).find((x) => String(x.id) === String(args && args.p_id));
+      if (!l) return { data: false, error: null };
+      Object.assign(l, { texto: "", leu_ate: null, leu_ate_id: null, mensagens_lidas: 0, aprendido_em: null,
+                         editado_por: null, editado_em: null, atualizado_em: new Date().toISOString() });
+      return { data: true, error: null };
     }
 
     if (nome === "zorvin_funil_do_telefone") {

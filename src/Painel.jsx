@@ -69,7 +69,8 @@ import { lerFunisDosTelefones, funilDoTelefone, chaveDoFunil, nomeDoFunil, noFun
 import EscolherHora from "./EscolherHora.jsx";
 import { perguntarOsScripts, fraseDosScriptsParaAFaixa, manterOQueSeSabia } from "./scriptsDoBanco.js";
 import { rotuloDaHora, porQueNaoServe, semAColunaDaAgenda, aindaDaParaEditar } from "./agenda.js";
-import { useEstadoDoCopiloto, copilotoAparece, pedirSugestao, resumoAparece, pedirResumo } from "./copiloto.js";
+import { useEstadoDoCopiloto, copilotoAparece, pedirSugestao, resumoAparece, pedirResumo, ajusteAparece, pedirAjuste,
+         campoDoAjusteAparece, faixaDoCopilotoAparece, faixaDoCopilotoFecha } from "./copiloto.js";
 import ResumoDaConversa from "./ResumoDaConversa.jsx";
 import { mensagensDepoisDoResumo, textoDoResumo } from "./resumoDaConversa.js";
 import { ABAS_DA_SITUACAO, NOME_DA_SITUACAO } from "./abasDaSituacao.js";
@@ -3944,7 +3945,9 @@ export default function Painel({ sessao }) {
   //  O COPILOTO (13/10) — "Sugerir resposta". Ver `copiloto.js`.
   //
   //  `copiloto` é POR CONVERSA: { [conversaId]: { fase, erro?, sugestao? } },
-  //  com fase "pensando", "erro" ou "atrasada". Por conversa, e não um estado
+  //  com fase "pensando", "erro" ou "atrasada" — e, desde 05/11, "sugeriu" (a
+  //  sugestão está na caixa, e a faixa oferece pedir uma mudança) e
+  //  "ajustando" (o pedido de mudança está na ponte). Por conversa, e não um estado
   //  só, porque a resposta demora segundos e a atendente pode trocar de
   //  conversa nesse meio — a sugestão de A não pode ir parar na caixa de B, e
   //  voltando para A ela tem de ver que o pedido ainda está andando.
@@ -10963,12 +10966,18 @@ export default function Painel({ sessao }) {
       // fecha ELE, e só o seguinte fecha a busca ou a conversa.
       else if (conversaId && resumos[conversaId]) fecharResumo(conversaId);
       else if (buscaAberta) { setBuscaAberta(false); setBuscaConversa(""); }
+      // A FAIXA DO COPILOTO (05/11) fica logo acima da caixa de escrever, como
+      // a citação: Esc fecha ELA antes da conversa. O primeiro Esc no campo
+      // de pedir uma mudança apaga o pedido, e quem o pega é o próprio campo.
+      else if (conversaId && faixaDoCopilotoFecha(copiloto[conversaId],
+               { nota: modoNota, editando: Boolean(editando), vazia: !rascunhoRef.current.trim() }))
+        mudarCopiloto(conversaId, null);
       else if (respondendo) setRespondendo(null);
       else if (conversaId) setConversaId(null);
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, pdfAberto, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, menuEtapa, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, menuResponsaveis, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, fichaEmColuna, menuDepartamentos, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada, jaTratei, trateiOcupado, reabrindo, reabrirOcupado, escolhaTelefone, resumos]);
+  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, pdfAberto, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, menuEtapa, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, menuResponsaveis, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, fichaEmColuna, menuDepartamentos, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada, jaTratei, trateiOcupado, reabrindo, reabrirOcupado, escolhaTelefone, resumos, copiloto, modoNota]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -13692,8 +13701,16 @@ export default function Painel({ sessao }) {
   //  clique: a resposta chega segundos depois, e a aberta pode ser outra.
   // ------------------------------------------------------------
   const copilotoDisponivel = copilotoAparece(estadoDoCopiloto);
+  // O "PEDIR UMA MUDANÇA" (05/11) só com a ponte que tem a rota: a de antes
+  // não diz `ajustar`, e aí a sugestão entra na caixa sem faixa, como antes.
+  const ajusteDisponivel = ajusteAparece(estadoDoCopiloto);
   const copilotoAqui = conversaId ? copiloto[conversaId] || null : null;
   const copilotoPensando = Boolean(copilotoAqui && copilotoAqui.fase === "pensando");
+  // O CAMPO DE PEDIR UMA MUDANÇA mora com a mensagem na caixa de escrever (as
+  // contas estão em `copiloto.js`, e o Esc usa as mesmas).
+  const modoDaFaixa = { nota: modoNota, editando: Boolean(editando), vazia: !rascunho.trim() };
+  const campoDoAjuste = campoDoAjusteAparece(copilotoAqui, modoDaFaixa);
+  const faixaDoCopiloto = faixaDoCopilotoAparece(copilotoAqui, modoDaFaixa);
   const podeSugerir = copilotoDisponivel && Boolean(conversa) && !linhaDesativada && !modoNota
     && !editando && !rascunho.trim() && !copilotoPensando;
 
@@ -13704,6 +13721,20 @@ export default function Painel({ sessao }) {
       return novo;
     });
   }
+  // A MESMA MUDANÇA, A PARTIR DO QUE ESTÁ GUARDADO AGORA: as respostas do
+  // ajuste e do Desfazer chegam segundos depois, e o estado lido no clique
+  // pode já ter mudado (a pessoa escreveu outro pedido no campo).
+  function mexerNoCopiloto(id, fn) {
+    setCopiloto((atual) => {
+      const novo = { ...atual };
+      const valor = fn(atual[id] || null);
+      if (valor) novo[id] = valor; else delete novo[id];
+      return novo;
+    });
+  }
+  // DEPOIS DA SUGESTÃO NA CAIXA, a faixa fica com o campo de pedir uma mudança
+  // — e só com a ponte que tem a rota.
+  const faixaDoAjuste = (extra = {}) => (ajusteDisponivel ? { fase: "sugeriu", pedido: "", ...extra } : null);
 
   function colocarNaCaixa(texto) {
     setRascunho(texto);
@@ -13734,7 +13765,7 @@ export default function Painel({ sessao }) {
     // ele estiver vazio — é o que a pessoa encontra ao voltar.
     if (conversaIdRef.current === id) {
       if (!rascunhoRef.current.trim() && !modoNotaRef.current && !editandoRef.current) {
-        mudarCopiloto(id, null);
+        mudarCopiloto(id, faixaDoAjuste());
         colocarNaCaixa(texto);
       } else {
         mudarCopiloto(id, { fase: "atrasada", sugestao: texto });
@@ -13744,7 +13775,7 @@ export default function Painel({ sessao }) {
     const guardado = rascunhosRef.current[id];
     if (!guardado || !String(guardado.texto || "").trim()) {
       rascunhosRef.current[id] = { texto, nota: false };
-      mudarCopiloto(id, null);
+      mudarCopiloto(id, faixaDoAjuste());
     } else {
       mudarCopiloto(id, { fase: "atrasada", sugestao: texto });
     }
@@ -13753,9 +13784,116 @@ export default function Painel({ sessao }) {
   function usarSugestaoAtrasada() {
     const s = conversaId && copiloto[conversaId];
     if (!s || s.fase !== "atrasada" || modoNota || editando) return;
-    mudarCopiloto(conversaId, null);
+    // A LIÇÃO VAI JUNTO: a mensagem refeita que chegou atrasada pode ter
+    // ensinado uma, e o Desfazer dela continua na faixa.
+    mudarCopiloto(conversaId, faixaDoAjuste({ mudou: Boolean(s.deAjuste), licao: s.licao || null,
+                                              aviso: s.aviso || "" }));
     colocarNaCaixa(s.sugestao);
   }
+
+  // ------------------------------------------------------------
+  //  "PEDIR UMA MUDANÇA AO COPILOTO" (05/11)
+  //
+  //  Pedido do Rodrigo: depois da sugestão, quem atende pede uma mudança ("não
+  //  podemos passar o telefone do advogado"), e o copiloto refaz a mensagem e
+  //  APRENDE — a lição vale para o escritório inteiro, na hora (decidido com
+  //  ele). Quem fala com a IA é a ponte (`POST /copiloto/ajustar`), que lê o
+  //  mesmo que a sugestão e mais o que está na caixa agora.
+  //
+  //  - A MENSAGEM REFEITA ENTRA NA CAIXA, e NÃO SAI SOZINHA: a régua da
+  //    sugestão. Os marcadores são preenchidos aqui, com o nome da conversa
+  //    EM QUE se pediu.
+  //  - SÓ TROCA O QUE ESTAVA NA CAIXA QUANDO SE PEDIU. Quem mexeu na caixa
+  //    enquanto a IA pensava não perde o que escreveu: a faixa oferece usar a
+  //    mensagem refeita. Com a conversa fechada, ela vira o rascunho dela — se
+  //    o rascunho ainda for o que foi mandado.
+  //  - A LIÇÃO É DITA ("Aprendi: …"), com o DESFAZER ao lado: apagar a lição é
+  //    de quem a ensinou (a regra do 050), e a recusa calada do banco é dita
+  //    como recusa, e não como "esqueci".
+  //  - O AVISO DA PONTE (a lição que não pôde ser guardada) é dito: calado, a
+  //    atendente acharia que o copiloto aprendeu.
+  // ------------------------------------------------------------
+  async function pedirMudancaAoCopiloto() {
+    const id = conversaId;
+    const s = id && copiloto[id];
+    if (!conversa || !s || s.fase !== "sugeriu" || modoNota || editando) return;
+    const pedido = String(s.pedido || "").trim();
+    if (!pedido) return;
+    const enviada = rascunhoRef.current;
+    const contexto = { cliente: !ehGrupo(conversa) ? nomeDoContato(conversa.contato) : "", atendente: meuNome };
+    mexerNoCopiloto(id, (atual) => ({ ...(atual || {}), fase: "ajustando", erro: "", pedido }));
+    let r;
+    try {
+      r = await pedirAjuste(id, { pedido, sugestao: enviada.trim() });
+    } catch (e) {
+      // O PEDIDO FICA NO CAMPO, para tentar de novo sem escrever tudo outra vez.
+      mexerNoCopiloto(id, (atual) => ({ ...(atual || {}), fase: "sugeriu", pedido, erro: String((e && e.message) || e) }));
+      return;
+    }
+    const texto = preencherVariaveis(r.sugestao, { ...contexto, agora: new Date() });
+    const depois = { fase: "sugeriu", pedido: "", erro: "", mudou: true, licao: r.licao, aviso: r.aviso,
+                     desfeita: false, erroDesfazer: "" };
+    if (conversaIdRef.current === id) {
+      if (rascunhoRef.current === enviada && !modoNotaRef.current && !editandoRef.current) {
+        mudarCopiloto(id, depois);
+        colocarNaCaixa(texto);
+      } else {
+        mudarCopiloto(id, { ...depois, fase: "atrasada", sugestao: texto, deAjuste: true });
+      }
+      return;
+    }
+    const guardado = rascunhosRef.current[id];
+    const textoGuardado = String((guardado && guardado.texto) || "");
+    if (textoGuardado === enviada || !textoGuardado.trim()) {
+      rascunhosRef.current[id] = { texto, nota: false };
+      mudarCopiloto(id, depois);
+    } else {
+      mudarCopiloto(id, { ...depois, fase: "atrasada", sugestao: texto, deAjuste: true });
+    }
+  }
+
+  async function desfazerLicaoDoCopiloto() {
+    const id = conversaId;
+    const s = id && copiloto[id];
+    if (!s || !s.licao || s.desfazendo) return;
+    const licaoId = s.licao.id;
+    mexerNoCopiloto(id, (atual) => ({ ...(atual || {}), desfazendo: true, erroDesfazer: "" }));
+    const r = await supabase.from("zorvin_copiloto_licoes").delete().eq("id", licaoId).select("id");
+    let erroDesfazer = "";
+    if (r.error) erroDesfazer = comOCodigo("Não consegui desfazer a lição.", r.error, "lições do copiloto");
+    else if (naoGravouNada(r)) {
+      erroDesfazer = "Não desfez: o banco não deixou. A lição continua valendo; quem administra pode apagá-la na aba Copiloto, em Departamentos e acessos.";
+    }
+    mexerNoCopiloto(id, (atual) => {
+      if (!atual) return atual;
+      if (erroDesfazer) return { ...atual, desfazendo: false, erroDesfazer };
+      return { ...atual, desfazendo: false, erroDesfazer: "", licao: null, desfeita: true };
+    });
+  }
+
+  // A FAIXA DO AJUSTE SAI quando a caixa esvazia (a mensagem foi enviada, ou
+  // apagada) — menos com uma lição ainda à vista: o Desfazer é de quem a
+  // ensinou, e sumir com ele junto com a mensagem tiraria o único caminho que
+  // ela tem para desfazer. Aí a faixa fica SÓ com a lição (`soLicao`): a
+  // próxima mensagem que a pessoa escrever é dela, e não uma sugestão — o
+  // campo de pedir mudança não volta por cima dela.
+  //
+  // E SÓ DENTRO DA MESMA CONVERSA. Na troca, a conversa chega antes do
+  // rascunho dela (ele volta num efeito): por um desenho, a caixa da conversa
+  // de volta parece vazia, e a faixa dela sumiria sem ninguém ter mexido.
+  const conversaDaFaixaRef = useRef(null);
+  useEffect(() => {
+    const anterior = conversaDaFaixaRef.current;
+    conversaDaFaixaRef.current = conversaId;
+    if (anterior !== conversaId) return;
+    if (!copilotoAqui || copilotoAqui.fase !== "sugeriu" || copilotoAqui.soLicao) return;
+    if (rascunho.trim()) return;
+    if (copilotoAqui.licao || copilotoAqui.erroDesfazer) {
+      mudarCopiloto(conversaId, { ...copilotoAqui, soLicao: true, pedido: "", erro: "", aviso: "" });
+    } else {
+      mudarCopiloto(conversaId, null);
+    }
+  }, [rascunho, copilotoAqui, conversaId]);
 
   // ------------------------------------------------------------
   //  A MENSAGEM PRONTA DO LEMBRETE DE ACOMPANHAMENTO (02/11)
@@ -19640,41 +19778,124 @@ export default function Painel({ sessao }) {
             {/* A FAIXA DO COPILOTO, logo acima da caixa: enquanto ele lê a
                 conversa, quando falha (com a frase da ponte, que diz o que
                 fazer) e quando a sugestão chegou depois de a atendente começar
-                a escrever. O sucesso não tem faixa: a sugestão na caixa é a
-                resposta, e quem clicou está olhando para ela. */}
-            {copilotoAqui && (
+                a escrever. E, desde 05/11, depois da sugestão na caixa: o
+                campo de pedir uma mudança, o "Aprendi" com o Desfazer, e o
+                aviso da lição que não pôde ser guardada. */}
+            {faixaDoCopiloto && (
               <div data-copiloto-situacao={copilotoAqui.fase}
                    style={{ background: C.headerBar, padding: estreito ? "6px 8px 0" : "8px 16px 0" }}>
                 <style>{"@keyframes zv-copiloto-gira { to { transform: rotate(360deg); } }"}</style>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.searchBg,
+                <div style={{ background: C.searchBg,
                               borderLeft: `4px solid ${copilotoAqui.fase === "erro" ? "#e53935" : C.green}`,
-                              borderRadius: 6, padding: "6px 10px" }}>
-                  {copilotoAqui.fase === "pensando"
-                    ? <Loader2 size={16} color={C.green} style={{ flexShrink: 0, animation: "zv-copiloto-gira 1s linear infinite" }} />
-                    : copilotoAqui.fase === "erro"
-                      ? <AlertCircle size={16} color="#e53935" style={{ flexShrink: 0 }} />
-                      : <Sparkles size={16} color={C.green} style={{ flexShrink: 0 }} />}
-                  <div data-copiloto-frase style={{ flex: 1, minWidth: 0, fontSize: 13, color: C.textPrimary }}>
-                    <b style={{ color: copilotoAqui.fase === "erro" ? C.erroTexto : C.verdeTexto }}>Copiloto</b>
-                    {" · "}
-                    {copilotoAqui.fase === "pensando" ? "lendo a conversa para sugerir a resposta…"
-                      : copilotoAqui.fase === "erro" ? copilotoAqui.erro
-                      : "a sugestão chegou depois que você começou a escrever, e não entrou na caixa."}
+                              borderRadius: 6, padding: "6px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {copilotoAqui.fase === "pensando" || copilotoAqui.fase === "ajustando"
+                      ? <Loader2 size={16} color={C.green} style={{ flexShrink: 0, animation: "zv-copiloto-gira 1s linear infinite" }} />
+                      : copilotoAqui.fase === "erro"
+                        ? <AlertCircle size={16} color="#e53935" style={{ flexShrink: 0 }} />
+                        : <Sparkles size={16} color={C.green} style={{ flexShrink: 0 }} />}
+                    <div data-copiloto-frase style={{ flex: 1, minWidth: 0, fontSize: 13, color: C.textPrimary }}>
+                      <b style={{ color: copilotoAqui.fase === "erro" ? C.erroTexto : C.verdeTexto }}>Copiloto</b>
+                      {" · "}
+                      {copilotoAqui.fase === "pensando" ? "lendo a conversa para sugerir a resposta…"
+                        : copilotoAqui.fase === "ajustando" ? "refazendo a mensagem com o seu pedido…"
+                        : copilotoAqui.fase === "erro" ? copilotoAqui.erro
+                        : copilotoAqui.fase === "atrasada"
+                          ? (copilotoAqui.deAjuste
+                              ? "a mensagem refeita chegou depois que você mexeu na caixa, e não entrou nela."
+                              : "a sugestão chegou depois que você começou a escrever, e não entrou na caixa.")
+                        : !campoDoAjuste ? (copilotoAqui.licao ? "o que ele aprendeu com o seu pedido:" : "sobre o seu pedido:")
+                        : copilotoAqui.mudou ? "a mensagem refeita está na caixa. Confira antes de enviar."
+                        : "a sugestão está na caixa. Confira antes de enviar — e, se algo não serve, peça a mudança aqui."}
+                    </div>
+                    {copilotoAqui.fase === "atrasada" && !modoNota && !editando && (
+                      <button data-copiloto-usar onClick={usarSugestaoAtrasada}
+                              title={copilotoAqui.deAjuste ? "Trocar o que está na caixa pela mensagem refeita"
+                                                           : "Trocar o que está na caixa pela sugestão do copiloto"}
+                              style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.verdeTexto || C.green,
+                                       borderRadius: 14, padding: "4px 10px", fontSize: 12.5, cursor: "pointer", flexShrink: 0 }}>
+                        {copilotoAqui.deAjuste ? "Usar a mensagem refeita" : "Usar a sugestão"}
+                      </button>
+                    )}
+                    {copilotoAqui.fase !== "pensando" && copilotoAqui.fase !== "ajustando" && (
+                      <button data-copiloto-fechar onClick={() => mudarCopiloto(conversaId, null)}
+                              title="Fechar" aria-label="Fechar o aviso do copiloto"
+                              style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", flexShrink: 0 }}>
+                        <X size={18} color={C.textSecondary} />
+                      </button>
+                    )}
                   </div>
-                  {copilotoAqui.fase === "atrasada" && !modoNota && !editando && (
-                    <button data-copiloto-usar onClick={usarSugestaoAtrasada}
-                            title="Trocar o que está na caixa pela sugestão do copiloto"
-                            style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.verdeTexto || C.green,
-                                     borderRadius: 14, padding: "4px 10px", fontSize: 12.5, cursor: "pointer", flexShrink: 0 }}>
-                      Usar a sugestão
-                    </button>
+                  {campoDoAjuste && (
+                    <form data-copiloto-pedido
+                          onSubmit={(e) => { e.preventDefault(); pedirMudancaAoCopiloto(); }}
+                          style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <input data-copiloto-pedido-campo
+                             value={copilotoAqui.pedido || ""}
+                             readOnly={copilotoAqui.fase === "ajustando"}
+                             maxLength={500}
+                             onChange={(e) => {
+                               const v = e.target.value;
+                               mexerNoCopiloto(conversaId, (atual) => (atual ? { ...atual, pedido: v } : atual));
+                             }}
+                             onKeyDown={(e) => {
+                               // O Esc apaga o pedido, e não a conversa: a escada do
+                               // Esc ouve a janela, e o campo chega antes dela.
+                               if (e.key === "Escape" && (copilotoAqui.pedido || "").length) {
+                                 e.stopPropagation();
+                                 mexerNoCopiloto(conversaId, (atual) => (atual ? { ...atual, pedido: "" } : atual));
+                               }
+                             }}
+                             placeholder="Pedir uma mudança ao Copiloto (ex.: não podemos passar o telefone do advogado)"
+                             aria-label="Pedir uma mudança ao Copiloto"
+                             style={{ flex: 1, minWidth: 0, border: `1px solid ${C.divider}`, borderRadius: 16,
+                                      padding: "6px 12px", fontSize: 13, background: C.inputBg || C.panelBg,
+                                      color: C.textPrimary, outline: "none",
+                                      opacity: copilotoAqui.fase === "ajustando" ? 0.7 : 1 }} />
+                      <button type="submit" data-copiloto-pedir
+                              disabled={copilotoAqui.fase === "ajustando" || !(copilotoAqui.pedido || "").trim()}
+                              title="Mandar o pedido ao Copiloto"
+                              style={{ border: "none", background: C.green, color: "#fff", borderRadius: 14,
+                                       padding: "5px 12px", fontSize: 12.5, cursor: "pointer", flexShrink: 0,
+                                       opacity: copilotoAqui.fase === "ajustando" || !(copilotoAqui.pedido || "").trim() ? 0.55 : 1 }}>
+                        Pedir
+                      </button>
+                    </form>
                   )}
-                  {copilotoAqui.fase !== "pensando" && (
-                    <button data-copiloto-fechar onClick={() => mudarCopiloto(conversaId, null)}
-                            title="Fechar" aria-label="Fechar o aviso do copiloto"
-                            style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", flexShrink: 0 }}>
-                      <X size={18} color={C.textSecondary} />
-                    </button>
+                  {copilotoAqui.erro && copilotoAqui.fase !== "erro" && (
+                    <div data-copiloto-erro-do-pedido style={{ fontSize: 12.5, color: C.erroTexto }}>
+                      {copilotoAqui.erro}
+                    </div>
+                  )}
+                  {copilotoAqui.licao && (
+                    <div data-copiloto-licao style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.textPrimary }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <b style={{ color: C.verdeTexto }}>Aprendi:</b> “{copilotoAqui.licao.texto}”
+                        <span style={{ color: C.textSecondary }}> — vale para a equipe toda a partir de agora.</span>
+                      </div>
+                      <button data-copiloto-desfazer onClick={desfazerLicaoDoCopiloto}
+                              disabled={Boolean(copilotoAqui.desfazendo)}
+                              title="Desfazer: o Copiloto esquece esta lição"
+                              style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary,
+                                       borderRadius: 14, padding: "4px 10px", fontSize: 12.5, cursor: "pointer", flexShrink: 0,
+                                       opacity: copilotoAqui.desfazendo ? 0.55 : 1 }}>
+                        {copilotoAqui.desfazendo ? "Desfazendo…" : "Desfazer"}
+                      </button>
+                    </div>
+                  )}
+                  {copilotoAqui.desfeita && !copilotoAqui.licao && (
+                    <div data-copiloto-licao-desfeita style={{ fontSize: 12.5, color: C.textSecondary }}>
+                      Desfeito: o Copiloto esqueceu essa lição.
+                    </div>
+                  )}
+                  {copilotoAqui.erroDesfazer && (
+                    <div data-copiloto-erro-desfazer style={{ fontSize: 12.5, color: C.erroTexto }}>
+                      {copilotoAqui.erroDesfazer}
+                    </div>
+                  )}
+                  {copilotoAqui.aviso && (
+                    <div data-copiloto-aviso style={{ fontSize: 12.5, color: C.ambarTexto || C.textSecondary }}>
+                      {copilotoAqui.aviso}
+                    </div>
                   )}
                 </div>
               </div>

@@ -51,6 +51,15 @@ import { BRIDGE_URL, chamarPonte } from "./ponte.js";
 //  sempre, e o que muda é uma frase dizendo por que a IA não vai mover nada
 //  agora (`avisoDaIaDoFunil`). Esconder a chave deixaria quem administra sem
 //  saber por quê — e ela vale assim que a ponte puder.
+//
+//  ------------------------------------------------------------
+//  O AGENTE E O APRENDIZADO (05/11)
+//
+//  A ponte que tem o "Pedir uma mudança" (`POST /copiloto/ajustar`) diz
+//  `ajustar: true`; a de antes não diz nada, e o campo não aparece — a régua
+//  do resumo. `aprende` diz se a rodada que lê as conversas está ligada
+//  (`false` com COPILOTO_APRENDER=desligado lá), e é "antiga" quando a ponte
+//  respondeu sem falar dela: a aba de quem administra diz qual é o caso.
 // ============================================================
 
 const ESPERA_DO_ESTADO_MS = 8000;
@@ -60,12 +69,16 @@ const ESPERA_DO_ESTADO_MS = 8000;
 const ESPERA_DA_SUGESTAO_MS = 75000;
 // O RESUMO LÊ MAIS (até 300 mensagens), e a ponte pode ter de acordar antes.
 const ESPERA_DO_RESUMO_MS = 100000;
+// O AJUSTE LÊ O MESMO QUE A SUGESTÃO, e responde a mensagem e a lição.
+const ESPERA_DO_AJUSTE_MS = 75000;
 // O "NÃO CONSEGUI" É PERGUNTADO DE NOVO (auditoria de 28/10), pela régua de
 // `temVantoro.js`: guardado até o F5, ele deixava o botão numa instalação sem
 // a chave, para dar erro a cada clique, o dia inteiro.
 const DE_NOVO_EM_MS =
   (typeof globalThis !== "undefined" && globalThis.__PERGUNTAR_DE_NOVO_EM) || 30000;
 const VEZES_DE_NOVO = 4;
+
+const NAO_CONSEGUI = () => ({ ligado: null, modelo: null, resumo: null, funil: null, ajustar: null, aprende: null });
 
 let promessa = null;
 let falhas = 0;
@@ -81,13 +94,13 @@ function perguntarDeNovoDepois() {
   }, DE_NOVO_EM_MS);
 }
 
-/** `{ ligado, modelo, resumo, funil }`. `ligado`, `resumo` e `funil` são
- *  `null` quando não deu para perguntar; `funil` é "antiga" quando a ponte
- *  respondeu sem falar do funil. */
+/** `{ ligado, modelo, resumo, funil, ajustar, aprende }`. Todos menos `modelo`
+ *  são `null` quando não deu para perguntar; `funil` e `aprende` são "antiga"
+ *  quando a ponte respondeu sem falar deles. */
 export function perguntarOCopiloto() {
   if (promessa) return promessa;
   if (!BRIDGE_URL) {
-    promessa = Promise.resolve({ ligado: null, modelo: null, resumo: null, funil: null });
+    promessa = Promise.resolve(NAO_CONSEGUI());
     return promessa;
   }
   const relogio = new AbortController();
@@ -105,9 +118,13 @@ export function perguntarOCopiloto() {
         resumo: respondeu ? corpo.resumo === true : null,
         // E DO FUNIL (02/11): três respostas, e a ponte de antes é a terceira.
         funil: !respondeu ? null : corpo.funil === true ? true : corpo.funil === false ? false : "antiga",
+        // O AGENTE (05/11): a ponte de antes não fala dele, e o campo some.
+        ajustar: respondeu ? corpo.ajustar === true : null,
+        // E O APRENDIZADO: três respostas, como o funil.
+        aprende: !respondeu ? null : corpo.aprende === true ? true : corpo.aprende === false ? false : "antiga",
       };
     })
-    .catch(() => ({ ligado: null, modelo: null, resumo: null, funil: null }))
+    .catch(() => NAO_CONSEGUI())
     .then((r) => {
       // "NÃO CONSEGUI" MOSTRA, e não fica guardado (28/10).
       if (r.ligado === null) {
@@ -121,7 +138,7 @@ export function perguntarOCopiloto() {
   return esta;
 }
 
-/** `null` enquanto pergunta; depois `{ ligado, modelo, resumo, funil }`. */
+/** `null` enquanto pergunta; depois `{ ligado, modelo, resumo, funil, ajustar, aprende }`. */
 export function useEstadoDoCopiloto() {
   const [estado, setEstado] = useState(null);
   useEffect(() => {
@@ -141,6 +158,40 @@ export const copilotoAparece = (estado) => Boolean(estado) && estado.ligado !== 
 /** O "Resumir" aparece? O mesmo, e mais: a ponte que respondeu sem a rota do
  *  resumo (a de antes de 01/11) também esconde. */
 export const resumoAparece = (estado) => copilotoAparece(estado) && estado.resumo !== false;
+
+/** O "Pedir uma mudança" aparece? A régua do resumo: a ponte que respondeu
+ *  sem a rota (a de antes de 05/11) também esconde. */
+export const ajusteAparece = (estado) => copilotoAparece(estado) && estado.ajustar !== false;
+
+/** O CAMPO DE PEDIR UMA MUDANÇA está à vista? Ele mora com a mensagem na
+ *  caixa de escrever: com a caixa vazia (a mensagem foi enviada), na nota
+ *  interna e na edição de uma mensagem, ele não teria o que mudar. Enquanto o
+ *  pedido anda ("ajustando"), ele fica, travado. */
+export function campoDoAjusteAparece(s, { nota = false, editando = false, vazia = false } = {}) {
+  if (!s || nota || editando || s.soLicao) return false;
+  if (s.fase === "ajustando") return true;
+  return s.fase === "sugeriu" && !vazia;
+}
+
+/** A FAIXA DO COPILOTO, acima da caixa de escrever, está à vista? Uma conta só,
+ *  para o desenho e para o Esc — que não pode gastar a tecla fechando uma
+ *  faixa que ninguém vê.
+ *
+ *  Depois da sugestão (fase "sugeriu"), a faixa vive do campo de pedir uma
+ *  mudança; sem ele, ela fica só pelo que ainda tem a dizer (a lição, com o
+ *  Desfazer, e os avisos). */
+export function faixaDoCopilotoAparece(s, modo = {}) {
+  if (!s) return false;
+  if (s.fase !== "sugeriu") return true;
+  if (campoDoAjusteAparece(s, modo)) return true;
+  return Boolean(s.licao || s.desfeita || s.aviso || s.erroDesfazer);
+}
+
+/** A faixa que o Esc fecha: a que está à vista e tem o X. Enquanto o copiloto
+ *  lê ("pensando") ou refaz ("ajustando"), ela não tem X, e o pedido continua
+ *  andando. */
+export const faixaDoCopilotoFecha = (s, modo) =>
+  faixaDoCopilotoAparece(s, modo) && s.fase !== "pensando" && s.fase !== "ajustando";
 
 /** Por que a IA NÃO vai mover o funil agora, numa frase — ou `""` quando ela
  *  vai (ou quando não deu para perguntar: a dúvida não vira aviso). A chave
@@ -171,6 +222,23 @@ export async function pedirSugestao(conversaId) {
   const texto = String((r && r.sugestao) || "").trim();
   if (!texto) throw new Error("A IA não devolveu sugestão desta vez. Tente de novo.");
   return texto;
+}
+
+/** Pede ao copiloto que mude a mensagem. Devolve `{ sugestao, licao, aviso }`:
+ *  a mensagem refeita CRUA (com os marcadores, como a sugestão), a lição que
+ *  ficou gravada (`{ id, texto }`, ou `null` quando o pedido valia só para
+ *  esta conversa) e o aviso de quando a lição não pôde ser guardada. */
+export async function pedirAjuste(conversaId, { pedido, sugestao }) {
+  const r = await chamarPonte("/copiloto/ajustar", {
+    method: "POST",
+    body: JSON.stringify({ conversa_id: conversaId, pedido, sugestao }),
+    espera: ESPERA_DO_AJUSTE_MS,
+  });
+  const texto = String((r && r.sugestao) || "").trim();
+  if (!texto) throw new Error("A IA não devolveu a mensagem desta vez. Tente de novo.");
+  const licao = r && r.licao && r.licao.id != null && String(r.licao.texto || "").trim()
+    ? { id: r.licao.id, texto: String(r.licao.texto).trim() } : null;
+  return { sugestao: texto, licao, aviso: String((r && r.aviso) || "").trim() };
 }
 
 /** Pede o resumo de uma conversa. Devolve `{ resumo: { quer, combinado,
