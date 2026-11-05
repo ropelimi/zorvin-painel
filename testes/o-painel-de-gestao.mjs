@@ -44,7 +44,20 @@ const TODAS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 
 const nav = await abrirNavegador();
 // UM "AGORA" SÓ para a semente inteira — a lição das provas do "Já tratei".
-const AGORA = Date.now();
+//
+// E ESSE AGORA É HOJE ÀS 7H30 DE SÃO PAULO, com o relógio da tela parado nele
+// (05/11). A bancada põe os atendimentos "de hoje" das 8h às 16h, no fuso
+// desta prova, e os que ainda não aconteceram ficam fora do período: as
+// medianas da equipe mudavam com a hora em que a prova rodava. Medido de hora
+// em hora: o tempo de resposta da Camila e o meu davam 13 e 15 min da
+// meia-noite às 8h (a "mediana da equipe: 14 min" desta prova), empatavam das
+// 8h às 11h, davam 10 e 15 min das 11h às 14h ("13 min"), e empatavam de novo
+// depois das 14h. A rodada do GitHub de 05/11 caiu às 11h37 e reprovou, na
+// main também. Às 7h30, todos os de hoje estão no futuro, como quando a prova
+// foi escrita. E a semente conta desse mesmo agora: a tela e ela concordam a
+// qualquer hora do dia.
+const HOJE_EM_SP = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(Date.now());
+const AGORA = Date.parse(`${HOJE_EM_SP}T07:30:00-03:00`);
 const H = (h) => new Date(AGORA - h * 3600e3).toISOString();
 
 /** O telefone que o painel abre, e outro (a lição de `a-contabilizacao…`). */
@@ -145,6 +158,7 @@ function semente() {
 async function abrirPainel({ admin = true, largura = 1400, altura = 900, escuro = false, semPainel = false,
                              semTratados = false, protocolosFalham = false } = {}) {
   const ctx = await nav.newContext({ viewport: { width: largura, height: altura }, timezoneId: "America/Sao_Paulo" });
+  await ctx.clock.setFixedTime(new Date(AGORA));
   const page = await ctx.newPage();
   const estouros = [];
   page.on("pageerror", (e) => estouros.push(e.message));

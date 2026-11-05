@@ -7997,6 +7997,32 @@ que não depende do período, não é perguntada de novo quando ele muda (a cena
 esperava que fosse); e as linhas "pelo nome" da bancada são três, e não uma
 (a cena conferia só a do `autorSemId`).
 
+### A prova dependia da hora do dia (05/11, na PR do Quazar)
+
+A rodada do GitHub da PR do Quazar caiu às 11h37 de Brasília, e esta prova
+reprovou uma conferência: *"mediana da equipe: 14 min"* saía "13 min". Na
+`main`, a mesma reprovação. **Não era o painel, era a prova.** A bancada põe os
+atendimentos "de hoje" das 8h às 16h (no fuso de São Paulo, o da prova), e os
+que ainda não aconteceram ficam fora do período. Medido de hora em hora, o
+tempo de resposta da Camila e o meu:
+
+| horário de Brasília | Camila | eu | a mediana da equipe |
+|---|---|---|---|
+| da meia-noite às 8h | 13 min | 15 min | **14 min** (o da prova) |
+| das 8h às 11h | 15 min | 15 min | empatados, sem posição |
+| das 11h às 14h | 10 min | 15 min | 13 min |
+| depois das 14h | 10 min | 10 min | empatados, sem posição |
+
+A prova tinha sido escrita de madrugada, e passava só até as 8h. **Hoje o
+relógio da tela fica parado às 7h30 de hoje** (`ctx.clock.setFixedTime`), e a
+semente conta desse mesmo agora, e não do relógio da máquina: a tela e a
+semente concordam a qualquer hora. Rodada de novo às 11h50, ela passou
+inteira. Com o relógio parado às 20h, ela reprova (a dupla empata em 10 min),
+e é a conferência certa que reprova.
+
+**Régua que fica: prova que lê a bancada num período "até agora" fixa o
+relógio**, ou ela mede a hora em que rodou.
+
 ## A revisão do leiaute — o que se lê (05/11)
 
 Pedido do Rodrigo: *"Faça uma revisão geral do layout, para que o visual seja
