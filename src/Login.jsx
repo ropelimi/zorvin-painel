@@ -4,7 +4,7 @@ import { instalarSessao } from "./sessao.js";
 import { aplicarAparencia } from "./aparencia.js";
 import { Mail, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
 import Marca from "./Marca";
-import { rotuloDaVersao } from "./atualizacao.js";
+import { textoDaVersao, detalheDaVersao } from "./atualizacao.js";
 
 // Tela de entrada do Zorvin. É o MESMO usuário e a MESMA senha do Vantoro.
 //
@@ -497,9 +497,9 @@ export default function Login({ authMudo = false, sessaoTerminou = false } = {})
           Problemas para entrar? Fale com o administrador.
           {/* A VERSÃO (05/11): é aqui que se confere, antes mesmo de entrar,
               se a aba já tem a versão nova — ver `atualizacao.js`. */}
-          {rotuloDaVersao() && (
-            <div data-versao-do-zorvin style={{ marginTop: 6, fontSize: 11, opacity: .8, fontVariantNumeric: "tabular-nums" }}>
-              Zorvin {rotuloDaVersao()}
+          {textoDaVersao() && (
+            <div data-versao-do-zorvin title={detalheDaVersao()} style={{ marginTop: 6, fontSize: 11, opacity: .8, fontVariantNumeric: "tabular-nums" }}>
+              Zorvin {textoDaVersao()}
             </div>
           )}
         </div>

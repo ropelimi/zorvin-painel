@@ -68,9 +68,13 @@ function apoioDoPdfjs() {
 // - o IDENTIFICADOR é o commit publicado: na Render, `RENDER_GIT_COMMIT`; fora
 //   dela, o do `git`. Sem os dois, a hora da montagem — cada montagem, uma
 //   versão;
-// - o RÓTULO ("v1.313") sai do número da PR na mensagem do commit, que o
-//   GitHub escreve ao mesclar ("… (#313)"). Sem o número (um commit feito
-//   fora de uma PR, ou uma montagem sem o `git`), vai o começo do commit.
+// - o RÓTULO sai do número da PR na mensagem do commit, que o GitHub escreve
+//   ao mesclar ("… (#314)"), EM CENTENAS — a regra é do Rodrigo: a entrega
+//   314 é a "v3.14", a 399 a "v3.99", e a 400 a "v4.00". Depois do ponto vão
+//   sempre dois números (v4.05, e não v4.5). Sem o número (um commit feito
+//   fora de uma PR, ou uma montagem sem o `git`), vai o começo do commit;
+// - a DATA é a do commit, no fuso de Brasília ("05/11"), e não a da montagem:
+//   ela vai dentro do código, e o mesmo commit tem de dar o mesmo pacote.
 function lerDoGit(...args) {
   try {
     return execFileSync("git", args, { stdio: ["ignore", "pipe", "ignore"], encoding: "utf8" }).trim();
@@ -78,17 +82,53 @@ function lerDoGit(...args) {
     return "";
   }
 }
+/** 314 → "v3.14"; 400 → "v4.00"; 5 → "v0.05". */
+export function rotuloDaEntrega(numero) {
+  const n = Math.max(0, Math.floor(Number(numero) || 0));
+  return `v${Math.floor(n / 100)}.${String(n % 100).padStart(2, "0")}`;
+}
+
+/** A data do commit em Brasília: { data: "05/11", quando: "05/11/2026 às 01:12" }. */
+export function dataDoCommit(iso) {
+  const d = new Date(iso || "");
+  if (!iso || Number.isNaN(d.getTime())) return { data: "", quando: "" };
+  const fuso = { timeZone: "America/Sao_Paulo" };
+  try {
+    const dia = new Intl.DateTimeFormat("pt-BR", { ...fuso, day: "2-digit", month: "2-digit" }).format(d);
+    const ano = new Intl.DateTimeFormat("pt-BR", { ...fuso, year: "numeric" }).format(d);
+    const hora = new Intl.DateTimeFormat("pt-BR", { ...fuso, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(d);
+    return { data: dia, quando: `${dia}/${ano} às ${hora}` };
+  } catch (_) {
+    // SEM O FUSO NO NODE: Brasília não tem horário de verão desde 2019.
+    const b = new Date(d.getTime() - 3 * 60 * 60 * 1000);
+    const dois = (x) => String(x).padStart(2, "0");
+    const dia = `${dois(b.getUTCDate())}/${dois(b.getUTCMonth() + 1)}`;
+    return { data: dia, quando: `${dia}/${b.getUTCFullYear()} às ${dois(b.getUTCHours())}:${dois(b.getUTCMinutes())}` };
+  }
+}
+
+/** O número da PR e o rótulo, pela mensagem do último commit: "… (#314)" (a
+ *  mesclagem por squash) ou "Merge pull request #314 …" dão a v3.14. Sem o
+ *  número, o começo do commit. */
+export function rotuloDoCommit(assunto, commit) {
+  const texto = String(assunto || "");
+  const m = /\(#(\d+)\)\s*$/.exec(texto) || /#(\d+)/.exec(texto);
+  const numero = m ? Number(m[1]) : null;
+  return { numero, rotulo: numero ? rotuloDaEntrega(numero) : commit ? String(commit).slice(0, 7) : "" };
+}
+
 function versaoDoZorvin() {
   const commit = String(process.env.RENDER_GIT_COMMIT || "").trim() || lerDoGit("rev-parse", "HEAD");
-  const assunto = lerDoGit("log", "-1", "--format=%s");
-  const m = /\(#(\d+)\)\s*$/.exec(assunto) || /#(\d+)/.exec(assunto);
-  const numero = m ? Number(m[1]) : null;
+  const { numero, rotulo } = rotuloDoCommit(lerDoGit("log", "-1", "--format=%s"), commit);
+  const { data, quando } = dataDoCommit(lerDoGit("log", "-1", "--format=%cI"));
   const montadaEm = new Date().toISOString();
   return {
     id: commit || `montagem-${montadaEm}`,
-    rotulo: numero ? `v1.${numero}` : commit ? `v1 · ${commit.slice(0, 7)}` : "v1",
+    rotulo,
     numero,
     commit,
+    data,
+    quando,
     montada_em: montadaEm,
   };
 }
