@@ -3607,6 +3607,17 @@ export const supabase = {
       if (globalThis.__SEM_BUSCA_NO_BANCO) {
         return { data: null, error: { code: "PGRST202", message: `Could not find the function public.${nome}` } };
       }
+      // O BANCO SEM O 049 (04/11): a função existe, mas sem o argumento
+      // `p_todos_os_telefones` — o PostgREST não a acha com ele, e responde
+      // como responde quando a função não existe. As chamadas são contadas
+      // (`__BUSCAS_PEDIDAS`), com os argumentos, para a prova saber o que a
+      // tela perguntou.
+      (globalThis.__BUSCAS_PEDIDAS = globalThis.__BUSCAS_PEDIDAS || []).push({ ...(args || {}) });
+      const emTodos = Boolean(args && Object.prototype.hasOwnProperty.call(args, "p_todos_os_telefones"));
+      if (emTodos && globalThis.__BUSCA_SO_NO_TELEFONE) {
+        return { data: null, error: { code: "PGRST202",
+          message: `Could not find the function public.${nome}(p_advogado, p_limite, p_termo, p_todos_os_telefones) in the schema cache` } };
+      }
       // SÓ A FUNÇÃO CAI, e as consultas comuns continuam de pé.
       //
       // `__QUEBRAR_BUSCA` derruba tudo — a função E as tabelas — e isso é um
@@ -3634,7 +3645,13 @@ export const supabase = {
       const termo = semAcento(args && args.p_termo);
       const digitos = String((args && args.p_termo) || "").replace(/\D/g, "");
       const advId = args && args.p_advogado;
-      const minhas = TABELAS.conversas.filter((c) => String(c.advogado_id) === String(advId));
+      // EM TODOS OS TELEFONES, com o 049 e o argumento ligado — como no banco,
+      // a regra de acesso recortaria pelo que a pessoa enxerga; a bancada não
+      // tem regra de acesso nas leituras, e quem tira o que não se abre é a
+      // tela (`aBuscaAlcanca`).
+      const todosOsTelefones = emTodos && args.p_todos_os_telefones === true;
+      const minhas = todosOsTelefones ? TABELAS.conversas
+        : TABELAS.conversas.filter((c) => String(c.advogado_id) === String(advId));
       const porId = new Map(TABELAS.contatos.map((ct) => [String(ct.id), ct]));
       const saida = new Map();
 
@@ -3643,10 +3660,10 @@ export const supabase = {
         const campo = semAcento([ct.nome, ct.vantoro_nome, ct.nome_zorvin, ct.numero].join(" "));
         if (termo.length >= 3 && campo.includes(termo)) {
           saida.set(String(c.id), { id: c.id, motivo: "nome", trecho: null,
-                                    ultima_atividade: c.ultima_atividade });
+                                    ultima_atividade: c.ultima_atividade, advogado_id: c.advogado_id });
         } else if (digitos.length >= 4 && String(ct.numero || "").includes(digitos)) {
           saida.set(String(c.id), { id: c.id, motivo: "numero", trecho: null,
-                                    ultima_atividade: c.ultima_atividade });
+                                    ultima_atividade: c.ultima_atividade, advogado_id: c.advogado_id });
         }
       }
       if (termo.length >= 3) {
@@ -3666,12 +3683,20 @@ export const supabase = {
           const c = minhas.find((x) => String(x.id) === k);
           saida.set(k, { id: m.conversa_id, motivo, trecho,
                          ultima_atividade: c && c.ultima_atividade,
-                         mensagem_id: String(m.id), mensagem_em: m.criado_em });
+                         mensagem_id: String(m.id), mensagem_em: m.criado_em,
+                         advogado_id: c && c.advogado_id });
         }
       }
+      // AS DO TELEFONE ABERTO PRIMEIRO, e depois a mais recente — a ordem do
+      // 049, que é a que escolhe quais entram no teto.
+      const daqui = (x) => (String(x.advogado_id) === String(advId) ? 0 : 1);
       const lista = [...saida.values()]
-        .sort((a, b) => String(b.ultima_atividade || "").localeCompare(String(a.ultima_atividade || "")))
-        .slice(0, (args && args.p_limite) || 80);
+        .sort((a, b) => daqui(a) - daqui(b)
+          || String(b.ultima_atividade || "").localeCompare(String(a.ultima_atividade || "")))
+        .slice(0, (args && args.p_limite) || 80)
+        // A FUNÇÃO DE ANTES NÃO DEVOLVIA A COLUNA: sem o argumento novo, a
+        // resposta sai como a do banco sem o 049.
+        .map((x) => (emTodos ? x : (({ advogado_id: _fora, ...resto }) => resto)(x)));
       if (await esperaOuAborto(120, sinal)) return respostaAbortada();
       return { data: lista, error: null };
     }

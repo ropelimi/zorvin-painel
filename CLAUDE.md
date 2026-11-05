@@ -2008,6 +2008,11 @@ conta e a régua passa a falar de outra coisa.
 
 Prova: `a-busca-nao-empurra-a-conversa`, 11 conferências, 2 sabotagens e 2
 pegas.
+
+**E a nota do teto de 80 desceu pelo mesmo motivo (04/11)**: ela também chega
+depois de a conversa estar à vista, e no alto a empurrava 100 pontos para
+baixo. Foi esta prova que pegou, quando a busca passou a procurar em todos os
+telefones — ver "A busca procura em todos os telefones".
 ## O campo de grupos — a setinha do fim da fita
 
 Pedido do Rodrigo em 16/09, com a tela do WhatsApp Web ao lado: lá a fita de
@@ -2244,7 +2249,7 @@ isso."*
 
 | onde | o que procura | quem responde |
 |---|---|---|
-| a lupa da lista | o nome (os três), o número, o texto das mensagens, o que foi dito nos áudios (desde 31/10) e o cadastro do Vantoro | o banco, por dois caminhos ao mesmo tempo: `buscar_conversas` (sem acento, até 80 conversas) e os nomes e o número em `contatos`; o Vantoro chega depois |
+| a lupa da lista | o nome (os três), o número, o texto das mensagens, o que foi dito nos áudios (desde 31/10) e o cadastro do Vantoro — em todos os telefones da pessoa desde 04/11 (ver "A busca procura em todos os telefones") | o banco, por dois caminhos ao mesmo tempo: `buscar_conversas` (sem acento, até 80 conversas) e os nomes e o número em `contatos`; o Vantoro chega depois |
 | "Nova conversa" | a agenda de contatos | `contatos`, pela coluna `busca` (sem acento) e pelo número |
 | a lupa da conversa aberta | o texto das mensagens daquela conversa, e o que foi dito nos áudios (desde 31/10) | o banco, até 500 achados |
 | os menus | etiquetas, pessoas, rápidas… | a tela (`pesquisaNosMenus.js`, 23/10) |
@@ -2344,6 +2349,116 @@ e 14 pegas**, todas limpas, rodadas em cópias e lidas uma a uma:
   o salto da lupa que não carrega o pedaço em volta da achada;
 - **e o histórico chegando:** o som e a notificação para a mensagem de três
   dias atrás; o rótulo da lista trocado por ela.
+
+## A busca procura em todos os telefones (04/11)
+
+Pedido do Rodrigo, com duas fotos: *"Quando eu faço uma pesquisa, precisa ser
+pesquisado em todos os telefones. Exemplo da Jessica Maressa, que é apenas um
+"lead", que não tem ficha cadastrada no Vantoro. Veja que temos conversa com
+ela apenas no telefone SAC, então ao pesquisar aparece, mas por não ter
+conversa no telefone de Audiências, por exemplo, não está aparecendo a
+conversa ao ser pesquisado. Então corrija isso, pois não importa em qual
+telefone o usuário esteja, a busca deve encontrar todas as conversas, com ou
+sem ficha do Vantoro."*
+
+**A busca da lista recortava no telefone aberto**, nos três caminhos: a função
+do banco (`buscar_conversas`), a busca pelos nomes em `contatos` e a do
+cadastro do Vantoro. Hoje os três procuram em todos os telefones que a pessoa
+enxerga — **quem decide o que cada pessoa enxerga continua sendo a regra de
+acesso de `conversas`**. A função do banco ganhou o argumento
+`p_todos_os_telefones` no script 049 da ponte (ver o CLAUDE.md dela). As contas
+sem tela moram em `src/buscaEmTodosOsTelefones.js`.
+
+| | |
+|---|---|
+| a linha de outro telefone | ganha um **selo com o nome do telefone** (`data-selo-do-telefone`), verde, antes dos outros selos — é o que muda o que o clique faz |
+| a ordem | **as do telefone aberto primeiro**, depois as dos outros, cada grupo na ordem de sempre (`oTelefoneAbertoPrimeiro`). O banco usa a mesma ordem para escolher as 80 que devolve |
+| o clique numa de outro telefone | **vai ao telefone dela**, já com a conversa aberta, pela porta do histórico (`verConversaDoHistorico`): lê a linha, troca de telefone, leva a lista à aba dela e apaga a busca |
+| a busca que casou no texto | o clique abre a conversa **na mensagem achada**, também no outro telefone: o alvo vale pelo id da conversa (`alvoDe`), e não pelo telefone |
+| a oferta do Vantoro | continua sendo **deste telefone**: o cliente que só conversa com o SAC, procurado das Audiências, aparece com a conversa do SAC **e** com o "Começar conversa" pelas Audiências, como antes |
+
+**A tela tira o que um clique não abre** (`aBuscaAlcanca`). A regra de acesso
+já recorta pelos telefones da pessoa, e esta é a segunda guarda, pelo que a
+regra não sabe: a **linha desativada**. A regra deixa ver as conversas de um
+telefone desativado a quem tem permissão nele, e a barra não o oferece a quem
+não administra — o clique terminaria em "Você não tem acesso a este telefone".
+Ficam: a do telefone aberto, a de um telefone que a barra oferece, e, **só para
+quem administra**, a de uma linha desativada (de qualquer departamento).
+
+**E quem administra abre a linha desativada pela busca** (e pelo histórico):
+`verConversaDoHistorico` aceita a linha desativada quando quem clica
+administra. Ela abre só para leitura, com a explicação no lugar da caixa de
+escrever, como pela barra.
+
+**O banco sem o 049** (a ponte que a Render não publicou, um comprador com a
+ponte antiga): a chamada com o argumento novo não acha a função (PGRST202), e
+a busca pergunta de novo sem ele, só neste telefone, sem aviso de falha. **Só a
+segunda resposta decide** (`BUSCA_EM_TODOS_NO_BANCO`): respondendo, é o banco
+sem o 049, e não se pergunta de novo nesta sessão; sem a função também, é o
+banco sem busca nenhuma, e vale o caminho de reserva de sempre. Nesse banco, o
+nome continua sendo achado em todos os telefones (a busca pelos nomes é uma
+leitura de `contatos` e `conversas`, e não depende do 049); o texto das
+mensagens, só no telefone aberto.
+
+**Duas linhas com o mesmo nome**: durante a busca, o mesmo cliente pode
+aparecer uma vez em cada telefone, pelo mesmo número. O selo do telefone entra
+na chave do que se vê (`chaveDoQueSeVe`), e o número só aparece onde ele é o
+que separa duas linhas — inclusive dois homônimos de um mesmo telefone de fora.
+
+**A nota do teto ("Mostrando as 80 conversas mais recentes…") desceu para
+depois das conversas**, e diz que as deste telefone vêm primeiro. Ela chega
+com a resposta completa, depois de a dos nomes já ter desenhado a conversa
+achada, e no alto ela a empurrava 100 pontos para baixo debaixo do olho de quem
+já a via — a régua de 16/09, da oferta do cadastro. Procurando em todos os
+telefones, uma palavra comum chega às 80 muito mais vezes: foi a prova
+`a-busca-nao-empurra-a-conversa` que pegou, com "rodrigo", na primeira rodada.
+
+**A bancada aprendeu o 049**: `buscar_conversas` com `p_todos_os_telefones`
+procura em todas as conversas, devolve `advogado_id` e põe as do telefone
+aberto primeiro; `__BUSCA_SO_NO_TELEFONE` é o banco sem o 049 (PGRST202 com o
+argumento novo); e as chamadas ficam em `__BUSCAS_PEDIDAS`, com os argumentos.
+**A bancada não tem regra de acesso nas leituras**: quem tira o telefone que a
+pessoa não atende, nas provas, é a guarda da tela — que é exatamente o que a
+cena de quem não administra confere.
+
+Prova: `a-busca-procura-em-todos-os-telefones`, 69 conferências em nove cenas:
+o lead do relato (o selo, pintado, e o clique que leva até o telefone dela); a
+mensagem achada noutro telefone, fora das 120 últimas; o mesmo cliente nos dois
+telefones e os homônimos de fora; o teto de 80, com as deste telefone primeiro e
+a nota depois; quem não administra; a linha desativada para quem administra; o
+banco sem o 049; a oferta do Vantoro; e o celular a 360.
+
+**20 sabotagens e 20 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma:
+
+- o painel de antes inteiro (46 reprovações — é o pedido reproduzido);
+- **as três buscas:** a do banco sem o argumento novo (15); a dos nomes só no
+  telefone aberto; as conversas que o banco achou lidas só no telefone aberto
+  (8);
+- **o selo:** sem ele (17); também nas deste telefone;
+- **o clique:** abrindo aqui, sem ir ao telefone dela (6); o de fora sem o
+  alvo da mensagem achada (3);
+- **a ordem e a nota:** sem as deste telefone primeiro (2); a nota do teto de
+  volta no alto (2);
+- **o que um clique abre:** sem tirar o que ele não abre (2); a linha
+  desativada também para quem não administra; a linha desativada fora da busca
+  de quem administra (6); o clique nela recusado a quem administra (4);
+- **o banco sem o 049:** sem a segunda pergunta (3); sem lembrar, perguntando
+  duas vezes a cada busca;
+- **o resto:** a oferta do Vantoro contando as conversas de outros telefones;
+  o número que separa sem o selo na chave;
+- **e a bancada:** sem o telefone aberto primeiro no teto; sem o argumento novo
+  (12).
+
+**A busca pelos nomes só no telefone aberto é pega só na cena do banco sem o
+049**, e está certo: com o 049, a função do banco também acha pelo nome, em
+todos os telefones, e cobre a falta. Num banco sem o 049, o nome é o único
+caminho que atravessa os telefones.
+
+**A rodada foi interrompida no meio** (a máquina reiniciou depois da décima
+sabotagem) e retomada da décima primeira, sobre o mesmo código: as sabotagens
+rodam em cópias, e o repositório não foi tocado. A prova inteira rodou de novo
+antes do commit.
 
 ## Copiar leva só o texto (08/10)
 
@@ -3123,7 +3238,10 @@ linha, e a prova a pega.
 mais exata, e é código morto: `contatos.numero` é único e a lista é de **um**
 telefone do escritório por vez, então duas linhas são dois contatos, e dois
 contatos são dois números. A conferência daria um caminho que nenhuma prova
-consegue exercitar.
+consegue exercitar. **Durante a busca, desde 04/11, a lista mostra vários
+telefones**, e o mesmo cliente pode aparecer duas vezes pelo mesmo número: o
+selo do telefone entra na chave do que se vê — ver "A busca procura em todos
+os telefones".
 
 **O cabeçalho da conversa já dizia o número** — foi consertado numa rodada
 anterior, e por isso esta mudança é só na lista. **Um limite conhecido, deixado
