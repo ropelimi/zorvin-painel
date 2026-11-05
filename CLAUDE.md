@@ -7070,7 +7070,7 @@ o quadro, em `src/ResumoDaConversa.jsx`.
 | | |
 |---|---|
 | computador | um ícone de pergaminho (`data-resumo-botao`) na barra de escrever, ao lado do ✨ |
-| computador com o cabeçalho recolhido | "Resumir a conversa" no ⋮ do cabeçalho |
+| computador com a conversa abaixo de 500 pontos | "Resumir a conversa" no ⋮ do cabeçalho (até 05/11, era o cabeçalho recolhido que decidia — ver logo abaixo) |
 | celular | "Resumir a conversa" no ⋮ (`data-resumo-item`), logo depois de "Sugerir resposta" |
 | o resultado | um quadro por cima do alto da conversa (`data-resumo-da-conversa`) |
 
@@ -7078,14 +7078,73 @@ o quadro, em `src/ResumoDaConversa.jsx`.
 tem a conta de largura de 29/09 (`FILA_ESCRITA`), e um botão a mais nela
 apertaria o nome do cliente em todas as larguras de notebook.
 
-**E onde o cabeçalho recolhe no ⋮ (`cabecalhoRecolhido`), o botão vai
-junto.** São 40 pontos a menos na caixa de escrever, e a prova
+~~**E onde o cabeçalho recolhe no ⋮ (`cabecalhoRecolhido`), o botão vai
+junto.**~~ **Mudou em 05/11** — ver "E com a ficha aberta, o pergaminho fica",
+logo abaixo. São 40 pontos a menos na caixa de escrever, e a prova
 `a-auditoria-de-27-10` mediu: numa janela de 900, a caixa caía para **181
 pontos**, abaixo do piso de 200. O cabeçalho recolhe quando a conversa tem
 menos de ~590 pontos; acima disso, com o botão, a caixa fica com ~290 ou
 mais. E não é uma régua nova: no recolhido o ⋮ do cabeçalho está lá, com
 "Resumir a conversa" escrito. A primeira escrita não tinha essa guarda, e foi
 a prova vizinha que reprovou.
+
+### E com a ficha aberta, o pergaminho fica (05/11)
+
+Relato do Rodrigo: *"Quando a Ficha do Vantoro está aberta, não está
+aparecendo o pergaminho de Resumir a conversa. Corrija para mim."*
+
+**A régua era a errada.** O pergaminho seguia o cabeçalho recolhido no ⋮
+(`cabecalhoRecolhido`), e com a ficha em coluna o cabeçalho recolhe numa tela
+de 1280 a 1366 pontos. A do escritório é de 1280 (1920 a 150%): ali a
+conversa fica com 530 pontos, o nome do alto não cabe ao lado dos botões, e o
+pergaminho ia junto para o ⋮ — com a caixa de escrever sobrando.
+
+**O que o pergaminho custa é a caixa de escrever**, e não o nome do alto.
+Hoje ele fica na barra enquanto a conversa tiver 500 pontos ou mais
+(`resumoNaBarra`, `RESUMO_NA_BARRA_A_PARTIR`). **Medido na bancada**, com a
+ficha em coluna:
+
+| janela | a conversa | o pergaminho | a caixa de escrever |
+|---|---|---|---|
+| 1240 | 490 | no ⋮ | 232 |
+| 1250 | 500 | na barra | **200** (o piso) |
+| 1280 | 530 | na barra | 230 |
+| 1366 | 616 | na barra | 316 |
+
+**Abaixo de 500 ele continua no ⋮**, que existe ali: com a conversa abaixo de
+590 pontos o cabeçalho sempre recolhe. A janela de 900 da `a-auditoria-de-27-10`
+(a conversa com 480) continua sem o pergaminho, e a caixa com mais de 200.
+
+**O ⋮ do cabeçalho continua dizendo "Resumir a conversa"** onde ele existe,
+mesmo com o pergaminho na barra. Dois caminhos para o mesmo gesto não
+atrapalham, e tirar o item do menu mudaria o que o menu recolhido promete:
+dizer o nome de cada coisa.
+
+Prova: `o-resumo-da-conversa`, cena 13, com a ficha em coluna (a ponte de
+mentira diz que há Vantoro, e só nessa cena): a 1250, 1280 e 1366, a ficha
+aberta, o cabeçalho recolhido, o pergaminho PINTADO na barra
+(`elementFromPoint`), a caixa com o piso e o resumo vindo por ele; e a 1240,
+o pergaminho fora da barra, a caixa com o piso e o item no ⋮. E, na cena 11,
+o tablet em pé.
+
+**E o tablet em pé (744) fica com o ⋮.** Lá o leiaute é o do celular, mas a
+conversa tem 684 pontos, acima da régua: só a guarda do celular (`!estreito`)
+segura o pergaminho no ⋮. Num telefone, a largura sozinha já o tira.
+
+**6 sabotagens e 6 pegas**, rodadas em cópias e lidas uma a uma:
+
+- o painel de antes (o pergaminho seguindo o cabeçalho recolhido: 6
+  reprovações, a 1250, 1280 e 1366 — é o relato reproduzido);
+- sem a régua (sempre na barra): a caixa cai para 181 a 900 e para 190 a
+  1240;
+- a régua alta demais (550) e baixa demais (480);
+- a conta da largura sem descontar a ficha;
+- o pergaminho também no celular.
+
+**A última vazou na primeira rodada, e era a prova.** As cenas do celular
+rodam a 390, onde a conversa tem menos de 500 pontos e a largura sozinha já
+tira o pergaminho. Entrou a cena do tablet em pé, e a mesma sabotagem é pega
+ali; as outras cinco foram rodadas de novo contra a prova final.
 
 **Ao contrário do ✨, ele não some com texto na caixa**: resumir não mexe no
 que está escrito. Por isso ele vem antes do lugar que o ✨ e o relógio de
@@ -7162,7 +7221,8 @@ decisão. A sugestão do copiloto entra na caixa de escrever, a um Enter do
 cliente; o resumo só é lido pela equipe, e é nas notas que ela escreve o que
 combinou.
 
-Prova: `o-resumo-da-conversa`, 82 conferências em 12 cenas, com a ponte
+Prova: `o-resumo-da-conversa`, 82 conferências em 12 cenas (108 em 13
+desde 05/11), com a ponte
 fingida pela prova e o relógio fixado às 9h de Brasília. **26 sabotagens, 25
 pegas e uma que vaza com razão**, todas rodadas em cópias e lidas uma a uma:
 
