@@ -3142,6 +3142,66 @@ antes de o pdf.js começar a buscar o resto. Quem pega é a cena da fila, com o
 depósito lento: três downloads ficam no ar ao mesmo tempo, quando a fila deixa
 dois.
 
+## O aviso automático do Vantoro tem o rosto dele (05/11)
+
+Pedido do Rodrigo, com a foto de um aviso de audiência: *"Nos avisos de
+audiência, o ícone tem que mostrar que foi uma mensagem automática enviada
+pelo Vantoro."*
+
+**O aviso aparecia com as iniciais de quem olhava a tela.** A ponte grava o
+aviso sem autor e marcado como automático (`mensagens.automatica`, script 037
+da ponte), e o rosto da bolha caía no nome de quem está com o Zorvin aberto
+(`quem.nome || meuNome`). Na foto, "RS", como se o Rodrigo o tivesse mandado.
+**Medido em 05/11, só contando:** 107 avisos, desde 13/08. E 92 mensagens de
+julho, de antes de o Zorvin anotar quem escreve, tinham o mesmo defeito.
+
+| a bolha | a linha do autor | o rosto |
+|---|---|---|
+| o aviso automático | "Aviso automático do Vantoro", com um robô (`data-autor-automatico`) | um robô (`data-avatar-automatico`) |
+| a mensagem sem autor | nenhuma, como antes | um rosto sem traços (`data-avatar-sem-autor`), e nunca as iniciais de quem olha |
+| a de gente | o nome, como antes | a foto ou as iniciais da pessoa, como antes |
+
+- **Quem decide é `quemFalou`**: `automatica === true` é o aviso do Vantoro.
+  Hoje é o único caso: a resposta fora do horário não mora em `mensagens`.
+  Uma mensagem automática de outra origem, no futuro, pede outro rótulo ali;
+- **o `title` diz o porquê**: *"Mensagem automática, enviada sozinha pelo
+  Vantoro (aviso de audiência): ninguém da equipe a escreveu."*;
+- **o aviso não entra em "quem participou da conversa"**: a pergunta do
+  grupinho é com quem falar sobre o cliente, e ninguém da equipe o escreveu;
+- **o círculo dos ícones passou a ter 28**, como os rostos de gente. A borda
+  somava 2 (`box-sizing`), e o de "Pelo celular" já saía com 30. Foi a prova
+  que achou.
+
+**O que não mudou, e é decisão:**
+
+- a faixa de quem responde citando o aviso continua dizendo "Respondendo a
+  equipe";
+- o histórico de atendimento (a primeira e a última mensagem enviadas a um
+  cliente) diz "equipe" quando a mensagem é um aviso: a rota da ponte não
+  manda a marca de automático.
+
+Prova: `o-aviso-automatico-do-vantoro`, 36 conferências em cinco cenas: o
+aviso (a linha do autor, o robô PINTADO e do tamanho dos outros rostos, o
+desenho, o `title`, o `aria-label`, e nenhuma inicial nem foto de quem olha);
+a mensagem sem autor; o contraste (a colega sem foto com as iniciais dela, e
+eu com a minha foto); "quem participou"; e o celular. Na bancada, quem entra
+é "Rodrigo Sousa", com foto, e a mensagem sem autor reproduzia o "RS".
+
+**16 sabotagens e 16 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma:
+
+- o painel de antes inteiro (19 reprovações — é o pedido reproduzido: "RS" no
+  aviso e na mensagem sem autor);
+- **quem escreveu:** `quemFalou` sem o aviso automático (11); a linha do autor
+  sem o aviso (4); desenhada como a de uma pessoa (4); com o `title` do rótulo
+  de importação; com o relógio do histórico no lugar do robô;
+- **o rosto:** o aviso com as iniciais "AA" (9); a mensagem sem autor com as
+  iniciais de quem olha, o desenho de antes (6); com um "?" no círculo (6); o
+  robô com o desenho do rosto neutro; a sem autor com o desenho do robô; o
+  robô com o `title` do nome; sem o `aria-label`; a sem autor sem o `title`;
+  sem o `border-box` (o círculo de 30);
+- **e "quem participou" contando o aviso** (3).
+
 ## A citação leva até a mensagem citada
 
 Pedido do Rodrigo em 16/09: *"ao clicar na mensagem que foi respondida, ir para

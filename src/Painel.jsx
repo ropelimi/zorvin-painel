@@ -9,7 +9,7 @@ import {
   StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star,
   Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList, ShieldCheck,
   ChevronLeft, ChevronRight, Images, ExternalLink, Pin, Copy, Forward, Sticker,
-  History, BarChart3, Users, Smartphone,
+  History, BarChart3, Users, Smartphone, Bot, UserRound,
   Image as ImageIcon, Video,
   Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote, Volume2,
   ListChecks, Undo2, UserCheck, SquareKanban, BellRing, BellPlus, CircleCheck, RotateCcw,
@@ -2713,7 +2713,9 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
     // atendente respondeu) e também nas RECEBIDAS quando é um GRUPO
     // (para saber qual participante escreveu, como no WhatsApp).
     const ehGrupoConversa = String(conversa?.contato?.numero || "").startsWith("grupo:");
-    const mostrarAutor = (saida || ehGrupoConversa) && !!m.enviado_por;
+    // O AVISO AUTOMÁTICO não tem `enviado_por`, e diz quem o mandou assim
+    // mesmo: sem a linha, a bolha se lia como de alguém da equipe.
+    const mostrarAutor = (saida || ehGrupoConversa) && (!!m.enviado_por || m.automatica === true);
     // Quem escreveu, com o nome e a foto DE HOJE.
     const quem = quemFalou(m);
     // Última mensagem de uma sequência do mesmo remetente: recebe o
@@ -2971,13 +2973,16 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
                 desenho de um telefone, se lê como o que é: a
                 mensagem saiu daqui, mas não por aqui. */}
             {mostrarAutor && (
-              quem.aparelho || quem.rotulo ? (
-                <div title={quem.aparelho
+              quem.aparelho || quem.rotulo || quem.automatica ? (
+                <div data-autor-automatico={quem.automatica ? "" : undefined}
+                     title={quem.automatica
+                      ? "Mensagem automática, enviada sozinha pelo Vantoro (aviso de audiência): ninguém da equipe a escreveu."
+                      : quem.aparelho
                       ? "Saiu pelo aplicativo do WhatsApp, fora do Zorvin — o WhatsApp não diz qual atendente escreveu."
                       : "Rótulo do histórico importado, e não uma pessoa do escritório."}
                      style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5,
                               fontWeight: 600, color: C.textSecondary, marginBottom: 1 }}>
-                  {quem.aparelho ? <Smartphone size={12} /> : <History size={12} />}
+                  {quem.automatica ? <Bot size={12} /> : quem.aparelho ? <Smartphone size={12} /> : <History size={12} />}
                   {quem.nome}
                 </div>
               ) : (
@@ -3265,20 +3270,39 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
           )}
           {saida && (
             <div style={{ width: 28, flexShrink: 0 }}>{!ultimaDoGrupo ? null
-              : (quem.aparelho || quem.rotulo)
+              : (quem.aparelho || quem.rotulo || quem.automatica || !quem.nome)
                 /* Sem bolinha de iniciais: "PC" num círculo colorido
-                   é a cara de uma pessoa, e não há pessoa aqui. */
-                ? <span title={quem.nome} style={{ width: 28, height: 28, borderRadius: "50%", background: C.bubbleIn,
+                   é a cara de uma pessoa, e não há pessoa aqui.
+                   E a mensagem SEM AUTOR não pega o nome de quem está
+                   olhando a tela (05/11): o aviso automático aparecia
+                   com as iniciais dela, e as mensagens de julho, de
+                   antes de o Zorvin anotar quem escreve, também. */
+                ? <span data-avatar-automatico={quem.automatica ? "" : undefined}
+                        data-avatar-sem-autor={!quem.nome ? "" : undefined}
+                        title={quem.automatica
+                          ? "Mensagem automática, enviada sozinha pelo Vantoro (aviso de audiência): ninguém da equipe a escreveu."
+                          : !quem.nome ? "Quem enviou esta mensagem não ficou registrado." : quem.nome}
+                        aria-label={quem.automatica ? "Aviso automático do Vantoro"
+                          : !quem.nome ? "Quem enviou não ficou registrado" : quem.nome}
+                        /* `border-box`: sem ele a borda somava 2 aos 28, e o
+                           círculo saía maior que os rostos de gente (e
+                           maior que o lugar dele, de 28) — já no celular de
+                           "Pelo celular", antes do robô (05/11). */
+                        style={{ width: 28, height: 28, boxSizing: "border-box", borderRadius: "50%", background: C.bubbleIn,
                                 border: `1px solid ${C.divider}`, display: "flex", alignItems: "center",
                                 justifyContent: "center", flexShrink: 0 }}>
                     {/* Desenhos diferentes porque são coisas
-                        diferentes: um celular para o que saiu pelo
+                        diferentes: um robô para o que saiu sozinho
+                        pelo Vantoro, um celular para o que saiu pelo
                         aplicativo, o relógio do histórico para o
-                        rótulo que veio da importação. */}
-                    {quem.aparelho ? <Smartphone size={14} color={C.textSecondary} />
-                                   : <History size={14} color={C.textSecondary} />}
+                        rótulo que veio da importação, e um rosto sem
+                        traços para quem não ficou registrado. */}
+                    {quem.automatica ? <Bot size={15} color={C.textSecondary} />
+                      : quem.aparelho ? <Smartphone size={14} color={C.textSecondary} />
+                      : quem.rotulo ? <History size={14} color={C.textSecondary} />
+                      : <UserRound size={14} color={C.textSecondary} />}
                   </span>
-                : <Avatar nome={quem.nome || meuNome} foto={quem.foto} size={28} />}</div>
+                : <Avatar nome={quem.nome} foto={quem.foto} size={28} />}</div>
           )}
         </div>
         )}
@@ -4992,6 +5016,21 @@ export default function Painel({ sessao }) {
   /** Quem escreveu esta mensagem (ou esta nota), com o nome e a foto de hoje. */
   function quemFalou(m) {
     if (!m) return { id: null, nome: null, foto: null };
+    // O AVISO AUTOMÁTICO DO VANTORO (05/11).
+    //
+    // O aviso de audiência sai sozinho, pedido pelo Vantoro: ninguém da
+    // equipe o escreveu, e a ponte o grava sem autor, marcado como
+    // automático (`mensagens.automatica`, script 037 da ponte). Sem autor, a
+    // bolha caía no nome de quem está olhando a tela, e o aviso aparecia com
+    // as iniciais da pessoa ("RS") — como se ela o tivesse mandado. Medido
+    // em 05/11: 107 avisos, desde 13/08.
+    //
+    // Hoje, todo `automatica` é aviso do Vantoro: a resposta fora do horário
+    // não mora em `mensagens`. Uma mensagem automática de outra origem, no
+    // futuro, pede outro rótulo aqui.
+    if (m.automatica === true) {
+      return { id: null, nome: "Aviso automático do Vantoro", foto: null, automatica: true };
+    }
     const ehNota = m.origem === "nota";
     const id = (ehNota ? m.autor_id : m.enviado_por_id) || null;
     const nomeGravado = (ehNota ? m.autor : m.enviado_por) || null;
@@ -15560,9 +15599,10 @@ export default function Painel({ sessao }) {
     for (const m of mensagens) {
       if (m.origem !== "advogado" && m.origem !== "nota") continue;
       const q = quemFalou(m);
-      // NEM APARELHO NEM RÓTULO. A pergunta do grupinho é "com quem eu falo
-      // sobre este cliente", e nenhum dos dois tem a quem perguntar.
-      if (!q.nome || q.aparelho || q.rotulo) continue;
+      // NEM APARELHO, NEM RÓTULO, NEM O AVISO AUTOMÁTICO. A pergunta do
+      // grupinho é "com quem eu falo sobre este cliente", e nenhum dos três
+      // tem a quem perguntar.
+      if (!q.nome || q.aparelho || q.rotulo || q.automatica) continue;
       const chave = q.id || "nome:" + chaveDeNome(q.nome);
       const antes = mapa.get(chave);
       if (!antes) { mapa.set(chave, { ...q, quantas: 1, ultimaEm: m.criado_em }); continue; }
