@@ -8,8 +8,10 @@
 //   QUANDO      em que dias e em que horas do dia isso acontece.
 //   QUÃO RÁPIDO quanto o cliente espera para ser respondido.
 //   ONDE        por telefone do escritório.
-//   QUEM        por atendente — e este é o único bloco que mostra todo mundo,
-//               porque comparação com uma linha só não é comparação.
+//   QUEM        a equipe, uma linha por pessoa juntando as quatro contas de
+//               pessoa (05/11) — e mostra todo mundo, porque comparação com
+//               uma linha só não é comparação. Escolhida uma pessoa, a ficha
+//               dela, com cada número ao lado da mediana da equipe.
 //
 // ------------------------------------------------------------------
 // OS QUATRO FILTROS, E POR QUE ELES FICAM JUNTOS NO TOPO
@@ -61,6 +63,7 @@
 //
 // Todo gráfico tem um botão "Tabela" que troca o desenho pelos números.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { campoDaPlanilha } from "./planilha.js";
 import { semAFuncao } from "./gravar.js";
 import { supabase } from "./supabase";
@@ -68,9 +71,13 @@ import { nomeDoContato } from "./contato.js";
 import { telefoneLegivel } from "./numeros.js";
 import { diasDesde } from "./espera.js";
 import {
+  juntarAEquipe, colunasVisiveis, colunasDaFicha, fraseDoQueFaltou, ordenarAEquipe,
+  sentidoDeComeco, mediana, aPessoaNaEquipe, baseDaComparacao, linhasDoCabecalho,
+} from "./painelDeGestao.js";
+import {
   RefreshCw, AlertCircle, Table2, BarChart3, Info, Calendar,
   ChevronLeft, ChevronRight, ChevronDown, Check, X, Users, Phone, Building2,
-  ListChecks, Download, UserCheck, SquareKanban, Ticket,
+  ListChecks, Download, UserCheck, SquareKanban, Ticket, Printer,
 } from "lucide-react";
 
 const DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -87,8 +94,10 @@ const MESES_LONGOS = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho"
 const MAX_DIAS = 400;
 
 const CORES = {
-  claro:  { saiu: "#008069", chegou: "#2a78d6", apagado: "#98a5ac", aviso: "#c98500" },
-  escuro: { saiu: "#00a884", chegou: "#3987e5", apagado: "#6b7a83", aviso: "#e0a400" },
+  claro:  { saiu: "#008069", chegou: "#2a78d6", apagado: "#98a5ac", aviso: "#c98500", selo: "#008069" },
+  // O SELO "você" tem letra branca, e no escuro o verde das barras (#00a884)
+  // dava 3,0:1 com ela. O selo usa o verde dos botões (4,9) nos dois temas.
+  escuro: { saiu: "#00a884", chegou: "#3987e5", apagado: "#6b7a83", aviso: "#e0a400", selo: "#008069" },
 };
 // A rampa do mapa de horários: UM tom só, do quase-invisível ao cheio. Rampa de
 // várias cores ("arco-íris") faz o olho ler salto onde só há mais um pouco.
@@ -229,8 +238,61 @@ function useFora(ref, aoFechar, ativo) {
   }, [ref, aoFechar, ativo]);
 }
 
-export default function PainelNumeros({ C, modo = "claro", advogados = [], departamentos = [],
+/* ================================================================
+   UMA LEITURA DO BANCO, com o seu estado (05/11)
+   ================================================================
+   As quatro leituras que falam de PESSOA (o Painel, os protocolos, o "Já
+   tratei" e a carteira) moram no alto da tela e descem para as seções. Antes
+   cada seção lia a sua; a tabela da equipe, que junta as quatro, teria de ler
+   tudo de novo — e cada uma dessas contas percorre as conversas do período.
+
+   CADA UMA COM O SEU ESTADO: a falta de uma função não esconde as outras (a
+   régua das seções). `semFuncao` é a função que não existe; o `falta` de
+   dentro da resposta (o script de antes que falta) cada seção lê do seu jeito.
+   A CHAVE É A PERGUNTA (os argumentos), e não o objeto, que nasce de novo a
+   cada desenho. */
+function useLeitura(nome, args) {
+  const chave = JSON.stringify(args);
+  const [estado, setEstado] = useState({ carregando: true, erro: "", semFuncao: false, dados: null });
+  useEffect(() => {
+    let vivo = true;
+    setEstado((e) => ({ ...e, carregando: true, erro: "", semFuncao: false }));
+    (async () => {
+      const { data, error } = await supabase.rpc(nome, JSON.parse(chave));
+      if (!vivo) return;
+      if (error) {
+        setEstado(semAFuncao(error)
+          ? { carregando: false, erro: "", semFuncao: true, dados: null }
+          : { carregando: false, semFuncao: false, dados: null,
+              erro: `${error.message || "erro desconhecido"}${error.code ? ` (código ${error.code})` : ""}` });
+        return;
+      }
+      setEstado({ carregando: false, erro: "", semFuncao: false, dados: data || null });
+    })();
+    return () => { vivo = false; };
+  }, [nome, chave]);
+  return estado;
+}
+
+/** As seções da tela, na ordem dela: é o que o menu de imprimir oferece e o
+ *  que a navegação do alto leva. */
+const SECOES_DO_PAINEL = [
+  { id: "equipe", curto: "Equipe" },
+  { id: "protocolos", curto: "Protocolos", rotulo: "Protocolos de atendimento" },
+  { id: "atendimentos", curto: "Mensagens", rotulo: "Atendimentos e mensagens" },
+  { id: "carteira", curto: "Carteira", rotulo: "Carteira de cada responsável" },
+  { id: "funil", curto: "Funil", rotulo: "Funil" },
+  { id: "jatratei", curto: "Já tratei", rotulo: "Já tratei" },
+];
+
+export default function PainelNumeros({ C: CDaTela, CClaro = null, modo: modoDaTela = "claro", advogados = [], departamentos = [],
                                         souAdmin = false, meuId = null, meuNome = "", aoFechar }) {
+  // NO PAPEL, SEMPRE O TEMA CLARO (ver `CSS_DA_IMPRESSAO`): quem trabalha no
+  // escuro imprimiria uma folha preta. `imprimindo` liga no `beforeprint` e
+  // desliga no `afterprint`, e o resto da tela não sabe de nada.
+  const [imprimindo, setImprimindo] = useState(false);
+  const C = imprimindo && CClaro ? CClaro : CDaTela;
+  const modo = imprimindo ? "claro" : modoDaTela;
   const cores = CORES[modo] || CORES.claro;
   const rampa = RAMPA[modo] || RAMPA.claro;
 
@@ -243,10 +305,6 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
   const outraPessoa = souAdmin && quem != null && String(quem) !== String(meuId);
   const [telefone, setTelefone] = useState(null);
   const [departamento, setDepartamento] = useState(null);
-  const [carregando, setCarregando] = useState(true);
-  const [erro, setErro] = useState("");
-  const [faltaSql, setFaltaSql] = useState(false);
-  const [d, setD] = useState(null);
 
   // O FUSO DE QUEM ESTÁ OLHANDO. Sem mandá-lo, o banco (que roda em UTC) corta
   // o dia às 21h e o mapa de horários sai três horas deslocado.
@@ -257,29 +315,49 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
 
   const deIso = periodo.de.toISOString(), ateIso = periodo.ate.toISOString();
 
-  useEffect(() => {
-    let vivo = true;
-    (async () => {
-      setCarregando(true); setErro(""); setFaltaSql(false);
-      const { data, error } = await supabase.rpc("painel_dashboard", {
-        p_desde: deIso, p_ate: ateIso, p_quem: quem, p_fuso: fuso,
-        p_telefone: telefone, p_departamento: departamento,
-      });
-      if (!vivo) return;
-      if (error) {
-        // Banco sem a função ainda. Aqui NÃO existe plano B honesto: contar no
-        // navegador é justamente o que dava número errado.
-        if (semAFuncao(error)) setFaltaSql(true);
-        // O CÓDIGO VAI JUNTO, a régua das duas seções de baixo.
-        else setErro(`${error.message || "Erro desconhecido"}${error.code ? ` (código ${error.code})` : ""}`);
-        setCarregando(false);
-        return;
-      }
-      setD(data || null);
-      setCarregando(false);
-    })();
-    return () => { vivo = false; };
-  }, [deIso, ateIso, quem, telefone, departamento, fuso]);
+  // AS QUATRO LEITURAS DE PESSOA (ver `useLeitura`). O banco sem a função do
+  // Painel NÃO tem plano B honesto: contar no navegador é justamente o que
+  // dava número errado. E o código vai junto na frase, a régua das seções.
+  const lPainel = useLeitura("painel_dashboard", {
+    p_desde: deIso, p_ate: ateIso, p_quem: quem, p_fuso: fuso,
+    p_telefone: telefone, p_departamento: departamento,
+  });
+  const lProtocolos = useLeitura("zorvin_relatorio_atendimentos", {
+    p_desde: deIso, p_ate: ateIso, p_quem: quem, p_fuso: fuso,
+    p_telefone: telefone, p_departamento: departamento, p_limite: 1000,
+  });
+  const lCarteira = useLeitura("zorvin_relatorio_responsaveis", {
+    p_telefone: telefone, p_departamento: departamento, p_fuso: fuso,
+  });
+  const lTratados = useLeitura("zorvin_relatorio_tratados", {
+    p_desde: deIso, p_ate: ateIso, p_quem: quem, p_fuso: fuso,
+    p_telefone: telefone, p_departamento: departamento, p_limite: 1000,
+  });
+  const carregando = lPainel.carregando, erro = lPainel.erro, faltaSql = lPainel.semFuncao, d = lPainel.dados;
+
+  // A EQUIPE, JUNTANDO AS QUATRO (ver `painelDeGestao.js`). Só depois de as
+  // quatro responderem: desenhada no meio do caminho, a tabela ganharia
+  // colunas uma a uma, empurrando o que está embaixo a cada resposta.
+  const todasResponderam = !lPainel.carregando && !lProtocolos.carregando && !lCarteira.carregando && !lTratados.carregando;
+  const fontes = useMemo(() => {
+    if (!todasResponderam) return null;
+    const veio = (l) => Boolean(l.dados) && !l.erro && !l.semFuncao && !(l.dados && l.dados.falta);
+    return {
+      painel: veio(lPainel),
+      protocolos: veio(lProtocolos),
+      tratados: veio(lTratados),
+      // Quem não administra recebe só a PRÓPRIA carteira (o banco recorta):
+      // a dos colegas não veio, e não é zero.
+      carteira: veio(lCarteira) ? (lCarteira.dados.so_meu ? "parcial" : true) : false,
+    };
+  }, [todasResponderam, lPainel, lProtocolos, lTratados, lCarteira]);
+  const equipe = useMemo(() => (fontes ? juntarAEquipe({
+    painel: (lPainel.dados && lPainel.dados.por_atendente) || [],
+    protocolos: (lProtocolos.dados && lProtocolos.dados.por_pessoa) || [],
+    tratados: (lTratados.dados && lTratados.dados.por_pessoa) || [],
+    carteira: (lCarteira.dados && lCarteira.dados.linhas) || [],
+    fontes, meuId,
+  }) : null), [fontes, lPainel.dados, lProtocolos.dados, lTratados.dados, lCarteira.dados, meuId]);
 
   // ---------- a linguagem visual ----------
   const sombra = modo === "escuro"
@@ -311,8 +389,12 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
   const nomesVistosRef = useRef(new Map());
   const opcoesAtendente = useMemo(() => {
     const vistos = new Map();
-    (d?.por_atendente || []).forEach((p) => {
-      if (!p.id) return;
+    // DA EQUIPE INTEIRA (05/11), e não só do ranking de atendimentos: quem só
+    // finalizou ou só marcou "Já tratei" no período também pode ser escolhido,
+    // e com o nome dela.
+    const pessoas = equipe ? equipe.linhas.filter((l) => l.id && !l.pelonome)
+                           : (d?.por_atendente || []).filter((p) => p.id);
+    pessoas.forEach((p) => {
       vistos.set(String(p.id), p.nome || "(sem nome)");
       nomesVistosRef.current.set(String(p.id), p.nome || "(sem nome)");
     });
@@ -333,7 +415,7 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
             ...[...vistos.entries()]
               .sort((a, b) => a[1].localeCompare(b[1]))
               .map(([id, nome]) => ({ valor: id, rotulo: id === String(meuId) ? `${nome} (você)` : nome }))];
-  }, [d, meuId, meuNome, quem]);
+  }, [d, equipe, meuId, meuNome, quem]);
 
   const opcoesTelefone = useMemo(() => {
     const lista = departamento
@@ -364,13 +446,81 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
     departamento ? { rotulo: nomeDe(opcoesDepartamento, departamento), limpar: () => setDepartamento(null) } : null,
   ].filter(Boolean);
 
+  // ---------- a pessoa escolhida ----------
+  const linhaDaPessoa = quem != null && equipe ? equipe.linhas.find((l) => l.id != null && String(l.id) === String(quem)) : null;
+  const nomeDaPessoa = quem == null ? "" : (linhaDaPessoa && linhaDaPessoa.nome)
+    || nomesVistosRef.current.get(String(quem))
+    || (String(quem) === String(meuId) ? (meuNome || "Você") : "Pessoa escolhida");
+  const escolherPessoa = (id) => souAdmin && setQuem((v) => (String(v) === String(id) ? null : id));
+
+  // ---------- a impressão ----------
+  const secoes = SECOES_DO_PAINEL.map((s) => (s.id === "equipe"
+    ? { ...s, rotulo: quem != null ? "A pessoa e a equipe" : "A equipe" } : s));
+  const [paraImprimir, setParaImprimir] = useState(() => new Set(SECOES_DO_PAINEL.map((s) => s.id)));
+  const fora = (id) => (paraImprimir.has(id) ? undefined : "");
+  const [geradoEm, setGeradoEm] = useState(() => new Date());
+  const dataLonga = (x) => x.toLocaleDateString("pt-BR");
+  const nDias = diasEntre(periodo.de, periodo.ate);
+  const linhasDoPapel = linhasDoCabecalho({
+    periodo: `${dataLonga(periodo.de)} a ${dataLonga(periodo.ate)} · ${nDias} ${nDias === 1 ? "dia" : "dias"}`,
+    quem: quem != null ? nomeDaPessoa : null,
+    telefone: telefone ? nomeDe(opcoesTelefone, telefone) : null,
+    departamento: departamento ? nomeDe(opcoesDepartamento, departamento) : null,
+    geradoEm, geradoPor: meuNome,
+  });
+  // O NOME DO ARQUIVO do "Salvar como PDF" sai do título da guia.
+  const tituloDoPapel = `Relatório de atendimento — ${quem != null ? nomeDaPessoa : "equipe"} — ${rotuloDoPeriodo(periodo)}`;
+  const tituloDoPapelRef = useRef(tituloDoPapel);
+  tituloDoPapelRef.current = tituloDoPapel;
+  useEffect(() => {
+    let tituloDeAntes = null;
+    const antes = () => {
+      tituloDeAntes = document.title;
+      document.title = tituloDoPapelRef.current;
+      // SÍNCRONO: o navegador monta a folha logo depois deste evento.
+      flushSync(() => { setImprimindo(true); setGeradoEm(new Date()); });
+    };
+    const depois = () => {
+      if (tituloDeAntes != null) document.title = tituloDeAntes;
+      tituloDeAntes = null;
+      setImprimindo(false);
+    };
+    window.addEventListener("beforeprint", antes);
+    window.addEventListener("afterprint", depois);
+    return () => { window.removeEventListener("beforeprint", antes); window.removeEventListener("afterprint", depois); };
+  }, []);
+  const imprimir = () => { try { window.print(); } catch (_) { /* o navegador sem impressão */ } };
+
+  // ---------- a navegação das seções ----------
+  // SÓ AS SEÇÕES QUE TÊM ALGO DESENHADO: sem a função do banco, quem atende
+  // não vê a seção, e o atalho para ela levaria a lugar nenhum.
+  const telaRef = useRef(null);
+  const barraRef = useRef(null);
+  const [comConteudo, setComConteudo] = useState([]);
+  useEffect(() => {
+    const vis = SECOES_DO_PAINEL.filter((s) => {
+      const el = document.getElementById(`secao-do-painel-${s.id}`);
+      return el && el.offsetHeight > 8;
+    }).map((s) => s.id);
+    setComConteudo((v) => (v.join(",") === vis.join(",") ? v : vis));
+  });
+  const irPara = (id) => {
+    const el = document.getElementById(`secao-do-painel-${id}`), tela = telaRef.current;
+    if (!el || !tela) return;
+    const barra = barraRef.current ? barraRef.current.offsetHeight : 0;
+    const topo = el.getBoundingClientRect().top - tela.getBoundingClientRect().top + tela.scrollTop - barra - 10;
+    tela.scrollTo({ top: Math.max(0, topo), behavior: "smooth" });
+  };
+
   return (
-    <div data-tela="painel"
+    <div data-tela="painel" ref={telaRef} data-imprimindo={imprimindo ? "sim" : undefined}
          style={{ position: "fixed", inset: 0, background: C.headerBar, color: C.textPrimary,
                   zIndex: 200, overflowY: "auto" }}>
+      <style>{CSS_DA_IMPRESSAO}</style>
 
       {/* ================= A BARRA DE FILTROS ================= */}
-      <div style={{ position: "sticky", top: 0, zIndex: 30, background: C.panel,
+      <div ref={barraRef} data-nao-imprime data-barra-do-painel
+           style={{ position: "sticky", top: 0, zIndex: 30, background: C.panel,
                     borderBottom: `1px solid ${C.divider}`, boxShadow: sombra }}>
         <div style={{ maxWidth: 1180, margin: "0 auto", padding: "12px 18px",
                       display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -424,18 +574,72 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
             </button>
           </div>
         )}
+
+        {/* OS ATALHOS PARA CADA SEÇÃO, e o botão de imprimir na ponta: a
+            tela tem seis seções, e a de baixo fica a muitas rolagens da de
+            cima. Os atalhos rolam de lado no celular, para a barra não
+            crescer, e o botão fica sempre à vista (só o ícone, no celular). */}
+        <div data-linha-das-secoes
+             style={{ maxWidth: 1180, margin: "0 auto", padding: "0 18px 10px",
+                      display: "flex", alignItems: "center", gap: 10 }}>
+          <nav data-nav-do-painel aria-label="Seções do painel"
+               style={{ flex: "1 1 auto", minWidth: 0, display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none" }}>
+            {comConteudo.length > 1 && SECOES_DO_PAINEL.filter((s) => comConteudo.includes(s.id)).map((s) => (
+              <button key={s.id} onClick={() => irPara(s.id)} data-ir-para={s.id}
+                      style={{ flexShrink: 0, minHeight: 28, padding: "3px 11px", borderRadius: 14, cursor: "pointer",
+                               border: `1px solid ${C.divider}`, background: C.headerBar, color: C.textSecondary,
+                               fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
+                {s.curto}
+              </button>
+            ))}
+          </nav>
+          <BotaoDeImprimir C={C} sombra={sombra} secoes={secoes} escolhidas={paraImprimir}
+                           definir={setParaImprimir} imprimir={imprimir} />
+        </div>
       </div>
 
-      <div style={{ padding: "20px 18px 40px", maxWidth: 1180, margin: "0 auto" }}>
+      <div data-conteudo-do-painel style={{ padding: "20px 18px 40px", maxWidth: 1180, margin: "0 auto" }}>
+        <CabecalhoDaImpressao linhas={linhasDoPapel}
+                              secoesFora={secoes.filter((s) => !paraImprimir.has(s.id)).map((s) => s.rotulo)} />
+
+        {/* A PESSOA E A EQUIPE (05/11): o pedido era o atendimento de CADA
+            pessoa, e ele vem primeiro. */}
+        <section id="secao-do-painel-equipe" data-secao-do-painel="equipe" data-nao-imprime={fora("equipe")}>
+          <Titulo C={C} primeiro>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+              <Users size={16} /> {quem != null ? "A pessoa e a equipe" : "A equipe"}
+            </span>
+          </Titulo>
+          {!equipe && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, color: C.textSecondary, padding: "10px 0 6px" }}
+                 data-equipe-carregando>
+              <RefreshCw size={16} /> Juntando os números de cada pessoa…
+            </div>
+          )}
+          {equipe && quem != null && (
+            <FichaDaPessoa C={C} estilos={estilos} cores={cores} linhas={equipe.linhas} fontes={fontes}
+                           quem={quem} nome={nomeDaPessoa} sou={String(quem) === String(meuId)} periodo={periodo} />
+          )}
+          {equipe && (
+            <AEquipe C={C} estilos={estilos} cores={cores} linhas={equipe.linhas} fontes={fontes}
+                     foraDaTabela={equipe.foraDaTabela} faltou={fraseDoQueFaltou(fontes)}
+                     quem={quem} meuId={meuId} podeEscolher={souAdmin} aoEscolher={escolherPessoa} />
+          )}
+        </section>
+
         {/* OS PROTOCOLOS VÊM PRIMEIRO: é a contabilização do DataCrazy, que o
             Rodrigo pediu, e o resumo de mensagens de baixo é uma conta mais
             antiga com outro sentido de "atendimento". Função própria no banco
             (script 029), fora do bloco de baixo pela régua das outras seções:
             a falta de uma função não esconde a outra. */}
-        <RelatorioProtocolos C={C} estilos={estilos} cores={cores} deIso={deIso} ateIso={ateIso} fuso={fuso}
-                             quem={quem} telefone={telefone} departamento={departamento}
-                             souAdmin={souAdmin} meuId={meuId} advogados={advogados}
-                             aoEscolherPessoa={(id) => souAdmin && setQuem((v) => (String(v) === String(id) ? null : id))} />
+        <section id="secao-do-painel-protocolos" data-secao-do-painel="protocolos" data-nao-imprime={fora("protocolos")}>
+          <RelatorioProtocolos C={C} estilos={estilos} cores={cores} deIso={deIso} ateIso={ateIso} leitura={lProtocolos}
+                               quem={quem}
+                               souAdmin={souAdmin} meuId={meuId} advogados={advogados}
+                               aoEscolherPessoa={escolherPessoa} />
+        </section>
+
+        <section id="secao-do-painel-atendimentos" data-secao-do-painel="atendimentos" data-nao-imprime={fora("atendimentos")}>
 
         {carregando && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, color: C.textSecondary, padding: 24 }}>
@@ -476,9 +680,9 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
           <>
             <div style={{ ...nota, marginBottom: 14 }} data-teste="escopo">
               {d.so_meu && outraPessoa
-                ? <>Estes são os números <b style={{ color: C.textPrimary }}>da pessoa escolhida</b>: os atendimentos que ela pegou e as mensagens que passaram por eles. A comparação entre atendentes, no fim da tela, continua mostrando todo mundo.</>
+                ? <>Estes são os números <b style={{ color: C.textPrimary }}>da pessoa escolhida</b>: os atendimentos que ela pegou e as mensagens que passaram por eles. A tabela da equipe, no alto da tela, continua mostrando todo mundo.</>
                 : d.so_meu
-                ? <>Estes são <b style={{ color: C.textPrimary }}>os seus números</b>{meuNome && !souAdmin ? ` (${meuNome})` : ""}: os atendimentos que você pegou e as mensagens que passaram por eles. A comparação entre atendentes, no fim da tela, continua mostrando todo mundo.</>
+                ? <>Estes são <b style={{ color: C.textPrimary }}>os seus números</b>{meuNome && !souAdmin ? ` (${meuNome})` : ""}: os atendimentos que você pegou e as mensagens que passaram por eles. A tabela da equipe, no alto da tela, continua mostrando todo mundo.</>
                 : <>Estes são os números <b style={{ color: C.textPrimary }}>do escritório inteiro</b> — de todos os telefones que você alcança.</>}
               {" "}<b style={{ color: C.textPrimary }}>{rotuloDoPeriodo(periodo)}</b>.
             </div>
@@ -551,45 +755,506 @@ export default function PainelNumeros({ C, modo = "claro", advogados = [], depar
                        telefone={telefone} departamento={departamento}
                        aoEscolher={(id) => setTelefone((v) => (String(v) === String(id) ? null : id))} />
 
-            <Titulo C={C}>Por atendente</Titulo>
-            <div style={{ ...nota, marginBottom: 10 }}>
-              Este bloco mostra <b style={{ color: C.textPrimary }}>todo mundo</b>, mesmo quando o
-              resto da tela está recortado em uma pessoa — é para comparar. Sua linha é a verde;
-              clique numa linha para recortar a tela naquela pessoa.
-            </div>
-            <Atendentes C={C} estilos={estilos} cores={cores} dados={d.por_atendente || []}
-                        meuId={meuId} selecionado={quem} podeEscolher={souAdmin}
-                        aoEscolher={(id) => setQuem((v) => (String(v) === String(id) ? null : id))} />
-
+            {/* O "POR ATENDENTE" SAIU DAQUI (05/11): cada pessoa está na
+                tabela da equipe, no alto, com estes números e os das outras
+                três contas. */}
             <Ressalvas d={d} t={t} C={C} estilos={estilos} />
           </>
         )}
+        </section>
 
         {/* A CARTEIRA DE CADA RESPONSÁVEL — fora do bloco de cima pela mesma
             razão do "Já tratei": função própria no banco (script 011). Usa
             telefone e departamento da barra, e NÃO o período: é a foto de
             agora, e a seção diz isso. */}
-        <RelatorioResponsaveis C={C} estilos={estilos} cores={cores} fuso={fuso}
-                               telefone={telefone} departamento={departamento}
-                               souAdmin={souAdmin} meuId={meuId} />
+        <section id="secao-do-painel-carteira" data-secao-do-painel="carteira" data-nao-imprime={fora("carteira")}>
+          <RelatorioResponsaveis C={C} estilos={estilos} cores={cores} leitura={lCarteira}
+                                 souAdmin={souAdmin} meuId={meuId} />
+        </section>
 
         {/* O FUNIL — função própria no banco (script 019), fora do bloco de
             cima pela mesma razão das outras duas. Usa o período para o que
             ACONTECEU (entradas, saídas, tempo de quem saiu) e não para o que
             ESTÁ (quantos em cada etapa agora) — e a seção diz qual é qual. */}
-        <RelatorioFunil C={C} estilos={estilos} cores={cores} deIso={deIso} ateIso={ateIso}
-                        telefone={telefone} departamento={departamento} souAdmin={souAdmin} />
+        <section id="secao-do-painel-funil" data-secao-do-painel="funil" data-nao-imprime={fora("funil")}>
+          <RelatorioFunil C={C} estilos={estilos} cores={cores} deIso={deIso} ateIso={ateIso}
+                          telefone={telefone} departamento={departamento} souAdmin={souAdmin} />
+        </section>
 
         {/* O "JÁ TRATEI" FICA FORA do bloco de cima, de propósito: ele tem a
             própria função no banco (script 010), e um banco sem a do Painel
             não pode esconder o relatório — nem o contrário. Os FILTROS são os
             mesmos: uma barra só, acima de tudo o que ela recorta. */}
-        <RelatorioJaTratei C={C} estilos={estilos} cores={cores}
-                           deIso={deIso} ateIso={ateIso} fuso={fuso} passo="day"
-                           quem={quem} telefone={telefone} departamento={departamento}
-                           souAdmin={souAdmin} meuId={meuId} advogados={advogados}
-                           aoEscolherPessoa={(id) => souAdmin && setQuem((v) => (String(v) === String(id) ? null : id))} />
+        <section id="secao-do-painel-jatratei" data-secao-do-painel="jatratei" data-nao-imprime={fora("jatratei")}>
+          <RelatorioJaTratei C={C} estilos={estilos} cores={cores} leitura={lTratados}
+                             deIso={deIso} ateIso={ateIso} passo="day"
+                             quem={quem}
+                             souAdmin={souAdmin} meuId={meuId} advogados={advogados}
+                             aoEscolherPessoa={escolherPessoa} />
+        </section>
       </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   A PESSOA E A EQUIPE (05/11)
+   ================================================================
+   Pedido do Rodrigo: "um Dashboard interativo onde eu consiga acessar os
+   dados mais relevantes sobre o atendimento individual de cada usuário".
+
+   O atendimento de cada pessoa estava em QUATRO tabelas, no fim de quatro
+   seções. Aqui elas viram uma linha por pessoa (`juntarAEquipe`), com um
+   gráfico da métrica escolhida em cima. A métrica do gráfico e a ordem da
+   tabela andam juntas: escolher "Finalizou" ordena as duas.
+
+   UMA COR SÓ PARA AS BARRAS, e o verde numa linha: a da pessoa escolhida, ou
+   a sua quando ninguém está escolhido. Uma cor por pessoa gastaria o único
+   canal livre para repetir o que o comprimento já mostra (a régua do ranking
+   de antes, que esta seção substitui). */
+const formatarColuna = (c, v) => (v == null ? "—" : c.tipo === "tempo" ? tempo(v) : numero(v));
+const posicaoPorExtenso = (p) => (p.posicao == null ? "" : `${p.posicao}º de ${p.de}`);
+
+function AEquipe({ C, estilos, cores, linhas, fontes, foraDaTabela, faltou, quem, meuId, podeEscolher, aoEscolher }) {
+  const colunas = useMemo(() => colunasVisiveis(fontes), [fontes]);
+  const [metrica, setMetrica] = useState("atendimentos");
+  const [ordem, setOrdem] = useState({ coluna: "atendimentos", sentido: "desc" });
+  // A MÉTRICA TEM DE EXISTIR entre as colunas que vieram: sem a função do
+  // Painel, "Atendimentos" não está na tela, e o gráfico vai para a primeira.
+  const col = colunas.find((c) => c.id === metrica) || colunas[0] || null;
+  const ordemValida = ordem.coluna === "nome" || colunas.some((c) => c.id === ordem.coluna)
+    ? ordem : { coluna: col ? col.id : "nome", sentido: col ? sentidoDeComeco(col.id) : "asc" };
+
+  const escolher = (id) => {
+    setMetrica(id);
+    setOrdem((o) => (o.coluna === id ? { coluna: id, sentido: o.sentido === "asc" ? "desc" : "asc" }
+                                     : { coluna: id, sentido: sentidoDeComeco(id) }));
+  };
+  const ordenarPorNome = () => setOrdem((o) => ({ coluna: "nome", sentido: o.coluna === "nome" && o.sentido === "asc" ? "desc" : "asc" }));
+
+  const tabela = useMemo(() => ordenarAEquipe(linhas, ordemValida.coluna, ordemValida.sentido),
+                         [linhas, ordemValida.coluna, ordemValida.sentido]);
+  // O GRÁFICO só leva quem tem o número: quem não respondeu ninguém não tem
+  // tempo de resposta, e uma barra de zero diria "respondeu na hora".
+  const barras = useMemo(() => (col ? ordenarAEquipe(linhas.filter((l) => l[col.id] != null), col.id, sentidoDeComeco(col.id)) : []),
+                         [linhas, col]);
+  const maior = col ? Math.max(1, ...barras.map((l) => Number(l[col.id] || 0))) : 1;
+  // A MEDIANA DA BASE DA COLUNA (`baseDaComparacao`), a mesma da ficha.
+  const med = col ? mediana(baseDaComparacao(linhas, col.id).map((l) => l[col.id])) : null;
+  // O VERDE é da pessoa escolhida; sem ninguém escolhido, é seu.
+  const destaque = quem != null ? String(quem) : meuId != null ? String(meuId) : null;
+
+  if (!linhas.length) {
+    return (
+      <div style={{ ...estilos.cartao, color: C.textSecondary }} data-equipe-vazia>
+        Ninguém da equipe atendeu, finalizou, marcou “Já tratei” ou tem conversa na carteira neste recorte.
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {/* ---- o gráfico da métrica escolhida ---- */}
+      {col && (
+        <div style={{ ...estilos.cartao, marginBottom: 12 }} data-bloco-de-impressao data-ranking-da-equipe={col.id}>
+          <div role="group" aria-label="O que comparar" data-nao-imprime data-metricas-da-equipe
+               style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+            {colunas.map((c) => {
+              const ativa = c.id === col.id;
+              return (
+                <button key={c.id} onClick={() => escolher(c.id)} aria-pressed={ativa}
+                        data-metrica-da-equipe={c.id} data-escolhida={ativa ? "sim" : undefined} title={c.ajuda}
+                        style={{ minHeight: 32, padding: "5px 12px", borderRadius: 16, cursor: "pointer",
+                                 fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap",
+                                 border: `1px solid ${ativa ? C.greenDark : C.divider}`,
+                                 background: ativa ? C.greenDark : "transparent",
+                                 color: ativa ? "#fff" : C.textPrimary }}>
+                  {c.rotulo}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+            <div style={{ fontSize: 14, fontWeight: 700 }} data-titulo-do-ranking>{col.rotulo}</div>
+            <div style={{ ...estilos.nota, fontSize: 12 }}>
+              {col.tipo === "tempo" ? "mediana de cada pessoa · quanto menor, melhor · o mais rápido primeiro" : col.ajuda}
+            </div>
+          </div>
+          {!barras.length && <div style={estilos.nota}>Ninguém tem este número no recorte.</div>}
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {barras.map((l) => {
+              const v = Number(l[col.id] || 0);
+              const p = aPessoaNaEquipe(linhas, l.id, col.id);
+              const verde = destaque != null && l.id != null && String(l.id) === destaque;
+              const clica = podeEscolher && l.id && !l.pelonome;
+              const frase = `${l.nome}: ${formatarColuna(col, v)}${p.posicao ? ` · ${posicaoPorExtenso(p)}` : ""}${med != null ? ` · mediana da equipe: ${formatarColuna(col, med)}` : ""}`;
+              // UM BOTÃO SÓ QUANDO O CLIQUE FAZ ALGO: para quem não
+              // administra a linha não escolhe ninguém, e um botão que não
+              // faz nada é pior do que nenhum.
+              const Linha = clica ? "button" : "div";
+              return (
+                <Linha key={l.chave} data-barra-da-equipe={l.nome} data-valor={String(v)}
+                        data-destaque={verde ? "sim" : undefined}
+                        onClick={clica ? () => aoEscolher(l.id) : undefined} title={frase}
+                        aria-label={clica ? frase : undefined} aria-pressed={clica ? (quem != null && String(quem) === String(l.id)) : undefined}
+                        style={{ display: "flex", alignItems: "center", gap: 10, width: "calc(100% + 12px)", minHeight: 30,
+                                 boxSizing: "border-box", padding: "3px 6px", margin: "0 -6px", border: "none", borderRadius: 8,
+                                 background: quem != null && String(quem) === String(l.id) ? C.listActive : "transparent",
+                                 cursor: clica ? "pointer" : "default", color: C.textPrimary, textAlign: "left", font: "inherit" }}>
+                  <span data-nome-do-ranking style={{ flex: "0 0 32%", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                 fontSize: 13, fontWeight: verde ? 800 : 600, color: l.pelonome ? C.textSecondary : C.textPrimary }}>
+                    {l.nome}{l.sou ? " (você)" : ""}
+                  </span>
+                  <span data-trilho-do-ranking style={{ flex: "1 1 auto", position: "relative", height: 14, minWidth: 40 }}>
+                    <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, borderRadius: "0 4px 4px 0",
+                                   width: `${Math.max(v > 0 ? 1.5 : 0, (v / maior) * 100)}%`,
+                                   background: verde ? cores.saiu : cores.apagado }} />
+                    {med != null && (
+                      <span aria-hidden="true" data-mediana-da-equipe
+                            style={{ position: "absolute", top: -3, bottom: -3, width: 0,
+                                     left: `${Math.min(100, (Number(med) / maior) * 100)}%`,
+                                     borderLeft: `1.5px dashed ${C.textSecondary}` }} />
+                    )}
+                  </span>
+                  <span style={{ flex: "0 0 auto", minWidth: 64, textAlign: "right", fontSize: 13, fontWeight: 700,
+                                 fontVariantNumeric: "tabular-nums" }}>
+                    {formatarColuna(col, v)}
+                  </span>
+                </Linha>
+              );
+            })}
+          </div>
+          {med != null && barras.length > 1 && (
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 12, ...estilos.nota, fontSize: 12 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 10, height: 10, borderRadius: 3, background: cores.saiu }} />
+                {quem != null ? "a pessoa escolhida" : "você"}
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }} data-legenda-da-mediana>
+                <span style={{ width: 0, height: 12, borderLeft: `1.5px dashed ${C.textSecondary}` }} />
+                mediana da equipe: <b style={{ color: C.textPrimary }}>{formatarColuna(col, med)}</b>
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ---- a tabela, uma linha por pessoa ---- */}
+      <div style={estilos.cartao} data-tabela-da-equipe>
+        <div data-rola-de-lado style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr>
+              <th style={estilos.th} aria-sort={ordemValida.coluna === "nome" ? (ordemValida.sentido === "asc" ? "ascending" : "descending") : "none"}>
+                <button onClick={ordenarPorNome} data-ordenar-equipe="nome"
+                        style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", font: "inherit",
+                                 color: "inherit", letterSpacing: "inherit", textTransform: "inherit", fontWeight: "inherit" }}>
+                  Pessoa{ordemValida.coluna === "nome" ? (ordemValida.sentido === "asc" ? " ▲" : " ▼") : ""}
+                </button>
+              </th>
+              {colunas.map((c) => {
+                const ativa = ordemValida.coluna === c.id;
+                return (
+                  <th key={c.id} style={{ ...estilos.thNum, color: ativa ? C.textPrimary : estilos.thNum.color }}
+                      aria-sort={ativa ? (ordemValida.sentido === "asc" ? "ascending" : "descending") : "none"} title={c.ajuda}>
+                    <button onClick={() => escolher(c.id)} data-ordenar-equipe={c.id}
+                            style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", font: "inherit",
+                                     color: "inherit", letterSpacing: "inherit", textTransform: "inherit", fontWeight: "inherit",
+                                     whiteSpace: "nowrap" }}>
+                      {c.rotulo}{ativa ? (ordemValida.sentido === "asc" ? " ▲" : " ▼") : ""}
+                    </button>
+                  </th>
+                );
+              })}
+            </tr></thead>
+            <tbody>
+              {tabela.map((l) => {
+                const clica = podeEscolher && l.id && !l.pelonome;
+                const escolhida = quem != null && l.id != null && String(quem) === String(l.id);
+                return (
+                  <tr key={l.chave} data-equipe-linha={l.nome}
+                      // `data-atendente` marca quem está no ranking de
+                      // atendimentos do Painel (`por_atendente`): é o que o
+                      // bloco "Por atendente", que esta tabela substitui,
+                      // mostrava. Quem só tem "Já tratei" ou carteira não tem.
+                      data-atendente={l.temPainel ? l.nome : undefined}
+                      data-escolhida={escolhida ? "sim" : undefined}
+                      onClick={() => clica && aoEscolher(l.id)}
+                      style={{ cursor: clica ? "pointer" : "default", background: escolhida ? C.listActive : "transparent" }}>
+                    <td style={{ ...estilos.td, minWidth: 140 }}>
+                      <div style={{ fontWeight: l.sou ? 800 : 600, color: l.pelonome ? C.textSecondary : C.textPrimary }}>
+                        {l.nome}
+                        {l.sou && <span style={{ marginLeft: 7, fontSize: 11, fontWeight: 700, color: "#fff",
+                                                 background: cores.selo, borderRadius: 10, padding: "1px 7px" }}>você</span>}
+                        {l.pelonome && (
+                          <span title="Contado pelo nome: mensagens anteriores a agosto/2026 não guardam quem enviou."
+                                style={{ marginLeft: 7, fontSize: 11, fontWeight: 700, color: C.textSecondary,
+                                         border: `1px solid ${C.divider}`, borderRadius: 10, padding: "1px 7px" }}>
+                            pelo nome
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    {colunas.map((c) => {
+                      const v = l[c.id];
+                      const alerta = c.alerta && Number(v) > 0;
+                      return (
+                        <td key={c.id} data-coluna={c.id} data-valor={v == null ? "" : String(v)}
+                            style={{ ...estilos.num, fontWeight: ordemValida.coluna === c.id ? 800 : 600,
+                                     color: alerta ? C.erroTexto || "#c62828" : v == null ? C.textSecondary : C.textPrimary }}>
+                          {formatarColuna(c, v)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ ...estilos.nota, marginTop: 10, fontSize: 12 }} data-notas-da-equipe>
+          Tempos em mediana. A carteira e o “há 3+ dias” são de agora; o resto é do período.
+          {podeEscolher ? " Clique numa pessoa para ver a ficha dela e recortar a tela inteira nela." : ""}
+          {fontes.carteira === "parcial" && (
+            <> A carteira de cada colega é só para quem administra: a sua está na ficha, acima.</>
+          )}
+          {foraDaTabela.celular > 0 && (
+            <> Ficaram fora da tabela <b style={{ color: C.textPrimary }}>{numero(foraDaTabela.celular)}</b> {foraDaTabela.celular === 1 ? "protocolo respondido" : "protocolos respondidos"} direto
+              pelo celular do escritório: não dá para saber quem estava com o aparelho.</>
+          )}
+          {!!faltou && <> <span style={{ color: C.ambarTexto || cores.aviso }} data-equipe-faltou>Ficaram de fora as colunas de {faltou}, que não carregaram: o motivo está na seção de cada uma, mais abaixo.</span></>}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ================================================================
+   A FICHA DA PESSOA ESCOLHIDA (05/11)
+   ================================================================
+   Cada número dela ao lado da mediana da equipe, e a posição dela. A
+   mediana, e não a média: uma pessoa que pegou o plantão do mês puxa a média
+   e não a mediana. A posição conta só quem tem o número — quem não respondeu
+   ninguém não entra no ranking do tempo —, e o empate divide a posição. */
+function FichaDaPessoa({ C, estilos, cores, linhas, fontes, quem, nome, sou, periodo }) {
+  const l = linhas.find((x) => x.id != null && String(x.id) === String(quem)) || null;
+  const colunas = colunasDaFicha(fontes);
+  return (
+    <div style={{ ...estilos.cartao, borderColor: C.greenDark, marginBottom: 12 }} data-ficha-da-pessoa={nome} data-bloco-de-impressao>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <UserCheck size={20} color={cores.saiu} style={{ flexShrink: 0 }} />
+        <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.2 }} data-nome-da-ficha>{nome}</div>
+        {sou && <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: cores.selo,
+                                borderRadius: 10, padding: "1px 7px" }}>você</span>}
+      </div>
+      <div style={{ ...estilos.nota, marginTop: 4 }}>
+        {rotuloDoPeriodo(periodo)}. Cada número ao lado da mediana da equipe e da posição — contadas só entre quem
+        fez aquilo no período: quem não atendeu ninguém não puxa a mediana dos atendimentos para baixo. A carteira é
+        de agora.
+      </div>
+      {!l && (
+        <div style={{ ...estilos.nota, marginTop: 12 }} data-ficha-vazia>
+          Nenhum número desta pessoa neste recorte: ela não atendeu, não finalizou, não marcou “Já tratei” e não tem
+          conversa na carteira.
+        </div>
+      )}
+      {l && (
+        <div style={{ display: "grid", gap: 10, marginTop: 14, gridTemplateColumns: "repeat(auto-fill, minmax(128px, 1fr))" }}>
+          {colunas.map((c) => {
+            const v = l[c.id];
+            const inteira = fontes[c.fonte] === true;
+            const p = inteira ? aPessoaNaEquipe(linhas, l.id, c.id) : null;
+            const valores = inteira ? baseDaComparacao(linhas, c.id).map((x) => Number(x[c.id])) : [];
+            const teto = Math.max(1, Number(v || 0), ...valores);
+            const alerta = c.alerta && Number(v) > 0;
+            return (
+              <div key={c.id} data-ficha-coluna={c.id} data-valor={v == null ? "" : String(v)}
+                   style={{ border: `1px solid ${C.divider}`, borderRadius: 12, padding: "10px 12px" }}>
+                <div style={{ ...estilos.rotulo, fontSize: 10.5, display: "flex", alignItems: "center", gap: 5 }}>
+                  {c.rotulo}
+                  <span title={c.ajuda} style={{ display: "flex", cursor: "help" }}><Info size={11} /></span>
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 700, marginTop: 4, letterSpacing: -0.3,
+                              color: alerta ? C.erroTexto || "#c62828" : C.textPrimary }}>
+                  {formatarColuna(c, v)}
+                </div>
+                {p && v != null && (
+                  <div aria-hidden="true" style={{ position: "relative", height: 6, background: C.divider, borderRadius: 3, marginTop: 8 }}>
+                    <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, borderRadius: 3,
+                                  width: `${Math.max(Number(v) > 0 ? 3 : 0, (Number(v) / teto) * 100)}%`, background: cores.saiu }} />
+                    {p.mediana != null && (
+                      <div style={{ position: "absolute", top: -3, bottom: -3, width: 0,
+                                    left: `${Math.min(100, (Number(p.mediana) / teto) * 100)}%`,
+                                    borderLeft: `1.5px dashed ${C.textPrimary}` }} />
+                    )}
+                  </div>
+                )}
+                <div style={{ ...estilos.nota, fontSize: 11.5, marginTop: 6 }} data-comparacao-da-ficha>
+                  {p && p.mediana == null
+                    ? (c.fonte === "carteira" ? "ninguém da equipe tem conversa na carteira" : "ninguém da equipe fez isso no período")
+                    : p
+                    ? <>{p.posicao ? <><b style={{ color: C.textPrimary }}>{posicaoPorExtenso(p)}</b>{c.menorMelhor && p.posicao === 1 ? " · o mais rápido" : ""} · </> : ""}
+                        mediana da equipe: {formatarColuna(c, p.mediana)}</>
+                    : c.fonte === "carteira" && fontes.carteira === "parcial" ? "a dos colegas é só para quem administra" : ""}
+                </div>
+                {c.id === "carteira" && v != null && (
+                  <div style={{ ...estilos.nota, fontSize: 11.5, marginTop: 2 }} data-detalhe-da-carteira>
+                    {numero(l.esperando)} esperando
+                    {l.maisAntiga ? ` · a mais antiga há ${diasDesde(l.maisAntiga)} ${diasDesde(l.maisAntiga) === 1 ? "dia" : "dias"}` : ""}
+                    {l.naoLidas ? ` · ${numero(l.naoLidas)} não ${l.naoLidas === 1 ? "lida" : "lidas"}` : ""}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ================================================================
+   IMPRIMIR O RELATÓRIO (05/11)
+   ================================================================
+   "com a possibilidade de imprimir um relatório". O navegador imprime a
+   tela, e a tela tem de ser outra no papel:
+
+   - A TELA É UM QUADRO FIXO QUE ROLA (`position: fixed`, `overflow-y`), e o
+     navegador imprime só o pedaço à vista. No papel ela vira um bloco comum,
+     e o Zorvin que mora atrás dela (esta guia monta o painel inteiro) some;
+   - SEMPRE NO TEMA CLARO: quem trabalha no escuro imprimiria uma folha preta.
+     O tema troca no `beforeprint`, com `flushSync` (o navegador monta a folha
+     logo depois do evento, e um desenho agendado chegaria tarde), e volta no
+     `afterprint`. Vale também para o Ctrl+P;
+   - SEM OS CONTROLES (`data-nao-imprime`): a barra de filtros vira o
+     cabeçalho do papel (`data-so-impressao`), que diz o recorte inteiro — um
+     relatório impresso não tem a barra ao lado;
+   - SEM AS LISTAS DE REGISTROS: são dezenas de folhas, e estão na planilha
+     de cada seção;
+   - AS CORES SAEM IMPRESSAS (`print-color-adjust: exact`): sem isso o
+     navegador apaga o fundo das barras, e o gráfico vira um papel em branco. */
+const CSS_DA_IMPRESSAO = `
+[data-so-impressao] { display: none; }
+@media print {
+  @page { margin: 10mm; }
+  /* O TEMA ESCURO MORA TAMBÉM NO <html> (aparencia.js: color-scheme e o
+     fundo): sem desfazê-lo aqui, a margem da folha sai preta. */
+  html, body, #root { height: auto !important; min-height: 0 !important; max-height: none !important;
+                      overflow: visible !important; background: #fff !important; color-scheme: light !important; }
+  #root > div { height: auto !important; max-height: none !important; display: block !important; overflow: visible !important; }
+  #root > div > *:not([data-tela="painel"]) { display: none !important; }
+  [data-tela="painel"] { position: static !important; inset: auto !important; overflow: visible !important;
+                         z-index: auto !important; background: #fff !important; }
+  [data-tela="painel"] [data-nao-imprime] { display: none !important; }
+  [data-tela="painel"] [data-so-impressao] { display: block !important; }
+  [data-tela="painel"] [data-conteudo-do-painel] { max-width: none !important; padding: 0 !important; }
+  [data-tela="painel"] [data-rola-de-lado] { overflow: visible !important; }
+  [data-tela="painel"] * { box-shadow: none !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  [data-tela="painel"] [data-cartao], [data-tela="painel"] [data-ficha-coluna], [data-tela="painel"] tr,
+  [data-tela="painel"] [data-bloco-de-impressao] { break-inside: avoid; }
+  [data-tela="painel"] h3 { break-after: avoid; }
+  [data-tela="painel"] table { font-size: 11px; }
+  [data-tela="painel"] th, [data-tela="painel"] td { padding-top: 5px !important; padding-bottom: 5px !important; }
+  /* A TABELA DA EQUIPE CABE NA FOLHA EM PÉ: dez colunas com o recheio da
+     tela davam 882 pontos numa folha de 718, e o navegador cortava a última
+     coluna (e encolhia a folha inteira para tentar caber). */
+  [data-tela="painel"] [data-tabela-da-equipe] th { font-size: 8.5px !important; letter-spacing: 0 !important;
+                                                     padding-left: 4px !important; white-space: normal !important; }
+  [data-tela="painel"] [data-tabela-da-equipe] th button { white-space: normal !important; text-align: inherit; }
+  [data-tela="painel"] [data-tabela-da-equipe] td { font-size: 10.5px !important; padding-left: 4px !important; }
+  [data-tela="painel"] [data-tabela-da-equipe] td:first-child { min-width: 0 !important; }
+}
+@media (max-width: 560px) {
+  [data-tela="painel"] [data-rotulo-de-imprimir] { display: none; }
+  /* O RANKING NO CELULAR EM DUAS LINHAS: o nome e o número em cima, a barra
+     embaixo, de ponta a ponta. Numa linha só, a 390 o nome ficava com 107
+     pontos ("ISABELA GUE…") e a barra com 130. */
+  [data-tela="painel"] [data-barra-da-equipe] { flex-wrap: wrap !important; row-gap: 4px !important; }
+  [data-tela="painel"] [data-nome-do-ranking] { flex: 1 1 0 !important; }
+  [data-tela="painel"] [data-trilho-do-ranking] { order: 3; flex: 1 1 100% !important; }
+  /* AS MÉTRICAS NUMA LINHA QUE ROLA DE LADO: quebradas, eram três linhas de
+     botões antes do gráfico. */
+  [data-tela="painel"] [data-metricas-da-equipe] { flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none; }
+  [data-tela="painel"] [data-metricas-da-equipe] > button { flex-shrink: 0; }
+}
+/* NO CELULAR A BARRA NÃO GRUDA NO ALTO: com o período, os três filtros, o
+   "Filtrando por" e os atalhos, ela cobria um terço da tela o tempo todo. */
+@media (max-width: 767px) {
+  [data-tela="painel"] [data-barra-do-painel] { position: static !important; }
+}
+`;
+
+/** O cabeçalho da primeira folha: o recorte inteiro, por extenso. */
+function CabecalhoDaImpressao({ linhas, secoesFora }) {
+  return (
+    <div data-so-impressao style={{ marginBottom: 14, color: "#111b21", fontFamily: "'Segoe UI', Helvetica, Arial, sans-serif" }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12,
+                    borderBottom: "2px solid #008069", paddingBottom: 6, marginBottom: 8 }}>
+        <div style={{ fontSize: 20, fontWeight: 800 }}>Relatório de atendimento</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#008069" }}>Ropelimi Zorvin</div>
+      </div>
+      <table style={{ borderCollapse: "collapse", fontSize: 12 }}>
+        <tbody>
+          {linhas.map(([k, v]) => (
+            <tr key={k} data-linha-do-cabecalho={k}>
+              <td style={{ padding: "1px 14px 1px 0", color: "#667781", fontWeight: 700, whiteSpace: "nowrap" }}>{k}</td>
+              <td style={{ padding: "1px 0" }}>{v}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div style={{ fontSize: 11, color: "#667781", marginTop: 8 }}>
+        As listas de registros ficam fora do papel: estão na planilha de cada seção, na tela.
+        {secoesFora.length ? ` Fora deste relatório, por escolha: ${secoesFora.join(", ")}.` : ""}
+      </div>
+    </div>
+  );
+}
+
+/** O botão e o menu do que vai no relatório. */
+function BotaoDeImprimir({ C, sombra, secoes, escolhidas, definir, imprimir }) {
+  const [aberto, setAberto] = useState(false);
+  const caixa = useRef(null);
+  // O clique fora e o Esc fecham o menu (`useFora` cuida dos dois).
+  useFora(caixa, () => setAberto(false), aberto);
+  const nenhuma = !secoes.some((s) => escolhidas.has(s.id));
+  return (
+    <div ref={caixa} style={{ position: "relative" }}>
+      <button onClick={() => setAberto((v) => !v)} data-imprimir-relatorio aria-expanded={aberto}
+              title="Imprimir um relatório (ou salvar em PDF)" aria-label="Imprimir relatório"
+              style={{ display: "flex", alignItems: "center", gap: 7, minHeight: 36, padding: "6px 12px",
+                       borderRadius: 10, cursor: "pointer", fontSize: 13, fontWeight: 700,
+                       border: `1px solid ${C.greenDark}`, background: C.greenDark, color: "#fff" }}>
+        <Printer size={15} style={{ flexShrink: 0 }} />
+        <span data-rotulo-de-imprimir>Imprimir relatório</span>
+      </button>
+      {aberto && (
+        <div data-menu-de-impressao
+             style={{ position: "absolute", top: 42, right: 0, width: 280, maxWidth: "calc(100vw - 32px)", zIndex: 40,
+                      background: C.panel, borderRadius: 12, border: `1px solid ${C.divider}`,
+                      boxShadow: "0 12px 32px rgba(0,0,0,.28)", padding: "12px 14px" }}>
+          <div style={{ fontSize: 11, color: C.textSecondary, fontWeight: 700, letterSpacing: 0.6,
+                        textTransform: "uppercase", marginBottom: 6 }}>O que vai no relatório</div>
+          {secoes.map((s) => (
+            <label key={s.id} data-secao-impressa={s.id}
+                   style={{ display: "flex", alignItems: "center", gap: 9, minHeight: 34, cursor: "pointer", fontSize: 13.5 }}>
+              <input type="checkbox" checked={escolhidas.has(s.id)}
+                     onChange={(e) => definir((v) => { const n = new Set(v); if (e.target.checked) n.add(s.id); else n.delete(s.id); return n; })}
+                     style={{ width: 16, height: 16, accentColor: C.greenDark, flexShrink: 0 }} />
+              {s.rotulo}
+            </label>
+          ))}
+          <div style={{ fontSize: 11.5, color: C.textSecondary, lineHeight: 1.45, margin: "6px 0 10px" }}>
+            Sai no tema claro, com o recorte da barra no alto da primeira folha. Para um PDF, escolha
+            “Salvar como PDF” na janela de impressão.
+          </div>
+          <button onClick={() => { setAberto(false); imprimir(); }} disabled={nenhuma} data-imprimir-agora
+                  style={{ width: "100%", minHeight: 36, borderRadius: 10, border: "none", cursor: nenhuma ? "default" : "pointer",
+                           background: nenhuma ? C.divider : C.greenDark, color: nenhuma ? C.textSecondary : "#fff",
+                           fontSize: 13.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
+            <Printer size={15} /> {nenhuma ? "Escolha o que imprimir" : "Imprimir"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -910,7 +1575,7 @@ function Grafico({ C, estilos, legenda, colunas, linhas, desenho, vazio, rodape 
             </span>
           ))}
         </div>
-        <button onClick={() => setTabela((v) => !v)} title={tabela ? "Ver o gráfico" : "Ver os números"}
+        <button onClick={() => setTabela((v) => !v)} title={tabela ? "Ver o gráfico" : "Ver os números"} data-nao-imprime
           style={{ display: "flex", alignItems: "center", gap: 5, minHeight: 30, padding: "4px 10px",
                    border: `1px solid ${C.divider}`, background: "transparent", color: C.textSecondary,
                    borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
@@ -1077,7 +1742,7 @@ function Mapa({ C, estilos, dados, rampa }) {
             </span>
           )}
         </div>
-        <button onClick={() => setTabela((v) => !v)}
+        <button onClick={() => setTabela((v) => !v)} data-nao-imprime
           style={{ display: "flex", alignItems: "center", gap: 5, minHeight: 30, padding: "4px 10px",
                    border: `1px solid ${C.divider}`, background: "transparent", color: C.textSecondary,
                    borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
@@ -1190,8 +1855,10 @@ function Telefones({ C, estilos, cores, dados, advogados, departamentos, telefon
   if (!linhas.length) return <div style={{ ...estilos.cartao, color: C.textSecondary }}>Nenhum telefone cadastrado.</div>;
   const maior = Math.max(1, ...linhas.map((l) => l.recebidas + l.enviadas));
 
+  // A TABELA ROLA DE LADO dentro do cartão (05/11): a 360 ela pedia 377
+  // pontos, e a tela inteira rolava de lado por causa dela.
   return (
-    <div style={estilos.cartao}>
+    <div style={{ ...estilos.cartao, overflowX: "auto" }} data-rola-de-lado>
       <div style={{ display: "flex", gap: 14, marginBottom: 12, flexWrap: "wrap" }}>
         {[["Recebidas", cores.chegou], ["Enviadas", cores.saiu]].map(([n, c]) => (
           <span key={n} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: C.textSecondary }}>
@@ -1225,80 +1892,6 @@ function Telefones({ C, estilos, cores, dados, advogados, departamentos, telefon
               <td style={{ ...estilos.num, fontWeight: 700 }}>{numero(l.atendimentos)}</td>
               <td style={estilos.num}>{numero(l.recebidas)}</td>
               <td style={estilos.num}>{numero(l.enviadas)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/* ================================================================
-   POR ATENDENTE — a comparação
-   ================================================================
-   UMA cor para as barras, e não uma cor por pessoa: a barra já diz quem é
-   maior; pintar cada uma de um tom gastaria o único canal livre para repetir o
-   que o comprimento mostra. O verde marca UMA linha — a sua. */
-function Atendentes({ C, estilos, cores, dados, meuId, selecionado, podeEscolher, aoEscolher }) {
-  const linhas = useMemo(() => (dados || [])
-    .map((p) => ({
-      chave: p.chave,
-      id: p.id,
-      nome: p.nome || "(sem nome)",
-      sou: !!(meuId && p.id && String(p.id) === String(meuId)),
-      temId: !!p.id,
-      atendimentos: Number(p.atendimentos || 0),
-      enviadas: Number(p.enviadas || 0),
-      resposta: p.resposta_mediana == null ? null : Number(p.resposta_mediana),
-      espera: p.espera_mediana == null ? null : Number(p.espera_mediana),
-    }))
-    .sort((a, b) => (b.atendimentos - a.atendimentos) || (b.enviadas - a.enviadas)),
-  [dados, meuId]);
-
-  if (!linhas.length) return <div style={{ ...estilos.cartao, color: C.textSecondary }}>Ninguém atendeu nada no período.</div>;
-  const maior = Math.max(1, ...linhas.map((l) => l.atendimentos));
-
-  return (
-    <div style={estilos.cartao}>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead><tr>
-          <th style={estilos.th}>Atendente</th>
-          <th style={estilos.thNum}>Atendimentos</th>
-          <th style={estilos.thNum}>Enviadas</th>
-          <th style={estilos.thNum} title="Mediana do tempo entre o contato escrever e esta pessoa responder">Resposta</th>
-          <th style={estilos.thNum} title="Mediana do tempo entre o atendimento começar e esta pessoa pegá-lo">Atender</th>
-        </tr></thead>
-        <tbody>
-          {linhas.map((l) => (
-            <tr key={l.chave} data-atendente={l.nome}
-                onClick={() => podeEscolher && l.id && aoEscolher(l.id)}
-                style={{ cursor: podeEscolher && l.id ? "pointer" : "default",
-                         background: String(selecionado) === String(l.id) ? C.listActive : "transparent" }}>
-              <td style={{ ...estilos.td, width: "40%" }}>
-                <div style={{ fontWeight: l.sou ? 800 : 600 }}>
-                  {l.nome}
-                  {l.sou && <span style={{ marginLeft: 7, fontSize: 11, fontWeight: 700, color: "#fff",
-                                           background: cores.saiu, borderRadius: 10, padding: "1px 7px" }}>você</span>}
-                  {/* Sem id, a linha pode ser duas pessoas somadas (ou uma pessoa
-                      partida em duas, se ela trocou de nome). Dizer isso na linha
-                      é mais honesto do que um total liso. */}
-                  {!l.temId && (
-                    <span title="Contado pelo nome: mensagens anteriores a agosto/2026 não guardam quem enviou."
-                          style={{ marginLeft: 7, fontSize: 11, fontWeight: 700, color: C.textSecondary,
-                                   border: `1px solid ${C.divider}`, borderRadius: 10, padding: "1px 7px" }}>
-                      pelo nome
-                    </span>
-                  )}
-                </div>
-                <div style={{ height: 6, background: C.divider, borderRadius: 3, overflow: "hidden", marginTop: 7 }}>
-                  <div style={{ width: `${Math.round((l.atendimentos / maior) * 100)}%`, height: "100%",
-                                background: l.sou ? cores.saiu : cores.apagado }} />
-                </div>
-              </td>
-              <td style={{ ...estilos.num, fontWeight: 700 }}>{numero(l.atendimentos)}</td>
-              <td style={estilos.num}>{numero(l.enviadas)}</td>
-              <td style={estilos.num}>{tempo(l.resposta)}</td>
-              <td style={estilos.num}>{tempo(l.espera)}</td>
             </tr>
           ))}
         </tbody>
@@ -1442,34 +2035,16 @@ const POR_PAGINA = 50;
    SEM A FUNÇÃO ou SEM O 028, quem administra lê qual atualização falta; quem
    atende não vê nada. COM A FUNÇÃO FALHANDO, a frase vem com o código — falha
    não é ausência (armadilha nº 2). */
-function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, fuso, quem, telefone, departamento,
+function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, leitura, quem,
                               souAdmin, meuId, advogados, aoEscolherPessoa }) {
-  const [r, setR] = useState(null);
-  const [carregando, setCarregando] = useState(true);
-  const [erro, setErro] = useState("");
-  const [falta, setFalta] = useState(null);   // "029" | "028" | null
+  // A LEITURA VEM DO ALTO (`useLeitura`). "029" é a função que falta, e
+  // "028", o que ela diz faltar lá dentro.
+  const { carregando, erro } = leitura;
+  const falta = leitura.semFuncao ? "029" : (leitura.dados && leitura.dados.falta ? String(leitura.dados.falta) : null);
+  const r = leitura.dados && !leitura.dados.falta ? leitura.dados : null;
   const [quantos, setQuantos] = useState(POR_PAGINA);
-
-  useEffect(() => {
-    let vivo = true;
-    (async () => {
-      setCarregando(true); setErro(""); setFalta(null); setQuantos(POR_PAGINA);
-      const { data, error } = await supabase.rpc("zorvin_relatorio_atendimentos", {
-        p_desde: deIso, p_ate: ateIso, p_quem: quem, p_fuso: fuso,
-        p_telefone: telefone, p_departamento: departamento, p_limite: 1000,
-      });
-      if (!vivo) return;
-      setCarregando(false);
-      if (error) {
-        if (semAFuncao(error)) { setFalta("029"); return; }
-        setErro(`${error.message || "erro desconhecido"}${error.code ? ` (código ${error.code})` : ""}`);
-        return;
-      }
-      if (data && data.falta) { setFalta(String(data.falta)); return; }
-      setR(data || null);
-    })();
-    return () => { vivo = false; };
-  }, [deIso, ateIso, quem, telefone, departamento, fuso]);
+  // A LISTA VOLTA AO COMEÇO A CADA LEITURA NOVA, como quando a seção lia sozinha.
+  useEffect(() => { setQuantos(POR_PAGINA); }, [leitura.dados]);
 
   const nomeDoTelefone = (id) => {
     const a = advogados.find((x) => String(x.id) === String(id));
@@ -1654,7 +2229,7 @@ function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, fuso, quem, tel
                             <td style={{ ...estilos.td, fontWeight: sou ? 800 : 600, color: p.tipo === "pessoa" ? C.textPrimary : C.textSecondary }}>
                               {p.nome}
                               {sou && <span style={{ marginLeft: 7, fontSize: 11, fontWeight: 700, color: "#fff",
-                                                     background: cores.saiu, borderRadius: 10, padding: "1px 7px" }}>você</span>}
+                                                     background: cores.selo, borderRadius: 10, padding: "1px 7px" }}>você</span>}
                             </td>
                             <td style={estilos.num} data-primeiras={p.primeiras}>{numero(p.primeiras)}</td>
                             <td style={estilos.num}>{p.primeiras ? tempo(p.primeira_mediana) : "—"}</td>
@@ -1669,6 +2244,7 @@ function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, fuso, quem, tel
               )}
             </div>
 
+            <div data-nao-imprime>
             <Titulo C={C}>Os protocolos</Titulo>
             <div style={estilos.cartao} data-protocolos-lista>
               <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
@@ -1723,6 +2299,7 @@ function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, fuso, quem, tel
                 </button>
               )}
             </div>
+            </div>
           </>
         );
       })()}
@@ -1749,31 +2326,12 @@ function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, fuso, quem, tel
    SEM A FUNÇÃO ou SEM O SCRIPT 008, quem administra lê qual script falta;
    quem atende não vê nada. COM A FUNÇÃO FALHANDO, a frase vem com o código
    — falha não é ausência (armadilha nº 2). */
-function RelatorioResponsaveis({ C, estilos, cores, fuso, telefone, departamento, souAdmin, meuId }) {
-  const [r, setR] = useState(null);
-  const [carregando, setCarregando] = useState(true);
-  const [erro, setErro] = useState("");
-  const [falta, setFalta] = useState(null);   // "011" | "008" | null
-
-  useEffect(() => {
-    let vivo = true;
-    (async () => {
-      setCarregando(true); setErro(""); setFalta(null);
-      const { data, error } = await supabase.rpc("zorvin_relatorio_responsaveis", {
-        p_telefone: telefone, p_departamento: departamento, p_fuso: fuso,
-      });
-      if (!vivo) return;
-      setCarregando(false);
-      if (error) {
-        if (semAFuncao(error)) { setFalta("011"); return; }
-        setErro(`${error.message || "erro desconhecido"}${error.code ? ` (código ${error.code})` : ""}`);
-        return;
-      }
-      if (data && data.falta) { setFalta(String(data.falta)); return; }
-      setR(data || null);
-    })();
-    return () => { vivo = false; };
-  }, [telefone, departamento, fuso]);
+function RelatorioResponsaveis({ C, estilos, cores, leitura, souAdmin, meuId }) {
+  // A LEITURA VEM DO ALTO (`useLeitura`): "011" é a função que falta, e
+  // "008", o que ela diz faltar lá dentro.
+  const { carregando, erro } = leitura;
+  const falta = leitura.semFuncao ? "011" : (leitura.dados && leitura.dados.falta ? String(leitura.dados.falta) : null);
+  const r = leitura.dados && !leitura.dados.falta ? leitura.dados : null;
 
   if (falta && !souAdmin) return null;
 
@@ -1800,7 +2358,7 @@ function RelatorioResponsaveis({ C, estilos, cores, fuso, telefone, departamento
           <div style={{ fontWeight: sou ? 800 : 600, fontStyle: semDono ? "italic" : "normal" }}>
             {nome}
             {sou && <span style={{ marginLeft: 7, fontSize: 11, fontWeight: 700, color: "#fff",
-                                   background: cores.saiu, borderRadius: 10, padding: "1px 7px" }}>você</span>}
+                                   background: cores.selo, borderRadius: 10, padding: "1px 7px" }}>você</span>}
           </div>
           <div style={{ height: 6, background: C.divider, borderRadius: 3, overflow: "hidden", marginTop: 6 }}>
             <div style={{ width: `${Math.round((Number(l.conversas || 0) / maiorCarteira) * 100)}%`, height: "100%",
@@ -2085,33 +2643,15 @@ function RelatorioFunil({ C, estilos, cores, deIso, ateIso, telefone, departamen
   );
 }
 
-function RelatorioJaTratei({ C, estilos, cores, deIso, ateIso, fuso, passo, quem, telefone, departamento,
+function RelatorioJaTratei({ C, estilos, cores, leitura, deIso, ateIso, passo, quem,
                              souAdmin, meuId, advogados, aoEscolherPessoa }) {
-  const [r, setR] = useState(null);
-  const [carregando, setCarregando] = useState(true);
-  const [erro, setErro] = useState("");
-  const [falta, setFalta] = useState(false);
+  // A LEITURA VEM DO ALTO (`useLeitura`).
+  const { carregando, erro } = leitura;
+  const falta = leitura.semFuncao;
+  const r = leitura.dados;
   const [quantos, setQuantos] = useState(POR_PAGINA);
-
-  useEffect(() => {
-    let vivo = true;
-    (async () => {
-      setCarregando(true); setErro(""); setFalta(false); setQuantos(POR_PAGINA);
-      const { data, error } = await supabase.rpc("zorvin_relatorio_tratados", {
-        p_desde: deIso, p_ate: ateIso, p_quem: quem, p_fuso: fuso,
-        p_telefone: telefone, p_departamento: departamento, p_limite: 1000,
-      });
-      if (!vivo) return;
-      setCarregando(false);
-      if (error) {
-        if (semAFuncao(error)) { setFalta(true); return; }
-        setErro(`${error.message || "erro desconhecido"}${error.code ? ` (código ${error.code})` : ""}`);
-        return;
-      }
-      setR(data || null);
-    })();
-    return () => { vivo = false; };
-  }, [deIso, ateIso, quem, telefone, departamento, fuso]);
+  // A LISTA VOLTA AO COMEÇO A CADA LEITURA NOVA, como quando a seção lia sozinha.
+  useEffect(() => { setQuantos(POR_PAGINA); }, [leitura.dados]);
 
   const nomeDoTelefone = (id) => {
     const a = advogados.find((x) => String(x.id) === String(id));
@@ -2281,7 +2821,7 @@ function RelatorioJaTratei({ C, estilos, cores, deIso, ateIso, fuso, passo, quem
                           <div style={{ fontWeight: sou ? 800 : 600 }}>
                             {p.nome}
                             {sou && <span style={{ marginLeft: 7, fontSize: 11, fontWeight: 700, color: "#fff",
-                                                   background: cores.saiu, borderRadius: 10, padding: "1px 7px" }}>você</span>}
+                                                   background: cores.selo, borderRadius: 10, padding: "1px 7px" }}>você</span>}
                           </div>
                           <div style={{ height: 6, background: C.divider, borderRadius: 3, overflow: "hidden", marginTop: 6 }}>
                             <div style={{ width: `${Math.round((Number(p.tratamentos) / maiorPessoa) * 100)}%`, height: "100%",
@@ -2296,6 +2836,7 @@ function RelatorioJaTratei({ C, estilos, cores, deIso, ateIso, fuso, passo, quem
               </div>
             </div>
 
+            <div data-nao-imprime>
             <Titulo C={C}>Os registros</Titulo>
             <div style={estilos.cartao} data-relatorio-registros>
               <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
@@ -2354,6 +2895,7 @@ function RelatorioJaTratei({ C, estilos, cores, deIso, ateIso, fuso, passo, quem
                   Mostrar mais {Math.min(POR_PAGINA, regs.length - quantos)}
                 </button>
               )}
+            </div>
             </div>
           </>
         );

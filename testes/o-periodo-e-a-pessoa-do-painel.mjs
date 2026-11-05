@@ -209,8 +209,10 @@ console.log("\n3. “Este ano”: a seta anda um ano civil; o mês continua de m
 // ==================================================================
 // A PESSOA ESCOLHIDA. A Jenifer tratou uma conversa no mês mais antigo da
 // lista de meses, onde o roteiro da bancada não chega: ela está no "Por
-// pessoa" do Já tratei e NÃO no "Por atendente" — é o caso em que o nome
-// caía para o de quem administra.
+// pessoa" do Já tratei e NÃO entre quem atendeu no Painel — é o caso em que o
+// nome caía para o de quem administra. Desde 05/11 o "Por atendente" virou a
+// tabela da equipe, que junta as quatro contas; quem atendeu no Painel é a
+// linha com `data-atendente` (`por_atendente`).
 //
 // O MÊS É CONTADO NO CALENDÁRIO DE SÃO PAULO, o fuso do navegador desta prova
 // (`abrirPainel`), e não no relógio da máquina. Contado na máquina — que no
@@ -262,7 +264,7 @@ console.log("\n4. A Jenifer escolhida no “Por pessoa” do Já tratei é a Jen
   const eu = await page.evaluate(() => globalThis.__ESPERADO.eu);
   const linha = page.locator('[data-relatorio-por-pessoa] [data-pessoa-no-relatorio="JENIFER ALMEIDA"]');
   ok("a Jenifer está no “Por pessoa” do Já tratei", (await linha.count()) === 1);
-  ok("e NÃO está no “Por atendente” (é o caso do defeito)",
+  ok("e NÃO está entre quem atendeu no Painel (é o caso do defeito)",
      (await page.locator('[data-atendente="JENIFER ALMEIDA"]').count()) === 0);
   await linha.first().click().catch(() => {});
   await page.waitForTimeout(1200);
@@ -286,13 +288,13 @@ console.log("\n5. A colega continua a colega num mês em que ela não atendeu");
   // PELA BANCADA, e não escrito à mão (a lição do `__ESPERADO.outroAutor`).
   const { eu, outroAutor: colega } = await page.evaluate(() => globalThis.__ESPERADO);
   const linha = page.locator(`[data-atendente="${colega}"]`);
-  ok(`a colega (${colega}) está no “Por atendente” dos 30 dias`, (await linha.count()) > 0);
+  ok(`a colega (${colega}) está entre quem atendeu nos 30 dias`, (await linha.count()) > 0);
   await linha.first().click().catch(() => {});
   await page.waitForTimeout(1000);
   ok("escolhida, o filtro diz o nome dela", (await filtrando(page)).includes(colega), await filtrando(page));
   // O MÊS MAIS ANTIGO da lista: o roteiro da bancada não chega lá.
   ok("a lista de meses está lá", (await mesMaisAntigo(page)) >= 12);
-  ok("nesse mês ela não está no “Por atendente”", (await linha.count()) === 0);
+  ok("nesse mês ela não está entre quem atendeu", (await linha.count()) === 0);
   const f = await filtrando(page);
   ok("e o filtro continua dizendo o nome dela", f.includes(colega), f);
   ok("e não o de quem administra", f.length > 0 && !f.includes(eu.nome), f);
