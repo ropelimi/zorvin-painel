@@ -63,7 +63,7 @@ import JaTratei from "./JaTratei.jsx";
 import Reabrir from "./Reabrir.jsx";
 import { nomeDoContato } from "./contato.js";
 import { preencherVariaveis, usaVariaveis, variaveisDesconhecidas, VARIAVEIS } from "./variaveis.js";
-import { diasDesde, DIAS_DO_VERMELHO } from "./espera.js";
+import { diasDesde, corDaEspera, DIAS_DO_VERMELHO, VERMELHO_DO_SELO, AMBAR_DO_SELO } from "./espera.js";
 import { montarCaminho, duracaoLegivel } from "./caminhoNoFunil.js";
 import { lerFunisDosTelefones, funilDoTelefone, chaveDoFunil, nomeDoFunil, noFunil } from "./funis.js";
 import EscolherHora from "./EscolherHora.jsx";
@@ -1061,7 +1061,13 @@ const TEMAS = {
   claro: {
     rail: "#202c33", headerBar: "#f0f2f5", panel: "#ffffff", listActive: "#f0f2f5",
     chatBg: "#efeae2", bubbleIn: "#ffffff", bubbleOut: "#d9fdd3", green: "#00a884",
-    greenDark: "#008069", textPrimary: "#111b21", textSecondary: "#667781",
+    // O CINZA DO TEXTO SECUNDÁRIO (revisão do leiaute, 05/11). O #667781 de
+    // antes dava 4,65:1 no branco, mas 4,14 no cinza do alto da lista e da
+    // conversa escolhida, 4,19 na bolha verde (a hora de quem envia) e 3,9 no
+    // fundo da conversa — abaixo dos 4,5 que se pedem para letra miúda, e ele
+    // é a letra miúda da tela inteira: o número, a hora, a prévia. O #54656f é
+    // o do WhatsApp Web de hoje: 6,1 no branco, 5,4 no cinza, 5,5 na bolha.
+    greenDark: "#008069", textPrimary: "#111b21", textSecondary: "#54656f",
     divider: "#e9edef", unread: "#008069", inputBg: "#ffffff", searchBg: "#f0f2f5",
     scrollbar: "rgba(11,20,26,.24)", scrollbarForte: "rgba(11,20,26,.38)",
     // A barra de digitar: SÓ O BALÃO. `barraFundo` é transparente, então o
@@ -1076,6 +1082,17 @@ const TEMAS = {
     // envia, e o #d4a017 de "Editando a mensagem" 2,1:1 sobre o cinza. Estes
     // dão 5,1 e 5,4. O ícone e a borda continuam com a cor viva.
     erroTexto: "#c62828", ambarTexto: "#7a5f00",
+    // O BOTÃO VERDE COM LETRA BRANCA (revisão do leiaute, 05/11). Com o
+    // #00a884, a letra branca dava 3,0:1 — "Criar", "Salvar", "Criar
+    // pré-cadastro". O #008069 dá 4,9, e é o verde dos botões do WhatsApp
+    // Web. O ícone sozinho num botão verde (enviar, gravar) continua no
+    // `green`: desenho pede 3:1, e ele passa.
+    botao: "#008069",
+    // A HORA NA BOLHA DE QUEM ENVIA: no claro, o mesmo cinza do resto.
+    horaNaSaida: "#54656f",
+    // O VERMELHO DO "esperando há N dias" (`corDaEspera`): 5,6:1 no branco e
+    // 5,0 no cinza da conversa escolhida. O #e5573f de antes dava 3,6.
+    esperaVermelha: "#c62828",
   },
   escuro: {
     rail: "#161717", headerBar: "#202c33", panel: "#111b21", listActive: "#2a3942",
@@ -1094,6 +1111,15 @@ const TEMAS = {
     // 1,9:1 — o "não enviado · reenviar" era quase invisível justamente onde
     // ele precisa ser visto. O rosado dá 4,7. O âmbar já passava (6,0).
     erroTexto: "#ffb4ab", ambarTexto: "#d4a017",
+    // No escuro o botão fica no mesmo verde: com a letra branca ele dá 4,9,
+    // e contra o fundo (#111b21) continua se vendo (3,5:1).
+    botao: "#008069",
+    // A HORA NA BOLHA DE QUEM ENVIA: o cinza de sempre (#9aa8b1) dava 3,3:1
+    // sobre o verde escuro da bolha (#005c4b). Este dá 5,0.
+    horaNaSaida: "#bcd1cd",
+    // No escuro o #e5573f passava no fundo da lista (4,7), mas dava 3,3 na
+    // conversa escolhida (#2a3942). Este dá 5,2 nela e 7,5 no fundo.
+    esperaVermelha: "#ff8a7a",
   },
 };
 
@@ -1221,7 +1247,11 @@ function corDe(txt) {
 // que é o suficiente para a pessoa ver que tem um nome ali e não conseguir ler
 // qual é. O matiz é o mesmo; só a claridade mudou.
 const CORES_NOME_ESCURO = ["#8fd0ff", "#ffd08a", "#b6e88f", "#ffb0d4", "#d1c1ff", "#8ce6d6", "#ffb892", "#a7d8ff", "#8ee0b0", "#ffb6c4"];
-const CORES_NOME_CLARO = ["#0272b5", "#ab5300", "#4c7a1d", "#8e24aa", "#4527a0", "#007984", "#ad1457", "#3949ab", "#00695c", "#b71c40"];
+// E SOBRE O FUNDO DA CONVERSA TAMBÉM (revisão do leiaute, 05/11): a
+// figurinha não tem bolha, e o nome de quem a mandou fica sobre o bege do
+// fundo (#efeae2), mais escuro que a bolha verde. Ali quatro do claro davam
+// de 4,27 a 4,42; um tom abaixo, dão 4,6 no bege e 5,0 na bolha.
+const CORES_NOME_CLARO = ["#026cac", "#a65100", "#48741c", "#8e24aa", "#4527a0", "#00737d", "#ad1457", "#3949ab", "#00695c", "#b71c40"];
 function corNome(txt, modo) {
   const arr = modo === "escuro" ? CORES_NOME_ESCURO : CORES_NOME_CLARO;
   let h = 0;
@@ -1888,7 +1918,7 @@ function MetaBolha({ C, m, saida, flutuante, aoReenviar }) {
       // vazaria por cima da linha de baixo.
       display: "flex", alignItems: "center", gap: 3, height: m._status === "erro" ? "auto" : 15,
       fontSize: 11, lineHeight: 1, whiteSpace: "nowrap", userSelect: "none",
-      color: m._status === "erro" ? C.erroTexto : C.textSecondary,
+      color: m._status === "erro" ? C.erroTexto : (saida ? C.horaNaSaida : C.textSecondary),
     }}>
       {m.fixada && <Pin size={12} color={C.textSecondary} />}
       {m.favorita && <Star size={12} color="#f4c430" fill="#f4c430" />}
@@ -2201,7 +2231,7 @@ function MenuMensagem({ C, saida, tudo, paraCima, aoVerTudo, aoReagir, aoRespond
             {saida && (
               <>
                 <div style={{ height: 1, background: C.divider, margin: "4px 0" }} />
-                <button onClick={aoApagar} style={{ ...ITEM, color: "#e53935" }}>
+                <button onClick={aoApagar} style={{ ...ITEM, color: C.erroTexto }}>
                   <Trash2 size={17} color="#e53935" /> Apagar
                 </button>
               </>
@@ -2767,7 +2797,7 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
                 {m.texto}
               </div>
               {estadoDaAutomatica(m) === "erro" && (
-                <div data-automatica-erro style={{ fontSize: 12, color: "#e5573f", marginTop: 4, lineHeight: 1.4 }}>
+                <div data-automatica-erro style={{ fontSize: 12, color: C.erroTexto, marginTop: 4, lineHeight: 1.4 }}>
                   Não saiu{m._erro ? `: ${String(m._erro).replace(/[.\s]+$/, "")}.` : "."} O cliente não recebeu esta resposta.
                 </div>
               )}
@@ -4439,6 +4469,14 @@ export default function Painel({ sessao }) {
   const larguraDaConversa = largura - 60
     - (estreito ? 0 : LARGURA_DA_LISTA)
     - (fichaEmColuna && fichaVisivel && temVantoro === true ? 330 : 0);
+  // A CAIXA DE ESCREVER APERTADA (revisão do leiaute, 05/11). No computador a
+  // caixa divide a linha com seis botões, e numa conversa estreita (a 768 em
+  // pé, ou com a ficha em coluna numa janela pequena) sobravam uns 75 pontos:
+  // "Digite uma mensagem" quebrava em duas linhas, e a caixa nascia com a
+  // altura de duas. Abaixo de 440 de conversa, a frase é a curta. No celular
+  // a caixa tem menos botões, e a frase de sempre cabe a partir de 375 (o
+  // iPhone pequeno); a 360 (o Android pequeno) ela também quebrava.
+  const caixaApertada = estreito ? largura < 370 : larguraDaConversa < 440;
 
   // ============================================================
   //  QUEM TEM PRIORIDADE NO CABEÇALHO É O NOME, E NÃO OS BOTÕES
@@ -16030,7 +16068,7 @@ export default function Painel({ sessao }) {
         .sort((a, b) => String(b.feita_em).localeCompare(String(a.feita_em)))
     : [];
   const proximaTarefa = tarefasAbertasDaConversa[0] || null;
-  const corDaSituacao = (s) => (s === "atrasada" ? "#e53935" : s === "hoje" ? "#d99a1e" : C.textSecondary);
+  const corDaSituacao = (s) => (s === "atrasada" ? C.erroTexto : s === "hoje" ? C.ambarTexto : C.textSecondary);
 
   const listaDeTarefas = !conversa || !tarefasDaConversa ? null : (() => {
     const f = tarefasDaConversa;
@@ -16464,7 +16502,7 @@ export default function Painel({ sessao }) {
                 style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
           <Icone size={17} color={cor} /> {rotulo}
           {estaEsperando && esperaDaAberta >= 1 && (
-            <span style={{ marginLeft: "auto", fontSize: 12, color: esperaDaAberta >= 3 ? "#e5573f" : C.textSecondary }}>
+            <span style={{ marginLeft: "auto", fontSize: 12, color: esperaDaAberta >= DIAS_DO_VERMELHO ? C.esperaVermelha : C.textSecondary }}>
               {esperaDaAberta}d
             </span>
           )}
@@ -16822,15 +16860,15 @@ export default function Painel({ sessao }) {
       }}
       rows={1}
       placeholder={editando ? (editando.origem === "nota"
-                                ? (estreito ? "Corrija a nota" : "Corrija a nota interna e aperte Enter")
-                                : "Corrija a mensagem e aperte Enter")
+                                ? (estreito || caixaApertada ? "Corrija a nota" : "Corrija a nota interna e aperte Enter")
+                                : (estreito || caixaApertada ? "Corrija a mensagem" : "Corrija a mensagem e aperte Enter"))
                       // NO CELULAR O AVISO É CURTO, e nao por preguica: a frase
                       // inteira quebra em tres linhas numa tela de 320px e empurra
                       // a conversa para fora da vista. A moldura ambar e o icone
                       // aceso ja dizem que aquilo e uma nota; o campo so precisa
                       // nomear o que se escreve nele.
-                      : (modoNota ? (estreito ? "Nota interna" : "Escreva uma nota interna (só a equipe vê)")
-                                  : "Digite uma mensagem")}
+                      : (modoNota ? (estreito || caixaApertada ? "Nota interna" : "Escreva uma nota interna (só a equipe vê)")
+                                  : (caixaApertada ? "Mensagem" : "Digite uma mensagem"))}
       style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", color: C.textPrimary, boxSizing: "border-box", padding: "10px 6px", fontSize: 14.5, resize: "none", lineHeight: "20px", maxHeight: 120, overflowY: "auto", fontFamily: "inherit", alignSelf: "flex-end" }}
     />
     {/* O RELÓGIO SÓ APARECE COM TEXTO NA CAIXA: agendar é agendar ESTE texto,
@@ -17208,6 +17246,13 @@ export default function Painel({ sessao }) {
            A marca data-compacto é a saída para quando alguma fileira precisar
            desobedecer. Hoje ninguém usa, e é de propósito que a exceção exista
            escrita em vez de aparecer como um "important" solto mais adiante. */
+        /* A FRASE DA CAIXA DE ESCREVER NUMA LINHA SÓ (revisão do leiaute,
+           05/11). A caixa cresce com o que está escrito nela, e a frase que
+           não cabia quebrava em duas linhas e a fazia nascer com a altura de
+           duas. A frase curta (\`caixaApertada\`) é o conserto; esta regra é o
+           encosto para a letra mais larga que a das provas: a frase é
+           cortada na borda, e a caixa continua com uma linha. */
+        textarea[data-campo]::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         @media (max-width: 767px) {
           button, [role="button"], select,
           input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),
@@ -17394,7 +17439,7 @@ export default function Painel({ sessao }) {
             {tarefasParaAgora > 0 && (
               <span data-selo-tarefas={tarefasParaAgora} data-atrasadas={tarefasAtrasadas}
                     style={{ position: "absolute", top: 1, right: 0, minWidth: 18, height: 18, padding: "0 4px",
-                             borderRadius: 9, background: tarefasAtrasadas ? "#d92b20" : "#d99a1e", color: "#fff",
+                             borderRadius: 9, background: tarefasAtrasadas ? VERMELHO_DO_SELO : AMBAR_DO_SELO, color: "#fff",
                              fontSize: 10.5, fontWeight: 700, lineHeight: 1, display: "flex", alignItems: "center",
                              justifyContent: "center", border: `2px solid ${C.rail}`, boxSizing: "border-box" }}>
                 {tarefasParaAgora > 99 ? "99+" : tarefasParaAgora}
@@ -17417,7 +17462,7 @@ export default function Painel({ sessao }) {
             {nEsperando > 0 && (
               <span data-selo-esperando={nEsperando} data-sem-resposta={nSemResposta}
                     style={{ position: "absolute", top: 1, right: 0, minWidth: 18, height: 18, padding: "0 4px",
-                             borderRadius: 9, background: nSemResposta ? "#d92b20" : "#d99a1e", color: "#fff",
+                             borderRadius: 9, background: nSemResposta ? VERMELHO_DO_SELO : AMBAR_DO_SELO, color: "#fff",
                              fontSize: 10.5, fontWeight: 700, lineHeight: 1, display: "flex", alignItems: "center",
                              justifyContent: "center", border: `2px solid ${C.rail}`, boxSizing: "border-box" }}>
                 {nEsperando > 99 ? "99+" : nEsperando}
@@ -17502,7 +17547,7 @@ export default function Painel({ sessao }) {
                   </div>
                   <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                     <button onClick={() => setContatoForm(null)} style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary, borderRadius: 8, padding: "9px 16px", fontSize: 14, cursor: "pointer" }}>Cancelar</button>
-                    <button onClick={criarContatoEConversar} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Salvar e conversar</button>
+                    <button onClick={criarContatoEConversar} style={{ border: "none", background: C.botao, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Salvar e conversar</button>
                   </div>
                 </div>
               ) : (
@@ -17844,7 +17889,7 @@ export default function Painel({ sessao }) {
                        onClick={() => setMenuTopoAberto(false)} style={ITEM_QUE_ABRE_GUIA}>
                       <BellRing size={17} color={C.textSecondary} /> <span style={{ flex: 1 }}>Tarefas</span>
                       {tarefasParaAgora > 0 && (
-                        <span style={{ fontSize: 12, fontWeight: 700, color: tarefasAtrasadas ? "#d92b20" : "#d99a1e" }}>{tarefasParaAgora}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: tarefasAtrasadas ? C.erroTexto : C.ambarTexto }}>{tarefasParaAgora}</span>
                       )}
                     </a>
                   )}
@@ -17853,7 +17898,7 @@ export default function Painel({ sessao }) {
                        onClick={() => setMenuTopoAberto(false)} style={ITEM_QUE_ABRE_GUIA}>
                       <Hourglass size={17} color={C.textSecondary} /> <span style={{ flex: 1 }}>Esperando resposta</span>
                       {nEsperando > 0 && (
-                        <span style={{ fontSize: 12, fontWeight: 700, color: nSemResposta ? "#d92b20" : "#d99a1e" }}>{nEsperando}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: nSemResposta ? C.erroTexto : C.ambarTexto }}>{nEsperando}</span>
                       )}
                     </a>
                   )}
@@ -17874,7 +17919,7 @@ export default function Painel({ sessao }) {
                     <button onClick={() => { setMenuTopoAberto(false); setAbaDaAdmin("estrutura"); setTelaAdmin(true); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><ShieldCheck size={17} color={C.textSecondary} /> Departamentos e acessos</button>
                   )}
                   <div style={{ height: 1, background: C.divider }} />
-                  <button onClick={() => { setMenuTopoAberto(false); sair(); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: "#e5573f", fontSize: 14, fontWeight: 600, textAlign: "left" }}><LogOut size={17} /> Desconectar</button>
+                  <button onClick={() => { setMenuTopoAberto(false); sair(); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.erroTexto, fontSize: 14, fontWeight: 600, textAlign: "left" }}><LogOut size={17} /> Desconectar</button>
                   {/* A VERSÃO DO ZORVIN (05/11), pedido do Rodrigo: "em algum
                       lugar colocar a informação de qual é a versão atual". No
                       pé do menu, miúda: é para conferir quando alguém pergunta
@@ -17963,7 +18008,7 @@ export default function Painel({ sessao }) {
                             </span>
                           </span>
                           {naoLidas > 0 && (
-                            <span style={{ flexShrink: 0, minWidth: 20, height: 20, borderRadius: 10, background: C.green, color: "#fff",
+                            <span style={{ flexShrink: 0, minWidth: 20, height: 20, borderRadius: 10, background: C.botao, color: "#fff",
                                            fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 6px" }}>{naoLidas}</span>
                           )}
                           {ativo && <Check size={16} color={C.green} style={{ flexShrink: 0 }} />}
@@ -18029,15 +18074,23 @@ export default function Painel({ sessao }) {
                 CPF ou proc" — cortada justamente no que ela promete. O começo
                 ("Buscar por nome") é o mesmo nas duas, e é por ele que as
                 provas acham a caixa. */}
+            {/* E NO COMPUTADOR TAMBÉM (revisão do leiaute, 05/11): a frase
+                inteira pede 300 pontos, e a caixa tem 286 — a tela dizia
+                "…CPF ou proces". A curta segue o jeito da do celular: o que
+                cabe, e as reticências dizendo que há mais. As reticências da
+                caixa (`textOverflow`) são o encosto para uma letra mais larga
+                que a das provas: cortada, a frase termina em "…", e não no
+                meio da palavra. */}
             <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder={temVantoro === true
-                     ? (estreito ? "Buscar por nome, CPF…" : "Buscar por nome, mensagem, CPF ou processo")
+                     ? (estreito ? "Buscar por nome, CPF…" : "Buscar por nome, mensagem, CPF…")
                      : (estreito ? "Buscar por nome, número…" : "Buscar por nome, mensagem ou número")}
                    aria-label="Buscar conversas"
                    // O QUE SE ESCREVEU PARA PROCURAR NÃO SEGURA A ATUALIZAÇÃO
                    // SOZINHA (05/11): não é trabalho que se perde, e uma busca
                    // esquecida na caixa a seguraria o dia inteiro.
                    data-nao-segura-a-atualizacao=""
-                   style={{ border: "none", outline: "none", background: "transparent", fontSize: 14, flex: 1, minWidth: 0, color: C.textPrimary }} />
+                   style={{ border: "none", outline: "none", background: "transparent", fontSize: 14, flex: 1, minWidth: 0, color: C.textPrimary,
+                             textOverflow: "ellipsis" }} />
           </div>
         </div>
 
@@ -18435,7 +18488,7 @@ export default function Painel({ sessao }) {
                         <span style={{ display: "block", fontSize: 12.5, color: C.textSecondary, fontVariantNumeric: "tabular-nums" }}>{numeroBonito(a.numero) || "sem número"}</span>
                       </span>
                       {n > 0 && (
-                        <span style={{ flexShrink: 0, minWidth: 22, height: 22, borderRadius: 11, background: C.green, color: "#fff",
+                        <span style={{ flexShrink: 0, minWidth: 22, height: 22, borderRadius: 11, background: C.botao, color: "#fff",
                                        fontSize: 11.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 6px" }}>{n}</span>
                       )}
                     </button>
@@ -18465,7 +18518,7 @@ export default function Painel({ sessao }) {
               <button
                 data-tentar-acesso
                 onClick={() => { setErroDoAcesso(""); setTentativaDeAcesso((n) => n + 1); }}
-                style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8,
+                style={{ background: C.botao, color: "#fff", border: "none", borderRadius: 8,
                          padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
                 Tentar de novo
               </button>
@@ -18698,8 +18751,7 @@ export default function Painel({ sessao }) {
                     <div data-espera={espera}
                          title={`Sem resposta desde ${new Date(c.esperando_desde).toLocaleDateString("pt-BR")}`}
                          style={{ marginTop: 3, fontSize: 11.5, fontWeight: 600,
-                                  color: espera >= DIAS_DO_VERMELHO ? "#e5573f"
-                                       : (modo === "escuro" ? "#e0a400" : "#8a6d00") }}>
+                                  color: corDaEspera(espera, C) }}>
                       esperando há {espera} {espera === 1 ? "dia" : "dias"}
                     </div>
                   )}
@@ -18858,7 +18910,7 @@ export default function Painel({ sessao }) {
                   {/* O QUE O CLIQUE FAZ, ESCRITO. As outras linhas desta lista
                       abrem uma conversa que existe; esta CRIA uma. Sem dizer,
                       as duas parecem a mesma coisa. */}
-                  <span style={{ fontSize: 12, fontWeight: 600, color: C.green,
+                  <span style={{ fontSize: 12, fontWeight: 600, color: C.verdeTexto,
                                  whiteSpace: "nowrap" }}>Começar conversa</span>
                 </div>
               ))}
@@ -18914,13 +18966,13 @@ export default function Painel({ sessao }) {
                 {(nSemResposta || nAtrasadas) ? (
                   <a data-ver-quem-espera data-abre-guia href={enderecoDaTela("esperando")} target="_blank" rel="noopener"
                      title="Ver quais (abre numa guia nova)"
-                     style={{ display: "inline-flex", alignItems: "center", marginTop: 10, background: C.green, color: "#fff", borderRadius: 8,
+                     style={{ display: "inline-flex", alignItems: "center", marginTop: 10, background: C.botao, color: "#fff", borderRadius: 8,
                               padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", textDecoration: "none" }}>
                     Ver quais
                   </a>
                 ) : (
                   <button data-ver-quem-espera onClick={lerQuemEspera}
-                          style={{ marginTop: 10, border: "none", background: C.green, color: "#fff", borderRadius: 8,
+                          style={{ marginTop: 10, border: "none", background: C.botao, color: "#fff", borderRadius: 8,
                                    padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
                     Tentar de novo
                   </button>
@@ -19336,7 +19388,7 @@ export default function Painel({ sessao }) {
                     <span data-outros-telefones={outrasConversasDoContato}
                           style={{ position: "absolute", top: 2, right: 2,
                                    minWidth: 15, height: 15, padding: "0 3px",
-                                   borderRadius: 8, background: C.green, color: "#fff",
+                                   borderRadius: 8, background: C.botao, color: "#fff",
                                    fontSize: 9.5, fontWeight: 700, lineHeight: "15px",
                                    textAlign: "center", pointerEvents: "none" }}>
                       {outrasConversasDoContato}
@@ -19534,7 +19586,7 @@ export default function Painel({ sessao }) {
                         {outrasConversasDoContato > 0 && (
                           <span data-outros-telefones={outrasConversasDoContato}
                                 style={{ marginLeft: "auto", minWidth: 18, height: 18,
-                                         padding: "0 5px", borderRadius: 9, background: C.green,
+                                         padding: "0 5px", borderRadius: 9, background: C.botao,
                                          color: "#fff", fontSize: 11, fontWeight: 700,
                                          lineHeight: "18px", textAlign: "center" }}>
                             {outrasConversasDoContato}
@@ -19839,7 +19891,7 @@ export default function Painel({ sessao }) {
                     leitura. {estadoMensagens.codigo ? `Código do banco: ${estadoMensagens.codigo}.` : ""}
                   </div>
                   <button data-tentar-mensagens onClick={() => carregarMensagens(conversaId)}
-                          style={{ border: "none", background: C.green, color: "#fff", borderRadius: 9,
+                          style={{ border: "none", background: C.botao, color: "#fff", borderRadius: 9,
                                    padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
                     Tentar de novo
                   </button>
@@ -19949,7 +20001,7 @@ export default function Painel({ sessao }) {
                       {!saindo && (
                         <button data-cancelar-agendada onClick={() => cancelarAgendada(a)}
                                 title="Cancelar esta mensagem agendada"
-                                style={{ border: `1px solid ${C.divider}`, background: "transparent", color: "#e53935",
+                                style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.erroTexto,
                                          borderRadius: 14, padding: "4px 10px", fontSize: 12.5, cursor: "pointer", flexShrink: 0 }}>
                           Cancelar
                         </button>
@@ -20061,7 +20113,7 @@ export default function Painel({ sessao }) {
                       <button type="submit" data-copiloto-pedir
                               disabled={copilotoAqui.fase === "ajustando" || !(copilotoAqui.pedido || "").trim()}
                               title="Mandar o pedido ao Copiloto"
-                              style={{ border: "none", background: C.green, color: "#fff", borderRadius: 14,
+                              style={{ border: "none", background: C.botao, color: "#fff", borderRadius: 14,
                                        padding: "5px 12px", fontSize: 12.5, cursor: "pointer", flexShrink: 0,
                                        opacity: copilotoAqui.fase === "ajustando" || !(copilotoAqui.pedido || "").trim() ? 0.55 : 1 }}>
                         Pedir
@@ -20727,7 +20779,7 @@ export default function Painel({ sessao }) {
               ))}
               {estreito && <span aria-hidden className="fita-borda" />}
               <div style={{ flex: 1 }} />
-              <button onClick={sair} style={{ display: estreito ? "none" : "flex", alignItems: "center", gap: 8, border: "none", background: "transparent", color: "#e5573f", borderRadius: 8, padding: "10px 12px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}><LogOut size={17} /> Sair</button>
+              <button onClick={sair} style={{ display: estreito ? "none" : "flex", alignItems: "center", gap: 8, border: "none", background: "transparent", color: C.erroTexto, borderRadius: 8, padding: "10px 12px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}><LogOut size={17} /> Sair</button>
             </div>
             {/* Conteúdo à direita */}
             <div style={{ flex: 1, overflowY: "auto", padding: estreito ? "20px 16px" : 28, position: "relative" }}>
@@ -20889,7 +20941,7 @@ export default function Painel({ sessao }) {
                         </div>
                         <button onClick={pedirPermissaoDeAviso}
                                 data-pedir-permissao
-                                style={{ border: "none", background: C.green, color: "#fff",
+                                style={{ border: "none", background: C.botao, color: "#fff",
                                          borderRadius: 8, padding: "7px 13px", fontSize: 13,
                                          fontWeight: 600, cursor: "pointer" }}>
                           Autorizar
@@ -20908,7 +20960,7 @@ export default function Painel({ sessao }) {
                       <div style={{ fontSize: 13, color: C.textSecondary }}>Respostas prontas da equipe. Na conversa, digite <b>/</b> para usar.</div>
                     </div>
                     {!rapidaForm && (
-                      <button onClick={() => setRapidaForm({ titulo: "", texto: "" })} style={{ display: "flex", alignItems: "center", gap: 6, border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}><Plus size={16} /> Nova</button>
+                      <button onClick={() => setRapidaForm({ titulo: "", texto: "" })} style={{ display: "flex", alignItems: "center", gap: 6, border: "none", background: C.botao, color: "#fff", borderRadius: 8, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}><Plus size={16} /> Nova</button>
                     )}
                   </div>
 
@@ -21004,7 +21056,7 @@ export default function Painel({ sessao }) {
                                   <IconeDoAnexo tipo={tipo} size={16} color={C.textSecondary} />
                                   <span data-nome-do-anexo style={{ flex: 1, minWidth: 0, fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nome}</span>
                                   <button type="button" data-trocar-anexo-da-rapida onClick={() => arquivoDaRapidaRef.current?.click()} style={BOTAO}>Trocar</button>
-                                  <button type="button" data-tirar-anexo-da-rapida onClick={tirarAnexoDaRapida} style={{ ...BOTAO, color: "#e5573f" }}>Tirar</button>
+                                  <button type="button" data-tirar-anexo-da-rapida onClick={tirarAnexoDaRapida} style={{ ...BOTAO, color: C.erroTexto }}>Tirar</button>
                                 </div>
                                 {novo && (
                                   <div style={{ fontSize: 12, color: C.textSecondary }}>O arquivo sobe para o depósito quando você salvar.</div>
@@ -21025,7 +21077,7 @@ export default function Painel({ sessao }) {
                       })()}
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                         <button onClick={() => setRapidaForm(null)} style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary, borderRadius: 8, padding: "9px 16px", fontSize: 14, cursor: "pointer" }}>Cancelar</button>
-                        <button data-salvar-rapida onClick={salvarRapidaForm} disabled={salvandoRapida} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: salvandoRapida ? "default" : "pointer", opacity: salvandoRapida ? 0.7 : 1 }}>{salvandoRapida ? "Salvando…" : "Salvar"}</button>
+                        <button data-salvar-rapida onClick={salvarRapidaForm} disabled={salvandoRapida} style={{ border: "none", background: C.botao, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: salvandoRapida ? "default" : "pointer", opacity: salvandoRapida ? 0.7 : 1 }}>{salvandoRapida ? "Salvando…" : "Salvar"}</button>
                       </div>
                     </div>
                   ) : (<>
@@ -21059,7 +21111,7 @@ export default function Painel({ sessao }) {
                           <button data-editar-rapida onClick={() => setRapidaForm({ id: r.id, titulo: r.titulo, texto: r.texto,
                             midia_url: r.midia_url || null, midia_tipo: r.midia_tipo || null, midia_mime: r.midia_mime || null,
                             midia_nome: r.midia_nome || null, midiaOriginal: r.midia_url || null })} title="Editar" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex", flexShrink: 0 }}><Pencil size={16} /></button>
-                          <button data-apagar-rapida onClick={() => apagarRapida(r.id)} title="Apagar" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#e5573f", display: "flex", flexShrink: 0 }}><Trash2 size={16} /></button>
+                          <button data-apagar-rapida onClick={() => apagarRapida(r.id)} title="Apagar" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.erroTexto, display: "flex", flexShrink: 0 }}><Trash2 size={16} /></button>
                         </div>
                       ))}
                     </div>
@@ -21076,7 +21128,7 @@ export default function Painel({ sessao }) {
                       <div style={{ fontSize: 13, color: C.textSecondary }}>Etiquetas coloridas para organizar e filtrar as conversas.</div>
                     </div>
                     {!tagForm && (
-                      <button onClick={() => setTagForm({ nome: "", cor: CORES_TAG[0] })} style={{ display: "flex", alignItems: "center", gap: 6, border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}><Plus size={16} /> Nova</button>
+                      <button onClick={() => setTagForm({ nome: "", cor: CORES_TAG[0] })} style={{ display: "flex", alignItems: "center", gap: 6, border: "none", background: C.botao, color: "#fff", borderRadius: 8, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}><Plus size={16} /> Nova</button>
                     )}
                   </div>
 
@@ -21101,7 +21153,7 @@ export default function Painel({ sessao }) {
                       </div>
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                         <button onClick={() => setTagForm(null)} style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary, borderRadius: 8, padding: "9px 16px", fontSize: 14, cursor: "pointer" }}>Cancelar</button>
-                        <button data-salvar-etiqueta onClick={salvarTagForm} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Salvar</button>
+                        <button data-salvar-etiqueta onClick={salvarTagForm} style={{ border: "none", background: C.botao, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Salvar</button>
                       </div>
                     </div>
                   ) : (<>
@@ -21123,7 +21175,7 @@ export default function Painel({ sessao }) {
                           <span style={{ width: 14, height: 14, borderRadius: 4, background: t.cor, flexShrink: 0 }} />
                           <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.nome}</span>
                           <button data-editar-etiqueta onClick={() => setTagForm({ id: t.id, nome: t.nome, cor: t.cor })} title="Editar" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex", flexShrink: 0 }}><Pencil size={16} /></button>
-                          <button data-apagar-etiqueta onClick={() => apagarTag(t.id)} title="Apagar" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#e5573f", display: "flex", flexShrink: 0 }}><Trash2 size={16} /></button>
+                          <button data-apagar-etiqueta onClick={() => apagarTag(t.id)} title="Apagar" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.erroTexto, display: "flex", flexShrink: 0 }}><Trash2 size={16} /></button>
                         </div>
                       ))}
                     </div>
@@ -21139,7 +21191,7 @@ export default function Painel({ sessao }) {
                       <div style={{ fontSize: 13, color: C.textSecondary }}>{`Todos os contatos salvos. Crie novos e abra a conversa com ${voc.o} ${voc.singular} atual.`}</div>
                     </div>
                     {!contatoForm && (
-                      <button onClick={() => setContatoForm({ nome: "", numero: "" })} style={{ display: "flex", alignItems: "center", gap: 6, border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}><UserPlus size={16} /> Novo</button>
+                      <button onClick={() => setContatoForm({ nome: "", numero: "" })} style={{ display: "flex", alignItems: "center", gap: 6, border: "none", background: C.botao, color: "#fff", borderRadius: 8, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}><UserPlus size={16} /> Novo</button>
                     )}
                   </div>
 
@@ -21156,7 +21208,7 @@ export default function Painel({ sessao }) {
                       </div>
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                         <button onClick={() => setContatoForm(null)} style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary, borderRadius: 8, padding: "9px 16px", fontSize: 14, cursor: "pointer" }}>Cancelar</button>
-                        <button onClick={salvarContato} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Salvar</button>
+                        <button onClick={salvarContato} style={{ border: "none", background: C.botao, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Salvar</button>
                       </div>
                     </div>
                   ) : (
@@ -21245,7 +21297,7 @@ export default function Painel({ sessao }) {
                           {[...new Set(impArquivos.flatMap((it) => it.autores))].map((a) => <option key={a} value={a}>{a}</option>)}
                         </select>
                         <div style={{ fontSize: 11.5, color: C.textSecondary, marginTop: 5, lineHeight: 1.4 }}>
-                          As mensagens desse nome entram como <b>enviadas (você)</b>; as dos outros, como <b>recebidas (contato)</b>. <b style={{ color: impMeuNome ? C.textSecondary : "#e5573f" }}>Confira bem para não inverter os papéis.</b>
+                          As mensagens desse nome entram como <b>enviadas (você)</b>; as dos outros, como <b>recebidas (contato)</b>. <b style={{ color: impMeuNome ? C.textSecondary : C.erroTexto }}>Confira bem para não inverter os papéis.</b>
                         </div>
                       </div>
 
@@ -21273,12 +21325,12 @@ export default function Painel({ sessao }) {
                         return (
                           <>
                             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                              <button onClick={importarLote} disabled={bloqueado} title={!impMeuNome ? "Escolha qual nome é você" : (faltam > 0 ? "Preencha os números que faltam" : "")} style={{ border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "11px 22px", fontSize: 14.5, fontWeight: 600, cursor: bloqueado ? "default" : "pointer", opacity: bloqueado ? 0.55 : 1 }}>
+                              <button onClick={importarLote} disabled={bloqueado} title={!impMeuNome ? "Escolha qual nome é você" : (faltam > 0 ? "Preencha os números que faltam" : "")} style={{ border: "none", background: C.botao, color: "#fff", borderRadius: 8, padding: "11px 22px", fontSize: 14.5, fontWeight: 600, cursor: bloqueado ? "default" : "pointer", opacity: bloqueado ? 0.55 : 1 }}>
                                 {importando ? (impProgresso || "Importando…") : "Importar tudo"}
                               </button>
                               {!importando && <button onClick={() => { setImpArquivos([]); setImpMeuNome(""); }} style={{ border: "none", background: "transparent", color: C.textSecondary, fontSize: 13.5, cursor: "pointer" }}>Limpar</button>}
-                              {!impMeuNome && <span style={{ fontSize: 12.5, color: "#e5573f", fontWeight: 600 }}>Escolha o seu nome</span>}
-                              {impMeuNome && faltam > 0 && <span style={{ fontSize: 12.5, color: "#e5573f", fontWeight: 600 }}>Faltam {faltam} número(s)</span>}
+                              {!impMeuNome && <span style={{ fontSize: 12.5, color: C.erroTexto, fontWeight: 600 }}>Escolha o seu nome</span>}
+                              {impMeuNome && faltam > 0 && <span style={{ fontSize: 12.5, color: C.erroTexto, fontWeight: 600 }}>Faltam {faltam} número(s)</span>}
                             </div>
                             <div style={{ fontSize: 11.5, color: C.textSecondary, marginTop: 12, lineHeight: 1.4 }}>
                               O número é <b>obrigatório</b> — é ele que evita conversa duplicada no futuro (quando o contato mandar mensagem nova). Contatos que <b>não estavam salvos</b> já vêm com o número preenchido; os <b>salvos</b> você precisa preencher. Pode reimportar sem duplicar.
@@ -21292,7 +21344,7 @@ export default function Painel({ sessao }) {
               )}
 
               {estreito && (
-                <button onClick={sair} style={{ marginTop: 28, display: "flex", alignItems: "center", gap: 8, border: "none", background: "transparent", color: "#e5573f", padding: "8px 0", fontSize: 14, fontWeight: 600, cursor: "pointer" }}><LogOut size={17} /> Sair</button>
+                <button onClick={sair} style={{ marginTop: 28, display: "flex", alignItems: "center", gap: 8, border: "none", background: "transparent", color: C.erroTexto, padding: "8px 0", fontSize: 14, fontWeight: 600, cursor: "pointer" }}><LogOut size={17} /> Sair</button>
               )}
             </div>
           </div>
@@ -21747,7 +21799,7 @@ export default function Painel({ sessao }) {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 20 }}>
               <button onClick={() => { const n = notaParaApagar; setNotaParaApagar(null); apagarNota(n); }}
-                style={{ border: `1px solid ${C.divider}`, background: "transparent", color: "#e53935",
+                style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.erroTexto,
                          borderRadius: 8, padding: "11px 16px", fontSize: 14.5, fontWeight: 600, cursor: "pointer" }}>
                 Apagar a nota
               </button>
@@ -21773,7 +21825,7 @@ export default function Painel({ sessao }) {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 20 }}>
               <button onClick={() => apagarSelecionadas(true)}
-                style={{ border: `1px solid ${C.divider}`, background: "transparent", color: "#e53935",
+                style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.erroTexto,
                          borderRadius: 8, padding: "11px 16px", fontSize: 14.5, fontWeight: 600, cursor: "pointer" }}>
                 Apagar para todos
               </button>

@@ -146,7 +146,7 @@ export default function VisualizadorDePdf({ url, nome, aoBaixar, aoAbrirNumaAba,
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button type="button" onClick={aoBaixar}
-                      style={{ ...botao, color: "#fff", background: "#00a884", padding: "8px 14px" }}>
+                      style={{ ...botao, color: "#fff", background: "#008069", padding: "8px 14px" }}>
                 <Download size={16} /> Baixar
               </button>
               <button type="button" onClick={aoAbrirNumaAba}

@@ -5,7 +5,7 @@ import { comOCodigo } from "./gravar.js";
 import { nomeDoContato } from "./contato.js";
 import { telefoneLegivel } from "./numeros.js";
 import { rotuloDaHora } from "./agenda.js";
-import { diasDesde } from "./espera.js";
+import { diasDesde, corDaEspera } from "./espera.js";
 import { NOME_DA_SITUACAO } from "./abasDaSituacao.js";
 import JaTratei from "./JaTratei.jsx";
 import { PAGINA_DA_FAXINA, DIAS_DA_FAXINA, DIAS_PADRAO_DA_FAXINA, PAUSA_ENTRE_FINALIZACOES_MS, GRUPOS_DA_FAXINA,
@@ -365,9 +365,9 @@ export default function Faxina({
                 : String(c.responsavel_id) === String(meuId) ? "com você"
                 : `com ${(nomeDaPessoa && nomeDaPessoa(c.responsavel_id)) || "alguém da equipe"}`}</span>
               <span data-faxina-aba={c.situacao}>{NOME_DA_SITUACAO[c.situacao] || c.situacao}</span>
-              <span data-faxina-parada={parada} style={{ color: "#d99a1e", fontWeight: 600 }}>parada há {parada} dias</span>
+              <span data-faxina-parada={parada} style={{ color: C.ambarTexto, fontWeight: 600 }}>parada há {parada} dias</span>
               {espera >= 1 && (
-                <span data-faxina-espera={espera} style={{ color: "#e5573f", fontWeight: 600 }}>esperando há {espera} {espera === 1 ? "dia" : "dias"}</span>
+                <span data-faxina-espera={espera} style={{ color: corDaEspera(espera, C), fontWeight: 600 }}>esperando há {espera} {espera === 1 ? "dia" : "dias"}</span>
               )}
             </div>
             <div data-faxina-ultima style={{ marginTop: 5, fontSize: 13, color: C.textPrimary, lineHeight: 1.4,
@@ -391,7 +391,7 @@ export default function Faxina({
                 Abrir a conversa
               </button>
               <button data-faxina-finalizar={c.id} disabled={Boolean(progresso)} onClick={() => abrirFinalizar([c])}
-                      style={{ ...botaoFraco, border: "none", background: progresso ? C.divider : C.green, color: "#fff", fontWeight: 600 }}>
+                      style={{ ...botaoFraco, border: "none", background: progresso ? C.divider : C.botao, color: "#fff", fontWeight: 600 }}>
                 Finalizar
               </button>
             </div>
@@ -464,7 +464,7 @@ export default function Faxina({
                 <button key={g.chave} role="tab" aria-selected={ativo} data-faxina-grupo={g.chave}
                         data-faxina-conta={n == null ? "" : n} disabled={Boolean(progresso)}
                         onClick={() => setGrupo(g.chave)}
-                        style={{ border: `1px solid ${ativo ? C.green : C.divider}`, background: ativo ? C.green : "transparent",
+                        style={{ border: `1px solid ${ativo ? C.botao : C.divider}`, background: ativo ? C.botao : "transparent",
                                  color: ativo ? "#fff" : C.textPrimary, borderRadius: 18, padding: "7px 13px",
                                  fontSize: 13, fontWeight: ativo ? 700 : 500, cursor: "pointer" }}>
                   {g.rotulo}{n != null && <span style={{ fontWeight: 700 }}> · {n}</span>}
@@ -518,7 +518,7 @@ export default function Faxina({
                 </>
               ) : marcadasNaLista.length > 0 ? (
                 <button data-faxina-finalizar-marcadas onClick={() => abrirFinalizar(marcadasNaLista)}
-                        style={{ ...botaoFraco, border: "none", background: C.green, color: "#fff", fontWeight: 600 }}>
+                        style={{ ...botaoFraco, border: "none", background: C.botao, color: "#fff", fontWeight: 600 }}>
                   Finalizar {quantasConversas(marcadasNaLista.length)}
                 </button>
               ) : (

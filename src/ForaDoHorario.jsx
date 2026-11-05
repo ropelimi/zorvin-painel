@@ -347,12 +347,12 @@ export function ForaDoHorario({ cx, C, departamentos = [], aoAvisar }) {
         </div>
 
         {problemas.length > 0 && (
-          <div data-fora-problemas style={{ fontSize: 12.5, color: "#e5573f", marginBottom: 8, lineHeight: 1.45 }}>
+          <div data-fora-problemas style={{ fontSize: 12.5, color: C.erroTexto || "#c62828", marginBottom: 8, lineHeight: 1.45 }}>
             {problemas.join(" ")}
           </div>
         )}
         {impedeLigar && (
-          <div data-fora-impede style={{ fontSize: 12.5, color: "#e5573f", marginBottom: 8, lineHeight: 1.45 }}>
+          <div data-fora-impede style={{ fontSize: 12.5, color: C.erroTexto || "#c62828", marginBottom: 8, lineHeight: 1.45 }}>
             {semTexto ? "Para ligar, escreva o texto que o cliente vai receber."
                       : "Para ligar, abra pelo menos um dia da semana."}
           </div>

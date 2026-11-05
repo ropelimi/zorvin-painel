@@ -142,7 +142,7 @@ export function PalavrasDaCasa({ cx, C, aoAvisar }) {
 
       <div style={{ ...cx.dica, marginTop: 10, marginBottom: 0 }} data-palavras-previa>
         Vai ficar assim na barra lateral: <b>{previa}</b>
-        {salvo && <span style={{ color: C.green, marginLeft: 8 }}>· salvo</span>}
+        {salvo && <span style={{ color: C.verdeTexto, marginLeft: 8 }}>· salvo</span>}
       </div>
     </div>
   );

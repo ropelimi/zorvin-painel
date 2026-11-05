@@ -1,6 +1,7 @@
 import React, { useRef, useState } from "react";
 import { CircleCheck, ListChecks, Loader2, X } from "lucide-react";
 import { NOME_DA_SITUACAO } from "./abasDaSituacao.js";
+import { DIAS_DO_VERMELHO } from "./espera.js";
 
 // ============================================================
 //  A CHECKLIST DO "JÁ TRATEI"
@@ -111,7 +112,7 @@ export function JaTratei({ C, estreito, nome, dias, esperando = true, finalizar 
                 <span data-ja-tratei-protocolo={protocolo}>{" · "}protocolo {protocolo}</span>
               )}
               {dias >= 1 && (
-                <span data-ja-tratei-dias={dias} style={{ color: dias >= 3 ? "#e5573f" : C.textSecondary, fontWeight: 600 }}>
+                <span data-ja-tratei-dias={dias} style={{ color: dias >= DIAS_DO_VERMELHO ? C.esperaVermelha : C.textSecondary, fontWeight: 600 }}>
                   {" · "}esperando há {dias} {dias === 1 ? "dia" : "dias"}
                 </span>
               )}
@@ -194,7 +195,7 @@ export function JaTratei({ C, estreito, nome, dias, esperando = true, finalizar 
         {erro && (
           <div data-ja-tratei-erro
                style={{ margin: "0 16px 10px", padding: "9px 11px", borderRadius: 8, fontSize: 12.5,
-                        lineHeight: 1.45, background: "rgba(229,87,63,.12)", color: "#e5573f",
+                        lineHeight: 1.45, background: "rgba(229,87,63,.12)", color: C.erroTexto,
                         border: "1px solid rgba(229,87,63,.35)" }}>
             {erro}
           </div>

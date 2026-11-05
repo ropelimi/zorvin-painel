@@ -4,7 +4,7 @@ import { supabase } from "./supabase.js";
 import { naoGravouNada, comOCodigo, semATabela } from "./gravar.js";
 import { nomeDoContato } from "./contato.js";
 import { telefoneLegivel } from "./numeros.js";
-import { diasDesde } from "./espera.js";
+import { diasDesde, corDaEspera } from "./espera.js";
 import { situacao, semATabelaDeTarefas, rotuloDaTarefa, ordenarAbertas } from "./tarefas.js";
 import { casaComAPesquisa } from "./pesquisaNosMenus.js";
 import { chaveDoFunil, listaDeFunis, nomeDoFunil, noFunil, telefonesDoFunil } from "./funis.js";
@@ -450,7 +450,7 @@ export default function Funil({
           </span>
           {naoLidas > 0 && (
             <span title={`${naoLidas} não lida${naoLidas === 1 ? "" : "s"}`}
-                  style={{ background: verde, color: "#fff", borderRadius: 10, fontSize: 11, fontWeight: 700,
+                  style={{ background: C.unread || "#008069", color: "#fff", borderRadius: 10, fontSize: 11, fontWeight: 700,
                            minWidth: 20, height: 20, display: "grid", placeItems: "center", padding: "0 5px" }}>
               {naoLidas}
             </span>
@@ -460,7 +460,7 @@ export default function Funil({
                       color: C.textSecondary, flexWrap: "wrap" }}>
           <span title="Desde quando o cartão está nesta etapa">Nesta etapa {haQuanto(c.movido_em)}</span>
           {espera >= 1 && (
-            <span data-espera-no-cartao style={{ color: espera >= 3 ? "#e53935" : "#d99a1e", fontWeight: 600 }}>
+            <span data-espera-no-cartao style={{ color: corDaEspera(espera, C), fontWeight: 600 }}>
               · esperando há {espera} {espera === 1 ? "dia" : "dias"}
             </span>
           )}
@@ -483,7 +483,7 @@ export default function Funil({
           <div data-tarefa-no-cartao={situacao(tarefa)} title={tarefa.texto}
                style={{ marginTop: 6, fontSize: 11.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
-                        color: situacao(tarefa) === "atrasada" ? "#e53935" : situacao(tarefa) === "hoje" ? "#d99a1e" : C.textSecondary }}>
+                        color: situacao(tarefa) === "atrasada" ? C.erroTexto : situacao(tarefa) === "hoje" ? C.ambarTexto : C.textSecondary }}>
             ⏰ {situacao(tarefa) === "atrasada" ? "Tarefa atrasada" : `Tarefa ${rotuloDaTarefa(tarefa)}`}: {tarefa.texto}
           </div>
         )}

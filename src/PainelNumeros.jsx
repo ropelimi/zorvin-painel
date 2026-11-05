@@ -69,7 +69,7 @@ import { semAFuncao } from "./gravar.js";
 import { supabase } from "./supabase";
 import { nomeDoContato } from "./contato.js";
 import { telefoneLegivel } from "./numeros.js";
-import { diasDesde } from "./espera.js";
+import { diasDesde, DIAS_DO_VERMELHO } from "./espera.js";
 import {
   juntarAEquipe, colunasVisiveis, colunasDaFicha, fraseDoQueFaltou, ordenarAEquipe,
   sentidoDeComeco, mediana, aPessoaNaEquipe, baseDaComparacao, linhasDoCabecalho,
@@ -671,7 +671,7 @@ export default function PainelNumeros({ C: CDaTela, CClaro = null, modo: modoDaT
         )}
 
         {!!erro && (
-          <div style={{ ...cartao, borderColor: "#e5573f", color: "#e5573f" }}>
+          <div style={{ ...cartao, borderColor: "#e5573f", color: C.erroTexto }}>
             Não consegui somar os atendimentos: {erro}
           </div>
         )}
@@ -1387,7 +1387,7 @@ function SeletorDePeriodo({ C, cores, periodo, definir, estilos, sombra }) {
             ))}
           </div>
           {aviso && (
-            <div style={{ ...estilos.nota, color: cores.aviso, marginTop: 8 }}>{aviso}</div>
+            <div style={{ ...estilos.nota, color: C.ambarTexto, marginTop: 8 }}>{aviso}</div>
           )}
           <button onClick={aplicarEscolhido}
             style={{ width: "100%", marginTop: 10, minHeight: 38, borderRadius: 10, cursor: "pointer",
@@ -2120,7 +2120,7 @@ function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, leitura, quem,
       )}
 
       {!!erro && (
-        <div style={{ ...estilos.cartao, borderColor: "#e5573f", color: "#e5573f" }} data-protocolos-erro>
+        <div style={{ ...estilos.cartao, borderColor: "#e5573f", color: C.erroTexto }} data-protocolos-erro>
           Não consegui somar os protocolos: {erro}
         </div>
       )}
@@ -2369,9 +2369,9 @@ function RelatorioResponsaveis({ C, estilos, cores, leitura, souAdmin, meuId }) 
         <td style={estilos.num} data-esperando={l.esperando}>{numero(l.esperando)}</td>
         {/* O VERMELHO É O DA LISTA: três dias ou mais. Uma cor diferente aqui
             ensinaria duas réguas para a mesma coisa. */}
-        <td style={{ ...estilos.num, color: atrasadas ? "#e5573f" : C.textSecondary, fontWeight: atrasadas ? 700 : 400 }}
+        <td style={{ ...estilos.num, color: atrasadas ? C.esperaVermelha : C.textSecondary, fontWeight: atrasadas ? 700 : 400 }}
             data-atrasadas={l.atrasadas}>{numero(atrasadas)}</td>
-        <td style={{ ...estilos.num, color: dias != null && dias >= 3 ? "#e5573f" : C.textPrimary }}
+        <td style={{ ...estilos.num, color: dias != null && dias >= DIAS_DO_VERMELHO ? C.esperaVermelha : C.textPrimary }}
             data-mais-antiga={dias == null ? "" : dias}>
           {dias == null ? "—" : dias === 0 ? "hoje" : `há ${dias} ${dias === 1 ? "dia" : "dias"}`}
         </td>
@@ -2404,7 +2404,7 @@ function RelatorioResponsaveis({ C, estilos, cores, leitura, souAdmin, meuId }) 
       )}
 
       {!!erro && (
-        <div style={{ ...estilos.cartao, borderColor: "#e5573f", color: "#e5573f" }} data-responsaveis-erro>
+        <div style={{ ...estilos.cartao, borderColor: "#e5573f", color: C.erroTexto }} data-responsaveis-erro>
           Não consegui contar as carteiras: {erro}
         </div>
       )}
@@ -2440,7 +2440,7 @@ function RelatorioResponsaveis({ C, estilos, cores, leitura, souAdmin, meuId }) 
             {!r.so_meu && (linhas.length + (sem ? 1 : 0)) > 1 && (
               <div style={{ ...estilos.nota, marginTop: 10 }} data-responsaveis-total>
                 No total: {numero(total.conversas)} conversas, {numero(total.esperando)} esperando,{" "}
-                <b style={{ color: Number(total.atrasadas) ? "#e5573f" : C.textPrimary }}>{numero(total.atrasadas)}</b> há 3 dias ou mais.
+                <b style={{ color: Number(total.atrasadas) ? C.esperaVermelha : C.textPrimary }}>{numero(total.atrasadas)}</b> há 3 dias ou mais.
               </div>
             )}
           </div>
@@ -2537,7 +2537,7 @@ function RelatorioFunil({ C, estilos, cores, deIso, ateIso, telefone, departamen
       )}
 
       {!!erro && (
-        <div style={{ ...estilos.cartao, borderColor: "#e5573f", color: "#e5573f" }} data-funil-erro>
+        <div style={{ ...estilos.cartao, borderColor: "#e5573f", color: C.erroTexto }} data-funil-erro>
           Não consegui contar o funil: {erro}
         </div>
       )}
@@ -2708,7 +2708,7 @@ function RelatorioJaTratei({ C, estilos, cores, leitura, deIso, ateIso, passo, q
       )}
 
       {!!erro && (
-        <div style={{ ...estilos.cartao, borderColor: "#e5573f", color: "#e5573f" }} data-relatorio-erro>
+        <div style={{ ...estilos.cartao, borderColor: "#e5573f", color: C.erroTexto }} data-relatorio-erro>
           Não consegui somar o que foi tratado: {erro}
         </div>
       )}

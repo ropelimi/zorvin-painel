@@ -441,7 +441,7 @@ export default function Login({ authMudo = false, sessaoTerminou = false } = {})
             </div>
           )}
           {erro && (
-            <div role="alert" style={{ color: "#fff", background: "#e5573f", fontSize: 13, fontWeight: 500, marginTop: 16, padding: "9px 12px", borderRadius: 10 }}>
+            <div role="alert" style={{ color: "#fff", background: "#c62828", fontSize: 13, fontWeight: 500, marginTop: 16, padding: "9px 12px", borderRadius: 10 }}>
               {erro}
               {/* Miúdo e apagado de propósito: quem só quer entrar não precisa
                   ler isto, e quem for investigar precisa que esteja escrito. */}

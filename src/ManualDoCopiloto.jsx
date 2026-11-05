@@ -132,7 +132,7 @@ export function ManualDoCopiloto({ cx, C, departamentos = [], telefones = [] }) 
           </div>
         )}
         {lido && lido.erro && (
-          <div data-manual-erro style={{ fontSize: 13, color: "#e53935", lineHeight: 1.5 }}>
+          <div data-manual-erro style={{ fontSize: 13, color: C.erroTexto, lineHeight: 1.5 }}>
             {lido.erro}{" "}
             <button style={cx.botaoFraco} onClick={() => { setLido(null); ler(); }}>Tentar de novo</button>
           </div>
@@ -149,7 +149,7 @@ export function ManualDoCopiloto({ cx, C, departamentos = [], telefones = [] }) 
               {salvando ? <Loader2 size={14} className="zv-girando" /> : null}
               {salvando ? "Salvando…" : "Salvar o manual"}
             </button>
-            <span data-manual-conta style={{ fontSize: 12, color: grande ? "#e53935" : C.textSecondary }}>
+            <span data-manual-conta style={{ fontSize: 12, color: grande ? C.erroTexto : C.textSecondary }}>
               {texto.length.toLocaleString("pt-BR")}/{TETO.toLocaleString("pt-BR")} caracteres
               {grande ? " — passou do limite" : ""}
             </span>
@@ -161,7 +161,7 @@ export function ManualDoCopiloto({ cx, C, departamentos = [], telefones = [] }) 
           </div>
           {recado && (
             <div data-manual-recado={recado.tipo}
-                 style={{ marginTop: 8, fontSize: 13, color: recado.tipo === "ok" ? C.green : "#e53935" }}>
+                 style={{ marginTop: 8, fontSize: 13, color: recado.tipo === "ok" ? C.verdeTexto : C.erroTexto }}>
               {recado.frase}
             </div>
           )}
