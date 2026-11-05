@@ -4504,6 +4504,18 @@ export default function Painel({ sessao }) {
   // iPhone pequeno); a 360 (o Android pequeno) ela também quebrava.
   const caixaApertada = estreito ? largura < 370 : larguraDaConversa < 440;
 
+  // O "RESUMIR" NA BARRA DE ESCREVER SAI DA LARGURA DA CONVERSA (05/11), e não
+  // do cabeçalho. Relato do Rodrigo: *"Quando a Ficha do Vantoro está aberta,
+  // não está aparecendo o pergaminho de Resumir a conversa."* Ele seguia o
+  // cabeçalho recolhido no ⋮ (`cabecalhoRecolhido`), e com a ficha em coluna
+  // o cabeçalho recolhe numa tela de 1280 a 1366 — a do escritório, a 150%.
+  // O que o pergaminho custa é a largura da CAIXA DE ESCREVER, e não a do
+  // nome do alto: ele fica enquanto a caixa guarda o piso de 200 pontos
+  // (medido pela `a-auditoria-de-27-10`). O ⋮ do cabeçalho continua dizendo
+  // "Resumir a conversa" onde ele existe.
+  const RESUMO_NA_BARRA_A_PARTIR = 500;
+  const resumoNaBarra = !estreito && larguraDaConversa >= RESUMO_NA_BARRA_A_PARTIR;
+
   // ============================================================
   //  QUEM TEM PRIORIDADE NO CABEÇALHO É O NOME, E NÃO OS BOTÕES
   //
@@ -16943,13 +16955,14 @@ export default function Painel({ sessao }) {
         relógio dividem: o botão fica parado enquanto o vizinho troca. Um
         clique com o quadro aberto o fecha. No celular, o caminho é o ⋮.
 
-        ONDE O CABEÇALHO RECOLHE NO ⋮, ELE VAI JUNTO. São 40 pontos a menos
-        na caixa de escrever, e a prova `a-auditoria-de-27-10` mediu: a 900, a
-        caixa caía para 181 (o piso é 200). Abaixo do recolhido a conversa
-        tem menos de ~590 pontos; acima, a caixa fica com ~290 ou mais. E é
-        uma régua que já existe: no recolhido, o ⋮ do cabeçalho está lá, com
-        "Resumir a conversa" escrito. */}
-    {!estreito && !cabecalhoRecolhido && podeResumir && !editando && (
+        ONDE A CAIXA DE ESCREVER NÃO CABE COM ELE, ELE SAI. São 40 pontos a
+        menos na caixa, e a prova `a-auditoria-de-27-10` mediu: a 900, a caixa
+        caía para 181 (o piso é 200). A régua é a largura da conversa
+        (`resumoNaBarra`), e não o cabeçalho recolhido, como era até 05/11:
+        com a ficha aberta, o cabeçalho recolhe com a caixa sobrando, e o
+        pergaminho sumia à toa. Onde ele sai, o ⋮ do cabeçalho tem "Resumir a
+        conversa" escrito. */}
+    {resumoNaBarra && podeResumir && !editando && (
       <button data-resumo-botao
               onClick={() => (resumoAqui ? fecharResumo() : resumirAConversa())}
               disabled={Boolean(resumoAqui && resumoAqui.fase === "pensando")}

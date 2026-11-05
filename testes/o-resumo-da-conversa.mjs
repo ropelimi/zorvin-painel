@@ -121,7 +121,7 @@ const ponte = {
 };
 const pedidos = [];
 
-async function abrirPagina({ largura = 1400, altura = 900, area = false } = {}) {
+async function abrirPagina({ largura = 1400, altura = 900, area = false, comVantoro = false } = {}) {
   const ctx = await nav.newContext({ viewport: { width: largura, height: altura }, timezoneId: "America/Sao_Paulo" });
   if (area) await ctx.grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(ENDERECO).origin });
   const page = await ctx.newPage();
@@ -142,8 +142,9 @@ async function abrirPagina({ largura = 1400, altura = 900, area = false } = {}) 
       return json(r.status, r.corpo);
     }
     // SEM VANTORO: a ficha fixa estreitaria a conversa sem nada a ver com o
-    // resumo.
-    if (url.pathname.endsWith("/vantoro/status")) return json(200, { ok: true, configurado: false });
+    // resumo. A cena 13 é a exceção, e é justamente sobre a ficha aberta.
+    if (url.pathname.endsWith("/vantoro/status")) return json(200, { ok: true, configurado: comVantoro });
+    if (comVantoro && url.pathname.endsWith("/vantoro/cliente")) return json(200, { ok: true, clientes: [] });
     return json(404, {});
   });
   await page.goto(ENDERECO);
@@ -464,6 +465,19 @@ console.log("\n11. No celular, o caminho é o ⋮, e o quadro cabe na tela");
   ok("sem erro de JavaScript", estouros.length === 0, q(estouros));
   await ctx.close();
 }
+// O TABLET EM PÉ (744, o iPad mini) é o leiaute do celular com a conversa
+// LARGA: 684 pontos, acima da régua dos 500 do pergaminho. Ali só a guarda do
+// celular o mantém no ⋮ — num telefone, a largura sozinha já o tira (05/11).
+{
+  ({ ctx, page, estouros } = await abrirPagina({ largura: 744, altura: 1000 }));
+  await abrirConversa(page, A);
+  ok("(744, tablet em pé) não há pergaminho na barra de escrever", (await botao(page).count()) === 0);
+  ok("(744) abriu o ⋮", await clicar(page.getByRole("button", { name: "Mais opções desta conversa" })));
+  await page.waitForTimeout(300);
+  ok("(744) e o ⋮ tem “Resumir a conversa”", /Resumir a conversa/.test(await texto(page.locator("[data-resumo-item]"))));
+  ok("(744) sem erro de JavaScript", estouros.length === 0, q(estouros));
+  await ctx.close();
+}
 {
   ponte.estado = { status: 200, corpo: { ok: true, ligado: true, modelo: "claude-haiku-5-5" } };
   ({ ctx, page } = await abrirPagina({ largura: 390, altura: 844 }));
@@ -499,6 +513,67 @@ console.log("\n12. Onde o cabeçalho recolhe no ⋮, o Resumir vai junto, e a ca
   await clicar(item);
   ok("o resumo veio por ele", await esperarFase(page, "pronto"));
   ok("sem erro de JavaScript", estouros.length === 0, q(estouros));
+  await ctx.close();
+}
+
+// ==================================================================
+// COM A FICHA ABERTA, O PERGAMINHO FICA (05/11). Relato do Rodrigo: *"Quando
+// a Ficha do Vantoro está aberta, não está aparecendo o pergaminho de Resumir
+// a conversa."* A tela dele é de 1280 pontos (1920 a 150%), e com a ficha em
+// coluna o cabeçalho recolhe no ⋮ — e o pergaminho ia junto, com a caixa de
+// escrever sobrando. A régua passou a ser a caixa de escrever: ela tem de
+// guardar o piso de 200, com o pergaminho dentro da barra.
+console.log("\n13. Com a ficha aberta, o pergaminho continua na barra, e a caixa de escrever guarda o piso");
+// 1250 é a borda: a conversa fica com 500 pontos (1250 − 60 da barra − 360 da
+// lista − 330 da ficha), o menor em que o pergaminho fica.
+for (const largura of [1250, 1280, 1366]) {
+  ({ ctx, page, estouros } = await abrirPagina({ largura, altura: 800, comVantoro: true }));
+  await abrirConversa(page, A);
+  await page.waitForTimeout(600);
+  const fichaEmColuna = await page.evaluate(() => {
+    const f = document.querySelector("[data-ficha]");
+    return Boolean(f && f.getBoundingClientRect().width > 200 && f.getAttribute("data-ficha-sobreposta") !== "sim");
+  });
+  ok(`(${largura}) a ficha está aberta, em coluna`, fichaEmColuna);
+  const recolhido = (await page.locator('[data-topo-conversa] [aria-label="Mais opções desta conversa"]').count()) === 1;
+  ok(`(${largura}) e o cabeçalho recolheu no ⋮ (o caso do relato)`, recolhido);
+  const pintado = await page.evaluate(() => {
+    const b = document.querySelector("[data-resumo-botao]");
+    if (!b) return "não existe";
+    const r = b.getBoundingClientRect();
+    const no = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return no && b.contains(no) ? "pintado" : `coberto por ${no ? no.tagName : "nada"}`;
+  });
+  ok(`(${largura}) o pergaminho está na barra de escrever, e pintado`, pintado === "pintado", pintado);
+  const caixa = await page.evaluate((sel) => {
+    const c = document.querySelector(sel);
+    return c ? Math.round(c.getBoundingClientRect().width) : null;
+  }, CAMPO);
+  ok(`(${largura}) e a caixa de escrever guarda o piso de 200 (${caixa})`, caixa != null && caixa >= 200, `largura ${caixa}`);
+  ponte.resumir = () => pronto(RESUMO_A);
+  await clicar(botao(page));
+  ok(`(${largura}) e o resumo vem por ele`, await esperarFase(page, "pronto"));
+  ok(`(${largura}) sem erro de JavaScript`, estouros.length === 0, q(estouros));
+  await ctx.close();
+}
+// E UM PONTO ABAIXO DA BORDA, o pergaminho sai e o ⋮ o oferece: a 1240 a
+// conversa tem 490, e com ele a caixa ficaria abaixo do piso.
+{
+  ({ ctx, page, estouros } = await abrirPagina({ largura: 1240, altura: 800, comVantoro: true }));
+  await abrirConversa(page, A);
+  await page.waitForTimeout(600);
+  ok("(1240) abaixo da borda, o pergaminho sai da barra", (await botao(page).count()) === 0);
+  const caixa = await page.evaluate((sel) => {
+    const c = document.querySelector(sel);
+    return c ? Math.round(c.getBoundingClientRect().width) : null;
+  }, CAMPO);
+  ok(`(1240) e a caixa de escrever guarda o piso de 200 (${caixa})`, caixa != null && caixa >= 200, `largura ${caixa}`);
+  const menu = page.locator('[data-topo-conversa] [aria-label="Mais opções desta conversa"]');
+  await clicar(menu);
+  await page.waitForTimeout(300);
+  ok("(1240) e o ⋮ do cabeçalho tem “Resumir a conversa”",
+     /Resumir a conversa/.test(await texto(page.locator("[data-resumo-item]"))));
+  ok("(1240) sem erro de JavaScript", estouros.length === 0, q(estouros));
   await ctx.close();
 }
 
