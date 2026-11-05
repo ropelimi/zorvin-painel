@@ -86,7 +86,7 @@ export function Reabrir({ C, estreito, nome, protocolo, finalizacao = "", ocupad
         {erro && (
           <div data-reabrir-erro
                style={{ margin: "0 16px 10px", padding: "9px 11px", borderRadius: 8, fontSize: 12.5,
-                        lineHeight: 1.45, background: "rgba(229,87,63,.12)", color: "#e5573f",
+                        lineHeight: 1.45, background: "rgba(229,87,63,.12)", color: C.erroTexto,
                         border: "1px solid rgba(229,87,63,.35)" }}>
             {erro}
           </div>

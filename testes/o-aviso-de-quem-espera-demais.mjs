@@ -280,12 +280,14 @@ console.log("\n1. Ao abrir: o resumo, o número da barra e a lista");
     ok("e a de 2 dias diz “esperando há 2 dias”",
        /esperando há 2 dias/.test(await texto(page, '[data-atrasada-linha="esp-2dias"]')), await texto(page, '[data-atrasada-linha="esp-2dias"]'));
     // A COR É A DA LISTA: âmbar com 2 dias, vermelho a partir de 3. Toda linha
-    // daqui era vermelha quando a aba começava nos 3 dias.
+    // daqui era vermelha quando a aba começava nos 3 dias. O vermelho é o da
+    // espera no tema claro (#c62828): o de antes (#e53935) dava 4,2:1 no
+    // branco, e a revisão do leiaute (05/11) o trocou na lista e aqui juntos.
     const corDoDetalhe = (id) => page.locator(`[data-atrasada-linha="${id}"] [data-detalhe-da-espera]`).first()
       .evaluate((e) => getComputedStyle(e).color).catch(() => "");
     const cor2 = await corDoDetalhe("esp-2dias"), cor5 = await corDoDetalhe("esp-a1");
     ok("e a de 2 dias é âmbar, como na lista, e a de 5 dias vermelha",
-       cor2 !== "" && cor5 === "rgb(229, 57, 53)" && cor2 !== cor5, `2 dias: ${cor2} · 5 dias: ${cor5}`);
+       cor2 !== "" && cor5 === "rgb(198, 40, 40)" && cor2 !== cor5, `2 dias: ${cor2} · 5 dias: ${cor5}`);
     const notaDasMinhas = await texto(page, '[data-secao-da-espera="atrasadas"]');
     ok("e a aba explica a régua: “… espera resposta há 2 dias ou mais.”, sem 3 dias em lugar nenhum",
        /espera resposta há 2 dias ou mais\./.test(notaDasMinhas) && !/3 dias ou mais/i.test(notaDasMinhas), notaDasMinhas.slice(0, 200));

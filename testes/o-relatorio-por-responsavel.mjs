@@ -151,7 +151,10 @@ console.log("\nQuem administra vê a carteira de cada um, e a fila sem dono");
   ok("a minha linha diz “você”", /você/.test(eu?.texto || ""));
   ok("a da Jenifer: 2 conversas — a arquivada não entra", je?.conversas === "2", JSON.stringify(je));
   ok("as duas atrasadas, a mais antiga de 10 dias", je?.atrasadas === "2" && je?.maisAntiga === "10");
-  ok("atrasada é vermelha, como na lista", /229, 87, 63/.test(je?.corAtrasadas || ""), je?.corAtrasadas);
+  // O vermelho da lista (`esperaVermelha`, #c62828 no claro): o de antes
+  // (#e5573f) dava 3,6:1 no branco, e a revisão do leiaute (05/11) trocou os
+  // dois juntos. A conferência foi invertida, e não apagada.
+  ok("atrasada é vermelha, como na lista", /198, 40, 40/.test(je?.corAtrasadas || ""), je?.corAtrasadas);
   const o = await ordem(page);
   ok("quem tem mais atrasada vem primeiro", o.indexOf("JENIFER ALMEIDA") < o.indexOf("Rodrigo Sousa"), o.join(","));
   ok("“sem responsável” é uma linha, no fim", o[o.length - 1] === "sem", o.join(","));

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { perguntarOsScripts, comoDizerASituacao, valorPreocupa, numeroDe, quandoLegivel,
          publicacaoAtrasada, primeiraQueFalta } from "./scriptsDoBanco.js";
 import { Database, Loader2, RefreshCw, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
+import { AMBAR_DO_SELO, VERMELHO_DO_SELO } from "./espera.js";
 
 // ============================================================
 //  A ABA "ATUALIZAÇÕES DO BANCO" — o que a ponte fez ao subir
@@ -21,7 +22,13 @@ import { Database, Loader2, RefreshCw, ChevronDown, ChevronRight, AlertTriangle 
 //  fora da vista o script que entrou hoje — que é o que se veio olhar.
 // ============================================================
 
+// OS TONS são o traço da caixa e o fundo dos selos, e não a cor da LETRA:
+// escrita, a letra usa a do tema (`verdeTexto`, `ambarTexto`, `erroTexto`), e o
+// selo de letra branca usa os escuros (revisão do leiaute, 05/11). O âmbar daqui
+// dava 2,4:1 escrito no branco, e o verde 3,4:1 com a letra branca do selo.
 const TONS = { bom: "#2e9e6b", atencao: "#d99a1e", ruim: "#e5573f" };
+const FUNDO_DO_SELO = { bom: "#1e7d54", atencao: AMBAR_DO_SELO, ruim: VERMELHO_DO_SELO };
+const letraDoTom = (tom, C) => ({ bom: C.verdeTexto, atencao: C.ambarTexto, ruim: C.erroTexto })[tom] || null;
 
 // Uma linha da conferência. A forma de quase todas é (o que, resposta) — e
 // essa se lê como "o que: resposta". As outras vão como "coluna = valor".
@@ -29,7 +36,7 @@ function linhaDaConferencia(linha, i, C) {
   const pares = Object.entries(linha || {});
   const pintar = (v) => (
     <span data-valor-preocupa={valorPreocupa(v) ? "sim" : undefined}
-          style={valorPreocupa(v) ? { color: TONS.ruim, fontWeight: 700 } : undefined}>
+          style={valorPreocupa(v) ? { color: C.erroTexto, fontWeight: 700 } : undefined}>
       {v === null ? "—" : String(v)}
     </span>
   );
@@ -61,7 +68,7 @@ function scriptDaPonte(a, C, nestaSubida) {
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <b style={{ fontSize: 13, fontFamily: "monospace" }}>{a.nome}</b>
         {a.sucesso === false ? (
-          <span style={{ fontSize: 12, fontWeight: 700, color: TONS.ruim }}>falhou</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: C.erroTexto }}>falhou</span>
         ) : (
           <span style={{ fontSize: 12, color: C.textSecondary }}>
             aplicado pela ponte {quandoLegivel(a.aplicado_em)}
@@ -69,7 +76,7 @@ function scriptDaPonte(a, C, nestaSubida) {
           </span>
         )}
         {entrouAgora && (
-          <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: TONS.bom,
+          <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: FUNDO_DO_SELO.bom,
                          borderRadius: 10, padding: "1px 8px" }}>nesta subida</span>
         )}
       </div>
@@ -78,7 +85,7 @@ function scriptDaPonte(a, C, nestaSubida) {
                       wordBreak: "break-word" }}>{a.erro}</div>
       )}
       {a.alerta && (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: TONS.ruim,
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: C.erroTexto,
                       fontWeight: 600, marginTop: 4 }}>
           <AlertTriangle size={14} /> A conferência deste script diz que algo não ficou como devia.
         </div>
@@ -162,9 +169,9 @@ function blocoDaVersao(estado, C) {
     : g.situacao === "a_mais_nova" ? "a_mais_nova"
     : atrasada ? "desatualizada" : "publicando";
   const SELOS = {
-    a_mais_nova: { texto: "a mais nova", cor: TONS.bom },
-    publicando: { texto: "publicando", cor: TONS.atencao },
-    desatualizada: { texto: "desatualizada", cor: TONS.ruim },
+    a_mais_nova: { texto: "a mais nova", cor: TONS.bom, fundo: FUNDO_DO_SELO.bom },
+    publicando: { texto: "publicando", cor: TONS.atencao, fundo: FUNDO_DO_SELO.atencao },
+    desatualizada: { texto: "desatualizada", cor: TONS.ruim, fundo: FUNDO_DO_SELO.ruim },
   };
   const selo = SELOS[tipo];
   const noAr = g && g.no_ar;
@@ -185,7 +192,7 @@ function blocoDaVersao(estado, C) {
           {noAr && noAr.quando ? `, de ${quandoLegivel(noAr.quando)}` : ""}
         </span>
         {selo && (
-          <span data-selo-da-versao style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: selo.cor,
+          <span data-selo-da-versao style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: selo.fundo,
                                              borderRadius: 10, padding: "1px 8px" }}>{selo.texto}</span>
         )}
       </div>
@@ -213,7 +220,7 @@ function blocoDaVersao(estado, C) {
 
       {tipo === "desatualizada" && (
         <div data-como-publicar style={{ marginTop: 6 }}>
-          <div style={{ display: "flex", gap: 6, color: TONS.ruim, fontWeight: 600 }}>
+          <div style={{ display: "flex", gap: 6, color: C.erroTexto, fontWeight: 600 }}>
             <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 2 }} />
             <span>
               {g.situacao === "fora_da_lista"
@@ -320,7 +327,7 @@ export function AtualizacoesDoBanco({ cx, C, aoSaber }) {
                style={{ borderLeft: `4px solid ${tom || C.divider}`, background: C.panel, padding: "10px 12px",
                         borderRadius: 8, marginBottom: 10 }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-              <b style={{ fontSize: 14, color: tom || C.textPrimary }}>{jeito.rotulo}</b>
+              <b style={{ fontSize: 14, color: (jeito && letraDoTom(jeito.tom, C)) || C.textPrimary }}>{jeito.rotulo}</b>
               {estado.quando && (
                 <span style={{ fontSize: 12, color: C.textSecondary }}>· conferido {quandoLegivel(estado.quando)}</span>
               )}

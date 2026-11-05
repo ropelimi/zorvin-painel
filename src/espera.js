@@ -14,6 +14,26 @@
  *  diria que a mesma espera é mais grave numa tela do que na outra. */
 export const DIAS_DO_VERMELHO = 3;
 
+/** A COR DO "esperando há N dias", numa escrita só (revisão do leiaute,
+ *  05/11): a lista e as linhas da tela Esperando resposta tinham cada uma o
+ *  seu vermelho e o seu âmbar (#e5573f e #e53935, #8a6d00 e #7a5f00), e o
+ *  vermelho dava 3,6:1 no branco — abaixo dos 4,5 da letra miúda, justamente
+ *  no rótulo que diz quem espera há mais tempo. As cores moram no tema
+ *  (`esperaVermelha` e `ambarTexto`), conferidas no fundo da lista e no da
+ *  conversa escolhida, nos dois temas. */
+export function corDaEspera(dias, C) {
+  return dias >= DIAS_DO_VERMELHO ? C.esperaVermelha : C.ambarTexto;
+}
+
+/** OS SELOS COM NÚMERO, de letra branca (a ampulheta e o sino da barra, as
+ *  abas da tela Esperando resposta). O vermelho e o âmbar de antes (#e53935 e
+ *  #d99a1e) davam 4,2:1 e 2,4:1 com a letra branca, e o número do selo é
+ *  miúdo. Estes dão 4,9:1 e 5,9:1, e são os mesmos em todo selo: o âmbar já
+ *  era o da faixa de "não consegui carregar" do alto da tela. Revisão do
+ *  leiaute, 05/11. */
+export const VERMELHO_DO_SELO = "#d92b20";
+export const AMBAR_DO_SELO = "#8a5a00";
+
 /** Quantos dias de calendário vão de `iso` até hoje. Zero para vazio ou data
  *  inválida. */
 export function diasDesde(iso) {

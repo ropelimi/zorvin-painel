@@ -80,7 +80,7 @@ export default function ResumoDaConversa({ C, escuro, estreito, estado, novas = 
         <div style={{ marginTop: 10 }}>
           <div data-resumo-erro style={{ fontSize: 13, lineHeight: 1.5, color: C.erroTexto }}>{estado.erro}</div>
           <button data-resumo-tentar onClick={aoResumirDeNovo}
-                  style={{ ...botao, marginTop: 8, border: "none", background: C.green, color: "#fff" }}>
+                  style={{ ...botao, marginTop: 8, border: "none", background: C.botao, color: "#fff" }}>
             Tentar de novo
           </button>
         </div>

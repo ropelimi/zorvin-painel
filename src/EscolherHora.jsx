@@ -101,7 +101,7 @@ export default function EscolherHora({
                     placeholder={textoObrigatorio ? "Escreva a mensagem" : "Sem legenda"}
                     style={{ ...campo, resize: "vertical", minHeight: 70, lineHeight: 1.4 }} />
           {faltaTexto && (
-            <div data-agenda-problema style={{ color: "#e53935", fontSize: 12.5, marginTop: 4 }}>
+            <div data-agenda-problema style={{ color: C.erroTexto, fontSize: 12.5, marginTop: 4 }}>
               A mensagem não pode ficar vazia — para não mandar, use Cancelar.
             </div>
           )}
@@ -151,7 +151,7 @@ export default function EscolherHora({
 
       {problema ? (
         <div data-agenda-problema
-             style={{ display: "flex", alignItems: "center", gap: 6, color: "#e53935", fontSize: 12.5, marginTop: 10 }}>
+             style={{ display: "flex", alignItems: "center", gap: 6, color: C.erroTexto, fontSize: 12.5, marginTop: 10 }}>
           <AlertCircle size={15} style={{ flexShrink: 0 }} /> {problema}
         </div>
       ) : iso && (
@@ -173,7 +173,7 @@ export default function EscolherHora({
       <button data-agenda-confirmar onClick={confirmar} disabled={!pronto}
               style={{ marginTop: 14, width: "100%", border: "none", borderRadius: 10, padding: "11px 12px",
                        fontSize: 14.5, fontWeight: 700, cursor: pronto ? "pointer" : "default",
-                       background: verde, color: "#fff", opacity: pronto ? 1 : 0.4 }}>
+                       background: C.botao || "#008069", color: "#fff", opacity: pronto ? 1 : 0.4 }}>
         {!pronto ? (editar ? "Salvar alterações" : "Escolha quando enviar")
           : editar ? `Salvar — sai ${rotuloDaHora(iso)}` : `Agendar para ${rotuloDaHora(iso)}`}
       </button>

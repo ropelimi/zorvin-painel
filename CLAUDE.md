@@ -7898,6 +7898,179 @@ que não depende do período, não é perguntada de novo quando ele muda (a cena
 esperava que fosse); e as linhas "pelo nome" da bancada são três, e não uma
 (a cena conferia só a do `autorSemId`).
 
+## A revisão do leiaute — o que se lê (05/11)
+
+Pedido do Rodrigo: *"Faça uma revisão geral do layout, para que o visual seja
+agradável para o usuário, de forma responsiva. Veja se nada está quebrado, se
+está tudo alinhado e em harmonia, o sistema precisa ser funcional, ser fácil
+de entender as informações e prático para o trabalho no dia a dia."*
+
+**Uma varredura abriu o Zorvin em seis larguras (360, 390, 768, 1024, 1366 e
+1920) e nos dois temas**, em cada estado de todo dia (a lista, a conversa, a
+ficha, o menu, as Configurações, Departamentos e acessos e as cinco telas), e
+mediu o que costuma quebrar sem ninguém ver:
+
+| o que se mediu | o que achou |
+|---|---|
+| a tela rolando de lado | nada |
+| algo saindo da tela | nada |
+| texto cortado sem reticências | nada |
+| alvo de dedo menor que o dedo, no celular | nada |
+| campo com letra menor que 16, no celular (o iPhone amplia a tela) | nada |
+| erro de JavaScript | nada |
+| **a letra com contraste abaixo do pedido** | **em quase toda tela, no tema claro** |
+
+**O que estava errado era a LEITURA.** A WCAG pede 4,5:1 para a letra miúda
+(3:1 para a grande), e a letra miúda do Zorvin é a tela inteira: o número do
+telefone, a hora, a prévia, o "esperando há N dias".
+
+| o quê | antes | agora |
+|---|---|---|
+| o cinza do texto secundário, no claro (`textSecondary`) | #667781: 4,65 no branco, mas **4,14** no cinza do alto da lista e da conversa escolhida, **4,19** na bolha verde (a hora de quem envia) e **3,9** no fundo da conversa | **#54656f**, o do WhatsApp Web de hoje: 6,1 / 5,4 / 5,5 / 5,1 |
+| o botão verde com letra branca ("Criar", "Salvar", a aba escolhida de Departamentos, o papel do pré-cadastro, a pílula da Faxina) | #00a884: **3,0** nos dois temas | **`C.botao`, #008069**: 4,9. O botão que é só ícone (enviar, gravar) continua no `green`: desenho pede 3:1, e ele passa |
+| a hora na bolha de quem envia, no escuro | #9aa8b1 sobre #005c4b: **3,3** | **`horaNaSaida`, #bcd1cd**: 5,0 |
+| o vermelho de "esperando há 3+ dias" | #e5573f: **3,6** no branco (claro); no escuro **3,3** na conversa escolhida | **`esperaVermelha`**: #c62828 no claro (5,6), #ff8a7a no escuro (5,2 na escolhida) |
+| "Sair", "Desconectar" e as frases de erro em vermelho | #e5573f: **3,6** | `C.erroTexto` (5,6 no claro) |
+| o nome de quem mandou uma figurinha (fica sobre o bege do fundo, sem bolha) | quatro cores davam **4,27 a 4,42** | um tom abaixo: 4,6 no bege, 5,0 na bolha |
+
+**A cor do "esperando há N dias" mora num lugar só** (`corDaEspera`, em
+`espera.js`, com as cores no tema): a lista, as linhas da tela Esperando
+resposta e a Faxina tinham cada uma o seu vermelho (#e5573f, #e53935) e o seu
+âmbar (#8a6d00, #7a5f00).
+
+**Duas frases que não cabiam:**
+
+- **a busca do computador** dizia "Buscar por nome, mensagem, CPF ou
+  proces": a frase pede 300 pontos e a caixa tem 286. Hoje é "Buscar por
+  nome, mensagem, CPF…", no jeito da do celular, e a caixa tem reticências
+  (`textOverflow`) para uma letra mais larga que a das provas;
+- **a caixa de escrever** quebrava "Digite uma mensagem" em duas linhas numa
+  conversa estreita (a 768 em pé, com uns 75 pontos para a frase) e no
+  celular de 360 — e a caixa nascia com a altura de duas. Hoje, abaixo de 440
+  de conversa (`caixaApertada`) e no celular abaixo de 370, a frase é
+  "Mensagem" (e as outras, as curtas que o celular já usava). Uma regra de
+  folha de estilo (`textarea[data-campo]::placeholder`) mantém a frase numa
+  linha se uma letra mais larga a fizer passar da caixa.
+
+**As provas que acham a caixa pela frase continuam achando**: elas procuram
+`placeholder*="Digite uma mensagem"` em janelas de 1024 para cima e no
+celular de 390, onde a frase é a de sempre; e as da edição procuram "Corrija
+a mensagem", que está nas duas formas.
+
+### E a letra dos avisos, que a varredura não via
+
+A varredura abria os estados de todo dia **da bancada**, e a bancada não tem
+tarefa vencendo, cartão do funil esperando, cliente sem resposta nem conversa
+parada: as cores de aviso nunca apareciam nela. A prova planta esses estados
+(a cena 6), e eles mostraram mais letra clara demais:
+
+| o quê | antes | agora |
+|---|---|---|
+| o âmbar escrito: "Hoje" e "· hoje às 14:00" das tarefas, a espera de 1 e 2 dias e a tarefa de hoje no cartão do funil, o "parada há N dias" da faxina, os números do menu ⋮ | #d99a1e: **2,2 a 2,4** | `C.ambarTexto` (#7a5f00 no claro) |
+| o vermelho escrito: "Atrasadas" e "· atrasada", a tarefa atrasada e a espera de 3+ dias no cartão, o "sem resposta há…" da tela Esperando, a espera na janela do Finalizar | #e53935 e #e5573f: **3,4 a 4,2** | `C.erroTexto` e `C.esperaVermelha` |
+| os selos de número com letra branca: o sino e a ampulheta da barra, as abas da tela Esperando resposta | âmbar #d99a1e: **2,4**; vermelho #e53935: **4,2** | `AMBAR_DO_SELO`, #8a5a00 (5,9), e `VERMELHO_DO_SELO`, #d92b20 (4,9), em `espera.js`. O âmbar já era o da faixa de "não consegui carregar" |
+| letra branca no verde #00a884: as não lidas do cartão do funil, o "Finalizar" da faxina, o confirmar da tarefa e da hora, o "Baixar" do PDF | **3,0** | o verde dos botões (#008069); as não lidas do cartão, o das não lidas da lista |
+| o verde escrito: "Começar conversa", o "principal" e os botões de texto da ficha, o "· salvo" das palavras da casa, o recado do Manual do Copiloto | #00a884: **3,0** | `C.verdeTexto`, que já existia |
+| o aviso de erro da tela de entrada | branco no #e5573f: **3,6** | #c62828: 5,6 |
+
+**O Painel de números acompanhou:** o "Há 3+ dias" do relatório por
+responsável é o vermelho da lista (`esperaVermelha`), a nota de aviso da
+escolha do período usa o âmbar do tema, e as frases de erro dos relatórios a
+letra do tema (o traço da caixa continua vivo). A cena 1 confere a tela
+Painel nos dois temas, no computador e no celular.
+
+**Por inspeção, sem prova**, as mesmas trocas onde a bancada não chega: a
+aba Atualizações do banco (os tons viraram só traço e fundo de selo, e a
+letra usa a do tema), as frases de erro do Manual do Copiloto, da tarefa e da
+hora, o "Apagar" do menu da mensagem, os botões vermelhos de contorno e o
+aviso de quem importa o histórico.
+
+**O que fica com a cor viva, e é decisão:** ícones, bolinhas, bordas e
+traços, onde o pedido é 3:1 e eles passam; as cores das etapas do funil e
+das iniciais.
+
+### A varredura também mediu o que se sobrepõe, e foi preciso ensiná-la
+
+Ela contava como "coberto" todo botão em cujo centro estava outro elemento, e
+apontou dezenas: os botões ATRÁS de uma janela aberta (as Configurações
+cobrem a tela inteira) e os botões de mensagem rolados para debaixo do alto
+da conversa. Hoje ela olha só a camada de cima e a parte que se vê de quem
+rola — e sobram os menus abertos, que cobrem de propósito.
+
+### O que fica de fora, e é decisão
+
+- **o verde da marca continua o mesmo** (`green`, #00a884): ele pinta
+  ícones, selos e bordas, onde o pedido é 3:1, e passa;
+- **a fileira de abas das Configurações, no celular, continua rolando de
+  lado** (a última aba aparece cortada na borda): é o jeito de caber sete abas
+  em 360 pontos, e o corte é o que diz que há mais.
+
+Prova: `a-revisao-do-leiaute`, 98 conferências em seis cenas: o contraste
+em dez estados, nas larguras de 1366 e 390 e nos dois temas (a conta é a da
+WCAG, com o fundo do primeiro ancestral de fundo sólido, e o controle
+desligado e o que está atrás de uma janela aberta de fora); a cor da espera,
+uma só na lista e na tela Esperando resposta, e legível na conversa
+escolhida; a busca; a caixa de escrever em cinco larguras; nada rolando de
+lado a 360 e a 768; e a letra dos avisos, nos estados plantados (as tarefas,
+o funil, as duas abas da tela Esperando, a faxina, os selos da barra e do
+menu ⋮ em âmbar, e a janela do Finalizar), nos dois temas.
+
+**35 sabotagens e 35 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma:
+
+- o painel de antes inteiro (62 reprovações — é o pedido reproduzido);
+- **o tema:** o cinza secundário de antes, no claro (18); o botão com o verde
+  de antes, no claro e no escuro; a hora na bolha de quem envia com o cinza de
+  sempre, no escuro, e sem o token; o vermelho da espera de antes, no claro e
+  no escuro; as cores do nome de antes, no claro;
+- **uma cor só para a espera:** a tela Esperando com o vermelho próprio; a
+  lista com o vermelho próprio (10);
+- **os botões e as abas:** o "Desconectar" com o vermelho de antes; a aba
+  escolhida de Departamentos e a pílula da Faxina com o verde de antes;
+- **as frases:** a busca com a frase inteira, e sem as reticências; a caixa
+  sem a frase curta no computador, e no celular pequeno; a caixa sem a regra
+  de uma linha;
+- **a letra dos avisos:** o cabeçalho "Hoje" e o "Atrasadas" das tarefas, e o
+  horário da tarefa, com as cores de antes; a espera, a tarefa e as não lidas
+  do cartão do funil; as duas abas da tela Esperando e o "sem resposta há…";
+  o "parada há N dias" e o "Finalizar" da faxina; a espera na janela do
+  Finalizar; os selos de letra branca com o âmbar (8) e com o vermelho de
+  antes; os números do menu ⋮; e o "Há 3+ dias" do Painel, pego pela
+  `o-relatorio-por-responsavel`.
+
+**Sete pegam por uma conferência só, e está certo:**
+
+- **a caixa sem a frase curta**, no computador e no celular pequeno: ela
+  continua com uma linha (a regra de não quebrar segura), e só reprova a
+  conferência de que a frase cabe;
+- **o "Hoje" das tarefas, o "parada há N dias", a espera na janela do
+  Finalizar e os números do menu ⋮** reprovam só no tema claro: no escuro, o
+  âmbar e o vermelho de antes já se liam (7,1:1 e 4,8:1);
+- **o "Há 3+ dias" do Painel**: a `o-relatorio-por-responsavel` confere a cor
+  daquela coluna numa conferência só.
+
+**E a rodada aprendeu a rodar outra prova**: cada sabotagem pode pedir
+`prova:<nome>` no lugar das cenas, e a do Painel roda a
+`o-relatorio-por-responsavel`, que é quem confere aquela coluna.
+
+**Duas provas vizinhas foram INVERTIDAS, e não apagadas**: pediam o vermelho
+de antes. `o-aviso-de-quem-espera-demais` pedia #e53935 na linha de 5 dias da
+tela Esperando, e `o-relatorio-por-responsavel` pedia #e5573f no "Há 3+
+dias"; hoje as duas pedem o vermelho da lista (#c62828 no claro).
+
+**Duas lições das vizinhas, rodadas com a bancada noutra porta:**
+
+- **a prova `entrar` procura a porta 5199 no texto da falha** ("127.0.0.1:5199
+  não respondeu"). Com a bancada numa porta de cópia, ela reprova duas
+  conferências sem defeito nenhum: a frase está certa e diz o endereço, só
+  que outro. Na integração contínua a porta é a 5199;
+- **`o-acompanhamento-por-etapa` espera 0,8 s depois de a guia de Tarefas
+  abrir** e confere a tarefa. Com duas provas rodando juntas na mesma máquina,
+  a lista ainda não tinha chegado ("e mostra as tarefas" reprovou); sozinha,
+  passou inteira (119 de 119). Ao rodar vizinhas em paralelo, uma reprovação
+  de tempo se confere rodando a prova de novo, sozinha, antes de procurar
+  defeito.
+
 ## O tempo real que entupia — e a mensagem que parecia não ter saído (20/10)
 
 Relato do Rodrigo: *"Quando é enviada uma mensagem demora para aparecer,

@@ -4,7 +4,7 @@ import { X, RefreshCw, Hourglass, MessageCircle, AlertCircle, ChevronDown, Check
 import { nomeDoContato } from "./contato.js";
 import { telefoneLegivel } from "./numeros.js";
 import { rotuloDaHora } from "./agenda.js";
-import { diasDesde, DIAS_DO_VERMELHO } from "./espera.js";
+import { diasDesde, corDaEspera, VERMELHO_DO_SELO, AMBAR_DO_SELO } from "./espera.js";
 import { rotuloDosMinutos, fraseDoLimite, HA_DIAS_OU_MAIS } from "./esperandoDemais.js";
 import { FILTROS_DE_SEMPRE, TODOS_OS_RESPONSAVEIS, SEM_RESPONSAVEL, arrumarFiltros, filtrosMudaram, chaveDosFiltros,
          chaveDasEtiquetas, passaNosFiltros, telefonesOferecidos, comOsDepartamentos, rotuloDaLista, rotuloDoResponsavel,
@@ -392,11 +392,11 @@ export default function Esperando({
   // se sabe, ela diz "Procurando…". Só some a aba do que este banco NÃO tem.
   const abas = [
     temAvisoDeEspera !== false && {
-      id: "sem-resposta", titulo: "Clientes sem resposta", forte: "#e53935", texto: C.erroTexto || "#e53935",
+      id: "sem-resposta", titulo: "Clientes sem resposta", forte: VERMELHO_DO_SELO, texto: C.erroTexto,
       falhou: Boolean(semResposta?.erro || erroDasEtiquetas), n: srProntos ? meusSemResposta.length : null,
     },
     podeContarAtrasadas !== false && {
-      id: "atrasadas", titulo: tituloDasQueEsperam(f, HA_DIAS_OU_MAIS, meuId), forte: "#d99a1e", texto: C.ambarTexto || "#d99a1e",
+      id: "atrasadas", titulo: tituloDasQueEsperam(f, HA_DIAS_OU_MAIS, meuId), forte: AMBAR_DO_SELO, texto: C.ambarTexto,
       falhou: Boolean(atrasadas?.chave === chave && atrasadas?.erro),
       n: atProntas && atrasadas?.lido && !atrasadas?.erro ? minhas.length : null,
     },
@@ -574,7 +574,7 @@ export default function Esperando({
                     const quem = comQuem(l);
                     return linha(`sr-${l.conversa_id}`, { "data-sem-resposta-linha": l.conversa_id },
                       { id: l.conversa_id, advogado_id: l.advogado_id }, l.contato,
-                      `sem resposta há ${rotuloDosMinutos(l.minutos)} de expediente`, "#e53935",
+                      `sem resposta há ${rotuloDosMinutos(l.minutos)} de expediente`, C.esperaVermelha,
                       `escreveu ${rotuloDaHora(l.aberto_em, agora)}${quem ? ` · ${quem}` : ""}`);
                   })}
             </>)}
@@ -594,7 +594,7 @@ export default function Esperando({
                     // dias seria vermelha aqui e âmbar na lista.
                     return linha(`at-${cv.id}`, { "data-atrasada-linha": cv.id }, cv, cv.contato,
                       `esperando há ${d} dia${d === 1 ? "" : "s"}`,
-                      d >= DIAS_DO_VERMELHO ? "#e53935" : (C.ambarTexto || "#d99a1e"), comQuem(cv) || null);
+                      corDaEspera(d, C), comQuem(cv) || null);
                   })}
               {atProntas && atrasadas?.cortado && nota(`Mostrando as ${minhas.length} que esperam há mais tempo.`, { borderTop: `1px solid ${C.divider}` })}
             </>)}

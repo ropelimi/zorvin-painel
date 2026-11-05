@@ -176,7 +176,7 @@ export default function NovaTarefa({
 
       {problemaDaHora ? (
         <div data-tarefa-problema
-             style={{ display: "flex", alignItems: "center", gap: 6, color: "#e53935", fontSize: 12.5, marginTop: 10 }}>
+             style={{ display: "flex", alignItems: "center", gap: 6, color: C.erroTexto, fontSize: 12.5, marginTop: 10 }}>
           <AlertCircle size={15} style={{ flexShrink: 0 }} /> {problemaDaHora}
         </div>
       ) : iso && (
@@ -190,7 +190,7 @@ export default function NovaTarefa({
 
       {erro && (
         <div data-tarefa-erro role="alert"
-             style={{ display: "flex", alignItems: "flex-start", gap: 6, color: "#e53935", fontSize: 12.5, marginTop: 10, lineHeight: 1.4 }}>
+             style={{ display: "flex", alignItems: "flex-start", gap: 6, color: C.erroTexto, fontSize: 12.5, marginTop: 10, lineHeight: 1.4 }}>
           <AlertCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} /> {erro}
         </div>
       )}
@@ -198,7 +198,7 @@ export default function NovaTarefa({
       <button data-tarefa-confirmar onClick={confirmar} disabled={!pronto}
               style={{ marginTop: 14, width: "100%", border: "none", borderRadius: 10, padding: "11px 12px",
                        fontSize: 14.5, fontWeight: 700, cursor: pronto ? "pointer" : "default",
-                       background: verde, color: "#fff", opacity: pronto ? 1 : 0.4 }}>
+                       background: C.botao || "#008069", color: "#fff", opacity: pronto ? 1 : 0.4 }}>
         {gravando ? "Salvando…"
           : !textoLimpo ? "Escreva o que fazer"
           : !iso || problemaDaHora ? "Escolha quando"

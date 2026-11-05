@@ -968,7 +968,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
   const botao = {
     display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
     border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13.5,
-    fontWeight: 600, cursor: "pointer", background: C.green, color: "#fff",
+    fontWeight: 600, cursor: "pointer", background: C.botao, color: "#fff",
   };
   const cabecalhoSecao = {
     display: "flex", alignItems: "center", gap: 6, width: "100%", border: "none",
@@ -1365,7 +1365,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
             <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
               <b style={{ fontSize: 13.5 }}>{telefoneLegivel(t.digitos || t.numero)}</b>
               {t.principal && (
-                <span data-principal style={{ fontSize: 10.5, fontWeight: 700, color: C.green,
+                <span data-principal style={{ fontSize: 10.5, fontWeight: 700, color: C.verdeTexto,
                                border: `1px solid ${C.green}`, borderRadius: 5, padding: "1px 5px" }}>
                   WhatsApp
                 </span>
@@ -1446,7 +1446,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
                           nome: (edicao.nome || cliente?.nome || nomeContato || "").trim(),
                           clienteId: cliente?.id || null,
                         })}
-                        style={{ border: "none", background: "transparent", color: C.green,
+                        style={{ border: "none", background: "transparent", color: C.verdeTexto,
                                  cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0 }}>
                   conversar por este
                 </button>
@@ -1501,7 +1501,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
             style={{
               display: "flex", alignItems: "center", gap: 7, width: "100%",
               border: `1px solid ${C.divider}`, borderRadius: 8, padding: "8px 10px",
-              background: "transparent", color: C.green, cursor: "pointer",
+              background: "transparent", color: C.verdeTexto, cursor: "pointer",
               fontSize: 12.5, fontWeight: 600, textAlign: "left",
             }}>
             <MessageSquare size={15} />
@@ -1652,8 +1652,8 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
                         onClick={() => setPapel(v)}
                         style={{ flex: 1, padding: "9px 8px", borderRadius: 9, cursor: "pointer",
                                  fontSize: 13, fontWeight: 600,
-                                 border: `1px solid ${papel === v ? C.green : C.divider}`,
-                                 background: papel === v ? C.green : "transparent",
+                                 border: `1px solid ${papel === v ? C.botao : C.divider}`,
+                                 background: papel === v ? C.botao : "transparent",
                                  color: papel === v ? "#fff" : C.textSecondary }}>
                   {r}
                 </button>
@@ -1699,7 +1699,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
             <button onClick={() => { setCliente(null); setEdicao({}); }}
                     data-trocar-cadastro
                     style={{ border: "none", background: "transparent", padding: 0,
-                             cursor: "pointer", color: C.green, fontWeight: 600,
+                             cursor: "pointer", color: C.verdeTexto, fontWeight: 600,
                              font: "inherit" }}>
               trocar
             </button>

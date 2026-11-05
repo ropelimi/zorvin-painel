@@ -51,10 +51,13 @@ function emLotes(lista, n = LOTE) {
   return lotes;
 }
 
+// A COR DE CADA SEÇÃO é a da letra de aviso do tema (`erroTexto` e
+// `ambarTexto`): o vermelho e o âmbar de antes davam 3,8:1 e 2,2:1 no fundo do
+// cabeçalho (revisão do leiaute, 05/11).
 const SECOES = [
-  { id: "atrasada", titulo: "Atrasadas", cor: "#e53935" },
-  { id: "hoje", titulo: "Hoje", cor: "#d99a1e" },
-  { id: "proxima", titulo: "Próximas", cor: null },
+  { id: "atrasada", titulo: "Atrasadas", tom: "erroTexto" },
+  { id: "hoje", titulo: "Hoje", tom: "ambarTexto" },
+  { id: "proxima", titulo: "Próximas", tom: null },
 ];
 
 export default function Tarefas({
@@ -218,7 +221,7 @@ export default function Tarefas({
     const cliente = ct ? nomeDoContato(ct) || telefoneLegivel(ct.numero) : "Conversa que você não alcança mais";
     const tel = cv ? advPorId[String(cv.advogado_id)] : null;
     const s = situacao(t, agora);
-    const corQuando = feita ? C.textSecondary : s === "atrasada" ? "#e53935" : s === "hoje" ? "#d99a1e" : C.textSecondary;
+    const corQuando = feita ? C.textSecondary : s === "atrasada" ? C.erroTexto : s === "hoje" ? C.ambarTexto : C.textSecondary;
     return (
       <div key={t.id} data-tarefa-da-tela={t.id} data-situacao={feita ? "feita" : s}
            style={{ display: "flex", alignItems: "flex-start", flexWrap: "wrap", gap: 10, padding: "10px 12px",
@@ -346,7 +349,7 @@ export default function Tarefas({
                                    color: C.textPrimary, textAlign: "left", fontSize: 13 }}>
                     <span style={{ display: "block", fontWeight: 600 }}>{g.id ? nomeDe(g.id) : "Sem pessoa"}</span>
                     <span style={{ display: "block", fontSize: 12, color: C.textSecondary, marginTop: 2 }}>
-                      <span data-atrasadas-da-pessoa={g.atrasada} style={{ color: g.atrasada ? "#e53935" : C.textSecondary, fontWeight: g.atrasada ? 700 : 400 }}>
+                      <span data-atrasadas-da-pessoa={g.atrasada} style={{ color: g.atrasada ? C.erroTexto : C.textSecondary, fontWeight: g.atrasada ? 700 : 400 }}>
                         {g.atrasada} atrasada{g.atrasada === 1 ? "" : "s"}
                       </span>
                       {" · "}{g.hoje} hoje · {g.proxima} depois
@@ -361,7 +364,7 @@ export default function Tarefas({
             <section key={s.id} data-secao-de-tarefas={s.id}
                      style={{ border: `1px solid ${C.divider}`, borderRadius: 12, overflow: "hidden", marginBottom: 14 }}>
               <header style={{ padding: "9px 12px", fontSize: 12.5, fontWeight: 700, letterSpacing: 0.3,
-                               color: s.cor || C.textSecondary, background: C.headerBar }}>
+                               color: (s.tom && C[s.tom]) || C.textSecondary, background: C.headerBar }}>
                 {s.titulo.toUpperCase()} <span data-contagem-da-secao style={{ fontWeight: 600 }}>({porSecao[s.id].length})</span>
               </header>
               {porSecao[s.id].map((t) => linha(t))}
