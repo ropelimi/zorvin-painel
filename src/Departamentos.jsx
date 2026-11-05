@@ -21,6 +21,7 @@ import { ManualDoCopiloto } from "./ManualDoCopiloto.jsx";
 import { Chave } from "./Chave.jsx";
 import { casaComAPesquisa } from "./pesquisaNosMenus.js";
 import { X, Plus, Trash2, Loader2, Building2, Phone, ShieldCheck } from "lucide-react";
+import { NOME_DO_ASSISTENTE } from "./assistente.js";
 
 // ============================================================
 //  DEPARTAMENTOS, TELEFONES E PERMISSÕES
@@ -280,10 +281,11 @@ export default function Departamentos({ C, aoFechar, abaInicial, aoSaberDosScrip
                     data-aba-aviso-de-espera>Aviso de espera</button>
           )}
           {/* O MANUAL DO COPILOTO: é para cá que se volta quando as sugestões
-              saem do jeito errado. Ver `ManualDoCopiloto.jsx`. */}
+              saem do jeito errado. Ver `ManualDoCopiloto.jsx`. A aba diz o
+              nome do assistente (Quazar, desde 05/11), e não "Copiloto". */}
           {temCopiloto === true && (
             <button style={cx.aba(aba === "copiloto")} onClick={() => setAba("copiloto")}
-                    data-aba-copiloto>Copiloto</button>
+                    data-aba-copiloto>{NOME_DO_ASSISTENTE}</button>
           )}
           {/* A ABA DAS NOTAS mora aqui porque aqui é a tela de quem administra,
               e o retroativo é coisa de administrador — ele mexe no histórico de

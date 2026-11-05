@@ -248,7 +248,7 @@ ok("a faixa está lá, e diz que a sugestão está na caixa",
    q(await texto(faixa(page))));
 ok("com o campo de pedir uma mudança", (await campoDoPedido(page).count()) === 1);
 ok("que diz o que é (placeholder)",
-   /Pedir uma mudança ao Copiloto/.test((await campoDoPedido(page).first().getAttribute("placeholder").catch(() => "")) || ""));
+   /Pedir uma mudança ao Quazar/.test((await campoDoPedido(page).first().getAttribute("placeholder").catch(() => "")) || ""));
 ok("o botão Pedir fica desligado com o campo vazio",
    await page.locator("[data-copiloto-pedir]").first().isDisabled().catch(() => false));
 ok("e nada saiu para o cliente", (await saiuParaOCliente(page, A)) === 0);
@@ -687,7 +687,7 @@ console.log("\n18. Sem o 050, as seções somem; a leitura que falha é dita");
   ok("a leitura das lições que falha é dita, e nenhuma lista é desenhada",
      /Não consegui ler as lições/.test(await texto(page.locator("[data-licoes-erro]")))
      && (await page.locator("[data-licao-da-config]").count()) === 0);
-  ok("a das notas também", /Não consegui ler o que o Copiloto aprendeu/.test(await texto(page.locator("[data-notas-erro]"))));
+  ok("a das notas também", /Não consegui ler o que o Quazar aprendeu/.test(await texto(page.locator("[data-notas-erro]"))));
   await ctx.close();
 }
 

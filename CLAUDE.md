@@ -6550,9 +6550,9 @@ escritório escreve na aba nova. As notas internas não vão.
 
 | | |
 |---|---|
-| computador | um ✨ dentro da caixa de escrever, **só com a caixa vazia** — no lugar em que o relógio de agendar aparece quando há texto |
+| computador | um ✨ dentro da caixa de escrever (desde 05/11, o **rosto do Quazar** — ver "O Quazar", mais abaixo), **só com a caixa vazia** — no lugar em que o relógio de agendar aparece quando há texto |
 | celular | "Sugerir resposta" no ⋮ da conversa, pela mesma regra |
-| administração | aba **Copiloto** em Departamentos e acessos (`ManualDoCopiloto.jsx`) |
+| administração | aba **Copiloto** (desde 05/11, **Quazar**) em Departamentos e acessos (`ManualDoCopiloto.jsx`) |
 
 **Só com a caixa vazia, e é a decisão que segura o resto.** A barra nunca
 ganha um botão a mais (o ✨ some quando o relógio aparece), e uma sugestão
@@ -6791,6 +6791,105 @@ pega, além da cena 8, que é a dela.
   sabotagem tinha tirado esperam 30 segundos e derrubam a prova, sem dizer as
   conferências seguintes. Hoje os gestos são guardados (`preencher`, `apertar`),
   como os cliques.
+
+## O Quazar — o assistente oficial do Zorvin (05/11)
+
+Pedido do Rodrigo: *"O Copiloto tem que ter um nome, pois ele será o
+assistente oficial do Zorvin. Ele tem que ser um "mascote" do sistema. Então
+dê o melhor nome possível pra ele, e escolhe qual mascote ele será."* E, nas
+voltas seguintes, ele mesmo foi escolhendo: de cachorro para lobo, de lobo
+para **pato** (*"foi esse o primeiro som de aviso do Zorvin, lembra?"*), um
+**pato malandro**, de óculos escuros, *"esperto, bom de papo"*; e o nome tinha
+de ser *"diferente, fora do comum"*, sem precisar lembrar a palavra "pato".
+
+**O nome é QUAZAR**: o "quá" do pato, o primeiro som de aviso do Zorvin, e o
+quasar, o objeto mais brilhante do universo (daí os óculos escuros). O Z é o
+do Zorvin.
+
+**O desenho é de frente e simétrico.** O de três quartos foi reprovado (*"uma
+lente maior que a outra"*). Os caminhos saíram de um script, com uma lente
+espelhada da outra: mexer numa sem mexer na outra é o defeito de volta.
+
+| onde | antes | agora |
+|---|---|---|
+| o botão da caixa de escrever | estrelinhas | o **rosto do Quazar**, de 28 pontos no alvo de 40 |
+| a faixa da sugestão | estrelinhas e "Copiloto ·" | o rosto e "Quazar ·" |
+| o campo de pedir uma mudança, o Pedir, o fechar, o Desfazer | "ao Copiloto" | "ao Quazar" |
+| o ⋮ do celular | "Sugerir resposta" com estrelinhas | com o rosto |
+| o quadro do resumo | estrelinhas, e "Feito pela IA" | o rosto, e "Feito pelo Quazar, a IA do Zorvin" |
+| o resumo copiado | "(feito pela IA do Zorvin)" | "(feito pelo Quazar, a IA do Zorvin)" |
+| a aba da administração | "Copiloto" | "Quazar", com o título "O Quazar, o assistente do Zorvin" |
+| as frases de falha da faixa e da aba | "do copiloto" | "do Quazar" |
+
+**O nome mora num lugar só** (`NOME_DO_ASSISTENTE`, em `src/assistente.js`),
+e o rosto num componente só (`src/RostoDoAssistente.jsx`). **A ponte tem o
+dela**, também `NOME_DO_ASSISTENTE`: as frases de erro que ela manda à faixa
+já dizem o nome ("O Quazar preferiu não sugerir…"). Trocar o nome é trocar os
+dois. E as frases dizem "o Quazar": um nome feminino pede trocar o artigo
+junto.
+
+**O que NÃO muda com o nome:** os `data-copiloto-*` das provas, as rotas da
+ponte (`/copiloto/...`), as tabelas (`zorvin_copiloto*`), as variáveis
+(`COPILOTO_*`) e os nomes do código. **E o que se pede à IA**: a sugestão sai
+como se fosse a atendente, e um cliente nunca lê "Quazar". O nome é para a
+equipe.
+
+**"A IA do Zorvin" continua escrito onde o texto sai da tela.** O resumo
+copiado vai para uma nota, um e-mail ou o Vantoro, e ali "feito pelo Quazar"
+sozinho não diz que foi uma IA. A régua de 01/11 continua: colado longe da
+tela, o resumo não pode passar por anotação de alguém da equipe.
+
+**Os ids dos gradientes levam o `useId`.** O rosto aparece duas vezes na mesma
+tela (o do botão, com a caixa vazia, e o do quadro do resumo). Com o mesmo id,
+o segundo pintaria com os gradientes do primeiro, e, com o primeiro escondido,
+sem cor nenhuma. A prova esconde o primeiro e mede o verde da cabeça do
+segundo numa foto da tela.
+
+**Fica de fora, e é decisão:**
+
+- **a IA que move o funil** continua dizendo "A IA pôs aqui", "A IA moveu…".
+  É outra rodada da ponte, e não o assistente que conversa com a equipe. Ficou
+  oferecido ao Rodrigo;
+- **enquanto o Quazar escreve, o botão mostra o giro de sempre**, e não o
+  rosto: o giro é o sinal de "espere";
+- **o rosto não tem prova de feitio** (as lentes iguais, por exemplo): ele é
+  um desenho gerado e conferido na tela uma vez. A prova confere que ele está
+  lá, pintado, colorido e do tamanho certo.
+
+Prova: `o-assistente-se-chama-quazar`, 109 conferências em dez cenas: o botão
+(o rosto pintado, o tamanho, o rótulo, a cor e o title enquanto ele escreve);
+a faixa, com a lição pedida e desfeita; a lição que o banco não deixa desfazer;
+o erro da ponte; o resumo, e o texto copiado; dois rostos na tela; o tema
+escuro; o celular; a aba; e a aba com a ponte calada e as três leituras
+falhando. Em cada cena, nada à vista diz "copiloto" — nem o texto, nem um
+title, aria-label ou placeholder.
+
+**31 sabotagens e 31 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma (e uma cópia sem sabotagem nenhuma, de controle, passou inteira):
+
+- o painel de antes inteiro (62 reprovações — é o pedido reproduzido), e o
+  nome de volta a "Copiloto" na constante (41);
+- **o botão:** as estrelinhas de volta (14); o rosto maior que o alvo; o rosto
+  sem o `aria-hidden`; e o `title`, o `aria-label` e o `title` de quando ele
+  escreve dizendo "copiloto";
+- **o desenho:** os ids fixos, sem o `useId` (com o primeiro rosto escondido,
+  a cabeça do segundo mede 0,04 de verde, e a prova pede 0,15); a cabeça
+  apontando para um id sem o prefixo (5); o rosto quase transparente (3);
+- **a faixa:** "Copiloto" no nome (9); as estrelinhas (4); o campo do pedido
+  (4); o fechar (5); o "Desfeito" e o Desfazer; e a lição que não se desfaz
+  mandando à aba "Copiloto";
+- **o resumo:** o quadro sem o rosto (6); o "Feito pela IA" de volta; o texto
+  copiado sem dizer que é a IA do Zorvin; o botão com "(IA)"; e o "Resumir de
+  novo" pedindo "à IA";
+- **o celular:** o item do ⋮ com as estrelinhas;
+- **a aba:** o nome "Copiloto" de volta; o título sem o rosto; a explicação e
+  as notas dizendo "o copiloto" (3 cada); e o manual, as lições e a ponte
+  calada dizendo "do copiloto".
+
+**As provas que liam as frases de antes foram INVERTIDAS, e não apagadas**:
+`o-copiloto-aprende-com-a-equipe` (o placeholder e a frase das notas que não
+vieram) e `o-resumo-da-conversa` (a frase de baixo do quadro e o texto
+copiado).
 
 ## O resumo da conversa — "Resumir" (01/11)
 
@@ -7897,6 +7996,32 @@ uma:
 que não depende do período, não é perguntada de novo quando ele muda (a cena
 esperava que fosse); e as linhas "pelo nome" da bancada são três, e não uma
 (a cena conferia só a do `autorSemId`).
+
+### A prova dependia da hora do dia (05/11, na PR do Quazar)
+
+A rodada do GitHub da PR do Quazar caiu às 11h37 de Brasília, e esta prova
+reprovou uma conferência: *"mediana da equipe: 14 min"* saía "13 min". Na
+`main`, a mesma reprovação. **Não era o painel, era a prova.** A bancada põe os
+atendimentos "de hoje" das 8h às 16h (no fuso de São Paulo, o da prova), e os
+que ainda não aconteceram ficam fora do período. Medido de hora em hora, o
+tempo de resposta da Camila e o meu:
+
+| horário de Brasília | Camila | eu | a mediana da equipe |
+|---|---|---|---|
+| da meia-noite às 8h | 13 min | 15 min | **14 min** (o da prova) |
+| das 8h às 11h | 15 min | 15 min | empatados, sem posição |
+| das 11h às 14h | 10 min | 15 min | 13 min |
+| depois das 14h | 10 min | 10 min | empatados, sem posição |
+
+A prova tinha sido escrita de madrugada, e passava só até as 8h. **Hoje o
+relógio da tela fica parado às 7h30 de hoje** (`ctx.clock.setFixedTime`), e a
+semente conta desse mesmo agora, e não do relógio da máquina: a tela e a
+semente concordam a qualquer hora. Rodada de novo às 11h50, ela passou
+inteira. Com o relógio parado às 20h, ela reprova (a dupla empata em 10 min),
+e é a conferência certa que reprova.
+
+**Régua que fica: prova que lê a bancada num período "até agora" fixa o
+relógio**, ou ela mede a hora em que rodou.
 
 ## A revisão do leiaute — o que se lê (05/11)
 

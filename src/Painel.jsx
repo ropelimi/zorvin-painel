@@ -72,6 +72,8 @@ import { rotuloDaHora, porQueNaoServe, semAColunaDaAgenda, aindaDaParaEditar } f
 import { useEstadoDoCopiloto, copilotoAparece, pedirSugestao, resumoAparece, pedirResumo, ajusteAparece, pedirAjuste,
          campoDoAjusteAparece, faixaDoCopilotoAparece, faixaDoCopilotoFecha } from "./copiloto.js";
 import ResumoDaConversa from "./ResumoDaConversa.jsx";
+import { NOME_DO_ASSISTENTE } from "./assistente.js";
+import { RostoDoAssistente } from "./RostoDoAssistente.jsx";
 import { mensagensDepoisDoResumo, textoDoResumo } from "./resumoDaConversa.js";
 import { ABAS_DA_SITUACAO, NOME_DA_SITUACAO } from "./abasDaSituacao.js";
 import { SEM_RESPONSAVEL, chaveDosResponsaveis, daChave, passaNosResponsaveis, recortarPelosResponsaveis,
@@ -14126,7 +14128,7 @@ export default function Painel({ sessao }) {
     let erroDesfazer = "";
     if (r.error) erroDesfazer = comOCodigo("Não consegui desfazer a lição.", r.error, "lições do copiloto");
     else if (naoGravouNada(r)) {
-      erroDesfazer = "Não desfez: o banco não deixou. A lição continua valendo; quem administra pode apagá-la na aba Copiloto, em Departamentos e acessos.";
+      erroDesfazer = `Não desfez: o banco não deixou. A lição continua valendo; quem administra pode apagá-la na aba ${NOME_DO_ASSISTENTE}, em Departamentos e acessos.`;
     }
     mexerNoCopiloto(id, (atual) => {
       if (!atual) return atual;
@@ -16910,9 +16912,9 @@ export default function Painel({ sessao }) {
       <button data-resumo-botao
               onClick={() => (resumoAqui ? fecharResumo() : resumirAConversa())}
               disabled={Boolean(resumoAqui && resumoAqui.fase === "pensando")}
-              title={resumoAqui && resumoAqui.fase === "pensando" ? "A IA está lendo a conversa…"
-                : resumoAqui ? "Fechar o resumo" : "Resumir a conversa (IA)"}
-              aria-label={resumoAqui ? "Fechar o resumo da conversa" : "Resumir a conversa com a IA"}
+              title={resumoAqui && resumoAqui.fase === "pensando" ? `O ${NOME_DO_ASSISTENTE} está lendo a conversa…`
+                : resumoAqui ? "Fechar o resumo" : `Resumir a conversa (${NOME_DO_ASSISTENTE})`}
+              aria-label={resumoAqui ? "Fechar o resumo da conversa" : `Resumir a conversa com o ${NOME_DO_ASSISTENTE}`}
               aria-pressed={Boolean(resumoAqui)}
               style={{ border: "none", background: resumoAqui ? C.listActive : "transparent",
                        cursor: resumoAqui && resumoAqui.fase === "pensando" ? "default" : "pointer",
@@ -16932,12 +16934,12 @@ export default function Painel({ sessao }) {
         mensagem" deixaria de caber numa linha. */}
     {!estreito && copilotoDisponivel && !modoNota && !editando && !rascunho.trim() && (
       <button data-copiloto-botao onClick={sugerirComCopiloto} disabled={copilotoPensando}
-              title={copilotoPensando ? "O copiloto está escrevendo a sugestão…" : "Sugerir resposta (copiloto)"}
-              aria-label="Sugerir resposta com o copiloto"
+              title={copilotoPensando ? `O ${NOME_DO_ASSISTENTE} está escrevendo a sugestão…` : `Sugerir resposta (${NOME_DO_ASSISTENTE})`}
+              aria-label={`Sugerir resposta com o ${NOME_DO_ASSISTENTE}`}
               style={{ border: "none", background: "transparent", cursor: copilotoPensando ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0, alignSelf: "flex-end" }}>
         {copilotoPensando
           ? <Loader2 size={21} color={C.green} style={{ animation: "zv-copiloto-gira 1s linear infinite" }} />
-          : <Sparkles size={21} color={C.textSecondary} />}
+          : <RostoDoAssistente tamanho={28} />}
       </button>
     )}
     {(rascunho.trim() || modoNota) ? (
@@ -19483,7 +19485,7 @@ export default function Painel({ sessao }) {
                         <button onClick={() => { setMenuDaConversa(false); sugerirComCopiloto(); }}
                                 data-copiloto-item
                                 style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
-                          <Sparkles size={17} color={C.green} /> Sugerir resposta
+                          <RostoDoAssistente tamanho={20} /> Sugerir resposta
                         </button>
                       )}
                       {/* O RESUMO (01/11), logo depois do copiloto: os dois de IA
@@ -20052,9 +20054,9 @@ export default function Painel({ sessao }) {
                       ? <Loader2 size={16} color={C.green} style={{ flexShrink: 0, animation: "zv-copiloto-gira 1s linear infinite" }} />
                       : copilotoAqui.fase === "erro"
                         ? <AlertCircle size={16} color="#e53935" style={{ flexShrink: 0 }} />
-                        : <Sparkles size={16} color={C.green} style={{ flexShrink: 0 }} />}
+                        : <RostoDoAssistente tamanho={22} />}
                     <div data-copiloto-frase style={{ flex: 1, minWidth: 0, fontSize: 13, color: C.textPrimary }}>
-                      <b style={{ color: copilotoAqui.fase === "erro" ? C.erroTexto : C.verdeTexto }}>Copiloto</b>
+                      <b style={{ color: copilotoAqui.fase === "erro" ? C.erroTexto : C.verdeTexto }}>{NOME_DO_ASSISTENTE}</b>
                       {" · "}
                       {copilotoAqui.fase === "pensando" ? "lendo a conversa para sugerir a resposta…"
                         : copilotoAqui.fase === "ajustando" ? "refazendo a mensagem com o seu pedido…"
@@ -20070,7 +20072,7 @@ export default function Painel({ sessao }) {
                     {copilotoAqui.fase === "atrasada" && !modoNota && !editando && (
                       <button data-copiloto-usar onClick={usarSugestaoAtrasada}
                               title={copilotoAqui.deAjuste ? "Trocar o que está na caixa pela mensagem refeita"
-                                                           : "Trocar o que está na caixa pela sugestão do copiloto"}
+                                                           : `Trocar o que está na caixa pela sugestão do ${NOME_DO_ASSISTENTE}`}
                               style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.verdeTexto || C.green,
                                        borderRadius: 14, padding: "4px 10px", fontSize: 12.5, cursor: "pointer", flexShrink: 0 }}>
                         {copilotoAqui.deAjuste ? "Usar a mensagem refeita" : "Usar a sugestão"}
@@ -20078,7 +20080,7 @@ export default function Painel({ sessao }) {
                     )}
                     {copilotoAqui.fase !== "pensando" && copilotoAqui.fase !== "ajustando" && (
                       <button data-copiloto-fechar onClick={() => mudarCopiloto(conversaId, null)}
-                              title="Fechar" aria-label="Fechar o aviso do copiloto"
+                              title="Fechar" aria-label={`Fechar o aviso do ${NOME_DO_ASSISTENTE}`}
                               style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", flexShrink: 0 }}>
                         <X size={18} color={C.textSecondary} />
                       </button>
@@ -20104,15 +20106,15 @@ export default function Painel({ sessao }) {
                                  mexerNoCopiloto(conversaId, (atual) => (atual ? { ...atual, pedido: "" } : atual));
                                }
                              }}
-                             placeholder="Pedir uma mudança ao Copiloto (ex.: não podemos passar o telefone do advogado)"
-                             aria-label="Pedir uma mudança ao Copiloto"
+                             placeholder={`Pedir uma mudança ao ${NOME_DO_ASSISTENTE} (ex.: não podemos passar o telefone do advogado)`}
+                             aria-label={`Pedir uma mudança ao ${NOME_DO_ASSISTENTE}`}
                              style={{ flex: 1, minWidth: 0, border: `1px solid ${C.divider}`, borderRadius: 16,
                                       padding: "6px 12px", fontSize: 13, background: C.inputBg || C.panelBg,
                                       color: C.textPrimary, outline: "none",
                                       opacity: copilotoAqui.fase === "ajustando" ? 0.7 : 1 }} />
                       <button type="submit" data-copiloto-pedir
                               disabled={copilotoAqui.fase === "ajustando" || !(copilotoAqui.pedido || "").trim()}
-                              title="Mandar o pedido ao Copiloto"
+                              title={`Mandar o pedido ao ${NOME_DO_ASSISTENTE}`}
                               style={{ border: "none", background: C.botao, color: "#fff", borderRadius: 14,
                                        padding: "5px 12px", fontSize: 12.5, cursor: "pointer", flexShrink: 0,
                                        opacity: copilotoAqui.fase === "ajustando" || !(copilotoAqui.pedido || "").trim() ? 0.55 : 1 }}>
@@ -20133,7 +20135,7 @@ export default function Painel({ sessao }) {
                       </div>
                       <button data-copiloto-desfazer onClick={desfazerLicaoDoCopiloto}
                               disabled={Boolean(copilotoAqui.desfazendo)}
-                              title="Desfazer: o Copiloto esquece esta lição"
+                              title={`Desfazer: o ${NOME_DO_ASSISTENTE} esquece esta lição`}
                               style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary,
                                        borderRadius: 14, padding: "4px 10px", fontSize: 12.5, cursor: "pointer", flexShrink: 0,
                                        opacity: copilotoAqui.desfazendo ? 0.55 : 1 }}>
@@ -20143,7 +20145,7 @@ export default function Painel({ sessao }) {
                   )}
                   {copilotoAqui.desfeita && !copilotoAqui.licao && (
                     <div data-copiloto-licao-desfeita style={{ fontSize: 12.5, color: C.textSecondary }}>
-                      Desfeito: o Copiloto esqueceu essa lição.
+                      Desfeito: o {NOME_DO_ASSISTENTE} esqueceu essa lição.
                     </div>
                   )}
                   {copilotoAqui.erroDesfazer && (

@@ -2,11 +2,15 @@ import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "./supabase.js";
 import { naoGravouNada, comOCodigo } from "./gravar.js";
 import { useEstadoDoCopiloto } from "./copiloto.js";
-import { Sparkles, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { NOME_DO_ASSISTENTE } from "./assistente.js";
+import { RostoDoAssistente } from "./RostoDoAssistente.jsx";
 import { LicoesDoCopiloto, NotasDoCopiloto, useNomesDaEquipe } from "./AprendizadoDoCopiloto.jsx";
 
 // ============================================================
-//  O MANUAL DO COPILOTO — a aba "Copiloto" de Departamentos e acessos
+//  O MANUAL DO COPILOTO — a aba "Quazar" de Departamentos e acessos. Desde
+//  05/11 o copiloto tem nome e rosto (`assistente.js`, `RostoDoAssistente.jsx`):
+//  a TELA diz Quazar, e o código, as rotas e as tabelas continuam "copiloto".
 //
 //  O copiloto lê, a cada clique em "Sugerir resposta", as últimas mensagens
 //  da conversa aberta, as mensagens rápidas da equipe e ESTE texto. É aqui
@@ -53,13 +57,13 @@ export function ManualDoCopiloto({ cx, C, departamentos = [], telefones = [] }) 
     const { data, error } = await supabase.from("zorvin_copiloto")
       .select("instrucoes, atualizado_em").maybeSingle();
     if (error) {
-      setLido({ erro: comOCodigo("Não consegui ler o manual do copiloto.", error, "manual do copiloto") });
+      setLido({ erro: comOCodigo(`Não consegui ler o manual do ${NOME_DO_ASSISTENTE}.`, error, "manual do copiloto") });
       return false;
     }
     // SEM A LINHA, o "Salvar" não teria o que atualizar. O script 024 a cria
     // sempre; sem ela, a instalação está pela metade, e isso é dito.
     if (!data) {
-      setLido({ erro: "O manual do copiloto ainda não está pronto no banco (falta a linha que o script 024 cria). Confira em “Atualizações do banco”." });
+      setLido({ erro: `O manual do ${NOME_DO_ASSISTENTE} ainda não está pronto no banco (falta a linha que o script 024 cria). Confira em “Atualizações do banco”.` });
       return false;
     }
     setLido({ instrucoes: data.instrucoes || "", atualizado_em: data.atualizado_em || null });
@@ -96,26 +100,26 @@ export function ManualDoCopiloto({ cx, C, departamentos = [], telefones = [] }) 
 
   // O QUE A PONTE DIZ DO COPILOTO — ligado, desligado, ou não deu para saber.
   // A chave é da ponte, e ninguém a vê daqui; o que se diz é se ela existe.
-  const situacao = !estado ? { cor: C.textSecondary, frase: "Perguntando à ponte se o copiloto está ligado…" }
+  const situacao = !estado ? { cor: C.textSecondary, frase: `Perguntando à ponte se o ${NOME_DO_ASSISTENTE} está ligado…` }
     : estado.ligado === true ? { cor: C.green, frase: `Ligado${estado.modelo ? ` (${estado.modelo})` : ""}: o botão “Sugerir resposta” aparece na caixa de escrever.` }
     : estado.ligado === false ? { cor: C.erroTexto, frase: "Ainda não está ligado: falta a variável ANTHROPIC_API_KEY na Render (serviço da ponte). Enquanto ela não existir, o botão não aparece para a equipe." }
-    : { cor: C.ambarTexto, frase: "Não consegui perguntar à ponte se o copiloto está ligado. O botão aparece assim mesmo, e o clique diz o que estiver errado." };
+    : { cor: C.ambarTexto, frase: `Não consegui perguntar à ponte se o ${NOME_DO_ASSISTENTE} está ligado. O botão aparece assim mesmo, e o clique diz o que estiver errado.` };
 
   return (
     <div data-manual-do-copiloto>
       <div style={cx.secao}>
-        <div style={cx.titulo}><Sparkles size={16} color={C.green} /> O copiloto</div>
+        <div style={cx.titulo} data-titulo-do-assistente><RostoDoAssistente tamanho={26} /> O {NOME_DO_ASSISTENTE}, o assistente do Zorvin</div>
         <div data-copiloto-ligado={estado ? String(estado.ligado) : "perguntando"}
              style={{ ...cx.dica, color: situacao.cor, fontWeight: 600 }}>
           {situacao.frase}
         </div>
         <div style={{ ...cx.dica, marginBottom: 0 }}>
-          Ao clicar em <b>Sugerir resposta</b>, o copiloto lê as últimas 40 mensagens da
+          Ao clicar em <b>Sugerir resposta</b>, o {NOME_DO_ASSISTENTE} lê as últimas 40 mensagens da
           conversa aberta (os áudios, pela transcrição), as mensagens rápidas da equipe, o
           manual abaixo, as lições que a equipe ensinou e o que ele aprendeu lendo as conversas
           daquele telefone e daquele departamento — e escreve uma resposta na caixa. <b>Nada sai
           sozinho</b>: quem atende lê, pede uma mudança se precisar e só então envia. As notas
-          internas não vão para o copiloto.
+          internas não vão para o {NOME_DO_ASSISTENTE}.
         </div>
       </div>
 

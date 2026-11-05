@@ -1,5 +1,7 @@
 import React from "react";
-import { Sparkles, Loader2, X, Copy, RotateCcw, AlertCircle } from "lucide-react";
+import { Loader2, X, Copy, RotateCcw, AlertCircle } from "lucide-react";
+import { NOME_DO_ASSISTENTE } from "./assistente.js";
+import { RostoDoAssistente } from "./RostoDoAssistente.jsx";
 import { PARTES_DO_RESUMO, fraseDaLeitura } from "./resumoDaConversa.js";
 
 // ============================================================
@@ -48,7 +50,7 @@ export default function ResumoDaConversa({ C, escuro, estreito, estado, novas = 
                   borderLeft: `4px solid ${corDaBorda}`, borderRadius: 10,
                   boxShadow: "0 6px 20px rgba(0,0,0,.25)", padding: estreito ? "10px 12px" : "12px 16px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <Sparkles size={17} color={C.green} style={{ flexShrink: 0 }} />
+        <RostoDoAssistente tamanho={24} />
         <b style={{ fontSize: 14, flex: 1, minWidth: 120 }}>Resumo da conversa</b>
         {fase === "pronto" && (
           <button data-resumo-copiar onClick={aoCopiar} title="Copiar o resumo (texto puro)" style={botao}>
@@ -56,7 +58,7 @@ export default function ResumoDaConversa({ C, escuro, estreito, estado, novas = 
           </button>
         )}
         {fase === "pronto" && (
-          <button data-resumo-de-novo onClick={aoResumirDeNovo} title="Pedir um resumo novo à IA"
+          <button data-resumo-de-novo onClick={aoResumirDeNovo} title={`Pedir um resumo novo ao ${NOME_DO_ASSISTENTE}`}
                   aria-label="Resumir de novo" style={botao}>
             <RotateCcw size={14} /> {estreito ? "" : "Resumir de novo"}
           </button>
@@ -124,7 +126,7 @@ export default function ResumoDaConversa({ C, escuro, estreito, estado, novas = 
             </div>
           )}
           <div data-resumo-aviso-da-ia style={{ marginTop: 10, fontSize: 11.5, color: C.textSecondary }}>
-            Feito pela IA a partir da conversa e das notas internas: confira na conversa antes de agir.
+            Feito pelo {NOME_DO_ASSISTENTE}, a IA do Zorvin, a partir da conversa e das notas internas: confira na conversa antes de agir.
           </div>
         </>
       )}
