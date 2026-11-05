@@ -70,14 +70,17 @@ import { supabase } from "./supabase";
 import { nomeDoContato } from "./contato.js";
 import { telefoneLegivel } from "./numeros.js";
 import { diasDesde, DIAS_DO_VERMELHO } from "./espera.js";
+import { Titulo, Grafico } from "./blocosDoPainel.jsx";
 import {
   juntarAEquipe, colunasVisiveis, colunasDaFicha, fraseDoQueFaltou, ordenarAEquipe,
-  sentidoDeComeco, mediana, aPessoaNaEquipe, baseDaComparacao, linhasDoCabecalho,
+  sentidoDeComeco, mediana, aPessoaNaEquipe, baseDaComparacao, linhasDoCabecalho, COLUNAS_DA_EQUIPE,
 } from "./painelDeGestao.js";
+import { diasDaCarteira, rotuloDasAtrasadas, fraseDasAtrasadas, pontosDaFicha } from "./visaoGeral.js";
+import VisaoGeral, { CORES_DO_STATUS } from "./VisaoGeral.jsx";
 import {
   RefreshCw, AlertCircle, Table2, BarChart3, Info, Calendar,
   ChevronLeft, ChevronRight, ChevronDown, Check, X, Users, Phone, Building2,
-  ListChecks, Download, UserCheck, SquareKanban, Ticket, Printer,
+  ListChecks, Download, UserCheck, SquareKanban, Ticket, Printer, CircleCheck, TriangleAlert,
 } from "lucide-react";
 
 const DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -277,6 +280,8 @@ function useLeitura(nome, args) {
 /** As seções da tela, na ordem dela: é o que o menu de imprimir oferece e o
  *  que a navegação do alto leva. */
 const SECOES_DO_PAINEL = [
+  // A VISÃO GERAL (05/11) vem primeiro: é o resumo de tudo o que está embaixo.
+  { id: "visao", curto: "Visão geral", rotulo: "Visão geral" },
   { id: "equipe", curto: "Equipe" },
   { id: "protocolos", curto: "Protocolos", rotulo: "Protocolos de atendimento" },
   { id: "atendimentos", curto: "Mensagens", rotulo: "Atendimentos e mensagens" },
@@ -345,6 +350,9 @@ export default function PainelNumeros({ C: CDaTela, CClaro = null, modo: modoDaT
     return {
       painel: veio(lPainel),
       protocolos: veio(lProtocolos),
+      // O TEMPO EM EXPEDIENTE (script 052 da ponte): vem com os protocolos, e
+      // o banco de antes não manda a chave do prazo — sem ela, a coluna some.
+      expediente: veio(lProtocolos) && Object.prototype.hasOwnProperty.call(lProtocolos.dados, "prazo"),
       tratados: veio(lTratados),
       // Quem não administra recebe só a PRÓPRIA carteira (o banco recorta):
       // a dos colegas não veio, e não é zero.
@@ -358,6 +366,9 @@ export default function PainelNumeros({ C: CDaTela, CClaro = null, modo: modoDaT
     carteira: (lCarteira.dados && lCarteira.dados.linhas) || [],
     fontes, meuId,
   }) : null), [fontes, lPainel.dados, lProtocolos.dados, lTratados.dados, lCarteira.dados, meuId]);
+  // A RÉGUA DAS ATRASADAS (script 051 da ponte): "Há +2 dias" com ele, "Há +3
+  // dias" no banco de antes. É a resposta do banco que diz, e não a tela.
+  const diasDaRegua = diasDaCarteira(lCarteira.dados);
 
   // ---------- a linguagem visual ----------
   const sombra = modo === "escuro"
@@ -602,10 +613,20 @@ export default function PainelNumeros({ C: CDaTela, CClaro = null, modo: modoDaT
         <CabecalhoDaImpressao linhas={linhasDoPapel}
                               secoesFora={secoes.filter((s) => !paraImprimir.has(s.id)).map((s) => s.rotulo)} />
 
-        {/* A PESSOA E A EQUIPE (05/11): o pedido era o atendimento de CADA
-            pessoa, e ele vem primeiro. */}
+        {/* A VISÃO GERAL (05/11): os indicadores, os destaques e as roscas,
+            das leituras que a tela já faz (ver VisaoGeral.jsx). */}
+        <section id="secao-do-painel-visao" data-secao-do-painel="visao" data-nao-imprime={fora("visao")}>
+          <VisaoGeral C={C} estilos={estilos} modo={modo} lProtocolos={lProtocolos} lCarteira={lCarteira}
+                      departamentos={departamentos} departamento={departamento}
+                      quem={quem} nome={nomeDaPessoa} sou={quem != null && String(quem) === String(meuId)}
+                      souAdmin={souAdmin} rotuloPeriodo={rotuloDoPeriodo(periodo)}
+                      aoIrPara={irPara}
+                      aoEscolherDepartamento={(id) => setDepartamento((v) => (String(v) === String(id) ? null : String(id)))} />
+        </section>
+
+        {/* A PESSOA E A EQUIPE (05/11): o atendimento de CADA pessoa. */}
         <section id="secao-do-painel-equipe" data-secao-do-painel="equipe" data-nao-imprime={fora("equipe")}>
-          <Titulo C={C} primeiro>
+          <Titulo C={C}>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
               <Users size={16} /> {quem != null ? "A pessoa e a equipe" : "A equipe"}
             </span>
@@ -618,12 +639,14 @@ export default function PainelNumeros({ C: CDaTela, CClaro = null, modo: modoDaT
           )}
           {equipe && quem != null && (
             <FichaDaPessoa C={C} estilos={estilos} cores={cores} linhas={equipe.linhas} fontes={fontes}
-                           quem={quem} nome={nomeDaPessoa} sou={String(quem) === String(meuId)} periodo={periodo} />
+                           quem={quem} nome={nomeDaPessoa} sou={String(quem) === String(meuId)} periodo={periodo}
+                           dias={diasDaRegua} />
           )}
           {equipe && (
             <AEquipe C={C} estilos={estilos} cores={cores} linhas={equipe.linhas} fontes={fontes}
                      foraDaTabela={equipe.foraDaTabela} faltou={fraseDoQueFaltou(fontes)}
-                     quem={quem} meuId={meuId} podeEscolher={souAdmin} aoEscolher={escolherPessoa} />
+                     quem={quem} meuId={meuId} podeEscolher={souAdmin} aoEscolher={escolherPessoa}
+                     dias={diasDaRegua} />
           )}
         </section>
 
@@ -815,8 +838,8 @@ export default function PainelNumeros({ C: CDaTela, CClaro = null, modo: modoDaT
 const formatarColuna = (c, v) => (v == null ? "—" : c.tipo === "tempo" ? tempo(v) : numero(v));
 const posicaoPorExtenso = (p) => (p.posicao == null ? "" : `${p.posicao}º de ${p.de}`);
 
-function AEquipe({ C, estilos, cores, linhas, fontes, foraDaTabela, faltou, quem, meuId, podeEscolher, aoEscolher }) {
-  const colunas = useMemo(() => colunasVisiveis(fontes), [fontes]);
+function AEquipe({ C, estilos, cores, linhas, fontes, foraDaTabela, faltou, quem, meuId, podeEscolher, aoEscolher, dias }) {
+  const colunas = useMemo(() => colunasVisiveis(fontes, dias), [fontes, dias]);
   const [metrica, setMetrica] = useState("atendimentos");
   const [ordem, setOrdem] = useState({ coluna: "atendimentos", sentido: "desc" });
   // A MÉTRICA TEM DE EXISTIR entre as colunas que vieram: sem a função do
@@ -1012,7 +1035,7 @@ function AEquipe({ C, estilos, cores, linhas, fontes, foraDaTabela, faltou, quem
           </table>
         </div>
         <div style={{ ...estilos.nota, marginTop: 10, fontSize: 12 }} data-notas-da-equipe>
-          Tempos em mediana. A carteira e o “há 3+ dias” são de agora; o resto é do período.
+          Tempos em mediana. A carteira e o “{rotuloDasAtrasadas(dias)}” são de agora; o resto é do período.
           {podeEscolher ? " Clique numa pessoa para ver a ficha dela e recortar a tela inteira nela." : ""}
           {fontes.carteira === "parcial" && (
             <> A carteira de cada colega é só para quem administra: a sua está na ficha, acima.</>
@@ -1035,9 +1058,17 @@ function AEquipe({ C, estilos, cores, linhas, fontes, foraDaTabela, faltou, quem
    mediana, e não a média: uma pessoa que pegou o plantão do mês puxa a média
    e não a mediana. A posição conta só quem tem o número — quem não respondeu
    ninguém não entra no ranking do tempo —, e o empate divide a posição. */
-function FichaDaPessoa({ C, estilos, cores, linhas, fontes, quem, nome, sou, periodo }) {
+function FichaDaPessoa({ C, estilos, cores, linhas, fontes, quem, nome, sou, periodo, dias }) {
   const l = linhas.find((x) => x.id != null && String(x.id) === String(quem)) || null;
-  const colunas = colunasDaFicha(fontes);
+  const colunas = colunasDaFicha(fontes, dias);
+  // OS PONTOS PARA A CONVERSA DE FEEDBACK (05/11, `pontosDaFicha`): só onde a
+  // comparação diz alguma coisa, e com o número junto. A comparação só sai
+  // das fontes que vieram inteiras — a parcial não tem com quem comparar.
+  const fonteDe = (id) => (COLUNAS_DA_EQUIPE.find((x) => x.id === id) || {}).fonte;
+  const pontos = l ? pontosDaFicha({
+    linha: l, dias,
+    comparar: (id) => (fontes[fonteDe(id)] === true ? aPessoaNaEquipe(linhas, l.id, id) : null),
+  }) : null;
   return (
     <div style={{ ...estilos.cartao, borderColor: C.greenDark, marginBottom: 12 }} data-ficha-da-pessoa={nome} data-bloco-de-impressao>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -1106,6 +1137,35 @@ function FichaDaPessoa({ C, estilos, cores, linhas, fontes, quem, nome, sou, per
               </div>
             );
           })}
+        </div>
+      )}
+      {pontos && (
+        <div data-pontos-da-ficha style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.divider}` }}>
+          <div style={{ ...estilos.rotulo, fontSize: 10.5 }}>Para a conversa de feedback</div>
+          {!pontos.fortes.length && !pontos.atencao.length && (
+            <div style={{ ...estilos.nota, marginTop: 6 }} data-pontos-vazios>
+              Nada que se destaque: os números estão perto da mediana da equipe.
+            </div>
+          )}
+          {(pontos.fortes.length > 0 || pontos.atencao.length > 0) && (
+            <div style={{ display: "grid", gap: 10, marginTop: 8, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+              {[
+                { chave: "fortes", titulo: "Pontos fortes", itens: pontos.fortes, Icone: CircleCheck, cor: CORES_DO_STATUS.bom, texto: C.verdeTexto },
+                { chave: "atencao", titulo: "Pontos de atenção", itens: pontos.atencao, Icone: TriangleAlert, cor: CORES_DO_STATUS.atencao, texto: C.ambarTexto },
+              ].filter((g) => g.itens.length).map((g) => (
+                <div key={g.chave} data-pontos={g.chave}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: g.texto }}>
+                    <g.Icone size={15} color={g.cor} aria-hidden="true" /> {g.titulo}
+                  </div>
+                  <ul style={{ margin: "6px 0 0", paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>
+                    {g.itens.map((x) => (
+                      <li key={x.id} data-ponto={x.id} style={{ fontSize: 13, lineHeight: 1.45, color: C.textPrimary }}>{x.texto}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1456,15 +1516,6 @@ function Escolha({ C, sombra, icone: Icone, opcoes, valor, definir, grupo }) {
 /* ================================================================
    TÍTULO DE SEÇÃO
    ================================================================ */
-function Titulo({ C, children, primeiro = false }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, margin: primeiro ? "2px 0 10px" : "28px 0 10px" }}>
-      <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0, letterSpacing: -0.2 }}>{children}</h3>
-      <div style={{ flex: 1, height: 1, background: C.divider }} />
-    </div>
-  );
-}
-
 /* ================================================================
    CARTÕES DE NÚMERO
    ================================================================ */
@@ -1553,53 +1604,6 @@ function Situacao({ t, C, cores, estilos }) {
         {" "}<b style={{ color: C.textPrimary }}>Encerrado</b> é o que foi respondido e está parado
         há mais de 6 horas; ninguém precisa clicar em nada para encerrar.
       </div>
-    </div>
-  );
-}
-
-/* ================================================================
-   O ENVELOPE DE UM GRÁFICO — legenda e botão de tabela
-   ================================================================
-   TODO gráfico tem sua tabela. Não é enfeite de acessibilidade: é o que
-   permite conferir o desenho, copiar para uma planilha, e ler a tela sem
-   depender de distinguir verde de azul. */
-function Grafico({ C, estilos, legenda, colunas, linhas, desenho, vazio, rodape }) {
-  const [tabela, setTabela] = useState(false);
-  return (
-    <div style={estilos.cartao}>
-      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 14 }}>
-        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", flex: "1 1 auto" }}>
-          {(legenda || []).map((l) => (
-            <span key={l.nome} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: C.textSecondary }}>
-              <span style={{ width: 10, height: 10, borderRadius: 3, background: l.cor }} /> {l.nome}
-            </span>
-          ))}
-        </div>
-        <button onClick={() => setTabela((v) => !v)} title={tabela ? "Ver o gráfico" : "Ver os números"} data-nao-imprime
-          style={{ display: "flex", alignItems: "center", gap: 5, minHeight: 30, padding: "4px 10px",
-                   border: `1px solid ${C.divider}`, background: "transparent", color: C.textSecondary,
-                   borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-          {tabela ? <BarChart3 size={13} /> : <Table2 size={13} />} {tabela ? "Gráfico" : "Tabela"}
-        </button>
-      </div>
-
-      {vazio && <div style={{ ...estilos.nota, padding: "18px 0" }}>Nada neste período.</div>}
-      {!vazio && !tabela && desenho()}
-
-      {!vazio && tabela && (
-        <div style={{ maxHeight: 320, overflowY: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr>{colunas.map((c, i) => <th key={c} style={i ? estilos.thNum : estilos.th}>{c}</th>)}</tr></thead>
-            <tbody>
-              {linhas.map((l, i) => (
-                <tr key={i}>{l.map((v, j) => <td key={j} style={j ? estilos.num : estilos.td}>{v}</td>)}</tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {rodape && <div style={{ ...estilos.nota, marginTop: 12 }}>{rodape}</div>}
     </div>
   );
 }
@@ -2057,6 +2061,14 @@ function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, leitura, quem,
     em_atendimento: { texto: "em atendimento", cor: cores.saiu },
     sem_resposta: { texto: "esperando resposta", cor: cores.aviso },
   };
+  // O PRAZO DE CADA PROTOCOLO (script 052 da ponte): só nos que o cliente
+  // abriu. A palavra numa cor de texto, e não na cor do status.
+  const PRAZO_DO_PROTOCOLO = {
+    no_prazo: { texto: "no prazo", cor: C.verdeTexto },
+    atrasado: { texto: "fora do prazo", cor: C.ambarTexto },
+    sem_acao: { texto: "prazo vencido", cor: C.erroTexto },
+    aguardando: { texto: "ainda no prazo", cor: C.textSecondary },
+  };
   const quemAbriu = (x) => x.origem === "cliente" ? "o cliente escreveu"
     : x.origem === "reabertura" ? `reaberto por ${x.aberto_por_nome || "alguém da equipe"}`
     : "a equipe começou a conversa";
@@ -2068,10 +2080,14 @@ function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, leitura, quem,
   function baixarPlanilha() {
     const regs = (r && r.registros) || [];
     const campo = campoDaPlanilha;
+    // O PRAZO (script 052 da ponte) vai no FIM: as colunas de antes ficam no
+    // lugar, e a planilha que alguém já monta toda semana não muda de forma.
+    const comPrazo = regs.some((x) => Object.prototype.hasOwnProperty.call(x, "prazo"));
     const linhas = [
       ["Protocolo", "Aberto em", "Como começou", "Cliente", "Número", "Telefone do escritório",
        "Primeira resposta em", "Quem respondeu", "Minutos até a primeira resposta",
-       "Finalizado em", "Quem finalizou", "Minutos até finalizar", "Situação"],
+       "Finalizado em", "Quem finalizou", "Minutos até finalizar", "Situação",
+       ...(comPrazo ? ["Prazo", "Minutos de expediente até a primeira ação", "Prazo do departamento (minutos)"] : [])],
       ...regs.map((x) => [
         x.protocolo,
         new Date(x.aberto_em).toLocaleString("pt-BR"),
@@ -2086,6 +2102,9 @@ function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, leitura, quem,
         x.finalizado_nome || "",
         minutos(x.aberto_em, x.finalizado_em),
         (ESTADO[x.estado] || {}).texto || "",
+        ...(comPrazo ? [(PRAZO_DO_PROTOCOLO[x.prazo] || {}).texto || "",
+                        x.minutos_ate_acao == null ? "" : String(x.minutos_ate_acao),
+                        x.limite == null ? "" : String(x.limite)] : []),
       ]),
     ];
     const texto = "\ufeff" + linhas.map((l) => l.map(campo).join(";")).join("\r\n");
@@ -2131,6 +2150,7 @@ function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, leitura, quem,
         const pr = tempos.primeira_resposta || {}, fi = tempos.finalizar || {};
         const regs = r.registros || [];
         const pessoas = r.por_pessoa || [];
+        const pessoasComExpediente = pessoas.some((p) => Object.prototype.hasOwnProperty.call(p, "primeira_mediana_expediente"));
         // OS DIAS SEM NADA ENTRAM COMO ZERO, como no relatório do "Já tratei":
         // o banco só devolve os dias que tiveram protocolo. Completar não é
         // contar — o número de cada dia continua vindo do banco.
@@ -2181,6 +2201,11 @@ function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, leitura, quem,
               <Tempo C={C} estilos={estilos} etiqueta="Até a primeira resposta"
                      mediana={pr.mediana} media={pr.media} quantos={pr.quantos}
                      ajuda={`Do momento em que o cliente abriu o protocolo até a primeira resposta da equipe. Só nos protocolos que o cliente abriu: na conversa começada por nós e no Reabrir não houve cliente esperando.${r.so_meu ? " Aqui, só as primeiras respostas da pessoa." : ""}`} />
+              {Object.prototype.hasOwnProperty.call(pr, "mediana_expediente") && (
+                <Tempo C={C} estilos={estilos} etiqueta="Até a 1ª resposta, no expediente"
+                       mediana={pr.mediana_expediente} media={pr.media_expediente} quantos={pr.quantos}
+                       ajuda={`O mesmo tempo, contando só o horário de expediente do departamento (a aba “Fora do horário”, com os feriados): a noite e o fim de semana ficam de fora.${r.so_meu ? " Aqui, só as primeiras respostas da pessoa." : ""}`} />
+              )}
               <Tempo C={C} estilos={estilos} etiqueta="Até finalizar"
                      mediana={fi.mediana} media={fi.media} quantos={fi.quantos}
                      ajuda={`Do começo do protocolo até o “Finalizar”, em todo protocolo finalizado.${r.so_meu ? " Aqui, só os que a pessoa finalizou." : ""}`} />
@@ -2211,6 +2236,7 @@ function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, leitura, quem,
                       <th style={estilos.th}>Pessoa</th>
                       <th style={estilos.thNum}>Primeiras respostas</th>
                       <th style={estilos.thNum}>Até responder</th>
+                      {pessoasComExpediente && <th style={estilos.thNum} title="A mediana contando só o horário de expediente">No expediente</th>}
                       <th style={estilos.thNum}>Finalizou</th>
                       <th style={estilos.thNum}>Até finalizar</th>
                     </tr></thead>
@@ -2233,6 +2259,11 @@ function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, leitura, quem,
                             </td>
                             <td style={estilos.num} data-primeiras={p.primeiras}>{numero(p.primeiras)}</td>
                             <td style={estilos.num}>{p.primeiras ? tempo(p.primeira_mediana) : "—"}</td>
+                            {pessoasComExpediente && (
+                              <td style={estilos.num} data-primeira-expediente={p.primeira_mediana_expediente == null ? "" : String(p.primeira_mediana_expediente)}>
+                                {p.primeiras ? tempo(p.primeira_mediana_expediente) : "—"}
+                              </td>
+                            )}
                             <td style={estilos.num} data-finalizou={p.finalizou}>{numero(p.finalizou)}</td>
                             <td style={estilos.num}>{p.finalizou ? tempo(p.finalizar_mediana) : "—"}</td>
                           </tr>
@@ -2278,6 +2309,15 @@ function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, leitura, quem,
                         {nomeDoTelefone(x.advogado_id) && ` · ${nomeDoTelefone(x.advogado_id)}`}
                       </span>
                       <span style={{ flex: 1 }} />
+                      {PRAZO_DO_PROTOCOLO[x.prazo] && (
+                        <span data-prazo-do-protocolo={x.prazo}
+                              title={x.minutos_ate_acao != null && x.limite != null
+                                ? `${x.minutos_ate_acao} min de expediente até a primeira ação · prazo de ${x.limite} min` : undefined}
+                              style={{ fontSize: 11.5, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
+                                       color: PRAZO_DO_PROTOCOLO[x.prazo].cor, border: `1px solid ${C.divider}` }}>
+                          {PRAZO_DO_PROTOCOLO[x.prazo].texto}
+                        </span>
+                      )}
                       <span data-estado-do-protocolo style={{ fontSize: 11.5, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
                                      color: est.cor, border: `1px solid ${C.divider}` }}>{est.texto}</span>
                     </div>
@@ -2342,6 +2382,8 @@ function RelatorioResponsaveis({ C, estilos, cores, leitura, souAdmin, meuId }) 
   const linhas = (r && r.linhas) || [];
   const sem = r && r.sem_responsavel;
   const total = (r && r.total) || {};
+  // A RÉGUA QUE O BANCO USOU (`dias_atrasada`, script 051 da ponte).
+  const dias = diasDaCarteira(r);
   const maiorCarteira = Math.max(1, ...linhas.map((l) => Number(l.conversas || 0)),
                                  sem ? Number(sem.conversas || 0) : 0);
 
@@ -2367,8 +2409,10 @@ function RelatorioResponsaveis({ C, estilos, cores, leitura, souAdmin, meuId }) 
         </td>
         <td style={estilos.num} data-conversas={l.conversas}>{numero(l.conversas)}</td>
         <td style={estilos.num} data-esperando={l.esperando}>{numero(l.esperando)}</td>
-        {/* O VERMELHO É O DA LISTA: três dias ou mais. Uma cor diferente aqui
-            ensinaria duas réguas para a mesma coisa. */}
+        {/* O VERMELHO MARCA QUE HÁ ALGUÉM ESPERANDO além da régua do banco
+            (2 dias com o script 051 da ponte, a mesma da tela "Esperando
+            resposta"). A "mais antiga", ao lado, continua com o vermelho da
+            lista: três dias ou mais. */}
         <td style={{ ...estilos.num, color: atrasadas ? C.esperaVermelha : C.textSecondary, fontWeight: atrasadas ? 700 : 400 }}
             data-atrasadas={l.atrasadas}>{numero(atrasadas)}</td>
         <td style={{ ...estilos.num, color: dias != null && dias >= DIAS_DO_VERMELHO ? C.esperaVermelha : C.textPrimary }}
@@ -2424,7 +2468,7 @@ function RelatorioResponsaveis({ C, estilos, cores, leitura, souAdmin, meuId }) 
                 <th style={estilos.th}>Responsável</th>
                 <th style={estilos.thNum}>Conversas</th>
                 <th style={estilos.thNum} title="Com cliente esperando resposta">Esperando</th>
-                <th style={estilos.thNum} title="Esperando há 3 dias ou mais — o vermelho da lista">Há 3+ dias</th>
+                <th style={estilos.thNum} title={`Esperando ${fraseDasAtrasadas(dias)}`} data-rotulo-das-atrasadas>{rotuloDasAtrasadas(dias)}</th>
                 <th style={estilos.thNum} title="A espera do cliente mais esquecido">Mais antiga</th>
                 <th style={estilos.thNum}>Não lidas</th>
               </tr></thead>
@@ -2440,7 +2484,7 @@ function RelatorioResponsaveis({ C, estilos, cores, leitura, souAdmin, meuId }) 
             {!r.so_meu && (linhas.length + (sem ? 1 : 0)) > 1 && (
               <div style={{ ...estilos.nota, marginTop: 10 }} data-responsaveis-total>
                 No total: {numero(total.conversas)} conversas, {numero(total.esperando)} esperando,{" "}
-                <b style={{ color: Number(total.atrasadas) ? C.esperaVermelha : C.textPrimary }}>{numero(total.atrasadas)}</b> há 3 dias ou mais.
+                <b style={{ color: Number(total.atrasadas) ? C.esperaVermelha : C.textPrimary }}>{numero(total.atrasadas)}</b> {fraseDasAtrasadas(dias)}.
               </div>
             )}
           </div>

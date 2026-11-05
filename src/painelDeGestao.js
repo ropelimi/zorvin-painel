@@ -28,7 +28,7 @@
  *  daria zero — comparar alguém com zero não diz nada.
  *    - "fez": quem tem o número maior que zero (fez aquilo no período);
  *    - "tem": quem tem o número (o tempo: quem não respondeu ninguém não tem);
- *    - "carteira": quem tem carteira (o "há 3+ dias" de quem tem conversa).
+ *    - "carteira": quem tem carteira (o "há +2 dias" de quem tem conversa).
  *  `semPosicao`: a carteira é volume de trabalho, e não desempenho — "1º de
  *  5" se leria como o melhor, e é só o maior. */
 export const COLUNAS_DA_EQUIPE = [
@@ -42,15 +42,36 @@ export const COLUNAS_DA_EQUIPE = [
     ajuda: "Mediana do tempo entre o atendimento começar e esta pessoa pegá-lo." },
   { id: "primeiras", fonte: "protocolos", rotulo: "1ª resposta", tipo: "numero", base: "fez",
     ajuda: "Protocolos que o cliente abriu e em que a primeira resposta foi desta pessoa." },
+  // O TEMPO EM HORÁRIO DE EXPEDIENTE (script 052 da ponte, 05/11). O tempo do
+  // relógio ("Resposta", acima) conta noite, fim de semana e feriado: quem
+  // chega às 8h e responde a fila da noite parece a pessoa mais lenta da
+  // equipe. A fonte é `expediente`, e não `protocolos`: o banco sem o 052
+  // não manda a chave, e a coluna some em vez de mostrar "—" para todos.
+  { id: "primeiraExpediente", fonte: "expediente", rotulo: "1ª resp. (exped.)", tipo: "tempo", menorMelhor: true, base: "tem",
+    ajuda: "Mediana do tempo, só em horário de expediente, entre o cliente abrir o atendimento e esta pessoa dar a primeira resposta. Noite, fim de semana e feriado não contam." },
   { id: "finalizou", fonte: "protocolos", rotulo: "Finalizou", tipo: "numero", base: "fez",
     ajuda: "Protocolos que esta pessoa finalizou no período." },
   { id: "tratados", fonte: "tratados", rotulo: "Já tratei", tipo: "numero", base: "fez",
     ajuda: "Vezes que a pessoa marcou “Já tratei” no período (os desfeitos não contam)." },
   { id: "carteira", fonte: "carteira", rotulo: "Carteira", tipo: "numero", base: "fez", semPosicao: true,
     ajuda: "Conversas em que a pessoa é a responsável, agora (não usa o período)." },
-  { id: "atrasadas", fonte: "carteira", rotulo: "Há 3+ dias", tipo: "numero", alerta: true, base: "carteira", semPosicao: true,
+  // O RÓTULO SAI DA RÉGUA QUE O BANCO USOU (`comARegua`): "Há +2 dias" com o
+  // script 051 da ponte, "Há +3 dias" no banco de antes. Escrito aqui à mão,
+  // ele diria um número e a conta usaria outro.
+  { id: "atrasadas", fonte: "carteira", rotulo: "Há +3 dias", tipo: "numero", alerta: true, base: "carteira", semPosicao: true,
     ajuda: "Conversas da carteira em que o cliente espera resposta há 3 dias ou mais, agora." },
 ];
+
+/** A coluna das atrasadas com a régua da carteira (`dias_atrasada`, script
+ *  051 da ponte). Sem a régua, as colunas como estão. */
+export function comARegua(colunas, dias) {
+  const d = Number(dias);
+  if (!Number.isInteger(d) || d < 1) return colunas;
+  return colunas.map((c) => (c.id !== "atrasadas" ? c : {
+    ...c, rotulo: `Há +${d} dias`,
+    ajuda: `Conversas da carteira em que o cliente espera resposta há ${d} dias ou mais, agora.`,
+  }));
+}
 
 const NOMES_DAS_FONTES = {
   painel: "os atendimentos e as mensagens",
@@ -62,7 +83,7 @@ const NOMES_DAS_FONTES = {
 const vazia = (chave) => ({
   chave, id: null, nome: "", pelonome: false, sou: false, temPainel: false,
   atendimentos: null, enviadas: null, resposta: null, espera: null,
-  primeiras: null, primeiraMediana: null, finalizou: null, finalizarMediana: null,
+  primeiras: null, primeiraMediana: null, primeiraExpediente: null, finalizou: null, finalizarMediana: null,
   tratados: null, carteira: null, esperando: null, atrasadas: null, maisAntiga: null, naoLidas: null,
 });
 
@@ -119,6 +140,7 @@ export function juntarAEquipe({ painel = [], protocolos = [], tratados = [], car
       nomear(l, p.nome);
       l.primeiras = n(p.primeiras) || 0;
       l.primeiraMediana = n(p.primeira_mediana);
+      l.primeiraExpediente = n(p.primeira_mediana_expediente);
       l.finalizou = n(p.finalizou) || 0;
       l.finalizarMediana = n(p.finalizar_mediana);
     }
@@ -172,15 +194,16 @@ export function juntarAEquipe({ painel = [], protocolos = [], tratados = [], car
 }
 
 /** As colunas da TABELA: só as das fontes que vieram inteiras. Uma coluna
- *  com o número de uma pessoa só e "—" em todas as outras não compara nada. */
-export function colunasVisiveis(fontes) {
-  return COLUNAS_DA_EQUIPE.filter((c) => fontes[c.fonte] === true);
+ *  com o número de uma pessoa só e "—" em todas as outras não compara nada.
+ *  `dias` é a régua da carteira (ver `comARegua`). */
+export function colunasVisiveis(fontes, dias) {
+  return comARegua(COLUNAS_DA_EQUIPE.filter((c) => fontes[c.fonte] === true), dias);
 }
 
 /** As colunas da FICHA: as das fontes que vieram, inteiras ou não. A
  *  posição e a mediana da equipe só saem das inteiras. */
-export function colunasDaFicha(fontes) {
-  return COLUNAS_DA_EQUIPE.filter((c) => Boolean(fontes[c.fonte]));
+export function colunasDaFicha(fontes, dias) {
+  return comARegua(COLUNAS_DA_EQUIPE.filter((c) => Boolean(fontes[c.fonte])), dias);
 }
 
 /** Quais fontes faltaram, por extenso: "os protocolos e a carteira". A

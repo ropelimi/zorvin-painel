@@ -6043,9 +6043,11 @@ lista.
 
 - **o rótulo "esperando há N dias" da lista de conversas** continua âmbar com
   1 e 2 dias e vermelho a partir de 3;
-- **o relatório por responsável do Painel de números** continua com a coluna
+- ~~**o relatório por responsável do Painel de números** continua com a coluna
   "Há 3+ dias", contada no banco (script 011 da ponte). Mudar para 2 pede um
-  script novo na ponte.
+  script novo na ponte.~~ **Feito em 05/11, a pedido do Rodrigo**: o script 051
+  da ponte conta a partir de 2 dias, e a coluna diz "Há +2 dias" — ver "A
+  Visão geral do Painel".
 
 **E a cor das linhas da aba passou a ser a da lista.** Com os 3 dias, toda
 linha da aba era vermelha, e estava certo: todas tinham 3 ou mais. Com os 2,
@@ -7949,7 +7951,7 @@ foi no mês rolava a tela quatro vezes e juntava de cabeça.
 
 | no alto da tela | o que é |
 |---|---|
-| **A equipe** (`data-tabela-da-equipe`) | uma linha por pessoa, com as nove colunas das quatro contas: Atendimentos, Enviadas, Resposta, Atender, 1ª resposta, Finalizou, Já tratei, Carteira e Há 3+ dias |
+| **A equipe** (`data-tabela-da-equipe`) | uma linha por pessoa, com as dez colunas das quatro contas (eram nove até a Visão geral, de 05/11): Atendimentos, Enviadas, Resposta, Atender, 1ª resposta, 1ª resp. (exped.), Finalizou, Já tratei, Carteira e Há +2 dias |
 | o gráfico (`data-ranking-da-equipe`) | a métrica escolhida, uma barra por pessoa, com a mediana da equipe tracejada |
 | **a ficha** (`data-ficha-da-pessoa`) | escolhida uma pessoa, cada número dela ao lado da mediana da equipe, com a posição |
 | **Imprimir relatório** | o menu do que vai no papel, e a folha no tema claro |
@@ -8051,14 +8053,17 @@ O navegador imprime a tela, e a tela tem de ser outra no papel
   relatório impresso não tem a barra ao lado;
 - **sem as listas de registros** dos protocolos e do "Já tratei": são
   dezenas de folhas, e estão na planilha de cada seção. O cabeçalho diz isso;
-- **o menu do que vai no papel**: as seis seções, marcadas; a desmarcada sai,
+- **o menu do que vai no papel**: as seções (sete desde 05/11, com a Visão
+  geral primeiro), marcadas; a desmarcada sai,
   e o cabeçalho diz quais ficaram fora "por escolha". Sem nada marcado, o
   botão desliga e diz por quê;
 - **o título da guia vira o nome do arquivo** do "Salvar como PDF"
   ("Relatório de atendimento — JENIFER ALMEIDA — …"), e volta depois;
 - **a tabela da equipe cabe na folha em pé**: dez colunas com o recheio da
   tela davam 882 pontos numa A4 de 718, e o navegador cortava a última
-  coluna. No papel, o cabeçalho delas quebra em linhas e a letra encolhe;
+  coluna. No papel, o cabeçalho delas quebra em linhas e a letra encolhe.
+  Com a coluna da 1ª resposta em expediente (05/11), a folha em pé continua
+  cabendo, e a prova confere;
 - **as cores saem impressas** (`print-color-adjust: exact`), e cartão e linha
   de tabela não se partem entre duas folhas (`break-inside: avoid`).
 
@@ -8077,9 +8082,10 @@ O navegador imprime a tela, e a tela tem de ser outra no papel
 
 ### O que fica de fora, e é decisão
 
-- **os tempos dos protocolos por pessoa** (até responder, até finalizar)
-  continuam no "Por pessoa" dos protocolos: na tabela da equipe seriam onze
-  colunas;
+- **o tempo até finalizar, por pessoa**, continua no "Por pessoa" dos
+  protocolos. O até responder entrou na tabela da equipe em 05/11, em
+  expediente ("1ª resp. (exped.)"), e não no relógio: é a conta que não cobra
+  de quem chega às 8h a fila da noite (ver "A Visão geral do Painel");
 - **a tabela da equipe não tem planilha**: o pedido era o relatório impresso,
   e cada seção continua com a dela;
 - **os atalhos não somem no celular**: com a barra solta, eles ficam no alto
@@ -8181,6 +8187,295 @@ e é a conferência certa que reprova.
 **Régua que fica: prova que lê a bancada num período "até agora" fixa o
 relógio**, ou ela mede a hora em que rodou.
 
+## A Visão geral do Painel — os números que servem para cobrar (05/11)
+
+Pedido do Rodrigo: *"A tela "Painel" preciso de um dashboard de verdade, que
+seja inteligente e interativa. Com cards, gráficos de pizza, etc. Tem que
+fazer sentido também as informações que me ajudem a melhorar o atendimento,
+organizar a equipe e dar feedbacks e fazer cobranças de forma correta. Existe
+lá números sobre "Há 3+ dias", que na verdade deve ser "Há +2 dias". Faça
+essas atualizações e me diga como tudo vai funcionar, o que significa cada
+indicador, etc."*
+
+**Uma seção nova, a primeira da tela**: a **Visão geral**
+(`data-visao-geral`, `src/VisaoGeral.jsx`), com as contas sem tela em
+`src/visaoGeral.js`. O resto da tela (a equipe, os protocolos, os
+atendimentos, a carteira, o funil e o "Já tratei") continua embaixo, como
+estava. O título e o envelope de gráfico (`Titulo`, `Grafico`) saíram de
+`PainelNumeros.jsx` para `src/blocosDoPainel.jsx`, que as duas telas usam.
+
+| de cima para baixo | o que é |
+|---|---|
+| **os indicadores** (`data-indicadores`, `data-indicador`) | No prazo · 1ª resposta · Atendimentos · Esperando resposta · Sem responsável |
+| **os destaques** (`data-destaques`, `data-destaque-da-visao`) | as frases do que fazer, o mais urgente primeiro, cada uma com o caminho até o lugar de agir |
+| **as roscas** (`data-roscas`, `data-rosca`) | o prazo do período, os protocolos do período e os protocolos por departamento |
+
+### O prazo é em horário de expediente (script 052 da ponte)
+
+A conta do 029 media o tempo até a 1ª resposta **no relógio**: o cliente que
+escreve na sexta às 19h e é respondido na segunda às 8h05 entrava com 61
+horas, e quem chega às 8h e responde a fila da noite parecia a pessoa mais
+lenta da equipe. O 052 conta **só o expediente** de cada departamento (o da
+aba "Fora do horário", com os feriados), e julga cada protocolo que o
+CLIENTE abriu contra o **prazo do departamento** (o da aba "Aviso de espera",
+30 minutos se ninguém mudou) — a mesma régua do aviso de quem espera demais.
+
+| desfecho | quando |
+|---|---|
+| no prazo | a equipe respondeu ou finalizou antes de o prazo vencer |
+| atendido fora do prazo | respondeu ou finalizou depois |
+| sem resposta, prazo vencido | ninguém agiu, e o prazo já venceu |
+| ainda no prazo | ninguém agiu, e o prazo não venceu: **fica fora da porcentagem** |
+
+**"Ainda no prazo" fora da conta, e é decisão:** contado como no prazo, daria
+por atendido quem ainda espera; como fora, cobraria o que não venceu. A rosca
+do prazo não o desenha, e a frase embaixo dela diz quantos são.
+
+**O prazo é da EQUIPE, e não de uma pessoa.** Quando ninguém agiu a tempo,
+quem finalmente responde não foi quem atrasou: quem pega a conversa esquecida
+levaria a culpa de um atraso que é de todos. Com uma pessoa escolhida, o banco
+manda o prazo nulo, e a tela não desenha o cartão nem a rosca do prazo — e o
+alto da seção diz por quê.
+
+**Sem o 052, nada de prazo**: o cartão, a rosca e os destaques do prazo não
+aparecem, a 1ª resposta é a do relógio e diz isso, e a coluna "1ª resp.
+(exped.)" não entra na tabela da equipe. Nada de 0% no lugar do que o banco
+não contou.
+
+### A régua da carteira é a do banco (script 051 da ponte)
+
+"Há 3+ dias" virou **"Há +2 dias"**, a escrita do pedido. A conta é do banco
+(o 051 mudou `zorvin_relatorio_responsaveis` para 2 dias, a régua da tela
+"Esperando resposta" desde 02/11), e **a resposta diz a régua**
+(`dias_atrasada`): o rótulo sai dela (`rotuloDasAtrasadas`), e nunca de um
+número escrito na tela. Num banco sem o 051 a resposta não diz, a conta é a
+de 3 dias, e a tela escreve **"Há +3 dias"**. Rótulo e conta não discordam
+em nenhum dos dois bancos. Vale para o cabeçalho da carteira, a coluna da
+tabela da equipe, o indicador e os destaques.
+
+### Os indicadores
+
+| o cartão | o que diz | usa o período? |
+|---|---|---|
+| **No prazo** | dos clientes que abriram atendimento, a parte atendida antes do prazo vencer; e o período anterior, em pontos | sim |
+| **1ª resposta** | a mediana do tempo até a 1ª resposta, em expediente; o relógio ao lado | sim |
+| **Atendimentos** | os protocolos que a equipe começou (respondeu, finalizou ou abriu), com os finalizados e os em atendimento | sim |
+| **Esperando resposta** | as conversas com cliente esperando, e quantas há +2 dias | **agora** |
+| **Sem responsável** | a fila de onde todo mundo puxa trabalho | **agora** |
+
+- **O que é de agora tem a marca "agora"**, na linha de baixo: a carteira é
+  uma foto, e o período da barra não vale para ela;
+- **a comparação com o período anterior só com 5 julgados nos dois**
+  (`MINIMO_PARA_COMPARAR`): com três clientes, um a mais fora do prazo muda
+  33 pontos, e a tela anunciaria uma piora que é só o acaso;
+- **os atendimentos comparam pelo número** quando o anterior teve menos de
+  10: "de 6 para 12" é "+100%", que soa a erro;
+- **os números na mesma altura**: o rótulo de cada cartão cabe numa linha.
+
+### Os destaques
+
+`destaques()`, em `visaoGeral.js`. Cada um com o **nível** (o ícone e a
+palavra — Urgente, Atenção, Bom sinal, Para saber —, nunca a cor sozinha), o
+título com o número, o detalhe e o caminho:
+
+| o destaque | nível | o caminho |
+|---|---|---|
+| clientes que passaram do prazo sem resposta | Urgente | a guia "Esperando resposta" |
+| a carteira com conversas há +2 dias (o total, com os nomes e a fila sem dono) | Atenção | a seção da carteira |
+| a fila sem responsável esperando | Atenção | a seção da carteira |
+| o departamento 10 pontos ou mais abaixo da equipe | Atenção | recorta a tela nele |
+| o prazo melhorou ou piorou 5 pontos ou mais | Bom sinal ou Atenção | a seção dos protocolos |
+| uma carteira no dobro da mediana ou mais, e 10 conversas acima dela (o título diz os dois números) | Para saber | a seção da carteira |
+| a 1ª resposta típica, em expediente, com o relógio ao lado | Para saber | — |
+| o volume que mudou 20% ou mais (com 10 ou mais no anterior) | Para saber | — |
+
+**O que eles não fazem, e é decisão: apontar a pessoa "mais lenta".** O prazo
+é da equipe. O que é de uma pessoa — a carteira dela — aparece com o nome; o
+desempenho de cada uma fica na ficha, ao lado da mediana da equipe.
+
+**O link da guia é um link de verdade** (`<a target="_blank" rel="noopener"
+data-abre-guia>`), como os do menu ⋮.
+
+### As roscas
+
+- **Um anel fino, com 2 pontos da cor do cartão entre as fatias**, e o número
+  do meio. **O mouse numa fatia** (ou na linha dela, na legenda) faz o meio
+  dizer o número dela, e as outras esmaecem. Cada fatia tem também o
+  `<title>` com o número;
+- **a legenda é a leitura exata**: o nome, o número e a parte. A do prazo leva
+  o ícone de cada desfecho;
+- **cada rosca tem a sua tabela** (o botão "Tabela", como os outros
+  gráficos). A dos departamentos traz o prazo e o tempo de cada um;
+- **a rosca dos departamentos é clicável**: cada linha da legenda é um botão
+  que recorta a tela inteira no departamento (o filtro da barra). **É por ela
+  que o teclado chega à rosca**: os desenhos não pegam o foco;
+- **só com dois departamentos ou mais, e sem um escolhido na barra**: com um
+  só, seria uma fatia. **Até cinco fatias**; o resto vira "Outros (N)", e a
+  tabela tem todos.
+
+### As cores
+
+Conferidas no validador de paleta, nos dois temas (`CORES_DA_VISAO`):
+
+- **o status** (verde, âmbar, vermelho) **é o mesmo nos dois temas**, e
+  sempre com o ícone e a palavra. A palavra de cada nível usa a cor de TEXTO
+  do tema (`C.erroTexto`, `C.ambarTexto`, `C.verdeTexto`), que passa no
+  contraste; a cor do status escrita em letra pequena sumiria no branco;
+- **a situação** usa o azul e o verde da tela (claros no escuro) e o âmbar do
+  aviso;
+- **cada departamento tem a sua cor, a da posição dele na lista de
+  departamentos**, e não a da posição na rosca: trocar o período, ou um
+  departamento crescer, não pinta ninguém de outra cor.
+
+### A pessoa, e a conversa de feedback
+
+Escolhida uma pessoa (ou para quem não administra, desde a abertura), a visão
+geral é dela: os atendimentos de que ela participou e a carteira dela, sem o
+prazo (é da equipe) e sem a fila sem responsável. **"A sua carteira"**, e não
+"a carteira sua" (`carteiraDe`).
+
+**A ficha ganhou os pontos para a conversa de feedback**
+(`data-pontos-da-ficha`, `pontosDaFicha`): os fortes e os de atenção, **cada
+um com o número e a mediana da equipe** — "responde devagar" sem o número é
+opinião.
+
+| o ponto | quando |
+|---|---|
+| responde rápido | a 1ª resposta em expediente até 75% da mediana da equipe |
+| a 1ª resposta demora mais | 150% da mediana ou mais |
+| mais (ou menos) atendimentos, mais (ou menos) finalizações | 125% da mediana ou mais (50% ou menos) |
+| conversas da carteira há +2 dias | sempre que houver |
+| carteira em dia | com carteira e nenhuma atrasada |
+
+**Só com 3 primeiras respostas ou mais**, e só contra quem fez aquilo no
+período (`aPessoaNaEquipe`): com uma resposta, o tempo é o acaso. **O prazo e
+o "Já tratei" não entram**, e é decisão: o prazo é da equipe, e o "Já tratei"
+mede o registro, e não o atendimento.
+
+### Nenhuma leitura nova
+
+**A visão geral lê o que a tela já lê** (os protocolos e a carteira, pelo
+`useLeitura` do alto): uma seção que perguntasse por si dobraria as idas ao
+banco a cada troca de período. O que não carregou é dito
+(`data-visao-ficou-de-fora`), com o resto de pé; a função que FALTA é dita
+só a quem administra (é quem pode fazer alguma coisa), e a que FALHA, a todo
+mundo.
+
+### Imprimir, e o celular
+
+- **A Visão geral é a primeira seção do papel** (o menu de imprimir tem sete
+  seções), **sem os botões dos destaques nem os de "Tabela"**, e sem a frase
+  "Clique num departamento…", que no papel não se faz. Cada rosca e os
+  destaques não se partem entre duas folhas;
+- **no celular**, os cartões ficam um embaixo do outro, e a legenda de cada
+  rosca desce para baixo dela.
+
+### A tabela da equipe acompanhou
+
+- **"1ª resp. (exped.)"**, ao lado da "1ª resposta": a mediana de cada pessoa
+  em expediente (`primeiraExpediente`). Sem o 052, a coluna não entra;
+- **"Há +2 dias"** no lugar de "Há 3+ dias", pela régua do banco
+  (`comARegua`).
+
+### O que fica de fora, e é decisão
+
+- **o prazo de cada pessoa**: é da equipe (acima);
+- **o gráfico de colunas por dia na Visão geral**: os dias estão na seção dos
+  protocolos, logo abaixo;
+- **a fatia "Outros" não é provada**: ela só nasce com seis departamentos ou
+  mais, e a semente tem três (o escritório tem quatro);
+- **a conta do expediente não é provada aqui**: na bancada, o 052 é o de um
+  departamento sem semana escrita (o relógio inteiro, em minutos cheios). A
+  conta com a semana e os feriados está provada num Postgres de verdade, na
+  seção 104 da prova da ponte.
+
+### A prova
+
+`a-visao-geral-do-painel`, 152 conferências em 13 cenas, sobre
+protocolos plantados em três telefones de três departamentos, com as contas
+feitas à mão (no comentário da semente): os indicadores; os destaques e os
+três caminhos (a guia, a seção, o departamento); as roscas (o anel do
+tamanho da parte, o mouse na fatia e na legenda, a tabela, o teclado); a cor
+que segue o departamento; a pessoa escolhida e a ficha; quem não administra;
+o banco sem o 052 e sem o 051; a falha e a falta; o celular; o tema escuro e
+o contraste das palavras; a impressão; as idas ao banco; e, numa semente
+própria, o prazo que piorou, o volume que mudou e a carteira desigual — os
+três destaques que a semente de sempre não mostra.
+
+- **Os números "de agora" são conferidos contra a seção da carteira**, linha
+  a linha: a bancada tem a sua carteira, e o indicador tem de dizer o mesmo
+  que a outra escrita dos mesmos números;
+- **cada resposta da semente tem 30 segundos a mais**: na bancada o
+  expediente é o relógio em minutos cheios, e sem os 30 segundos as duas
+  contas dariam o mesmo número — trocar uma pela outra passaria. Com eles, o
+  relógio diz "21 min" e o expediente "20 min";
+- **o anel é conferido pelos números, e não pelo desenho**: a prova calcula
+  onde cada fatia tem de estar (o anel começa às 12h e anda no sentido do
+  relógio, uma parte depois da outra, na ordem da legenda), pergunta o que a
+  tela pinta ali (`elementFromPoint`) e põe o mouse no meio de cada uma.
+
+**46 sabotagens e 46 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma:
+
+- o painel de antes inteiro (121 reprovações — é o pedido reproduzido);
+- **os indicadores:** o prazo contando quem ainda está no prazo; a comparação
+  sem o mínimo de julgados; a variação com o sinal trocado; a 1ª resposta do
+  relógio com cara de expediente; o que espera agora sem a fila sem dono; o
+  prazo com a marca "agora"; a régua da carteira sempre a de antes (3 dias), e
+  sempre 2, mesmo no banco de antes; os atendimentos sempre comparados pelo
+  número;
+- **os destaques:** sem ordenar pelo nível; o nível sem o ícone (a cor
+  sozinha); o urgente sem o prazo por extenso; a guia "Esperando resposta" na
+  mesma aba, e sem o `noopener`; "Ver a carteira" sem levar à seção; "Ver só
+  este departamento" sem recortar; o departamento escolhido pelo melhor, e
+  não pelo pior; "a carteira sua"; a carteira da pessoa pelo total da equipe;
+  as carteiras desiguais sem os 10 a mais, e sem o destaque; o volume sem o
+  mínimo de 10 no anterior, e nunca dito; o prazo que piorou sem virar
+  atenção;
+- **as roscas:** quem ainda está no prazo dentro da rosca do prazo; o anel sem
+  o respiro entre as fatias; o anel com o deslocamento ao contrário; a cor do
+  departamento pela posição na rosca; a legenda dos departamentos sem botões;
+  o mouse na fatia sem esmaecer as outras; a rosca dos departamentos com um
+  departamento escolhido; a frase do clique no papel; as roscas partidas no
+  papel;
+- **a pessoa e a ficha:** a fila sem dono com uma pessoa escolhida; a régua do
+  "devagar" em 3 vezes a mediana; a carteira em dia sem ponto forte;
+- **as faltas e as falhas:** a falha dos protocolos calada; a falta da função
+  dita a quem atende; sem o 052, a 1ª resposta dita como de expediente, e a
+  coluna do expediente na tabela;
+- **o celular e o tema:** a legenda com largura fixa; os indicadores sempre em
+  cinco colunas; o escuro com as cores do claro; a palavra do nível na cor do
+  status;
+- **e uma ida por fonte:** a visão geral lendo a carteira por conta própria.
+
+**A primeira rodada achou três defeitos da PROVA, e não do painel, e foi
+refeita inteira** depois do conserto:
+
+- **o link que abre na mesma aba estourava a prova.** A tela do Painel saía da
+  guia, e o passo seguinte (voltar ao alto) lia um elemento que não existia.
+  Hoje o passo é guardado, e as conferências seguintes dizem o que viram;
+- **o painel de antes estourava na cena do celular**, pela mesma razão: a
+  medida lia a Visão geral, que não existe nele. Hoje a medida diz que ela
+  não está lá;
+- **a sabotagem do deslocamento ao contrário vazou.** A prova calculava o meio
+  de cada fatia pelo atributo do desenho, e o ponto acompanhava o desenho
+  errado. Hoje ela calcula onde cada fatia TEM DE ESTAR pelos números e
+  pergunta o que a tela pinta ali. **O lugar de um desenho se confere pela
+  conta, e não pelo próprio desenho.**
+
+**E faltavam três destaques com cena.** O do prazo que piorou, o do volume que
+mudou e o da carteira desigual só tinham a conferência de NÃO aparecerem (a
+cena 2), e uma sabotagem que os sumisse passaria. Entrou a cena 13, com uma
+semente própria. E, relendo para escrever as sabotagens, a frase da carteira
+desigual dizia "mais que o dobro da mediana" com uma conta que vale também no
+dobro exato: hoje ela diz os dois números ("tem 16 conversas; a mediana da
+equipe é 2").
+
+**`o-painel-de-gestao` foi INVERTIDA, e não apagada**: as seis seções viraram
+sete (com a Visão geral primeiro), as nove colunas da equipe viraram dez (com
+a 1ª resposta em expediente), e quem volta ao alto é o atalho da Visão geral
+— o da equipe agora leva a seção dela para logo abaixo da barra.
+
 ## A revisão do leiaute — o que se lê (05/11)
 
 Pedido do Rodrigo: *"Faça uma revisão geral do layout, para que o visual seja
@@ -8257,7 +8552,7 @@ parada: as cores de aviso nunca apareciam nela. A prova planta esses estados
 | o aviso de erro da tela de entrada | branco no #e5573f: **3,6** | #c62828: 5,6 |
 
 **O Painel de números acompanhou:** o "Há 3+ dias" do relatório por
-responsável é o vermelho da lista (`esperaVermelha`), a nota de aviso da
+responsável (hoje "Há +2 dias", pelo script 051) é o vermelho da lista (`esperaVermelha`), a nota de aviso da
 escolha do período usa o âmbar do tema, e as frases de erro dos relatórios a
 letra do tema (o traço da caixa continua vivo). A cena 1 confere a tela
 Painel nos dois temas, no computador e no celular.
