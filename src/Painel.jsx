@@ -22108,7 +22108,8 @@ export default function Painel({ sessao }) {
           nomes das linhas do relatório, e refazer as consultas aqui daria uma
           segunda lista que pode divergir da que está na tela. */}
       {telaPainel && guiaPronta === true && (
-        <PainelNumeros C={C} modo={modo} advogados={advogados} departamentos={departamentos}
+        // `CClaro`: o papel sai sempre no tema claro (ver `CSS_DA_IMPRESSAO`).
+        <PainelNumeros C={C} CClaro={TEMAS.claro} modo={modo} advogados={advogados} departamentos={departamentos}
                        souAdmin={souAdmin} meuId={sessao?.user?.id || null} meuNome={meuNome}
                        aoFechar={fecharAGuia} />
       )}

@@ -7676,6 +7676,228 @@ mais:
 - a espera inventada na conversa começada pela equipe;
 - o filtro de telefone ignorado.
 
+## O Painel de gestão — a pessoa, a equipe e o relatório impresso (05/11)
+
+Pedido do Rodrigo: *"Faça uma revisão completa da tela "Painel", preciso que
+essa tela seja um Dashboard interativo onde eu consiga acessar os dados mais
+relevantes sobre o atendimento individual de cada usuário, com a
+possibilidade de imprimir um relatório. O painel precisa ter gráficos,
+precisa ser visualmente agradável para a gestão."*
+
+**O atendimento de cada pessoa estava em quatro tabelas**, no fim de quatro
+seções: o "Por atendente" do Painel (atendimentos, enviadas, tempos), o "Por
+pessoa" dos protocolos (primeiras respostas e finalizações), o do "Já
+tratei" e a carteira de cada responsável. Quem queria saber como a Jenifer
+foi no mês rolava a tela quatro vezes e juntava de cabeça.
+
+| no alto da tela | o que é |
+|---|---|
+| **A equipe** (`data-tabela-da-equipe`) | uma linha por pessoa, com as nove colunas das quatro contas: Atendimentos, Enviadas, Resposta, Atender, 1ª resposta, Finalizou, Já tratei, Carteira e Há 3+ dias |
+| o gráfico (`data-ranking-da-equipe`) | a métrica escolhida, uma barra por pessoa, com a mediana da equipe tracejada |
+| **a ficha** (`data-ficha-da-pessoa`) | escolhida uma pessoa, cada número dela ao lado da mediana da equipe, com a posição |
+| **Imprimir relatório** | o menu do que vai no papel, e a folha no tema claro |
+| os atalhos (`data-nav-do-painel`) | um botão por seção, na barra |
+
+As contas sem tela moram em `src/painelDeGestao.js`.
+
+### As quatro leituras subiram para o alto da tela
+
+`useLeitura` (em `PainelNumeros.jsx`) faz a pergunta de cada conta (o Painel,
+os protocolos, o "Já tratei" e a carteira) **uma vez**, e ela desce para a
+seção e para a tabela da equipe. Antes cada seção lia a sua, e a tabela, que
+junta as quatro, teria de ler tudo de novo. **Cada uma com o seu estado**: a
+falta de uma função não esconde as outras, a régua das seções. A chave da
+pergunta são os argumentos (o texto), e não o objeto, que nasce de novo a
+cada desenho. **A carteira não depende do período**, e trocar o período não
+a pergunta de novo. O funil continua com a leitura dele.
+
+**A tabela espera as quatro responderem**: desenhada no meio do caminho, ela
+ganharia colunas uma a uma, empurrando o que está embaixo a cada resposta.
+
+### Como a tabela junta (`juntarAEquipe`)
+
+- **pelo id da pessoa**, e nunca pelo nome: duas pessoas podem ter o mesmo;
+- **numa conta que veio inteira, quem não aparece nela tem zero** (não fez
+  aquilo no período), e numa que não veio, "—". **O tempo nunca vira zero**:
+  quem não respondeu ninguém não tem tempo de resposta, e zero seria
+  "respondeu na hora";
+- **a carteira de quem não administra é "parcial"**: o banco devolve só a
+  linha dela (o `so_meu` da resposta). A dos colegas não veio, e não é zero:
+  a coluna sai da tabela, e a ficha mostra a sua, dizendo que a dos colegas é
+  só para quem administra. **A sua, vazia, é zero**: ela veio, e não há
+  conversa nenhuma nela;
+- **a linha "pelo nome"** (mensagens de antes de ago/2026, sem conta) entra
+  com os números do Painel, marcada, e não junta com ninguém: o nome não é a
+  pessoa. Ela não é clicável, e não entra na mediana nem na posição;
+- **o protocolo respondido pelo celular do escritório fica fora**, e a nota
+  embaixo da tabela diz quantos: não dá para saber quem estava com o aparelho;
+- **a conta que não veio tira só as colunas dela**, e a nota diz quais
+  ("Ficaram de fora as colunas de …, que não carregaram: o motivo está na
+  seção de cada uma, mais abaixo").
+
+**`data-atendente` continua marcando quem está no ranking de atendimentos do
+Painel** (`por_atendente`), agora nas linhas da tabela da equipe: é o que o
+bloco "Por atendente", que a tabela substitui, mostrava. Quem só tem "Já
+tratei" ou carteira não tem a marca. As provas `painel` e
+`o-periodo-e-a-pessoa-do-painel` passaram sem mudar o que conferem (só a
+redação, que falava do bloco que saiu).
+
+### O gráfico, a ordem, e com quem se compara
+
+- **a métrica do gráfico e a ordem da tabela andam juntas**: escolher
+  "Finalizou" (no botão da métrica ou no cabeçalho da coluna) ordena as duas;
+  o mesmo cabeçalho de novo inverte a tabela. "Pessoa" ordena só a tabela;
+- **o tempo começa pelo mais rápido**, e o resto pelo maior. **O vazio vai
+  sempre para o fim**, nos dois sentidos;
+- **o gráfico só leva quem tem o número**: uma barra de zero no tempo seria
+  "respondeu na hora";
+- **uma cor só para as barras, e o verde numa**: a da pessoa escolhida, ou a
+  sua quando ninguém está escolhido (a régua do ranking de antes);
+- **o selo "você" usa o verde dos botões** (`cores.selo`, #008069), e não o
+  das barras: com o #00a884 do escuro, a letra branca dava 3,0:1. Vale para os
+  cinco selos da tela, os de antes desta entrega também;
+- **a mediana e a posição contam só quem fez aquilo** (`baseDaComparacao`):
+  na tabela aparece quem fez qualquer coisa no período, e a mediana dos
+  atendimentos contando quem só marcou "Já tratei" daria zero — comparar
+  alguém com zero não diz nada. No tempo, contam os que têm tempo; no "há 3+
+  dias", os que têm carteira;
+- **sem posição quando ela não diz nada**: na carteira e no "há 3+ dias"
+  (são volume de trabalho, e não desempenho — "1º de 5" se leria como o
+  melhor, e é só o maior), com a pessoa fora da base, e com todo mundo
+  empatado. O empate divide a posição: duas com 10 são as duas "1º".
+
+**Quem administra clica numa pessoa** (na barra ou na linha) e a tela inteira
+se recorta nela, como o filtro de atendente da barra, que passou a oferecer
+quem aparece em qualquer uma das quatro contas (antes, só no ranking de
+atendimentos). **A tabela não se recorta**: ela é para comparar. Clicar de
+novo desfaz. **Quem não administra** vê a própria ficha desde a abertura, e
+as barras não são botões.
+
+### Imprimir
+
+O navegador imprime a tela, e a tela tem de ser outra no papel
+(`CSS_DA_IMPRESSAO`):
+
+- **a tela é um quadro fixo que rola**, e o navegador imprimiria só o pedaço
+  à vista: no papel ela vira um bloco comum, e o Zorvin que mora atrás dela
+  (esta guia monta o painel inteiro) some;
+- **sempre no tema claro**: o tema troca no `beforeprint`, com `flushSync` (o
+  navegador monta a folha logo depois do evento, e um desenho agendado
+  chegaria tarde), e volta no `afterprint`. Vale também para o Ctrl+P. O
+  `Painel.jsx` passa a paleta clara (`CClaro={TEMAS.claro}`);
+- **o tema escuro mora também no `<html>`** (`aparencia.js` põe ali o fundo e
+  o `color-scheme`): sem desfazê-los, a margem da folha saía preta. Só se viu
+  desenhando o PDF;
+- **sem os controles** (`data-nao-imprime`): a barra de filtros vira o
+  cabeçalho da primeira folha (`data-so-impressao`), com o período por
+  extenso, a pessoa, o telefone, o departamento e quem gerou, e quando. Um
+  relatório impresso não tem a barra ao lado;
+- **sem as listas de registros** dos protocolos e do "Já tratei": são
+  dezenas de folhas, e estão na planilha de cada seção. O cabeçalho diz isso;
+- **o menu do que vai no papel**: as seis seções, marcadas; a desmarcada sai,
+  e o cabeçalho diz quais ficaram fora "por escolha". Sem nada marcado, o
+  botão desliga e diz por quê;
+- **o título da guia vira o nome do arquivo** do "Salvar como PDF"
+  ("Relatório de atendimento — JENIFER ALMEIDA — …"), e volta depois;
+- **a tabela da equipe cabe na folha em pé**: dez colunas com o recheio da
+  tela davam 882 pontos numa A4 de 718, e o navegador cortava a última
+  coluna. No papel, o cabeçalho delas quebra em linhas e a letra encolhe;
+- **as cores saem impressas** (`print-color-adjust: exact`), e cartão e linha
+  de tabela não se partem entre duas folhas (`break-inside: avoid`).
+
+### No celular
+
+- **a barra não gruda no alto**: com o período, os três filtros, o
+  "Filtrando por" e os atalhos, ela cobria um terço da tela o tempo todo;
+- **o ranking em duas linhas**: o nome e o número em cima, a barra de ponta a
+  ponta embaixo. Numa linha só, a 390 o nome ficava com 107 pontos;
+- **as métricas numa linha que rola de lado** (quebradas, eram três linhas de
+  botões antes do gráfico), e **os números da ficha dois por linha**;
+- **o botão de imprimir só com o ícone**, com o alvo de dedo;
+- **a tabela "Por telefone" rola de lado dentro do cartão**: a 360 ela pedia
+  377 pontos, e a tela inteira rolava de lado por causa dela. Era assim antes
+  desta entrega, e a prova nova pegou.
+
+### O que fica de fora, e é decisão
+
+- **os tempos dos protocolos por pessoa** (até responder, até finalizar)
+  continuam no "Por pessoa" dos protocolos: na tabela da equipe seriam onze
+  colunas;
+- **a tabela da equipe não tem planilha**: o pedido era o relatório impresso,
+  e cada seção continua com a dela;
+- **os atalhos não somem no celular**: com a barra solta, eles ficam no alto
+  da tela, e levam a cada seção dali.
+
+Prova: `o-painel-de-gestao`, 140 conferências em nove cenas, sobre cinco
+protocolos, três "Já tratei" e uma carteira plantados, com as contas feitas
+à mão, e os números do Painel conferidos contra os da bancada
+(`__ESPERADO.painel`): a tabela junta as quatro (e cada número é o da seção
+de onde ele vem, na mesma tela); o gráfico e a ordem; a pessoa escolhida e a
+ficha; quem não administra; a conta que falta; uma ida ao banco por conta; a
+impressão (no mesmo instante do evento, com a emulação do papel e com um
+PDF de verdade); o celular a 360 e a 390; e os atalhos.
+
+**49 sabotagens e 49 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma:
+
+- o painel de antes inteiro (103 reprovações — é o pedido reproduzido);
+- **a conta da equipe:** a carteira parcial virando coluna da tabela; o tempo
+  de quem não respondeu virando zero; sem o zero de quem não aparece numa
+  conta; a linha "pelo nome" ganhando os zeros das outras; os protocolos
+  juntados pelo nome; o celular virando pessoa; sem a marca de quem está no
+  ranking de atendimentos, e todo mundo marcado; a mediana contando os zeros;
+  a posição com todo mundo empatado; a carteira com posição; a posição do
+  tempo como a de um número; o vazio no começo da ordem crescente; o tempo
+  começando pelo mais lento; a minha carteira vazia como "—";
+- **o gráfico, a tabela e a escolha:** a métrica sem trocar o gráfico, e sem
+  levar a tabela; barra para quem não tem o número; o verde sempre meu, com
+  outra pessoa escolhida; a linha que não escolhe ninguém; as barras como
+  botão para quem não administra; a ficha só para quem administra; a carteira
+  inteira para quem não administra; sem dizer quais colunas faltaram; a
+  tabela lendo as contas de novo; a carteira relida a cada troca de período;
+- **a impressão:** sem o tema claro no papel; o tema agendado, e não na hora;
+  o título sem o nome do arquivo, e sem voltar; o quadro fixo no papel; o
+  Zorvin de trás no papel; a barra de filtros no papel; sem o cabeçalho; as
+  listas de registros no papel; desmarcar sem tirar do papel; o esquema
+  escuro na margem da folha; a tabela larga demais para a folha em pé; o
+  Imprimir que não imprime; imprimir sem nada marcado; o menu sem o Esc;
+- **o celular e os atalhos:** a barra grudada no alto; o ranking numa linha
+  só; as métricas quebrando em linhas; os números da ficha um por linha; a
+  tabela dos telefones fazendo a tela rolar de lado; o rótulo de imprimir no
+  celular; o atalho sem descontar a barra.
+
+**A primeira rodada achou três coisas, e a segunda foi refeita sobre elas:**
+
+- **a minha carteira vazia aparecia como "—"**, e quem achou foi a saída de
+  uma sabotagem, e não uma conferência. A que trata a carteira de quem não
+  administra como inteira mostrou na ficha um "0" onde o painel certo
+  escrevia "—": sem conversa nenhuma, a carteira da própria pessoa veio, e
+  está vazia. Hoje a fonte parcial dá o zero a quem pergunta, e só a ele
+  (`juntarAEquipe`), e a prova confere;
+- **o Esc do menu de imprimir estava escrito duas vezes**: o `useFora` já
+  fechava o menu com o Esc, e um segundo ouvinte fazia o mesmo. A sabotagem
+  que tirava o segundo vazou, com razão, e ele saiu. O defeito de verdade é
+  o `useFora` sem a tecla, e esse é pego;
+- **o painel de antes fez a prova parar na última cena**: ela media a seção
+  do "Já tratei" sem perguntar se ela existia. Hoje a medida é guardada, e o
+  painel de antes é pego até a última conferência.
+
+**Duas lições desta rodada, as duas da prova:**
+
+- **`page.pdf()` depois de `emulateMedia({ media: "screen" })` imprime a
+  TELA**, e não o papel: o Playwright usa a emulação também para o PDF. A
+  primeira escrita da cena saiu com uma folha só, a da tela, e eu ia procurar
+  defeito no CSS de impressão. Antes do PDF a emulação sai (`media: null`);
+- **o tema que troca "depois" passaria**: a cena esperava 150 ms entre o
+  `beforeprint` e a conferência, e um tema agendado (sem o `flushSync`) já
+  teria chegado. No navegador, a folha é montada logo depois do evento. Hoje
+  a conferência é feita no mesmo instante do evento.
+
+**E duas expectativas minhas que a primeira rodada corrigiu**: a carteira,
+que não depende do período, não é perguntada de novo quando ele muda (a cena
+esperava que fosse); e as linhas "pelo nome" da bancada são três, e não uma
+(a cena conferia só a do `autorSemId`).
+
 ## O tempo real que entupia — e a mensagem que parecia não ter saído (20/10)
 
 Relato do Rodrigo: *"Quando é enviada uma mensagem demora para aparecer,
