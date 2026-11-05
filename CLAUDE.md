@@ -5288,7 +5288,35 @@ administração mora abaixo da dobra da janela, e no ponto do rosto o
 `elementFromPoint` não achava nada. Hoje a conferência traz o rosto à vista
 antes de medir (`scrollIntoView`), como quem rola até ele.
 
-RESULTADO_DAS_SABOTAGENS_DO_FUNIL
+Provas: `a-ia-move-o-funil`, agora com 94 conferências (eram 57 em 02/11);
+`o-assistente-se-chama-quazar`, 115 (as duas respostas vazias); e
+`o-resumo-da-conversa`, 82 (a frase do resumo vazio, invertida). As
+vizinhas passaram sem mudança: as cinco do funil (etapas, caminho, cada
+telefone, relatório e o que não se desmancha), o acompanhamento por etapa, as
+tarefas, o responsável, o copiloto (sugerir e aprender), a auditoria de
+27/10, o cabeçalho, o celular e as telas.
+
+**33 sabotagens e 33 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma (e a cópia de controle, sem sabotagem nenhuma, passou inteira):
+
+- o painel de antes inteiro (36 reprovações — é o pedido reproduzido), e o
+  nome trocado na constante (22);
+- **o cartão:** "IA:" de volta; o `title` com "A IA pôs aqui"; as
+  estrelinhas no lugar do rosto; o rosto maior;
+- **a conversa:** o menu da etapa com "A IA pôs aqui:" e com as estrelinhas;
+  o selo com "(a IA pôs aqui)" no `title`, com as estrelinhas de volta (3) e
+  com "a IA" no `aria-label`;
+- **o caminho:** "A IA moveu"; "A IA pôs no funil" (só a cena 8b pega); a
+  bolinha com as iniciais no lugar do rosto (4); as estrelinhas no porquê;
+- **a administração:** o título (3), o robô de volta, a chave e a explicação
+  (3) dizendo "a IA"; e cada frase com "a IA": ligar, ler de novo, desligar,
+  o funil sem cliente, a falha de ligar, a falha de desligar e a leitura que
+  falha. As três últimas e a do funil sem cliente só as conferências novas
+  pegam;
+- **descrever a etapa** com "é o que a IA lê";
+- **os três avisos da ponte** com "a IA";
+- **e as respostas vazias** do copiloto: a sugestão e a mensagem refeita
+  (pela prova do Quazar) e o resumo (pela do resumo).
 
 ## Tarefas e lembretes (06/10)
 
