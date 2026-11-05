@@ -6550,9 +6550,9 @@ escritório escreve na aba nova. As notas internas não vão.
 
 | | |
 |---|---|
-| computador | um ✨ dentro da caixa de escrever, **só com a caixa vazia** — no lugar em que o relógio de agendar aparece quando há texto |
+| computador | um ✨ dentro da caixa de escrever (desde 05/11, o **rosto do Quazar** — ver "O Quazar", mais abaixo), **só com a caixa vazia** — no lugar em que o relógio de agendar aparece quando há texto |
 | celular | "Sugerir resposta" no ⋮ da conversa, pela mesma regra |
-| administração | aba **Copiloto** em Departamentos e acessos (`ManualDoCopiloto.jsx`) |
+| administração | aba **Copiloto** (desde 05/11, **Quazar**) em Departamentos e acessos (`ManualDoCopiloto.jsx`) |
 
 **Só com a caixa vazia, e é a decisão que segura o resto.** A barra nunca
 ganha um botão a mais (o ✨ some quando o relógio aparece), e uma sugestão
@@ -6791,6 +6791,85 @@ pega, além da cena 8, que é a dela.
   sabotagem tinha tirado esperam 30 segundos e derrubam a prova, sem dizer as
   conferências seguintes. Hoje os gestos são guardados (`preencher`, `apertar`),
   como os cliques.
+
+## O Quazar — o assistente oficial do Zorvin (05/11)
+
+Pedido do Rodrigo: *"O Copiloto tem que ter um nome, pois ele será o
+assistente oficial do Zorvin. Ele tem que ser um "mascote" do sistema. Então
+dê o melhor nome possível pra ele, e escolhe qual mascote ele será."* E, nas
+voltas seguintes, ele mesmo foi escolhendo: de cachorro para lobo, de lobo
+para **pato** (*"foi esse o primeiro som de aviso do Zorvin, lembra?"*), um
+**pato malandro**, de óculos escuros, *"esperto, bom de papo"*; e o nome tinha
+de ser *"diferente, fora do comum"*, sem precisar lembrar a palavra "pato".
+
+**O nome é QUAZAR**: o "quá" do pato, o primeiro som de aviso do Zorvin, e o
+quasar, o objeto mais brilhante do universo (daí os óculos escuros). O Z é o
+do Zorvin.
+
+**O desenho é de frente e simétrico.** O de três quartos foi reprovado (*"uma
+lente maior que a outra"*). Os caminhos saíram de um script, com uma lente
+espelhada da outra: mexer numa sem mexer na outra é o defeito de volta.
+
+| onde | antes | agora |
+|---|---|---|
+| o botão da caixa de escrever | estrelinhas | o **rosto do Quazar**, de 28 pontos no alvo de 40 |
+| a faixa da sugestão | estrelinhas e "Copiloto ·" | o rosto e "Quazar ·" |
+| o campo de pedir uma mudança, o Pedir, o fechar, o Desfazer | "ao Copiloto" | "ao Quazar" |
+| o ⋮ do celular | "Sugerir resposta" com estrelinhas | com o rosto |
+| o quadro do resumo | estrelinhas, e "Feito pela IA" | o rosto, e "Feito pelo Quazar, a IA do Zorvin" |
+| o resumo copiado | "(feito pela IA do Zorvin)" | "(feito pelo Quazar, a IA do Zorvin)" |
+| a aba da administração | "Copiloto" | "Quazar", com o título "O Quazar, o assistente do Zorvin" |
+| as frases de falha da faixa e da aba | "do copiloto" | "do Quazar" |
+
+**O nome mora num lugar só** (`NOME_DO_ASSISTENTE`, em `src/assistente.js`),
+e o rosto num componente só (`src/RostoDoAssistente.jsx`). **A ponte tem o
+dela**, também `NOME_DO_ASSISTENTE`: as frases de erro que ela manda à faixa
+já dizem o nome ("O Quazar preferiu não sugerir…"). Trocar o nome é trocar os
+dois. E as frases dizem "o Quazar": um nome feminino pede trocar o artigo
+junto.
+
+**O que NÃO muda com o nome:** os `data-copiloto-*` das provas, as rotas da
+ponte (`/copiloto/...`), as tabelas (`zorvin_copiloto*`), as variáveis
+(`COPILOTO_*`) e os nomes do código. **E o que se pede à IA**: a sugestão sai
+como se fosse a atendente, e um cliente nunca lê "Quazar". O nome é para a
+equipe.
+
+**"A IA do Zorvin" continua escrito onde o texto sai da tela.** O resumo
+copiado vai para uma nota, um e-mail ou o Vantoro, e ali "feito pelo Quazar"
+sozinho não diz que foi uma IA. A régua de 01/11 continua: colado longe da
+tela, o resumo não pode passar por anotação de alguém da equipe.
+
+**Os ids dos gradientes levam o `useId`.** O rosto aparece duas vezes na mesma
+tela (o do botão, com a caixa vazia, e o do quadro do resumo). Com o mesmo id,
+o segundo pintaria com os gradientes do primeiro, e, com o primeiro escondido,
+sem cor nenhuma. A prova esconde o primeiro e mede o verde da cabeça do
+segundo numa foto da tela.
+
+**Fica de fora, e é decisão:**
+
+- **a IA que move o funil** continua dizendo "A IA pôs aqui", "A IA moveu…".
+  É outra rodada da ponte, e não o assistente que conversa com a equipe. Ficou
+  oferecido ao Rodrigo;
+- **enquanto o Quazar escreve, o botão mostra o giro de sempre**, e não o
+  rosto: o giro é o sinal de "espere";
+- **o rosto não tem prova de feitio** (as lentes iguais, por exemplo): ele é
+  um desenho gerado e conferido na tela uma vez. A prova confere que ele está
+  lá, pintado, colorido e do tamanho certo.
+
+Prova: `o-assistente-se-chama-quazar`, 109 conferências em dez cenas: o botão
+(o rosto pintado, o tamanho, o rótulo, a cor e o title enquanto ele escreve);
+a faixa, com a lição pedida e desfeita; a lição que o banco não deixa desfazer;
+o erro da ponte; o resumo, e o texto copiado; dois rostos na tela; o tema
+escuro; o celular; a aba; e a aba com a ponte calada e as três leituras
+falhando. Em cada cena, nada à vista diz "copiloto" — nem o texto, nem um
+title, aria-label ou placeholder.
+
+RESULTADO_DAS_SABOTAGENS
+
+**As provas que liam as frases de antes foram INVERTIDAS, e não apagadas**:
+`o-copiloto-aprende-com-a-equipe` (o placeholder e a frase das notas que não
+vieram) e `o-resumo-da-conversa` (a frase de baixo do quadro e o texto
+copiado).
 
 ## O resumo da conversa — "Resumir" (01/11)
 

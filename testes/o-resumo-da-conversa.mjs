@@ -245,7 +245,7 @@ console.log("\n3. O resumo: as três partes, o que a IA leu, e a frase da IA");
   ok("diz quando foi feito e o que a IA leu", leitura === "Feito às 09:00. Leu a conversa inteira: 5 mensagens e 1 nota interna.",
      q(leitura));
   ok("e que foi feito pela IA, para conferir antes de agir",
-     /Feito pela IA .*confira na conversa antes de agir/.test(await texto(page.locator("[data-resumo-aviso-da-ia]"))));
+     /Feito pelo Quazar, a IA do Zorvin, .*confira na conversa antes de agir/.test(await texto(page.locator("[data-resumo-aviso-da-ia]"))));
   ok("o botão diz que fecha o resumo", (await botao(page).first().getAttribute("aria-pressed")) === "true"
      && /Fechar/.test((await botao(page).first().getAttribute("title")) || ""));
 }
@@ -397,7 +397,7 @@ console.log("\n9. Copiar leva o texto puro, dizendo que é da IA");
   await page.waitForTimeout(300);
   const copiado = await page.evaluate(() => navigator.clipboard.readText());
   ok("o texto diz de quem é a conversa, quando e que foi feito pela IA",
-     copiado.startsWith("Resumo da conversa com ANDREIA CRISTINA MARTINS, às 09:00 (feito pela IA do Zorvin)"), q(copiado.slice(0, 120)));
+     copiado.startsWith("Resumo da conversa com ANDREIA CRISTINA MARTINS, às 09:00 (feito pelo Quazar, a IA do Zorvin)"), q(copiado.slice(0, 120)));
   ok("e traz as três partes, com os itens em linhas",
      copiado.includes(`O que o cliente quer:\n${RESUMO_A.quer}`) && copiado.includes(`- ${RESUMO_A.combinado[0]}`)
      && copiado.includes(`O que falta:\n- ${RESUMO_A.falta[0]}`), q(copiado));

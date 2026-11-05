@@ -209,7 +209,7 @@ console.log("\n4. O erro é dito com a frase da ponte");
 {
   await caixa(page).fill("");
   ponte.sugestao = { status: 503, demora: 0, corpo: { ok: false,
-    erro: "O copiloto ainda não está ligado: falta a variável ANTHROPIC_API_KEY na Render (serviço da ponte)." } };
+    erro: "O Quazar ainda não está ligado: falta a variável ANTHROPIC_API_KEY na Render (serviço da ponte)." } };
   await clicar(botao(page));
   await page.waitForTimeout(800);
   const frase = await texto(faixa(page, "erro"));

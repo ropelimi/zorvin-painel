@@ -3,10 +3,11 @@ import { supabase } from "./supabase.js";
 import { naoGravouNada, comOCodigo, semATabela } from "./gravar.js";
 import { casaComAPesquisa, nadaComAPesquisa, PESQUISA_A_PARTIR_DE } from "./pesquisaNosMenus.js";
 import CampoDePesquisa from "./CampoDePesquisa.jsx";
+import { NOME_DO_ASSISTENTE } from "./assistente.js";
 import { ChevronDown, ChevronRight, GraduationCap, BookOpen, Loader2 } from "lucide-react";
 
 // ============================================================
-//  O QUE O COPILOTO APRENDEU (05/11) — duas seções da aba "Copiloto"
+//  O QUE O COPILOTO APRENDEU (05/11) — duas seções da aba "Quazar"
 //
 //  Pedido do Rodrigo: o Copiloto "sempre aprender, ficar cada vez mais
 //  inteligente", lendo as conversas de cada departamento e de cada telefone,
@@ -77,7 +78,7 @@ export function LicoesDoCopiloto({ cx, C, nomes }) {
       .order("criada_em", { ascending: false }).limit(TETO_DA_LISTA);
     if (error) {
       if (semATabela(error)) { setLido({ semTabela: true }); return false; }
-      setLido({ erro: comOCodigo("Não consegui ler as lições do copiloto.", error, "lições do copiloto") });
+      setLido({ erro: comOCodigo(`Não consegui ler as lições do ${NOME_DO_ASSISTENTE}.`, error, "lições do copiloto") });
       return false;
     }
     setLido({ linhas: data || [] });
@@ -115,7 +116,7 @@ export function LicoesDoCopiloto({ cx, C, nomes }) {
 
   async function apagar(licao) {
     if (ocupado) return;
-    if (!window.confirm(`Apagar esta lição? O Copiloto deixa de segui-la a partir da próxima sugestão.\n\n“${licao.texto}”`)) return;
+    if (!window.confirm(`Apagar esta lição? O ${NOME_DO_ASSISTENTE} deixa de segui-la a partir da próxima sugestão.\n\n“${licao.texto}”`)) return;
     setOcupado(licao.id); setRecado(null);
     const r = await supabase.from("zorvin_copiloto_licoes").delete().eq("id", licao.id).select("id");
     if (r.error) {
@@ -141,9 +142,9 @@ export function LicoesDoCopiloto({ cx, C, nomes }) {
 
   return (
     <div style={cx.secao} data-licoes-do-copiloto>
-      <div style={cx.titulo}><GraduationCap size={16} color={C.green} /> O que o Copiloto aprendeu com a equipe</div>
+      <div style={cx.titulo}><GraduationCap size={16} color={C.green} /> O que o {NOME_DO_ASSISTENTE} aprendeu com a equipe</div>
       <div style={cx.dica}>
-        Quando alguém pede uma mudança numa sugestão (<b>Pedir uma mudança ao Copiloto</b>, embaixo
+        Quando alguém pede uma mudança numa sugestão (<b>Pedir uma mudança ao {NOME_DO_ASSISTENTE}</b>, embaixo
         da sugestão na conversa) e o pedido ensina uma regra — “não passamos o telefone do
         advogado” —, ela vira uma lição. <b>As lições valem na hora, para a equipe toda.</b> Em cada
         sugestão vão as mais recentes: com muitas guardadas, as mais antigas deixam de entrar, e
@@ -250,12 +251,12 @@ export function LicoesDoCopiloto({ cx, C, nomes }) {
  *  um, pela régua de `temVantoro.js`: ainda perguntando, ligada, desligada
  *  pela variável, e a ponte de antes desta função (respondeu sem `aprende`). */
 export function fraseDaLeitura(estado) {
-  if (!estado) return { tipo: "perguntando", frase: "Perguntando à ponte se o Copiloto está lendo as conversas…" };
+  if (!estado) return { tipo: "perguntando", frase: `Perguntando à ponte se o ${NOME_DO_ASSISTENTE} está lendo as conversas…` };
   if (estado.ligado === false) {
-    return { tipo: "desligado", frase: "O Copiloto não está ligado na ponte (falta a ANTHROPIC_API_KEY), e por isso também não lê as conversas. As notas abaixo ficam como estão." };
+    return { tipo: "desligado", frase: `O ${NOME_DO_ASSISTENTE} não está ligado na ponte (falta a ANTHROPIC_API_KEY), e por isso também não lê as conversas. As notas abaixo ficam como estão.` };
   }
   if (estado.aprende === true) {
-    return { tipo: "lendo", frase: "O Copiloto lê as conversas sozinho, aos poucos (um pedaço por minuto, de cada telefone e de cada departamento), e reescreve estas notas. Elas entram nas sugestões do telefone e do departamento." };
+    return { tipo: "lendo", frase: `O ${NOME_DO_ASSISTENTE} lê as conversas sozinho, aos poucos (um pedaço por minuto, de cada telefone e de cada departamento), e reescreve estas notas. Elas entram nas sugestões do telefone e do departamento.` };
   }
   if (estado.aprende === false) {
     return { tipo: "parado", frase: "A leitura das conversas está desligada na ponte (COPILOTO_APRENDER=desligado). As notas abaixo continuam valendo nas sugestões, mas não crescem." };
@@ -263,7 +264,7 @@ export function fraseDaLeitura(estado) {
   if (estado.aprende === "antiga") {
     return { tipo: "antiga", frase: "A ponte que está no ar ainda não lê as conversas: ela é de antes desta função. Confira em “Atualizações do banco” qual versão está no ar." };
   }
-  return { tipo: "duvida", frase: "Não consegui perguntar à ponte se o Copiloto está lendo as conversas." };
+  return { tipo: "duvida", frase: `Não consegui perguntar à ponte se o ${NOME_DO_ASSISTENTE} está lendo as conversas.` };
 }
 
 function rotuloDoTelefone(t) {
@@ -284,7 +285,7 @@ export function NotasDoCopiloto({ cx, C, departamentos = [], telefones = [], est
       .select("id, escopo, advogado_id, departamento_id, texto, mensagens_lidas, aprendido_em, atualizado_em, editado_por, editado_em");
     if (error) {
       if (semATabela(error)) { setLido({ semTabela: true }); return false; }
-      setLido({ erro: comOCodigo("Não consegui ler o que o Copiloto aprendeu com as conversas.", error, "notas do copiloto") });
+      setLido({ erro: comOCodigo(`Não consegui ler o que o ${NOME_DO_ASSISTENTE} aprendeu com as conversas.`, error, "notas do copiloto") });
       return false;
     }
     setLido({ linhas: data || [] });
@@ -325,20 +326,20 @@ export function NotasDoCopiloto({ cx, C, departamentos = [], telefones = [], est
     }
     if (naoGravouNada(r)) {
       setOcupado("");
-      setRecado({ id: linha.id, tipo: "erro", frase: "Não salvou: o banco não deixou. Só quem administra o Zorvin corrige as notas do Copiloto." });
+      setRecado({ id: linha.id, tipo: "erro", frase: `Não salvou: o banco não deixou. Só quem administra o Zorvin corrige as notas do ${NOME_DO_ASSISTENTE}.` });
       return;
     }
     const releu = await ler();
     setOcupado("");
     setTextos((atual) => { const novo = { ...atual }; delete novo[linha.id]; return novo; });
     setRecado(releu
-      ? { id: linha.id, tipo: "ok", frase: "Salvo. A próxima sugestão já lê as notas corrigidas, e o Copiloto continua aprendendo a partir delas." }
+      ? { id: linha.id, tipo: "ok", frase: `Salvo. A próxima sugestão já lê as notas corrigidas, e o ${NOME_DO_ASSISTENTE} continua aprendendo a partir delas.` }
       : { id: linha.id, tipo: "erro", frase: "Salvou, mas não consegui reler as notas para conferir. Feche e abra esta aba." });
   }
 
   async function lerDeNovo(linha, nome) {
     if (ocupado) return;
-    if (!window.confirm(`Ler tudo de novo em “${nome}”? O Copiloto esquece as notas de lá e lê todas as conversas outra vez, aos poucos.`)) return;
+    if (!window.confirm(`Ler tudo de novo em “${nome}”? O ${NOME_DO_ASSISTENTE} esquece as notas de lá e lê todas as conversas outra vez, aos poucos.`)) return;
     setOcupado(linha.id); setRecado(null);
     const r = await supabase.rpc("zorvin_copiloto_ler_de_novo", { p_id: linha.id });
     if (r.error) {
@@ -355,7 +356,7 @@ export function NotasDoCopiloto({ cx, C, departamentos = [], telefones = [], est
     setOcupado("");
     setTextos((atual) => { const novo = { ...atual }; delete novo[linha.id]; return novo; });
     setRecado({ id: linha.id, tipo: releu ? "ok" : "erro", frase: releu
-      ? "Combinado: o Copiloto vai ler as conversas de novo, aos poucos (um pedaço por minuto)."
+      ? `Combinado: o ${NOME_DO_ASSISTENTE} vai ler as conversas de novo, aos poucos (um pedaço por minuto).`
       : "Pedi a leitura de novo, mas não consegui reler as notas para conferir. Feche e abra esta aba." });
   }
 
@@ -388,7 +389,7 @@ export function NotasDoCopiloto({ cx, C, departamentos = [], telefones = [], est
           <div style={{ padding: "0 2px 10px 23px" }}>
             {!texto.trim() && textos[linha.id] == null && (
               <div data-notas-vazias style={{ ...cx.dica, marginBottom: 6 }}>
-                Ainda não há notas aqui: o Copiloto lê as conversas aos poucos, e elas aparecem depois da primeira leitura.
+                Ainda não há notas aqui: o {NOME_DO_ASSISTENTE} lê as conversas aos poucos, e elas aparecem depois da primeira leitura.
               </div>
             )}
             <textarea data-notas-texto value={texto} rows={10}
@@ -427,7 +428,7 @@ export function NotasDoCopiloto({ cx, C, departamentos = [], telefones = [], est
 
   return (
     <div style={cx.secao} data-notas-do-copiloto-secao>
-      <div style={cx.titulo}><BookOpen size={16} color={C.green} /> O que o Copiloto aprendeu lendo as conversas</div>
+      <div style={cx.titulo}><BookOpen size={16} color={C.green} /> O que o {NOME_DO_ASSISTENTE} aprendeu lendo as conversas</div>
       <div data-copiloto-leitura={leitura.tipo}
            style={{ ...cx.dica, color: leitura.tipo === "lendo" ? C.verdeTexto
                                   : leitura.tipo === "perguntando" ? C.textSecondary : C.ambarTexto }}>
@@ -435,7 +436,7 @@ export function NotasDoCopiloto({ cx, C, departamentos = [], telefones = [], est
       </div>
       <div style={cx.dica}>
         São notas, e não regras: as perguntas de sempre, como a equipe responde, o que não se faz. O
-        Copiloto não guarda dado de cliente nelas (CPF, processo, telefone, e-mail). Se algo estiver
+        {NOME_DO_ASSISTENTE} não guarda dado de cliente nelas (CPF, processo, telefone, e-mail). Se algo estiver
         errado, corrija o texto: ele continua a partir do que você escreveu. As notas internas da
         equipe nunca são lidas.
       </div>

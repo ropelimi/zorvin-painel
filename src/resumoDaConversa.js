@@ -7,6 +7,8 @@
 //  (`ResumoDaConversa.jsx`) e faz as contas daqui.
 // ============================================================
 
+import { NOME_DO_ASSISTENTE } from "./assistente.js";
+
 export const PARTES_DO_RESUMO = [
   { chave: "quer", titulo: "O que o cliente quer", vazio: "Não ficou claro na conversa." },
   { chave: "combinado", titulo: "O que já foi combinado", vazio: "Nada combinado ainda." },
@@ -54,7 +56,7 @@ export function textoDoResumo(resumo, { nome = "", quando = "" } = {}) {
   const r = resumo || {};
   const lista = (v, vazio) => (v && v.length ? v.map((x) => `- ${x}`) : [`- ${vazio}`]);
   return [
-    `Resumo da conversa${nome ? ` com ${nome}` : ""}${quando ? `, ${quando}` : ""} (feito pela IA do Zorvin)`,
+    `Resumo da conversa${nome ? ` com ${nome}` : ""}${quando ? `, ${quando}` : ""} (feito pelo ${NOME_DO_ASSISTENTE}, a IA do Zorvin)`,
     "",
     `${PARTES_DO_RESUMO[0].titulo}:`,
     r.quer || PARTES_DO_RESUMO[0].vazio,
