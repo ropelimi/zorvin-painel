@@ -55,9 +55,11 @@ Build: `npm install && npm run build` · Publish directory: `dist`
 Dito por ele em 25/09, depois de quatro entregas seguidas terminarem com esse
 recado. Mesclou, está no ar. ~~O que resta a pedir, quando faz diferença, é o
 **Ctrl+Shift+R** — o navegador pode estar com a versão velha em cache.~~
-**Desde 05/11 nem isso:** a aba aberta se atualiza sozinha em poucos minutos,
-e a versão (v1.N, com N o número da PR) aparece no pé do menu ⋮. É ela que vai
-no recado da entrega. Ver "O Zorvin se atualiza sozinho, e diz a versão".
+**Desde 05/11 nem isso:** a aba aberta se atualiza sozinha num momento sem
+ninguém (escondida, de madrugada, ou na volta do descanso), e a versão
+("v3.15 · 05/11", com 315 o número da PR, em centenas) aparece no pé do menu
+⋮. É ela que vai no recado da entrega. Ver "O Zorvin se atualiza sozinho, e
+diz a versão".
 
 **Com uma exceção medida em 14/10:** naquele dia a Render não publicou três
 PRs da PONTE, e ninguém soube até a manhã seguinte. A regra continua — não
@@ -80,33 +82,98 @@ dia aberto. E a aba velha quebra aos poucos: os pedaços de código buscados
 depois (o pdf.js da prévia) mudam de nome a cada publicação, e o de nome velho
 deixa de existir no site.
 
+### Nunca na frente de ninguém (a segunda rodada, no mesmo dia)
+
+A primeira regra (a da PR #313) recarregava com a tela parada há 2 minutos, e
+mostrava faixas no meio da tela. O Rodrigo: *"A atualização deve ser mais
+sútil, sem atrapalhar a operação"*, e *"não quero nem sonhar em isso
+acontecendo"*. Dois minutos sem mexer no mouse pode ser alguém lendo uma
+conversa, ou no telefone com o cliente.
+
+**A aba só recarrega sozinha em três momentos** (`momentoSemNinguem`, em
+`src/atualizacao.js`):
+
+| o momento | quando | o que segura, além do que se perderia |
+|---|---|---|
+| **escondida** | a aba das conversas escondida há 2 minutos (outra guia, outro programa, a tela bloqueada) | a conversa rolada para mensagens antigas, a lista rolada para baixo, uma janela aberta por cima |
+| **madrugada** | das 0h às 6h, com a aba parada há uma hora, à vista ou não | nada mais |
+| **descanso** | o computador acorda (o relógio salta 20 minutos ou mais), nos 2 minutos seguintes, com a aba ainda escondida e ninguém tendo mexido nela | nada mais |
+
+**Com a aba à vista, de dia, nunca.** Para quem quer a novidade na hora, um
+**pontinho** no canto do ⋮ (`data-versao-nova`) e o item **"Atualizar o Zorvin
+(v3.15 · 05/11)"** no alto do menu (`data-atualizar-agora`). **Nenhuma faixa**,
+nem antes nem depois: as duas da primeira rodada (`data-versao-nova` como
+faixa, e a do "atualizado") saíram.
+
+**O que mudaria ao voltar** (`useQuandoEscondida`, no Painel) só vale para a
+aba escondida de dia. Nada daquilo é trabalho que se perde, mas é a pessoa
+voltando e achando a tela diferente. De madrugada e na volta do descanso não
+segura. **A guia de uma tela** (Funil, Tarefas, Painel de números) não diz o
+que mudaria, e por isso não recarrega escondida de dia: recarrega de
+madrugada, na volta do descanso, ou quando alguém a abre de novo.
+
+**A volta traz a tela como estava.** Antes de recarregar, a aba guarda uma
+**foto da tela** na guia (`sessionStorage`), e a página nova nasce com ela
+(`fotoDaVolta`): a conversa aberta (pelo endereço da guia de uma conversa), a
+aba da lista, os filtros da fita, a busca, os responsáveis escolhidos, a pasta
+de arquivadas e o filtro de quem participou. **A foto vale uma vez**: o F5 de
+depois abre como sempre. E ela vence em 10 minutos.
+
+**O som dos avisos continua depois da recarga.** Medido no Chromium: o
+navegador só deixa tocar som depois de a pessoa clicar na página, e a recarga
+feita pela própria página guarda esse clique.
+
+**As mensagens que chegam nos segundos da recarga ganham o aviso**
+(`recuperarAvisosRef`, no Painel). Entre a página velha sair e a nova assinar
+o tempo real passam uns segundos, e o tempo real não repete o que passou.
+Então a página que nasceu de uma recarga feita pelo Zorvin (`recargaFeitaEm`)
+pergunta ao banco, assim que o canal assina, pelas mensagens de cliente desde
+a saída, e passa cada uma pelo mesmo aviso do tempo real
+(`avisarMensagemNovaRef`, a mesma conta nos dois caminhos):
+
+- **dois minutos de folga para trás**: a saída é medida no relógio do
+  computador, e a mensagem, no do banco. O computador adiantado em um minuto
+  pularia justamente a mensagem do meio;
+- **o que a página velha já avisou não avisa de novo**: a marca de
+  `reivindicarAviso` é da mensagem, e vale 15 minutos. O que ela viu sem
+  avisar (a conversa aberta, à vista, ou de outra pessoa) a página nova decide
+  igual, porque a conversa volta aberta;
+- **as 50 mais recentes**, e até cinco minutos à frente do relógio do
+  computador;
+- **o F5 da pessoa não confere nada**: só a recarga feita pelo Zorvin deixa a
+  foto.
+
+### A versão: em centenas, com a data
+
+Pedido do Rodrigo, no mesmo dia: *"Por que ficou 'v1.313'? Parece que nunca
+saiu da versão 1"*, e a regra dele: *"já que é a entrega 313, podemos colocar
+como versão 3.13 … até a versão 3.99 e a próxima será uma versão 4.00"*.
+
 | | |
 |---|---|
-| a versão | no pé do menu ⋮ (`data-versao-do-zorvin`) e na tela de entrada: "Zorvin v1.313" |
-| o número | o da PR que entrou por último: o GitHub termina a mensagem do commit da mesclagem em "(#313)" |
-| a conferência | a aba pergunta pelo `versao.json` de 5 em 5 minutos, e quando volta à frente |
-| a recarga | sozinha, com a tela parada há 2 minutos (ou a aba escondida) e nada que se perca |
-| a volta | a conversa aberta reabre, pelo endereço da guia de uma conversa (`?conversa=…&linha=…`); a guia de uma tela recarrega nela |
-| enquanto não é seguro | a faixa verde-escura `data-versao-nova`, com "Atualizar agora" |
-| depois | a faixa `data-zorvin-atualizado` ("O Zorvin foi atualizado para a v1.313"), que some 45 segundos depois do primeiro gesto |
-
-**A faixa não pede nada de ninguém**: a versão nova entra sozinha na primeira
-pausa. Ela diz que há uma, e oferece entrar agora para quem não quer esperar.
+| a versão | no pé do menu ⋮ (`data-versao-do-zorvin`) e na tela de entrada: "Zorvin v3.15 · 05/11" |
+| o número | o da PR que entrou por último, em centenas (`rotuloDaEntrega`): a 314 é a v3.14, a 399 a v3.99, a 400 a v4.00. Depois do ponto, sempre dois números (v4.05) |
+| a data | a do commit, no fuso de Brasília (`dataDoCommit`), e não a da montagem: ela vai dentro do código, e o mesmo commit tem de dar o mesmo pacote |
+| o `title` | "Entrega 315, de 05/11/2026 às 04:40" |
+| a conferência | a aba pergunta pelo `versao.json` de 5 em 5 minutos, quando volta à frente, e logo que o computador acorda |
 
 **A montagem escreve a versão em dois lugares** (`vite.config.js`), a partir da
 mesma conta: dentro do código (`__ZORVIN_VERSAO__`) e no arquivo `versao.json`.
 
 - **o identificador é o commit publicado**: `RENDER_GIT_COMMIT` na Render, o
   do `git` fora dela, e sem os dois, a hora da montagem;
-- **o rótulo sai da mensagem do commit** (`git log -1`). Sem o número da PR, vai
-  o começo do commit ("v1 · 0123456");
+- **o rótulo sai da mensagem do commit** (`git log -1`): o GitHub termina a
+  mensagem da mesclagem em "(#315)". Sem o número da PR, vai o começo do
+  commit ("0123456");
 - **a hora da montagem fica só no arquivo**: dentro do código, ela mudaria o
   pacote a cada montagem do mesmo commit;
 - **no servidor de desenvolvimento**, o mesmo arquivo é servido por uma rota, e
   nunca guardado.
 
-**O que segura a recarga** (`motivosParaEsperar`, em `src/atualizacao.js`).
-Cada tela diz o que é dela (`useMotivoParaEsperar`):
+### O que se perderia segura a recarga, em qualquer momento
+
+`motivosParaEsperar`, em `src/atualizacao.js`. Cada tela diz o que é dela
+(`useMotivoParaEsperar`):
 
 - **o Painel:** o texto na caixa de escrever (ou a edição de uma mensagem), o
   rascunho de outra conversa, o áudio gravando ou gravado, os anexos escolhidos
@@ -115,15 +182,14 @@ Cada tela diz o que é dela (`useMotivoParaEsperar`):
 - **a faxina:** o lote finalizando conversas;
 - **e, sem cada janela precisar dizer, o texto que a pessoa DIGITOU** num campo
   (pelo `beforeinput`), enquanto ele diz outra coisa que não o que dizia antes
-  da primeira tecla. O campo preenchido pelo próprio painel não segura nada
-  sozinho. A ficha fica de fora desta conta (ela diz por si), e os campos de
-  procurar também (`data-nao-segura-a-atualizacao`): a busca esquecida na caixa
-  seguraria a atualização o dia inteiro;
+  da primeira tecla. A ficha fica de fora desta conta (ela diz por si), e os
+  campos de procurar também (`data-nao-segura-a-atualizacao`): a busca volta
+  escrita depois da recarga;
 - **e um áudio tocando.**
 
-**"Atualizar agora" pergunta antes, dizendo o que se perde** ("Atualizar agora
-apaga o texto na caixa de escrever…"). Com a ficha por salvar, o navegador não
-pergunta de novo: o `beforeunload` da ficha lê `recargaPedida`.
+**"Atualizar o Zorvin" pergunta antes, dizendo o que se perde** ("Atualizar
+agora apaga o texto na caixa de escrever…"). Com a ficha por salvar, o
+navegador não pergunta de novo: o `beforeunload` da ficha lê `recargaPedida`.
 
 **A recarga confere antes se o site responde**: um `fetch` do endereço de volta,
 com `cache: "reload"`, que também renova o que o navegador guardou daquele
@@ -132,59 +198,104 @@ navegador.
 
 **A recarga que não trouxe a versão nova não vira um círculo.** Antes de
 recarregar, a aba anota para qual versão foi (`sessionStorage`, só nesta guia).
+Voltando com o código velho (o site ainda serviu o arquivo antigo), ela não
+recarrega sozinha de novo para a mesma versão por uma hora. O pontinho fica
+**âmbar**, e o item do menu vira "Carregar a versão nova", com o pedido do
+Ctrl+Shift+R, que aí é o que resta; clicado, ele pede o endereço com um
+carimbo (`v=`). **Sem conseguir anotar, não há recarga sozinha.**
 
-- **Voltando com o código velho** (o site ainda serviu o arquivo antigo), ela
-  não recarrega sozinha de novo para a mesma versão por uma hora.
-- **A faixa âmbar `data-versao-nao-carregou`** pede o Ctrl+Shift+R, que aí é o
-  que resta. O "Tentar de novo" dela pede o endereço com um carimbo (`v=`).
-- **Sem conseguir anotar, não há recarga sozinha.**
+**Para quem conta as entregas ao Rodrigo:** não peça o Ctrl+Shift+R. A versão
+nova entra sozinha num momento sem ninguém, e o número dela aparece no pé do
+menu ⋮: é ele que vai no recado ("entrou no ar a v3.15"). Quem quiser na hora
+tem o "Atualizar o Zorvin" no ⋮.
 
-**O que se perde numa recarga sozinha, e é decisão:** a escolha do seletor de
-responsáveis, os filtros da fita e o ponto da rolagem. Nada disso é trabalho,
-e tudo volta num clique.
+**Fica de fora da prova, e é decisão:**
 
-**Fica de fora da prova, e é decisão:** o áudio gravando, a mensagem saindo e a
-faxina em lote. Os três seguram a recarga por segundos, e montar a cena de cada
-um custaria mais do que o defeito que ela pegaria.
+- o áudio gravando, a mensagem saindo e a faxina em lote. Os três seguram a
+  recarga por segundos, e montar a cena de cada um custaria mais do que o
+  defeito que ela pegaria;
+- **o som tocando de verdade depois da recarga.** A ativação guardada foi
+  medida uma vez no Chromium; na prova, o espião conta o som pedido, e não o
+  ouvido (o navegador de prova não tem alto-falante);
+- **a versão perguntada de novo logo depois de acordar**, quando a primeira
+  pergunta falhou porque a rede ainda não tinha voltado. A prova não tira a
+  rede no meio do descanso.
 
-**Para quem conta as entregas ao Rodrigo:** não peça mais o Ctrl+Shift+R. A
-versão nova entra sozinha em poucos minutos, e o número dela aparece no pé do
-menu ⋮: é ele que vai no recado ("entrou no ar a v1.313").
-
-Prova: `o-zorvin-se-atualiza-sozinho`, 82 conferências em 15 cenas. Ela finge
+Prova: `o-zorvin-se-atualiza-sozinho`, 182 conferências em 20 cenas. Ela finge
 a publicação: o `versao.json` que a aba pergunta é trocado pela prova, e a
 versão que a aba "roda" é dita por `__VERSAO_EM_USO` (o servidor da bancada
-não remonta o código). A cena 14 monta o pacote de verdade, com o
-`RENDER_GIT_COMMIT` que a Render daria, e confere o arquivo e o código.
+não remonta o código). A aba escondida é dita pela prova
+(`visibilityState`), a madrugada por `__MADRUGADA` e pelo relógio de mentira
+nas horas de verdade (`clock.install`, no fuso de São Paulo), e o descanso
+pelo relógio que salta (`clock.fastForward`). Cada recarga deixa anotado o
+MOMENTO que a decidiu (a foto da tela o leva), e cada cena confere qual foi.
+A cena 18 monta o pacote de verdade, com o `RENDER_GIT_COMMIT` que a Render
+daria, e confere o arquivo e o código.
 
-**23 sabotagens e 23 pegas**, todas limpas, rodadas em cópias e lidas uma a
-uma:
+**55 sabotagens, 54 pegas e uma que vaza com razão**, todas rodadas em cópias
+e lidas uma a uma:
 
-- o painel de antes inteiro (39 reprovações — é o pedido reproduzido);
-- **a conferência e a pausa:** sem perguntar pela versão (27); recarregando
-  sem esperar a tela parar; o mouse andando sem contar como gesto; a aba
-  escondida sem contar como parada;
-- **o que segura:** o rascunho de outra conversa; o anexo escolhido; a ficha
-  por salvar; o texto digitado numa janela; a busca escrita segurando; o texto
-  na caixa de escrever (pego só pela frase da pergunta, ver abaixo);
-- **a recarga:** sem a marca (a recarga em círculo, 6); sem voltar para a
-  conversa aberta; "Atualizar agora" sem perguntar (7); a ficha perguntando
-  de novo; a segunda tentativa sem o carimbo; recarregando sem conferir se o
-  site responde (a aba vira a página de erro do navegador);
-- **o aviso e a versão:** o "atualizado" sumindo antes de alguém voltar; sem a
-  versão no menu; sem a versão na entrada; a montagem sem o `versao.json` (6);
-  o código e o arquivo discordando (a aba recarregaria a cada pergunta); a
-  hora da montagem dentro do código.
+- o painel de antes inteiro (75 reprovações — a regra dos 2 minutos e as
+  faixas);
+- **os momentos:**
+  - à vista, de dia, recarregando com a tela parada (a regra de antes);
+  - escondida sem esperar o tempo, e sem olhar o que mudaria ao voltar;
+  - a conversa rolada, a lista rolada e a janela por cima, cada uma deixando
+    de contar;
+  - de madrugada sem olhar se a tela está parada; a madrugada o dia inteiro;
+    a madrugada no relógio de Londres;
+  - o descanso com a aba à vista, sem olhar quem mexeu depois e sem a janela
+    da volta; sem perceber o relógio que salta;
+  - a guia de uma tela sem as duas guardas;
+- **a foto da tela:** sem a aba da lista, sem os responsáveis, sem a busca e o
+  filtro, sem a pasta de arquivadas, sem quem participou, sem dizer que há o
+  responsável (o seletor some), e valendo duas vezes;
+- **as mensagens do meio da recarga:** sem conferir; com 15 segundos de folga;
+  sem limite para trás; pelas 50 mais antigas; avisando de novo o que já
+  avisou; e conferindo em toda abertura (o F5 também);
+- **o que se perderia:** o texto na caixa, o rascunho de outra conversa, o
+  anexo, a ficha por salvar e o texto digitado numa janela, cada um deixando
+  de segurar; e a busca escrita segurando;
+- **a recarga:** sem a marca (a recarga em círculo); sem voltar para a
+  conversa aberta; "Atualizar o Zorvin" sem perguntar; a ficha perguntando de
+  novo; a segunda tentativa sem o carimbo; recarregando sem conferir se o site
+  responde;
+- **o que a tela mostra:** sem o pontinho; sem o item; o item sem a versão e a
+  data; sem a versão no menu e na entrada; a versão sem o `title`;
+- **a montagem:** o rótulo de antes (v1.N), na regra e no commit; sem os dois
+  números depois do ponto; a data no fuso de Londres; a data da montagem, e
+  não a do commit; a hora da montagem dentro do código; sem o `versao.json`; o
+  código e o arquivo discordando.
 
-**O texto na caixa de escrever é pego por uma conferência só, e com razão:**
-sem o motivo do Painel, a conta do texto digitado segura a recarga do mesmo
-jeito (a caixa é um campo onde se digitou), e o que muda é a frase da
-pergunta, que passa a dizer "um texto digitado na tela". As duas guardas se
-cobrem; é a régua de 25/09.
+**A que vaza com razão:** tirar a guarda da guia de uma tela
+(`if (TELA_DA_GUIA)`, em `useQuandoEscondida`). As telas são desenhadas numa
+camada fixa que cobre a janela inteira, e a conferência da janela aberta por
+cima (`janelaPorCima`) a segura do mesmo jeito. A guarda fica: ela não depende
+de como a tela é desenhada. A sabotagem que tira as duas é pega.
 
-**A rodada foi interrompida no meio** (a máquina reiniciou depois da quinta
-sabotagem) e retomada da sexta, sem nada ter mudado no código entre as duas
-metades.
+**A rodada foi feita três vezes, e as duas primeiras ensinaram:**
+
+- **o painel de antes estourava a prova**, em vez de reprovar: ela importava
+  as regras da versão do `vite.config.js`, e o de antes não as tinha. Hoje a
+  cena 18 as importa na hora, guardada, e diz quando faltam;
+- **duas sabotagens vazaram, e as duas eram da prova:**
+  - sem o limite para trás, a mensagem de quatro minutos antes continuava sem
+    avisar, porque a rajada de 55 mensagens a deixava fora das 50 mais
+    recentes. A rajada passou para uma janela própria;
+  - a conferência em toda abertura (o F5 também) passava por dois motivos: a
+    prova olhava o F5 com um relógio fixo, e a mensagem que ela esperava calada
+    já tinha sido avisada (e marcada) na abertura de antes. Hoje a abertura de
+    sempre também é conferida, o F5 ganha uma mensagem que nenhuma página viu,
+    e a ausência só é conferida depois de um aviso que TEM de sair.
+
+**A ausência de um aviso só se confere depois de um aviso que tem de sair.**
+Com um relógio fixo, a prova mede a pressa dela, e não o painel.
+
+**E a prova achou um defeito do painel antes da PR:** depois de a aba se
+atualizar com um responsável escolhido e a lista vazia, o seletor de
+responsáveis sumia, sem como desfazer a escolha. Quem diz se o banco tem o
+responsável é a lista de conversas, e a lista vazia não diz nada. A foto
+passou a levar isso (`temResponsavel`).
 
 ## Como o painel funciona
 
@@ -8825,8 +8936,9 @@ com `ps` que nada ficou rodando.**
   quer dizer: as provas verdes no último commit da PR, sem conflito com a
   `main`, e nenhum comentário ou revisão esperando resposta. Com PR nos dois
   repositórios, **a da ponte entra primeiro**. Mesclou, conta-se a ele o que
-  entrou no ar, e a versão que o leva (v1.N, no pé do menu ⋮). ~~E o
-  Ctrl+Shift+R, quando faz diferença~~: desde 05/11 a aba se atualiza sozinha.
+  entrou no ar, e a versão que o leva ("v3.15", no pé do menu ⋮: o número da
+  PR em centenas). ~~E o Ctrl+Shift+R, quando faz diferença~~: desde 05/11 a
+  aba se atualiza sozinha, num momento sem ninguém.
 - **O que continua sendo dele é a decisão sobre o conteúdo**, e não o merge:
   o som que ele precisa ouvir antes (ver "A galinha — e a quinta tentativa de
   sintetizar bicho (01/10)"), e o script que reescreve dado de produção sem

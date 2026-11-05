@@ -13,7 +13,7 @@ import {
   Image as ImageIcon, Video,
   Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote, Volume2,
   ListChecks, Undo2, UserCheck, SquareKanban, BellRing, BellPlus, CircleCheck, RotateCcw,
-  Sparkles, Loader2, Headset, Hourglass, Eraser, ScrollText, AlarmClock
+  Sparkles, Loader2, Headset, Hourglass, Eraser, ScrollText, AlarmClock, RefreshCw
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
@@ -78,8 +78,9 @@ import { SEM_RESPONSAVEL, chaveDosResponsaveis, daChave, passaNosResponsaveis, r
          argumentosDaContagem, rotuloDosResponsaveis, fraseDosResponsaveis } from "./responsaveisDaLista.js";
 import { pareceAcessoVencido, pedirConferenciaDaSessao, marcarSaidaPedida, foiSaidaPedida } from "./vigiaDaSessao.js";
 import { rascunhosDe, guardarRascunho } from "./rascunhos.js";
-import { useAtualizacao, useMotivoParaEsperar, registrarEnderecoDeVolta, atualizarAgora, rotuloDaVersao,
-         esquecerQueAtualizou } from "./atualizacao.js";
+import { useAtualizacao, useMotivoParaEsperar, useQuandoEscondida, registrarEnderecoDeVolta, registrarFotoDaTela,
+         fotoDaVolta, marcarFotoUsada, recargaFeitaEm, atualizarAgora, textoDaVersao,
+         detalheDaVersao } from "./atualizacao.js";
 import CampoDePesquisa, { ComPesquisa } from "./CampoDePesquisa.jsx";
 import { PESQUISA_A_PARTIR_DE, casaComAPesquisa, nadaComAPesquisa, chaveDaPesquisa } from "./pesquisaNosMenus.js";
 import { padraoSemAcento, casaNaMensagem, semAColunaDaTranscricao, juntarAchados,
@@ -3278,7 +3279,38 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
   });
 });
 
+// UMA JANELA ABERTA POR CIMA (05/11) — ver `useQuandoEscondida`, no painel.
+// As janelas do painel (Configurações, a do Finalizar, a de agendar, a da
+// tarefa…) cobrem a tela com um fundo escuro em `position: fixed`. Olhar o
+// que está por cima em três pontos do meio da tela, e subir até achar um
+// desses fundos, vale para todas — sem cada janela precisar dizer que está
+// aberta, e sem a próxima janela que alguém criar ficar de fora.
+function janelaPorCima() {
+  if (typeof document === "undefined" || typeof window === "undefined") return false;
+  try {
+    const w = window.innerWidth, h = window.innerHeight;
+    for (const [fx, fy] of [[0.5, 0.5], [0.3, 0.45], [0.7, 0.55]]) {
+      let el = document.elementFromPoint(w * fx, h * fy);
+      while (el && el !== document.body && el !== document.documentElement) {
+        if (getComputedStyle(el).position === "fixed") {
+          const r = el.getBoundingClientRect();
+          if (r.width >= w * 0.9 && r.height >= h * 0.9) return true;
+        }
+        el = el.parentElement;
+      }
+    }
+  } catch (_) { return false; }
+  return false;
+}
+
 export default function Painel({ sessao }) {
+  // A FOTO DA RECARGA (05/11) — ver `atualizacao.js`. A recarga que o Zorvin
+  // faz sozinho guarda como a tela estava (a aba da lista, os filtros, a
+  // busca, os responsáveis), e a página nova nasce com ela: quem volta acha
+  // tudo como deixou. Numa abertura comum não há foto, e a tela nasce como
+  // sempre. A guia de uma tela não usa: o endereço dela já diz o que é.
+  const [fotoDaRecarga] = useState(() => (TELA_DA_GUIA ? null : fotoDaVolta()));
+  useEffect(() => { marcarFotoUsada(); }, []);
   // Tema começa pelo que foi salvo da última vez (claro/escuro).
   const [modo, setModo] = useState(() => {
     try { return localStorage.getItem("zorvin_modo") || "claro"; } catch (_) { return "claro"; }
@@ -3507,7 +3539,7 @@ export default function Painel({ sessao }) {
   const [historico, setHistorico] = useState(null);
   const [mensagens, setMensagens] = useState([]);
   const [seletorAberto, setSeletorAberto] = useState(false);
-  const [verArquivadas, setVerArquivadas] = useState(false); // exibindo a lista de arquivadas
+  const [verArquivadas, setVerArquivadas] = useState(() => Boolean(fotoDaRecarga && fotoDaRecarga.arquivadas)); // exibindo a lista de arquivadas
   const [contatosLista, setContatosLista] = useState([]); // todos os contatos (agenda)
   // A LEITURA DA AGENDA QUE FALHOU não é "nenhum contato salvo" (armadilha nº 2).
   const [erroContatos, setErroContatos] = useState("");
@@ -3629,8 +3661,8 @@ export default function Painel({ sessao }) {
   //  e concluiria que não há nada a fazer.
   // ============================================================
   const [temSituacao, setTemSituacao] = useState(null);
-  const [abaSituacao, setAbaSituacao] = useState("aberto");
-  const abaSituacaoRef = useRef("aberto");
+  const [abaSituacao, setAbaSituacao] = useState(() => (fotoDaRecarga && NOME_DA_SITUACAO[fotoDaRecarga.aba] ? fotoDaRecarga.aba : "aberto"));
+  const abaSituacaoRef = useRef(abaSituacao);
   useEffect(() => { abaSituacaoRef.current = abaSituacao; }, [abaSituacao]);
   // O NÚMERO DE CADA ABA, do banco: `{ de, aguardando, aberto, finalizado }`.
   const [contagemDasAbas, setContagemDasAbas] = useState(null);
@@ -3664,7 +3696,13 @@ export default function Painel({ sessao }) {
   //  linha que a lista trouxe (o PostgREST escreve a chave mesmo com valor
   //  nulo). Nenhuma consulta a mais.
   // ============================================================
-  const [temResponsavel, setTemResponsavel] = useState(null);
+  // NA VOLTA DA RECARGA (05/11), a resposta vem da página velha, na foto. A
+  // pergunta às linhas (logo abaixo, na leitura da lista) não responde quando
+  // a tela volta com uma escolha que esvazia a lista — os Finalizados de uma
+  // pessoa podem não ter conversa nenhuma —, e o seletor de responsáveis
+  // sumiria justamente quando é nele que se desfaz a escolha.
+  const [temResponsavel, setTemResponsavel] = useState(() =>
+    (fotoDaRecarga && typeof fotoDaRecarga.temResponsavel === "boolean" ? fotoDaRecarga.temResponsavel : null));
   const temResponsavelRef = useRef(null);
   useEffect(() => { temResponsavelRef.current = temResponsavel; }, [temResponsavel]);
   // ============================================================
@@ -3691,7 +3729,8 @@ export default function Painel({ sessao }) {
   //  aparece. `responsaveisDaLista` é a PERGUNTA (uma chave de texto), e é ela
   //  que entra nas dependências de quem lê a lista — a lição de 25/09.
   // ============================================================
-  const [responsaveisEscolhidos, setResponsaveisEscolhidos] = useState([]);
+  const [responsaveisEscolhidos, setResponsaveisEscolhidos] = useState(() => (fotoDaRecarga && Array.isArray(fotoDaRecarga.responsaveis)
+    ? fotoDaRecarga.responsaveis.map(String) : []));
   const [menuResponsaveis, setMenuResponsaveis] = useState(false);
   const responsaveisMenuRef = useRef(null);
   const responsaveisDaLista = temResponsavel === true ? chaveDosResponsaveis(responsaveisEscolhidos) : "";
@@ -3788,7 +3827,7 @@ export default function Painel({ sessao }) {
   const [menuOrdem, setMenuOrdem] = useState(false);
   const ordemMenuRef = useRef(null);
 
-  const [busca, setBusca] = useState("");
+  const [busca, setBusca] = useState(() => (fotoDaRecarga && typeof fotoDaRecarga.busca === "string" ? fotoDaRecarga.busca : ""));
   const [rascunho, setRascunho] = useState("");
   const [atendimentos, setAtendimentos] = useState({}); // { conversaId: { por, em } }
   const [ultimasMidias, setUltimasMidias] = useState({}); // { conversaId: tipo } da última mensagem, se mídia
@@ -4302,7 +4341,8 @@ export default function Painel({ sessao }) {
   const marcosRef = useRef({ convId: null, lista: [] });
   // RELER OS MARCOS — preenchido logo depois de `carregarMensagens`.
   const relerMarcosRef = useRef(() => {});
-  const [filtro, setFiltro] = useState("tudo"); // aba/filtro da lista: 'tudo' | 'naolidas' | 'favoritas' | 'tag:<id>' | 'frente:<FRENTE>'
+  const [filtro, setFiltro] = useState(() => (fotoDaRecarga && typeof fotoDaRecarga.filtro === "string" && fotoDaRecarga.filtro
+    ? fotoDaRecarga.filtro : "tudo")); // aba/filtro da lista: 'tudo' | 'naolidas' | 'favoritas' | 'tag:<id>' | 'frente:<FRENTE>'
   // O filtro de agora, para quem é chamado fora do desenho (a releitura das
   // tarefas depois de um clique).
   const filtroRef = useRef("tudo");
@@ -4560,23 +4600,7 @@ export default function Painel({ sessao }) {
     : null;
   useEffect(() => registrarEnderecoDeVolta(() => (voltaRef.current ? enderecoDaConversa(voltaRef.current) : null)), []);
   const atualizacao = useAtualizacao();
-  // O "ATUALIZADO" SOME 45 SEGUNDOS DEPOIS DO PRIMEIRO GESTO, e não da recarga:
-  // a aba recarregou com a tela parada, e é quando a pessoa volta que ela
-  // precisa ler por que a tela piscou.
-  useEffect(() => {
-    if (!atualizacao.atualizadoPara) return undefined;
-    let relogio = null;
-    const gestos = ["pointerdown", "pointermove", "keydown", "touchstart"];
-    const aoPrimeiroGesto = () => {
-      gestos.forEach((t) => window.removeEventListener(t, aoPrimeiroGesto, true));
-      relogio = setTimeout(esquecerQueAtualizou, Number(globalThis.__AVISO_DE_ATUALIZADO_MS) || 45000);
-    };
-    gestos.forEach((t) => window.addEventListener(t, aoPrimeiroGesto, true));
-    return () => {
-      gestos.forEach((t) => window.removeEventListener(t, aoPrimeiroGesto, true));
-      clearTimeout(relogio);
-    };
-  }, [atualizacao.atualizadoPara]);
+  const versaoNovaNoMenu = Boolean(atualizacao.pendente || atualizacao.naoPegou || atualizacao.recarregando);
   // O NOME VEM DO CADASTRO DO VANTORO. A ordem abaixo é essa por um motivo:
   // `usuarios.nome` é reescrito a cada login com o que está no Vantoro, então
   // é a cópia mais nova que existe aqui. O `user_metadata` vem logo atrás
@@ -6129,7 +6153,58 @@ export default function Painel({ sessao }) {
   useEffect(() => { setQuemParticipou(false); setMenuResponsavel(false); }, [conversaId]);
 
   // Trocar de telefone zera a escolha: os atendentes são outros.
-  useEffect(() => { setQuemFiltra([]); setMenuQuem(false); }, [advogadoId]);
+  //
+  // MENOS NA VOLTA DA RECARGA (05/11): a escolha volta junto com o telefone em
+  // que foi feita — ver `fotoDaRecarga`. Indo para outro telefone, ela vale
+  // mais nada, e zera como sempre.
+  const quemDaVoltaRef = useRef(fotoDaRecarga && Array.isArray(fotoDaRecarga.quem) && fotoDaRecarga.quem.length
+    && fotoDaRecarga.advogadoId != null ? { advogadoId: String(fotoDaRecarga.advogadoId), quem: fotoDaRecarga.quem.map(String) } : null);
+  useEffect(() => {
+    const volta = quemDaVoltaRef.current;
+    if (volta && advogadoId != null && String(advogadoId) === volta.advogadoId) {
+      quemDaVoltaRef.current = null;
+      setQuemFiltra(volta.quem);
+      setMenuQuem(false);
+      return;
+    }
+    if (advogadoId != null) quemDaVoltaRef.current = null;
+    setQuemFiltra([]); setMenuQuem(false);
+  }, [advogadoId]);
+
+  // ------------------------------------------------------------
+  //  A ATUALIZAÇÃO SEM NINGUÉM VER (05/11) — ver `atualizacao.js`.
+  //
+  //  A FOTO: como a tela está agora, para a página nova nascer igual (ver
+  //  `fotoDaRecarga`, no começo do componente). A conversa aberta vai pelo
+  //  endereço de volta, logo acima.
+  //
+  //  O QUE MUDARIA AO VOLTAR: de dia, a aba escondida só recarrega se quem
+  //  volta acharia a tela igual. A conversa rolada para mensagens antigas
+  //  voltaria no fim; a lista rolada para baixo voltaria no alto; e uma janela
+  //  aberta por cima (Configurações, a do Finalizar, a de agendar…) fecharia.
+  //  Nada disso é trabalho que se perde — de madrugada e na volta do
+  //  descanso, não segura nada —, mas de dia é a pessoa voltando e achando a
+  //  tela diferente. A guia de uma tela não recarrega escondida de dia.
+  // ------------------------------------------------------------
+  const listaDeConversasRef = useRef(null);
+  const fotoRef = useRef(null);
+  fotoRef.current = TELA_DA_GUIA ? null : {
+    aba: abaSituacao, arquivadas: verArquivadas, filtro, busca,
+    responsaveis: responsaveisEscolhidos, quem: quemFiltra, advogadoId, conversaId,
+    temResponsavel,
+  };
+  useEffect(() => registrarFotoDaTela(() => fotoRef.current), []);
+  useQuandoEscondida(() => {
+    if (TELA_DA_GUIA) return ["a guia de uma tela"];
+    const lista = [];
+    const conversaEl = listaRef.current;
+    if (conversaEl && conversaEl.scrollHeight - conversaEl.scrollTop - conversaEl.clientHeight
+        > Math.max(240, conversaEl.clientHeight * 0.5)) lista.push("a conversa rolada para mensagens antigas");
+    const listaEl = listaDeConversasRef.current;
+    if (listaEl && listaEl.scrollTop > Math.max(240, listaEl.clientHeight * 0.5)) lista.push("a lista de conversas rolada para baixo");
+    if (janelaPorCima()) lista.push("uma janela aberta por cima");
+    return lista;
+  });
 
   useEffect(() => {
     let vivo = true;
@@ -7698,7 +7773,7 @@ export default function Painel({ sessao }) {
     return data;
   }
 
-  async function abrirNaAbaDela(advId, linha) {
+  async function abrirNaAbaDela(advId, linha, { restaurando = false } = {}) {
     const convId = linha.id;
     const arquivada = Boolean(linha.arquivada);
     // A PERGUNTA QUE A LISTA VAI FAZER AO BANCO — a régua de `abaDaLista`: na
@@ -7715,8 +7790,12 @@ export default function Painel({ sessao }) {
       && !passaNosResponsaveis(linha, daChave(responsaveisDaListaRef.current));
     if (escolhaSai) setResponsaveisEscolhidos([]);
     setVerArquivadas(arquivada);
-    setBusca("");
-    setFiltro("tudo");
+    // NA VOLTA DA RECARGA (05/11), a busca e o filtro ficam: a conversa estava
+    // aberta com eles, e a página nova nasceu com eles (`fotoDaRecarga`).
+    if (!restaurando) {
+      setBusca("");
+      setFiltro("tudo");
+    }
     setConversas((antes) => (antes.some((c) => String(c.id) === String(convId))
       ? antes : [linha, ...antes]));
     // ABERTA ANTES DA TROCA DE ABA. A recarga que a troca dispara mantém a
@@ -7813,7 +7892,10 @@ export default function Painel({ sessao }) {
           ? comOCodigo("Não consegui ler a mensagem do lembrete — a conversa abriu sem ela.", error, "mensagem do lembrete")
           : "A mensagem do lembrete não veio — a conversa abriu sem ela.", 8000);
       }
-      await verConversaDoHistorico({ advogadoId: pedido.advogadoId, conversaId: pedido.conversaId });
+      // A VOLTA DA RECARGA (05/11): a conversa é a que estava aberta quando
+      // o Zorvin se atualizou, e a busca e o filtro dela ficam.
+      const restaurando = Boolean(fotoDaRecarga && String(fotoDaRecarga.conversaId || "") === String(pedido.conversaId));
+      await verConversaDoHistorico({ advogadoId: pedido.advogadoId, conversaId: pedido.conversaId }, { restaurando });
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [advogadoId]);
@@ -8206,7 +8288,7 @@ export default function Painel({ sessao }) {
   // `antesDeAbrir` roda depois de a linha ser lida e antes de qualquer troca
   // na tela: é onde a mensagem pronta do lembrete vira o rascunho da conversa
   // que vai abrir (`usarMensagemPronta`). Devolve se abriu.
-  async function verConversaDoHistorico(l, { antesDeAbrir } = {}) {
+  async function verConversaDoHistorico(l, { antesDeAbrir, restaurando = false } = {}) {
     // A LINHA DESATIVADA ABRE PARA QUEM ADMINISTRA (04/11): ela é só leitura,
     // e é quem administra que a vê na barra. A busca em todos os telefones a
     // alcança, e o clique não pode dizer "sem acesso" a quem a abre pela
@@ -8224,7 +8306,7 @@ export default function Painel({ sessao }) {
     setAdvogadoId(adv.id);
     // A MESMA PORTA DO LINK: a conversa pode morar noutra aba, na pasta de
     // arquivadas, ou depois da primeira página — ver `abrirNaAbaDela`.
-    await abrirNaAbaDela(adv.id, linha);
+    await abrirNaAbaDela(adv.id, linha, { restaurando });
     return true;
   }
 
@@ -9393,6 +9475,89 @@ export default function Painel({ sessao }) {
   // manhã de trinta conversas abertas eram trinta janelas de silêncio, e a
   // mensagem que caísse numa delas simplesmente não aparecia até alguém
   // recarregar a página.
+  //
+  // O AVISO DE MENSAGEM NOVA — as perguntas estão em `esteAvisoMeInteressa`, e
+  // o porquê de cada uma, no tratador do tempo real logo abaixo. Uma função
+  // só, num espelho, para valer igual nos dois caminhos por onde a mensagem
+  // chega: o tempo real e a recuperação da recarga.
+  const avisarMensagemNovaRef = useRef(() => {});
+  avisarMensagemNovaRef.current = (nova) => {
+    if (!nova || nova.origem !== "contato" || ehHistoricoChegando(nova)) return;
+    if (!(document.hidden || nova.conversa_id !== conversaIdRef.current)) return;
+    esteAvisoMeInteressa(nova.conversa_id).then(async (paraMim) => {
+      if (!paraMim) return;
+      // ABERTA NESSE MEIO-TEMPO, a conversa não avisa: a pessoa já está
+      // vendo a mensagem.
+      if (!document.hidden && nova.conversa_id === conversaIdRef.current) return;
+      // ABERTA NOUTRA GUIA, À VISTA (02/11): a régua de cima, valendo
+      // para as guias vizinhas. Com as telas abrindo conversas em guias
+      // novas, a pessoa lê a conversa numa guia enquanto a das conversas
+      // fica escondida atrás — e ela tocaria o aviso da conversa que a
+      // pessoa está lendo.
+      if (outraGuiaVendo(nova.conversa_id)) return;
+      // UMA GUIA SÓ AVISA (02/11): a mensagem chega a todas as guias do
+      // Zorvin abertas na máquina, e cada uma tocaria o seu som. A
+      // primeira que pedir fica com o aviso — ver `reivindicarAviso`. É a
+      // mesma marca que impede a recuperação da recarga de avisar de novo o
+      // que a página velha já avisou.
+      if (!(await reivindicarAviso(`mensagem:${nova.id}`))) return;
+      tocarAviso();
+      // O NOME DE QUEM ESCREVEU, e não "Nova mensagem". Com a etiqueta
+      // por conversa, dois clientes escrevendo viram dois avisos — e dois
+      // avisos dizendo "Nova mensagem" não dizem a qual conversa ir.
+      const quem = conversasRef.current.find((c) => c.id === nova.conversa_id);
+      notificarDesktop(
+        (quem && nomeDoContato(quem.contato)) || "Nova mensagem",
+        nova.texto || "Mídia recebida",
+        nova.conversa_id);
+    }).catch((e) => console.error("Zorvin — o aviso de mensagem nova falhou:", e));
+  };
+
+  // ------------------------------------------------------------
+  //  AS MENSAGENS QUE CHEGARAM NOS SEGUNDOS DA RECARGA (05/11)
+  //
+  //  Entre a página velha sair e a nova assinar o tempo real passam uns
+  //  segundos, e a mensagem do cliente que chega nesse meio entra no banco
+  //  sem aviso nenhum: a velha já saiu, e o tempo real não repete o que
+  //  passou. A guia escondida pode estar ali só para tocar esse som.
+  //
+  //  Então a página que nasceu de uma recarga feita pelo Zorvin
+  //  (`recargaFeitaEm`) pergunta ao banco, logo que o canal assina, pelas
+  //  mensagens de cliente desde a saída, e passa cada uma pelo mesmo aviso.
+  //  UMA vez por página.
+  //
+  //  - DOIS MINUTOS DE FOLGA PARA TRÁS. A saída é medida no relógio do
+  //    computador, e a mensagem, no do banco: o computador adiantado em um
+  //    minuto pularia justamente a mensagem do meio. O que a página velha já
+  //    avisou não avisa de novo: a marca de `reivindicarAviso` vale 15
+  //    minutos. E o que ela viu sem avisar (a conversa aberta, à vista, ou de
+  //    outra pessoa) a página nova decide igual: a conversa volta aberta;
+  //  - AS MAIS RECENTES, se passarem de 50: as que chegaram no meio da
+  //    recarga são as mais novas. E até cinco minutos à frente do relógio do
+  //    computador, pelo atrasado — nada além disso é uma mensagem de agora.
+  // ------------------------------------------------------------
+  const recuperouAvisosRef = useRef(false);
+  const recuperarAvisosRef = useRef(async () => {});
+  recuperarAvisosRef.current = async () => {
+    if (recuperouAvisosRef.current || TELA_DA_GUIA) return;
+    recuperouAvisosRef.current = true;
+    const desde = recargaFeitaEm();
+    if (!desde) return;
+    const { data, error } = await supabase.from("mensagens")
+      .select("id, conversa_id, origem, texto, criado_em")
+      .eq("origem", "contato")
+      .gte("criado_em", new Date(desde - 2 * 60 * 1000).toISOString())
+      .lte("criado_em", new Date(Date.now() + 5 * 60 * 1000).toISOString())
+      .order("criado_em", { ascending: false })
+      .limit(50);
+    if (error) {
+      console.error("Zorvin — não consegui conferir as mensagens que chegaram durante a atualização:", error);
+      return;
+    }
+    // Da mais velha para a mais nova, como o tempo real as teria entregado.
+    for (const nova of (data || []).slice().reverse()) avisarMensagemNovaRef.current(nova);
+  };
+
   useEffect(() => {
     // A GUIA DE UMA TELA NÃO ASSINA O TEMPO REAL (02/11) — ver `TELA_DA_GUIA`.
     // Cada guia assinada recebe cada gravação do escritório, e o limite do
@@ -9522,34 +9687,10 @@ export default function Painel({ sessao }) {
         //  depois: em fila, as duas idas ao banco somariam os seus tempos antes
         //  de o som tocar.
         // ------------------------------------------------------------
-        if (nova.origem === "contato" && !ehHistoricoChegando(nova)
-            && (document.hidden || nova.conversa_id !== conversaIdRef.current)) {
-          esteAvisoMeInteressa(nova.conversa_id).then(async (paraMim) => {
-            if (!paraMim) return;
-            // ABERTA NESSE MEIO-TEMPO, a conversa não avisa: a pessoa já está
-            // vendo a mensagem.
-            if (!document.hidden && nova.conversa_id === conversaIdRef.current) return;
-            // ABERTA NOUTRA GUIA, À VISTA (02/11): a régua de cima, valendo
-            // para as guias vizinhas. Com as telas abrindo conversas em guias
-            // novas, a pessoa lê a conversa numa guia enquanto a das conversas
-            // fica escondida atrás — e ela tocaria o aviso da conversa que a
-            // pessoa está lendo.
-            if (outraGuiaVendo(nova.conversa_id)) return;
-            // UMA GUIA SÓ AVISA (02/11): a mensagem chega a todas as guias do
-            // Zorvin abertas na máquina, e cada uma tocaria o seu som. A
-            // primeira que pedir fica com o aviso — ver `reivindicarAviso`.
-            if (!(await reivindicarAviso(`mensagem:${nova.id}`))) return;
-            tocarAviso();
-            // O NOME DE QUEM ESCREVEU, e não "Nova mensagem". Com a etiqueta
-            // por conversa, dois clientes escrevendo viram dois avisos — e dois
-            // avisos dizendo "Nova mensagem" não dizem a qual conversa ir.
-            const quem = conversasRef.current.find((c) => c.id === nova.conversa_id);
-            notificarDesktop(
-              (quem && nomeDoContato(quem.contato)) || "Nova mensagem",
-              nova.texto || "Mídia recebida",
-              nova.conversa_id);
-          }).catch((e) => console.error("Zorvin — o aviso de mensagem nova falhou:", e));
-        }
+        //  O AVISO MORA EM `avisarMensagemNovaRef` (05/11): é a mesma conta para
+        //  a mensagem que chega pelo tempo real e para a que chegou nos
+        //  segundos em que o Zorvin se atualizava (`recuperarAvisosRef`).
+        avisarMensagemNovaRef.current(nova);
 
         // Esta mensagem é do advogado atualmente aberto? Se a conversa já está
         // na lista, sim. Se não está (pode ser uma conversa NOVA — lead novo),
@@ -9966,6 +10107,10 @@ export default function Painel({ sessao }) {
       // ------------------------------------------------------------
       if (!vivo || doCanal !== canal) return;
       if (estado === "SUBSCRIBED") {
+        // O CANAL ASSINOU: daqui para a frente o tempo real avisa, e o que
+        // chegou nos segundos da recarga é perguntado ao banco — uma vez por
+        // página. Ver `recuperarAvisosRef`.
+        recuperarAvisosRef.current();
         // A VOLTA RELÊ. O `postgres_changes` não repete o que passou: tudo o
         // que o banco publicou durante a queda não chega nunca. Só apagar o
         // aviso deixaria a pessoa tranquila e a tela errada — que é pior do
@@ -16944,76 +17089,12 @@ export default function Painel({ sessao }) {
         );
       })()}
 
-      {/* A VERSÃO NOVA DO ZORVIN (05/11) — ver `atualizacao.js`.
-          A faixa NÃO PEDE NADA de ninguém: a versão nova entra sozinha na
-          primeira pausa, quando nada na tela se perderia. Ela diz que há uma,
-          e oferece entrar agora para quem não quer esperar. Some com a
-          recarga. Verde-escura, e não âmbar nem vermelha: não é falha. */}
-      {(atualizacao.recarregando || (atualizacao.pendente && !atualizacao.naoPegou)) && (
-        <div data-versao-nova={atualizacao.recarregando ? "atualizando" : "esperando"}
-             style={{ background: "#005c4b", color: "#fff", padding: "8px 14px", fontSize: 13.5,
-                      display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-                      flexWrap: "wrap", boxShadow: "0 2px 8px rgba(0,0,0,.25)" }}>
-          {atualizacao.recarregando ? (
-            <span>Atualizando o Zorvin…</span>
-          ) : (<>
-            <span>
-              Há uma versão nova do Zorvin{atualizacao.pendente.rotulo ? ` (${atualizacao.pendente.rotulo})` : ""}.
-              {" "}Ela entra sozinha quando a tela ficar parada por uns minutos.
-            </span>
-            <button data-atualizar-agora
-                    onClick={async () => {
-                      const r = await atualizarAgora();
-                      if (!r.ok && r.erro) mostrarAviso(r.erro, 6000);
-                    }}
-                    style={{ border: "1px solid rgba(255,255,255,.6)", background: "transparent",
-                             color: "#fff", borderRadius: 8, padding: "5px 14px",
-                             fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
-              Atualizar agora
-            </button>
-          </>)}
-        </div>
-      )}
-      {/* A RECARGA QUE NÃO TROUXE A VERSÃO NOVA: o site ainda serviu o código
-          antigo. A aba não recarrega de novo sozinha (recarregaria em círculo),
-          e aqui o Ctrl+Shift+R é o que resta. Âmbar: pede um gesto. */}
-      {atualizacao.naoPegou && !atualizacao.recarregando && (
-        <div data-versao-nao-carregou
-             style={{ background: "#8a5a00", color: "#fff", padding: "8px 14px", fontSize: 13.5,
-                      display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-                      flexWrap: "wrap", boxShadow: "0 2px 8px rgba(0,0,0,.25)" }}>
-          <span>
-            A versão nova do Zorvin{atualizacao.naoPegou.rotulo ? ` (${atualizacao.naoPegou.rotulo})` : ""} ainda
-            {" "}não carregou nesta aba. Se continuar assim, aperte Ctrl+Shift+R.
-          </span>
-          <button data-atualizar-agora
-                  onClick={async () => {
-                    const r = await atualizarAgora();
-                    if (!r.ok && r.erro) mostrarAviso(r.erro, 6000);
-                  }}
-                  style={{ border: "1px solid rgba(255,255,255,.6)", background: "transparent",
-                           color: "#fff", borderRadius: 8, padding: "5px 14px",
-                           fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
-            Tentar de novo
-          </button>
-        </div>
-      )}
-      {/* E A RECARGA QUE DEU CERTO DIZ POR QUE A TELA PISCOU. */}
-      {atualizacao.atualizadoPara && !atualizacao.pendente && (
-        <div data-zorvin-atualizado
-             style={{ background: "#005c4b", color: "#fff", padding: "8px 14px", fontSize: 13.5,
-                      display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-                      flexWrap: "wrap", boxShadow: "0 2px 8px rgba(0,0,0,.25)" }}>
-          <CheckCheck size={15} style={{ flexShrink: 0 }} />
-          <span>O Zorvin foi atualizado para a {atualizacao.atualizadoPara}.</span>
-          <button data-fechar-atualizado onClick={esquecerQueAtualizou}
-                  aria-label="Fechar o aviso de atualização" title="Fechar"
-                  style={{ border: "none", background: "transparent", color: "#fff", cursor: "pointer",
-                           display: "flex", padding: 2 }}>
-            <X size={16} />
-          </button>
-        </div>
-      )}
+      {/* A VERSÃO NOVA DO ZORVIN NÃO TEM FAIXA (05/11) — ver `atualizacao.js`.
+          Ela entra sozinha num momento sem ninguém, e para quem a quer na
+          hora há o pontinho no ⋮ e "Atualizar o Zorvin" dentro do menu. As
+          faixas de antes ("há uma versão nova", "foi atualizado") ocupavam o
+          alto da tela no meio do trabalho, e o pedido do Rodrigo foi que a
+          atualização fosse sutil. */}
       </div>
       {/* A FILA DE COLUNAS — barra lateral, lista, conversa e ficha.
           `minHeight: 0` não é enfeite: sem ele um filho que rola (a lista de
@@ -17595,15 +17676,60 @@ export default function Painel({ sessao }) {
             {!estreito && controleDaOrdem}
             {/* Menu ⋮ do topo, estilo WhatsApp Web */}
             <span ref={menuTopoRef} style={{ position: "relative", display: "flex" }}>
-              <button onClick={() => setMenuTopoAberto((v) => !v)} aria-label="Menu" title="Menu" style={{ ...BOTAO_ICONE, ...ICONE_DO_TOPO, color: C.textSecondary }}>
+              <button data-menu-do-topo onClick={() => setMenuTopoAberto((v) => !v)}
+                      aria-label={versaoNovaNoMenu ? "Menu (há uma versão nova do Zorvin)" : "Menu"}
+                      title={versaoNovaNoMenu ? "Menu — há uma versão nova do Zorvin" : "Menu"}
+                      style={{ ...BOTAO_ICONE, ...ICONE_DO_TOPO, color: C.textSecondary }}>
                 <MoreVertical size={20} />
               </button>
+              {/* O PONTINHO DA VERSÃO NOVA (05/11): discreto, no canto do ⋮.
+                  Ele não pede nada — a versão entra sozinha num momento sem
+                  ninguém —, e diz a quem quer a novidade na hora onde ela
+                  está. Âmbar quando a recarga não trouxe o código novo. */}
+              {versaoNovaNoMenu && (
+                <span data-versao-nova={atualizacao.naoPegou ? "nao-carregou" : atualizacao.recarregando ? "atualizando" : "esperando"}
+                      aria-hidden="true"
+                      style={{ position: "absolute", top: estreito ? 7 : 4, right: estreito ? 7 : 4, width: 8, height: 8,
+                               borderRadius: "50%", background: atualizacao.naoPegou ? "#d99a1e" : C.green,
+                               boxShadow: `0 0 0 2px ${C.headerBar}`, pointerEvents: "none" }} />
+              )}
               {/* ABAIXO DO BOTÃO, e não por cima dele (auditoria de 07/10): em
                   `top: 26` o menu cobria a metade de baixo do ⋮ (34px no
                   computador, 40 no celular), e o segundo toque para fechar
                   caía em "Marcar todas como lidas" — que não pergunta nada. */}
               {menuTopoAberto && (
                 <div style={{ position: "absolute", top: estreito ? 44 : 38, right: 0, width: 230, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.28)", zIndex: 50, overflow: "hidden" }}>
+                  {/* ATUALIZAR O ZORVIN (05/11): só com uma versão nova
+                      esperando. Com algo que se perderia, pergunta antes,
+                      dizendo o quê (`atualizarAgora`). */}
+                  {versaoNovaNoMenu && (
+                    <button data-atualizar-agora
+                            {...(atualizacao.naoPegou ? { "data-versao-nao-carregou": "" } : {})}
+                            disabled={atualizacao.recarregando}
+                            onClick={async () => {
+                              setMenuTopoAberto(false);
+                              const r = await atualizarAgora();
+                              if (!r.ok && r.erro) mostrarAviso(r.erro, 6000);
+                            }}
+                            style={{ width: "100%", display: "flex", alignItems: "flex-start", gap: 10, padding: "11px 14px",
+                                     border: "none", borderBottom: `1px solid ${C.divider}`, background: "transparent",
+                                     cursor: atualizacao.recarregando ? "default" : "pointer", color: C.textPrimary,
+                                     fontSize: 14, textAlign: "left" }}>
+                      <RefreshCw size={17} color={atualizacao.naoPegou ? "#d99a1e" : C.green} style={{ flexShrink: 0, marginTop: 1 }} />
+                      <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                        <span style={{ fontWeight: 600 }}>
+                          {atualizacao.recarregando ? "Atualizando o Zorvin…"
+                            : atualizacao.naoPegou ? `Carregar a versão nova${textoDaVersao(atualizacao.naoPegou) ? ` (${textoDaVersao(atualizacao.naoPegou)})` : ""}`
+                            : `Atualizar o Zorvin${textoDaVersao(atualizacao.pendente) ? ` (${textoDaVersao(atualizacao.pendente)})` : ""}`}
+                        </span>
+                        <span style={{ fontSize: 12, color: C.textSecondary, lineHeight: 1.35 }}>
+                          {atualizacao.naoPegou
+                            ? "Ela ainda não carregou nesta guia. Se continuar assim, aperte Ctrl+Shift+R."
+                            : "Leva uns segundos, e você volta para onde estava. Sem clicar, ela entra sozinha quando ninguém estiver usando."}
+                        </span>
+                      </span>
+                    </button>
+                  )}
                   <button onClick={marcarTodasLidas} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><CheckCheck size={17} color={C.textSecondary} /> Marcar todas como lidas</button>
                   <button onClick={() => { setMenuTopoAberto(false); abrirConfig(); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><Settings size={17} color={C.textSecondary} /> Configurações</button>
                   {/* O PAINEL É DE TODO MUNDO.
@@ -17674,11 +17800,11 @@ export default function Painel({ sessao }) {
                       "a sua já atualizou?", e não para ler todo dia. O número
                       depois do ponto é o da última entrega (PR) que entrou no
                       ar — ver `atualizacao.js`. */}
-                  {rotuloDaVersao() && (
-                    <div data-versao-do-zorvin
+                  {textoDaVersao() && (
+                    <div data-versao-do-zorvin title={detalheDaVersao()}
                          style={{ padding: "7px 14px 9px", borderTop: `1px solid ${C.divider}`, fontSize: 11.5,
                                   color: C.textSecondary, fontVariantNumeric: "tabular-nums" }}>
-                      Zorvin {rotuloDaVersao()}
+                      Zorvin {textoDaVersao()}
                     </div>
                   )}
                 </div>
@@ -18192,7 +18318,7 @@ export default function Painel({ sessao }) {
         </div>
         </>)}
 
-        <div style={{ flex: 1, overflowY: "auto" }}
+        <div ref={listaDeConversasRef} data-lista-de-conversas style={{ flex: 1, overflowY: "auto" }}
              onScroll={(e) => {
                // Mais uma página quando faltam 600px para o fim: o tempo de
                // desenhar a próxima cabe dentro do que ainda há para rolar, e
