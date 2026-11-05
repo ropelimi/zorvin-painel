@@ -82,6 +82,9 @@ import { useAtualizacao, useMotivoParaEsperar, useQuandoEscondida, registrarEnde
          fotoDaVolta, marcarFotoUsada, recargaFeitaEm, atualizarAgora, textoDaVersao,
          detalheDaVersao } from "./atualizacao.js";
 import CampoDePesquisa, { ComPesquisa } from "./CampoDePesquisa.jsx";
+import { encaixarNaJanela } from "./encaixarNaJanela.js";
+import { FILTROS_DE_SEMPRE, arrumarFiltros, chaveDosFiltros, chaveDasEtiquetas,
+         recortarAsQueEsperamNoBanco } from "./filtrosDaEspera.js";
 import { PESQUISA_A_PARTIR_DE, casaComAPesquisa, nadaComAPesquisa, chaveDaPesquisa } from "./pesquisaNosMenus.js";
 import { padraoSemAcento, casaNaMensagem, semAColunaDaTranscricao, juntarAchados,
          TETO_DA_BUSCA_NA_CONVERSA } from "./buscaNaConversa.js";
@@ -2014,28 +2017,7 @@ function usarDentroDaTela(aberto, tudo) {
   return [alvo, desloca];
 }
 
-// O MENU QUE ABRE PARA O LADO NÃO SAI DA JANELA (auditoria de 28/10).
-//
-// Os menus dos selos da linha do número (responsável, etapa, tarefas) e o
-// painel de emojis da caixa de escrever abrem para a DIREITA de onde nascem.
-// Com a conversa estreita — 348px a 768, o iPad em pé — eles passavam da
-// borda: o "Tarefas desta conversa" ia até 933px numa tela de 768, a página
-// inteira rolava de lado e o fim do menu sumia.
-//
-// Mede uma vez, ao aparecer, e empurra para dentro só o que faltou. Pela
-// propriedade `translate`, e não por `transform`, para não brigar com quem
-// usa `transform` no mesmo elemento. Fica fora do componente de propósito:
-// estável, o React só a chama quando o elemento nasce — e não a cada desenho.
-function encaixarNaJanela(el) {
-  if (!el) return;
-  el.style.translate = "";
-  const r = el.getBoundingClientRect();
-  const FOLGA = 8;
-  let d = 0;
-  if (r.right > window.innerWidth - FOLGA) d = window.innerWidth - FOLGA - r.right;
-  if (r.left + d < FOLGA) d = FOLGA - r.left;
-  if (d) el.style.translate = `${Math.round(d)}px 0`;
-}
+// O MENU QUE ABRE PARA O LADO NÃO SAI DA JANELA: `encaixarNaJanela.js`.
 
 // O ROSTO DE REAGIR, ao lado da bolha.
 //
@@ -3790,7 +3772,21 @@ export default function Painel({ sessao }) {
   const temAvisoDeEsperaRef = useRef(null);
   useEffect(() => { temAvisoDeEsperaRef.current = temAvisoDeEspera; }, [temAvisoDeEspera]);
   const [semResposta, setSemResposta] = useState({ linhas: [], erro: "", lido: false });
-  const [atrasadas, setAtrasadas] = useState({ linhas: [], erro: "", lido: false, cortado: false });
+  const [atrasadas, setAtrasadas] = useState({ linhas: [], erro: "", lido: false, cortado: false,
+                                                chave: chaveDosFiltros(FILTROS_DE_SEMPRE) });
+  // OS FILTROS DA TELA "ESPERANDO RESPOSTA" (05/11) — ver `filtrosDaEspera.js`.
+  // Moram aqui, e não na tela, porque a leitura das conversas que esperam há
+  // dias vai ao banco com eles, de minuto em minuto. Só a guia da tela os
+  // muda: na das conversas eles ficam no padrão ("as suas"), que é o que a
+  // ampulheta e o resumo do alto contam. E não são guardados: valem até a
+  // guia recarregar, como o seletor de responsáveis da lista.
+  const [filtrosDaEspera, setFiltrosDaEspera] = useState(FILTROS_DE_SEMPRE);
+  const filtrosDaEsperaRef = useRef(FILTROS_DE_SEMPRE);
+  filtrosDaEsperaRef.current = filtrosDaEspera;
+  // AS CONVERSAS DAS ETIQUETAS ESCOLHIDAS, lidas do banco. `chave` diz de
+  // quais etiquetas a resposta é: a tela só recorta com a resposta das
+  // etiquetas de agora.
+  const [etiquetasDaEspera, setEtiquetasDaEspera] = useState({ chave: "", ids: null, erro: "", lido: false });
   // AS TAREFAS DA CONVERSA ABERTA: `{ conversaId, carregando, lista, erro }`.
   const [tarefasDaConversa, setTarefasDaConversa] = useState(null);
   // O menu das tarefas tem os dois endereços dos outros menus da linha do
@@ -6841,8 +6837,47 @@ export default function Painel({ sessao }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meuId, anotarFalhaDeLeitura, limparFalhaDeLeitura]);
+  // AS CONVERSAS COM AS ETIQUETAS ESCOLHIDAS NOS FILTROS da tela "Esperando
+  // resposta" (05/11). Paginadas, pela régua do filtro de etiquetas da lista:
+  // uma etiqueta muito usada passa das mil linhas, e é ali que o teto da API
+  // corta calado. Sem etiqueta escolhida, nada é perguntado (`null`).
+  const lerEtiquetasDaEspera = useCallback(async () => {
+    const filtros = arrumarFiltros(filtrosDaEsperaRef.current);
+    if (!filtros.etiquetas.length) return null;
+    const chave = chaveDasEtiquetas(filtros);
+    const frase = "Não consegui ler as conversas com as etiquetas escolhidas.";
+    let r;
+    try {
+      const ids = new Set();
+      r = { ids, erro: "" };
+      for (let pagina = 0; pagina < 50; pagina++) {
+        const { data, error } = await supabase.from("conversa_tags")
+          .select("conversa_id").in("tag_id", filtros.etiquetas)
+          .order("conversa_id").range(pagina * 1000, (pagina + 1) * 1000 - 1);
+        if (error) { r = { ids: null, erro: comOCodigo(frase, error, "etiquetas") }; break; }
+        (data || []).forEach((l) => ids.add(String(l.conversa_id)));
+        if (!data || data.length < 1000) break;
+      }
+    } catch (e) {
+      r = { ids: null, erro: comOCodigo(frase, e, "etiquetas") };
+    }
+    // A RESPOSTA DE ETIQUETAS QUE NINGUÉM ESCOLHE MAIS não vai para a tela.
+    if (chaveDasEtiquetas(filtrosDaEsperaRef.current) === chave) setEtiquetasDaEspera({ chave, ...r, lido: true });
+    return { chave, ...r };
+  }, []);
+  // VALE A ÚLTIMA PERGUNTA: com os filtros trocados no meio de uma leitura, a
+  // resposta que chega por último pode ser a da pergunta de antes.
+  const geracaoDasQueEsperamRef = useRef(0);
   const lerAtrasadas = useCallback(async () => {
     if (!meuId) return;
+    const minha = ++geracaoDasQueEsperamRef.current;
+    const filtros = arrumarFiltros(filtrosDaEsperaRef.current);
+    const chave = chaveDosFiltros(filtros);
+    const suas = filtros.responsaveis === null;
+    // AS ETIQUETAS VÊM PRIMEIRO, e mesmo sem a espera e o responsável: os
+    // clientes sem resposta também se recortam por elas.
+    const etiquetas = await lerEtiquetasDaEspera();
+    if (minha !== geracaoDasQueEsperamRef.current) return;
     // SEM A ESPERA (004) OU SEM O RESPONSÁVEL (008) não há o que contar, e a
     // consulta pela coluna que falta morreria com 42703.
     //
@@ -6851,21 +6886,57 @@ export default function Painel({ sessao }) {
     // a tela que abre numa guia nova dizer "0" das suas conversas — e decidir
     // a aba de começo com isso.
     if (!podeContarAtrasadasRef.current) {
-      if (sabeSePodeContarRef.current) setAtrasadas({ linhas: [], erro: "", lido: true, cortado: false });
+      if (sabeSePodeContarRef.current) setAtrasadas({ linhas: [], erro: "", lido: true, cortado: false, chave });
+      return;
+    }
+    const oQue = `${suas ? "as suas conversas" : "as conversas"} que esperam ${HA_DIAS_OU_MAIS}`;
+    if (etiquetas && etiquetas.erro) {
+      setAtrasadas((s) => ({ ...s, lido: true, chave, erro: etiquetas.erro }));
       return;
     }
     try {
-      let q = supabase.from("conversas")
-        .select(`id, advogado_id, esperando_desde, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
-        .eq("responsavel_id", meuId).not("esperando_desde", "is", null)
-        .lt("esperando_desde", corteDasAtrasadas().toISOString())
-        .order("esperando_desde", { ascending: true }).limit(TETO_DAS_ATRASADAS);
-      if (TEM_ARQUIVADA) q = q.eq("arquivada", false);
-      const r = await q;
-      if (r.error) {
-        anotarFalhaDeLeitura("minhas-atrasadas", `as suas conversas que esperam ${HA_DIAS_OU_MAIS}`, r.error);
-        setAtrasadas((s) => ({ ...s, lido: true,
-          erro: comOCodigo(`Não consegui ler as suas conversas que esperam ${HA_DIAS_OU_MAIS}.`, r.error, "conversas que esperam") }));
+      // O RECORTE VAI AO BANCO (`recortarAsQueEsperamNoBanco`): o
+      // responsável — "as suas" no padrão — e os telefones. As colunas
+      // começam como sempre começaram (`id, advogado_id, esperando_desde`):
+      // é por elas que as provas da pesca e da cadência reconhecem esta
+      // leitura.
+      const montar = () => {
+        let q = supabase.from("conversas")
+          .select(`id, advogado_id, esperando_desde, responsavel_id, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
+          .not("esperando_desde", "is", null)
+          .lt("esperando_desde", corteDasAtrasadas().toISOString());
+        if (TEM_ARQUIVADA) q = q.eq("arquivada", false);
+        return recortarAsQueEsperamNoBanco(q, filtros, meuId, advogadosPermitidosRef.current);
+      };
+      let veio = [];
+      let erro = null;
+      if (etiquetas && etiquetas.ids) {
+        // COM ETIQUETA, as conversas dela, em lotes: a lista de ids vai na
+        // URL, e centenas de uma vez fariam o pedido ser recusado pelo
+        // tamanho. As que esperam há mais tempo primeiro, de todos os lotes.
+        const lista = [...etiquetas.ids];
+        for (let i = 0; i < lista.length && !erro; i += 150) {
+          const q = montar();
+          if (!q) break;
+          const r = await q.in("id", lista.slice(i, i + 150))
+            .order("esperando_desde", { ascending: true }).limit(TETO_DAS_ATRASADAS);
+          if (r.error) erro = r.error;
+          else veio.push(...(r.data || []));
+        }
+        veio.sort((a, b) => new Date(a.esperando_desde) - new Date(b.esperando_desde));
+      } else {
+        const q = montar();
+        if (q) {
+          const r = await q.order("esperando_desde", { ascending: true }).limit(TETO_DAS_ATRASADAS);
+          if (r.error) erro = r.error;
+          else veio = r.data || [];
+        }
+      }
+      if (minha !== geracaoDasQueEsperamRef.current) return;
+      if (erro) {
+        anotarFalhaDeLeitura("minhas-atrasadas", oQue, erro);
+        setAtrasadas((s) => ({ ...s, lido: true, chave,
+          erro: comOCodigo(`Não consegui ler ${oQue}.`, erro, "conversas que esperam") }));
         return;
       }
       limparFalhaDeLeitura("minhas-atrasadas");
@@ -6875,15 +6946,25 @@ export default function Painel({ sessao }) {
       // mesmo, e a segunda conferência é o que impede os dois de divergirem
       // calados.
       const ativos = new Set(advogadosPermitidosRef.current.map((a) => String(a.id)));
-      const veio = r.data || [];
-      const linhas = veio.filter((c) => ativos.has(String(c.advogado_id)) && ehAtrasada(c.esperando_desde));
-      setAtrasadas({ linhas, erro: "", lido: true, cortado: veio.length >= TETO_DAS_ATRASADAS });
+      const linhas = veio.filter((c) => ativos.has(String(c.advogado_id)) && ehAtrasada(c.esperando_desde))
+        .slice(0, TETO_DAS_ATRASADAS);
+      setAtrasadas({ linhas, erro: "", lido: true, cortado: veio.length >= TETO_DAS_ATRASADAS, chave });
     } catch (e) {
       console.error("Zorvin — conversas que esperam:", e);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meuId, anotarFalhaDeLeitura, limparFalhaDeLeitura]);
+  }, [meuId, anotarFalhaDeLeitura, limparFalhaDeLeitura, lerEtiquetasDaEspera]);
   const lerQuemEspera = useCallback(() => { lerSemResposta(); lerAtrasadas(); }, [lerSemResposta, lerAtrasadas]);
+  // TROCADOS OS FILTROS, as conversas que esperam são lidas de novo, NA HORA
+  // (só a guia da tela os troca). A chave é a pergunta, e não o objeto: a
+  // abertura já lê pelo relógio de baixo, e a primeira chave não relê nada.
+  const chaveDaEspera = chaveDosFiltros(filtrosDaEspera);
+  const ultimaChaveDaEsperaRef = useRef(chaveDaEspera);
+  useEffect(() => {
+    if (TELA_DA_GUIA !== "esperando" || ultimaChaveDaEsperaRef.current === chaveDaEspera) return;
+    ultimaChaveDaEsperaRef.current = chaveDaEspera;
+    lerAtrasadas();
+  }, [chaveDaEspera, lerAtrasadas]);
   // DE MINUTO EM MINUTO, depois de a abertura terminar (ver
   // `ESPERA_ANTES_DA_PRIMEIRA_MS`). `podeContarAtrasadas` entra aqui por ser a
   // PERGUNTA, e não o estado de onde ela sai (a régua de `ordenarPelaEspera`):
@@ -22075,6 +22156,10 @@ export default function Painel({ sessao }) {
                    semResposta={semResposta} temAvisoDeEspera={temAvisoDeEspera}
                    atrasadas={atrasadas}
                    podeContarAtrasadas={temEspera === null || temResponsavel === null ? null : podeContarAtrasadas}
+                   filtros={filtrosDaEspera} aoMudarFiltros={(f) => setFiltrosDaEspera(arrumarFiltros(f))}
+                   etiquetasDaEspera={etiquetasDaEspera} temResponsavel={temResponsavel === true}
+                   pessoas={Object.values(equipe.porId)} nomeDaPessoa={nomeDaPessoa}
+                   etiquetas={tags} departamentos={departamentos} estreito={estreito}
                    aoAbrirConversa={(cv) => abrirConversaNumaGuia(cv)}
                    aoAtualizar={lerQuemEspera}
                    aoFechar={fecharAGuia} />

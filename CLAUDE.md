@@ -5539,7 +5539,7 @@ responsável (17 pessoas, de 1 a 56 cada).
 | ao abrir, sem conversa escolhida | o resumo na tela da direita (`data-resumo-da-espera`): *"2 clientes sem resposta há mais de 30 min de expediente"*, *"12 conversas suas esperando resposta há 2 dias ou mais"* (eram 3 até 02/11), e **Ver quais** |
 | a barra lateral | a ampulheta (`data-abrir-esperando`), com a soma das duas listas — **vermelha** quando há cliente sem resposta, **âmbar** quando são só as suas |
 | o ⋮ do topo | "Esperando resposta", com o mesmo número: no celular a tela da direita não aparece ao abrir, e a barra e o ⋮ são o caminho |
-| a tela | `Esperando.jsx` (`data-tela="esperando"`), com uma aba para cada lista (02/11, ver "As duas abas da tela Esperando resposta", mais abaixo). Abre numa guia nova desde 02/11, e clicar num cliente abre a conversa noutra guia, já no telefone dela |
+| a tela | `Esperando.jsx` (`data-tela="esperando"`), com uma aba para cada lista (02/11, ver "As duas abas da tela Esperando resposta", mais abaixo) e os filtros de responsável, etiquetas, telefones e departamentos (05/11, ver "Os filtros da tela"). Abre numa guia nova desde 02/11, e clicar num cliente abre a conversa noutra guia, já no telefone dela |
 | o aviso | o som escolhido, a tarja (pela chave de `notificarDesktop`) e a faixa |
 | a administração | a aba **Aviso de espera**, em Departamentos e acessos (`AvisoDeEspera.jsx`) |
 
@@ -5944,6 +5944,159 @@ com razão**, todas rodadas em cópias e lidas uma a uma:
 foi achada com ela em andamento; consertar com as cópias rodando faria metade
 da rodada provar um código e metade outro. A régua de 13/10: *rodada de
 sabotagens não convive com edição*.
+
+### Os filtros da tela (05/11)
+
+Pedido do Rodrigo: *"Na tela de "Esperando resposta" eu preciso ter um
+filtro de responsável, também filtro de etiquetas, telefones e
+departamentos."*
+
+**Quatro pílulas acima das abas** (`data-filtros-da-espera`): Responsável,
+Etiquetas, Telefones e Departamentos. Elas recortam as duas abas, e o número
+de cada aba é o do recorte. Ficam fora da parte que rola, como as abas. As
+contas sem tela moram em `src/filtrosDaEspera.js`.
+
+| a pílula | o que se escolhe |
+|---|---|
+| Responsável | "As suas" (o padrão), "Todos os responsáveis", "Sem responsável" e as pessoas, uma ou várias |
+| Etiquetas | uma ou várias: vale a conversa com qualquer uma delas |
+| Telefones | um ou vários |
+| Departamentos | um ou vários, e os telefones oferecidos passam a ser só os deles |
+
+**Os quatro somam ("e"), e dentro de cada um vale qualquer escolha ("ou")**:
+a Jenifer ou a Isabela, no SAC, com a etiqueta Urgente. Cada pílula só
+aparece quando serve: o responsável com a coluna do 008, as etiquetas com
+alguma etiqueta, os telefones com dois ou mais, os departamentos com dois ou
+mais que tenham telefone.
+
+**O padrão é "As suas", e não "Todos"**, e a pílula o escreve
+("Responsável: As suas"). É o que a tela mostrava antes dos filtros, e o que
+a ampulheta e o resumo do alto contam: os clientes sem resposta seus ou sem
+responsável, e as conversas em que você é o responsável. Abrir com "Todos"
+faria a aba dizer um número e a ampulheta outro. E um rótulo neutro
+("Responsável") se leria como "todos".
+
+- **marcar uma pessoa não fecha o menu**: escolher várias é o comum. "As
+  suas" e "Todos os responsáveis" fecham, e o Esc e o clique fora também;
+- **desmarcar a última pessoa volta ao padrão** (`arrumarFiltros`): uma
+  lista vazia deixaria a tela num estado que nenhum rótulo diz;
+- **quem saiu do escritório não é oferecido**, pela régua de 04/11
+  (`podeSerEscolhida`), a menos que já esteja escolhido;
+- **a segunda aba deixa de dizer "SUAS"** quando a lista não é só sua
+  ("CONVERSAS ESPERANDO HÁ 2 DIAS OU MAIS"), e as frases de dentro das duas
+  abas dizem de quem são;
+- **cada linha diz com quem está** ("com JENIFER", "com você", "sem
+  responsável") quando a tela mostra as de outras pessoas. No padrão, só o
+  "sem responsável": repetir "com você" em todas seria ruído.
+
+**A pílula de uma lista escreve a primeira escolha na ordem do menu**, e
+quantas mais ("Aguardando cliente +1"): o mesmo recorte escreve sempre a
+mesma coisa, como o seletor de responsáveis do alto da lista. Pela ordem dos
+ids, que no banco são aleatórios, ela escreveria uma etiqueta qualquer.
+
+**O departamento recorta os telefones oferecidos**, e trocá-lo tira da
+escolha os telefones que saíram dele (`comOsDepartamentos`): escondidos e
+marcados, eles recortariam a lista sem nada na tela dizendo por quê.
+
+**Fora do padrão aparece "Limpar os filtros"**, e a lista vazia diz que é o
+recorte ("…com estes filtros"), com o mesmo botão. Sem isso, "nenhum
+cliente" se leria como "a fila está em dia".
+
+#### Quem recorta
+
+- **os clientes sem resposta** vêm inteiros da função do banco (041), e a
+  tela os recorta, como já fazia com "as suas";
+- **as conversas que esperam vão ao banco recortadas**
+  (`recortarAsQueEsperamNoBanco`): o responsável, os telefones e, com
+  etiquetas, só as conversas delas (`.in("id")`, em lotes de 150). Elas vêm
+  com um teto (as 500 que esperam há mais tempo), e recortar só o que veio
+  mostraria "as da Jenifer entre as 500" com cara de "as da Jenifer";
+- **as etiquetas vêm numa pergunta própria** (`conversa_tags`, paginada), e
+  só com etiqueta escolhida;
+- **as colunas da leitura começam como sempre** (`id, advogado_id,
+  esperando_desde`): é por elas que as provas da pesca e da cadência a
+  reconhecem.
+
+**Trocar o filtro diz "Procurando…"**, e não a lista de antes com cara de
+nova: a resposta diz de quais filtros ela é (`chave`), e a de outros não é
+desenhada. A aba fica sem número até a resposta chegar, e **vale a última
+pergunta** (`geracaoDasQueEsperamRef`).
+
+**A leitura das etiquetas que falha é dita nas duas abas**, com o código, e
+nunca vira "nenhum cliente".
+
+**A escolha vale enquanto a guia estiver aberta**, e não é guardada, pela
+régua do seletor de responsáveis: quem deixou "Jenifer" ontem abriria hoje
+uma lista curta sem lembrar por quê. A leitura de minuto em minuto continua
+com os filtros.
+
+**Só na guia da tela.** A ampulheta e o resumo do alto, na guia das
+conversas, continuam contando as suas, sem filtro nenhum.
+
+**No celular**, as pílulas quebram em linhas, com os 40 pontos de alvo de
+dedo, e os menus cabem na tela: `encaixarNaJanela` saiu do `Painel.jsx` para
+um arquivo próprio, e a tela usa a mesma conta dos menus do painel.
+
+Prova: `os-filtros-da-tela-esperando`, 105 conferências em 9 cenas: o
+padrão; o responsável (uma pessoa, duas, sem responsável, todos, o menu e
+quem saiu); as etiquetas (com a Zebra, uma etiqueta plantada cujo id vem
+antes e o nome depois, que separa a ordem do menu da ordem dos ids); os
+telefones e os departamentos; o recorte no banco, com 500 conversas mais
+antigas no caminho; a falha das etiquetas; o "Procurando…"; a leitura de
+minuto em minuto; e o celular, a 360 e a 390. As conversas da bancada
+nascem esperando (as não lidas de cada telefone), e a prova tira a espera
+delas depois de abrir: as contas são só as das conversas que ela planta.
+
+**33 sabotagens e 33 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma:
+
+- o painel de antes inteiro (74 reprovações — é o pedido reproduzido);
+- **o padrão:** "todos" no lugar de "as suas" (7); o rótulo do padrão
+  dizendo "Todos"; desmarcar a última pessoa sem voltar ao padrão; as suas,
+  nos clientes, sem os sem responsável;
+- **o menu do responsável:** marcar fechando o menu (6); "Todos os
+  responsáveis" sem fechar; sem o Esc; sem o clique fora; quem saiu
+  oferecido;
+- **o que a tela diz:** a segunda aba sempre "Suas"; a frase das conversas
+  sempre a do padrão, e a dos clientes; a linha sem dizer com quem está; o
+  número da aba dos clientes sem o recorte (5);
+- **as etiquetas:** procuradas pelo id errado nos clientes (5); a pílula pela
+  ordem dos ids; só a primeira etiqueta valendo; sem o "Limpar os filtros"; a
+  falha das etiquetas calada;
+- **os telefones e os departamentos:** o departamento sem recortar os
+  telefones oferecidos; trocar o departamento sem tirar o telefone que saiu
+  dele; a lista vazia sem dizer que é o recorte;
+- **o recorte no banco**, cada um fora dele e pego pela cena das 500
+  conversas: as suas (7), o responsável escolhido, o telefone e a etiqueta;
+- **trocar e reler:** trocar o filtro mostrando a lista de antes; os filtros
+  trocados sem reler (10); a leitura com os filtros do primeiro desenho, sem
+  o espelho (11);
+- **o desenho:** a barra depois das abas; a barra sem quebrar no celular (4);
+  o menu sem encaixar na janela.
+
+**Três lições desta rodada, as três da prova:**
+
+- **a pílula pela ordem dos ids passaria**: nas duas etiquetas da bancada, a
+  ordem dos ids e a dos nomes coincidem. A Zebra entrou para separá-las.
+  **Uma ordem que coincide na bancada não prova nada sobre a ordem;**
+- **a barra numa linha só não rolava de lado nem saía da tela**: as pílulas
+  encolhiam, e os rótulos viravam reticências ("Responsável: As s…"). A cena
+  pegava pela conta das linhas, e ganhou depois da rodada a conferência que
+  diz o defeito ("nenhum rótulo cortado"); a sabotagem, rodada de novo, é
+  pega por ela;
+- **uma espera sem conferência não pega nada**: a cena das 500 conversas
+  esperava as suas chegarem sem conferir que chegaram. Ganhou a conferência
+  antes da rodada, e é ela que pega "as suas fora do banco" ali.
+
+**E a primeira escrita da prova reprovou três vezes, e as três eram minhas:**
+o telefone "Arquivo" da bancada também é de Acordos; a conta dos clientes do
+Sucesso do Cliente (são três, e não dois); e a pílula, que eu esperava pela
+ordem do clique.
+
+**Fica de fora, e é decisão:** a corrida de duas trocas seguidas
+(`geracaoDasQueEsperamRef`, e a chave das etiquetas em
+`lerEtiquetasDaEspera`). Na bancada as respostas chegam na ordem em que foram
+pedidas, e a prova não as cruza.
 
 ## A faxina da fila (01/11)
 
