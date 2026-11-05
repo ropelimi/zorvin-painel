@@ -1,10 +1,19 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { X, RefreshCw, Hourglass, MessageCircle, AlertCircle } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { X, RefreshCw, Hourglass, MessageCircle, AlertCircle, ChevronDown, Check, Users, UserCheck, Tag, Phone,
+         Building2, FilterX } from "lucide-react";
 import { nomeDoContato } from "./contato.js";
 import { telefoneLegivel } from "./numeros.js";
 import { rotuloDaHora } from "./agenda.js";
 import { diasDesde, DIAS_DO_VERMELHO } from "./espera.js";
-import { ehParaMim, rotuloDosMinutos, fraseDoLimite, HA_DIAS_OU_MAIS } from "./esperandoDemais.js";
+import { rotuloDosMinutos, fraseDoLimite, HA_DIAS_OU_MAIS } from "./esperandoDemais.js";
+import { FILTROS_DE_SEMPRE, TODOS_OS_RESPONSAVEIS, SEM_RESPONSAVEL, arrumarFiltros, filtrosMudaram, chaveDosFiltros,
+         chaveDasEtiquetas, passaNosFiltros, telefonesOferecidos, comOsDepartamentos, rotuloDaLista, rotuloDoResponsavel,
+         tituloDasQueEsperam, fraseDoResponsavelSemResposta, fraseDasQueEsperam } from "./filtrosDaEspera.js";
+import { primeiroNome } from "./responsaveisDaLista.js";
+import { podeSerEscolhida } from "./quemSaiu.js";
+import { encaixarNaJanela } from "./encaixarNaJanela.js";
+import CampoDePesquisa, { ComPesquisa } from "./CampoDePesquisa.jsx";
+import { PESQUISA_A_PARTIR_DE, casaComAPesquisa, nadaComAPesquisa } from "./pesquisaNosMenus.js";
 
 // ============================================================
 //  A TELA "ESPERANDO RESPOSTA" (31/10)
@@ -32,6 +41,12 @@ import { ehParaMim, rotuloDosMinutos, fraseDoLimite, HA_DIAS_OU_MAIS } from "./e
 //  O QUE NÃO VEIO É DITO, e nunca vira "ninguém esperando" — a armadilha nº 2.
 //  "Nenhum cliente sem resposta" no lugar de "não consegui ler" faria a
 //  pessoa ir embora achando que a fila está em dia.
+//
+//  OS FILTROS (05/11): responsável, etiquetas, telefones e departamentos,
+//  numa barra ACIMA das abas — eles recortam as duas, e o número de cada aba
+//  é o do recorte. As contas moram em `filtrosDaEspera.js`. O padrão do
+//  responsável é "as suas", o que a tela mostrava antes, e não "todos": é o
+//  que a ampulheta e o resumo do alto contam.
 // ============================================================
 
 /** EM QUAL ABA A TELA ABRE: na primeira que tem o que mostrar.
@@ -68,14 +83,304 @@ export function abaDeComeco({ temAvisoDeEspera, semResposta, nSemResposta, podeC
   return temSR ? "sem-resposta" : temAT ? "atrasadas" : null;
 }
 
+// ------------------------------------------------------------
+//  A BARRA DOS FILTROS (05/11)
+//
+//  Uma pílula por filtro, que abre o menu dele. MARCAR NÃO FECHA O MENU:
+//  escolher várias é o comum ("Jenifer e Ivone"). "As suas" e "Todos os
+//  responsáveis" fecham, como o "Todos os responsáveis" do seletor da lista.
+//  Fecha com o Esc (o primeiro Esc apaga a pesquisa, se houver) e com o
+//  clique fora. A pílula que recorta fora do padrão fica verde cheia, a régua
+//  da fita de filtros da lista.
+//
+//  SÓ APARECE O FILTRO QUE TEM O QUE ESCOLHER: o de telefones com um telefone
+//  só, ou o de departamentos com um só, seria uma pílula que não muda nada.
+//  E o do responsável só com a coluna do responsável (008).
+// ------------------------------------------------------------
+function BarraDeFiltros({ C, estreito, filtros, aoMudar, meuId, pessoas, nomeDaPessoa, temResponsavel,
+                          etiquetas, telefones, departamentos }) {
+  const [aberto, setAberto] = useState(null);
+  const barraRef = useRef(null);
+  const f = arrumarFiltros(filtros);
+  useEffect(() => {
+    if (!aberto) return undefined;
+    const fora = (e) => { if (barraRef.current && !barraRef.current.contains(e.target)) setAberto(null); };
+    const esc = (e) => { if (e.key === "Escape") setAberto(null); };
+    document.addEventListener("mousedown", fora);
+    document.addEventListener("touchstart", fora);
+    window.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", fora);
+      document.removeEventListener("touchstart", fora);
+      window.removeEventListener("keydown", esc);
+    };
+  }, [aberto]);
+
+  const nomeDe = (id) => (nomeDaPessoa ? nomeDaPessoa(id) : "") || "";
+  const escolhidos = Array.isArray(f.responsaveis) ? f.responsaveis : [];
+  const gente = (pessoas || [])
+    .filter((p) => p && p.nome && (podeSerEscolhida(p) || escolhidos.includes(String(p.id))))
+    .sort((a, b) => {
+      if (meuId && String(a.id) === String(meuId)) return -1;
+      if (meuId && String(b.id) === String(meuId)) return 1;
+      return String(a.nome).localeCompare(String(b.nome), "pt-BR");
+    });
+  const tags = (etiquetas || []).filter((t) => t && t.id != null);
+  const tels = telefones || [];
+  const telsComDep = new Set(tels.map((t) => String(t.departamento_id ?? "")));
+  const deps = (departamentos || []).filter((d) => d && telsComDep.has(String(d.id)));
+  const oferecidos = telefonesOferecidos(f, tels);
+  const nomeDoDep = (id) => (deps.find((d) => String(d.id) === String(id)) || {}).nome || "";
+
+  const mostraResponsavel = Boolean(temResponsavel);
+  const mostraEtiquetas = tags.length > 0;
+  const mostraTelefones = tels.length > 1;
+  const mostraDepartamentos = deps.length > 1;
+  if (!mostraResponsavel && !mostraEtiquetas && !mostraTelefones && !mostraDepartamentos) return null;
+
+  const alternar = (lista, id) => (lista.includes(id) ? lista.filter((x) => x !== id) : [...lista, id]);
+  const mudar = (novo) => aoMudar(arrumarFiltros({ ...f, ...novo }));
+
+  const ITEM = { width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "8px 12px", border: "none",
+                 background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left",
+                 minHeight: estreito ? 44 : 36, boxSizing: "border-box" };
+  const caixa = (sim) => (
+    <span style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                   border: `1.5px solid ${sim ? C.green : C.divider}`, background: sim ? C.green : "transparent" }}>
+      {sim && <Check size={12} color="#fff" />}
+    </span>
+  );
+  const pilula = (id, Icone, rotulo, ativo, titulo) => (
+    <button type="button" data-filtro-da-espera={id} data-filtro-ativo={ativo ? "sim" : undefined}
+            aria-haspopup="listbox" aria-expanded={aberto === id} aria-label={rotulo} title={titulo || rotulo}
+            onClick={() => setAberto((a) => (a === id ? null : id))}
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, maxWidth: "100%", minWidth: 0, boxSizing: "border-box",
+                     padding: "5px 9px 5px 10px", borderRadius: 16, cursor: "pointer", fontSize: 12.5, fontWeight: 600,
+                     border: `1px solid ${ativo ? C.greenDark : C.divider}`, background: ativo ? C.greenDark : C.panel,
+                     color: ativo ? "#fff" : C.textPrimary }}>
+      <Icone size={14} style={{ flexShrink: 0 }} />
+      <span data-rotulo-do-filtro style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rotulo}</span>
+      <ChevronDown size={14} style={{ flexShrink: 0, transform: aberto === id ? "rotate(180deg)" : "none", transition: "transform .12s" }} />
+    </button>
+  );
+  const menu = (id, titulo, rotuloDaPesquisa, quantos, corpo) => aberto === id && (
+    <ComPesquisa>{(pesquisa, setPesquisa) => {
+      const comPesquisa = quantos >= PESQUISA_A_PARTIR_DE;
+      return (
+        <div data-menu-do-filtro={id} role="listbox" aria-multiselectable="true" ref={encaixarNaJanela}
+             style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 60, width: 280,
+                      maxWidth: "calc(100vw - 16px)", maxHeight: 380, overflowY: "auto", fontWeight: 400,
+                      background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10,
+                      boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
+          <div style={{ padding: "10px 12px 8px", borderBottom: `1px solid ${C.divider}`, position: "sticky", top: 0, zIndex: 1, background: C.panel }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.textSecondary, letterSpacing: 0.3 }}>{titulo}</div>
+            {comPesquisa && (
+              <div style={{ marginTop: 8 }}>
+                <CampoDePesquisa C={C} valor={pesquisa} aoMudar={setPesquisa} rotulo={rotuloDaPesquisa}
+                                 focar={!estreito} nome={`filtro-${id}`} />
+              </div>
+            )}
+          </div>
+          {corpo(comPesquisa ? pesquisa : "")}
+        </div>
+      );
+    }}</ComPesquisa>
+  );
+  const nada = (oQue, pesquisa) => (
+    <div data-nada-com-a-pesquisa style={{ padding: "14px 12px", fontSize: 13, color: C.textSecondary, textAlign: "center" }}>
+      {nadaComAPesquisa(oQue, pesquisa)}
+    </div>
+  );
+
+  const responsavel = mostraResponsavel && (
+    <span style={{ position: "relative", display: "inline-flex", maxWidth: "100%", minWidth: 0 }}>
+      {pilula("responsavel", UserCheck, `Responsável: ${rotuloDoResponsavel(f, nomeDe, meuId)}`, f.responsaveis !== null,
+              f.responsaveis === null ? "As suas: os clientes sem resposta que são seus ou de ninguém, e as conversas em que você é o responsável" : undefined)}
+      {menu("responsavel", "MOSTRAR AS DE", "Pesquisar pessoa", gente.length + 1, (pesquisa) => {
+        const achadas = gente.filter((p) => casaComAPesquisa(pesquisa, p.nome));
+        const semAparece = casaComAPesquisa(pesquisa, "Sem responsável");
+        return (<>
+          <button type="button" role="option" data-opcao-do-filtro="suas" aria-selected={f.responsaveis === null}
+                  onClick={() => { mudar({ responsaveis: null }); setAberto(null); }}
+                  style={{ ...ITEM, alignItems: "flex-start" }}>
+            <UserCheck size={16} color={C.textSecondary} style={{ flexShrink: 0, marginTop: 2 }} />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: "block", fontWeight: 600 }}>As suas</span>
+              <span style={{ display: "block", fontSize: 12, color: C.textSecondary, marginTop: 2, lineHeight: 1.35 }}>
+                O padrão: os clientes sem resposta que são seus ou de ninguém, e as conversas em que você é o responsável.
+              </span>
+            </span>
+            {f.responsaveis === null && <Check size={16} color={C.green} style={{ flexShrink: 0 }} />}
+          </button>
+          <button type="button" role="option" data-opcao-do-filtro={TODOS_OS_RESPONSAVEIS} aria-selected={f.responsaveis === TODOS_OS_RESPONSAVEIS}
+                  onClick={() => { mudar({ responsaveis: TODOS_OS_RESPONSAVEIS }); setAberto(null); }}
+                  style={{ ...ITEM, fontWeight: 600, borderBottom: `1px solid ${C.divider}` }}>
+            <Users size={16} color={C.textSecondary} style={{ flexShrink: 0 }} />
+            <span style={{ flex: 1 }}>Todos os responsáveis</span>
+            {f.responsaveis === TODOS_OS_RESPONSAVEIS && <Check size={16} color={C.green} style={{ flexShrink: 0 }} />}
+          </button>
+          {semAparece && (
+            <button type="button" role="option" data-opcao-do-filtro={SEM_RESPONSAVEL} aria-selected={escolhidos.includes(SEM_RESPONSAVEL)}
+                    onClick={() => mudar({ responsaveis: alternar(escolhidos, SEM_RESPONSAVEL) })} style={ITEM}>
+              {caixa(escolhidos.includes(SEM_RESPONSAVEL))}
+              <span style={{ flex: 1, minWidth: 0 }}>Sem responsável</span>
+            </button>
+          )}
+          {achadas.map((p) => {
+            const id = String(p.id);
+            const sim = escolhidos.includes(id);
+            return (
+              <button key={id} type="button" role="option" data-opcao-do-filtro={id} aria-selected={sim}
+                      onClick={() => mudar({ responsaveis: alternar(escolhidos, id) })} style={ITEM}>
+                {caixa(sim)}
+                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {p.nome}{meuId && id === String(meuId) ? " (você)" : ""}
+                </span>
+              </button>
+            );
+          })}
+          {!achadas.length && !semAparece && nada("Ninguém", pesquisa)}
+        </>);
+      })}
+    </span>
+  );
+
+  const etiquetasDoFiltro = mostraEtiquetas && (
+    <span style={{ position: "relative", display: "inline-flex", maxWidth: "100%", minWidth: 0 }}>
+      {pilula("etiquetas", Tag, rotuloDaLista(f.etiquetas, tags, "Etiquetas"), f.etiquetas.length > 0,
+              f.etiquetas.length > 1 ? "As conversas com qualquer uma das etiquetas escolhidas" : undefined)}
+      {menu("etiquetas", "COM QUALQUER UMA DAS ETIQUETAS", "Pesquisar etiqueta", tags.length, (pesquisa) => {
+        const achadas = tags.filter((t) => casaComAPesquisa(pesquisa, t.nome));
+        return (<>
+          {achadas.map((t) => {
+            const id = String(t.id);
+            const sim = f.etiquetas.includes(id);
+            return (
+              <button key={id} type="button" role="option" data-opcao-do-filtro={id} aria-selected={sim}
+                      onClick={() => mudar({ etiquetas: alternar(f.etiquetas, id) })} style={ITEM}>
+                {caixa(sim)}
+                <span style={{ width: 12, height: 12, borderRadius: 3, background: t.cor || C.divider, flexShrink: 0 }} />
+                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.nome}</span>
+              </button>
+            );
+          })}
+          {!achadas.length && nada("Nenhuma etiqueta", pesquisa)}
+        </>);
+      })}
+    </span>
+  );
+
+  const telefonesDoFiltro = mostraTelefones && (
+    <span style={{ position: "relative", display: "inline-flex", maxWidth: "100%", minWidth: 0 }}>
+      {pilula("telefones", Phone, rotuloDaLista(f.telefones, oferecidos, "Telefones"), f.telefones.length > 0)}
+      {menu("telefones", f.departamentos.length ? "TELEFONES DOS DEPARTAMENTOS ESCOLHIDOS" : "TELEFONES", "Pesquisar telefone",
+            oferecidos.length, (pesquisa) => {
+        const achados = oferecidos.filter((t) => casaComAPesquisa(pesquisa, t.nome, nomeDoDep(t.departamento_id)));
+        return (<>
+          {achados.map((t) => {
+            const id = String(t.id);
+            const sim = f.telefones.includes(id);
+            const dep = nomeDoDep(t.departamento_id);
+            return (
+              <button key={id} type="button" role="option" data-opcao-do-filtro={id} aria-selected={sim}
+                      onClick={() => mudar({ telefones: alternar(f.telefones, id) })} style={ITEM}>
+                {caixa(sim)}
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.nome}</span>
+                  {dep && <span style={{ display: "block", fontSize: 11.5, color: C.textSecondary }}>{dep}</span>}
+                </span>
+              </button>
+            );
+          })}
+          {!achados.length && nada("Nenhum telefone", pesquisa)}
+        </>);
+      })}
+    </span>
+  );
+
+  const departamentosDoFiltro = mostraDepartamentos && (
+    <span style={{ position: "relative", display: "inline-flex", maxWidth: "100%", minWidth: 0 }}>
+      {pilula("departamentos", Building2, rotuloDaLista(f.departamentos, deps, "Departamentos"), f.departamentos.length > 0)}
+      {menu("departamentos", "DEPARTAMENTOS", "Pesquisar departamento", deps.length, (pesquisa) => {
+        const achados = deps.filter((d) => casaComAPesquisa(pesquisa, d.nome));
+        return (<>
+          {achados.map((d) => {
+            const id = String(d.id);
+            const sim = f.departamentos.includes(id);
+            return (
+              <button key={id} type="button" role="option" data-opcao-do-filtro={id} aria-selected={sim}
+                      onClick={() => aoMudar(comOsDepartamentos(f, alternar(f.departamentos, id), tels))} style={ITEM}>
+                {caixa(sim)}
+                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.nome}</span>
+              </button>
+            );
+          })}
+          {!achados.length && nada("Nenhum departamento", pesquisa)}
+        </>);
+      })}
+    </span>
+  );
+
+  return (
+    <div ref={barraRef} data-filtros-da-espera role="group" aria-label="Filtros"
+         style={{ maxWidth: 760, margin: "0 auto", padding: "10px 16px 4px", boxSizing: "border-box",
+                  display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+      {responsavel}
+      {etiquetasDoFiltro}
+      {telefonesDoFiltro}
+      {departamentosDoFiltro}
+      {filtrosMudaram(f) && (
+        <button type="button" data-limpar-filtros-da-espera onClick={() => { aoMudar(FILTROS_DE_SEMPRE); setAberto(null); }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 5, border: "none", background: "transparent",
+                         color: C.verdeTexto || C.green, cursor: "pointer", fontSize: 12.5, fontWeight: 600, padding: "5px 6px" }}>
+          <FilterX size={14} /> Limpar os filtros
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function Esperando({
   C, meuId, advogados = [], semResposta, temAvisoDeEspera, atrasadas, podeContarAtrasadas,
+  filtros = FILTROS_DE_SEMPRE, aoMudarFiltros, etiquetasDaEspera, temResponsavel = false, pessoas = [], nomeDaPessoa,
+  etiquetas = [], departamentos = [], estreito = false,
   aoAbrirConversa, aoAtualizar, aoFechar,
 }) {
   const advPorId = useMemo(() => Object.fromEntries(advogados.map((a) => [String(a.id), a])), [advogados]);
   const agora = new Date();
-  const meusSemResposta = (semResposta?.linhas || []).filter((l) => ehParaMim(l, meuId));
-  const minhas = atrasadas?.linhas || [];
+  // O RECORTE DOS FILTROS (05/11) — ver `filtrosDaEspera.js`. No padrão
+  // ("as suas"), as duas listas são as de sempre: os clientes sem resposta
+  // que são seus ou de ninguém, e as conversas em que você é o responsável.
+  //
+  // AS ETIQUETAS VÊM DO BANCO numa pergunta própria, e a lista só se recorta
+  // com a resposta das etiquetas DE AGORA: com a de antes, ela mostraria por
+  // um instante as conversas da etiqueta que acabou de ser desmarcada. E AS
+  // CONVERSAS QUE ESPERAM TAMBÉM: a resposta diz de quais filtros ela é
+  // (`chave`), e a de outros filtros não é desenhada — trocar o filtro diz
+  // "Procurando…", e não a lista de antes com cara de nova.
+  const f = arrumarFiltros(filtros);
+  const chave = chaveDosFiltros(f);
+  const mudados = filtrosMudaram(f);
+  const comEtiquetas = f.etiquetas.length > 0;
+  const etiquetasProntas = !comEtiquetas || (etiquetasDaEspera?.chave === chaveDasEtiquetas(f) && Boolean(etiquetasDaEspera?.lido));
+  const erroDasEtiquetas = comEtiquetas && etiquetasProntas ? (etiquetasDaEspera?.erro || "") : "";
+  const recorte = { meuId, advogados, idsDasEtiquetas: etiquetasDaEspera?.ids };
+  const srProntos = Boolean(semResposta?.lido) && !semResposta?.erro && etiquetasProntas && !erroDasEtiquetas;
+  const meusSemResposta = !srProntos ? []
+    : (semResposta?.linhas || []).filter((l) => passaNosFiltros(l, f, { ...recorte, aba: "sem-resposta" }));
+  const atProntas = atrasadas?.chave === chave && etiquetasProntas;
+  const minhas = !atProntas ? []
+    : (atrasadas?.linhas || []).filter((l) => passaNosFiltros(l, f, { ...recorte, aba: "atrasadas" }));
+  const nomeDe = (id) => (nomeDaPessoa ? nomeDaPessoa(id) : "") || "";
+  // QUEM É O RESPONSÁVEL, escrito na linha quando a tela mostra as de outras
+  // pessoas: no padrão as linhas são suas (ou de ninguém), e repetir "com
+  // você" em todas seria ruído.
+  const comQuem = (l) => {
+    if (!l.responsavel_id) return "sem responsável";
+    if (f.responsaveis === null) return "";
+    if (meuId && String(l.responsavel_id) === String(meuId)) return "com você";
+    return `com ${primeiroNome(nomeDe(l.responsavel_id)) || "alguém da equipe"}`;
+  };
 
   // AS ABAS. O número de cada uma só aparece com a leitura feita: "0"
   // enquanto ela vem, ou depois de ela falhar, diria que não há ninguém.
@@ -88,11 +393,12 @@ export default function Esperando({
   const abas = [
     temAvisoDeEspera !== false && {
       id: "sem-resposta", titulo: "Clientes sem resposta", forte: "#e53935", texto: C.erroTexto || "#e53935",
-      falhou: Boolean(semResposta?.erro), n: semResposta?.erro || !semResposta?.lido ? null : meusSemResposta.length,
+      falhou: Boolean(semResposta?.erro || erroDasEtiquetas), n: srProntos ? meusSemResposta.length : null,
     },
     podeContarAtrasadas !== false && {
-      id: "atrasadas", titulo: `Suas conversas esperando ${HA_DIAS_OU_MAIS}`, forte: "#d99a1e", texto: C.ambarTexto || "#d99a1e",
-      falhou: Boolean(atrasadas?.erro), n: atrasadas?.erro || !atrasadas?.lido ? null : minhas.length,
+      id: "atrasadas", titulo: tituloDasQueEsperam(f, HA_DIAS_OU_MAIS, meuId), forte: "#d99a1e", texto: C.ambarTexto || "#d99a1e",
+      falhou: Boolean(atrasadas?.chave === chave && atrasadas?.erro),
+      n: atProntas && atrasadas?.lido && !atrasadas?.erro ? minhas.length : null,
     },
   ].filter(Boolean);
 
@@ -143,6 +449,20 @@ export default function Esperando({
       </button>
     </div>
   );
+  // A LISTA VAZIA COM FILTROS diz que é o recorte, e oferece desfazê-lo: sem
+  // isso, "nenhum cliente" se leria como "a fila está em dia".
+  const vaziaComFiltros = (texto) => (
+    <div data-espera-vazia-com-filtros
+         style={{ padding: "10px 12px", fontSize: 13, color: C.textSecondary, lineHeight: 1.5, background: C.panel,
+                  borderTop: `1px solid ${C.divider}`, display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 10px" }}>
+      <span style={{ flex: "1 1 220px" }}>{texto}</span>
+      <button type="button" data-limpar-filtros-da-lista-vazia onClick={() => aoMudarFiltros && aoMudarFiltros(FILTROS_DE_SEMPRE)}
+              style={{ border: "none", background: "transparent", color: C.verdeTexto || C.green, cursor: "pointer",
+                       fontWeight: 600, fontSize: 13, padding: "4px 0" }}>
+        Limpar os filtros
+      </button>
+    </div>
+  );
   const linha = (key, attrs, cv, contato, detalhe, corDetalhe, marca) => {
     const cliente = contato ? nomeDoContato(contato) || telefoneLegivel(contato.numero) : "Cliente";
     const tel = advPorId[String(cv.advogado_id)];
@@ -184,6 +504,15 @@ export default function Esperando({
                 style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", padding: 6, borderRadius: "50%" }}>
           <RefreshCw size={18} color={C.textSecondary} />
         </button>
+      </div>
+
+      {/* OS FILTROS (05/11), acima das abas: eles recortam as duas, e o número
+          de cada aba é o do recorte. Fora da parte que rola, como as abas. */}
+      <div style={{ background: C.headerBar }}>
+        <BarraDeFiltros C={C} estreito={estreito} filtros={f} aoMudar={(novo) => aoMudarFiltros && aoMudarFiltros(novo)}
+                        meuId={meuId} pessoas={pessoas} nomeDaPessoa={nomeDaPessoa}
+                        temResponsavel={temResponsavel}
+                        etiquetas={etiquetas} telefones={advogados} departamentos={departamentos} />
       </div>
 
       {/* AS ABAS (02/11), fora da parte que rola: a lista de um dia cheio passa
@@ -233,22 +562,30 @@ export default function Esperando({
         <div style={{ maxWidth: 760, margin: "0 auto", padding: "14px 16px 40px" }}>
           {ativa === "sem-resposta" && painel("sem-resposta", <>
               {nota(<>Quem escreveu e ainda não recebeu <b>nenhuma</b> resposta, {meusSemResposta.length
-                ? fraseDoLimite(meusSemResposta) : "além do tempo do departamento"} de expediente. Os que têm
-                outra pessoa como responsável aparecem só para ela.</>, { borderBottom: "none" })}
+                ? fraseDoLimite(meusSemResposta) : "além do tempo do departamento"} de expediente. {fraseDoResponsavelSemResposta(f, nomeDe, meuId)}</>,
+                { borderBottom: "none" })}
               {semResposta?.erro ? falha("data-espera-falhou-sem-resposta", semResposta.erro)
-                : !semResposta?.lido ? nota("Procurando…")
-                : meusSemResposta.length === 0 ? nota("Nenhum cliente sem resposta além do tempo combinado.", { borderTop: `1px solid ${C.divider}` })
-                : meusSemResposta.map((l) => linha(`sr-${l.conversa_id}`, { "data-sem-resposta-linha": l.conversa_id },
-                    { id: l.conversa_id, advogado_id: l.advogado_id }, l.contato,
-                    `sem resposta há ${rotuloDosMinutos(l.minutos)} de expediente`, "#e53935",
-                    `escreveu ${rotuloDaHora(l.aberto_em, agora)}${l.responsavel_id ? "" : " · sem responsável"}`))}
+                : erroDasEtiquetas ? falha("data-espera-falhou-etiquetas", erroDasEtiquetas)
+                : !srProntos ? nota("Procurando…")
+                : meusSemResposta.length === 0 ? (mudados
+                  ? vaziaComFiltros("Nenhum cliente sem resposta além do tempo combinado, com estes filtros.")
+                  : nota("Nenhum cliente sem resposta além do tempo combinado.", { borderTop: `1px solid ${C.divider}` }))
+                : meusSemResposta.map((l) => {
+                    const quem = comQuem(l);
+                    return linha(`sr-${l.conversa_id}`, { "data-sem-resposta-linha": l.conversa_id },
+                      { id: l.conversa_id, advogado_id: l.advogado_id }, l.contato,
+                      `sem resposta há ${rotuloDosMinutos(l.minutos)} de expediente`, "#e53935",
+                      `escreveu ${rotuloDaHora(l.aberto_em, agora)}${quem ? ` · ${quem}` : ""}`);
+                  })}
             </>)}
 
           {ativa === "atrasadas" && painel("atrasadas", <>
-              {nota(`As conversas em que você é o responsável e o cliente espera resposta ${HA_DIAS_OU_MAIS}.`)}
-              {atrasadas?.erro ? falha("data-espera-falhou-atrasadas", atrasadas.erro)
-                : !atrasadas?.lido ? nota("Procurando…")
-                : minhas.length === 0 ? nota(`Nenhuma conversa sua esperando ${HA_DIAS_OU_MAIS}.`, { borderTop: `1px solid ${C.divider}` })
+              {nota(fraseDasQueEsperam(f, nomeDe, meuId, HA_DIAS_OU_MAIS))}
+              {atrasadas?.chave === chave && atrasadas?.erro ? falha("data-espera-falhou-atrasadas", atrasadas.erro)
+                : !atProntas || !atrasadas?.lido ? nota("Procurando…")
+                : minhas.length === 0 ? (mudados
+                  ? vaziaComFiltros(`Nenhuma conversa esperando ${HA_DIAS_OU_MAIS}, com estes filtros.`)
+                  : nota(`Nenhuma conversa sua esperando ${HA_DIAS_OU_MAIS}.`, { borderTop: `1px solid ${C.divider}` }))
                 : minhas.map((cv) => {
                     const d = diasDesde(cv.esperando_desde);
                     // A COR É A DO RÓTULO DA LISTA (02/11): âmbar com 2 dias,
@@ -257,9 +594,9 @@ export default function Esperando({
                     // dias seria vermelha aqui e âmbar na lista.
                     return linha(`at-${cv.id}`, { "data-atrasada-linha": cv.id }, cv, cv.contato,
                       `esperando há ${d} dia${d === 1 ? "" : "s"}`,
-                      d >= DIAS_DO_VERMELHO ? "#e53935" : (C.ambarTexto || "#d99a1e"), null);
+                      d >= DIAS_DO_VERMELHO ? "#e53935" : (C.ambarTexto || "#d99a1e"), comQuem(cv) || null);
                   })}
-              {atrasadas?.cortado && nota(`Mostrando as ${minhas.length} que esperam há mais tempo.`, { borderTop: `1px solid ${C.divider}` })}
+              {atProntas && atrasadas?.cortado && nota(`Mostrando as ${minhas.length} que esperam há mais tempo.`, { borderTop: `1px solid ${C.divider}` })}
             </>)}
 
           {abas.length === 0 && (

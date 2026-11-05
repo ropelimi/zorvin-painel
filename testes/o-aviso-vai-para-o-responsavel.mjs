@@ -331,9 +331,17 @@ console.log("\n9. Uma rajada de mensagens pergunta o responsável UMA vez");
   const { ctx, page } = await abrirPainel({ semente: semear([c]) });
   // O DIÁRIO DAS IDAS AO BANCO só a partir daqui: a abertura não interessa.
   await page.evaluate(() => { globalThis.__DIARIO = []; });
+  // A PERGUNTA PELO DONO é a de UMA conversa: ela pede o responsável e
+  // filtra só pelo id. A leitura das suas conversas que esperam (a da tela
+  // "Esperando resposta") também pede o responsável desde 05/11, por causa
+  // do filtro de responsável dela, e tem o relógio próprio: a primeira
+  // rodada, cinco segundos depois de a lista chegar, cai dentro desta cena.
+  // Contada aqui, ela era uma pergunta pelo dono a mais, e a cena reprovava
+  // o painel certo.
   const perguntasPeloDono = () => page.evaluate(() => {
     const n = (globalThis.__DIARIO || [])
-      .filter((m) => m.tabela === "conversas" && /responsavel_id/.test(m.colunas || "")).length;
+      .filter((m) => m.tabela === "conversas" && /responsavel_id/.test(m.colunas || "")
+        && (m.pedidos || []).join(",") === "id").length;
     globalThis.__DIARIO = [];
     return n;
   });
