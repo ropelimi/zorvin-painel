@@ -6864,7 +6864,27 @@ escuro; o celular; a aba; e a aba com a ponte calada e as três leituras
 falhando. Em cada cena, nada à vista diz "copiloto" — nem o texto, nem um
 title, aria-label ou placeholder.
 
-RESULTADO_DAS_SABOTAGENS
+**31 sabotagens e 31 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma (e uma cópia sem sabotagem nenhuma, de controle, passou inteira):
+
+- o painel de antes inteiro (62 reprovações — é o pedido reproduzido), e o
+  nome de volta a "Copiloto" na constante (41);
+- **o botão:** as estrelinhas de volta (14); o rosto maior que o alvo; o rosto
+  sem o `aria-hidden`; e o `title`, o `aria-label` e o `title` de quando ele
+  escreve dizendo "copiloto";
+- **o desenho:** os ids fixos, sem o `useId` (com o primeiro rosto escondido,
+  a cabeça do segundo mede 0,04 de verde, e a prova pede 0,15); a cabeça
+  apontando para um id sem o prefixo (5); o rosto quase transparente (3);
+- **a faixa:** "Copiloto" no nome (9); as estrelinhas (4); o campo do pedido
+  (4); o fechar (5); o "Desfeito" e o Desfazer; e a lição que não se desfaz
+  mandando à aba "Copiloto";
+- **o resumo:** o quadro sem o rosto (6); o "Feito pela IA" de volta; o texto
+  copiado sem dizer que é a IA do Zorvin; o botão com "(IA)"; e o "Resumir de
+  novo" pedindo "à IA";
+- **o celular:** o item do ⋮ com as estrelinhas;
+- **a aba:** o nome "Copiloto" de volta; o título sem o rosto; a explicação e
+  as notas dizendo "o copiloto" (3 cada); e o manual, as lições e a ponte
+  calada dizendo "do copiloto".
 
 **As provas que liam as frases de antes foram INVERTIDAS, e não apagadas**:
 `o-copiloto-aprende-com-a-equipe` (o placeholder e a frase das notas que não
