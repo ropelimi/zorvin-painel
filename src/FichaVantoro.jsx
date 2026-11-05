@@ -24,6 +24,7 @@ import { chaveDoNumero, outrosNumeros, telefoneLegivel, numeroCanonico } from ".
 import { chamarPonte, BRIDGE_URL, FALTA_PONTE } from "./ponte.js";
 import { enderecoNoVantoro } from "./temVantoro.js";
 import { naoGravouNada, comOCodigo } from "./gravar.js";
+import { registrarMotivoParaEsperar, recargaPedida } from "./atualizacao.js";
 
 // Este erro é de configuração da ponte, ou é outra coisa?
 //
@@ -289,13 +290,22 @@ function comRascunho(c, quem) {
 
 // RECARREGAR, FECHAR A ABA OU SAIR DO PAINEL PERGUNTA ANTES, se há rascunho
 // de qualquer ficha — mesmo recolhida: o rascunho mora aqui, e não nela.
+//
+// MENOS NO "ATUALIZAR AGORA" (05/11): ele acabou de perguntar, dizendo o que
+// se perde, e uma segunda pergunta, do navegador, seria a mesma em outras
+// palavras.
 if (typeof window !== "undefined") {
   window.addEventListener("beforeunload", (e) => {
-    if (!rascunhosDaFicha.size) return;
+    if (!rascunhosDaFicha.size || recargaPedida()) return;
     e.preventDefault();
     e.returnValue = "";
   });
 }
+
+// E A ATUALIZAÇÃO SOZINHA ESPERA (05/11): o que está por salvar em qualquer
+// ficha se perderia numa recarga — e é a mesma conta do botão de salvar. Ver
+// `atualizacao.js`.
+registrarMotivoParaEsperar(() => (rascunhosDaFicha.size ? "as alterações não salvas da ficha" : null));
 
 export default function FichaVantoro({ numero, nomeContato, C, estreito, sobreposta = false, quem = "", onFechar, onAviso, aoLigarCadastro, aoConversarPor }) {
   const [carregando, setCarregando] = useState(true);

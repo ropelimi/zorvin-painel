@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
 import { readFileSync, readdirSync } from "node:fs";
 import { extname } from "node:path";
+import { execFileSync } from "node:child_process";
 
 // OS ARQUIVOS DE APOIO DO pdf.js, servidos pelo PRÓPRIO SITE (29/10).
 //
@@ -58,14 +59,72 @@ function apoioDoPdfjs() {
   };
 }
 
+// A VERSÃO DO ZORVIN (05/11) — ver `src/atualizacao.js`.
+//
+// Escrita em DOIS lugares, a partir da mesma conta: dentro do código
+// (`__ZORVIN_VERSAO__`) e no arquivo `versao.json`, que a aba aberta pergunta
+// de tempos em tempos. Os dois diferentes são a versão nova.
+//
+// - o IDENTIFICADOR é o commit publicado: na Render, `RENDER_GIT_COMMIT`; fora
+//   dela, o do `git`. Sem os dois, a hora da montagem — cada montagem, uma
+//   versão;
+// - o RÓTULO ("v1.313") sai do número da PR na mensagem do commit, que o
+//   GitHub escreve ao mesclar ("… (#313)"). Sem o número (um commit feito
+//   fora de uma PR, ou uma montagem sem o `git`), vai o começo do commit.
+function lerDoGit(...args) {
+  try {
+    return execFileSync("git", args, { stdio: ["ignore", "pipe", "ignore"], encoding: "utf8" }).trim();
+  } catch (_) {
+    return "";
+  }
+}
+function versaoDoZorvin() {
+  const commit = String(process.env.RENDER_GIT_COMMIT || "").trim() || lerDoGit("rev-parse", "HEAD");
+  const assunto = lerDoGit("log", "-1", "--format=%s");
+  const m = /\(#(\d+)\)\s*$/.exec(assunto) || /#(\d+)/.exec(assunto);
+  const numero = m ? Number(m[1]) : null;
+  const montadaEm = new Date().toISOString();
+  return {
+    id: commit || `montagem-${montadaEm}`,
+    rotulo: numero ? `v1.${numero}` : commit ? `v1 · ${commit.slice(0, 7)}` : "v1",
+    numero,
+    commit,
+    montada_em: montadaEm,
+  };
+}
+
+function arquivoDaVersao(versao) {
+  const corpo = JSON.stringify(versao);
+  return {
+    name: "versao-do-zorvin",
+    // NO SERVIDOR DE DESENVOLVIMENTO, o mesmo arquivo — e nunca guardado: a
+    // prova troca a resposta dele para fingir uma publicação.
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if ((req.url || "").split("?")[0] !== "/versao.json") return next();
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.setHeader("Cache-Control", "no-store");
+        res.end(corpo);
+      });
+    },
+    generateBundle() {
+      this.emitFile({ type: "asset", fileName: "versao.json", source: corpo });
+    },
+  };
+}
+
 // A BANCADA SÓ ENTRA NO PACOTE QUANDO ESTÁ LIGADA (auditoria de 27/10) — ver
 // `src/bancada-desligada.js`. A pergunta é a mesma de `supabase.js`
 // (`VITE_BANCADA === "1"`), feita aqui na montagem: lá ela escolhe o cliente,
 // aqui ela escolhe o que entra no arquivo.
 export default defineConfig(({ mode }) => {
   const bancada = (process.env.VITE_BANCADA ?? loadEnv(mode, process.cwd(), "VITE_").VITE_BANCADA) === "1";
+  const versao = versaoDoZorvin();
   return {
-    plugins: [react(), apoioDoPdfjs()],
+    plugins: [react(), apoioDoPdfjs(), arquivoDaVersao(versao)],
+    // A HORA DA MONTAGEM FICA SÓ NO ARQUIVO: dentro do código, ela mudaria o
+    // pacote a cada montagem do mesmo commit, e a comparação é pelo `id`.
+    define: { __ZORVIN_VERSAO__: JSON.stringify({ ...versao, montada_em: undefined }) },
     // O pdf.js É LIDO COMO VEM, sem a pré-compilação do servidor de
     // desenvolvimento. Ele é um módulo só, sem dependências; pré-compilado na
     // primeira vez que alguém abre um PDF, o servidor RECARREGARIA a página no
