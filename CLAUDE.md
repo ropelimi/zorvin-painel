@@ -6098,6 +6098,19 @@ ordem do clique.
 `lerEtiquetasDaEspera`). Na bancada as respostas chegam na ordem em que foram
 pedidas, e a prova não as cruza.
 
+**E a integração contínua pegou uma prova vizinha que contava largo
+demais.** A leitura das suas conversas que esperam passou a pedir o
+responsável (`responsavel_id`, para o filtro), e a cena 9 de
+`o-aviso-vai-para-o-responsavel` conta como "pergunta pelo dono" toda leitura
+de `conversas` que pede essa coluna. A primeira rodada da leitura, cinco
+segundos depois de a lista chegar, cai dentro da cena, e ela reprovava sempre
+("foram 2"), com o painel certo. Eu não tinha rodado essa prova: ela não tem
+"espera" no nome. Hoje ela conta só a pergunta sobre UMA conversa (a que
+filtra só pelo id), e as duas sabotagens da junção do aviso (a rajada sem
+junção, e juntar virando guardar) continuam sendo pegas por ela. **Ao pôr uma
+coluna nova numa leitura com relógio próprio, procure as provas que contam
+leituras por coluna**, e não só as que têm o nome da tela.
+
 ## A faxina da fila (01/11)
 
 Pedido do Rodrigo, da lista de recomendações de 31/10: *"Pode seguir para a
