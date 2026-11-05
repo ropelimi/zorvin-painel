@@ -3740,6 +3740,10 @@ export const supabase = {
       }
       await espera(40);
       if (globalThis.__SEM_RESPONSAVEL) return { data: { falta: "008" }, error: null };
+      // A RÉGUA DAS ATRASADAS (script 051 da ponte, 05/11): 2 dias de
+      // calendário, e a resposta diz a régua (`dias_atrasada`).
+      // `__SEM_051` é o banco de antes: 3 dias, e a resposta sem a chave.
+      const DIAS = globalThis.__SEM_051 ? 3 : 2;
       const eu = TABELAS.usuarios[0] || {};
       const tel = (args && args.p_telefone) || null, dep = (args && args.p_departamento) || null;
       const adv = new Map(ADVOGADOS.map((a) => [String(a.id), a]));
@@ -3758,7 +3762,7 @@ export const supabase = {
         g.nao_lidas += Number(c.nao_lidas || 0);
         if (c.esperando_desde) {
           g.esperando++;
-          if (dias(c.esperando_desde) >= 3) g.atrasadas++;
+          if (dias(c.esperando_desde) >= DIAS) g.atrasadas++;
           if (!g.mais_antiga || new Date(c.esperando_desde) < new Date(g.mais_antiga)) g.mais_antiga = c.esperando_desde;
         }
         grupos.set(k, g);
@@ -3773,6 +3777,7 @@ export const supabase = {
       const soma = (k) => todos.reduce((n, g) => n + Number(g[k] || 0), 0);
       return { data: {
         so_meu: !eu.admin, agora: new Date().toISOString(), linhas,
+        ...(globalThis.__SEM_051 ? {} : { dias_atrasada: DIAS }),
         sem_responsavel: semDono ? (({ id, ...resto }) => resto)(semDono) : null,
         total: { conversas: soma("conversas"), esperando: soma("esperando"), atrasadas: soma("atrasadas") },
       }, error: null };
@@ -4228,6 +4233,35 @@ export const supabase = {
                  porId: m && m.enviado_por_id ? String(m.enviado_por_id) : null,
                  rotulo: m && m.enviado_por ? String(m.enviado_por).trim() || null : null };
       }).filter(Boolean);
+      // O PRAZO EM HORÁRIO DE EXPEDIENTE (script 052 da ponte, 05/11). A conta
+      // de verdade (os minutos de expediente pela semana do departamento, os
+      // feriados) está provada num Postgres, na seção 104 da prova da ponte.
+      // Aqui ela é a de um departamento SEM semana escrita, que o 052 conta no
+      // relógio inteiro: o que a tela tem de provar é o que ela faz com a
+      // resposta. O prazo de cada departamento é o da aba "Aviso de espera"
+      // (30 sem linha), como lá. `__SEM_052` é o banco de antes: a resposta do
+      // 029, sem nenhuma chave nova.
+      const com052 = !globalThis.__SEM_052;
+      const agoraMs = Date.now();
+      const prazoDoDep = new Map((TABELAS.zorvin_aviso_de_espera || []).map((x) => [String(x.departamento_id), Number(x.minutos)]));
+      for (const g of base) {
+        g.departamento_id = (adv.get(String(g.advogado_id)) || {}).departamento_id ?? null;
+        if (g.origem !== "cliente") { g.limite = null; g.minAcao = null; g.minResposta = null; g.prazo = null; continue; }
+        g.limite = prazoDoDep.get(String(g.departamento_id)) ?? 30;
+        const acoes = [g.primeira_resposta_em, g.finalizado_em].filter(Boolean).map(ms);
+        const fim = acoes.length ? Math.min(...acoes) : agoraMs;
+        g.minAcao = Math.floor(Math.max(0, fim - ms(g.aberto_em)) / 60000);
+        g.minResposta = g.primeira_resposta_em ? Math.floor(Math.max(0, ms(g.primeira_resposta_em) - ms(g.aberto_em)) / 60000) : null;
+        // A RÉGUA DO AVISO (041): no minuto em que chega ao prazo, já é fora dele.
+        g.prazo = acoes.length ? (g.minAcao < g.limite ? "no_prazo" : "atrasado")
+                : g.minAcao >= g.limite ? "sem_acao" : "aguardando";
+      }
+      const contarPrazo = (lista) => ({
+        no_prazo: lista.filter((g) => g.prazo === "no_prazo").length,
+        atrasados: lista.filter((g) => g.prazo === "atrasado").length,
+        sem_acao: lista.filter((g) => g.prazo === "sem_acao").length,
+        aguardando: lista.filter((g) => g.prazo === "aguardando").length,
+      });
       const participou = (g) => !soMeu || (Boolean(quem) && (g.porId === quem || String(g.finalizado_por) === quem
                                                              || String(g.aberto_por) === quem));
       const meus = base.filter(participou);
@@ -4235,16 +4269,18 @@ export const supabase = {
       const tempo = (v) => ({ mediana: mediana(v), media: media(v), quantos: v.length });
       const pessoas = new Map();
       const linha = (k, id, tipo, rotulo) => {
-        if (!pessoas.has(k)) pessoas.set(k, { id, tipo, rotulo, p: [], f: [] });
+        if (!pessoas.has(k)) pessoas.set(k, { id, tipo, rotulo, p: [], pe: [], f: [] });
         return pessoas.get(k);
       };
       for (const g of base.filter((x) => x.noPeriodo)) {
         if (g.origem === "cliente" && g.primeira_resposta_em) {
           const s = seg(g.aberto_em, g.primeira_resposta_em);
-          if (g.porId) linha(g.porId, g.porId, "pessoa", null).p.push(s);
-          else if (g.rotulo === "WhatsApp") linha("celular", null, "celular", "Pelo celular").p.push(s);
-          else if (g.rotulo) linha(`rotulo:${g.rotulo.toLowerCase()}`, null, "rotulo", g.rotulo).p.push(s);
-          else linha("desconhecido", null, "desconhecido", null).p.push(s);
+          const l = g.porId ? linha(g.porId, g.porId, "pessoa", null)
+            : g.rotulo === "WhatsApp" ? linha("celular", null, "celular", "Pelo celular")
+            : g.rotulo ? linha(`rotulo:${g.rotulo.toLowerCase()}`, null, "rotulo", g.rotulo)
+            : linha("desconhecido", null, "desconhecido", null);
+          l.p.push(s);
+          l.pe.push(g.minResposta * 60);
         }
         if (g.finalizado_em) {
           const id = g.finalizado_por ? String(g.finalizado_por) : null;
@@ -4254,15 +4290,43 @@ export const supabase = {
       const porPessoa = [...pessoas.values()]
         .map((x) => ({ id: x.id, tipo: x.tipo, nome: (x.id && nomeDe.get(x.id)) || x.rotulo || "(sem nome)",
                        primeiras: x.p.length, primeira_mediana: mediana(x.p),
+                       ...(com052 ? { primeira_mediana_expediente: mediana(x.pe) } : {}),
                        finalizou: x.f.length, finalizar_mediana: mediana(x.f) }))
         .sort((a, b) => (b.primeiras + b.finalizou) - (a.primeiras + a.finalizou) || a.nome.localeCompare(b.nome));
       const dias = new Map();
       for (const g of agora) {
         const k = iso(soDia(g.aberto_em));
-        const d = dias.get(k) || { quando: k, atendimentos: 0, sem_resposta: 0 };
+        const d = dias.get(k) || { quando: k, atendimentos: 0, sem_resposta: 0,
+                                   ...(com052 ? { finalizados: 0, no_prazo: soMeu ? null : 0, prazo_julgados: soMeu ? null : 0 } : {}) };
         if (g.iniciado) d.atendimentos += 1; else d.sem_resposta += 1;
+        if (com052) {
+          if (g.finalizado_em) d.finalizados += 1;
+          if (!soMeu && g.prazo === "no_prazo") d.no_prazo += 1;
+          if (!soMeu && ["no_prazo", "atrasado", "sem_acao"].includes(g.prazo)) d.prazo_julgados += 1;
+        }
         dias.set(k, d);
       }
+      // POR DEPARTAMENTO (052): os mesmos números, departamento a departamento.
+      const porDep = new Map();
+      for (const g of agora) {
+        const k = String(g.departamento_id ?? "");
+        if (!porDep.has(k)) porDep.set(k, []);
+        porDep.get(k).push(g);
+      }
+      const porDepartamento = [...porDep.entries()].map(([k, lista]) => {
+        const d = DEPARTAMENTOS.find((x) => String(x.id) === k);
+        const julgaveis = lista.filter((g) => g.prazo != null);
+        return {
+          id: d ? d.id : null, nome: d ? d.nome : "(sem departamento)",
+          atendimentos: lista.filter((g) => g.iniciado).length,
+          em_atendimento: lista.filter((g) => g.iniciado && !g.finalizado_em).length,
+          finalizados: lista.filter((g) => g.finalizado_em).length,
+          sem_resposta: soMeu ? null : lista.filter((g) => !g.iniciado).length,
+          primeira_mediana_expediente: mediana(lista.filter((g) => g.origem === "cliente" && g.primeira_resposta_em
+                                                                  && (!soMeu || g.porId === quem)).map((g) => g.minResposta * 60)),
+          prazo: soMeu ? null : { ...contarPrazo(lista), limite: julgaveis.length ? Math.max(...julgaveis.map((g) => g.limite)) : null },
+        };
+      }).sort((a, b) => b.atendimentos - a.atendimentos || String(a.nome).localeCompare(String(b.nome)));
       const registros = agora.slice().sort((a, b) => ms(b.aberto_em) - ms(a.aberto_em) || String(b.protocolo).localeCompare(String(a.protocolo)))
         .slice(0, Math.min(Math.max(Number((args && args.p_limite) || 500), 1), 2000))
         .map((g) => {
@@ -4279,8 +4343,11 @@ export const supabase = {
             finalizado_em: g.finalizado_em || null, finalizado_por: g.finalizado_por || null,
             finalizado_nome: g.finalizado_por ? nomeDe.get(String(g.finalizado_por)) || null : null,
             estado: g.finalizado_em ? "finalizado" : g.iniciado ? "em_atendimento" : "sem_resposta",
+            ...(com052 ? { prazo: g.prazo, minutos_ate_acao: g.minAcao, limite: g.limite } : {}),
           };
         });
+      const comPrazo = agora.filter((g) => g.prazo != null);
+      const doCliente = agora.filter((g) => g.origem === "cliente" && g.primeira_resposta_em && (!soMeu || g.porId === quem));
       return { data: {
         so_meu: soMeu,
         desde: Number.isFinite(t0) ? new Date(t0).toISOString() : null, ate: new Date(t1).toISOString(),
@@ -4289,15 +4356,26 @@ export const supabase = {
           em_atendimento: agora.filter((g) => g.iniciado && !g.finalizado_em).length,
           finalizados: agora.filter((g) => g.finalizado_em).length,
           sem_resposta: soMeu ? null : agora.filter((g) => !g.iniciado).length,
+          ...(com052 ? { do_cliente: soMeu ? null : agora.filter((g) => g.origem === "cliente").length } : {}),
         },
+        // O PRAZO É DA EQUIPE: com uma pessoa, nulo (o cabeçalho do 052).
+        ...(com052 ? { prazo: soMeu ? null : {
+          ...contarPrazo(agora),
+          limite_min: comPrazo.length ? Math.min(...comPrazo.map((g) => g.limite)) : null,
+          limite_max: comPrazo.length ? Math.max(...comPrazo.map((g) => g.limite)) : null,
+        } } : {}),
         tempos: {
-          primeira_resposta: tempo(agora.filter((g) => g.origem === "cliente" && g.primeira_resposta_em
-                                                       && (!soMeu || g.porId === quem))
-                                        .map((g) => seg(g.aberto_em, g.primeira_resposta_em))),
+          primeira_resposta: {
+            ...tempo(doCliente.map((g) => seg(g.aberto_em, g.primeira_resposta_em))),
+            ...(com052 ? { mediana_expediente: mediana(doCliente.map((g) => g.minResposta * 60)),
+                           media_expediente: media(doCliente.map((g) => g.minResposta * 60)) } : {}),
+          },
           finalizar: tempo(agora.filter((g) => g.finalizado_em && (!soMeu || String(g.finalizado_por) === quem))
                                 .map((g) => seg(g.aberto_em, g.finalizado_em))),
         },
-        antes: { existe: Number.isFinite(t0), atendimentos: meus.filter((g) => !g.noPeriodo && g.iniciado).length },
+        antes: { existe: Number.isFinite(t0), atendimentos: meus.filter((g) => !g.noPeriodo && g.iniciado).length,
+                 ...(com052 ? { prazo: soMeu || !Number.isFinite(t0) ? null : contarPrazo(meus.filter((g) => !g.noPeriodo)) } : {}) },
+        ...(com052 ? { por_departamento: porDepartamento } : {}),
         por_pessoa: porPessoa,
         por_dia: [...dias.values()].sort((a, b) => a.quando.localeCompare(b.quando)),
         total_registros: agora.length, registros,
