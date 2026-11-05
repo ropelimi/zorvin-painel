@@ -206,7 +206,7 @@ console.log("\nNo celular");
   }
 }
 
-console.log("\nNa nota não há emoji nem anexo — e o anexo era um perigo");
+console.log("\nNa nota não há emoji, e o clipe é o DA NOTA — o anexo era um perigo");
 {
   await page.setViewportSize({ width: 1300, height: 900 });
   await page.waitForTimeout(900);
@@ -217,16 +217,22 @@ console.log("\nNa nota não há emoji nem anexo — e o anexo era um perigo");
   const conta = () => page.evaluate(() => ({
     emoji: document.querySelectorAll('[title="Emojis e figurinhas"]').length,
     clipe: document.querySelectorAll('[title="Anexar arquivo"]').length,
+    clipeDaNota: document.querySelectorAll('[data-anexar="nota"]').length,
   }));
   const naMensagem = await conta();
-  ok("na caixa de MENSAGEM os dois estão lá", naMensagem.emoji === 1 && naMensagem.clipe === 1,
-     JSON.stringify(naMensagem));
+  ok("na caixa de MENSAGEM os dois estão lá", naMensagem.emoji === 1 && naMensagem.clipe === 1
+     && naMensagem.clipeDaNota === 0, JSON.stringify(naMensagem));
 
   await page.locator("[data-nota-interna]").first().click();
   await page.waitForTimeout(1200);
   const naNota = await conta();
-  ok("e na NOTA nenhum dos dois aparece", naNota.emoji === 0 && naNota.clipe === 0,
+  // INVERTIDA EM 05/11, E NÃO APAGADA: desde o script 053 da ponte a nota
+  // guarda arquivo, e o clipe da nota põe o arquivo NA NOTA. O que esta
+  // conferência protegia continua: o clipe de MANDAR AO CLIENTE não aparece
+  // na nota. Sem o 053, nenhum clipe aparece (a cena do fim).
+  ok("e na NOTA o emoji não aparece, nem o clipe de mandar ao cliente", naNota.emoji === 0 && naNota.clipe === 0,
      JSON.stringify(naNota));
+  ok("o clipe que aparece na nota é o DA NOTA", naNota.clipeDaNota === 1, JSON.stringify(naNota));
 
   // O QUE O CLIPE ESCONDIA, e é o motivo de isto não ser cosmético.
   //
@@ -285,28 +291,77 @@ console.log("\nNa nota não há emoji nem anexo — e o anexo era um perigo");
      (await contarAnexos()) > 0, "a prévia não abriu — a porta da colada não está sendo exercida");
   await fecharPrevia();
 
-  // AGORA, COM A NOTA ABERTA: as duas portas têm de recusar, e dizer por quê.
+  // AGORA, COM A NOTA ABERTA: as duas portas levam o arquivo PARA A NOTA, e
+  // nunca ao cliente. INVERTIDAS EM 05/11, E NÃO APAGADAS: elas exigiam a
+  // recusa, que era o certo quando a nota não guardava arquivo — e continua
+  // sendo, num banco sem o 053 (a cena do fim). O que elas protegem é o
+  // mesmo: o arquivo arrastado na nota não vai ao WhatsApp.
   await page.locator("[data-nota-interna]").first().click();
   await page.waitForTimeout(1000);
-  ok("(a nota realmente abriu antes de conferir a recusa)",
+  ok("(a nota realmente abriu antes de conferir as portas)",
      await page.locator(CAMPO_NOTA).count() > 0, "a nota não abriu — as conferências abaixo não valeriam nada");
+  const qualPrevia = () => page.evaluate(() =>
+    document.querySelector("[data-previa-anexo]")?.getAttribute("data-previa-anexo") || null);
 
   const antesFila = await page.evaluate(() => (globalThis.__TABELAS.fila_envio || []).length);
-  const aoSoltar = await soltarArquivo();
-  ok("arrastar um arquivo com a nota aberta NÃO abre a prévia",
-     (await contarAnexos()) === 0, "a prévia abriu com a nota aberta");
-  ok("e a tela diz por quê, em vez de engolir o gesto",
-     /nota interna é só texto|Feche a nota/i.test(aoSoltar), "nada explicando na tela");
-
-  const aoColar = await colarArquivo();
-  ok("colar um print com a nota aberta NÃO abre a prévia",
-     (await contarAnexos()) === 0, "a prévia abriu com a nota aberta");
-  ok("e a colada também é explicada",
-     /nota interna é só texto|Feche a nota/i.test(aoColar), "nada explicando na tela");
+  await soltarArquivo();
+  ok("arrastar um arquivo com a nota aberta abre a prévia DA NOTA, e não a do cliente",
+     (await qualPrevia()) === "nota", `a prévia é ${await qualPrevia()}`);
+  await fecharPrevia();
+  await colarArquivo();
+  ok("e colar um print também", (await qualPrevia()) === "nota", `a prévia é ${await qualPrevia()}`);
+  await fecharPrevia();
 
   const depoisFila = await page.evaluate(() => (globalThis.__TABELAS.fila_envio || []).length);
   ok("e nada foi mandado ao cliente por nenhuma das duas portas",
      depoisFila === antesFila, `a fila de envio foi de ${antesFila} para ${depoisFila}`);
+}
+
+console.log("\nSem o 053 da ponte, a nota continua só texto: as portas recusam, e dizem por quê");
+{
+  const ctx2 = await nav.newContext({ viewport: { width: 1300, height: 900 } });
+  const p2 = await ctx2.newPage();
+  p2.on("pageerror", (e) => erros.push("pageerror (sem o 053): " + e.message));
+  await p2.addInitScript(() => {
+    globalThis.__SEM_COLUNAS = { notas: ["midia_url", "midia_tipo", "midia_mime", "midia_nome"] };
+  });
+  await p2.goto(ENDERECO);
+  await p2.waitForSelector("[data-conversa-nome]");
+  await p2.waitForTimeout(1500);
+  await p2.locator("[data-conversa-nome]").first().click();
+  await p2.waitForTimeout(2000);
+  await p2.locator("[data-nota-interna]").first().click();
+  await p2.waitForTimeout(1200);
+  ok("(a nota abriu)", await p2.locator(CAMPO_NOTA).count() > 0);
+  ok("na nota não há clipe nenhum",
+     (await p2.locator('[data-anexar="nota"]').count()) === 0 && (await p2.locator('[title="Anexar arquivo"]').count()) === 0);
+  const portas = async (tipo) => p2.evaluate(async (t) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(["conteudo"], "print.png", { type: "image/png" }));
+    if (t === "drop") {
+      document.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+    } else {
+      const ev = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(ev, "clipboardData", { value: dt });
+      document.dispatchEvent(ev);
+    }
+    await new Promise((r) => setTimeout(r, 900));
+    return document.body.innerText;
+  }, tipo);
+  const antesFila = await p2.evaluate(() => (globalThis.__TABELAS.fila_envio || []).length);
+  const aoSoltar = await portas("drop");
+  ok("arrastar um arquivo com a nota aberta NÃO abre a prévia",
+     (await p2.locator("[data-previa-anexo]").count()) === 0, "a prévia abriu com a nota aberta");
+  ok("e a tela diz por quê, em vez de engolir o gesto",
+     /nota interna|Feche a nota/i.test(aoSoltar), "nada explicando na tela");
+  const aoColar = await portas("paste");
+  ok("colar um print com a nota aberta NÃO abre a prévia",
+     (await p2.locator("[data-previa-anexo]").count()) === 0, "a prévia abriu com a nota aberta");
+  ok("e a colada também é explicada", /nota interna|Feche a nota/i.test(aoColar), "nada explicando na tela");
+  const depoisFila = await p2.evaluate(() => (globalThis.__TABELAS.fila_envio || []).length);
+  ok("e nada foi mandado ao cliente por nenhuma das duas portas",
+     depoisFila === antesFila, `a fila de envio foi de ${antesFila} para ${depoisFila}`);
+  await ctx2.close();
 }
 
 ok("sem erro de JavaScript no caminho", erros.length === 0, erros.join(" | "));
