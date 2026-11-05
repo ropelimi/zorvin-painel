@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { BRIDGE_URL, chamarPonte } from "./ponte.js";
+import { NOME_DO_ASSISTENTE } from "./assistente.js";
 
 // ============================================================
 //  O COPILOTO — "Sugerir resposta" (13/10)
@@ -193,19 +194,21 @@ export function faixaDoCopilotoAparece(s, modo = {}) {
 export const faixaDoCopilotoFecha = (s, modo) =>
   faixaDoCopilotoAparece(s, modo) && s.fase !== "pensando" && s.fase !== "ajustando";
 
-/** Por que a IA NÃO vai mover o funil agora, numa frase — ou `""` quando ela
- *  vai (ou quando não deu para perguntar: a dúvida não vira aviso). A chave
- *  do funil continua na tela nos dois casos (ver o alto deste arquivo). */
+/** Por que o QUAZAR (a IA do funil) NÃO vai mover o funil agora, numa frase
+ *  — ou `""` quando ele vai (ou quando não deu para perguntar: a dúvida não
+ *  vira aviso). A chave do funil continua na tela nos dois casos (ver o alto
+ *  deste arquivo). Desde 05/11 as frases dizem o nome dele: ver "A IA do
+ *  funil também é o Quazar", no CLAUDE.md. */
 export function avisoDaIaDoFunil(estado) {
   if (!estado || estado.ligado === null) return "";
   if (estado.ligado === false) {
-    return "A ponte está sem a chave da Anthropic (a variável ANTHROPIC_API_KEY, na Render): enquanto ela faltar, a IA não move ninguém. A chave fica guardada e vale assim que a variável existir.";
+    return `A ponte está sem a chave da Anthropic (a variável ANTHROPIC_API_KEY, na Render): enquanto ela faltar, o ${NOME_DO_ASSISTENTE} não move ninguém. A chave fica guardada e vale assim que a variável existir.`;
   }
   if (estado.funil === "antiga") {
-    return "A ponte no ar ainda é de antes desta função. A chave fica guardada, e a IA começa a mover quando a ponte nova for publicada — confira em Atualizações do banco.";
+    return `A ponte no ar ainda é de antes desta função. A chave fica guardada, e o ${NOME_DO_ASSISTENTE} começa a mover quando a ponte nova for publicada — confira em Atualizações do banco.`;
   }
   if (estado.funil === false) {
-    return "A IA do funil está desligada na ponte (FUNIL_IA=desligada, na Render): enquanto for assim, ela não move ninguém, em funil nenhum.";
+    return `O ${NOME_DO_ASSISTENTE} está desligado no funil, na ponte (FUNIL_IA=desligada, na Render): enquanto for assim, ele não move ninguém, em funil nenhum.`;
   }
   return "";
 }
@@ -220,7 +223,7 @@ export async function pedirSugestao(conversaId) {
     espera: ESPERA_DA_SUGESTAO_MS,
   });
   const texto = String((r && r.sugestao) || "").trim();
-  if (!texto) throw new Error("A IA não devolveu sugestão desta vez. Tente de novo.");
+  if (!texto) throw new Error(`O ${NOME_DO_ASSISTENTE} não devolveu sugestão desta vez. Tente de novo.`);
   return texto;
 }
 
@@ -235,7 +238,7 @@ export async function pedirAjuste(conversaId, { pedido, sugestao }) {
     espera: ESPERA_DO_AJUSTE_MS,
   });
   const texto = String((r && r.sugestao) || "").trim();
-  if (!texto) throw new Error("A IA não devolveu a mensagem desta vez. Tente de novo.");
+  if (!texto) throw new Error(`O ${NOME_DO_ASSISTENTE} não devolveu a mensagem desta vez. Tente de novo.`);
   const licao = r && r.licao && r.licao.id != null && String(r.licao.texto || "").trim()
     ? { id: r.licao.id, texto: String(r.licao.texto).trim() } : null;
   return { sugestao: texto, licao, aviso: String((r && r.aviso) || "").trim() };
@@ -256,7 +259,7 @@ export async function pedirResumo(conversaId) {
   const combinado = lista(resumo && resumo.combinado);
   const falta = lista(resumo && resumo.falta);
   if (!quer && !combinado.length && !falta.length) {
-    throw new Error("A IA não devolveu resumo desta vez. Tente de novo.");
+    throw new Error(`O ${NOME_DO_ASSISTENTE} não devolveu resumo desta vez. Tente de novo.`);
   }
   return {
     resumo: { quer, combinado, falta },

@@ -384,7 +384,31 @@ ok("a faixa diz o erro, pelo nome",
   const achados = await ondeDizCopiloto(page);
   ok("e nada diz “copiloto”", achados.length === 0, q(achados));
 }
+// A RESPOSTA VAZIA (05/11): a frase de reserva é do PAINEL, e não da ponte. Ela
+// dizia "A IA não devolveu…", e a PR do Quazar não a viu: nenhuma cena
+// mandava uma resposta vazia.
+ponte.sugestao = { status: 200, corpo: { ok: true, sugestao: "   " }, demora: 0 };
+ok("pedi de novo, e a ponte respondeu em branco", await clicar(botao(page)));
+ok("a faixa diz que o Quazar não devolveu sugestão",
+   await esperar(async () => (await texto(page.locator('[data-copiloto-situacao="erro"] [data-copiloto-frase]')))
+     === "Quazar · O Quazar não devolveu sugestão desta vez. Tente de novo."),
+   q(await texto(page.locator("[data-copiloto-frase]"))));
 ponte.sugestao = { status: 200, corpo: { ok: true, sugestao: "{saudacao}, {nome}! Vamos verificar e retornamos." }, demora: 0 };
+ok("pedi de novo, e a sugestão veio", await clicar(botao(page)) && await esperar(async () => (await naCaixa(page)).length > 0));
+ponte.ajuste = { status: 200, corpo: { ok: true, sugestao: "" } };
+{
+  const c = page.locator("[data-copiloto-pedido-campo]");
+  ok("pedi uma mudança, e a ponte devolveu a mensagem em branco",
+     await esperar(async () => (await c.count()) === 1) && await preencher(c, PEDIDO) && await apertar(c, "Enter"));
+}
+ok("a faixa diz que o Quazar não devolveu a mensagem",
+   await esperar(async () => (await texto(page.locator("[data-copiloto-erro-do-pedido]"))).trim()
+     === "O Quazar não devolveu a mensagem desta vez. Tente de novo."),
+   q(await texto(page.locator("[data-copiloto-erro-do-pedido]"))));
+{
+  const achados = await ondeDizCopiloto(page);
+  ok("e nada diz “copiloto”", achados.length === 0, q(achados));
+}
 ok("nenhum estouro de página", estouros.length === 0, estouros.join(" | "));
 await ctx.close();
 

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCw, Search, Download, X, MessageCircle, Sparkles } from "lucide-react";
+import { RefreshCw, Search, Download, X, MessageCircle } from "lucide-react";
 import { supabase } from "./supabase.js";
 import { naoGravouNada, comOCodigo, semATabela } from "./gravar.js";
 import { nomeDoContato } from "./contato.js";
@@ -8,6 +8,8 @@ import { diasDesde, corDaEspera } from "./espera.js";
 import { situacao, semATabelaDeTarefas, rotuloDaTarefa, ordenarAbertas } from "./tarefas.js";
 import { casaComAPesquisa } from "./pesquisaNosMenus.js";
 import { chaveDoFunil, listaDeFunis, nomeDoFunil, noFunil, telefonesDoFunil } from "./funis.js";
+import { NOME_DO_ASSISTENTE } from "./assistente.js";
+import { RostoDoAssistente } from "./RostoDoAssistente.jsx";
 
 // ============================================================
 //  O FUNIL DE ETAPAS (06/10)
@@ -466,16 +468,16 @@ export default function Funil({
           )}
           {!cv && <span>· <MessageCircle size={11} style={{ verticalAlign: -1 }} /> sem conversa à vista</span>}
         </div>
-        {/* A IA PÔS AQUI (044): o porquê dela, em até duas linhas, e inteiro
-            no `title`. Uma pessoa que move o cartão apaga o motivo — ele
-            só fala da etapa que a IA escolheu. */}
+        {/* O QUAZAR PÔS AQUI (044; o nome desde 05/11): o porquê dele, em até
+            duas linhas, e inteiro no `title`. Uma pessoa que move o cartão
+            apaga o motivo — ele só fala da etapa que o Quazar escolheu. */}
         {c.ia_motivo && (
-          <div data-cartao-pela-ia title={`A IA pôs aqui: ${c.ia_motivo}`}
+          <div data-cartao-pela-ia title={`O ${NOME_DO_ASSISTENTE} pôs aqui: ${c.ia_motivo}`}
                style={{ marginTop: 6, display: "flex", gap: 5, alignItems: "flex-start", fontSize: 11.5,
                         color: C.textSecondary, lineHeight: 1.4 }}>
-            <Sparkles size={12} color={verde} style={{ flexShrink: 0, marginTop: 2 }} />
+            <RostoDoAssistente tamanho={14} style={{ marginTop: 1 }} />
             <span style={{ overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-              <b>IA:</b> {c.ia_motivo}
+              <b>{NOME_DO_ASSISTENTE}:</b> {c.ia_motivo}
             </span>
           </div>
         )}

@@ -5170,6 +5170,10 @@ no Sucesso do Cliente. **Quem lê e decide é a ponte** (script 044 e a rodada
 | a conversa | a marca da IA no selo da etapa (`data-etapa-pela-ia`), e o porquê no menu dela (`data-motivo-da-ia`) |
 | o caminho do histórico | "**A IA** moveu de X para Y", com o porquê (`data-motivo-no-caminho`) |
 
+**Desde 05/11 a tela chama a IA do funil de Quazar**, com o rosto dele no
+lugar das estrelinhas e do robô — ver "A IA do funil também é o Quazar
+(05/11)", logo abaixo. A tabela acima é a de 02/11.
+
 **A chave é de cada funil de verdade**: o do departamento, ou o de um
 telefone com funil próprio. O telefone que usa o funil do departamento não
 tem chave. A frase de ligar diz o número que o **banco** devolveu ("a IA vai
@@ -5230,6 +5234,61 @@ uma:
 - **o caminho:** sem saber que foi a IA; sem o porquê;
 - **e a bancada:** sem o gatilho do 044 (a pessoa que move não apaga o
   motivo); o passo de gente dito da IA.
+
+### A IA do funil também é o Quazar (05/11)
+
+Pedido do Rodrigo, logo depois de o Copiloto virar o Quazar: *"Pode trocar a
+IA do funil para Quazar também."* Na entrega do nome (PR #319, a v3.19) a IA
+do funil tinha ficado de fora, de propósito: ela é outra rodada da ponte
+(`moverOFunilComAIA`), e não o assistente que conversa com a equipe. Para
+quem olha a tela, é a mesma IA do Zorvin, e dois nomes fariam pensar em dois
+programas.
+
+| onde | antes | agora |
+|---|---|---|
+| o cartão do funil | estrelinhas e "**IA:** o porquê" | o rosto de 14 pontos e "**Quazar:** o porquê"; o `title` diz "O Quazar pôs aqui: …" |
+| o selo da etapa, na conversa | estrelinhas, e "(a IA pôs aqui)" no `title` | o rosto de 14 pontos, e "(o Quazar pôs aqui)" |
+| o menu da etapa | estrelinhas e "A IA pôs aqui:" | o rosto de 16 pontos e "O Quazar pôs aqui:" |
+| o caminho do histórico | uma bolinha com as iniciais de "A IA", e "A IA moveu…" / "A IA pôs no funil…" | o rosto de 24 pontos no lugar da foto, "O Quazar moveu…" / "O Quazar pôs no funil…", e o rosto no porquê |
+| Etapas do funil (administração) | o robô e "A IA move os clientes de … de etapa" | o rosto de 20 pontos e "O Quazar move…", na chave, na explicação e em cada frase (ligar, ler de novo, desligar, e as três falhas) |
+| o botão de descrever a etapa | "é o que a IA lê" | "é o que o Quazar lê" |
+| os avisos da ponte que não move o funil | "a IA não move ninguém" | "o Quazar não move ninguém" (a ponte sem a chave, a de antes e a com `FUNIL_IA=desligada`) |
+
+**E três frases que a PR do nome não viu**: as respostas vazias do copiloto
+(`pedirSugestao`, `pedirAjuste` e `pedirResumo`, em `copiloto.js`) diziam "A
+IA não devolveu…". Elas são do PAINEL, e não da ponte, e nenhuma cena da
+prova do Quazar mandava uma resposta vazia. Hoje dizem "O Quazar não
+devolveu…".
+
+**O que não muda:** os `data-*` das provas (`data-cartao-pela-ia`,
+`data-etapa-pela-ia`, `data-motivo-da-ia`, `data-ia-do-funil`…), as colunas do
+banco (`ia_motivo`, `pela_ia`, `ia_ligada`), o nome da variável `FUNIL_IA`
+(ela aparece escrita na frase, porque é o nome que se procura na Render), o
+rótulo do console (o terceiro argumento de `comOCodigo`, que não vai à tela)
+e os comentários do código. **A ponte não mudou**: o que ela manda é o
+porquê, nas palavras da IA, e os avisos sobre ela são escritos aqui
+(`avisoDaIaDoFunil`).
+
+**A prova olha só o que é do Quazar.** Em cada lugar ela confere o nome
+escrito, o rosto PINTADO (`elementFromPoint`) e do tamanho certo, e que nada
+ali diz "IA" — nem o texto, nem um `title`, nem um `aria-label` (a palavra
+inteira: `FUNIL_IA` não conta). Os clientes da prova se chamam "IA CLIENTE…",
+e uma varredura da tela inteira acharia o nome deles.
+
+**E ela ganhou quatro frases que nenhuma cena exercitava:** a falha de
+desligar; a leitura da chave que falha (`__RECUSAR_LEITURA`, posta só depois
+de o painel abrir, porque a lista de funis da conversa lê a mesma tabela); o
+funil do telefone sem cliente para ler; e a entrada no funil feita pelo
+Quazar (a cena 8b). Essa entrada é plantada: o banco não produz hoje esse
+passo, porque o Quazar só move quem já está no funil, e o ramo existe na
+tela.
+
+**A primeira rodada reprovou o rosto certo, fora da vista.** A seção da
+administração mora abaixo da dobra da janela, e no ponto do rosto o
+`elementFromPoint` não achava nada. Hoje a conferência traz o rosto à vista
+antes de medir (`scrollIntoView`), como quem rola até ele.
+
+RESULTADO_DAS_SABOTAGENS_DO_FUNIL
 
 ## Tarefas e lembretes (06/10)
 
@@ -6847,14 +6906,25 @@ segundo numa foto da tela.
 
 **Fica de fora, e é decisão:**
 
-- **a IA que move o funil** continua dizendo "A IA pôs aqui", "A IA moveu…".
+- ~~**a IA que move o funil** continua dizendo "A IA pôs aqui", "A IA moveu…".
   É outra rodada da ponte, e não o assistente que conversa com a equipe. Ficou
-  oferecido ao Rodrigo;
+  oferecido ao Rodrigo;~~ **Feito no mesmo dia, a pedido dele** — ver "A IA
+  do funil também é o Quazar (05/11)", na seção do funil;
 - **enquanto o Quazar escreve, o botão mostra o giro de sempre**, e não o
   rosto: o giro é o sinal de "espere";
 - **o rosto não tem prova de feitio** (as lentes iguais, por exemplo): ele é
   um desenho gerado e conferido na tela uma vez. A prova confere que ele está
   lá, pintado, colorido e do tamanho certo.
+
+**Desde quando o Zorvin grava (medido em 05/11).** A apresentação do Quazar
+dizia que ele estudou as mensagens "desde 2022", e o Rodrigo corrigiu: o
+Zorvin é deste ano. Ele começou a gravar em **17/07/2026** (os 3 primeiros
+telefones entraram nesse dia; os 16, até 20/08). As mensagens mais antigas do
+banco, de 07/12/2022 em diante, vieram do histórico importado de arquivos do
+WhatsApp (o `id_uazapi` delas começa com `txt-` ou `grp-`): 3.650 mensagens,
+em 76 conversas de 5 telefones. **Ao dizer "desde quando", conte de
+17/07/2026, e diga as importadas à parte**: a data mais antiga do banco não é
+a do Zorvin.
 
 Prova: `o-assistente-se-chama-quazar`, 109 conferências em dez cenas: o botão
 (o rosto pintado, o tamanho, o rótulo, a cor e o title enquanto ele escreve);
