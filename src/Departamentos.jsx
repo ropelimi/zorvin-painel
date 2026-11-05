@@ -399,7 +399,7 @@ export default function Departamentos({ C, aoFechar, abaInicial, aoSaberDosScrip
           )}
 
           {/* Fora do `carregando`: o manual não depende dos departamentos. */}
-          {aba === "copiloto" && <ManualDoCopiloto cx={cx} C={C} />}
+          {aba === "copiloto" && <ManualDoCopiloto cx={cx} C={C} departamentos={departamentos} telefones={telefones} />}
 
           {aba === "notas" && <NotasNoVantoro cx={cx} C={C} />}
 

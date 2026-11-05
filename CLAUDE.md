@@ -6285,8 +6285,11 @@ divide 390px com quatro botões, e mais um faria "Digite uma mensagem" deixar
 de caber numa linha.
 
 **A sugestão entra na caixa e NÃO sai sozinha.** O cursor fica no fim,
-pronto para ajustar; quem envia é a atendente. O sucesso não tem faixa — a
-resposta é a caixa, e quem clicou está olhando para ela.
+pronto para ajustar; quem envia é a atendente. ~~O sucesso não tem faixa — a
+resposta é a caixa, e quem clicou está olhando para ela.~~ **Desde 05/11, com
+a ponte que tem a rota do agente, o sucesso deixa a faixa com o campo de pedir
+uma mudança** — ver "O Copiloto aprende com a equipe (05/11)", logo abaixo. A
+ponte de antes não diz `ajustar`, e aí continua sem faixa.
 
 ### Os marcadores, e de qual conversa
 
@@ -6352,6 +6355,165 @@ importam mais:
 - a aba sumindo na falha de leitura, e a falha virando caixa vazia;
 - a recusa calada virando "salvo";
 - salvar sem reler.
+
+## O Copiloto aprende com a equipe (05/11)
+
+Pedido do Rodrigo: *"O Copiloto precisa ser mais inteligente e sempre
+aprender, ficar cada vez mais inteligente. Faça ele ler todas as mensagens que
+temos no banco de dados e aprender com as conversas, isso para cada
+departamento, cada telefone. E outra função que preciso é de um agente […]: o
+usuário pode interagir com o Copiloto e pedir essa alteração, e o Copiloto tem
+que aprender com isso para caso aconteça novamente com outro cliente no
+futuro."* Decidido com ele: **a lição vale na hora**, e **para o escritório
+inteiro**.
+
+**Quem lê as conversas, refaz a mensagem e guarda a lição é a PONTE** (script
+050 e `POST /copiloto/ajustar` — ver "O copiloto aprende (script 050, 05/11)"
+no CLAUDE.md dela). "Aprender" não é treinar a IA: muda o que ela LÊ antes de
+sugerir — as lições da equipe e as notas que ela escreve lendo as conversas de
+cada telefone e departamento. Aqui moram o pedido e o que quem administra vê.
+
+### Pedir uma mudança ao Copiloto
+
+Depois da sugestão na caixa, a faixa do Copiloto (logo acima da caixa) fica
+com o campo **"Pedir uma mudança ao Copiloto"** (`data-copiloto-pedido-campo`):
+
+| a faixa | quando |
+|---|---|
+| "sugeriu" — a sugestão está na caixa, e o campo | depois da sugestão, e depois de cada mensagem refeita |
+| "ajustando" — refazendo a mensagem | o pedido está na ponte: o campo trava, o Pedir desliga, e não há X |
+| "atrasada" com "Usar a mensagem refeita" | a pessoa mexeu na caixa enquanto o Copiloto refazia |
+| só a lição (`soLicao`) | a mensagem saiu com uma lição ainda à vista: fica o "Aprendi", com o Desfazer |
+
+- **A mensagem refeita entra na caixa e NÃO sai sozinha**, com os marcadores
+  preenchidos pela conta das rápidas — com o nome da conversa EM QUE se
+  pediu, guardado no clique.
+- **Só troca o que estava na caixa quando se pediu.** Quem mexeu na caixa
+  enquanto o Copiloto refazia não perde o que escreveu: a faixa oferece usar a
+  refeita. Com a conversa trocada, ela vira o rascunho da conversa do pedido,
+  se o rascunho ainda for o que foi mandado.
+- **A lição é dita** (`data-copiloto-licao`: *"Aprendi: “…” — vale para a
+  equipe toda a partir de agora."*), com o **Desfazer** ao lado, que apaga a
+  lição do banco (a regra do 050 deixa quem a ensinou apagar a sua). A recusa
+  calada é dita como recusa, e o erro com o código — nunca "desfeito" sem ter
+  desfeito.
+- **O aviso da ponte é dito** (`data-copiloto-aviso`): a lição que não pôde
+  ser guardada, calada, se leria como "o Copiloto aprendeu".
+- **O erro do pedido é dito, e o pedido fica no campo**, para tentar de novo.
+- **A faixa some quando a caixa esvazia** (a mensagem foi enviada, ou
+  apagada) — **menos com uma lição à vista**: aí fica só a lição, e o campo não
+  volta por cima da próxima mensagem, que é de quem escreve.
+- **Só dentro da mesma conversa.** Na troca, a conversa chega antes do
+  rascunho dela, e por um desenho a caixa parece vazia: sem essa guarda, a
+  faixa da conversa de volta sumia sem ninguém ter mexido. **Foi a prova que
+  achou**, na cena da troca durante o pedido.
+- **O Esc apaga o pedido, e o segundo fecha a faixa** (ela entrou na escada do
+  Esc, antes da citação). Com a faixa à vista, um Esc não fecha mais a
+  conversa de primeira.
+- **Na nota interna e na edição de uma mensagem, o campo some**: não há o que
+  mudar ali.
+- **Só com a ponte que tem a rota** (`ajustar` em `/copiloto/estado`,
+  `ajusteAparece`): a de antes não oferece o campo, e a sugestão entra sem
+  faixa, como antes.
+- **O texto digitado no campo segura a atualização sozinha** do Zorvin, pela
+  regra geral do texto digitado (`atualizacao.js`).
+
+As contas sem tela (o campo e a faixa à vista, e a faixa que o Esc fecha)
+moram em `copiloto.js` (`campoDoAjusteAparece`, `faixaDoCopilotoAparece`,
+`faixaDoCopilotoFecha`): o desenho e o Esc usam as mesmas.
+
+### A aba "Copiloto": o que ele aprendeu
+
+Em Departamentos e acessos → Copiloto, depois do manual, duas seções novas
+(`AprendizadoDoCopiloto.jsx`):
+
+| seção | o quê |
+|---|---|
+| **O que o Copiloto aprendeu com a equipe** (`data-licoes-do-copiloto`) | as lições, da mais recente para a mais antiga: o texto, quem ensinou e quando, o pedido que a ensinou, e quem corrigiu. **Corrigir** e **Apagar** (que pergunta antes). A partir de 7, a pesquisa dos menus |
+| **O que o Copiloto aprendeu lendo as conversas** (`data-notas-do-copiloto-secao`) | as notas de cada departamento e, embaixo dele, de cada telefone, fechadas como sanfona: quantas mensagens leu e quando, o texto para **corrigir** (a ponte continua a partir dele) e **Ler tudo de novo** (que pergunta antes) |
+
+- **Uma frase diz o que a ponte faz com a leitura** (`fraseDaLeitura`, pelo
+  `aprende` de `/copiloto/estado`): lendo; desligada pela variável
+  (`COPILOTO_APRENDER=desligado`); a ponte de antes desta função; o Copiloto
+  desligado (sem a chave); e a pergunta que falhou.
+- **Sem o 050, as duas seções somem** (a tabela que falta não é falha). **A
+  leitura que falha é dita, com o código**, e nenhuma lista é desenhada: vazia,
+  ela se leria como "o Copiloto não aprendeu nada".
+- **Gravar relê do banco**, e a recusa calada é dita como recusa. **Quem
+  corrigiu e quando são do gatilho**, e não da tela.
+- **O departamento sem telefone não aparece**: não há conversa para ler, e a
+  ponte não cria as notas dele.
+- **Os nomes vêm da vista `equipe`**; quem a equipe não conhece vira "alguém
+  da equipe".
+- **A aba não diz quantas lições entram em cada sugestão.** O número é da
+  ponte (`COPILOTO_LICOES`), e escrito aqui divergiria no primeiro ajuste. A
+  frase diz que vão as mais recentes, e que vale apagar as que não servem
+  mais.
+
+### A bancada
+
+`zorvin_copiloto_licoes` e `zorvin_copiloto_aprendido` (vazias: cada prova
+planta o que precisa), `__SEM_COPILOTO_QUE_APRENDE` (o banco sem o 050), os
+gatilhos do 050 (quem corrigiu, e o `atualizado_em` das notas a cada
+gravação) e `zorvin_copiloto_ler_de_novo` (só quem administra; as chamadas
+ficam em `__CHAMADAS_LER_DE_NOVO`).
+
+Prova: `o-copiloto-aprende-com-a-equipe`, 145 conferências em 18 cenas, com a
+ponte fingida pela prova — que grava a lição na bancada antes de responder,
+como a de verdade grava no banco. O relógio fica fixado às 9h de Brasília.
+
+**43 sabotagens e 43 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma:
+
+- o painel de antes inteiro (105 reprovações — é o pedido reproduzido);
+- **a faixa e o pedido:** sem a faixa depois da sugestão (63); a ponte de
+  antes ganhando o campo; a refeita sem os marcadores preenchidos (7); a
+  refeita por cima do que a pessoa escreveu (4); a conversa trocada sem a
+  refeita como rascunho; a refeita sempre na conversa aberta; o pedido sem a
+  mensagem da caixa; o erro apagando o pedido do campo (4); o erro do pedido
+  calado; sem o aviso da ponte;
+- **a lição:** sem dizer a lição (15); o Desfazer sem conferir a recusa
+  calada (4); o Desfazer com o erro calado; o Desfazer só na tela, sem o
+  banco (5); usar a refeita atrasada sem a lição;
+- **quando a faixa sai:** a faixa que não sai quando a mensagem vai; com a
+  lição à vista, a faixa sumindo ao enviar (4); sem o `soLicao` (o campo volta
+  por cima da mensagem nova); a troca de conversa sumindo com a faixa (3);
+- **o Esc, a nota e o pedido em voo:** o Esc sem o degrau da faixa (a
+  conversa fecha); o Esc no campo fechando a faixa de primeira; a nota interna
+  com o campo; o campo sem travar enquanto refaz; o X enquanto refaz;
+- **as lições, na aba:** sem a seção (18); da mais antiga para a mais nova;
+  sem quem ensinou (3); corrigir sem reler; corrigir sem conferir a recusa
+  calada; apagar sem perguntar; a leitura que falha virando lista vazia; a
+  falha virando "sem o 050";
+- **as notas, na aba:** sem a seção (24); sem a linha do departamento (13);
+  "Ler tudo de novo" sem pedir ao banco (3); sem perguntar; salvar sem
+  conferir a recusa calada; `Departamentos.jsx` sem passar os telefones (18);
+- **a frase da leitura:** a da ponte de antes sumindo; a da leitura desligada
+  sumindo; a ponte de antes lida como "desligada";
+- **e a bancada** sem o gatilho das notas.
+
+**A troca de conversa sumindo com a faixa é pega também por onde não se
+espera.** Sem a guarda, a conversa de volta passa por um desenho com a caixa
+vazia, e a faixa vira só a lição (`soLicao`) sem ninguém ter enviado nada. Daí
+em diante ela não sai mais quando a mensagem vai — e é por aí que a cena 4 a
+pega, além da cena 8, que é a dela.
+
+**A primeira rodada de sabotagens foi parada no começo, e as duas razões eram da prova:**
+
+- **o controle (sem defeito nenhum) reprovou**, com três cópias rodando juntas.
+  A sugestão leva o cursor para a caixa de escrever no quadro seguinte
+  (`colocarNaCaixa`, com `requestAnimationFrame`), e numa máquina lenta a prova
+  já tinha começado a escrever o pedido: o cursor mudava de lugar no meio, e o
+  pedido ia em parte para a caixa. O campo ficava vazio, o Pedir desligado, e o
+  Enter não mandava nada. Uma pessoa não digita tão depressa; a prova sim. Hoje
+  ela espera o cursor chegar à caixa (`cursorNaCaixa`), confere que cada pedido
+  saiu (`pedirMudanca` espera a ponte de mentira receber), e as esperas que
+  dependem da ponte vão até 8 segundos — voltando assim que a condição vale.
+  Seis rodadas seguidas, três ao mesmo tempo, passaram antes de recomeçar;
+- **duas sabotagens pegaram estourando**: `fill` e `press` num campo que a
+  sabotagem tinha tirado esperam 30 segundos e derrubam a prova, sem dizer as
+  conferências seguintes. Hoje os gestos são guardados (`preencher`, `apertar`),
+  como os cliques.
 
 ## O resumo da conversa — "Resumir" (01/11)
 
