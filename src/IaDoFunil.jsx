@@ -3,7 +3,9 @@ import { supabase } from "./supabase.js";
 import { comOCodigo, semATabela } from "./gravar.js";
 import { Chave } from "./Chave.jsx";
 import { useEstadoDoCopiloto, avisoDaIaDoFunil } from "./copiloto.js";
-import { Bot, Loader2, RefreshCw } from "lucide-react";
+import { Loader2, RefreshCw } from "lucide-react";
+import { NOME_DO_ASSISTENTE } from "./assistente.js";
+import { RostoDoAssistente } from "./RostoDoAssistente.jsx";
 
 // ============================================================
 //  A IA MOVE O FUNIL — a chave de cada funil (02/11)
@@ -42,7 +44,7 @@ async function lerAChave(funil) {
     // SEM O 044 (a coluna) OU SEM O 043 (a tabela), a peça não existe.
     const semColuna = String(error.code) === "42703" || /ia_ligada/.test(String(error.message || ""));
     if (semColuna || semATabela(error)) return { existe: false };
-    return { existe: true, ligada: null, erro: comOCodigo("Não consegui saber se a IA cuida deste funil.", error, "IA do funil") };
+    return { existe: true, ligada: null, erro: comOCodigo(`Não consegui saber se o ${NOME_DO_ASSISTENTE} cuida deste funil.`, error, "IA do funil") };
   }
   const linha = (data || [])[0];
   return { existe: true, ligada: Boolean(linha && linha.ia_ligada), erro: "" };
@@ -79,7 +81,7 @@ export function IaDoFunil({ cx, C, funil, nomeDoFunil, aoAvisar }) {
     });
     setOcupado(false);
     if (r.error) {
-      aoAvisar(comOCodigo(ligar ? "Não consegui ligar a IA neste funil." : "Não consegui desligar a IA neste funil.",
+      aoAvisar(comOCodigo(ligar ? `Não consegui ligar o ${NOME_DO_ASSISTENTE} neste funil.` : `Não consegui desligar o ${NOME_DO_ASSISTENTE} neste funil.`,
                           r.error, "IA do funil"));
       ler();
       return;
@@ -87,11 +89,11 @@ export function IaDoFunil({ cx, C, funil, nomeDoFunil, aoAvisar }) {
     const d = r.data || {};
     const n = Number(d.clientes) || 0;
     if (!ligar) {
-      setFeito("A IA não move mais os clientes deste funil. O que ela já fez fica como está, com o porquê no cartão.");
+      setFeito(`O ${NOME_DO_ASSISTENTE} não move mais os clientes deste funil. O que ele já fez fica como está, com o porquê no cartão.`);
     } else {
       setFeito(n
-        ? `${deNovo ? "A IA vai ler de novo" : "Ligada. A IA vai ler"} ${n === 1 ? "o cliente" : `os ${n} clientes`} deste funil, os de conversa mais recente primeiro — uns cinco a cada meio minuto.`
-        : "Ligada. Este funil ainda não tem cliente com conversa para a IA ler.");
+        ? `${deNovo ? `O ${NOME_DO_ASSISTENTE} vai ler de novo` : `Ligado. O ${NOME_DO_ASSISTENTE} vai ler`} ${n === 1 ? "o cliente" : `os ${n} clientes`} deste funil, os de conversa mais recente primeiro — uns cinco a cada meio minuto.`
+        : `Ligado. Este funil ainda não tem cliente com conversa para o ${NOME_DO_ASSISTENTE} ler.`);
     }
     ler();
   }
@@ -103,22 +105,23 @@ export function IaDoFunil({ cx, C, funil, nomeDoFunil, aoAvisar }) {
     <div data-ia-do-funil={chave.ligada === true ? "ligada" : chave.ligada === false ? "desligada" : "nao-sei"}
          style={{ borderTop: `1px solid ${C.divider}`, borderBottom: `1px solid ${C.divider}`, padding: "10px 0", margin: "4px 0 12px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <Bot size={16} color={C.textSecondary} />
-        <span style={{ fontSize: 13.5, fontWeight: 600, color: C.textPrimary, flex: "1 1 220px" }}>
-          A IA move os clientes de {nomeDoFunil || "deste funil"} de etapa
+        <RostoDoAssistente tamanho={20} />
+        <span data-titulo-da-ia-do-funil style={{ fontSize: 13.5, fontWeight: 600, color: C.textPrimary, flex: "1 1 220px" }}>
+          O {NOME_DO_ASSISTENTE} move os clientes de {nomeDoFunil || "deste funil"} de etapa
         </span>
         {chave.ligada !== null && (
           <span data-chave-da-ia>
-            <Chave ligada={chave.ligada} rotulo={`A IA move os clientes de ${nomeDoFunil || "deste funil"}`}
+            <Chave ligada={chave.ligada} rotulo={`O ${NOME_DO_ASSISTENTE} move os clientes de ${nomeDoFunil || "deste funil"}`}
                    aoTrocar={() => !ocupado && pedir({ ligar: !chave.ligada })} />
           </span>
         )}
         {ocupado && <Loader2 size={14} className="zv-girando" />}
       </div>
       <div style={{ fontSize: 12.5, color: C.textSecondary, lineHeight: 1.5, marginTop: 6 }}>
-        Ligada, a IA lê a conversa de cada cliente quando ela sossega e muda a etapa sozinha. O cartão diz que foi
-        ela e por quê, e quem discordar arrasta de volta. Ela não desfaz o que uma pessoa decidiu sem algo novo na
-        conversa. A descrição de cada etapa, logo abaixo, é o que ela lê para saber o que a etapa quer dizer.
+        Ligado, o {NOME_DO_ASSISTENTE} lê a conversa de cada cliente quando ela sossega e muda a etapa sozinho. O
+        cartão diz que foi ele e por quê, e quem discordar arrasta de volta. Ele não desfaz o que uma pessoa decidiu
+        sem algo novo na conversa. A descrição de cada etapa, logo abaixo, é o que ele lê para saber o que a etapa
+        quer dizer.
       </div>
       {chave.erro && (
         <div data-falha-da-ia-do-funil style={{ fontSize: 12.5, color: C.ambarTexto || "#b26a00", marginTop: 6 }}>{chave.erro}</div>

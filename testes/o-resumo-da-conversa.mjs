@@ -338,7 +338,7 @@ console.log("\n6. O erro é dito com a frase da ponte, e “Tentar de novo” pe
   await clicar(botao(page));
   await esperarFase(page, "erro");
   ok("o resumo vazio vira erro, e não um quadro em branco",
-     /não devolveu resumo/.test(await texto(page.locator("[data-resumo-erro]"))), await texto(quadro(page)));
+     /^O Quazar não devolveu resumo desta vez/.test((await texto(page.locator("[data-resumo-erro]"))).trim()), await texto(quadro(page)));
   await clicar(page.locator("[data-resumo-fechar]"));
   ponte.resumir = () => ({ status: 404, demora: 0, corpo: {} });
   await clicar(botao(page));

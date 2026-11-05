@@ -4,6 +4,7 @@ import { naoGravouNada, comOCodigo, semATabela } from "./gravar.js";
 import { lerFunisDosTelefones, chaveDoFunil, noFunil } from "./funis.js";
 import { IaDoFunil } from "./IaDoFunil.jsx";
 import { AcompanhamentoDaEtapa } from "./AcompanhamentoDaEtapa.jsx";
+import { NOME_DO_ASSISTENTE } from "./assistente.js";
 import { semOAcompanhamento } from "./acompanhamento.js";
 import { SquareKanban, Plus, Loader2, Check, EyeOff, Eye, ArrowUp, ArrowDown, Sparkles, Smartphone, Undo2, PenLine } from "lucide-react";
 
@@ -486,7 +487,7 @@ export function EtapasDoFunil({ cx, C, departamentos = [], telefones = [], aoAvi
                 </button>
                 {comDescricao && e.ativo !== false && (
                   <button onClick={() => setDescrevendo({ id: e.id, texto: e.descricao || "" })} disabled={ocupado}
-                          data-etapa-descrever style={botaoFraco} title="O que esta etapa quer dizer — é o que a IA lê">
+                          data-etapa-descrever style={botaoFraco} title={`O que esta etapa quer dizer — é o que o ${NOME_DO_ASSISTENTE} lê`}>
                     <PenLine size={14} /> {e.descricao ? "Descrição" : "Descrever"}
                   </button>
                 )}

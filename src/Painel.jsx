@@ -13,7 +13,7 @@ import {
   Image as ImageIcon, Video,
   Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote, Volume2,
   ListChecks, Undo2, UserCheck, SquareKanban, BellRing, BellPlus, CircleCheck, RotateCcw,
-  Sparkles, Loader2, Headset, Hourglass, Eraser, ScrollText, AlarmClock, RefreshCw
+  Loader2, Headset, Hourglass, Eraser, ScrollText, AlarmClock, RefreshCw
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
@@ -15962,14 +15962,15 @@ export default function Painel({ sessao }) {
         {f.erro && (
           <div data-erro-da-etapa style={{ padding: "8px 12px", fontSize: 12.5, color: C.erroTexto }}>{f.erro}</div>
         )}
-        {/* A IA PÔS AQUI (044): o porquê dela, e o aviso de que escolher
-            outra etapa o apaga — o motivo só fala da etapa que ela escolheu. */}
+        {/* O QUAZAR PÔS AQUI (044; o nome desde 05/11): o porquê dele, e o
+            aviso de que escolher outra etapa o apaga — o motivo só fala da
+            etapa que ele escolheu. */}
         {f.cartao && f.cartao.ia_motivo && (
           <div data-motivo-da-ia style={{ padding: "8px 12px", fontSize: 12.5, color: C.textSecondary, lineHeight: 1.45,
                                           borderBottom: `1px solid ${C.divider}`, display: "flex", gap: 6 }}>
-            <Sparkles size={13} color={C.green} style={{ flexShrink: 0, marginTop: 2 }} />
+            <RostoDoAssistente tamanho={16} style={{ marginTop: 1 }} />
             <span>
-              <b style={{ color: C.textPrimary }}>A IA pôs aqui:</b> {f.cartao.ia_motivo}
+              <b style={{ color: C.textPrimary }}>O {NOME_DO_ASSISTENTE} pôs aqui:</b> {f.cartao.ia_motivo}
               <span style={{ display: "block", fontSize: 11.5, marginTop: 2 }}>Escolher outra etapa apaga este motivo.</span>
             </span>
           </div>
@@ -19175,7 +19176,7 @@ export default function Painel({ sessao }) {
                                   onClick={() => setMenuEtapa((v) => (v === "linha" ? false : "linha"))}
                                   aria-expanded={menuEtapa === "linha"} aria-haspopup="listbox"
                                   title={etapaAtualDaConversa ? `Etapa no funil: ${etapaAtualDaConversa.nome}${
-                                      funilDaConversa.cartao && funilDaConversa.cartao.ia_motivo ? " (a IA pôs aqui)" : ""} — clique para mudar`
+                                      funilDaConversa.cartao && funilDaConversa.cartao.ia_motivo ? ` (o ${NOME_DO_ASSISTENTE} pôs aqui)` : ""} — clique para mudar`
                                     : "Este cliente não está no funil — clique para pôr"}
                                   style={{ border: "none", background: "transparent", cursor: "pointer",
                                            display: "flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden",
@@ -19193,7 +19194,10 @@ export default function Painel({ sessao }) {
                               </span>
                             )}
                             {!selosCompactos && funilDaConversa.cartao && funilDaConversa.cartao.ia_motivo && (
-                              <Sparkles data-etapa-pela-ia size={11} color={C.green} style={{ flexShrink: 0 }} aria-label="a IA pôs aqui" />
+                              <span data-etapa-pela-ia role="img" aria-label={`o ${NOME_DO_ASSISTENTE} pôs aqui`}
+                                    style={{ display: "inline-flex", flexShrink: 0 }}>
+                                <RostoDoAssistente tamanho={14} />
+                              </span>
                             )}
                             {!selosCompactos && <ChevronDown size={12} style={{ flexShrink: 0, opacity: .7 }} />}
                           </button>
@@ -20575,21 +20579,23 @@ export default function Painel({ sessao }) {
                           <div key={p.id} data-passo-no-caminho={p.tipo}
                                style={{ display: "flex", gap: 9, marginBottom: 10 }}>
                             <div style={{ marginTop: 2 }}>
-                              <Avatar nome={p.pelaIa ? "A IA" : quemFoi(p.quem)} foto={p.quem ? equipe.porId[String(p.quem)]?.foto : undefined} size={24} />
+                              {p.pelaIa
+                                ? <RostoDoAssistente tamanho={24} />
+                                : <Avatar nome={quemFoi(p.quem)} foto={p.quem ? equipe.porId[String(p.quem)]?.foto : undefined} size={24} />}
                             </div>
                             <div style={{ minWidth: 0, flex: 1, fontSize: 13, lineHeight: 1.5 }}>
                               {p.tipo === "entrou" && (
                                 p.quem == null && !p.pelaIa
                                   ? <>Entrou no funil em {etapaChip(p.para)}, sozinho, quando escreveu pela primeira vez</>
-                                  : p.pelaIa ? <><b>A IA</b> pôs no funil em {etapaChip(p.para)}</>
+                                  : p.pelaIa ? <><b>O {NOME_DO_ASSISTENTE}</b> pôs no funil em {etapaChip(p.para)}</>
                                   : <><b>{quemFoi(p.quem)}</b> pôs no funil em {etapaChip(p.para)}</>
                               )}
                               {p.tipo === "moveu" && (
-                                <><b>{p.pelaIa ? "A IA" : quemFoi(p.quem)}</b> moveu de {etapaChip(p.de)} para {etapaChip(p.para)}</>
+                                <><b>{p.pelaIa ? `O ${NOME_DO_ASSISTENTE}` : quemFoi(p.quem)}</b> moveu de {etapaChip(p.de)} para {etapaChip(p.para)}</>
                               )}
                               {p.pelaIa && p.motivo && (
                                 <div data-motivo-no-caminho style={{ fontSize: 12, color: C.textSecondary, display: "flex", gap: 5 }}>
-                                  <Sparkles size={12} color={C.green} style={{ flexShrink: 0, marginTop: 3 }} />
+                                  <RostoDoAssistente tamanho={14} style={{ marginTop: 2 }} />
                                   <span>{p.motivo}</span>
                                 </div>
                               )}
