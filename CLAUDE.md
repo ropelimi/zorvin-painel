@@ -7458,6 +7458,19 @@ agendar dividem, e fica parado enquanto o vizinho troca.
 Pedir de novo é o "Resumir de novo", dentro do quadro; no celular, o mesmo
 item do ⋮ muda de nome.
 
+### E na nota interna, o pergaminho sai (06/11)
+
+Pedido do Rodrigo, com a foto da caixa âmbar: *"Nota interna não deve ter a
+função de resumir a conversa."* Com a caixa virada para nota
+(`modoNota`), o pergaminho não aparece na barra; saindo da nota, ele volta.
+A nota é o que a equipe escreve para a equipe, e o botão ali parecia resumir
+a nota, ou pôr o resumo dentro dela. O "Resumir a conversa" do ⋮ continua.
+
+Prova: `o-resumo-da-conversa`, cena 14 (117 conferências ao todo). **2
+sabotagens e 2 pegas**, rodadas em cópias (e a cópia sem sabotagem passou
+inteira): o pergaminho também na nota (2 reprovações), e o pergaminho sumindo
+sempre (17).
+
 ### O quadro
 
 **Por cima do alto da conversa**, pendurado numa âncora de altura zero logo
