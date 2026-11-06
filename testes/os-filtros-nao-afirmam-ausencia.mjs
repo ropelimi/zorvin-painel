@@ -107,56 +107,18 @@ const quebrar = (page, tabelas) => page.evaluate((t) => { globalThis.__RECUSAR_L
 const normal = (page) => page.evaluate(() => { globalThis.__ATRASO_POR_TABELA = {}; globalThis.__RECUSAR_LEITURA = []; });
 
 // ==================================================================
-console.log("\n1. “Minhas conversas”");
+console.log("\n1 e 2. “Minhas conversas” saiu da gaveta (06/11)");
+// INVERTIDAS, e não apagadas: as cenas 1 e 2 conferiam que "Minhas
+// conversas" procurava, dizia a falha e o teto de 500. O filtro saiu (o
+// seletor de responsáveis, escolhendo "Você", faz o mesmo, e é conferido em
+// `o-seletor-de-responsaveis`, com o teto e a falha). O que fica é a
+// garantia de que a gaveta não o oferece de novo.
 {
   const { ctx, page, estouros } = await abrir();
-  await lento(page, "conversas", 2500);
-  await filmarRecado(page);
-  ok("escolhi “Minhas conversas”", await naGaveta(page, "[data-minhas-opcao]"));
-  await page.waitForTimeout(600);
-  const durante = await marca(page);
-  ok("com o banco ainda no ar, a lista diz que procura — e não “Nenhuma conversa sua”",
-     durante === "procurando-filtro", String(durante));
-  const quadros = await filme(page);
-  ok("e em nenhum desenho antes da resposta ela disse “nenhuma”", quadros.length > 0 && !quadros.includes("sem-minhas"),
-     JSON.stringify(quadros));
-  await page.waitForTimeout(4500);
-  const depois = await marca(page);
-  ok("com a resposta, aí sim: nenhuma conversa sua", depois === "sem-minhas", String(depois));
-  ok("e nada de faixa, com tudo respondendo", (await faixa(page)) === 0);
-
-  // A FALHA: a leitura das minhas não volta.
-  await normal(page);
-  await clicar(page, '[data-aba="tudo"]');
-  await page.waitForTimeout(600);
-  await quebrar(page, ["conversas"]);
-  await naGaveta(page, "[data-minhas-opcao]");
-  await page.waitForTimeout(2500);
-  const r = await recado(page);
-  ok("a leitura que falhou não vira “Nenhuma conversa sua”", r && r.marca === "falhou-filtro", JSON.stringify(r));
-  ok("a frase traz o código do banco", r && /PGRST301/.test(r.texto), JSON.stringify(r));
-  ok("e a faixa âmbar acende", (await faixa(page)) === 1);
-  ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
-  await ctx.close();
-}
-
-// ==================================================================
-console.log("\n2. “Minhas conversas” com mais de 500: a tela diz que pode haver mais");
-{
-  const { ctx, page, estouros } = await abrir();
-  // QUINHENTAS E UMA conversas minhas no telefone de 1.200 — o teto da
-  // consulta é 500, e chegar nele quer dizer que pode haver mais.
-  await page.evaluate(() => {
-    let n = 0;
-    for (const c of globalThis.__TABELAS.conversas) {
-      if (c.advogado_id === "a13" && n < 501) { c.responsavel_id = "u1"; n += 1; }
-    }
-  });
-  ok("fui ao telefone de 1.200 conversas", await irPara(page, "Arquivo"));
-  await naGaveta(page, "[data-minhas-opcao]");
-  await page.waitForTimeout(3000);
-  ok("a lista mostra as minhas", (await idsNaLista(page)).length > 0);
-  ok("e diz que pode haver mais do que as mostradas", (await page.locator("[data-corte-do-filtro]").count()) === 1);
+  ok("abri a gaveta", await clicar(page, "[data-mais-filtros]"));
+  await page.waitForTimeout(300);
+  ok("e ela não oferece mais “Minhas conversas”",
+     (await page.locator("[data-menu-mais-filtros]").count()) === 1 && (await page.locator("[data-minhas-opcao]").count()) === 0);
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }

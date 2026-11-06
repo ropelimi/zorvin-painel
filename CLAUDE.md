@@ -4510,7 +4510,7 @@ conferência local cobria todos os casos em que a tela já sabia do dono.
 | a conversa aberta | na linha do número, um botão com o rosto e o nome | a mesma linha, só texto ("com você") |
 | o gesto | clicar ali | pelo ⋮ |
 | a lista | rosto de 18px no canto da linha; **o meu tem anel verde** | igual |
-| o filtro | "Minhas conversas" no menu da seta | igual |
+| o filtro | ~~"Minhas conversas" no menu da seta~~ o seletor de responsáveis, no alto da lista, com "Você" (06/11) | igual |
 
 **Na linha do número, e não um botão a mais na fila da direita:** aquela
 fila tem a conta de largura de 29/09, e um botão novo empurraria o nome do
@@ -4532,10 +4532,12 @@ pende é a do número, e "Quem responder primeiro assume" saía cortada em
 responsável grava nulo de propósito, e `??` deixaria a tela dos colegas
 dizendo "com a Jenifer" para uma conversa que ela devolveu.
 
-**"Minhas conversas" vai ao banco** (`extrasMinhas`), pela mesma razão do
+~~**"Minhas conversas" vai ao banco** (`extrasMinhas`), pela mesma razão do
 filtro de grupos: a minha conversa de dois meses atrás está fora das 200 da
 primeira página, e filtrar só o que está carregado seria "as minhas entre as
-recentes" com cara de "as minhas".
+recentes" com cara de "as minhas".~~ **Saiu em 06/11**: ver "O "Minhas
+conversas" saiu da gaveta (06/11)", na seção do seletor de responsáveis. O
+seletor, com "Você", vai ao banco do mesmo jeito.
 
 ### O Vantoro fica para o escritório; quem compra ganha o Zorvin sozinho
 
@@ -4639,8 +4641,9 @@ recorte da tela, o do banco, os argumentos da conta das abas, o rótulo e a
 frase. Escrita em cada lugar, a regra divergiria, e divergir aqui é a aba
 dizer um número e a lista mostrar outra coisa.
 
-**"Minhas conversas", na gaveta da fita, continua.** Escolher "Você" no seletor
-mostra as mesmas conversas, e recorta também os números das abas.
+~~**"Minhas conversas", na gaveta da fita, continua.**~~ **Saiu em 06/11** —
+ver logo abaixo. Escolher "Você" no seletor mostra as mesmas conversas, e
+recorta também os números das abas.
 
 ### Quem recorta é o banco
 
@@ -4783,6 +4786,31 @@ perderia o alvo de dedo. Não perde: a regra do celular vale para
 `[role="button"]` também, e ele ganha os 40 pontos assim mesmo. O que um
 `span` perde é o TECLADO — não recebe o foco, e o Enter não o abre. A prova
 ganhou essa conferência, e a mesma sabotagem, rodada de novo, é pega.
+
+### O "Minhas conversas" saiu da gaveta (06/11)
+
+Pedido do Rodrigo, com a foto do menu da seta: *"“Minhas conversas” não
+precisa mais existir, pois agora fazemos esse filtro com a opção
+“Responsável”."*
+
+**Saiu inteiro, e não só o item do menu**: a opção (`data-minhas-opcao`), o
+filtro `"minhas"` da lista, a leitura das minhas de fora das páginas
+(`extrasMinhas`), a frase da lista vazia (`sem-minhas`), a falha da faixa
+(`filtro-minhas`) e a palavra "Minhas" na pílula da fita. Escolher "Você" no
+seletor de responsáveis mostra as mesmas conversas, vai ao banco do mesmo
+jeito e ainda recorta o número das abas.
+
+**A aba que se atualiza sozinha com o filtro ligado volta em "Tudo"**: a foto
+da tela (`fotoDaVolta`) podia levar `filtro: "minhas"`, e a página nova não
+sabe mais desenhá-lo. Fica de fora da prova, e é decisão: vale só para as
+abas abertas com o filtro ligado no instante da atualização, uma vez.
+
+**As provas foram INVERTIDAS, e não apagadas**: a cena 5 de
+`o-responsavel-pela-conversa` confere que a gaveta não oferece mais o filtro
+e que o seletor, com "Você", traz só as minhas, inclusive a do fundo do
+telefone de 1200 conversas; a 13b de `a-auditoria-de-27-10` e as cenas 1 e 2
+de `os-filtros-nao-afirmam-ausencia` conferem que a opção não volta (o
+procurando, a falha e o teto do seletor estão em `o-seletor-de-responsaveis`).
 
 ## Quem saiu não aparece para escolher (04/11)
 
@@ -6823,7 +6851,7 @@ O menu do responsável diz *"JENIFER ALMEIDA desde 13/10, 09:12 — pela
 distribuição automática."* quando quem pôs o dono foi o Zorvin
 (`responsavel_por` nulo COM dono; assumir e passar adiante sempre gravam quem
 foi). Fora isso, nada novo para quem atende: a conversa chega com o rosto da
-pessoa na lista e entra em "Minhas conversas" dela pelo caminho que já existia
+pessoa na lista e entra no "Você" do seletor de responsáveis dela pelo caminho que já existia
 — o tempo real traz o dono pela presença da chave.
 
 ~~**O aviso de mensagem nova NÃO mudou**: enquanto ninguém responde, todo mundo
