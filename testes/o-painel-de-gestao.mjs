@@ -24,7 +24,7 @@
 //   5. UMA FONTE QUE FALTA tira só as colunas dela, e a tabela diz;
 //   6. UMA IDA AO BANCO POR FONTE: a tabela da equipe não lê nada de novo;
 //   7. IMPRIMIR: o menu do que vai no papel, o botão que imprime, o papel no
-//      tema claro, sem os controles nem as listas de registros, com o recorte
+//      tema claro, sem os controles nem os botões da planilha, com o recorte
 //      no alto e a tabela cabendo na folha em pé;
 //   8. NO CELULAR: nada rola de lado, a barra não gruda, o ranking em duas
 //      linhas e as métricas numa linha;
@@ -634,7 +634,10 @@ if (vale("7")) {
     return {
       barra: vis("[data-barra-do-painel]"), cabecalho: vis("[data-so-impressao]"),
       linhas: [...(cab ? cab.querySelectorAll("[data-linha-do-cabecalho]") : [])].map((l) => l.innerText.replace(/\s+/g, " ").trim()),
-      lista: vis("[data-protocolos-lista]"), registros: vis("[data-relatorio-registros]"), metricas: vis("[data-metricas-da-equipe]"),
+      // AS LISTAS SAÍRAM DA TELA (06/11); ficou o botão da planilha de cada
+      // seção, que também não vai ao papel.
+      listasDeAntes: document.querySelectorAll("[data-protocolos-lista], [data-relatorio-registros], [data-protocolo-no-relatorio], [data-registro-ja-tratei]").length,
+      lista: vis("[data-protocolos-planilha]"), registros: vis("[data-relatorio-planilha]"), metricas: vis("[data-metricas-da-equipe]"),
       tabela: vis("[data-tabela-da-equipe]"), ficha: vis("[data-ficha-da-pessoa]"),
       posicao: getComputedStyle(tela).position, rolagem: getComputedStyle(tela).overflowY,
       conversas: [...document.querySelectorAll("#root > div > *")].filter((e) => !e.matches('[data-tela="painel"]') && getComputedStyle(e).display !== "none").length,
@@ -647,7 +650,8 @@ if (vale("7")) {
   ok("e o cabeçalho do papel aparece, com o recorte inteiro", papel.cabecalho === true
      && papel.linhas.some((l) => /^Período \d{2}\/\d{2}\/\d{4} a \d{2}\/\d{2}\/\d{4}/.test(l))
      && papel.linhas.some((l) => l === "Atendente JENIFER ALMEIDA") && papel.linhas.some((l) => /^Gerado em .* por Rodrigo Sousa$/.test(l)), q(papel.linhas));
-  ok("as listas de registros e os botões das métricas ficam fora do papel", papel.lista === false && papel.registros === false && papel.metricas === false, q(papel));
+  ok("as listas de registros não existem mais, nem na tela nem no papel", papel.listasDeAntes === 0, q(papel));
+  ok("os botões da planilha e os das métricas ficam fora do papel", papel.lista !== true && papel.registros !== true && papel.metricas === false, q(papel));
   ok("a ficha e a tabela da equipe vão para o papel", papel.ficha === true && papel.tabela === true, q(papel));
   ok("a tela deixa de ser um quadro fixo que rola (senão sairia só o pedaço à vista)", papel.posicao === "static" && papel.rolagem === "visible", q(papel));
   ok("e o Zorvin que mora atrás dela não vai para o papel", papel.conversas === 0, q(papel));

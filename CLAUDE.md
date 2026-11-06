@@ -8060,8 +8060,9 @@ pedido de distância.
 
 E um gráfico **por dia** (verde com atendimento, âmbar esperando, os dias
 vazios como zero), uma tabela **por pessoa** (todo mundo, com "Pelo celular"
-numa linha própria; para quem administra, clicar recorta a tela) e **a lista
-dos protocolos**, com a planilha.
+numa linha própria; para quem administra, clicar recorta a tela) e ~~**a lista
+dos protocolos**, com a planilha~~ **a planilha dos protocolos** (a lista saiu
+da tela em 06/11 — ver "O Painel sem as listas de protocolos e de registros").
 
 **Tudo é do período da abertura**, e é isso que faz o total fechar com os
 dois cartões ao lado. **Só o total compara com o período anterior**: comparar
@@ -8237,8 +8238,10 @@ O navegador imprime a tela, e a tela tem de ser outra no papel
   cabeçalho da primeira folha (`data-so-impressao`), com o período por
   extenso, a pessoa, o telefone, o departamento e quem gerou, e quando. Um
   relatório impresso não tem a barra ao lado;
-- **sem as listas de registros** dos protocolos e do "Já tratei": são
-  dezenas de folhas, e estão na planilha de cada seção. O cabeçalho diz isso;
+- ~~**sem as listas de registros** dos protocolos e do "Já tratei"~~ —
+  desde 06/11 as listas nem existem na tela: cada protocolo e cada "Já
+  tratei" estão na planilha de cada seção, e o botão da planilha também fica
+  fora do papel. O cabeçalho diz isso;
 - **o menu do que vai no papel**: as seções (sete desde 05/11, com a Visão
   geral primeiro), marcadas; a desmarcada sai,
   e o cabeçalho diz quais ficaram fora "por escolha". Sem nada marcado, o

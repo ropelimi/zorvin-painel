@@ -196,9 +196,33 @@ const pessoa = async (page, nome) => {
            finalizou: await l.first().locator("[data-finalizou]").getAttribute("data-finalizou").catch(() => null),
            texto: ((await l.first().innerText().catch(() => "")) || "").replace(/\s+/g, " ").trim() };
 };
-const lista = (page) => page.evaluate((r) => [...document.querySelectorAll(`${r} [data-protocolo-no-relatorio]`)].map((e) => ({
-  p: e.getAttribute("data-protocolo-no-relatorio"), estado: e.getAttribute("data-estado"),
-  texto: (e.innerText || "").replace(/\s+/g, " ").trim() })), R);
+// A LISTA DOS PROTOCOLOS SAIU DA TELA (06/11, pedido do Rodrigo: "muita
+// informação"). O que ela conferia — cada protocolo, o estado, quem
+// respondeu, o celular, o começado pela equipe, a ordem — passou a ser
+// conferido NA PLANILHA, que leva as mesmas informações, um protocolo por
+// linha. Guardado: sem o botão, devolve lista vazia, e a conferência reprova
+// dizendo o que viu, em vez de estourar a prova.
+function lerCsv(csv) {
+  const linhas = csv.replace(/^\ufeff/, "").split("\r\n").filter(Boolean);
+  const campos = (l) => [...l.matchAll(/"((?:[^"]|"")*)"/g)].map((m) => m[1].replace(/""/g, '"'));
+  const cab = linhas.length ? campos(linhas[0]) : [];
+  return linhas.slice(1).map((l) => { const c = campos(l); return Object.fromEntries(cab.map((k, i) => [k, c[i] ?? ""])); });
+}
+async function baixarCsv(page, botao) {
+  const b = page.locator(botao);
+  if (!(await b.count())) return "";
+  const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 5000 }).catch(() => null), b.first().click().catch(() => {})]);
+  if (!dl) return "";
+  const fs = await import("node:fs");
+  return fs.readFileSync(await dl.path(), "utf8");
+}
+const lista = async (page) => lerCsv(await baixarCsv(page, `${R} [data-protocolos-baixar]`)).map((x) => ({
+  p: x["Protocolo"], estado: x["Situação"], comecou: x["Como começou"], respondeu: x["Quem respondeu"],
+  minResp: x["Minutos até a primeira resposta"], finalizou: x["Quem finalizou"], minFim: x["Minutos até finalizar"] }));
+const semAsListas = (page) => page.evaluate((r) => ({
+  linhas: document.querySelectorAll(`${r} [data-protocolo-no-relatorio], ${r} [data-protocolos-lista], ${r} [data-protocolos-mais]`).length,
+  titulo: [...document.querySelectorAll(`${r} h2, ${r} h3, ${r} div`)].some((e) => e.children.length === 0 && e.textContent.trim() === "Os protocolos"),
+}), R);
 
 // ==================================================================
 //  1. QUEM ADMINISTRA — o escritório inteiro
@@ -245,20 +269,28 @@ console.log("\nQuem administra vê os protocolos do escritório, e só conta o q
   const ordem = await page.$$eval(`${R} [data-pessoa-nos-protocolos]`, (ls) => ls.map((l) => l.getAttribute("data-pessoa-nos-protocolos")));
   ok("quem fez mais vem primeiro", ordem.join("|") === "JENIFER ALMEIDA|Rodrigo Sousa|Pelo celular", ordem.join("|"));
 
+  // A LISTA SAIU: nem as linhas, nem o título, nem o "Mostrar mais".
+  const sem = await semAsListas(page);
+  ok("a lista dos protocolos não aparece mais na tela (nem o título)", sem.linhas === 0 && !sem.titulo, JSON.stringify(sem));
+  const contagem = await page.locator(`${R} [data-protocolos-contagem]`).innerText().catch(() => "");
+  ok("e o botão da planilha diz quantos ela leva: os 8 do período", /A planilha leva os 8 protocolos do período/.test(contagem), contagem);
+
+  // O QUE A LISTA CONFERIA, AGORA NA PLANILHA.
   const ls = await lista(page);
-  ok("a lista traz os 8 protocolos do período, do mais novo para o mais velho",
+  ok("a planilha traz os 8 protocolos do período, do mais novo para o mais velho",
      ls.map((x) => x.p).join(",") === [P.A6b, P.A3, P.A1, P.A9, P.A2, P.A4, P.A5, P.A6a].join(","), ls.map((x) => x.p).join(","));
   const a6b = ls.find((x) => x.p === P.A6b), a5 = ls.find((x) => x.p === P.A5), a2 = ls.find((x) => x.p === P.A2),
         a4 = ls.find((x) => x.p === P.A4);
-  ok("o protocolo novo da cliente que voltou espera resposta", a6b && a6b.estado === "sem_resposta" && /esperando resposta/.test(a6b.texto),
+  ok("o protocolo novo da cliente que voltou espera resposta", a6b && a6b.estado === "esperando resposta" && !a6b.respondeu,
      JSON.stringify(a6b));
-  ok("o do celular diz que foi respondido pelo celular", a5 && /Respondido em 1 h, pelo celular/.test(a5.texto), JSON.stringify(a5));
+  ok("o do celular diz que foi respondido pelo celular, em 1 h", a5 && a5.respondeu === "Pelo celular" && a5.minResp === "60", JSON.stringify(a5));
   ok("o finalizado diz quem respondeu, quem finalizou e em quanto tempo",
-     a2 && a2.estado === "finalizado" && /Respondido em 2 h por JENIFER ALMEIDA/.test(a2.texto) && /Finalizado por Rodrigo Sousa em 4 h/.test(a2.texto),
+     a2 && a2.estado === "finalizado" && a2.respondeu === "JENIFER ALMEIDA" && a2.minResp === "120"
+     && a2.finalizou === "Rodrigo Sousa" && a2.minFim === "240",
      JSON.stringify(a2));
-  ok("o começado pela equipe não finge uma espera", a4 && /a equipe começou a conversa/.test(a4.texto) && !/Respondido em/.test(a4.texto),
+  ok("o começado pela equipe não finge uma espera", a4 && a4.comecou === "a equipe começou a conversa" && a4.minResp === "",
      JSON.stringify(a4));
-  ok("nada do período anterior nem de antes na lista", !ls.some((x) => x.p === P.A7 || x.p === P.A8));
+  ok("nada do período anterior nem de antes na planilha", ls.length > 0 && !ls.some((x) => x.p === P.A7 || x.p === P.A8));
 
   // OS DIAS SEM NADA TAMBÉM APARECEM, como zero, e as duas séries vão juntas.
   const tabela = page.locator(`${R} button[title="Ver os números"]`).first();
@@ -312,7 +344,7 @@ console.log("\nO filtro de telefone da barra recorta os protocolos");
   await page.locator('[data-grupo="telefone"]').getByRole("button", { name: TEL.outroNome }).first().click().catch(() => {});
   await page.waitForTimeout(1500);
   const ls = await lista(page);
-  ok("só o protocolo do outro telefone", ls.map((x) => x.p).join(",") === P.A9, ls.map((x) => x.p).join(","));
+  ok("na planilha, só o protocolo do outro telefone", ls.map((x) => x.p).join(",") === P.A9, ls.map((x) => x.p).join(","));
   ok("e as contas acompanham: 1, em atendimento, e ninguém esperando",
      (await cartao(page, "Total de atendimentos")) === "1" && (await cartao(page, "Esperando resposta")) === "0",
      `${await cartao(page, "Total de atendimentos")} / ${await cartao(page, "Esperando resposta")}`);
@@ -337,7 +369,8 @@ console.log("\nQuem não administra vê os protocolos de que participou — e o 
      (await cartao(page, "Até a primeira resposta")) === "2700" && /2 casos/.test(await notaDoCartao(page, "Até a primeira resposta"))
      && (await cartao(page, "Até finalizar")) === "14400" && /1 caso\b/.test(await notaDoCartao(page, "Até finalizar")),
      `${await cartao(page, "Até a primeira resposta")} · ${await cartao(page, "Até finalizar")}`);
-  ok("a lista tem os seus 4", (await lista(page)).length === 4, JSON.stringify((await lista(page)).map((x) => x.p)));
+  const seus = await lista(page);
+  ok("a planilha tem os seus 4", seus.length === 4, JSON.stringify(seus.map((x) => x.p)));
   ok("o “por pessoa” mostra a Jenifer e o celular também",
      Boolean(await pessoa(page, "JENIFER ALMEIDA")) && Boolean(await pessoa(page, "Pelo celular")));
   // O RECORTE É DO BANCO: pedir "todo mundo" por fora devolve o recorte assim
@@ -411,7 +444,7 @@ console.log("\nO caminho inteiro: finalizar o protocolo que esperava e vê-lo en
      `${await cartao(page, "Total de atendimentos")} / ${await cartao(page, "Finalizados")}`);
   ok("e só a FABI continua esperando resposta", (await cartao(page, "Esperando resposta")) === "1", await cartao(page, "Esperando resposta"));
   const a3 = (await lista(page)).find((x) => x.p === P.A3);
-  ok("na lista, ele diz quem finalizou", a3 && a3.estado === "finalizado" && /Finalizado por Rodrigo Sousa/.test(a3.texto), JSON.stringify(a3));
+  ok("na planilha, ele diz quem finalizou", a3 && a3.estado === "finalizado" && a3.finalizou === "Rodrigo Sousa", JSON.stringify(a3));
   ok("sem erro de JavaScript no caminho", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }

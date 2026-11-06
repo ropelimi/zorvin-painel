@@ -143,7 +143,27 @@ const cartao = async (page, etiqueta) => {
   if (!(await el.count())) return null;
   return (await el.first().getAttribute("data-valor")) || "";
 };
-const nomesDosRegistros = (page) => page.$$eval(`${R} [data-registro-ja-tratei] b`, (ns) => ns.map((n) => n.textContent.trim()));
+// A LISTA DOS REGISTROS SAIU DA TELA (06/11, pedido do Rodrigo: "muita
+// informação"). O que ela conferia — quem, a ordem, o desfeito marcado, o
+// texto do OUTROS, o recorte — passou a ser conferido NA PLANILHA, que leva
+// cada "Já tratei" numa linha. Guardado: sem o botão, devolve lista vazia, e a
+// conferência reprova dizendo o que viu, em vez de estourar a prova.
+function lerCsv(csv) {
+  const linhas = csv.replace(/^\ufeff/, "").split("\r\n").filter(Boolean);
+  const campos = (l) => [...l.matchAll(/"((?:[^"]|"")*)"/g)].map((m) => m[1].replace(/""/g, '"'));
+  const cab = linhas.length ? campos(linhas[0]) : [];
+  return linhas.slice(1).map((l) => { const c = campos(l); return Object.fromEntries(cab.map((k, i) => [k, c[i] ?? ""])); });
+}
+async function registros(page) {
+  const b = page.locator(`${R} [data-relatorio-baixar]`);
+  if (!(await b.count())) return [];
+  const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 5000 }).catch(() => null), b.first().click().catch(() => {})]);
+  if (!dl) return [];
+  const fs = await import("node:fs");
+  return lerCsv(fs.readFileSync(await dl.path(), "utf8"));
+}
+const nomesDosRegistros = async (page) => (await registros(page)).map((x) => x["Cliente"]);
+const textosDoOutros = async (page) => (await registros(page)).map((x) => x["O que foi tratado"]).filter(Boolean);
 const vezesDoAssunto = (page, nome) => page.locator(`${R} [data-assunto-no-relatorio="${nome}"] [data-vezes]`)
   .getAttribute("data-vezes").catch(() => null);
 const tratamentosDe = (page, nome) => page.locator(`${R} [data-pessoa-no-relatorio="${nome}"] [data-tratamentos]`)
@@ -172,12 +192,25 @@ console.log("\nQuem administra vê a equipe inteira, e um clique conta um");
   ok("por pessoa: Rodrigo 1 e Jenifer 1",
      (await tratamentosDe(page, "Rodrigo Sousa")) === "1" && (await tratamentosDe(page, "JENIFER ALMEIDA")) === "1");
 
-  const nomes = await nomesDosRegistros(page);
-  ok("os registros trazem os três do período, do mais recente para o mais antigo",
+  // A LISTA SAIU: nem as linhas, nem o título, nem o "Mostrar mais".
+  const sem = await page.evaluate((r) => ({
+    linhas: document.querySelectorAll(`${r} [data-registro-ja-tratei], ${r} [data-relatorio-registros], ${r} [data-relatorio-mais]`).length,
+    titulo: [...document.querySelectorAll(`${r} div`)].some((e) => e.children.length === 0 && e.textContent.trim() === "Os registros"),
+  }), R);
+  ok("a lista dos registros não aparece mais na tela (nem o título)", sem.linhas === 0 && !sem.titulo, JSON.stringify(sem));
+  const contagem = await page.locator(`${R} [data-relatorio-contagem]`).innerText().catch(() => "");
+  ok("e o botão da planilha diz quantos ela leva: os 3 do período", /A planilha leva os 3 registros do período/.test(contagem), contagem);
+
+  // O QUE A LISTA CONFERIA, AGORA NA PLANILHA.
+  const regs = await registros(page);
+  const nomes = regs.map((x) => x["Cliente"]);
+  ok("a planilha traz os três do período, do mais recente para o mais antigo",
      nomes.join("|") === "RAQUEL DESFEITA|ROSA DO RELATÓRIO|RUI DO OUTRO TELEFONE", nomes.join("|"));
-  ok("o desfeito vem marcado na lista", (await page.locator(`${R} [data-registro-desfeito]`).count()) === 1);
-  const obs = await page.locator(`${R} [data-registro-observacao]`).allInnerTexts();
-  ok("o texto do OUTROS aparece no registro", obs.some((t) => /segunda via do boleto/.test(t)), obs.join(" | "));
+  ok("o desfeito vem marcado, e só ele", regs.filter((x) => x["Desfeito"] === "sim").map((x) => x["Cliente"]).join("|") === "RAQUEL DESFEITA",
+     JSON.stringify(regs.map((x) => [x["Cliente"], x["Desfeito"]])));
+  const obs = regs.map((x) => x["O que foi tratado"]).filter(Boolean);
+  ok("o texto do OUTROS vai no registro dele", regs.some((x) => /segunda via do boleto/.test(x["O que foi tratado"]) && /OUTROS/.test(x["Assuntos"])),
+     obs.join(" | "));
 
   // OS DIAS SEM NADA TAMBÉM APARECEM, como zero. Sem isso, trinta dias com
   // "Já tratei" em três viram três barras soltas no gráfico.
@@ -223,7 +256,7 @@ console.log("\nO filtro de telefone da barra recorta o relatório");
   await page.locator('[data-grupo="telefone"]').getByRole("button", { name: TEL.outroNome }).first().click();
   await page.waitForTimeout(1500);
   const nomes = await nomesDosRegistros(page);
-  ok("só o registro do outro telefone", nomes.join("|") === "RUI DO OUTRO TELEFONE", nomes.join("|"));
+  ok("na planilha, só o registro do outro telefone", nomes.join("|") === "RUI DO OUTRO TELEFONE", nomes.join("|"));
   ok("e as somas acompanham (1)", (await cartao(page, "Vezes “Já tratei”")) === "1");
   await ctx.close();
 }
@@ -299,9 +332,9 @@ console.log("\nO caminho inteiro: marcar na conversa e ver no relatório");
   await irAoPainel(page, ["zorvin_tratamentos", "conversas"]);
   ok("o relatório passa a contar 3 — o clique novo conta UM, com dois assuntos",
      (await cartao(page, "Vezes “Já tratei”")) === "3", await cartao(page, "Vezes “Já tratei”"));
-  ok("e ele é o primeiro da lista", (await nomesDosRegistros(page))[0] === "RENATO QUE ESPERA",
+  ok("e ele é o primeiro da planilha", (await nomesDosRegistros(page))[0] === "RENATO QUE ESPERA",
      (await nomesDosRegistros(page)).join("|"));
-  const obs = await page.locator(`${R} [data-registro-observacao]`).allInnerTexts();
+  const obs = await textosDoOutros(page);
   ok("com o texto que foi escrito", obs.some((t) => /confirmou o acordo/.test(t)), obs.join(" | "));
   ok("sem erro de JavaScript no caminho", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
