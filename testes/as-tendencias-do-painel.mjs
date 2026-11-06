@@ -205,10 +205,13 @@ if (vale("0")) {
 // ==================================================================
 //  1-5. QUEM ADMINISTRA, no computador
 // ==================================================================
-if (vale("1") || vale("2") || vale("3") || vale("4") || vale("5")) {
-  const { ctx, page, estouros } = await abrirPainel();
-
+// O painel de quem administra abre na primeira cena que precisa dele, e
+// serve às cinco: com `CENAS`, só abre se alguma delas foi pedida.
+let doAdmin = null;
+const painelDoAdmin = async () => (doAdmin ??= await abrirPainel());
+{
   if (vale("1")) {
+    const { page } = await painelDoAdmin();
     console.log("\n1. A fila: entrada e saída, dia a dia");
     ok("a seção das tendências aparece", (await page.locator(T).count()) === 1);
     const ordem = await page.evaluate(() => [...document.querySelectorAll("[data-secao-do-painel]")].map((s) => s.getAttribute("data-secao-do-painel")));
@@ -255,6 +258,7 @@ if (vale("1") || vale("2") || vale("3") || vale("4") || vale("5")) {
   }
 
   if (vale("2")) {
+    const { page } = await painelDoAdmin();
     console.log("\n2. O prazo, dia a dia");
     const resumo = await texto(page, `${T} [data-resumo-do-prazo-dia]`);
     ok("a frase do prazo: 50% no período (8 de 16)", resumo.includes("No período, 50% dos clientes foram atendidos no prazo (8 de 16)."), resumo);
@@ -267,6 +271,7 @@ if (vale("1") || vale("2") || vale("3") || vale("4") || vale("5")) {
   }
 
   if (vale("3")) {
+    const { page } = await painelDoAdmin();
     console.log("\n3. O prazo pela hora em que o cliente escreveu");
     const resumo = await texto(page, `${T} [data-resumo-do-prazo-hora]`);
     ok("a hora que mais precisa de gente: 14h, 13% em 8 clientes",
@@ -283,6 +288,7 @@ if (vale("1") || vale("2") || vale("3") || vale("4") || vale("5")) {
   }
 
   if (vale("5")) {
+    const { page } = await painelDoAdmin();
     console.log("\n5. As faíscas nos cartões da Visão geral");
     const fp = page.locator('[data-indicador="prazo"] [data-faisca="prazo"]');
     const fa = page.locator('[data-indicador="atendimentos"] [data-faisca="atendimentos"]');
@@ -297,6 +303,7 @@ if (vale("1") || vale("2") || vale("3") || vale("4") || vale("5")) {
   }
 
   if (vale("4")) {
+    const { page } = await painelDoAdmin();
     console.log("\n4. O clique num dia recorta a tela inteira, e a barra oferece a volta");
     ok("antes: 15 atendimentos no cartão", (await valorDoIndicador(page, "atendimentos")) === "15", await valorDoIndicador(page, "atendimentos"));
     const col = page.locator(`${T} [data-colunas="fluxo"] [data-coluna="${diaSP(5)}"]`);
@@ -322,8 +329,8 @@ if (vale("1") || vale("2") || vale("3") || vale("4") || vale("5")) {
     await page.locator("[data-voltar-do-dia]").click().catch(() => {});
     await page.waitForTimeout(800);
   }
-  ok("sem erro de JavaScript no caminho", estouros.length === 0, estouros.join(" | "));
-  await ctx.close();
+  ok("sem erro de JavaScript no caminho", !doAdmin || doAdmin.estouros.length === 0, (doAdmin?.estouros || []).join(" | "));
+  if (doAdmin) await doAdmin.ctx.close();
 }
 
 // ==================================================================
@@ -421,7 +428,8 @@ if (vale("8")) {
   await ctx.close();
 }
 
-for (const c of CENAS) ok(`a cena pedida “${c}” existe`, cenasDaProva.has(c), [...cenasDaProva].join(","));
+ok("as cenas pedidas em CENAS existem nesta prova", !CENAS.length || CENAS.every((c) => cenasDaProva.has(c)),
+   `não existem: ${CENAS.filter((c) => !cenasDaProva.has(c)).join(", ")}`);
 await nav.close();
 console.log(`\n${feitas - falhas}/${feitas} conferências passaram`);
 process.exit(falhas ? 1 : 0);
