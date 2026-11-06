@@ -584,11 +584,13 @@ if (vale("7")) {
   await clicar(page, "[data-imprimir-relatorio]");
   const secoes = await page.$$eval("[data-menu-de-impressao] [data-secao-impressa]", (ns) => ns.map((n) => ({
     id: n.getAttribute("data-secao-impressa"), marcada: n.querySelector("input").checked, texto: n.innerText.trim() })));
-  // SETE SEÇÕES (eram seis até 05/11): a Visão geral entrou na frente.
-  ok("o menu oferece as sete seções, todas marcadas", q(secoes.map((s) => s.id)) === q(["visao", "equipe", "protocolos", "atendimentos", "carteira", "funil", "jatratei"])
-     && secoes.length === 7 && secoes.every((s) => s.marcada), q(secoes));
-  ok("com a pessoa escolhida, a Visão geral vem primeiro, e a da equipe é “A pessoa e a equipe”",
-     secoes[0] && secoes[0].texto === "Visão geral" && secoes[1] && secoes[1].texto === "A pessoa e a equipe", q(secoes.slice(0, 2)));
+  // OITO SEÇÕES (eram seis até 05/11, sete até 06/11): a Visão geral entrou
+  // na frente, e as Tendências logo depois dela.
+  ok("o menu oferece as oito seções, todas marcadas", q(secoes.map((s) => s.id)) === q(["visao", "tendencias", "equipe", "protocolos", "atendimentos", "carteira", "funil", "jatratei"])
+     && secoes.length === 8 && secoes.every((s) => s.marcada), q(secoes));
+  ok("com a pessoa escolhida, a Visão geral vem primeiro, as Tendências depois, e a da equipe é “A pessoa e a equipe”",
+     secoes[0] && secoes[0].texto === "Visão geral" && secoes[1] && secoes[1].texto === "Tendências do período"
+     && secoes[2] && secoes[2].texto === "A pessoa e a equipe", q(secoes.slice(0, 3)));
   await page.locator('[data-secao-impressa="funil"] input').click().catch(() => {});
   await page.locator('[data-secao-impressa="jatratei"] input').click().catch(() => {});
   await page.waitForTimeout(300);
@@ -600,11 +602,11 @@ if (vale("7")) {
   ok("“Imprimir” chama a impressão do navegador, uma vez", (await page.evaluate(() => globalThis.__IMPRESSOES)) === 1);
   ok("e o menu fecha", (await page.locator("[data-menu-de-impressao]").count()) === 0);
   await clicar(page, "[data-imprimir-relatorio]");
-  for (const s of ["visao", "equipe", "protocolos", "atendimentos", "carteira"]) await page.locator(`[data-secao-impressa="${s}"] input`).click().catch(() => {});
+  for (const s of ["visao", "tendencias", "equipe", "protocolos", "atendimentos", "carteira"]) await page.locator(`[data-secao-impressa="${s}"] input`).click().catch(() => {});
   await page.waitForTimeout(300);
   const nada = await page.evaluate(() => { const b = document.querySelector("[data-imprimir-agora]"); return b ? { desligado: b.disabled, texto: b.innerText.trim() } : null; });
   ok("sem nada marcado, o botão desliga e diz por quê", nada && nada.desligado && /Escolha o que imprimir/.test(nada.texto), q(nada));
-  for (const s of ["visao", "equipe", "protocolos", "atendimentos", "carteira", "funil", "jatratei"]) await page.locator(`[data-secao-impressa="${s}"] input`).click().catch(() => {});
+  for (const s of ["visao", "tendencias", "equipe", "protocolos", "atendimentos", "carteira", "funil", "jatratei"]) await page.locator(`[data-secao-impressa="${s}"] input`).click().catch(() => {});
   await page.keyboard.press("Escape");
   await page.waitForTimeout(300);
   ok("o Esc fecha o menu, e não a tela", (await page.locator("[data-menu-de-impressao]").count()) === 0
@@ -737,7 +739,7 @@ if (vale("9")) {
   const { ctx, page, estouros } = await abrirPainel();
   await page.waitForTimeout(800);
   const atalhos = await page.$$eval("[data-nav-do-painel] [data-ir-para]", (ns) => ns.map((n) => n.getAttribute("data-ir-para")));
-  ok("os atalhos das sete seções estão na barra, a Visão geral primeiro", q(atalhos) === q(["visao", "equipe", "protocolos", "atendimentos", "carteira", "funil", "jatratei"]), q(atalhos));
+  ok("os atalhos das oito seções estão na barra, a Visão geral primeiro e as Tendências depois", q(atalhos) === q(["visao", "tendencias", "equipe", "protocolos", "atendimentos", "carteira", "funil", "jatratei"]), q(atalhos));
   await clicar(page, '[data-ir-para="jatratei"]');
   await page.waitForTimeout(900);
   // Guardado: sem a seção ou sem a barra, a conferência reprova dizendo o

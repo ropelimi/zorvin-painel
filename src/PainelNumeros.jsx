@@ -71,6 +71,7 @@ import { nomeDoContato } from "./contato.js";
 import { telefoneLegivel } from "./numeros.js";
 import { diasDesde, DIAS_DO_VERMELHO } from "./espera.js";
 import { Titulo, Grafico } from "./blocosDoPainel.jsx";
+import TendenciasDoPainel from "./TendenciasDoPainel.jsx";
 import {
   juntarAEquipe, colunasVisiveis, colunasDaFicha, fraseDoQueFaltou, ordenarAEquipe,
   sentidoDeComeco, mediana, aPessoaNaEquipe, baseDaComparacao, linhasDoCabecalho, COLUNAS_DA_EQUIPE,
@@ -282,6 +283,8 @@ function useLeitura(nome, args) {
 const SECOES_DO_PAINEL = [
   // A VISÃO GERAL (05/11) vem primeiro: é o resumo de tudo o que está embaixo.
   { id: "visao", curto: "Visão geral", rotulo: "Visão geral" },
+  // AS TENDÊNCIAS (06/11): a entrada e a saída, e o prazo por dia e por hora.
+  { id: "tendencias", curto: "Tendências", rotulo: "Tendências do período" },
   { id: "equipe", curto: "Equipe" },
   { id: "protocolos", curto: "Protocolos", rotulo: "Protocolos de atendimento" },
   { id: "atendimentos", curto: "Mensagens", rotulo: "Atendimentos e mensagens" },
@@ -301,7 +304,21 @@ export default function PainelNumeros({ C: CDaTela, CClaro = null, modo: modoDaT
   const cores = CORES[modo] || CORES.claro;
   const rampa = RAMPA[modo] || RAMPA.claro;
 
-  const [periodo, setPeriodo] = useState(() => ultimosDias(30));
+  const [periodo, setPeriodoDaBarra] = useState(() => ultimosDias(30));
+  // O RECORTE DE UM DIA (06/11): clicar num dia de um gráfico das tendências
+  // leva a tela inteira para aquele dia, e guarda o período de antes para a
+  // barra oferecer a volta. Escolher outro período na barra esquece a volta:
+  // ela é do clique, e não de qualquer troca.
+  const [periodoAntes, setPeriodoAntes] = useState(null);
+  const setPeriodo = (p) => { setPeriodoAntes(null); setPeriodoDaBarra(p); };
+  const verDia = (quando) => {
+    const d = new Date(`${quando}T12:00:00`);
+    if (Number.isNaN(d.getTime())) return;
+    const agora = new Date();
+    const fim = fimDoDia(d);
+    setPeriodoAntes((v) => v || periodo);
+    setPeriodoDaBarra({ de: inicioDoDia(d), ate: fim > agora ? agora : fim, tipo: "dia" });
+  };
   // Quem não administra não escolhe atendente: é sempre ele mesmo.
   const [quem, setQuem] = useState(souAdmin ? null : meuId);
   // OUTRA PESSOA ESCOLHIDA (auditoria de 28/10): o banco diz `so_meu` para
@@ -586,8 +603,28 @@ export default function PainelNumeros({ C: CDaTela, CClaro = null, modo: modoDaT
           </div>
         )}
 
+        {/* A VOLTA DO RECORTE DE UM DIA: sem ela, quem clicou num dia para
+            olhar de perto ficaria preso nele, procurando no seletor o período
+            de antes. */}
+        {periodoAntes && (
+          <div data-recorte-do-dia
+               style={{ maxWidth: 1180, margin: "0 auto", padding: "0 18px 12px",
+                        display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <span style={{ ...nota, fontSize: 12.5 }}>
+              Vendo só <b style={{ color: C.textPrimary }}>{periodo.de.toLocaleDateString("pt-BR")}</b>, o dia clicado num gráfico.
+            </span>
+            <button onClick={() => { const antes = periodoAntes; setPeriodoAntes(null); setPeriodoDaBarra(antes); }}
+                    data-voltar-do-dia
+                    style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 28, padding: "3px 11px",
+                             borderRadius: 20, cursor: "pointer", border: `1px solid ${C.greenDark}`,
+                             background: "transparent", color: C.verdeTexto, fontSize: 12.5, fontWeight: 600 }}>
+              Voltar para {rotuloDoPeriodo(periodoAntes)}
+            </button>
+          </div>
+        )}
+
         {/* OS ATALHOS PARA CADA SEÇÃO, e o botão de imprimir na ponta: a
-            tela tem seis seções, e a de baixo fica a muitas rolagens da de
+            tela tem oito seções, e a de baixo fica a muitas rolagens da de
             cima. Os atalhos rolam de lado no celular, para a barra não
             crescer, e o botão fica sempre à vista (só o ícone, no celular). */}
         <div data-linha-das-secoes
@@ -617,11 +654,20 @@ export default function PainelNumeros({ C: CDaTela, CClaro = null, modo: modoDaT
             das leituras que a tela já faz (ver VisaoGeral.jsx). */}
         <section id="secao-do-painel-visao" data-secao-do-painel="visao" data-nao-imprime={fora("visao")}>
           <VisaoGeral C={C} estilos={estilos} modo={modo} lProtocolos={lProtocolos} lCarteira={lCarteira}
+                      deIso={deIso} ateIso={ateIso}
                       departamentos={departamentos} departamento={departamento}
                       quem={quem} nome={nomeDaPessoa} sou={quem != null && String(quem) === String(meuId)}
                       souAdmin={souAdmin} rotuloPeriodo={rotuloDoPeriodo(periodo)}
                       aoIrPara={irPara}
                       aoEscolherDepartamento={(id) => setDepartamento((v) => (String(v) === String(id) ? null : String(id)))} />
+        </section>
+
+        {/* AS TENDÊNCIAS (06/11): para onde os números vão, dia a dia e hora
+            a hora, da leitura dos protocolos que a tela já faz. */}
+        <section id="secao-do-painel-tendencias" data-secao-do-painel="tendencias" data-nao-imprime={fora("tendencias")}>
+          <TendenciasDoPainel C={C} estilos={estilos} modo={modo} leitura={lProtocolos}
+                              deIso={deIso} ateIso={ateIso} quem={quem}
+                              aoVerDia={periodo.tipo === "dia" ? null : verDia} />
         </section>
 
         {/* A PESSOA E A EQUIPE (05/11): o atendimento de CADA pessoa. */}
