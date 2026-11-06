@@ -8665,6 +8665,50 @@ sete (com a Visão geral primeiro), as nove colunas da equipe viraram dez (com
 a 1ª resposta em expediente), e quem volta ao alto é o atalho da Visão geral
 — o da equipe agora leva a seção dela para logo abaixo da barra.
 
+## O Painel sem as listas de protocolos e de registros (06/11)
+
+Pedido do Rodrigo: *"A tela "Painel" está com muita informação, tem coisa que
+não é necessária, por exemplo "Os protocolos" e "Os registros"."*
+
+| o que saiu | o que ficou no lugar |
+|---|---|
+| "Os protocolos": cada protocolo do período, um por linha, com o estado, o prazo, quem respondeu e quem finalizou, e o "Mostrar mais" | o botão **Baixar planilha** (`data-protocolos-baixar`), com a frase de quantos ela leva |
+| "Os registros": cada "Já tratei", com os assuntos, o texto do OUTROS e o desfeito, e o "Mostrar mais" | o botão **Baixar planilha** (`data-relatorio-baixar`), com a mesma frase |
+
+- **A planilha é a mesma de antes**, com as mesmas colunas: tudo o que a lista
+  mostrava continua nela (no "Já tratei", o texto do OUTROS em "O que foi
+  tratado" e o desfeito na última coluna);
+- **a frase diz quantos ela leva** (`BotaoDaPlanilha`, `data-…-contagem`): "A
+  planilha leva os 8 protocolos do período, um por linha"; e, quando o banco
+  cortou (no máximo os 1000 mais recentes), *"os N mais recentes, de M no
+  período. Para ter o resto, encurte o período"* — senão a planilha se leria
+  como o período inteiro;
+- **sem registros, nem o botão**: a seção já diz, nos cartões, que não houve
+  nada;
+- **o botão não vai ao papel** (`data-nao-imprime`), e o cabeçalho do papel
+  diz que cada protocolo e cada "Já tratei" estão na planilha da seção.
+
+**As provas que liam as listas foram INVERTIDAS, e não apagadas**: o que a
+lista conferia passou a ser conferido NA PLANILHA baixada, e entrou a
+conferência de que a lista não aparece mais (nem o título).
+
+- `a-contabilizacao-dos-atendimentos`: os 8 protocolos na ordem, o da cliente
+  que voltou esperando resposta, o do celular, o finalizado (quem respondeu,
+  quem finalizou, em quantos minutos), o começado pela equipe sem espera, nada
+  do período anterior, o recorte do telefone, os 4 de quem não administra e o
+  protocolo finalizado pela tela;
+- `o-relatorio-do-ja-tratei`: os três registros na ordem, o desfeito marcado
+  (e só ele), o texto do OUTROS no registro dele, o recorte da pessoa e do
+  telefone, e o "Já tratei" gravado pela tela;
+- `o-painel-de-gestao`: as listas não existem nem na tela nem no papel, e os
+  botões da planilha ficam fora do papel.
+
+**8 sabotagens e 8 pegas**, todas limpas, rodadas em cópias e lidas uma a uma
+(e a cópia de controle passou inteira): as listas de volta (o painel de antes
+inteiro); a planilha dos protocolos que some (12 reprovações); a do "Já
+tratei" que some (11); a planilha sem o desfeito; sem o texto do OUTROS; sem
+quem respondeu; a contagem errada; e o botão indo para o papel.
+
 ## A revisão do leiaute — o que se lê (05/11)
 
 Pedido do Rodrigo: *"Faça uma revisão geral do layout, para que o visual seja
