@@ -74,7 +74,7 @@
   "miolo-da-conversa": 21,
   "nao-lidas": 7,
   "nota": 29,
-  "nota-no-alto": 25,
+  "nota-no-alto": 35,
   "nota-num-banco-incompleto": 12,
   "numero-que-nao-recebe": 27,
   "numeros": 1,
@@ -145,5 +145,6 @@
   "trocar-de-conversa": 15,
   "zoom-na-imagem": 16,
   "o-aviso-automatico-do-vantoro": 14,
-  "a-visao-geral-do-painel": 48
+  "a-visao-geral-do-painel": 48,
+  "as-notas-com-anexo": 65
 }

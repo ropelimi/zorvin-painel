@@ -92,6 +92,7 @@ import { padraoSemAcento, casaNaMensagem, semAColunaDaTranscricao, juntarAchados
          TETO_DA_BUSCA_NA_CONVERSA } from "./buscaNaConversa.js";
 import { tipoDoAnexo, caminhoDoAnexoDaRapida, semAColunaDoAnexo, nomeDoAnexo, anexoDoDeposito,
          CACHE_DO_ANEXO_DA_RAPIDA } from "./rapidasComAnexo.js";
+import { caminhoDoAnexoDaNota, CACHE_DO_ANEXO_DA_NOTA, FRASE_DA_NOTA_SEM_ANEXO } from "./anexoNaNota.js";
 import { ehLembreteAutomatico, fechouSozinho } from "./acompanhamento.js";
 import { podeSerEscolhida, quemSaiuNoFim, saiuDoEscritorio, semAColunaAtivoDaEquipe } from "./quemSaiu.js";
 import { ehDeOutroTelefone, aBuscaAlcanca, oTelefoneAbertoPrimeiro } from "./buscaEmTodosOsTelefones.js";
@@ -2517,7 +2518,7 @@ function PreviaDeArquivo({ C, url, mime, nome, altura = 150, inteira = false }) 
   );
 }
 
-function BolhaAudio({ C, saida, url, m }) {
+function BolhaAudio({ C, saida, url, m, semTranscricao = false }) {
   const velocidade = useVelocidadeDoAudio();
   const tocador = useRef(null);
   // AS DUAS, E DE NOVO A CADA ARQUIVO CARREGADO: o navegador devolve
@@ -2558,7 +2559,9 @@ function BolhaAudio({ C, saida, url, m }) {
   const textoTranscrito = transcrita || (m && m.transcricao) || null;
   // A BOLHA PROVISÓRIA (o áudio que eu acabei de gravar) ainda não existe no
   // banco: a ponte não teria o que ler, e o botão viraria um "não achei".
-  const daParaTranscrever = Boolean(url && m && m.id != null && !String(m.id).startsWith("temp-"));
+  // E O ÁUDIO DA NOTA INTERNA também não (05/11): a ponte transcreve o que
+  // está em `mensagens`, e a nota mora em `notas`.
+  const daParaTranscrever = Boolean(!semTranscricao && url && m && m.id != null && !String(m.id).startsWith("temp-"));
   async function transcrever() {
     if (transcrevendo || !daParaTranscrever) return;
     setTranscrevendo(true);
@@ -2847,7 +2850,38 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
               ) : (
               <div style={{ position: "relative", background: "#a35e0c", color: "#fff", borderRadius: 8, padding: "7px 11px 6px", boxShadow: "0 1px 0.5px rgba(0,0,0,.2)", minWidth: 120 }}>
                 <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 1 }}>{quem.nome || "equipe"}:</div>
-                <div style={{ fontSize: 14, lineHeight: 1.35, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{formatarTexto(m.texto, "#fff3d6")}</div>
+                {/* O ARQUIVO DA NOTA (05/11, script 053 da ponte), com o
+                    mesmo desenho da conversa — a foto que abre grande, o
+                    vídeo, o áudio, o cartão do documento que baixa com o
+                    nome —, numa moldura clara dentro do âmbar: o cartão foi
+                    desenhado para o fundo de uma bolha, e no laranja ele
+                    sumiria. O áudio da nota não oferece transcrever: a ponte
+                    transcreve o que está em `mensagens`. */}
+                {m.midia_url && (
+                  <div data-anexo-da-nota={m.midia_tipo || "documento"}
+                       style={{ marginTop: 3, marginBottom: m.texto ? 4 : 0, background: C.bubbleIn,
+                                color: C.textPrimary, borderRadius: 6, padding: 3 }}>
+                    {m.midia_tipo === "imagem" ? (
+                      <button onClick={() => { setRetratoAberto(false); setImagemAberta(m.midia_url); }} aria-label="Abrir a imagem da nota em tela cheia"
+                              style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", display: "block", borderRadius: 5 }}>
+                        <img src={m.midia_url} alt="Imagem da nota interna" loading="lazy" decoding="async"
+                             onLoad={() => { if (pertoDoFim) fimRef.current?.scrollIntoView(); }}
+                             style={{ maxWidth: "min(260px, 62vw)", maxHeight: 320, width: "auto", height: "auto", borderRadius: 5, display: "block" }} />
+                      </button>
+                    ) : m.midia_tipo === "video" ? (
+                      <video controls preload="none" src={m.midia_url} style={{ maxWidth: "min(260px, 62vw)", borderRadius: 5, display: "block" }} />
+                    ) : m.midia_tipo === "audio" ? (
+                      <BolhaAudio C={C} saida={false} url={m.midia_url} m={m} semTranscricao />
+                    ) : (
+                      <CartaoDoDocumento C={C} m={m} saida={false} emSelecao={false}
+                                         aoBaixar={baixarDocumento} aoAbrirPdf={setPdfAberto}
+                                         aoMudarDeTamanho={() => { if (pertoDoFim) fimRef.current?.scrollIntoView(); }} />
+                    )}
+                  </div>
+                )}
+                {m.texto ? (
+                  <div style={{ fontSize: 14, lineHeight: 1.35, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{formatarTexto(m.texto, "#fff3d6")}</div>
+                ) : null}
                 {/* O PROCESSO A QUE A NOTA SE REFERE, quando tem um.
                     Sem isto, a escolha existiria e ninguém a veria:
                     a informação estaria no banco e no Vantoro, e a
@@ -4194,6 +4228,20 @@ export default function Painel({ sessao }) {
     })();
     return () => { vivo = false; };
   }, []);
+  // AS NOTAS COM ANEXO (script 053 da ponte, 05/11) — três estados, pela
+  // régua de `rapidaComAnexo`: `null` ainda não perguntei, `false` as colunas
+  // não existem (a nota continua só texto, como sempre foi), `true` existem OU
+  // não consegui saber. A pergunta sai na PRIMEIRA vez que a caixa vira nota,
+  // e não na abertura do painel: quem nunca escreve nota não paga a ida, e a
+  // abertura não ganha uma consulta a mais. A referência é para o arrastar e o
+  // Ctrl+V, que são ouvintes presos a um desenho velho (ver `abrirAnexos`).
+  const [notaComAnexo, setNotaComAnexo] = useState(null);
+  const notaComAnexoRef = useRef(null);
+  useEffect(() => { notaComAnexoRef.current = notaComAnexo; }, [notaComAnexo]);
+  // A FILA DA PRÉVIA, pela referência pelo mesmo motivo: `abrirAnexos` confere
+  // se o lote que está na prévia é de nota ou de mensagem.
+  const anexosPendentesRef = useRef([]);
+  useEffect(() => { anexosPendentesRef.current = anexosPendentes; }, [anexosPendentes]);
   const [tags, setTags] = useState([]); // definições das tags (id, nome, cor)
   const [tagsPorConversa, setTagsPorConversa] = useState({}); // { conversaId: [tagId,...] }
 
@@ -10219,9 +10267,15 @@ export default function Painel({ sessao }) {
           // Substitui APENAS a primeira versão provisória correspondente (que eu
           // mesmo acabei de escrever) — se eu mandar duas notas iguais em
           // sequência, não pode remover as duas de uma vez.
+          //
+          // E O ARQUIVO CONTA (05/11): duas notas que são só um arquivo têm o
+          // mesmo texto (vazio), e a primeira que chegasse levaria a
+          // provisória da outra. Pelo nome do arquivo, e não pelo endereço: a
+          // provisória mostra o arquivo da própria máquina.
           let removido = false;
           const semTemp = prev.filter((m) => {
-            if (!removido && String(m.id).startsWith("nota-temp-") && m.texto === n.texto) { removido = true; return false; }
+            if (!removido && String(m.id).startsWith("nota-temp-") && m.texto === n.texto
+                && (m.midia_nome || null) === (n.midia_nome || null)) { removido = true; return false; }
             return true;
           });
           return [...semTemp, item].sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em));
@@ -10453,6 +10507,23 @@ export default function Painel({ sessao }) {
   // uma conversa para a outra.
   useEffect(() => { rascunhoRef.current = rascunho; }, [rascunho]);
   useEffect(() => { modoNotaRef.current = modoNota; }, [modoNota]);
+  // A PERGUNTA DAS NOTAS COM ANEXO (ver `notaComAnexo`), uma vez por abertura,
+  // na primeira nota. Só a coluna que FALTA esconde o clipe da nota
+  // (`semAColunaDoAnexo`, pelo código e pelo nome); a pergunta que falha por
+  // outro motivo o mantém oferecido, e o pior caso é a gravação dizer o erro.
+  const perguntouDaNotaComAnexoRef = useRef(false);
+  useEffect(() => {
+    if (!modoNota || perguntouDaNotaComAnexoRef.current) return;
+    perguntouDaNotaComAnexoRef.current = true;
+    (async () => {
+      try {
+        const { error } = await supabase.from("notas").select("id, midia_url").limit(1);
+        setNotaComAnexo(!semAColunaDoAnexo(error));
+      } catch (_) {
+        setNotaComAnexo(true);
+      }
+    })();
+  }, [modoNota]);
   // E O PAINEL QUE SAI DE CENA GUARDA O QUE ESTAVA NA CAIXA (22/10). A troca
   // de conversa já guardava; sair de cena não, e desde 22/10 o painel sai
   // sozinho quando a sessão acaba (`vigiaDaSessao.js`) — às vezes no meio de
@@ -11994,7 +12065,9 @@ export default function Painel({ sessao }) {
     // não tem prazo de edição nem fila de envio. É o mesmo botão e a mesma
     // caixa — o desvio é só aqui, para não haver duas telas de edição.
     if (m.origem === "nota") {
-      if (!novo) { mostrarAviso("A nota não pode ficar vazia."); return; }
+      // A NOTA COM ARQUIVO PODE FICAR SEM TEXTO (05/11): o arquivo é a nota,
+      // e ele não se edita por aqui. A sem arquivo, vazia, não diria nada.
+      if (!novo && !m.midia_url) { mostrarAviso("A nota não pode ficar vazia."); return; }
       return salvarEdicaoDeNota(m, novo);
     }
     if (!novo) { mostrarAviso("A mensagem não pode ficar vazia."); return; }
@@ -13320,13 +13393,14 @@ export default function Painel({ sessao }) {
 
   /** O ANEXO DA RÁPIDA NA PRÉVIA, com a legenda preenchida (23/10). Ele já
    *  está no depósito: a prévia mostra o próprio endereço, e enviar não sobe
-   *  nada de novo (ver `enviarArquivo`). A nota interna é só texto, como para
-   *  qualquer anexo. */
+   *  nada de novo (ver `enviarArquivo`). Na nota interna ela não entra: o
+   *  anexo da rápida é o que a equipe manda AO CLIENTE (o vídeo do cliente
+   *  novo), e numa nota ele não iria a ninguém. */
   function abrirAnexoDaRapida(r) {
     const f = anexoDoDeposito(r);
     if (!f) return false;
     if (modoNotaRef.current) {
-      mostrarAviso("A nota interna é só texto. Feche a nota para enviar o anexo ao cliente.");
+      mostrarAviso("O anexo desta mensagem rápida é para o cliente. Feche a nota para usá-la.");
       return false;
     }
     const item = { file: f, tipo: f.tipo, nome: f.name, mime: f.type, tamanho: null, url: f.url,
@@ -13353,8 +13427,11 @@ export default function Painel({ sessao }) {
     // deixaria as outras duas abertas — e a colada é a mais provável de todas,
     // porque é o gesto de quem está anotando o que acabou de ver na tela.
     //
-    // Nota interna é texto: é assim que ela sobe para o Vantoro, e é assim que
-    // ela é lida. Um anexo ali não teria onde ficar.
+    // A nota interna era só texto, e um anexo ali não teria onde ficar. DESDE
+    // 05/11 ELA GUARDA ARQUIVO (script 053 da ponte), e o arquivo escolhido com a nota
+    // aberta vai PARA A NOTA, numa prévia âmbar que diz isso, e nunca para a
+    // fila de envio (`salvarNotaComAnexo`). A trava continua valendo num
+    // banco sem o 053: ali o arquivo não teria onde ficar.
     //
     // PELA REFERÊNCIA, E NÃO PELA VARIÁVEL DO RENDER — e disto dependia metade
     // da trava. Quem chama daqui não é só o clipe: `arrastar` e `Ctrl+V` são
@@ -13367,11 +13444,24 @@ export default function Painel({ sessao }) {
     // Acrescentar `modoNota` às dependências dos dois efeitos consertaria hoje e
     // voltaria a quebrar na terceira porta que alguém abrir. A referência está
     // sempre em dia, venha a chamada de onde vier.
-    if (modoNotaRef.current) {
-      mostrarAviso("A nota interna é só texto. Feche a nota para enviar o arquivo ao cliente.");
+    const naNota = Boolean(modoNotaRef.current);
+    if (naNota && notaComAnexoRef.current !== true) {
+      mostrarAviso(notaComAnexoRef.current === false ? FRASE_DA_NOTA_SEM_ANEXO
+        : "Um instante: ainda estou conferindo se este Zorvin guarda arquivo na nota interna. Tente de novo.");
       return;
     }
-    const novos = paraAnexos(arquivos);
+    // UM LOTE É DE NOTA OU DE MENSAGEM, NUNCA DOS DOIS. A prévia diz para onde
+    // os arquivos vão, e um arquivo do cliente misturado a um da nota sairia
+    // pelo caminho do outro. Com a prévia aberta a caixa não troca de modo,
+    // mas o arrastar e o Ctrl+V continuam ouvindo.
+    const naPrevia = anexosPendentesRef.current;
+    if (naPrevia.length && Boolean(naPrevia[0].nota) !== naNota) {
+      mostrarAviso(naNota
+        ? "Termine ou cancele os anexos para o cliente antes de pôr um arquivo na nota."
+        : "Termine ou cancele os anexos da nota antes de mandar um arquivo ao cliente.");
+      return;
+    }
+    const novos = paraAnexos(arquivos).map((a) => ({ ...a, nota: naNota }));
     if (!novos.length) return;
     setAnexosPendentes((antes) => {
       setAnexoAtivo(antes.length);   // o recém-chegado é o que aparece grande
@@ -13582,6 +13672,9 @@ export default function Painel({ sessao }) {
 
   function confirmarEnviarAnexo() {
     if (!anexosPendentes.length) return;
+    // O LOTE DA NOTA NÃO PASSA PELA FILA (05/11): cada arquivo vira uma nota
+    // interna, e nada vai ao cliente. Ver `salvarNotaComAnexo`.
+    if (anexosPendentes[0].nota) { salvarAnexosNaNota(); return; }
     // A ORDEM É A DA PRÉVIA — na tela E NA FILA (auditoria de 27/10). Cada
     // um entra na tela no instante em que é chamado, mas entrava na FILA quando
     // o seu arquivo terminava de subir: a procuração de 200 KB passava na
@@ -13596,6 +13689,131 @@ export default function Painel({ sessao }) {
     for (const { file, legenda } of lote) {
       vez = enviarArquivo(file, legenda, conversaId, null, null, vez).catch(() => {});
     }
+  }
+
+  /** OS ARQUIVOS DA PRÉVIA ÂMBAR VIRAM NOTAS INTERNAS (05/11), um por nota,
+   *  na ordem da prévia, com o que foi escrito embaixo de cada um como o
+   *  texto dela. UM DE CADA VEZ: a nota sai do banco pela hora em que entrou,
+   *  e juntos eles cairiam na ordem em que cada arquivo terminou de subir. A
+   *  conversa, o cadastro do Vantoro e o processo escolhido são os DESTE
+   *  clique: a subida leva o tempo dela, e a pessoa pode trocar de conversa no
+   *  meio. */
+  function salvarAnexosNaNota() {
+    const lote = anexosPendentes.slice();
+    const convId = conversaId;
+    const cliente = clienteDaConversa;
+    const processo = processoDaNota
+      ? processosDoCliente.find((p) => String(p.id) === String(processoDaNota)) || null
+      : null;
+    setAnexosPendentes([]);          // sem revogar: as bolhas provisórias
+    setAnexoAtivo(0);                // ainda apontam para os blobs
+    // A escolha do processo vale para este lote, e zera: a nota seguinte
+    // começa como geral, como depois de `enviarNota`.
+    setProcessoDaNota("");
+    (async () => {
+      for (const item of lote) await salvarNotaComAnexo(item, convId, cliente, processo);
+    })();
+  }
+
+  /** O ARQUIVO NA NOTA INTERNA (pedido de 05/11: "Nas notas internas precisa
+   *  ter a possibilidade de anexar documentos"). As colunas são do script 053
+   *  da ponte (`midia_url`, `midia_tipo`, `midia_mime`, `midia_nome`).
+   *
+   *  - O ARQUIVO SOBE ANTES DA LINHA, para `anexos/notas/<conversa>/…`, com o
+   *    cache de um ano e `immutable` (a régua da ponte, `CACHE_DA_MIDIA`):
+   *    subindo depois, uma nota gravada e um arquivo que falhasse deixariam
+   *    uma nota dizendo que tem anexo sem anexo nenhum. Falhando a subida,
+   *    NADA é salvo, e a frase diz qual arquivo;
+   *  - NADA VAI PARA A FILA DE ENVIO. A nota não vai ao WhatsApp, e o anexo
+   *    dela também não: o caminho é outro do começo ao fim;
+   *  - AS COLUNAS DO ANEXO SÃO OBRIGATÓRIAS na gravação, e não opcionais como
+   *    a foto de quem escreveu: gravar a nota sem elas seria a nota sem o
+   *    arquivo, calada. Num banco sem o 053 a gravação morre com 42703, e o
+   *    clipe da nota some (`notaComAnexo`);
+   *  - O TEXTO PODE FICAR VAZIO: o arquivo é a nota;
+   *  - A NOTA SOBE PARA A FICHA DO VANTORO como qualquer nota, e é a ponte que
+   *    acrescenta a linha "📎 Anexo no Zorvin: <nome>", lendo a nota gravada
+   *    (o arquivo não vai ao Vantoro). */
+  async function salvarNotaComAnexo(item, convId, cliente, processo) {
+    const file = item.file;
+    if (!file || !convId) return false;
+    const texto = (item.legenda || "").trim();
+    const nome = file.name || item.nome || "arquivo";
+    const tipo = item.tipo || tipoDoAnexo(file.type);
+    const comProcesso = processo
+      ? { processo_id: processo.id, processo_numero: processo.numero || "", processo_reu: processo.reu || "" }
+      : {};
+    const doAnexo = { midia_tipo: tipo, midia_mime: file.type || null, midia_nome: nome };
+    const tempId = "nota-temp-" + Date.now() + "-" + Math.round(Math.random() * 1e6);
+    // A BOLHA PROVISÓRIA mostra o arquivo da própria máquina (`item.url`), na
+    // hora, como a de um anexo para o cliente. Só na conversa da nota: aberta
+    // noutra, ela apareceria na conversa errada.
+    if (String(conversaIdRef.current) === String(convId)) {
+      setPertoDoFim(true);
+      setMensagens((prev) => [...prev, {
+        id: tempId, conversa_id: convId, origem: "nota", texto, autor: meuNome, autor_foto: minhaFoto,
+        criado_em: new Date().toISOString(), _status: "enviando", midia_url: item.url, ...doAnexo, ...comProcesso,
+      }].sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em)));
+    }
+    const tirarAProvisoria = () => setMensagens((prev) => prev.filter((m) => m.id !== tempId));
+
+    const caminho = caminhoDoAnexoDaNota(convId, nome);
+    let erroDaSubida = null;
+    try {
+      const r = await supabase.storage.from("anexos")
+        .upload(caminho, file, { contentType: file.type || undefined, ...CACHE_DO_ANEXO_DA_NOTA });
+      erroDaSubida = r.error || null;
+    } catch (e) { erroDaSubida = e || new Error("a subida falhou"); }
+    const url = erroDaSubida ? null : supabase.storage.from("anexos").getPublicUrl(caminho).data?.publicUrl;
+    if (!url) {
+      tirarAProvisoria();
+      console.error("Zorvin — subir o anexo da nota falhou:", erroDaSubida);
+      const codigo = (erroDaSubida && (erroDaSubida.status || erroDaSubida.statusCode)) || null;
+      mostrarAviso(codigo
+        ? `Não consegui subir “${nome}” para a nota${String(codigo) === "413" ? ": o arquivo é grande demais para o depósito" : ""} (erro ${codigo}). A nota não foi salva.`
+        : `Não consegui subir “${nome}” para a nota: o arquivo não chegou ao depósito — confira a conexão. A nota não foi salva.`, 9000);
+      return false;
+    }
+
+    const { error, data: gravada, perdidas } = await gravarSemAsQueFaltam(
+      (linha) => supabase.from("notas").insert(linha).select("id").single(),
+      { conversa_id: convId, texto, autor: meuNome, autor_foto: minhaFoto, autor_id: meuId,
+        midia_url: url, ...doAnexo, ...comProcesso },
+      ["autor_foto", "autor_id", "processo_id", "processo_numero", "processo_reu"],
+      COLUNAS_QUE_FALTAM_EM_NOTAS,
+    );
+    if (error) {
+      tirarAProvisoria();
+      if (semAColunaDoAnexo(error)) {
+        // O BANCO NÃO TEM O 053, e a pergunta da abertura não soube (ela
+        // falhou por outro motivo, e na dúvida o clipe fica). Agora se sabe.
+        setNotaComAnexo(false);
+        mostrarAviso(FRASE_DA_NOTA_SEM_ANEXO, 9000);
+      } else {
+        mostrarAviso(comOCodigo(`Não consegui salvar a nota com “${nome}”.`, error, "nota com anexo"), 7000);
+      }
+      return false;
+    }
+    // O PROCESSO QUE NÃO COUBE É DITO, como em `enviarNota`.
+    if (processo && (perdidas || []).some((c) => String(c).startsWith("processo"))) {
+      mostrarAviso("A nota foi salva, mas SEM o vínculo com o processo — este banco "
+        + "ainda não tem essa coluna. Peça para rodar o SQL das notas com processo.");
+      setMensagens((prev) => prev.map((m) => (m.id === tempId
+        ? { ...m, processo_id: undefined, processo_numero: undefined, processo_reu: undefined } : m)));
+    }
+    // PARA A FICHA DO VANTORO, depois de gravar (a régua de `enviarNota`): a
+    // nota não se perde porque o Vantoro dormia, e a falha daqui não a desfaz.
+    if (cliente && gravada?.id) {
+      chamarPonte(`/vantoro/cliente/${cliente}/nota`, {
+        method: "POST",
+        body: JSON.stringify({ id: gravada.id, texto, processo_id: processo ? processo.id : null }),
+      }).catch(() => mostrarAviso(
+        "A nota foi salva aqui, mas não subiu para a ficha do Vantoro agora. "
+        + "Tente editá-la daqui a pouco."));
+    }
+    // O tempo real traz a versão definitiva e tira a provisória (pelo texto E
+    // pelo nome do arquivo: ver o INSERT de `notas`).
+    return true;
   }
 
   /** Os anexos da prévia, AGENDADOS. Um atrás do outro, e não juntos: a ordem
@@ -16813,13 +17031,17 @@ export default function Painel({ sessao }) {
             style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
       <StickyNote size={22} color={modoNota ? "#d4a017" : C.textSecondary} />
     </button>
-    {/* O CLIPE SOME NA NOTA. Ver `abrirAnexos`: a nota é só texto, e o
-        arquivo anexado ali ia para o CLIENTE. O botão fora da vista é
-        metade do conserto; a outra metade está lá, fechando também o
-        arrastar e o colar. */}
-    {!modoNota && (
-    <button onClick={() => fileRef.current?.click()} title="Anexar arquivo" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
-      <Paperclip size={22} color={C.textSecondary} />
+    {/* O CLIPE DA NOTA (05/11) PÕE O ARQUIVO NA NOTA, e não no WhatsApp: o
+        título diz isso, o clipe fica âmbar como o botão da nota, e a prévia
+        que ele abre é a âmbar (ver `abrirAnexos` e `salvarNotaComAnexo`).
+        Num banco sem o 053 o clipe some na nota, como sumia antes — o
+        arquivo não teria onde ficar, e anexado ali ia para o CLIENTE. */}
+    {(!modoNota || notaComAnexo === true) && (
+    <button data-anexar={modoNota ? "nota" : "mensagem"} onClick={() => fileRef.current?.click()}
+            title={modoNota ? "Anexar arquivo à nota interna" : "Anexar arquivo"}
+            aria-label={modoNota ? "Anexar arquivo à nota interna (só a equipe vê)" : "Anexar arquivo"}
+            style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
+      <Paperclip size={22} color={modoNota ? "#d4a017" : C.textSecondary} />
     </button>
     )}
     <input ref={fileRef} type="file" multiple onChange={aoEscolherArquivo} style={{ display: "none" }} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" />
@@ -21679,12 +21901,28 @@ export default function Painel({ sessao }) {
         const atual = anexosPendentes[Math.min(anexoAtivo, anexosPendentes.length - 1)] || anexosPendentes[0];
         const trocarLegenda = (v) => setAnexosPendentes((antes) =>
           antes.map((a, i) => (i === anexoAtivo ? { ...a, legenda: v } : a)));
+        // A PRÉVIA DA NOTA (05/11) é âmbar, como a caixa da nota, e diz com
+        // todas as letras que o arquivo não vai ao cliente: é a mesma tela da
+        // prévia de um anexo para o WhatsApp, e o que separa uma da outra
+        // precisa estar à vista no instante do Enter.
+        const daNota = Boolean(anexosPendentes[0].nota);
+        const AMBAR = "#d4a017";
+        const qtd = anexosPendentes.length;
         return (
-        <div data-previa-anexo onClick={fecharAnexoPendente} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,.85)", zIndex: 100, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: 20 }}>
+        <div data-previa-anexo={daNota ? "nota" : "mensagem"} onClick={fecharAnexoPendente} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,.85)", zIndex: 100, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: 20 }}>
           <button onClick={(e) => { e.stopPropagation(); fecharAnexoPendente(); }} title="Cancelar" style={{ position: "absolute", top: 16, right: 20, background: "transparent", border: "none", cursor: "pointer", color: "#fff", display: "flex" }}>
             <X size={28} />
           </button>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480, width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+            {daNota && (
+              <div data-faixa-da-nota role="note"
+                   style={{ width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 8,
+                            background: "#a35e0c", color: "#fff", borderRadius: 8, padding: "8px 12px",
+                            fontSize: 13.5, lineHeight: 1.35 }}>
+                <StickyNote size={18} style={{ flexShrink: 0 }} />
+                <span><b>Nota interna</b> — só a equipe vê. {qtd > 1 ? "Os arquivos não vão" : "O arquivo não vai"} ao cliente.</span>
+              </div>
+            )}
             {atual.tipo === "imagem" && <img src={atual.url} alt="prévia" style={{ maxWidth: "100%", maxHeight: "50vh", borderRadius: 8, objectFit: "contain" }} />}
             {atual.tipo === "video" && <video src={atual.url} controls style={{ maxWidth: "100%", maxHeight: "50vh", borderRadius: 8 }} />}
             {atual.tipo === "audio" && <audio src={atual.url} controls style={{ width: "100%" }} />}
@@ -21735,7 +21973,7 @@ export default function Painel({ sessao }) {
                   <div key={i} style={{ position: "relative", flex: "0 0 auto" }}>
                     <button onClick={() => setAnexoAtivo(i)} title={a.nome}
                       style={{ width: 58, height: 58, borderRadius: 8, overflow: "hidden", cursor: "pointer", padding: 0,
-                               border: `2px solid ${i === anexoAtivo ? C.green : "rgba(255,255,255,.25)"}`,
+                               border: `2px solid ${i === anexoAtivo ? (daNota ? AMBAR : C.green) : "rgba(255,255,255,.25)"}`,
                                background: "rgba(255,255,255,.1)", display: "grid", placeItems: "center" }}>
                       {a.tipo === "imagem" ? <img src={a.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                        : a.tipo === "video" ? <video src={a.url} muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -21750,7 +21988,8 @@ export default function Painel({ sessao }) {
                 ))}
               </div>
             )}
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 10, width: "100%", background: C.headerBar, borderRadius: 10, padding: "8px 12px" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 10, width: "100%", background: C.headerBar, borderRadius: 10, padding: "8px 12px",
+                          ...(daNota ? { boxShadow: `inset 0 0 0 2px ${AMBAR}` } : null) }}>
               {/* A LEGENDA TEM VÁRIAS LINHAS (23/10). Era um campo de uma
                   linha só, e o navegador TIRA as quebras de linha de um campo
                   assim: 22 das 32 rápidas do escritório têm parágrafos (medido
@@ -21760,11 +21999,14 @@ export default function Painel({ sessao }) {
               <textarea data-legenda-do-anexo ref={legendaRef} autoFocus rows={1} value={atual.legenda || ""}
                 onChange={(e) => trocarLegenda(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); confirmarEnviarAnexo(); } }}
-                placeholder={anexosPendentes.length > 1 ? `Legenda de ${atual.nome}…` : "Adicione uma legenda…"}
+                placeholder={daNota
+                  ? (qtd > 1 ? `O que anotar sobre ${atual.nome} (opcional)…` : "O que anotar sobre o arquivo (opcional)…")
+                  : (qtd > 1 ? `Legenda de ${atual.nome}…` : "Adicione uma legenda…")}
                 style={{ flex: 1, border: "none", outline: "none", background: "transparent", color: C.textPrimary, fontSize: 14.5,
                          padding: "8px 4px", resize: "none", fontFamily: "inherit", lineHeight: 1.4, maxHeight: 140, overflowY: "auto" }} />
-              {/* AGENDAR OS ANEXOS — a mesma janela da caixa de escrever. */}
-              {temAgenda === true && (
+              {/* AGENDAR OS ANEXOS — a mesma janela da caixa de escrever. A
+                  nota não se agenda: ela não vai a ninguém. */}
+              {temAgenda === true && !daNota && (
                 <span style={{ position: "relative", display: "flex", flexShrink: 0 }}>
                   {escolhendoHora === "anexo" && (
                     // NO CELULAR A JANELA FICA PRESA À TELA, e não ao botão
@@ -21791,11 +22033,23 @@ export default function Painel({ sessao }) {
                   </button>
                 </span>
               )}
+              {daNota ? (
+                // O BOTÃO DA NOTA ESCREVE O QUE FAZ: "Salvar na nota", e não a
+                // seta de enviar, que é o desenho de mandar ao cliente.
+                <button data-salvar-na-nota onClick={confirmarEnviarAnexo}
+                  title={qtd > 1 ? `Salvar os ${qtd} na nota interna` : "Salvar na nota interna"}
+                  style={{ border: "none", background: AMBAR, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 44, height: 44, borderRadius: 22, padding: "0 14px", flexShrink: 0,
+                           color: "#fff", fontWeight: 700, fontSize: 14 }}>
+                  <StickyNote size={19} color="#fff" />
+                  <span>{qtd > 1 ? `Salvar ${qtd} na nota` : "Salvar na nota"}</span>
+                </button>
+              ) : (
               <button onClick={confirmarEnviarAnexo} title={anexosPendentes.length > 1 ? `Enviar os ${anexosPendentes.length}` : "Enviar"}
                 style={{ border: "none", background: C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, minWidth: 44, height: 44, borderRadius: 22, padding: "0 14px", flexShrink: 0 }}>
                 <Send size={20} color="#fff" />
                 {anexosPendentes.length > 1 && <span style={{ color: "#fff", fontWeight: 700, fontSize: 14 }}>{anexosPendentes.length}</span>}
               </button>
+              )}
             </div>
           </div>
         </div>

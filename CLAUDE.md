@@ -2098,6 +2098,132 @@ rodadas em cópias e lidas uma a uma:
   - o menu do "/" sem dizer que há anexo;
   - o vídeo gravado como documento.
 
+## As notas internas com anexo (05/11)
+
+Pedido do Rodrigo: *"Nas notas internas precisa ter a possibilidade de anexar
+documentos."* O comprovante que o cliente mandou por e-mail, o print do
+sistema do banco, o contrato conferido: nada disso tinha onde ficar na
+conversa sem ir para o cliente. As colunas são do script 053 da ponte
+(`midia_url`, `midia_tipo`, `midia_mime`, `midia_nome` em `notas`), e as
+contas que não precisam de tela moram em `src/anexoNaNota.js`.
+
+| onde | o quê |
+|---|---|
+| a caixa com a nota aberta | um **clipe âmbar** (`data-anexar="nota"`), com o título "Anexar arquivo à nota interna". O emoji continua fora da nota, como antes |
+| arrastar e colar com a nota aberta | vão para a nota, pelo mesmo caminho do clipe |
+| a prévia | **âmbar** (`data-previa-anexo="nota"`), com a faixa *"Nota interna — só a equipe vê. O arquivo não vai ao cliente."*, a caixa "O que anotar sobre o arquivo (opcional)…" e o botão **"Salvar na nota"** no lugar da seta de enviar. Não oferece agendar |
+| a bolha da nota | o arquivo com o desenho da conversa (a foto que abre grande, o vídeo, o áudio, o cartão do documento que baixa com o nome), numa moldura clara dentro do âmbar, e o texto embaixo, quando há |
+| a ficha do Vantoro | a nota sobe como qualquer nota; a ponte acrescenta *"📎 Anexo no Zorvin: <nome>"*, lendo a nota gravada |
+
+**O arquivo nunca passa pela fila de envio.** Ele sobe para
+`anexos/notas/<conversa>/…`, com o cache de um ano e `immutable` (a régua da
+ponte, `CACHE_DA_MIDIA`), e fica na nota. O nome de verdade vai em
+`midia_nome`, com acento e espaço; o higienizado fica só no endereço (a lição
+de 16/10).
+
+**O arquivo sobe ANTES da linha.** Ao contrário, uma nota gravada e um
+arquivo que falhasse deixariam uma nota dizendo que tem anexo sem anexo
+nenhum. Falhando a subida, **nada é salvo**, a bolha provisória sai e a frase
+diz qual arquivo (e, no 413, que ele é grande demais para o depósito).
+
+**Cada arquivo da prévia vira uma nota, UM DE CADA VEZ e na ordem da
+prévia**, com o que foi escrito embaixo dele como o texto. Juntos, eles
+cairiam na ordem em que cada arquivo terminou de subir. A conversa, o
+cadastro do Vantoro e o processo escolhido são os DO CLIQUE: a subida leva o
+tempo dela, e a pessoa pode trocar de conversa no meio. A bolha provisória só
+aparece na conversa da nota.
+
+**A nota com arquivo pode ficar sem texto**, ao salvar e ao editar: o arquivo
+é a nota. A sem arquivo, vazia, continua recusada. **O áudio da nota não
+oferece transcrever**: a ponte transcreve o que está em `mensagens`, e a nota
+mora em `notas`.
+
+**A provisória é trocada pela gravada pelo texto E pelo nome do arquivo.**
+Duas notas que são só um arquivo têm o mesmo texto (vazio), e a nota de uma
+colega que chegasse primeiro levaria a minha provisória.
+
+**Um lote é de nota ou de mensagem, nunca dos dois.** A prévia diz para onde
+os arquivos vão, e um arquivo do cliente misturado a um da nota sairia pelo
+caminho do outro. Com a prévia aberta, o arrastar e o Ctrl+V continuam
+ouvindo, e a tela diz por que não juntou.
+
+**`notaComAnexo` tem três estados**, pela régua de `rapidaComAnexo`, numa
+pergunta de uma linha. Ela sai na **primeira vez que a caixa vira nota**, e
+não na abertura do painel: quem nunca escreve nota não paga a ida, e a
+abertura não ganha uma consulta a mais (a prova `partida` mede). Só a coluna
+que FALTA esconde o clipe da nota (`semAColunaDoAnexo`); a pergunta que falha
+por outro motivo o mantém, e a gravação que descobre a falta do 053 o tira.
+**Num banco sem o 053**, o clipe some na nota, como sumia antes, e o
+arrastar e o colar são recusados com a frase de `FRASE_DA_NOTA_SEM_ANEXO` —
+a trava de antes continua valendo ali: anexado com a nota aberta, o arquivo
+ia para o CLIENTE.
+
+**A rápida com anexo não entra numa nota**: o anexo dela é o que a equipe
+manda ao cliente (o vídeo do cliente novo), e numa nota ele não iria a
+ninguém. A tela diz para fechar a nota.
+
+**Fica de fora, e é decisão:**
+
+- **os arquivos das notas não aparecem em Mídias.** A tela de Mídias lê
+  `mensagens`, e misturar as notas ali faria o print do sistema do banco
+  aparecer ao lado das fotos do cliente;
+- **a subida que dá certo e a gravação que falha deixam um arquivo sem nota
+  no depósito.** O depósito não deixa ninguém apagar (a armadilha nº 7 da
+  ponte), e é o mesmo caso da rápida com anexo;
+- **a guarda da rápida com anexo na nota e a provisória só na conversa da
+  nota não têm cena própria na prova.** As duas pedem montar uma troca de
+  conversa no meio de uma subida, ou uma rápida com anexo plantada, e o que
+  elas evitam aparece na tela na hora.
+
+**`nota-no-alto` foi INVERTIDA, e não apagada.** Ela conferia que a nota não
+tinha clipe e que arrastar e colar com a nota aberta não abriam prévia
+nenhuma. Hoje ela confere que o clipe é o DA NOTA (`data-anexar="nota"`) e que
+arrastar e colar abrem a prévia da nota, sem nada na fila; e um bloco novo, num
+banco sem o 053, confere o mundo de antes: sem clipe, e arrastar e colar
+recusados com a frase.
+
+Prova: `as-notas-com-anexo`, 93 conferências em nove cenas, com o depósito de
+mentira guardando cada subida e a ponte de mentira guardando as notas que
+sobem à ficha.
+
+**26 sabotagens, 25 pegas e uma que vaza com razão**, todas rodadas em
+cópias e lidas uma a uma:
+
+- o painel de antes inteiro (53 reprovações — é o pedido reproduzido);
+- **o 053:** o clipe da nota sem a guarda; a guarda tirada do arrastar e do
+  colar; a recusa calada; a pergunta que falha escondendo o clipe; a gravação
+  que descobre a falta do 053 sem tirar o clipe;
+- **o lote:** indo para a fila (14); o arquivo da nota marcado para o cliente
+  (23); o lote misturado; as notas salvas todas juntas;
+- **a subida e a gravação:** sem o cache de um ano; fora da pasta `notas/`; o
+  nome higienizado no lugar do de verdade; a falha do depósito gravando a nota
+  assim mesmo; a subida à ficha sem o id;
+- **a bolha:** a troca da provisória só pelo texto; o áudio oferecendo
+  transcrever; o bloco do texto vazio; a bolha sem o anexo; a edição recusando
+  a nota vazia com arquivo, e aceitando a vazia sem arquivo;
+- **a prévia:** sem a faixa; oferecendo agendar; com o botão de enviar; o clipe
+  com o título de mandar ao cliente;
+- **e a que vaza:** o clipe pequeno no celular. A regra geral do painel para o
+  celular já dá 40 pontos a todo botão que é só ícone
+  (`button:has(> svg:only-child)`, com `!important`), e o estilo do clipe não a
+  vence — a régua da faxina: ninguém tem de lembrar caso a caso.
+
+**A primeira rodada ensinou duas coisas, e as duas eram da prova:**
+
+- **o painel de antes estourava a prova**, em vez de reprovar: ela apertava
+  Enter num campo da prévia que o painel de antes não tem, e o Playwright
+  esperou 30 segundos e parou ali. Hoje as teclas e os `fill` são guardados;
+- **as notas salvas todas juntas passavam**, porque a foto da cena era menor que
+  o áudio e a subida era instantânea: juntas, elas entravam na mesma ordem. Hoje
+  a foto leva 8 KB de enchimento depois do fim (o navegador ignora o que vem
+  depois do IEND) e a subida custa 300 ms por KB: um de cada vez, a foto entra
+  primeiro; juntas, o áudio. A rodada foi refeita inteira sobre a prova final.
+
+**E o vigia `provas-que-reprovam` pegou o filtro de cenas** antes da PR: ele
+reconhece `vale("2")`, com o nome da cena entre aspas, e a prova chamava
+`vale(2)`. As cenas pedidas que não existem reprovam, pelo conjunto das cenas
+que a prova perguntou, como em `a-auditoria-de-27-10`.
+
 ## O topo da coluna — 283px para dizer o que cabe em 188
 
 Pedido do Rodrigo em 16/09, com as duas telas lado a lado: o topo do Zorvin
