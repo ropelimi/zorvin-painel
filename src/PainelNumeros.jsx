@@ -1263,7 +1263,7 @@ function CabecalhoDaImpressao({ linhas, secoesFora }) {
         </tbody>
       </table>
       <div style={{ fontSize: 11, color: "#667781", marginTop: 8 }}>
-        As listas de registros ficam fora do papel: estão na planilha de cada seção, na tela.
+        Cada protocolo e cada “Já tratei”, um a um, estão na planilha de cada seção, na tela, e não no papel.
         {secoesFora.length ? ` Fora deste relatório, por escolha: ${secoesFora.join(", ")}.` : ""}
       </div>
     </div>
@@ -1989,6 +1989,34 @@ function Ressalvas({ d, t, C, estilos }) {
   );
 }
 
+/* O BOTÃO DA PLANILHA, no lugar das listas que saíram (06/11). Ele diz
+   quantos registros a planilha leva — e, quando o banco cortou (a função
+   devolve no máximo os mais recentes), que são só os mais recentes, para a
+   planilha não se ler como o período inteiro. */
+function BotaoDaPlanilha({ C, estilos, aoBaixar, marca, veio, total, um, varios }) {
+  const cortou = Number(total) > veio;
+  return (
+    <div data-nao-imprime {...{ [`data-${marca}-planilha`]: "" }}
+         style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
+      <button onClick={aoBaixar} {...{ [`data-${marca}-baixar`]: "" }}
+        style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 32, padding: "5px 12px",
+                 border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary,
+                 borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>
+        <Download size={14} /> Baixar planilha
+      </button>
+      <span style={{ ...estilos.nota, flex: "1 1 220px" }} {...{ [`data-${marca}-contagem`]: "" }}>
+        {cortou
+          ? <>A planilha leva os <b style={{ color: C.textPrimary }}>{numero(veio)}</b> {varios} mais recentes,
+              de {numero(total)} no período. Para ter o resto, encurte o período.</>
+          : veio === 1
+            ? <>A planilha leva o {um} do período.</>
+            : <>A planilha leva os {numero(veio)} {varios} do período, um por linha.</>}
+      </span>
+    </div>
+  );
+}
+
+
 /* ================================================================
    O RELATÓRIO DO "JÁ TRATEI"
    ================================================================
@@ -2008,8 +2036,6 @@ function Ressalvas({ d, t, C, estilos }) {
    nada — um aviso sobre SQL não pede nada de quem atende. E FALHA NÃO É
    AUSÊNCIA: qualquer outro erro vira frase, com o código (armadilha nº 2).
    ================================================================ */
-const POR_PAGINA = 50;
-
 /* ================================================================
    OS PROTOCOLOS DE ATENDIMENTO — a contabilização do DataCrazy
    ================================================================
@@ -2046,16 +2072,11 @@ function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, leitura, quem,
   const { carregando, erro } = leitura;
   const falta = leitura.semFuncao ? "029" : (leitura.dados && leitura.dados.falta ? String(leitura.dados.falta) : null);
   const r = leitura.dados && !leitura.dados.falta ? leitura.dados : null;
-  const [quantos, setQuantos] = useState(POR_PAGINA);
-  // A LISTA VOLTA AO COMEÇO A CADA LEITURA NOVA, como quando a seção lia sozinha.
-  useEffect(() => { setQuantos(POR_PAGINA); }, [leitura.dados]);
 
   const nomeDoTelefone = (id) => {
     const a = advogados.find((x) => String(x.id) === String(id));
     return a ? (a.nome || a.numero) : "";
   };
-  const quandoCurto = (iso) => new Date(iso).toLocaleString("pt-BR",
-    { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
   const ESTADO = {
     finalizado: { texto: "finalizado", cor: C.textSecondary },
     em_atendimento: { texto: "em atendimento", cor: cores.saiu },
@@ -2275,71 +2296,13 @@ function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, leitura, quem,
               )}
             </div>
 
-            <div data-nao-imprime>
-            <Titulo C={C}>Os protocolos</Titulo>
-            <div style={estilos.cartao} data-protocolos-lista>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
-                <div style={{ ...estilos.nota, flex: "1 1 auto" }} data-protocolos-contagem>
-                  {Number(r.total_registros) > regs.length
-                    ? <>Os <b style={{ color: C.textPrimary }}>{numero(regs.length)}</b> mais recentes, de {numero(r.total_registros)} no período. Para ver o resto, encurte o período.</>
-                    : <>{numero(regs.length)} {regs.length === 1 ? "protocolo" : "protocolos"} no período, do mais recente para o mais antigo.</>}
-                </div>
-                {regs.length > 0 && (
-                  <button onClick={baixarPlanilha} data-protocolos-baixar
-                    style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 32, padding: "5px 12px",
-                             border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary,
-                             borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
-                    <Download size={14} /> Baixar planilha
-                  </button>
-                )}
-              </div>
-              {!regs.length && <div style={estilos.nota}>Nenhum protocolo aberto neste período.</div>}
-              {regs.slice(0, quantos).map((x, i) => {
-                const est = ESTADO[x.estado] || ESTADO.em_atendimento;
-                return (
-                  <div key={x.protocolo || i} data-protocolo-no-relatorio={x.protocolo} data-estado={x.estado}
-                       style={{ padding: "10px 0", borderTop: i ? `1px solid ${C.divider}` : "none" }}>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline", fontSize: 13.5 }}>
-                      <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, color: C.textSecondary, fontSize: 12.5 }}>
-                        {x.protocolo}
-                      </span>
-                      <b>{nomeDoContato(x.contato)}</b>
-                      <span style={{ color: C.textSecondary, fontSize: 12.5 }}>
-                        {telefoneLegivel(x.contato && x.contato.numero)}
-                        {nomeDoTelefone(x.advogado_id) && ` · ${nomeDoTelefone(x.advogado_id)}`}
-                      </span>
-                      <span style={{ flex: 1 }} />
-                      {PRAZO_DO_PROTOCOLO[x.prazo] && (
-                        <span data-prazo-do-protocolo={x.prazo}
-                              title={x.minutos_ate_acao != null && x.limite != null
-                                ? `${x.minutos_ate_acao} min de expediente até a primeira ação · prazo de ${x.limite} min` : undefined}
-                              style={{ fontSize: 11.5, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
-                                       color: PRAZO_DO_PROTOCOLO[x.prazo].cor, border: `1px solid ${C.divider}` }}>
-                          {PRAZO_DO_PROTOCOLO[x.prazo].texto}
-                        </span>
-                      )}
-                      <span data-estado-do-protocolo style={{ fontSize: 11.5, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
-                                     color: est.cor, border: `1px solid ${C.divider}` }}>{est.texto}</span>
-                    </div>
-                    <div style={{ ...estilos.nota, marginTop: 4 }} data-protocolo-caminho>
-                      Aberto {quandoCurto(x.aberto_em)} — {quemAbriu(x)}.
-                      {x.primeira_resposta_em && (x.origem === "cliente"
-                        ? <> Respondido em {tempo((new Date(x.primeira_resposta_em) - new Date(x.aberto_em)) / 1000)}{x.respondeu_nome ? (x.pelo_celular ? ", pelo celular" : ` por ${x.respondeu_nome}`) : ""}.</>
-                        : null)}
-                      {x.finalizado_em && <> Finalizado {x.finalizado_nome ? `por ${x.finalizado_nome} ` : ""}em {tempo((new Date(x.finalizado_em) - new Date(x.aberto_em)) / 1000)}.</>}
-                    </div>
-                  </div>
-                );
-              })}
-              {regs.length > quantos && (
-                <button onClick={() => setQuantos((n) => n + POR_PAGINA)} data-protocolos-mais
-                  style={{ marginTop: 8, border: "none", background: "transparent", cursor: "pointer",
-                           color: C.verdeTexto, fontSize: 13, fontWeight: 700, padding: "6px 0" }}>
-                  Mostrar mais {Math.min(POR_PAGINA, regs.length - quantos)}
-                </button>
-              )}
-            </div>
-            </div>
+            {/* A LISTA DOS PROTOCOLOS SAIU DA TELA (06/11, pedido do Rodrigo:
+                "muita informação"). Cada protocolo continua na PLANILHA, um por
+                linha, com as mesmas colunas de antes. */}
+            {regs.length > 0 && (
+              <BotaoDaPlanilha C={C} estilos={estilos} aoBaixar={baixarPlanilha} marca="protocolos"
+                               veio={regs.length} total={r.total_registros} um="protocolo" varios="protocolos" />
+            )}
           </>
         );
       })()}
@@ -2693,9 +2656,6 @@ function RelatorioJaTratei({ C, estilos, cores, leitura, deIso, ateIso, passo, q
   const { carregando, erro } = leitura;
   const falta = leitura.semFuncao;
   const r = leitura.dados;
-  const [quantos, setQuantos] = useState(POR_PAGINA);
-  // A LISTA VOLTA AO COMEÇO A CADA LEITURA NOVA, como quando a seção lia sozinha.
-  useEffect(() => { setQuantos(POR_PAGINA); }, [leitura.dados]);
 
   const nomeDoTelefone = (id) => {
     const a = advogados.find((x) => String(x.id) === String(id));
@@ -2880,67 +2840,13 @@ function RelatorioJaTratei({ C, estilos, cores, leitura, deIso, ateIso, passo, q
               </div>
             </div>
 
-            <div data-nao-imprime>
-            <Titulo C={C}>Os registros</Titulo>
-            <div style={estilos.cartao} data-relatorio-registros>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
-                <div style={{ ...estilos.nota, flex: "1 1 auto" }} data-relatorio-contagem>
-                  {Number(r.total_registros) > regs.length
-                    ? <>Os <b style={{ color: C.textPrimary }}>{numero(regs.length)}</b> mais recentes, de {numero(r.total_registros)} no período. Para ver o resto, encurte o período.</>
-                    : <>{numero(regs.length)} {regs.length === 1 ? "registro" : "registros"} no período, do mais recente para o mais antigo.</>}
-                </div>
-                {regs.length > 0 && (
-                  <button onClick={baixarPlanilha} data-relatorio-baixar
-                    style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 32, padding: "5px 12px",
-                             border: `1px solid ${C.divider}`, background: "transparent", color: C.textPrimary,
-                             borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
-                    <Download size={14} /> Baixar planilha
-                  </button>
-                )}
-              </div>
-              {!regs.length && <div style={estilos.nota}>Nada neste período.</div>}
-              {regs.slice(0, quantos).map((x, i) => (
-                <div key={`${x.conversa_id}-${x.quando}-${i}`} data-registro-ja-tratei
-                     style={{ padding: "10px 0", borderTop: i ? `1px solid ${C.divider}` : "none",
-                              opacity: x.desfeito ? 0.55 : 1 }}>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline", fontSize: 13.5 }}>
-                    <b>{nomeDoContato(x.contato)}</b>
-                    <span style={{ color: C.textSecondary, fontSize: 12.5 }}>
-                      {telefoneLegivel(x.contato && x.contato.numero)}
-                      {nomeDoTelefone(x.advogado_id) && ` · ${nomeDoTelefone(x.advogado_id)}`}
-                    </span>
-                    <span style={{ flex: 1 }} />
-                    <span style={{ color: C.textSecondary, fontSize: 12.5 }}>
-                      {x.quem_nome || "alguém da equipe"} · {new Date(x.quando).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 5 }}>
-                    {(x.assuntos || []).map((a) => (
-                      <span key={a} style={{ fontSize: 11.5, fontWeight: 600, padding: "2px 8px", borderRadius: 10,
-                                             border: `1px solid ${C.divider}`, color: C.textPrimary }}>{a}</span>
-                    ))}
-                    {x.desfeito && (
-                      <span data-registro-desfeito style={{ fontSize: 11.5, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
-                                     color: C.textSecondary, border: `1px dashed ${C.divider}` }}>desfeito</span>
-                    )}
-                  </div>
-                  {x.observacao && (
-                    <div data-registro-observacao style={{ fontSize: 13, marginTop: 6, lineHeight: 1.45,
-                                     borderLeft: `3px solid ${cores.saiu}`, paddingLeft: 8 }}>
-                      {x.observacao}
-                    </div>
-                  )}
-                </div>
-              ))}
-              {regs.length > quantos && (
-                <button onClick={() => setQuantos((n) => n + POR_PAGINA)} data-relatorio-mais
-                  style={{ marginTop: 8, border: "none", background: "transparent", cursor: "pointer",
-                           color: C.verdeTexto, fontSize: 13, fontWeight: 700, padding: "6px 0" }}>
-                  Mostrar mais {Math.min(POR_PAGINA, regs.length - quantos)}
-                </button>
-              )}
-            </div>
-            </div>
+            {/* A LISTA DOS REGISTROS SAIU DA TELA (06/11, pedido do Rodrigo:
+                "muita informação"). Cada "Já tratei" continua na PLANILHA, com o
+                texto do OUTROS e o desfeito marcado. */}
+            {regs.length > 0 && (
+              <BotaoDaPlanilha C={C} estilos={estilos} aoBaixar={baixarPlanilha} marca="relatorio"
+                               veio={regs.length} total={r.total_registros} um="registro" varios="registros" />
+            )}
           </>
         );
       })()}
