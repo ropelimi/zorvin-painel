@@ -1472,6 +1472,9 @@ const TABELAS = {
   // 2026 em diante).
   zorvin_fora_do_horario: [],
   zorvin_respostas_automaticas: [],
+  // O ENSAIO DO QUAZAR À NOITE (script 055 da ponte): começa VAZIO. Quem
+  // escreve é a ponte; cada prova planta as suas pela `__SEMENTE`.
+  zorvin_quazar_noturno: [],
   // A DISTRIBUIÇÃO DAS CONVERSAS NOVAS (script 023 da ponte). As três
   // começam VAZIAS, que é como o script as entrega: nenhum departamento
   // ligado, ninguém com a chave mexida (vale o padrão — quem atende recebe,
@@ -2086,6 +2089,8 @@ function consulta(tabela) {
         // nenhum departamento configurado, e a tela aparece nesse caso.
         || (/^zorvin_(fora_do_horario|feriados|respostas_automaticas)$/.test(tabela)
             && globalThis.__SEM_FORA_DO_HORARIO)
+        // O ENSAIO DO QUAZAR (script 055) que ainda não rodou: "não existe".
+        || (tabela === "zorvin_quazar_noturno" && (globalThis.__SEM_ENSAIO_DO_QUAZAR || globalThis.__SEM_FORA_DO_HORARIO))
         // A DISTRIBUIÇÃO (script 023) que ainda não rodou: as três tabelas
         // respondem "não existe". Vazia é o banco com o script e nada ligado,
         // e a aba aparece nesse caso.

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "./supabase.js";
 import { naoGravouNada, comOCodigo, semATabela } from "./gravar.js";
 import { Chave } from "./Chave.jsx";
+import { QuazarANoite } from "./EnsaioDoQuazar.jsx";
 import { Clock, CalendarX2, Plus, Trash2, Check } from "lucide-react";
 import {
   DIAS, SEMANA_PADRAO, FUSO_PADRAO, FUSOS, TEXTO_SUGERIDO, TETO_DO_TEXTO,
@@ -379,6 +380,12 @@ export function ForaDoHorario({ cx, C, departamentos = [], aoAvisar }) {
           {mudou && <span style={{ fontSize: 12.5, color: C.textSecondary }}>Ainda não salvo.</span>}
         </div>
       </div>
+      )}
+
+      {existe === true && !falhaDaLeitura && (
+        <QuazarANoite cx={cx} C={C} depId={depId} aoAvisar={aoAvisar} aoMudar={() => ler()}
+                      linha={linhas.find((l) => String(l.departamento_id) === String(depId)) || null}
+                      temColuna={linhas.some((l) => Object.prototype.hasOwnProperty.call(l, "quazar"))} />
       )}
 
       <div style={cx.secao} data-feriados>
