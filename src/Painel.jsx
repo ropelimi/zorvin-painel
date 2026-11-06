@@ -74,6 +74,7 @@ import { useEstadoDoCopiloto, copilotoAparece, pedirSugestao, resumoAparece, ped
 import ResumoDaConversa from "./ResumoDaConversa.jsx";
 import { NOME_DO_ASSISTENTE } from "./assistente.js";
 import { RostoDoAssistente } from "./RostoDoAssistente.jsx";
+import { BolhaDoEnsaio, bolhaDoEnsaio } from "./EnsaioDoQuazar.jsx";
 import { mensagensDepoisDoResumo, textoDoResumo } from "./resumoDaConversa.js";
 import { ABAS_DA_SITUACAO, NOME_DA_SITUACAO } from "./abasDaSituacao.js";
 import { SEM_RESPONSAVEL, chaveDosResponsaveis, daChave, passaNosResponsaveis, recortarPelosResponsaveis,
@@ -302,6 +303,9 @@ function bolhaDaRespostaAutomatica(r, convId) {
 // O BANCO SEM O SCRIPT 021: perguntado uma vez por sessão, e não a cada
 // conversa aberta — a mesma régua de `TEM_NOME_DO_CADASTRO`.
 let SEM_RESPOSTAS_AUTOMATICAS = false;
+// O ENSAIO DO QUAZAR À NOITE (script 055 da ponte): sem a tabela, a conversa
+// abre como antes, e não se pergunta de novo nesta sessão.
+let SEM_ENSAIO_DO_QUAZAR = false;
 
 // ============================================================
 //  OS MARCOS DOS PROTOCOLOS (script 028 da ponte)
@@ -347,7 +351,7 @@ function marcosNaJanela(marcos, desde) {
  *  mensagens anteriores: começar de uma nota, de uma resposta automática ou de
  *  um marco mais velhos que a janela pularia tudo o que fica entre eles. */
 function ehDeMensagens(m) {
-  return Boolean(m) && m.origem !== "nota" && m.origem !== "automatica" && m.origem !== "marco"
+  return Boolean(m) && m.origem !== "nota" && m.origem !== "automatica" && m.origem !== "marco" && m.origem !== "ensaio"
     && !m._filaId && !String(m.id || "").startsWith("temp-") && !String(m.id || "").startsWith("fila-");
 }
 const porHora = (a, b) => new Date(a.criado_em) - new Date(b.criado_em);
@@ -2785,6 +2789,10 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
             <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{textoDoMarco(m, nomeDeHoje)}</span>
             <span style={{ flexShrink: 0, opacity: 0.85 }}>· {horaCurta(m.criado_em)}</span>
           </div>
+        ) : m.origem === "ensaio" ? (
+          // O ENSAIO DO QUAZAR À NOITE (script 055): o que ele teria
+          // respondido, no meio e tracejado — não saiu para o cliente.
+          <BolhaDoEnsaio m={m} C={C} estreito={estreito} />
         ) : m.origem === "automatica" ? (
           // A RESPOSTA AUTOMÁTICA FORA DO HORÁRIO — nossa, à direita, e sem
           // assinatura de gente: ninguém escreveu. SEM MENU NENHUM: ela não
@@ -8921,6 +8929,11 @@ export default function Painel({ sessao }) {
     const pedidoDasAutomaticas = SEM_RESPOSTAS_AUTOMATICAS ? null
       : supabase.from("zorvin_respostas_automaticas").select("*").eq("conversa_id", convId)
           .order("criada_em", { ascending: true }).limit(50).then((r) => r);
+    // O ENSAIO DO QUAZAR À NOITE (script 055), ao mesmo tempo: o que ele
+    // teria respondido, e não foi enviado. Só o que ficou pronto.
+    const pedidoDosEnsaios = SEM_ENSAIO_DO_QUAZAR ? null
+      : supabase.from("zorvin_quazar_noturno").select("*").eq("conversa_id", convId)
+          .in("status", ["pronta", "calada"]).order("criada_em", { ascending: true }).limit(50).then((r) => r);
     // OS PROTOCOLOS DA CONVERSA (script 028), uma quinta ida, ao mesmo tempo.
     // Sem a coluna da situação na lista, nem se pergunta.
     const pedidoDosMarcos = SEM_ATENDIMENTOS || SITUACAO_NO_BANCO === false ? null
@@ -9077,6 +9090,22 @@ export default function Painel({ sessao }) {
       } catch (e) { anotarFalhaDeLeitura("automaticas", "as respostas automáticas", e); }
     }
 
+    // O ENSAIO DO QUAZAR. A tabela que falta (o 055 não rodou) cala; a falha
+    // vai para a faixa âmbar, como as respostas automáticas.
+    let ensaios = [];
+    if (pedidoDosEnsaios) {
+      try {
+        const { data: lidos, error: erroEnsaios } = await pedidoDosEnsaios;
+        if (erroEnsaios) {
+          if (semATabela(erroEnsaios)) SEM_ENSAIO_DO_QUAZAR = true;
+          else anotarFalhaDeLeitura("ensaios", `o ensaio do ${NOME_DO_ASSISTENTE}`, erroEnsaios);
+        } else {
+          limparFalhaDeLeitura("ensaios");
+          ensaios = (lidos || []).map((r) => bolhaDoEnsaio(r, convId));
+        }
+      } catch (e) { anotarFalhaDeLeitura("ensaios", `o ensaio do ${NOME_DO_ASSISTENTE}`, e); }
+    }
+
     // OS MARCOS DOS PROTOCOLOS. A tabela que falta (o 028 não rodou) cala; a
     // leitura que falha por outro motivo vai para a faixa âmbar, como as notas
     // — "nenhum protocolo" no lugar de "não consegui ler" apagaria da tela a
@@ -9099,7 +9128,7 @@ export default function Painel({ sessao }) {
     // com a mensagem do cliente tem a MESMA hora dela, e o marco tem de ficar
     // em cima da mensagem que o abriu, e não embaixo.
     const desdeDaJanela = maisAntigas && recentes.length ? recentes[0].criado_em : null;
-    const juntas = [...marcosNaJanela(marcos, desdeDaJanela), ...recentes, ...notas, ...naoSairam, ...automaticas]
+    const juntas = [...marcosNaJanela(marcos, desdeDaJanela), ...recentes, ...notas, ...naoSairam, ...automaticas, ...ensaios]
       .sort(porHora);
     // Se troquei de conversa enquanto esta busca estava em andamento, descarta o
     // resultado — senão as mensagens da conversa antiga sobrescreveriam a atual.

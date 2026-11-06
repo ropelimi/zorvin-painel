@@ -7177,6 +7177,88 @@ uma (e uma cópia sem sabotagem nenhuma, de controle, passou inteira):
 vieram) e `o-resumo-da-conversa` (a frase de baixo do quadro e o texto
 copiado).
 
+## O Quazar à noite, em ensaio (06/11)
+
+Pedido do Rodrigo: *"Como agora temos o Quazar, o que acha de começarmos a
+testar"* responder com a IA quem escreve depois do expediente, no lugar da
+mensagem pronta. Decidido com ele, em três respostas:
+
+1. **começa pelo ensaio**: o cliente continua recebendo a mensagem pronta, e
+   o Quazar escreve a resposta que daria, **sem enviar**. De manhã a equipe lê
+   na conversa e marca se ele acertou;
+2. **sozinho, ele diz que é o assistente virtual do escritório**;
+3. **ele conversa**: responde cada vez que o cliente escreve.
+
+**Quem escreve é a ponte** (script 055 e a rodada `quazarDaNoite`; ver "O
+Quazar à noite, em ensaio" no CLAUDE.md dela), e guarda em
+`zorvin_quazar_noturno`. O painel mostra e avalia. As contas sem tela e os
+dois componentes moram em `src/EnsaioDoQuazar.jsx`.
+
+| onde | o quê |
+|---|---|
+| a conversa | a resposta do ensaio (`data-ensaio-do-quazar="pronta"`), **no meio e tracejada**, com o rosto do Quazar, "não foi enviada ao cliente", o texto e o resumo "Para a equipe" |
+| a conversa | o "não responderia" (`"calada"`), com o porquê ("O cliente só agradeceu.") |
+| as duas | **Boa** e **Ruim** (`data-avaliar-ensaio`); o mesmo botão de novo desfaz; "Ruim" pede, sem obrigar, o que estava errado (`data-ensaio-comentario`) |
+| Departamentos e acessos → Fora do horário | a seção **O Quazar à noite** (`data-quazar-a-noite`): o modo do departamento (Desligado ou Ensaio) e as respostas dos últimos 7 dias, com as contas (boas, ruins, sem avaliação) e o link que abre cada conversa numa guia nova |
+
+- **No meio e tracejada, e não uma bolha verde à direita**: à direita ela
+  seria lida como algo que o cliente recebeu;
+- **só o que ficou pronto** (`pronta` e `calada`): a que a ponte ainda está
+  escrevendo (`pensando`) não aparece, nem conta;
+- **avaliar grava só a avaliação e o comentário** (as colunas que o 055 deixa
+  a tela mudar); quem avaliou e quando são do gatilho. **A tela mostra o que o
+  banco guardou**, e não o que pediu: a recusa calada (zero linhas) é dita na
+  bolha (`data-ensaio-erro`), e o botão fica como estava;
+- **a leitura vai junto das outras** da conversa (as notas, a fila, as
+  respostas automáticas, os marcos), ao mesmo tempo. **Sem o 055**, calada
+  (`SEM_ENSAIO_DO_QUAZAR`); **a falha**, na faixa âmbar ("o ensaio do
+  Quazar");
+- **não se relê sozinha**: o ensaio sai de noite e é lido de manhã, quando a
+  conversa abre (a ponte não pôs a tabela no tempo real, de propósito);
+- **o modo se grava sozinho**, sem o "Salvar" da resposta: são duas decisões,
+  e o "Ainda não salvo" de uma não pode segurar a outra. Só com a coluna do
+  055 (alguma linha traz `quazar`); sem a linha do departamento, a seção pede
+  para salvar a resposta primeiro;
+- **a lista da aba são três perguntas simples** (as respostas, as conversas,
+  os contatos), e não uma com tabelas embutidas: a regra de acesso de
+  `conversas` vale em cada uma, e a bancada não resolve tabela embutida com
+  apelido. **Só as do departamento escolhido.**
+
+**O que não está aqui, e é o próximo passo:** mandar de verdade. Depende de a
+equipe ler as respostas do ensaio, e de decidir como a mensagem que sai
+aparece na conversa (ela vai precisar entrar em `mensagens`).
+
+Prova: `o-quazar-a-noite-em-ensaio`, 42 conferências em sete cenas, com uma
+conversa plantada que tem uma resposta pronta, uma calada e uma ainda sendo
+escrita, e uma conversa de outro departamento com a sua resposta.
+
+**24 sabotagens e 24 pegas**, rodadas em cópias e lidas uma a uma (e a
+cópia sem sabotagem passou inteira):
+
+- o painel de antes inteiro (30 reprovações — é o pedido reproduzido);
+- **a leitura:** sem ler o ensaio (21); lendo também a que está sendo
+  escrita; a falha calada; a tabela que falta acendendo a faixa;
+- **a bolha:** à direita, como a que saiu; sem dizer que não foi enviada; sem
+  o tracejado; sem o resumo; a calada sem o porquê; sem o rosto do Quazar; a
+  bolha que não encolhe no celular;
+- **avaliar:** o mesmo botão sem desfazer; "Ruim" sem perguntar o que estava
+  errado (3); o comentário sem ir ao banco (2); sem conferir a recusa calada;
+  a tela marcando o que pediu, e não o que o banco guardou (2);
+- **a aba:** a seção sem a guarda da coluna; mudar o modo regravando a
+  resposta; mudar o modo sem reler; as contas com a que está sendo escrita
+  (2); a lista com outros departamentos (2); o link na mesma guia; o link sem
+  a conversa.
+
+**A primeira rodada ensinou duas coisas, as duas da rodada:**
+
+- **"a bolha larga demais" vazava com razão**: a bolha mora numa caixa
+  `flex`, que encolhe a largura escrita até caber. O defeito de verdade é a
+  bolha que não encolhe (`flexShrink: 0`), e esse é pego;
+- **uma cópia caiu na porta 6566**, que o Chrome recusa (`ERR_UNSAFE_PORT`),
+  e a prova estourou antes de começar. As duas foram rodadas de novo noutras
+  portas. **Ao escolher portas para cópias, fuja das que o Chrome recusa**
+  (6566, 6665 a 6669, 6697, 10080…).
+
 ## O resumo da conversa — "Resumir" (01/11)
 
 Pedido do Rodrigo, da lista de recomendações de 31/10: *"…em seguida pode
