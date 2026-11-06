@@ -31,6 +31,8 @@ import {
 } from "lucide-react";
 import { Titulo, Grafico } from "./blocosDoPainel.jsx";
 import { enderecoDaTela } from "./guias.js";
+import { Faisca } from "./TendenciasDoPainel.jsx";
+import { fluxoPorDia, prazoPorDia, pontosDaFaisca } from "./tendencias.js";
 import {
   lerPrazo, porcento, fraseDoLimite, variacaoDoPrazo, tempoCurto, resumoDaCarteira, diasDaCarteira,
   fatiasDoPrazo, fatiasDaSituacao, fatiasDosDepartamentos, destaques, rotuloDasAtrasadas, carteiraDe,
@@ -78,7 +80,7 @@ const NIVEL = {
 
 export default function VisaoGeral({ C, estilos, modo = "claro", lProtocolos, lCarteira, departamentos = [], departamento = null,
                                      quem = null, nome = "", sou = false, souAdmin = false, rotuloPeriodo = "",
-                                     aoIrPara, aoEscolherDepartamento }) {
+                                     aoIrPara, aoEscolherDepartamento, deIso = null, ateIso = null }) {
   const V = CORES_DA_VISAO[modo] || CORES_DA_VISAO.claro;
   const carregando = lProtocolos.carregando || lCarteira.carregando;
   const faltaP = lProtocolos.semFuncao || Boolean(lProtocolos.dados && lProtocolos.dados.falta);
@@ -122,7 +124,7 @@ export default function VisaoGeral({ C, estilos, modo = "claro", lProtocolos, lC
                   {" "}O que tem a marca <b style={{ color: C.textPrimary }}>agora</b> é a foto deste momento, e não usa o período.</>}
           </div>
 
-          <Indicadores C={C} estilos={estilos} p={p} c={c} quem={quem} sou={sou} nome={nome} />
+          <Indicadores C={C} V={V} estilos={estilos} p={p} c={c} quem={quem} sou={sou} nome={nome} deIso={deIso} ateIso={ateIso} />
 
           {(p || c) && (
             <Destaques C={C} V={V} estilos={estilos}
@@ -148,7 +150,20 @@ export default function VisaoGeral({ C, estilos, modo = "claro", lProtocolos, lC
 /* ================================================================
    OS INDICADORES
    ================================================================ */
-function Indicadores({ C, estilos, p, c, quem, sou, nome }) {
+function Indicadores({ C, V, estilos, p, c, quem, sou, nome, deIso, ateIso }) {
+  // AS FAÍSCAS (06/11): a tendência do período dentro do cartão, dos mesmos
+  // `por_dia` do gráfico grande das tendências. Só com o período conhecido.
+  const comDias = Boolean(p && deIso && ateIso);
+  const fluxo = comDias ? fluxoPorDia(p.por_dia, deIso, ateIso) : null;
+  const prazoDia = comDias ? prazoPorDia(p.por_dia, deIso, ateIso) : null;
+  const faiscaDoPrazo = prazoDia && prazoDia.existe && quem == null && prazoDia.dias.length > 1
+    ? <Faisca pontos={pontosDaFaisca(prazoDia.dias, null, { razao: ["noPrazo", "julgados"] })} formatar={(v) => `${v}% no prazo`}
+              rotulo="A parte no prazo, dia a dia, no período" cor={V.categorias[0]} corApagada={V.outros} marca="prazo" />
+    : null;
+  const faiscaDosAtendimentos = fluxo && fluxo.dias.length > 1
+    ? <Faisca pontos={pontosDaFaisca(fluxo.dias, "iniciados")} formatar={(v) => `${fmt(v)} ${v === 1 ? "atendimento" : "atendimentos"}`}
+              rotulo="Os atendimentos começados, dia a dia, no período" cor={V.situacao.em_atendimento} corApagada={V.outros} marca="atendimentos" />
+    : null;
   const prazo = lerPrazo(p && p.prazo);
   const antes = lerPrazo(p && p.antes && p.antes.prazo);
   const delta = variacaoDoPrazo(prazo, antes);
@@ -163,6 +178,7 @@ function Indicadores({ C, estilos, p, c, quem, sou, nome }) {
   if (prazo && prazo.julgados > 0) {
     lista.push(
       <Indicador key="prazo" C={C} estilos={estilos} id="prazo" rotulo="No prazo" valor={porcento(prazo.pct)} bruto={prazo.pct}
+        faisca={faiscaDoPrazo}
         sub={<>{fmt(prazo.noPrazo)} de {fmt(prazo.julgados)} {prazo.julgados === 1 ? "cliente" : "clientes"}{limite ? <> · prazo de {limite} de expediente</> : null}</>}
         comparacao={delta == null ? null
           : delta === 0 ? <>igual ao período anterior</>
@@ -188,6 +204,7 @@ function Indicadores({ C, estilos, p, c, quem, sou, nome }) {
     const pct = va >= 10 ? Math.round(((vb - va) / va) * 100) : null;
     lista.push(
       <Indicador key="atendimentos" C={C} estilos={estilos} id="atendimentos" rotulo="Atendimentos" valor={fmt(t.atendimentos)} bruto={t.atendimentos}
+        faisca={faiscaDosAtendimentos}
         sub={<>{fmt(t.finalizados)} {Number(t.finalizados) === 1 ? "finalizado" : "finalizados"} · {fmt(t.em_atendimento)} em atendimento</>}
         comparacao={!a.existe ? null
           : pct != null && Math.abs(pct) <= 300
@@ -224,9 +241,9 @@ function Indicadores({ C, estilos, p, c, quem, sou, nome }) {
  *  vizinhos ficarem na mesma altura), o número, e embaixo o que ele quer
  *  dizer. A marca "agora" vai na linha de baixo, e não no rótulo: no rótulo
  *  ela empurrava o ⓘ para uma segunda linha. */
-function Indicador({ C, estilos, id, rotulo, valor, bruto, sub, comparacao, ajuda, agora = false }) {
+function Indicador({ C, estilos, id, rotulo, valor, bruto, sub, comparacao, ajuda, agora = false, faisca = null }) {
   return (
-    <div style={estilos.cartao} data-indicador={id} data-valor={bruto == null ? "" : String(bruto)}>
+    <div style={{ ...estilos.cartao, display: "flex", flexDirection: "column" }} data-indicador={id} data-valor={bruto == null ? "" : String(bruto)}>
       <div style={{ ...estilos.rotulo, display: "flex", alignItems: "center", gap: 5 }}>
         <span>{rotulo}</span>
         {ajuda && <span title={ajuda} style={{ display: "flex", cursor: "help", flexShrink: 0 }}><Info size={12} /></span>}
@@ -246,6 +263,7 @@ function Indicador({ C, estilos, id, rotulo, valor, bruto, sub, comparacao, ajud
         </div>
       )}
       {comparacao && <div style={{ ...estilos.nota, marginTop: 2 }} data-comparacao-do-indicador>{comparacao}</div>}
+      {faisca}
     </div>
   );
 }

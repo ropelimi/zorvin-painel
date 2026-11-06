@@ -8709,6 +8709,146 @@ inteiro); a planilha dos protocolos que some (12 reprovações); a do "Já
 tratei" que some (11); a planilha sem o desfeito; sem o texto do OUTROS; sem
 quem respondeu; a contagem errada; e o botão indo para o papel.
 
+## As tendências do Painel (06/11)
+
+Pedido do Rodrigo: *"Aproveita que está trabalhando no Painel e melhore ele…
+Sinto que ainda está muito básico, quero algo profissional, um dashboard
+inteligente e interativo de verdade, com informações que ajudem a estudar os
+números, fazer uma boa gestão e tomar as melhores decisões."*
+
+**Uma seção nova, logo depois da Visão geral** (`data-tendencias`,
+`src/TendenciasDoPainel.jsx`), com as contas sem tela em `src/tendencias.js`.
+Três perguntas, um gráfico cada, e **uma frase com os números em cima de cada
+gráfico**: o gráfico mostra, a frase diz o que ele mostra.
+
+| o gráfico | a pergunta | a frase |
+|---|---|---|
+| **Entrada e saída, dia a dia** (`data-grafico-fluxo`) | a fila cresce ou encolhe? | "Entraram 18 protocolos; 5 já foram finalizados (28%) e 13 continuam abertos — 3 sem nenhuma resposta ainda. O dia de mais entrada foi (o dia), com 6." |
+| **O prazo, dia a dia** (`data-grafico-prazo-dia`) | em que dia o prazo estourou? | "No período, 50% dos clientes foram atendidos no prazo (8 de 16). O pior dia foi (o dia): 17%, em 6 clientes." |
+| **O prazo pela hora em que o cliente escreveu** (`data-grafico-prazo-hora`) | em que hora falta gente? | "A hora que mais precisa de gente: 14h — 13% no prazo, em 8 clientes…" |
+
+E **uma faísca** (o desenho pequeno da tendência) em dois cartões da Visão
+geral: o do prazo e o dos atendimentos (`data-faisca`).
+
+### Nenhuma leitura nova
+
+**Tudo sai dos protocolos que a tela já lê** (`zorvin_relatorio_atendimentos`,
+029 e 052, pelo `useLeitura` do alto): o `por_dia` e os `registros`. A prova
+confere que a leitura dos protocolos não ganhou uma ida a mais. **Nenhum script
+de banco**: o pedido foi usar o que já vem.
+
+### O dia de cada protocolo é o da abertura
+
+`por_dia.finalizados` conta, dos protocolos abertos naquele dia, quantos já
+foram finalizados, e não quantos foram finalizados naquele dia. Por isso o
+gráfico do fluxo diz "o dia em que os protocolos ENTRARAM, dividido no que
+aconteceu com eles até agora", e nunca "saíram no dia": o banco não manda a
+data da saída por dia. Lido assim, a coluna antiga quase toda verde é o
+normal, e **muito azul ou âmbar num dia antigo é atendimento esquecido** — o
+rodapé do gráfico diz isso.
+
+- **Sem o 052**, o banco não manda `finalizados`: o dia se divide só em "com
+  atendimento" e "esperando resposta", a frase não diz quantos saíram, e o
+  rodapé diz por quê. Nada de zero inventado;
+- **o prazo é da equipe** (a régua de 05/11): com uma pessoa escolhida, e para
+  quem não administra, os dois gráficos do prazo e a faísca do prazo não
+  aparecem. Fica o fluxo da pessoa;
+- **o dia sem cliente para julgar fica sem coluna e sem número** ("sem número"
+  no `aria-label`, "—" na tabela), e nunca 0%, que seria "ninguém foi atendido
+  a tempo". O dia de 0% de verdade tem coluna;
+- **a hora com menos de 5 clientes fica clara** (`MINIMO_POR_HORA`) e não
+  entra na conta da pior hora: ali a porcentagem é o acaso;
+- **os registros têm teto** (os 1000 mais recentes): passando dele, o gráfico
+  das horas diz que contou só os que vieram (`data-prazo-hora-cortado`);
+- **a faísca junta dias vizinhos** quando o período é longo (no máximo 30
+  pontos), somando as contagens e, no prazo, pela razão das somas — nunca pela
+  média das porcentagens, que daria o mesmo peso ao dia de 1 cliente e ao de
+  40. O destaque vai no último ponto com número: o dia de hoje, vazio de
+  manhã, apagaria o destaque.
+
+### Clicar num dia recorta a tela inteira
+
+**Cada coluna de dia é um botão** (`role="button"`, Enter e espaço também):
+clicado, o período da barra vira aquele dia, e TODA a tela (a Visão geral, a
+equipe, os protocolos) passa a falar dele. A barra diz *"Vendo só 01/11/2026,
+o dia clicado num gráfico."* e oferece **"Voltar para Últimos 30 dias"**
+(`data-recorte-do-dia`, `data-voltar-do-dia`), que devolve o período de antes.
+**Escolher outro período na barra esquece a volta**: ela é do clique. **Num dia
+só, as colunas deixam de ser botões**: o recorte de um dia dentro de um dia não
+muda nada.
+
+### O desenho, pela régua dos gráficos
+
+- **colunas de no máximo 24px**, com a ponta de cima arredondada em 4px e reta
+  no chão, e **2px da cor do cartão entre as fatias de uma pilha**;
+- **duas linhas de grade finas, por baixo das colunas** (a primeira escrita as
+  pintava por cima: o elemento posicionado vem depois na pintura);
+- **a leitura em cima de cada gráfico** (`data-leitura-das-colunas`): o mouse
+  ou o foco do teclado num dia lê o dia por extenso, o total e cada série, com
+  o traço da cor dela. O alvo do mouse é a faixa inteira do dia, e não só a
+  tinta da coluna;
+- **a régua do período** no prazo dia a dia e por hora (a linha com "50% no
+  período");
+- **cada gráfico tem a sua tabela** (o botão "Tabela", como os outros), e a
+  legenda quando há duas séries ou mais;
+- **as cores são as da Visão geral** (`CORES_DA_VISAO`), passadas no validador
+  de paleta nos dois temas: o verde dos finalizados, o azul de quem está em
+  atendimento e o âmbar de quem espera. O âmbar no claro fica em 2,99 de
+  contraste com o fundo, um centésimo abaixo de 3: o alívio é a tabela e a
+  legenda, que dizem o número e o nome sem depender da cor;
+- **no celular** (360 e 390), os três gráficos cabem na tela sem rolar de lado,
+  e os rótulos dos dias se espaçam pela largura que há (o primeiro encosta à
+  esquerda, para não sair do cartão);
+- **no papel**, a seção vai (é a segunda do menu de imprimir, marcada), sem os
+  botões de tabela, e sai quando desmarcada.
+
+**As seções do Painel passaram a oito**, e `o-painel-de-gestao` foi
+**INVERTIDA, e não apagada**: o menu de imprimir e os atalhos têm as
+Tendências logo depois da Visão geral, e "A pessoa e a equipe" passou a ser a
+terceira.
+
+### O que fica de fora, e é decisão
+
+- **a saída do dia** (quantos foram finalizados naquele dia, e não dos que
+  entraram nele): pediria uma conta nova no banco, e o pedido foi não criar
+  script;
+- **o prazo por dia da semana**: com 30 dias, cada dia da semana teria 4
+  pontos, e a conta seria o acaso. A hora do dia responde a mesma pergunta
+  ("quando falta gente") com mais casos.
+
+Prova: `as-tendencias-do-painel`, 64 conferências em nove cenas: as contas
+direto nas funções (com as datas na hora de quem roda, para valer em qualquer
+fuso); a seção e a ordem; o fluxo (a frase, as 30 colunas, a pilha, o vão, a
+largura, a leitura, a tabela); o prazo dia a dia (a frase, a régua, o dia sem
+número e o de 0% de verdade); o prazo por hora (a pior hora, a clara de poucos
+casos); as faíscas; o clique que recorta e a volta, e o teclado; quem atende;
+o banco sem o 052; o escuro; o celular a 360 e a 390; o papel; e as idas ao
+banco. A semente planta os protocolos num telefone só, com as contas feitas à
+mão no comentário dela.
+
+**22 sabotagens, 21 pegas e uma que vaza com razão**, todas rodadas em cópias
+e lidas uma a uma (e a cópia de controle, sem sabotagem nenhuma, passou nas
+três provas, a nova, a `o-painel-de-gestao` e a `a-visao-geral-do-painel`):
+
+- o painel de antes inteiro (42 reprovações — é o pedido reproduzido);
+- **as contas:** entraram sem os que esperam; sem o 052 inventando
+  finalizados; o dia sem cliente julgado com 0%; a pior hora sem o mínimo de
+  casos; a faísca do prazo pela média das porcentagens; os registros cortados
+  dizendo que são completos;
+- **o clique:** o dia que não recorta (4); o recorte sem a volta; a volta que
+  não volta ao período de antes; num dia só, as colunas continuando
+  clicáveis; sem o teclado;
+- **o desenho:** a pilha sem o vão de 2px; a coluna mais larga que 24px; a
+  frase do fluxo sem os números; a hora de poucos casos sem esmaecer; o escuro
+  com as cores do claro; a faísca sem o título de cada dia; a Visão geral sem
+  as faíscas;
+- **as seções:** as tendências fora do menu de imprimir e dos atalhos; e antes
+  da Visão geral (pega pela `o-painel-de-gestao`);
+- **e a que vaza:** a pessoa escolhida com o prazo (`quem == null` tirado de
+  `temPrazo`). Com uma pessoa escolhida, o banco manda o prazo nulo, e
+  `prazo.existe` já é falso: a guarda da tela é a segunda, e fica, para o dia
+  em que o banco mandar outra coisa — a régua de 25/09.
+
 ## A revisão do leiaute — o que se lê (05/11)
 
 Pedido do Rodrigo: *"Faça uma revisão geral do layout, para que o visual seja
