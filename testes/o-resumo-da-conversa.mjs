@@ -577,6 +577,36 @@ for (const largura of [1250, 1280, 1366]) {
   await ctx.close();
 }
 
+// ==================================================================
+// 14. NA NOTA INTERNA, O PERGAMINHO SAI (06/11) — pedido do Rodrigo, com a
+// foto da caixa âmbar: "Nota interna não deve ter a função de resumir a
+// conversa". Saindo da nota, ele volta.
+console.log("\n14. Na nota interna o pergaminho sai, e volta ao sair da nota");
+{
+  ({ ctx, page, estouros } = await abrirPagina());
+  ok("abri a conversa da Andreia", await abrirConversa(page, A));
+  ok("com a caixa de mensagem, o pergaminho está na barra", (await botao(page).count()) === 1);
+  const nota = page.locator("[data-nota-interna]");
+  ok("o botão da nota interna está na barra", (await nota.count()) === 1);
+  await clicar(nota);
+  await page.waitForTimeout(300);
+  const dica = await page.locator(CAMPO).first().getAttribute("placeholder").catch(() => "");
+  ok("a caixa virou nota interna", /nota interna/i.test(dica || ""), dica);
+  ok("e na nota o pergaminho NÃO aparece", (await botao(page).count()) === 0);
+  const pintado = await page.evaluate(() => {
+    const els = [...document.querySelectorAll("button")];
+    return els.filter((b) => /Resumir a conversa/.test(b.getAttribute("aria-label") || "") && b.offsetParent !== null).length;
+  });
+  ok("nem outro botão de resumir à vista", pintado === 0, String(pintado));
+  await clicar(nota);
+  await page.waitForTimeout(300);
+  const dica2 = await page.locator(CAMPO).first().getAttribute("placeholder").catch(() => "");
+  ok("saí da nota", !/nota interna/i.test(dica2 || ""), dica2);
+  ok("e o pergaminho voltou", (await botao(page).count()) === 1);
+  ok("sem erro de JavaScript", estouros.length === 0, q(estouros));
+  await ctx.close();
+}
+
 await nav.close();
 console.log(`\n${feitas - falhas}/${feitas} conferências passaram`);
 process.exit(falhas ? 1 : 0);

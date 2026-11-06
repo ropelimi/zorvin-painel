@@ -17239,8 +17239,13 @@ export default function Painel({ sessao }) {
         (`resumoNaBarra`), e não o cabeçalho recolhido, como era até 05/11:
         com a ficha aberta, o cabeçalho recolhe com a caixa sobrando, e o
         pergaminho sumia à toa. Onde ele sai, o ⋮ do cabeçalho tem "Resumir a
-        conversa" escrito. */}
-    {resumoNaBarra && podeResumir && !editando && (
+        conversa" escrito.
+
+        E NA NOTA INTERNA ELE SAI (06/11, a pedido do Rodrigo, com a foto da
+        caixa âmbar): a nota é o que a equipe escreve para a equipe, e o
+        pergaminho ali parecia resumir a nota, ou pôr o resumo nela. O resumo
+        da conversa continua a um clique: é só sair da nota, ou pelo ⋮. */}
+    {resumoNaBarra && podeResumir && !editando && !modoNota && (
       <button data-resumo-botao
               onClick={() => (resumoAqui ? fecharResumo() : resumirAConversa())}
               disabled={Boolean(resumoAqui && resumoAqui.fase === "pensando")}

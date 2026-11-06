@@ -7450,6 +7450,19 @@ rodam a 390, onde a conversa tem menos de 500 pontos e a largura sozinha já
 tira o pergaminho. Entrou a cena do tablet em pé, e a mesma sabotagem é pega
 ali; as outras cinco foram rodadas de novo contra a prova final.
 
+### E na nota interna, o pergaminho sai (06/11)
+
+Pedido do Rodrigo, com a foto da caixa âmbar: *"Nota interna não deve ter a
+função de resumir a conversa."* Com a caixa virada para nota
+(`modoNota`), o pergaminho não aparece na barra; saindo da nota, ele volta.
+A nota é o que a equipe escreve para a equipe, e o botão ali parecia resumir
+a nota, ou pôr o resumo dentro dela. O "Resumir a conversa" do ⋮ continua.
+
+Prova: `o-resumo-da-conversa`, cena 14 (117 conferências ao todo). **2
+sabotagens e 2 pegas**, rodadas em cópias (e a cópia sem sabotagem passou
+inteira): o pergaminho também na nota (2 reprovações), e o pergaminho sumindo
+sempre (17).
+
 **Ao contrário do ✨, ele não some com texto na caixa**: resumir não mexe no
 que está escrito. Por isso ele vem antes do lugar que o ✨ e o relógio de
 agendar dividem, e fica parado enquanto o vizinho troca.
