@@ -4812,6 +4812,11 @@ telefone de 1200 conversas; a 13b de `a-auditoria-de-27-10` e as cenas 1 e 2
 de `os-filtros-nao-afirmam-ausencia` conferem que a opção não volta (o
 procurando, a falha e o teto do seletor estão em `o-seletor-de-responsaveis`).
 
+**2 sabotagens e 2 pegas**, rodadas em cópias e lidas uma a uma (e a cópia
+sem sabotagem passou inteira): o painel de antes inteiro (4 reprovações) e a
+opção de volta sem a marca `data-minhas-opcao` (pega pela conferência que
+procura o nome no menu).
+
 ## Quem saiu não aparece para escolher (04/11)
 
 Relato do Rodrigo, com a foto do menu "Passar para": *"A Gabriely Mota está
