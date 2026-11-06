@@ -3308,7 +3308,28 @@ cliente só.
 **Fica de fora, e é decisão:** os anexos das notas internas (05/11) não entram,
 pela mesma razão de não entrarem no acervo de todos: o acervo lê `mensagens`.
 
-Prova: `a-midia-de-um-cliente`, 39 conferências em cinco cenas.
+Prova: `a-midia-de-um-cliente`, 39 conferências em cinco cenas: o Histórico
+e o número de arquivos; o acervo do cliente nas duas conversas (dois telefones),
+os filtros, as abas e a volta ao de todos; o ícone da barra lateral; o ⋮ no
+celular a 360 e a 390; e a falha. As vizinhas passaram sem mudança (as
+auditorias, o arquivo que baixa com o nome, o teclado, a barra lateral, o
+celular, a partida).
+
+**20 sabotagens e 20 pegas**, todas limpas, rodadas em cópias e lidas uma a uma
+(e a cópia de controle passou inteira): o painel de antes inteiro (32
+reprovações); o acervo do cliente sem recortar pelas conversas dele; o recorte
+só pela conversa aberta; quem mandou sem ir ao banco; a aba esquecendo o filtro,
+e o cliente; o filtro esquecendo o cliente; a barra lateral abrindo o do
+cliente; a etiqueta sem quem mandou, e com o telefone da conversa aberta; o
+título sem o nome; sem o "Ver de todas as conversas"; o Histórico sem o botão;
+a contagem com os links, e só da conversa aberta; o ⋮ abrindo o de todos; a
+falha das conversas virando "nenhum"; a lista vazia sem dizer o filtro; os
+filtros sem quebrar no celular; e o filtro sem dizer que está escolhido.
+
+**A primeira escrita da prova reprovou o painel certo**: o acervo de um cliente
+são duas idas à bancada (as conversas, depois as mensagens), e a prova
+conferia antes de a segunda voltar. Hoje a tela diz quando terminou
+(`data-midias-carregando`), e a prova espera por isso.
 
 ## O aviso automático do Vantoro tem o rosto dele (05/11)
 
