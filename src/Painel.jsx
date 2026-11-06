@@ -11235,12 +11235,44 @@ export default function Painel({ sessao }) {
   const [acervo, setAcervo] = useState({ carregando: false, itens: [] });
   // O documento do acervo que está baixando agora — "Baixando…" na linha dele.
   const [baixandoDoAcervo, setBaixandoDoAcervo] = useState(null);
+  // DE QUEM É O ACERVO (06/11), pedido da equipe: *"Onde que eu vejo tds os
+  // docs q essa cliente mandou? de uma vez, tipo no wpp"*. `null` é o acervo
+  // de sempre, de todas as conversas; `{ contatoId, nome }` é o de UM cliente,
+  // em todas as conversas dele que a pessoa vê (o mesmo cliente pode falar
+  // com o SAC e com a Subsídio Emenda). E `quemMandou` recorta pelo lado:
+  // 'todos', 'contato' (o cliente) ou 'advogado' (a equipe).
+  const [escopoDasMidias, setEscopoDasMidias] = useState(null);
+  const [quemMandou, setQuemMandou] = useState("todos");
 
   const pedidoMidiasRef = useRef(0);
-  const abrirMidias = useCallback(async (aba = "midias") => {
+  // Os três vêm por argumento, e não lidos do estado: a função é estável
+  // (`useCallback([])`), e o estado que ela visse seria o do primeiro desenho.
+  const abrirMidias = useCallback(async (aba = "midias", escopo = null, quem = "todos") => {
     setMidiasAberta(true);
+    setEscopoDasMidias(escopo);
+    setQuemMandou(quem);
     const meu = ++pedidoMidiasRef.current;
     setAcervo((a) => ({ ...a, carregando: true, erro: "" }));
+    // AS CONVERSAS DO CLIENTE, primeiro: a regra de acesso de `conversas`
+    // devolve só as dos telefones que a pessoa vê, e é delas que saem as
+    // mensagens. O telefone de cada uma vai junto, para a etiqueta de cada
+    // item dizer por qual telefone ele veio.
+    let idsDoCliente = null;
+    let telefonePorConversa = {};
+    if (escopo) {
+      const r = await supabase.from("conversas").select("id, advogado_id").eq("contato_id", escopo.contatoId);
+      if (meu !== pedidoMidiasRef.current) return;
+      if (r.error) {
+        setAcervo({ carregando: false, itens: [], erro: comOCodigo("Não consegui achar as conversas deste cliente.", r.error, "mídias") });
+        return;
+      }
+      idsDoCliente = (r.data || []).map((c) => c.id);
+      telefonePorConversa = Object.fromEntries((r.data || []).map((c) => [c.id, c.advogado_id]));
+      if (!idsDoCliente.length) {
+        setAcervo({ carregando: false, itens: [], erro: "", telefonePorConversa, conversasDoCliente: 0 });
+        return;
+      }
+    }
     // O TIPO VAI PARA O BANCO, e cada aba pergunta o seu (auditoria de 07/10).
     // Antes vinham as 500 mensagens mais recentes de QUALQUER tipo e a aba
     // filtrava aqui: num escritório movimentado, 500 são poucas horas de
@@ -11253,12 +11285,14 @@ export default function Painel({ sessao }) {
       if (aba === "midias") q = q.in("tipo", ["imagem", "video"]).not("midia_url", "is", null);
       else if (aba === "documentos") q = q.eq("tipo", "documento").not("midia_url", "is", null);
       else q = q.ilike("texto", "%http%");
+      if (idsDoCliente) q = q.in("conversa_id", idsDoCliente);
+      if (quem === "contato" || quem === "advogado") q = q.eq("origem", quem);
       // Teto de 500: é acervo para OLHAR, não para auditar. Sem teto, um ano de
       // conversa desenharia milhares de miniaturas de uma vez e a tela travaria
       // justamente em quem mais usa.
       return q.order("criado_em", { ascending: false }).limit(500);
     };
-    let { data, error } = await montar("id, conversa_id, tipo, texto, midia_url, midia_mime, midia_nome, criado_em");
+    let { data, error } = await montar("id, conversa_id, origem, tipo, texto, midia_url, midia_mime, midia_nome, criado_em");
     // A coluna do nome nasceu à mão, e a ponte a trata como opcional ("numa
     // base sem a coluna"). Num banco sem ela, o acervo abre como abria — sem o
     // nome —, em vez de não abrir por causa dele. Na LEITURA o PostgREST diz
@@ -11266,7 +11300,7 @@ export default function Painel({ sessao }) {
     // pelo nome, como em `semAColunaDaAgenda`.
     if (error && ["42703", "PGRST204"].includes(String(error.code || ""))
         && /midia_nome/.test(String(error.message || ""))) {
-      ({ data, error } = await montar("id, conversa_id, tipo, texto, midia_url, midia_mime, criado_em"));
+      ({ data, error } = await montar("id, conversa_id, origem, tipo, texto, midia_url, midia_mime, criado_em"));
     }
     if (meu !== pedidoMidiasRef.current) return;
     // A FALHA FICA NA JANELA, e não vira "Nenhuma foto ainda" depois que o
@@ -11275,8 +11309,47 @@ export default function Painel({ sessao }) {
       setAcervo({ carregando: false, itens: [], erro: comOCodigo("Não consegui abrir as mídias.", error, "mídias") });
       return;
     }
-    setAcervo({ carregando: false, itens: data || [], erro: "", cheio: (data || []).length >= 500 });
+    setAcervo({ carregando: false, itens: data || [], erro: "", cheio: (data || []).length >= 500,
+                telefonePorConversa, conversasDoCliente: idsDoCliente ? idsDoCliente.length : null });
   }, []);
+
+  // O ACERVO DE UM CLIENTE, pela conversa: o contato dela, e o nome do alto.
+  const abrirMidiasDoCliente = (c, aba) => {
+    const id = c && (c.contato_id || c.contato?.id);
+    if (!id) { mostrarAviso("Não consegui identificar o contato desta conversa."); return; }
+    abrirMidias(aba || midiaAba, { contatoId: id, nome: nomeDoContato(c.contato) }, "todos");
+  };
+  const nomeDoTelefonePorId = Object.fromEntries((advogados || []).map((a) => [a.id, a.nome]));
+  // QUANTOS ARQUIVOS o cliente tem, para o botão do histórico dizer se vale
+  // abrir. Fotos, vídeos e documentos (os links não têm coluna própria). Uma
+  // contagem só, sem trazer as linhas, e só quando o histórico abre. A falha
+  // não vira "nenhum": o botão fica com a frase de sempre.
+  const [contagemDeMidias, setContagemDeMidias] = useState(null);
+  const contatoDoHistorico = historico ? historico.contatoId : null;
+  useEffect(() => {
+    if (!contatoDoHistorico) return undefined;
+    let vivo = true;
+    setContagemDeMidias({ contatoId: contatoDoHistorico, n: null });
+    (async () => {
+      const r = await supabase.from("conversas").select("id").eq("contato_id", contatoDoHistorico);
+      if (!vivo || r.error) return;
+      const ids = (r.data || []).map((c) => c.id);
+      if (!ids.length) { setContagemDeMidias({ contatoId: contatoDoHistorico, n: 0 }); return; }
+      const c = await supabase.from("mensagens").select("id", { count: "exact", head: true })
+        .in("conversa_id", ids).in("tipo", ["imagem", "video", "documento"]).not("midia_url", "is", null);
+      if (!vivo || c.error) return;
+      setContagemDeMidias({ contatoId: contatoDoHistorico, n: c.count ?? null });
+    })();
+    return () => { vivo = false; };
+  }, [contatoDoHistorico]);
+  // A etiqueta de cada item: no acervo de todos, de qual conversa veio; no de
+  // um cliente, quem mandou e por qual telefone — a conversa é sempre a dele.
+  const etiquetaDoItem = (m) => {
+    if (!escopoDasMidias) return nomePorConversa[m.conversa_id] || "";
+    const quem = m.origem === "contato" ? "Cliente" : m.origem === "advogado" ? "Equipe" : "";
+    const tel = nomeDoTelefonePorId[(acervo.telefonePorConversa || {})[m.conversa_id]] || "";
+    return [quem, tel].filter(Boolean).join(" · ");
+  };
 
   // De qual conversa é cada item, para a etiqueta embaixo da miniatura. Só o que
   // está carregado — o acervo pode alcançar conversa de outro telefone, e ali a
@@ -17780,7 +17853,7 @@ export default function Painel({ sessao }) {
         {/* MÍDIAS de todas as conversas — o mesmo lugar do WhatsApp Web.
             UM BOTÃO, e não um `div` (auditoria de 28/10): é a única entrada do
             acervo, e o teclado não chegava até ela. */}
-        <button type="button" onClick={() => abrirMidias(midiaAba)} title="Mídias, documentos e links"
+        <button type="button" onClick={() => abrirMidias(midiaAba, null, "todos")} title="Mídias, documentos e links"
              aria-label="Mídias, documentos e links"
              style={{ width: ICONE_DA_BARRA, height: ICONE_DA_BARRA, borderRadius: 8, border: "none", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", color: midiasAberta ? "#fff" : "#aebac1", background: midiasAberta ? "rgba(255,255,255,.12)" : "transparent", cursor: "pointer" }}>
           <Images size={22} />
@@ -19877,6 +19950,14 @@ export default function Painel({ sessao }) {
                         <ClipboardList size={17} color={C.textSecondary} /> Ficha no Vantoro
                       </button>
                       )}
+                      {/* A MÍDIA DESTE CLIENTE (06/11): fotos, vídeos, documentos
+                          e links de todas as conversas dele, de uma vez — o
+                          "Mídia, links e docs" do WhatsApp. */}
+                      <button onClick={() => { setMenuDaConversa(false); abrirMidiasDoCliente(conversa); }}
+                              data-menu-midias
+                              style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
+                        <Images size={17} color={C.textSecondary} /> Mídia, links e documentos
+                      </button>
                       <button onClick={() => {
                                 setMenuDaConversa(false);
                                 const id = conversa.contato_id || conversa.contato?.id;
@@ -20682,6 +20763,27 @@ export default function Painel({ sessao }) {
             <span style={{ fontSize: 16, fontWeight: 600 }}>Histórico de atendimento</span>
           </div>
           <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+            {/* A MÍDIA DESTE CLIENTE (06/11), no alto: é a "informação do
+                contato" do WhatsApp, onde a equipe procura o que o cliente
+                mandou. O número sai da mesma leitura da galeria. */}
+            {conversa && String(conversa.contato_id || conversa.contato?.id || "") === String(historico.contatoId) && (
+              <button type="button" data-historico-midias onClick={() => abrirMidiasDoCliente(conversa)}
+                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", marginBottom: 16,
+                               border: `1px solid ${C.divider}`, borderRadius: 10, background: "transparent", color: C.textPrimary,
+                               cursor: "pointer", textAlign: "left" }}>
+                <Images size={18} color={C.green} style={{ flexShrink: 0 }} />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: 13.5, fontWeight: 600 }}>Mídia, links e documentos</span>
+                  <span style={{ display: "block", fontSize: 12, color: C.textSecondary }}>
+                    {contagemDeMidias && contagemDeMidias.contatoId === historico.contatoId && contagemDeMidias.n != null
+                      ? (contagemDeMidias.n === 0 ? "Nenhum arquivo ainda"
+                        : `${contagemDeMidias.n} ${contagemDeMidias.n === 1 ? "arquivo" : "arquivos"} — fotos, vídeos e documentos`)
+                      : "Tudo o que este cliente e a equipe trocaram"}
+                  </span>
+                </span>
+                <ChevronRight size={16} color={C.textSecondary} style={{ flexShrink: 0 }} />
+              </button>
+            )}
             {historico.carregando && <div style={{ fontSize: 13, color: C.textSecondary }}>Levantando…</div>}
             {!!historico.erro && <div style={{ fontSize: 13, color: C.textSecondary }}>{historico.erro}</div>}
             {!!historico.erroAlteracoes && (
@@ -22346,12 +22448,21 @@ export default function Painel({ sessao }) {
                 o X fica fixo — nunca sai da tela. */}
             <div style={{ display: "flex", alignItems: "center", gap: estreito ? 8 : 14, padding: estreito ? "12px 12px" : "14px 18px", borderBottom: `1px solid ${C.divider}` }}>
               <div style={{ flex: "0 1 auto", minWidth: 0 }}>
-                <div style={{ fontSize: 15.5, fontWeight: 700 }}>Mídia</div>
-                {!estreito && <div style={{ fontSize: 12, color: C.textSecondary }}>de todas as conversas</div>}
+                <div data-titulo-das-midias style={{ fontSize: 15.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: estreito ? 120 : 320 }}
+                     title={escopoDasMidias ? `Mídia de ${escopoDasMidias.nome}` : undefined}>
+                  {escopoDasMidias ? `Mídia de ${escopoDasMidias.nome}` : "Mídia"}
+                </div>
+                {!estreito && (
+                  <div style={{ fontSize: 12, color: C.textSecondary }}>
+                    {!escopoDasMidias ? "de todas as conversas"
+                      : acervo.conversasDoCliente > 1 ? `das ${acervo.conversasDoCliente} conversas deste cliente`
+                      : "das conversas deste cliente"}
+                  </div>
+                )}
               </div>
               <div className="sem-scrollbar fita" style={{ flex: 1, minWidth: 0, display: "flex", gap: 4, justifyContent: estreito ? "flex-end" : "center", "--fita-fundo": C.panel }}>
                 {[["midias", "Mídias"], ["documentos", "Documentos"], ["links", "Links"]].map(([k, r]) => (
-                  <button key={k} onClick={() => { setMidiaAba(k); abrirMidias(k); }} data-aba-das-midias={k}
+                  <button key={k} onClick={() => { setMidiaAba(k); abrirMidias(k, escopoDasMidias, quemMandou); }} data-aba-das-midias={k}
                           style={{ flexShrink: 0, border: "none", background: "transparent", cursor: "pointer", padding: estreito ? "8px 8px" : "8px 14px", fontSize: 14, fontWeight: 600, color: midiaAba === k ? C.textPrimary : C.textSecondary, borderBottom: `2px solid ${midiaAba === k ? C.green : "transparent"}` }}>{r}</button>
                 ))}
                 <span aria-hidden className="fita-borda" />
@@ -22362,7 +22473,41 @@ export default function Painel({ sessao }) {
               </button>
             </div>
 
-            <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
+            {/* QUEM MANDOU, e DE QUEM é o acervo (06/11). A pergunta que trouxe
+                isto foi "o que ESSA CLIENTE mandou": o filtro do lado vai ao
+                banco (`origem`), e não recorta só o que veio — o teto de 500
+                cortaria antes. "Deste cliente" só aparece com uma conversa
+                aberta (ou já escolhido), e "Todas as conversas" volta ao
+                acervo de sempre. */}
+            <div data-filtros-das-midias
+                 style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, padding: estreito ? "8px 12px" : "10px 18px", borderBottom: `1px solid ${C.divider}` }}>
+              {[["todos", "Todos"], ["contato", "Do cliente"], ["advogado", "Da equipe"]].map(([k, r]) => (
+                <button key={k} type="button" data-quem-mandou={k} aria-pressed={quemMandou === k}
+                        onClick={() => abrirMidias(midiaAba, escopoDasMidias, k)}
+                        style={{ border: `1px solid ${quemMandou === k ? C.botao : C.divider}`, background: quemMandou === k ? C.botao : "transparent",
+                                 color: quemMandou === k ? "#fff" : C.textPrimary, borderRadius: 16, padding: "5px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                  {r}
+                </button>
+              ))}
+              {(escopoDasMidias || conversa) && (
+                <span style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {escopoDasMidias ? (
+                    <button type="button" data-midias-de-todas onClick={() => abrirMidias(midiaAba, null, quemMandou)}
+                            style={{ border: "none", background: "transparent", color: C.verdeTexto, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: "5px 4px" }}>
+                      Ver de todas as conversas
+                    </button>
+                  ) : (
+                    <button type="button" data-midias-do-cliente onClick={() => abrirMidiasDoCliente(conversa)}
+                            title={`Só a mídia de ${nomeDoContato(conversa.contato)}`}
+                            style={{ border: "none", background: "transparent", color: C.verdeTexto, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: "5px 4px", maxWidth: estreito ? "100%" : 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      Só deste cliente: {nomeDoContato(conversa.contato)}
+                    </button>
+                  )}
+                </span>
+              )}
+            </div>
+
+            <div data-midias-carregando={acervo.carregando ? "sim" : "nao"} style={{ flex: 1, overflowY: "auto", padding: 14 }}>
               {acervo.carregando && <div style={{ color: C.textSecondary, fontSize: 14 }}>Carregando…</div>}
               {!acervo.carregando && !!acervo.erro && (
                 <div data-erro-das-midias style={{ color: C.erroTexto, fontSize: 14 }}>{acervo.erro}</div>
@@ -22371,10 +22516,12 @@ export default function Painel({ sessao }) {
                 <div style={{ color: C.textSecondary, fontSize: 12.5, marginBottom: 10 }}>Mostrando os 500 mais recentes.</div>
               )}
               {!acervo.carregando && !acervo.erro && acervoFiltrado.length === 0 && (
-                <div style={{ color: C.textSecondary, fontSize: 14 }}>
-                  {midiaAba === "midias" ? "Nenhuma foto ou vídeo ainda."
-                    : midiaAba === "documentos" ? "Nenhum documento ainda."
-                    : "Nenhum link enviado ainda."}
+                <div data-midias-vazio style={{ color: C.textSecondary, fontSize: 14 }}>
+                  {(midiaAba === "midias" ? "Nenhuma foto ou vídeo" : midiaAba === "documentos" ? "Nenhum documento" : "Nenhum link")
+                    + (quemMandou === "contato" ? " que o cliente mandou"
+                      : quemMandou === "advogado" ? " que a equipe mandou" : "")
+                    + (escopoDasMidias ? (acervo.conversasDoCliente === 0 ? ": você não vê nenhuma conversa deste cliente." : " nas conversas deste cliente.")
+                      : quemMandou === "todos" ? " ainda." : ".")}
                 </div>
               )}
 
@@ -22385,13 +22532,13 @@ export default function Painel({ sessao }) {
                   {acervoFiltrado.map((m) => (
                     <button key={m.id}
                             onClick={() => { if (m.tipo === "imagem") { setMidiasAberta(false); setRetratoAberto(false); setImagemAberta(m.midia_url); } else { window.open(m.midia_url, "_blank", "noopener"); } }}
-                            title={nomePorConversa[m.conversa_id] || ""}
+                            title={etiquetaDoItem(m)} data-item-das-midias={m.id}
                             style={{ position: "relative", border: "none", padding: 0, aspectRatio: "1 / 1", borderRadius: 8, overflow: "hidden", cursor: "pointer", background: C.inputBg }}>
                       {m.tipo === "imagem"
                         ? <img src={m.midia_url} alt="" loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                         : <span style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: C.textSecondary, fontSize: 13 }}>vídeo</span>}
                       <span style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "14px 8px 6px", fontSize: 11.5, color: "#fff", textAlign: "left", background: "linear-gradient(transparent, rgba(0,0,0,.75))", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {nomePorConversa[m.conversa_id] || ""}
+                        {etiquetaDoItem(m)}
                       </span>
                     </button>
                   ))}
@@ -22431,7 +22578,7 @@ export default function Painel({ sessao }) {
                             {ehLink ? m._link : (m.midia_nome || m.texto || "Documento")}
                           </span>
                           <span style={{ display: "block", fontSize: 11.5, color: C.textSecondary }}>
-                            {baixando ? "Baixando… · " : ""}{(nomePorConversa[m.conversa_id] || "")}{nomePorConversa[m.conversa_id] ? " · " : ""}{rotuloData(m.criado_em)}
+                            {baixando ? "Baixando… · " : ""}{etiquetaDoItem(m)}{etiquetaDoItem(m) ? " · " : ""}{rotuloData(m.criado_em)}
                           </span>
                         </span>
                         {!ehLink && <Download size={16} color={C.textSecondary} style={{ flexShrink: 0 }} />}

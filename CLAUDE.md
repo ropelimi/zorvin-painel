@@ -3268,6 +3268,48 @@ antes de o pdf.js começar a buscar o resto. Quem pega é a cena da fila, com o
 depósito lento: três downloads ficam no ar ao mesmo tempo, quando a fila deixa
 dois.
 
+## A mídia de um cliente, tipo no WhatsApp (06/11)
+
+Pedido da equipe (Maria Nicolly), com a foto de uma conversa, repassado pelo
+Rodrigo: *"Onde que eu vejo tds os docs q essa cliente mandou? de uma vez, tipo
+no wpp"*. O acervo da barra lateral (o ícone de Mídias) juntava as fotos, os
+documentos e os links de TODAS as conversas, e não havia como ver os de um
+cliente só.
+
+| onde | o quê |
+|---|---|
+| o Histórico de atendimento (o reloginho da conversa) | no alto, **Mídia, links e documentos** (`data-historico-midias`), com quantos arquivos o cliente tem |
+| o ⋮ da conversa (celular, e computador com o cabeçalho recolhido) | o item **Mídia, links e documentos** (`data-menu-midias`) |
+| dentro do acervo | **Todos · Do cliente · Da equipe** (`data-quem-mandou`), e **Só deste cliente: NOME** / **Ver de todas as conversas** |
+
+- **O acervo do cliente junta as conversas dele em todos os telefones** que a
+  pessoa vê (o mesmo cliente fala com o SAC e com a Subsídio Emenda, como na
+  foto). Primeiro as conversas do contato, depois as mensagens delas
+  (`.in("conversa_id")`). A regra de acesso de `conversas` decide quais
+  telefones entram, e não uma segunda escrita dela aqui.
+- **Cada item diz quem mandou e por qual telefone** ("Cliente · SAC",
+  "Equipe · Subsidio Emenda"). No acervo de todos continua dizendo de qual
+  conversa veio.
+- **"Do cliente" e "Da equipe" vão ao banco** (`origem`), e não recortam só o
+  que veio: o teto de 500 cortaria antes. O filtro e o cliente valem também
+  quando se troca de aba (Mídias, Documentos, Links).
+- **O ícone da barra lateral continua abrindo o acervo de todos**, como antes.
+  Com uma conversa aberta, ele oferece "Só deste cliente".
+- **A lista vazia diz o que foi pedido** ("Nenhum link que a equipe mandou nas
+  conversas deste cliente."). A leitura que falha diz que falhou, com o código.
+- **O número do Histórico** é uma contagem só (fotos, vídeos e documentos; os
+  links não têm coluna própria). A contagem que falha não vira "nenhum": o
+  botão fica com a frase de sempre.
+- **No cabeçalho solto do computador não entrou um botão novo**, e é decisão:
+  a fila tem a conta de largura de 29/09 (`FILA_ESCRITA`), e mais um ícone
+  apertaria o nome do cliente em todas as larguras de notebook. O caminho ali é
+  o reloginho do Histórico, que é a "informação do contato" do Zorvin.
+
+**Fica de fora, e é decisão:** os anexos das notas internas (05/11) não entram,
+pela mesma razão de não entrarem no acervo de todos: o acervo lê `mensagens`.
+
+Prova: `a-midia-de-um-cliente`, 39 conferências em cinco cenas.
+
 ## O aviso automático do Vantoro tem o rosto dele (05/11)
 
 Pedido do Rodrigo, com a foto de um aviso de audiência: *"Nos avisos de
