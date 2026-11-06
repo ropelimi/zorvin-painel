@@ -803,22 +803,16 @@ if (vale("13b")) {
   await ctx.close();
 }
 if (vale("13b")) {
-  // AS MINHAS: era só um `console.error`.
+  // AS MINHAS: era só um `console.error`. INVERTIDA em 06/11, e não apagada:
+  // "Minhas conversas" saiu da gaveta (o seletor de responsáveis faz o
+  // mesmo), e com ela a leitura que falhava calada. O que fica guardado é
+  // que a gaveta não a oferece de novo numa limpeza futura.
   const { ctx, page } = await abrir();
   await clicar(page, "[data-mais-filtros]");
   await page.waitForTimeout(300);
-  const temMinhas = (await page.locator("[data-minhas-opcao]").count()) > 0;
-  ok("o filtro “Minhas conversas” existe nesta bancada", temMinhas);
-  await page.evaluate(() => { globalThis.__RECUSAR_LEITURA = ["conversas"]; });
-  if (temMinhas) await clicar(page, "[data-minhas-opcao]");
-  await page.waitForTimeout(1500);
-  const f1 = await faixa(page);
-  ok("a falha das minhas é dita na faixa", /todas as conversas que são suas/.test(f1), f1);
-  await page.evaluate(() => { globalThis.__RECUSAR_LEITURA = []; });
-  await clicar(page, "[data-tentar-leituras]");
-  await page.waitForTimeout(2000);
-  const f2 = await faixa(page);
-  ok("e o “Tentar de novo” as refaz", !/que são suas/.test(f2), f2);
+  ok("a gaveta de filtros abriu", (await page.locator("[data-menu-mais-filtros]").count()) === 1);
+  ok("e o filtro “Minhas conversas” não está mais nela", (await page.locator("[data-minhas-opcao]").count()) === 0);
+  ok("o seletor de responsáveis está no alto da lista", (await page.locator("[data-seletor-de-responsaveis]").count()) === 1);
   await ctx.close();
 }
 if (vale("13b")) {

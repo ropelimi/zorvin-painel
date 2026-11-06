@@ -4449,8 +4449,10 @@ export default function Painel({ sessao }) {
   const marcosRef = useRef({ convId: null, lista: [] });
   // RELER OS MARCOS — preenchido logo depois de `carregarMensagens`.
   const relerMarcosRef = useRef(() => {});
+  // "minhas" saiu da gaveta em 06/11: a aba que se atualizou com ele ligado
+  // volta em "Tudo", e não num filtro que a tela não sabe mais desenhar.
   const [filtro, setFiltro] = useState(() => (fotoDaRecarga && typeof fotoDaRecarga.filtro === "string" && fotoDaRecarga.filtro
-    ? fotoDaRecarga.filtro : "tudo")); // aba/filtro da lista: 'tudo' | 'naolidas' | 'favoritas' | 'tag:<id>' | 'frente:<FRENTE>'
+    && fotoDaRecarga.filtro !== "minhas" ? fotoDaRecarga.filtro : "tudo")); // aba/filtro da lista: 'tudo' | 'naolidas' | 'favoritas' | 'tag:<id>' | 'frente:<FRENTE>'
   // O filtro de agora, para quem é chamado fora do desenho (a releitura das
   // tarefas depois de um clique).
   const filtroRef = useRef("tudo");
@@ -6202,14 +6204,8 @@ export default function Painel({ sessao }) {
   // É a armadilha nº 2 com outra roupa: ausência desenhada no lugar de
   // "ainda não perguntei".
   const [extrasGrupo, setExtrasGrupo] = useState([]);
-  // AS MINHAS QUE AS PÁGINAS JÁ LIDAS NÃO TÊM — o mesmo raciocínio dos
-  // grupos: um cliente meu parado há dois meses mora fora das 200 mais
-  // recentes, e "as minhas" sem ele seria uma lista curta com cara de lista
-  // inteira. Quem conclui "não tenho nada pendente" a partir dela esquece
-  // justamente o cliente mais esquecido.
-  const [extrasMinhas, setExtrasMinhas] = useState([]);
   // AS NÃO LIDAS, AS FAVORITAS E AS ARQUIVADAS QUE AS PÁGINAS LIDAS NÃO TÊM
-  // (auditoria de 28/10) — o desenho de `extrasMinhas`. As três são uma marca
+  // (auditoria de 28/10) — o desenho de `extrasGrupo`. As três são uma marca
   // na própria linha, e a tela as procurava só nas páginas carregadas: a
   // favorita da posição 450 não aparecia, a pasta dizia "Nenhuma conversa
   // arquivada." logo abaixo da linha "Arquivadas 1", e na ordem "Antigas" a
@@ -6446,44 +6442,6 @@ export default function Painel({ sessao }) {
   //  E A PERGUNTA TEM TRÊS DESFECHOS (auditoria de 28/10) — `perguntasDoFiltro`:
   //  procurando, falhou e pronto. A faixa dizia a falha, e a lista vazia
   //  logo abaixo dela dizia "nenhuma" sobre uma pergunta sem resposta.
-  useEffect(() => {
-    let cancelado = false;
-    setExtrasMinhas([]);
-    if (filtro !== "minhas" || !advogadoId) { limparFalhaDeLeitura("filtro-minhas"); return; }
-    const advId = advogadoId;
-    const chave = chaveDoFiltro(filtro, false, advId);
-    // Sem a coluna (ou sem saber quem sou) não há o que perguntar.
-    if (!meuId || temResponsavel !== true) {
-      limparFalhaDeLeitura("filtro-minhas");
-      marcarPergunta(chave, "pronto");
-      return;
-    }
-    marcarPergunta(chave, "procurando");
-    (async () => {
-      // COM ORDEM (auditoria de 28/10), para o teto cortar as mais antigas —
-      // sem ela, quais 500 vinham era sorte do banco.
-      const { data, error } = await supabase.from("conversas")
-        .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
-        .eq("advogado_id", advId).eq("responsavel_id", meuId)
-        .order("ultima_atividade", { ascending: false }).order("id").limit(500);
-      if (cancelado || advogadoIdRef.current !== advId) return;
-      // FALHOU, NÃO APAGA: as minhas das páginas lidas continuam aparecendo
-      // por `passaNoFiltro`, que não depende desta ida. MAS A FALHA É DITA
-      // (auditoria de 27/10): era só um `console.error`, e a lista curta se
-      // lia como "estas são todas as minhas" — quem conclui "não tenho nada
-      // pendente" a partir dela esquece justamente o cliente mais esquecido.
-      if (error) {
-        anotarFalhaDeLeitura("filtro-minhas", "todas as conversas que são suas", error);
-        marcarPergunta(chave, "falhou", error);
-        return;
-      }
-      limparFalhaDeLeitura("filtro-minhas");
-      setExtrasMinhas(data || []);
-      marcarPergunta(chave, "pronto", null, (data || []).length >= 500 ? 500 : 0);
-    })();
-    return () => { cancelado = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtro, advogadoId, meuId, temResponsavel, tentativaDosFiltros]);
 
   useEffect(() => {
     let cancelado = false;
@@ -14294,10 +14252,10 @@ export default function Painel({ sessao }) {
   const tagFiltrada = filtro.startsWith("tag:")
     ? tags.find((t) => t.id === filtro.slice(4)) || null
     : null;
-  // OS FILTROS DA GAVETA QUE PINTAM A PÍLULA DE VERDE — grupos e as minhas.
+  // OS FILTROS DA GAVETA QUE PINTAM A PÍLULA DE VERDE — grupos e tarefas.
   // Um nome só para a pergunta "a gaveta tem um filtro ligado que não é
   // etiqueta?", escrita cinco vezes no controle.
-  const filtroVerde = filtro === "grupos" || filtro === "minhas" || filtro === "tarefas";
+  const filtroVerde = filtro === "grupos" || filtro === "tarefas";
 
   // ------------------------------------------------------------
   //  O QUE É UM GRUPO — a pergunta, escrita uma vez só
@@ -14690,9 +14648,6 @@ export default function Painel({ sessao }) {
     // páginas já lidas: sem ele, a lista mostraria "os grupos entre as 200
     // conversas mais recentes" com cara de "os grupos".
     if (filtro === "grupos") return ehGrupo(c);
-    // AS MINHAS: as que têm a MIM como responsável. Não "as em que falei" —
-    // isso é o filtro de atendentes, lá no alto, e responde outra pergunta.
-    if (filtro === "minhas") return !!meuId && String(c.responsavel_id || "") === String(meuId);
     // COM TAREFA PARA HOJE: a resposta é do banco (`idsTarefaHoje`), porque a
     // tarefa não mora na linha da conversa. Antes de ela chegar, nada passa —
     // é breve, e "todas" no lugar de "ainda não sei" seria o filtro mentindo.
@@ -14742,12 +14697,12 @@ export default function Painel({ sessao }) {
   const idsDosExtras = useMemo(() => {
     const naLista = new Set(conversas.map((c) => String(c.id)));
     const ids = new Set();
-    for (const c of [...extras, ...extrasEtiqueta, ...extrasQuem, ...extrasGrupo, ...extrasMinhas, ...extrasTarefas,
+    for (const c of [...extras, ...extrasEtiqueta, ...extrasQuem, ...extrasGrupo, ...extrasTarefas,
       ...extrasMarcadas]) {
       if (!naLista.has(String(c.id))) ids.add(String(c.id));
     }
     return [...ids].sort().join(",");
-  }, [conversas, extras, extrasEtiqueta, extrasQuem, extrasGrupo, extrasMinhas, extrasTarefas, extrasMarcadas]);
+  }, [conversas, extras, extrasEtiqueta, extrasQuem, extrasGrupo, extrasTarefas, extrasMarcadas]);
   // O espelho primeiro, e a leitura depois: os efeitos rodam na ordem em que
   // estão escritos, e a leitura lê o espelho.
   useEffect(() => { idsDosExtrasRef.current = idsDosExtras ? idsDosExtras.split(",") : []; }, [idsDosExtras]);
@@ -15630,7 +15585,7 @@ export default function Painel({ sessao }) {
     // e o de baixo custaria um `Set` sobre a lista inteira a cada redesenho —
     // trabalho de sobra em cima do caminho mais quente que esta tela tem.
     if (!busca.trim() && !filtro.startsWith("tag:") && filtro !== "grupos"
-        && filtro !== "minhas" && filtro !== "tarefas" && filtro !== "naolidas" && filtro !== "favoritas"
+        && filtro !== "tarefas" && filtro !== "naolidas" && filtro !== "favoritas"
         && !verArquivadas && !quemFiltra.length) return daLista;
     // As que vieram do banco e não estavam na lista. Entram na mesma ordem de
     // sempre — fixada em cima, depois recente primeiro —, e não emendadas no
@@ -15653,7 +15608,7 @@ export default function Painel({ sessao }) {
       // vazia — o de cima é que trata a busca.)
       // E UMA VEZ SÓ: o filtro de atendentes soma com os outros, e a mesma
       // conversa pode vir pelos dois.
-      : [...extrasEtiqueta, ...extrasQuem, ...extrasGrupo, ...extrasMinhas, ...extrasTarefas, ...extrasMarcadas]
+      : [...extrasEtiqueta, ...extrasQuem, ...extrasGrupo, ...extrasTarefas, ...extrasMarcadas]
           .filter((c) => {
             const id = String(c.id);
             if (naLista.has(id)) return false;
@@ -15788,13 +15743,13 @@ export default function Painel({ sessao }) {
   // O FILTRO QUE PERGUNTA AO BANCO, e em que pé está a pergunta (auditoria de
   // 28/10) — ver `perguntasDoFiltro`. Sem resposta guardada para a chave de
   // agora, ela ainda não voltou: "procurando".
-  const filtroPerguntaAoBanco = filtro === "minhas" || filtro === "grupos" || filtro === "tarefas"
+  const filtroPerguntaAoBanco = filtro === "grupos" || filtro === "tarefas"
     || filtro === "naolidas" || filtro === "favoritas" || filtro.startsWith("tag:") || (verArquivadas && filtro === "tudo");
   const perguntaDaLista = filtroPerguntaAoBanco
     ? perguntasDoFiltro[chaveDoFiltro(filtro, verArquivadas, advogadoId, responsaveisDaLista)] || { estado: "procurando", codigo: "", cortou: 0 }
     : null;
   const oQueOFiltroProcura = verArquivadas && filtro === "tudo" ? "as conversas arquivadas"
-    : filtro === "minhas" ? "as suas conversas" : filtro === "grupos" ? "os grupos"
+    : filtro === "grupos" ? "os grupos"
     : filtro === "tarefas" ? "as conversas com tarefa para hoje" : filtro === "naolidas" ? "as conversas não lidas"
     : filtro === "favoritas" ? "as favoritas" : "as conversas desta etiqueta";
   // A FRASE DA LISTA QUE NÃO VEIO, escrita uma vez para as duas portas por
@@ -15851,7 +15806,6 @@ export default function Painel({ sessao }) {
     // quem responde é o ramo de cima — e sem a tabela ela ficava procurando
     // para sempre. Auditoria de 28/10.)
     : filtro === "tarefas" ? ["sem-tarefas-hoje", "Nenhuma conversa deste telefone com tarefa para hoje ou atrasada."]
-    : filtro === "minhas" ? ["sem-minhas", "Nenhuma conversa sua neste telefone. Uma conversa vira sua quando você responde primeiro, ou pelo responsável no alto dela."]
     // OS FILTROS FALAM DO QUE A PESSOA PEDIU (auditoria de 27/10): com "Não
     // lidas", "Favoritas" ou uma etiqueta ligados, a lista vazia dizia "Nenhuma
     // conversa ainda" — sobre o telefone inteiro, que ela acabou de ver cheio.
@@ -15880,7 +15834,7 @@ export default function Painel({ sessao }) {
   // perguntam ao banco agora, e "0 de 0+ conversas" era a página carregada
   // falando pelo filtro.
   const listaPodeCrescer = !busca.trim() && !filtro.startsWith("tag:")
-    && filtro !== "grupos" && filtro !== "minhas" && filtro !== "tarefas"
+    && filtro !== "grupos" && filtro !== "tarefas"
     && filtro !== "naolidas" && filtro !== "favoritas" && !verArquivadas && !quemFiltra.length;
 
   // Não lidas de cada advogado, para o selo na barra lateral.
@@ -17508,7 +17462,7 @@ export default function Painel({ sessao }) {
                     // OS FILTROS, OS DEPARTAMENTOS E OS TELEFONES TAMBÉM
                     // (auditoria de 27/10): acendiam esta faixa, e o botão não
                     // os relia.
-                    if (falhasDeLeitura["filtro-grupos"] || falhasDeLeitura["filtro-minhas"]
+                    if (falhasDeLeitura["filtro-grupos"]
                         || falhasDeLeitura["filtro-etiqueta"] || falhasDeLeitura["filtro-marcadas"]
                         || falhasDeLeitura.atendentes) {
                       setTentativaDosFiltros((n) => n + 1);
@@ -18683,13 +18637,11 @@ export default function Painel({ sessao }) {
                     aria-expanded={menuEtiquetas} aria-haspopup="listbox"
                     aria-label={tagFiltrada ? `Filtrando por ${tagFiltrada.nome}`
                                 : filtro === "grupos" ? "Mostrando só os grupos"
-                                : filtro === "minhas" ? "Mostrando só as minhas conversas"
                                 : filtro === "tarefas" ? "Mostrando só as conversas com tarefa para hoje" : "Mais filtros"}
                     title={tagFiltrada ? `Filtrando por "${tagFiltrada.nome}"`
                            : filtro === "grupos" ? "Mostrando só os grupos"
-                           : filtro === "minhas" ? "Mostrando só as conversas em que você é o responsável"
                            : filtro === "tarefas" ? "Mostrando só as conversas com tarefa para hoje ou atrasada"
-                           : "Mais filtros: minhas conversas, grupos e etiquetas"}
+                           : "Mais filtros: tarefas, grupos e etiquetas"}
                     style={{ flexShrink: 1, minWidth: 0, maxWidth: 190, minHeight: 30,
                              border: `1px solid ${tagFiltrada ? tagFiltrada.cor : (filtroVerde ? C.greenDark : C.divider)}`,
                              background: tagFiltrada ? tagFiltrada.cor : (filtroVerde ? C.greenDark : "transparent"),
@@ -18700,7 +18652,7 @@ export default function Painel({ sessao }) {
                              display: "flex", alignItems: "center", gap: 4 }}>
               {(tagFiltrada || filtroVerde) && (
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {tagFiltrada ? tagFiltrada.nome : filtro === "minhas" ? "Minhas" : filtro === "tarefas" ? "Tarefas hoje" : "Grupos"}
+                  {tagFiltrada ? tagFiltrada.nome : filtro === "tarefas" ? "Tarefas hoje" : "Grupos"}
                 </span>
               )}
               <ChevronDown size={14} style={{ flexShrink: 0, opacity: .8 }} />
@@ -18738,7 +18690,6 @@ export default function Painel({ sessao }) {
                 const ve = (rotulo) => !comPesquisa || casaComAPesquisa(pesquisa, rotulo);
                 const tagsAchadas = comPesquisa ? tags.filter((t) => casaComAPesquisa(pesquisa, t.nome)) : tags;
                 const nada = comPesquisa && tagsAchadas.length === 0
-                  && !(temResponsavel === true && ve("Minhas conversas"))
                   && !(temTarefas === true && ve("Com tarefa para hoje"))
                   && !ve("Grupos") && !ve("Todas as conversas");
                 return (
@@ -18755,18 +18706,10 @@ export default function Painel({ sessao }) {
                 {/* GRUPOS VEM PRIMEIRO, e separado por um traço: é uma
                     pergunta de outra natureza que as etiquetas. Etiqueta é uma
                     marca que a equipe põe; grupo é o que a conversa É. */}
-                {/* AS MINHAS VÊM PRIMEIRO: é o filtro de todo dia de quem
-                    atende. Só com o script 008 — sem a coluna, a lista viria
-                    sempre vazia, e "nenhuma conversa sua" seria mentira. */}
-                {temResponsavel === true && ve("Minhas conversas") && (
-                  <button data-minhas-opcao role="option" aria-selected={filtro === "minhas"}
-                          onClick={() => { setFiltro(filtro === "minhas" ? "tudo" : "minhas"); setMenuEtiquetas(false); }}
-                          style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "11px 12px", border: "none", borderBottom: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
-                    <UserCheck size={16} color={C.textSecondary} style={{ flexShrink: 0 }} />
-                    <span style={{ flex: 1 }}>Minhas conversas</span>
-                    {filtro === "minhas" && <Check size={16} color={C.green} style={{ flexShrink: 0 }} />}
-                  </button>
-                )}
+                {/* "MINHAS CONVERSAS" SAIU EM 06/11, a pedido do Rodrigo: o
+                    seletor de responsáveis, no alto da lista (04/11), faz o
+                    mesmo ao escolher "Você", e recorta também os números das
+                    abas. Duas portas para a mesma pergunta só confundiam. */}
                 {/* COM TAREFA PARA HOJE (script 018): as conversas deste
                     telefone com tarefa aberta que vence hoje ou já venceu — de
                     qualquer pessoa, porque quem vê a conversa vê as tarefas

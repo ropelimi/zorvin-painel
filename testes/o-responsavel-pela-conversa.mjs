@@ -10,8 +10,8 @@
 // O QUE ESTA PROVA GUARDA
 //
 //   1. sem o script 008, NADA disto aparece — nem o controle, nem o filtro,
-//      nem o rosto na linha. "Minhas conversas" sem a coluna seria uma lista
-//      sempre vazia, e "nenhuma conversa sua" seria mentira;
+//      nem o rosto na linha. (Um filtro das minhas sem a coluna seria uma
+//      lista sempre vazia, e "nenhuma conversa sua" seria mentira);
 //   2. assumir, passar e tirar GRAVAM no banco — e a frase espera o banco:
 //      recusado, a tela não diz "agora é sua";
 //   3. quem responde primeiro ASSUME sozinho, e responder numa conversa que
@@ -19,9 +19,10 @@
 //      importa: um "assume sempre quem responde" faria a conversa trocar de
 //      dono a cada ajuda de colega, e o responsável deixaria de querer dizer
 //      qualquer coisa;
-//   4. "Minhas conversas" acha também a conversa que está a cinco páginas de
-//      distância — senão seria "as minhas entre as 200 mais recentes" com
-//      cara de "as minhas";
+//   4. "Minhas conversas" saiu da gaveta (06/11), e o seletor de
+//      responsáveis com "Você" acha também a conversa que está a cinco
+//      páginas de distância — senão seria "as minhas entre as 200 mais
+//      recentes" com cara de "as minhas";
 //   5. o tempo real que traz "sem responsável" LIMPA a tela. É `null`, e um
 //      `??` no remendo da lista manteria o dono antigo;
 //   6. no celular o controle mora no ⋮, e o menu aparece PINTADO — medido
@@ -347,9 +348,15 @@ console.log("\nDuas pessoas respondendo juntas: quem chegou primeiro fica");
 }
 
 // ==================================================================
-//  5. "MINHAS CONVERSAS" — e a que está a cinco páginas de distância
+//  5. "MINHAS CONVERSAS" SAIU DA GAVETA (06/11) — E O SELETOR FAZ O MESMO
+//
+//  Pedido do Rodrigo: "Minhas conversas" não precisa mais existir, porque o
+//  seletor de responsáveis (04/11), escolhendo "Você", faz o mesmo filtro.
+//  INVERTIDA, e não apagada: a cena conferia que a gaveta oferecia o
+//  filtro; hoje confere que não oferece, e que o seletor responde a mesma
+//  pergunta — inclusive pela conversa a cinco páginas de distância.
 // ==================================================================
-console.log("\n“Minhas conversas” mostra só as minhas — inclusive a que não está carregada");
+console.log("\n“Minhas conversas” saiu da gaveta — o seletor “Você” mostra só as minhas, inclusive a que não está carregada");
 {
   const { ctx, page, estouros } = await abrirPainel();
   // A MINHA DESTE TELEFONE: assumida pelo caminho da tela, e não plantada.
@@ -358,18 +365,34 @@ console.log("\n“Minhas conversas” mostra só as minhas — inclusive a que n
   await clicarSeExiste(page, "[data-assumir-conversa]");
   await page.waitForTimeout(500);
 
-  await clicarSeExiste(page, "[data-mais-filtros]");
-  const tinha = await clicarSeExiste(page, "[data-minhas-opcao]");
-  ok("o menu de filtros oferece “Minhas conversas”", tinha);
-  await page.waitForTimeout(1200);
+  const abriuGaveta = await clicarSeExiste(page, "[data-mais-filtros]");
+  await page.waitForTimeout(300);
+  ok("a gaveta de filtros abre", abriuGaveta && (await page.locator("[data-menu-mais-filtros]").count()) === 1);
+  ok("e NÃO oferece mais “Minhas conversas”", (await page.locator("[data-minhas-opcao]").count()) === 0);
+  const textoDaGaveta = await page.locator("[data-menu-mais-filtros]").first().innerText().catch(() => "");
+  ok("nem pelo nome", textoDaGaveta.length > 0 && !/Minhas conversas/.test(textoDaGaveta), textoDaGaveta);
+  ok("e o resto da gaveta continua (os grupos)", (await page.locator("[data-grupos-opcao]").count()) === 1);
+  await page.keyboard.press("Escape").catch(() => {});
+  await page.waitForTimeout(300);
+
+  // O SELETOR, ESCOLHENDO "VOCÊ" (a minha conta na bancada é u1).
+  async function soEu() {
+    await clicarSeExiste(page, "[data-responsaveis-botao]");
+    await page.waitForTimeout(300);
+    const deu = await clicarSeExiste(page, '[data-responsavel-opcao="u1"]');
+    await page.keyboard.press("Escape").catch(() => {});
+    await page.waitForTimeout(2500);
+    return deu;
+  }
+  ok("o seletor de responsáveis oferece “Você”", await soEu());
   const ids = await page.$$eval("[data-conversa-id]", (ns) => ns.map((n) => n.getAttribute("data-conversa-id")));
   ok("a lista traz a minha", ids.includes("cv-livre"), ids.join(", "));
   ok("e não traz a da Jenifer", !ids.includes("cv-jen"), ids.join(", "));
   const donos = await page.evaluate((ids) => ids.map((id) =>
     (globalThis.__TABELAS.conversas.find((x) => String(x.id) === id) || {}).responsavel_id ?? null), ids);
   ok("e SÓ traz conversas minhas", donos.length > 0 && donos.every((d) => d === "u1"), JSON.stringify(donos));
-  const pilula = await page.locator("[data-mais-filtros]").first().innerText().catch(() => "");
-  ok("a pílula da fita escreve “Minhas”", /Minhas/.test(pilula), pilula);
+  const rotulo = await page.locator("[data-responsaveis-rotulo]").first().innerText().catch(() => "");
+  ok("o seletor escreve “Você”", /Você/.test(rotulo), rotulo);
 
   // O TELEFONE DE 1200 CONVERSAS. Uma delas, na posição ~1150, passa a ser
   // minha — pelo banco, como se um colega a tivesse passado ontem.
@@ -385,19 +408,11 @@ console.log("\n“Minhas conversas” mostra só as minhas — inclusive a que n
     return String(c.id);
   });
   ok("plantei uma conversa minha no fundo do telefone de 1200", Boolean(alvo));
-  // TROCAR DE TELEFONE ZERA O FILTRO (é de propósito — `trocarAdvogado`).
+  // A ESCOLHA DO SELETOR VALE AO TROCAR DE TELEFONE (04/11).
   await clicarSeExiste(page, '[data-telefone="Arquivo"]');
-  await page.waitForTimeout(2500);
-  const carregadas = await page.$$eval("[data-conversa-id]", (ns) => ns.map((n) => n.getAttribute("data-conversa-id")));
-  // O RETRATO DE ANTES: sem ele, a de baixo passaria num telefone em que a
-  // conversa estava na tela desde o começo.
-  ok("a conversa do fundo NÃO está entre as carregadas", alvo && !carregadas.includes(alvo),
-     `${carregadas.length} carregadas`);
-  await clicarSeExiste(page, "[data-mais-filtros]");
-  await clicarSeExiste(page, "[data-minhas-opcao]");
-  await page.waitForTimeout(2500);
+  await page.waitForTimeout(3000);
   const minhas = await page.$$eval("[data-conversa-id]", (ns) => ns.map((n) => n.getAttribute("data-conversa-id")));
-  ok("e mesmo assim ela aparece em “Minhas conversas”", alvo && minhas.includes(alvo), minhas.join(", "));
+  ok("e mesmo no fundo do telefone de 1200, ela aparece com “Você”", alvo && minhas.includes(alvo), `${minhas.length} na lista`);
   ok("sem erro de JavaScript no caminho", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
