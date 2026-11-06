@@ -7450,6 +7450,14 @@ rodam a 390, onde a conversa tem menos de 500 pontos e a largura sozinha já
 tira o pergaminho. Entrou a cena do tablet em pé, e a mesma sabotagem é pega
 ali; as outras cinco foram rodadas de novo contra a prova final.
 
+**Ao contrário do ✨, ele não some com texto na caixa**: resumir não mexe no
+que está escrito. Por isso ele vem antes do lugar que o ✨ e o relógio de
+agendar dividem, e fica parado enquanto o vizinho troca.
+
+**Um clique com o quadro aberto fecha o quadro**, sem pedir outro resumo.
+Pedir de novo é o "Resumir de novo", dentro do quadro; no celular, o mesmo
+item do ⋮ muda de nome.
+
 ### E na nota interna, o pergaminho sai (06/11)
 
 Pedido do Rodrigo, com a foto da caixa âmbar: *"Nota interna não deve ter a
@@ -7462,14 +7470,6 @@ Prova: `o-resumo-da-conversa`, cena 14 (117 conferências ao todo). **2
 sabotagens e 2 pegas**, rodadas em cópias (e a cópia sem sabotagem passou
 inteira): o pergaminho também na nota (2 reprovações), e o pergaminho sumindo
 sempre (17).
-
-**Ao contrário do ✨, ele não some com texto na caixa**: resumir não mexe no
-que está escrito. Por isso ele vem antes do lugar que o ✨ e o relógio de
-agendar dividem, e fica parado enquanto o vizinho troca.
-
-**Um clique com o quadro aberto fecha o quadro**, sem pedir outro resumo.
-Pedir de novo é o "Resumir de novo", dentro do quadro; no celular, o mesmo
-item do ⋮ muda de nome.
 
 ### O quadro
 
