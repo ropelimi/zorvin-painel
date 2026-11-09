@@ -120,7 +120,7 @@ async function abrir(ct, { quebrar = false, largura = 1400 } = {}) {
   ok("1: a janela abre com as opções", e.opcoes.length >= 4, String(e.opcoes.length));
   const com = e.opcoes.filter((o) => o.tem === "sim").map((o) => o.id).sort();
   ok("1: os três telefones com conversa estão no grupo deles",
-     JSON.stringify(com) === JSON.stringify(["a13", "a5", "a7"]) && e.opcoes.filter((o) => o.tem === "sim").every((o) => o.grupo === "com-conversa"),
+     JSON.stringify(com) === JSON.stringify(["a13", "a5", "a7"]) && e.opcoes.filter((o) => o.tem === "sim").length === 3 && e.opcoes.filter((o) => o.tem === "sim").every((o) => o.grupo === "com-conversa"),
      JSON.stringify(e.opcoes.map((o) => [o.id, o.tem, o.grupo])));
   ok("1: os sem conversa estão no grupo de conversa nova",
      e.opcoes.filter((o) => o.tem === "nao").length > 0 && e.opcoes.filter((o) => o.tem === "nao").every((o) => o.grupo === "sem-conversa"),
