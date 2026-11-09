@@ -493,6 +493,7 @@ a do telefone aberto na barra, que não diz nada sobre o cliente.
 | os sem conversa | outro grupo, "Começar conversa nova por", recuados: sem fundo, borda tracejada, "+ Conversa nova" |
 | o telefone aberto na barra | "· aberto agora", escrito ao lado do nome, e não mais a borda verde |
 | nenhum telefone com conversa | um grupo só, "Nenhum telefone conversou com este cliente ainda", sem Sugerido |
+| em qual aba a conversa mora (09/11, a segunda rodada) | um selo antes da última mensagem (`data-situacao-da-conversa`): **Novos** (âmbar) e **Em Atendimento** (verde), com uma bolinha, são as abertas; **Finalizados** e **Arquivada** (cinza), com um tique, as finalizadas |
 
 **A regra do sugerido:** a conversa da mensagem mais recente que alguém
 escreveu, de qualquer lado. As duas metades do pedido são a mesma pergunta:
@@ -513,14 +514,34 @@ está a nossa mais recente. A linha diz qual das duas foi.
   incluiria o aviso automático. Os telefones com conversa continuam
   destacados.
 
+### Aberta ou finalizada (09/11, a segunda rodada)
+
+Pedido do Rodrigo, logo depois da v3.31: *"Mostrar também se a conversa ainda
+está aberta ou já finalizada."*
+
+- **O nome do selo é o da ABA** (`NOME_DA_SITUACAO`), a régua do selo da
+  busca: é onde a pessoa vai encontrar a conversa. O `title` diz "Conversa em
+  aberto" ou "Conversa finalizada", com a aba;
+- **a arquivada diz "Arquivada"**, e não "Finalizados": ela fica finalizada
+  (o 057 da ponte), mas mora na pasta de arquivadas;
+- **a leitura das conversas do cliente passou a pedir `*`**: a situação (028)
+  e a arquivada (feita à mão) pedidas pelo nome dariam 42703 num banco sem
+  elas. **Sem o 028, só a arquivada ganha selo**, e a janela é a de antes;
+- **a situação não muda a sugestão**, e é decisão: o pedido foi mostrar. A
+  conversa finalizada em que o cliente escreveu por último continua sendo a
+  sugerida;
+- **no celular, o selo e a última mensagem quebram em duas linhas** quando não
+  cabem numa.
+
 **Fica de fora, e é decisão:** a sugestão não escolhe sozinha. O link que diz
 por onde falar (`de=`, a tela de Audiências do Vantoro) continua abrindo
 direto, sem a janela, como antes.
 
-Prova: `o-telefone-que-ja-conversa-se-destaca`, 42 conferências em cinco
+Prova: `o-telefone-que-ja-conversa-se-destaca`, 59 conferências em seis
 cenas: o cliente com conversa em três telefones (a nossa por último num, o
-cliente noutro, o aviso automático no terceiro), o cliente que respondeu por
-último, o cliente sem conversa, a leitura que falha e o celular a 360.
+cliente noutro, o aviso automático no terceiro; em atendimento, finalizada e
+arquivada), o cliente que respondeu por último (novo e finalizada), o cliente
+sem conversa, a leitura que falha, o celular a 360 e o banco sem o 028.
 
 **16 sabotagens e 16 pegas**, rodadas em cópias e lidas uma a uma (e a cópia
 de controle passou inteira):
@@ -538,6 +559,25 @@ de controle passou inteira):
 regra "a sugerida vem primeiro" era a segunda escrita da mesma conta — a
 sugerida já é a de mensagem mais recente, e a ordem a põe no alto sozinha.
 Saiu, pela régua de 25/09.
+
+**A segunda rodada (o selo da situação): 11 sabotagens e 11 pegas**, rodadas
+em cópias e lidas uma a uma (e a cópia de controle passou inteira): o painel
+de antes inteiro (11 reprovações); a situação fora da opção; as colunas pelo
+nome; a arquivada dizendo Finalizados; todas como abertas; o Novos com a cor
+do Em Atendimento; o selo com o valor do banco ("aguardando"); sem o `title`;
+sem o selo; o selo também nos sem conversa; a linha sem quebrar no celular.
+
+**Três vazaram na primeira escrita da prova, e as três eram dela:**
+
+- **as colunas pelo nome passavam porque a bancada devolve a linha inteira de
+  `conversas`**, qualquer que seja a coluna pedida. Hoje a prova lê o pedido
+  no diário da bancada (`__DIARIO`, as colunas da leitura filtrada por
+  `contato_id`);
+- **o Novos com a cor do Em Atendimento passava**: a prova comparava o Novos só
+  com a finalizada. Hoje compara também com o Em Atendimento da cena 1;
+- **a linha sem quebrar no celular passava**: a tela não rolava de lado, porque
+  o cartão corta. Hoje a prova confere que o selo e a última mensagem terminam
+  dentro do cartão.
 
 ## O Controle de atendimento do Vantoro, a um clique (23/10)
 
