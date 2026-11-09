@@ -8164,8 +8164,11 @@ export default function Painel({ sessao }) {
       let naoConferi = "";
       let semSugestao = "";
       if (cont) {
+        // `*`, e não as colunas pelo nome: a situação (028) e a arquivada
+        // (feita à mão) dizem se a conversa está aberta ou finalizada (09/11),
+        // e pedi-las pelo nome num banco sem elas daria 42703.
         const { data, error } = await supabase.from("conversas")
-          .select("id, advogado_id, ultima_atividade").eq("contato_id", cont.id);
+          .select("*").eq("contato_id", cont.id);
         // FALHANDO, A JANELA DIZ QUE NÃO CONFERIU (auditoria de 07/10), em vez
         // de mostrar todas as opções como "sem conversa ainda" — que mandaria
         // escolher um telefone novo para quem já tem histórico noutro.
@@ -8205,7 +8208,8 @@ export default function Painel({ sessao }) {
       const opcoes = advogadosPermitidos.map((adv) => {
         const c = ondeTem.find((x) => String(x.advogado_id) === String(adv.id));
         return { adv, ultima: (c && c.ultima_atividade) || null, temConversa: !!c,
-                 ultimaMsg: (c && c.ultimaMsg) || null, ultimaDe: (c && c.ultimaDe) || null };
+                 ultimaMsg: (c && c.ultimaMsg) || null, ultimaDe: (c && c.ultimaDe) || null,
+                 situacao: (c && c.situacao) || null, arquivada: !!(c && c.arquivada) };
       });
       // A SUGERIDA é a da mensagem mais recente que alguém escreveu. Sem
       // mensagem nenhuma (só aviso automático, ou a leitura que falhou), não
@@ -22425,7 +22429,30 @@ export default function Painel({ sessao }) {
                 <div data-titulo-do-grupo={marca} style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase",
                                                           color: C.textSecondary, margin: "2px 2px 6px" }}>{texto}</div>
               );
-              const cartao = ({ adv, temConversa, ultima, ultimaMsg, ultimaDe, sugerida }) => {
+              // EM QUAL ABA A CONVERSA MORA (09/11, pedido do Rodrigo: "mostrar
+              // também se a conversa ainda está aberta ou já finalizada"). O
+              // nome é o DA ABA (`NOME_DA_SITUACAO`), a régua do selo da busca:
+              // é onde a pessoa vai encontrá-la. A arquivada fica finalizada
+              // (057), e o selo diz "Arquivada", que é a pasta onde ela mora.
+              // Sem o 028 não há situação, e só a arquivada ganha selo: a pasta
+              // de arquivadas existe sem ele.
+              const seloDaSituacao = (situacao, arquivada) => {
+                const nome = arquivada ? "Arquivada" : NOME_DA_SITUACAO[situacao];
+                if (!nome) return null;
+                const aberta = !arquivada && situacao !== "finalizado";
+                const cor = !aberta ? C.textSecondary : situacao === "aguardando" ? C.ambarTexto : C.verdeTexto;
+                return (
+                  <span data-situacao-da-conversa={arquivada ? "arquivada" : situacao}
+                        title={aberta ? `Conversa em aberto: está na aba “${nome}”` : arquivada ? "Conversa arquivada (finalizada)" : `Conversa finalizada: está na aba “${nome}”`}
+                        style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10.5, fontWeight: 700,
+                                 color: cor, border: `1px solid ${cor}`, borderRadius: 999, padding: "1px 7px", lineHeight: 1.4 }}>
+                    {aberta ? <span aria-hidden style={{ width: 6, height: 6, borderRadius: "50%", background: cor }} />
+                            : <Check size={10} strokeWidth={3} aria-hidden />}
+                    {nome}
+                  </span>
+                );
+              };
+              const cartao = ({ adv, temConversa, ultima, ultimaMsg, ultimaDe, sugerida, situacao, arquivada }) => {
                 const aberto = adv.id === advogadoId;
                 const fundo = sugerida ? tom(0.18) : temConversa ? tom(0.09) : "transparent";
                 return (
@@ -22464,11 +22491,14 @@ export default function Painel({ sessao }) {
                         {numeroBonito(adv.numero) || "sem número"}
                       </span>
                       {temConversa ? (
-                        <span data-ultima-mensagem style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2, fontSize: 12, fontWeight: 600, color: C.verdeTexto }}>
-                          <MessageSquare size={12} aria-hidden />
-                          {ultimaMsg
-                            ? (ultimaDe === "contato" ? `Cliente respondeu · ${horaDe(ultimaMsg)}` : `Nossa última mensagem · ${horaDe(ultimaMsg)}`)
-                            : `Já tem conversa${ultima ? ` · ${horaDe(ultima)}` : ""}`}
+                        <span style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "3px 7px", marginTop: 3 }}>
+                          {seloDaSituacao(situacao, arquivada)}
+                          <span data-ultima-mensagem style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, color: C.verdeTexto }}>
+                            <MessageSquare size={12} aria-hidden />
+                            {ultimaMsg
+                              ? (ultimaDe === "contato" ? `Cliente respondeu · ${horaDe(ultimaMsg)}` : `Nossa última mensagem · ${horaDe(ultimaMsg)}`)
+                              : `Já tem conversa${ultima ? ` · ${horaDe(ultima)}` : ""}`}
+                          </span>
                         </span>
                       ) : !escolhaTelefone.naoConferi && (
                         <span style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 1, fontSize: 12, color: C.textSecondary }}>
