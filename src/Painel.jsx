@@ -8162,27 +8162,70 @@ export default function Painel({ sessao }) {
       // que consultar — todas as opções começam do zero.
       let ondeTem = [];
       let naoConferi = "";
+      let semSugestao = "";
       if (cont) {
         const { data, error } = await supabase.from("conversas")
-          .select("advogado_id, ultima_atividade").eq("contato_id", cont.id);
+          .select("id, advogado_id, ultima_atividade").eq("contato_id", cont.id);
         // FALHANDO, A JANELA DIZ QUE NÃO CONFERIU (auditoria de 07/10), em vez
         // de mostrar todas as opções como "sem conversa ainda" — que mandaria
         // escolher um telefone novo para quem já tem histórico noutro.
         if (error) naoConferi = comOCodigo("Não consegui conferir onde já existe conversa com esta pessoa.", error, "conversas do link");
         ondeTem = data || [];
+        // A ÚLTIMA MENSAGEM DE CADA CONVERSA, E DE QUEM FOI (09/11). Pedido do
+        // Rodrigo: sugerir o telefone onde o cliente respondeu por último, ou,
+        // se a última mensagem foi nossa, onde está a nossa mais recente. As
+        // duas metades são a mesma pergunta — a conversa da mensagem mais
+        // recente, de qualquer lado —, e a linha diz qual das duas foi.
+        //
+        // O AVISO AUTOMÁTICO NÃO CONTA (`automatica`, script 037 da ponte):
+        // ninguém escreveu, e um aviso de audiência saído ontem pelas
+        // Audiências não pode tirar a sugestão de onde o cliente conversa.
+        //
+        // `*` e não as colunas pelo nome: pedir `automatica` num banco sem o
+        // 037 daria 42703. Uma ida por conversa, ao mesmo tempo: um cliente
+        // tem conversa com poucos telefones, e `limit` por conversa é o que
+        // impede uma conversa cheia de esconder a última de outra.
+        if (ondeTem.length) {
+          const lidas = await Promise.all(ondeTem.map((c) =>
+            supabase.from("mensagens").select("*").eq("conversa_id", c.id)
+              .in("origem", ["contato", "advogado"])
+              .order("criado_em", { ascending: false }).limit(10)));
+          const falha = lidas.find((r) => r.error);
+          if (falha) {
+            semSugestao = comOCodigo("Não consegui conferir onde foi a última mensagem — escolha pelo histórico de cada telefone.",
+              falha.error, "últimas mensagens do link");
+          } else {
+            lidas.forEach((r, i) => {
+              const m = (r.data || []).find((x) => x.automatica !== true);
+              if (m) ondeTem[i] = { ...ondeTem[i], ultimaMsg: m.criado_em, ultimaDe: m.origem };
+            });
+          }
+        }
       }
       const opcoes = advogadosPermitidos.map((adv) => {
         const c = ondeTem.find((x) => String(x.advogado_id) === String(adv.id));
-        return { adv, ultima: (c && c.ultima_atividade) || null, temConversa: !!c };
+        return { adv, ultima: (c && c.ultima_atividade) || null, temConversa: !!c,
+                 ultimaMsg: (c && c.ultimaMsg) || null, ultimaDe: (c && c.ultimaDe) || null };
       });
-      // Quem já tem conversa vem primeiro, do mais recente para o mais antigo:
-      // é quase sempre a resposta certa, e deixá-la no topo poupa a leitura.
+      // A SUGERIDA é a da mensagem mais recente que alguém escreveu. Sem
+      // mensagem nenhuma (só aviso automático, ou a leitura que falhou), não
+      // há sugestão: chutar a conversa mais nova pela `ultima_atividade`
+      // repetiria justamente o aviso automático que a regra deixa de fora.
+      const sugerida = opcoes.filter((o) => o.ultimaMsg)
+        .sort((a, b) => new Date(b.ultimaMsg) - new Date(a.ultimaMsg))[0] || null;
+      if (sugerida) sugerida.sugerida = true;
+      // Primeiro as com mensagem de gente, da mais recente para a mais antiga
+      // (a sugerida é a primeira delas, sem precisar de regra própria);
+      // depois as que só têm o aviso automático (ou que não deu para ler),
+      // pela última atividade; depois as sem conversa, pelo nome.
+      const quando = (o) => new Date(o.ultimaMsg || o.ultima || 0).getTime();
       opcoes.sort((a, b) => {
         if (a.temConversa !== b.temConversa) return a.temConversa ? -1 : 1;
-        if (a.ultima && b.ultima) return new Date(b.ultima) - new Date(a.ultima);
+        if (!!a.ultimaMsg !== !!b.ultimaMsg) return a.ultimaMsg ? -1 : 1;
+        if (a.temConversa && quando(a) !== quando(b)) return quando(b) - quando(a);
         return String(a.adv.nome || "").localeCompare(String(b.adv.nome || ""));
       });
-      setEscolhaTelefone({ contato: cont, numero, nome, opcoes, naoConferi });
+      setEscolhaTelefone({ contato: cont, numero, nome, opcoes, naoConferi, semSugestao });
     })();
     // `advogadoId` é a única dependência de verdade: é ele que decide de QUAL
     // telefone do escritório a conversa é, e ele chega depois da primeira
@@ -17644,6 +17687,12 @@ export default function Painel({ sessao }) {
            medição nenhuma, nem re-render, e acerta sozinho quando a lista de
            tags muda de tamanho. */
         .fita { overflow-x: auto; }
+        /* As opções do "Falar por qual telefone?" (09/11): o passar do mouse e
+           o foco do teclado levantam o cartão um tom, sem mudar a cor que diz
+           se o telefone já conversa com o cliente. */
+        .opcao-de-telefone { transition: filter .12s, transform .12s; }
+        .opcao-de-telefone:hover { filter: brightness(1.06); }
+        .opcao-de-telefone:focus-visible { outline: 2px solid ${C.green}; outline-offset: 2px; }
         /* A BORDA que esmaece. É o último filho da fita e fica GRUDADO na
            direita (position: sticky) — não some com a rolagem e, por ser o
            último irmão, é desenhado POR CIMA das pílulas. Foi por isso que a
@@ -22347,35 +22396,108 @@ export default function Painel({ sessao }) {
                 {escolhaTelefone.naoConferi}
               </div>
             )}
-            <div style={{ display: "flex", flexDirection: "column", gap: 7, maxHeight: "52vh", overflowY: "auto" }}>
-              {escolhaTelefone.opcoes.map(({ adv, temConversa, ultima }) => (
-                <button key={adv.id}
-                        onClick={async () => {
-                          const e = escolhaTelefone;
-                          setEscolhaTelefone(null);
-                          await conversarPeloLink(e.contato, e.numero, e.nome, adv.id);
-                        }}
-                        style={{ display: "flex", alignItems: "center", gap: 10, textAlign: "left", width: "100%",
-                                 border: `1px solid ${adv.id === advogadoId ? C.green : C.divider}`,
-                                 background: C.inputBg, color: C.textPrimary, borderRadius: 10,
-                                 padding: "9px 11px", cursor: "pointer", font: "inherit" }}>
-                  <Avatar nome={adv.nome} foto={adv.foto_url} size={34} />
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: "block", fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {adv.nome}
+            {!!escolhaTelefone.semSugestao && (
+              <div data-escolha-sem-sugestao style={{ fontSize: 12.5, color: C.ambarTexto, lineHeight: 1.45, marginBottom: 12 }}>
+                {escolhaTelefone.semSugestao}
+              </div>
+            )}
+            {/* OS TELEFONES QUE JÁ CONVERSAM COM O CLIENTE, DESTACADOS (09/11).
+                Pedido do Rodrigo: na lista de antes, "já tem conversa" era só
+                um pedaço da letra miúda, e um telefone com histórico parecia
+                igual a um sem nada. Hoje são dois grupos, cada um com o seu
+                título: os com conversa num cartão verde, com a última mensagem
+                escrita por extenso; os sem conversa, recuados, com o traço
+                tracejado de "começar do zero". E o da última mensagem vem no
+                alto, com o selo "Sugerido" e o cursor já nele (o Enter o
+                escolhe). A borda verde marcava o telefone aberto na barra, que
+                não diz nada sobre o cliente: virou "aberto agora", escrito. */}
+            {(() => {
+              const opcoes = escolhaTelefone.opcoes;
+              const com = opcoes.filter((o) => o.temConversa);
+              const sem = opcoes.filter((o) => !o.temConversa);
+              const tom = (alfa) => `rgba(0,168,132,${alfa})`;
+              const escolher = async (adv) => {
+                const e = escolhaTelefone;
+                setEscolhaTelefone(null);
+                await conversarPeloLink(e.contato, e.numero, e.nome, adv.id);
+              };
+              const titulo = (texto, marca) => (
+                <div data-titulo-do-grupo={marca} style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase",
+                                                          color: C.textSecondary, margin: "2px 2px 6px" }}>{texto}</div>
+              );
+              const cartao = ({ adv, temConversa, ultima, ultimaMsg, ultimaDe, sugerida }) => {
+                const aberto = adv.id === advogadoId;
+                const fundo = sugerida ? tom(0.18) : temConversa ? tom(0.09) : "transparent";
+                return (
+                  <button key={adv.id} onClick={() => escolher(adv)} autoFocus={!!sugerida}
+                          data-telefone-opcao={adv.id} data-tem-conversa={temConversa ? "sim" : "nao"}
+                          data-sugerido={sugerida ? "sim" : undefined}
+                          className="opcao-de-telefone"
+                          style={{ display: "flex", alignItems: "center", gap: 10, textAlign: "left", width: "100%",
+                                   border: sugerida ? `1.5px solid ${C.green}`
+                                     : temConversa ? `1px solid ${tom(0.38)}` : `1px dashed ${C.divider}`,
+                                   backgroundColor: temConversa ? C.inputBg : "transparent",
+                                   backgroundImage: temConversa ? `linear-gradient(${fundo}, ${fundo})` : "none",
+                                   boxShadow: temConversa ? `inset 4px 0 0 ${C.green}` : "none",
+                                   color: C.textPrimary, borderRadius: 10,
+                                   padding: temConversa ? "10px 11px 10px 14px" : "8px 11px", cursor: "pointer", font: "inherit" }}>
+                    <span style={{ opacity: temConversa ? 1 : 0.8, display: "flex" }}>
+                      <Avatar nome={adv.nome} foto={adv.foto_url} size={temConversa ? 36 : 30} />
                     </span>
-                    <span style={{ display: "block", fontSize: 12, color: C.textSecondary }}>
-                      {numeroBonito(adv.numero) || "sem número"}
-                      {/* "já tem conversa" é o que faz a escolha ser informada:
-                          é onde está o histórico, e quase sempre a resposta. */}
-                      {temConversa
-                        ? ` · já tem conversa${ultima ? ` · ${horaDe(ultima)}` : ""}`
-                        : escolhaTelefone.naoConferi ? "" : " · conversa nova"}
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                        <span style={{ fontSize: 14, fontWeight: temConversa ? 700 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                       color: temConversa ? C.textPrimary : C.textSecondary }}>
+                          {adv.nome}
+                        </span>
+                        {sugerida && (
+                          <span data-selo-sugerido style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, background: C.botao, color: "#fff",
+                                                           fontSize: 10.5, fontWeight: 700, borderRadius: 999, padding: "2px 7px" }}>
+                            <Star size={10} fill="#fff" strokeWidth={0} aria-hidden /> Sugerido
+                          </span>
+                        )}
+                        {aberto && (
+                          <span data-aberto-agora style={{ flexShrink: 0, fontSize: 11, color: C.textSecondary }}>· aberto agora</span>
+                        )}
+                      </span>
+                      <span style={{ display: "block", fontSize: 12, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {numeroBonito(adv.numero) || "sem número"}
+                      </span>
+                      {temConversa ? (
+                        <span data-ultima-mensagem style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2, fontSize: 12, fontWeight: 600, color: C.verdeTexto }}>
+                          <MessageSquare size={12} aria-hidden />
+                          {ultimaMsg
+                            ? (ultimaDe === "contato" ? `Cliente respondeu · ${horaDe(ultimaMsg)}` : `Nossa última mensagem · ${horaDe(ultimaMsg)}`)
+                            : `Já tem conversa${ultima ? ` · ${horaDe(ultima)}` : ""}`}
+                        </span>
+                      ) : !escolhaTelefone.naoConferi && (
+                        <span style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 1, fontSize: 12, color: C.textSecondary }}>
+                          <Plus size={12} aria-hidden /> Conversa nova
+                        </span>
+                      )}
                     </span>
-                  </span>
-                </button>
-              ))}
-            </div>
+                    <ChevronRight size={17} color={temConversa ? C.verdeTexto : C.textSecondary} aria-hidden style={{ flexShrink: 0 }} />
+                  </button>
+                );
+              };
+              return (
+                <div data-telefones-da-escolha style={{ display: "flex", flexDirection: "column", gap: 14, maxHeight: "56vh", overflowY: "auto", padding: 2 }}>
+                  {com.length > 0 && (
+                    <div data-grupo-telefones="com-conversa" style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                      {titulo(com.length === 1 ? "Já conversa com este cliente" : `Já conversam com este cliente · ${com.length}`, "com-conversa")}
+                      {com.map(cartao)}
+                    </div>
+                  )}
+                  {sem.length > 0 && (
+                    <div data-grupo-telefones="sem-conversa" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {titulo(escolhaTelefone.naoConferi ? "Telefones"
+                        : com.length ? "Começar conversa nova por" : "Nenhum telefone conversou com este cliente ainda", "sem-conversa")}
+                      {sem.map(cartao)}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
               <button onClick={() => setEscolhaTelefone(null)}
                       style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.textSecondary, borderRadius: 8, padding: "8px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>Cancelar</button>

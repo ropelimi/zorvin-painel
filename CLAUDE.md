@@ -472,6 +472,73 @@ confere os dois mundos — o menu só existe abaixo de 768px, então uma confer�
 numa janela larga passaria por não ter achado o menu, e não por o item ter
 sumido.
 
+## "Falar por qual telefone?": quem já conversa se destaca (09/11)
+
+Pedido do Rodrigo, com a foto da janela que abre quando se clica no ícone do
+Zorvin dentro do Vantoro: *"Preciso que esses telefones que já tiveram
+conversa fiquem mais destacados, talvez alguma cor diferente"*. E, logo
+depois: *"E sempre sugerir onde teve a resposta do contato mais recente, ou a
+nossa última mensagem mais recente caso não tenha sido o contato que enviou a
+última mensagem."*
+
+Na janela de antes, "já tem conversa" era só um pedaço da letra miúda, e um
+telefone com histórico parecia igual a um sem nada. E a única borda verde era
+a do telefone aberto na barra, que não diz nada sobre o cliente.
+
+| | agora |
+|---|---|
+| os telefones com conversa | um grupo próprio, "Já conversam com este cliente · N", num cartão verde claro com a faixa verde à esquerda, nome em negrito |
+| cada um diz a última mensagem | "Cliente respondeu · 08/11" ou "Nossa última mensagem · 23/10", em verde (`data-ultima-mensagem`) |
+| o sugerido | o primeiro da lista, com o selo **Sugerido** (`data-selo-sugerido`), a borda verde e o cursor já nele: o **Enter** o escolhe |
+| os sem conversa | outro grupo, "Começar conversa nova por", recuados: sem fundo, borda tracejada, "+ Conversa nova" |
+| o telefone aberto na barra | "· aberto agora", escrito ao lado do nome, e não mais a borda verde |
+| nenhum telefone com conversa | um grupo só, "Nenhum telefone conversou com este cliente ainda", sem Sugerido |
+
+**A regra do sugerido:** a conversa da mensagem mais recente que alguém
+escreveu, de qualquer lado. As duas metades do pedido são a mesma pergunta:
+se o cliente escreveu por último, é onde ele respondeu; se fomos nós, é onde
+está a nossa mais recente. A linha diz qual das duas foi.
+
+- **O aviso automático não conta** (`automatica`, script 037 da ponte):
+  ninguém escreveu, e um aviso de audiência saído ontem pelas Audiências não
+  pode tirar a sugestão de onde o cliente conversa. O telefone que só tem o
+  aviso continua no grupo com conversa, dizendo "Já tem conversa", depois dos
+  que têm mensagem de gente;
+- **uma ida por conversa, ao mesmo tempo**, com `limit` (as dez últimas de
+  `contato` e `advogado`, a primeira que não é automática): uma conversa cheia
+  não esconde a última de outra. `*`, e não as colunas pelo nome: pedir
+  `automatica` num banco sem o 037 daria 42703;
+- **a leitura que falha é dita** (`data-escolha-sem-sugestao`, âmbar, com o
+  código), e não vira sugestão chutada pela última atividade: essa conta
+  incluiria o aviso automático. Os telefones com conversa continuam
+  destacados.
+
+**Fica de fora, e é decisão:** a sugestão não escolhe sozinha. O link que diz
+por onde falar (`de=`, a tela de Audiências do Vantoro) continua abrindo
+direto, sem a janela, como antes.
+
+Prova: `o-telefone-que-ja-conversa-se-destaca`, 42 conferências em cinco
+cenas: o cliente com conversa em três telefones (a nossa por último num, o
+cliente noutro, o aviso automático no terceiro), o cliente que respondeu por
+último, o cliente sem conversa, a leitura que falha e o celular a 360.
+
+**16 sabotagens e 16 pegas**, rodadas em cópias e lidas uma a uma (e a cópia
+de controle passou inteira):
+
+- o painel de antes inteiro (33 reprovações — é o pedido reproduzido);
+- **a sugestão:** o aviso automático contando; a sugestão pela última
+  atividade; só pelo cliente (a nossa não conta); a falha das mensagens
+  calada; sem o cursor; sem o selo;
+- **o destaque:** o cartão com conversa sem o tingido; sem a faixa à esquerda;
+  o sem conversa sem o tracejado; sem o "aberto agora"; uma lista só, sem os
+  grupos; o aviso automático antes das mensagens de gente;
+- **os títulos:** sem contar; o de nenhum dizendo conversa nova.
+
+**Uma vazou na primeira rodada, com razão, e o código ficou mais simples:** a
+regra "a sugerida vem primeiro" era a segunda escrita da mesma conta — a
+sugerida já é a de mensagem mais recente, e a ordem a põe no alto sozinha.
+Saiu, pela régua de 25/09.
+
 ## O Controle de atendimento do Vantoro, a um clique (23/10)
 
 Pedido do Rodrigo: *"Preciso de um ícone que leve para a tela de Controle de
