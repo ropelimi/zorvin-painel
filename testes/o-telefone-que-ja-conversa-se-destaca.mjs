@@ -21,7 +21,10 @@
 //     Enter a escolhe e abre a conversa por aquele telefone;
 //   * o telefone aberto na barra diz "aberto agora", e não ganha a borda verde;
 //   * sem conversa nenhuma, nenhum "Sugerido", e o título diz isso;
-//   * a leitura das mensagens que falha é dita, e não vira sugestão chutada.
+//   * a leitura das mensagens que falha é dita, e não vira sugestão chutada;
+//   * cada telefone com conversa diz em qual aba ela mora (09/11): aberta
+//     ("Novos", "Em Atendimento") ou finalizada ("Finalizados", "Arquivada");
+//     sem o 028 só a arquivada tem selo, e a janela funciona como antes.
 import { abrirNavegador, ENDERECO } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
@@ -32,6 +35,7 @@ const ok = (nome, cond, det = "") => {
 };
 
 const nav = await abrirNavegador();
+let corDoEmAtendimento = "";
 const H = (n) => new Date(Date.now() - n * 3600e3).toISOString();
 const contato = (id, numero, nome) => ({ id, numero, nome, vantoro_nome: null, nome_zorvin: null,
   vantoro_cliente_id: null, foto_url: null });
@@ -56,11 +60,14 @@ const C3 = contato("ct-dest-3", "5511980011003", "CLIENTE TRES");
 const semente = {
   contatos: [C1, C2, C3],
   conversas: [
-    conversa("cv-d1-a5", "a5", C1, { ultima_atividade: H(3) }),
-    conversa("cv-d1-a7", "a7", C1, { ultima_atividade: H(1) }),
-    conversa("cv-d1-a13", "a13", C1, { ultima_atividade: H(0.17) }),
-    conversa("cv-d2-a5", "a5", C2, { ultima_atividade: H(1) }),
-    conversa("cv-d2-a7", "a7", C2, { ultima_atividade: H(3) }),
+    // As situações (09/11): o SAC do cliente 1 finalizado, o Acordos 1 em
+    // atendimento, o Arquivo arquivado (e por isso finalizado, o 057); o SAC
+    // do cliente 2 novo, o Acordos 1 dele finalizado.
+    conversa("cv-d1-a5", "a5", C1, { ultima_atividade: H(3), situacao: "finalizado" }),
+    conversa("cv-d1-a7", "a7", C1, { ultima_atividade: H(1), situacao: "aberto" }),
+    conversa("cv-d1-a13", "a13", C1, { ultima_atividade: H(0.17), situacao: "finalizado", arquivada: true }),
+    conversa("cv-d2-a5", "a5", C2, { ultima_atividade: H(1), situacao: "aguardando" }),
+    conversa("cv-d2-a7", "a7", C2, { ultima_atividade: H(3), situacao: "finalizado" }),
   ],
   mensagens: [
     msg("m-d1-a5", "cv-d1-a5", "contato", H(3)),
@@ -72,16 +79,18 @@ const semente = {
   ],
 };
 
-async function abrir(ct, { quebrar = false, largura = 1400 } = {}) {
+async function abrir(ct, { quebrar = false, largura = 1400, sem028 = false } = {}) {
   const ctx = await nav.newContext({ viewport: { width: largura, height: 900 } });
   const page = await ctx.newPage();
   const estouros = [];
   page.on("pageerror", (e) => estouros.push(e.message));
   await page.route("**/ponte-de-mentira/**", (r) => r.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' }));
-  await page.addInitScript(({ s, q }) => {
+  await page.addInitScript(({ s, q, sem }) => {
     globalThis.__SEMENTE = s;
+    globalThis.__DIARIO = [];
     if (q) globalThis.__QUEBRAR_SO_A_LEITURA = ["mensagens"];
-  }, { s: semente, q: quebrar });
+    if (sem) globalThis.__SEM_SITUACAO = true;
+  }, { s: semente, q: quebrar, sem: sem028 });
   await page.goto(`${ENDERECO}?telefone=${ct.numero}&nome=${encodeURIComponent(ct.nome)}`);
   await page.waitForSelector("[data-telefones-da-escolha]", { timeout: 10000 }).catch(() => {});
   await page.waitForTimeout(400);
@@ -93,6 +102,13 @@ async function abrir(ct, { quebrar = false, largura = 1400 } = {}) {
       sugerido: b.getAttribute("data-sugerido") === "sim",
       grupo: b.closest("[data-grupo-telefones]")?.getAttribute("data-grupo-telefones") || null,
       ultima: b.querySelector("[data-ultima-mensagem]")?.innerText || "",
+      situacao: b.querySelector("[data-situacao-da-conversa]")?.getAttribute("data-situacao-da-conversa") || null,
+      seloSit: b.querySelector("[data-situacao-da-conversa]")?.innerText || "",
+      corSit: b.querySelector("[data-situacao-da-conversa]") ? getComputedStyle(b.querySelector("[data-situacao-da-conversa]")).color : "",
+      tituloSit: b.querySelector("[data-situacao-da-conversa]")?.getAttribute("title") || "",
+      // O selo e a última mensagem inteiros dentro do cartão (o celular).
+      dentro: [b.querySelector("[data-situacao-da-conversa]"), b.querySelector("[data-ultima-mensagem]")].filter(Boolean)
+        .every((x) => x.getBoundingClientRect().right <= b.getBoundingClientRect().right + 0.5),
       selo: !!b.querySelector("[data-selo-sugerido]"),
       aberto: !!b.querySelector("[data-aberto-agora]"),
       texto: b.innerText,
@@ -105,6 +121,11 @@ async function abrir(ct, { quebrar = false, largura = 1400 } = {}) {
       opcoes,
       titulos: [...document.querySelectorAll("[data-titulo-do-grupo]")].map((t) => ({ marca: t.getAttribute("data-titulo-do-grupo"), texto: t.innerText })),
       semSugestao: document.querySelector("[data-escolha-sem-sugestao]")?.innerText || "",
+      // A leitura das conversas do cliente: as colunas que ela pediu. A bancada
+      // devolve a linha inteira de \`conversas\` qualquer que seja a coluna
+      // pedida, e só o pedido diz se a situação seria lida no banco de verdade.
+      colunasDaLeitura: (globalThis.__DIARIO || []).filter((m) => m.tabela === "conversas" && (m.pedidos || []).includes("contato_id"))
+        .map((m) => m.colunas),
       largura: document.documentElement.scrollWidth,
       janela: innerWidth,
     };
@@ -146,6 +167,23 @@ async function abrir(ct, { quebrar = false, largura = 1400 } = {}) {
   ok("1: o sem conversa diz Conversa nova", semC && /Conversa nova/.test(semC.texto), semC?.texto);
   ok("1: o telefone aberto na barra diz aberto agora", e.opcoes.filter((o) => o.aberto).length === 1, JSON.stringify(e.opcoes.map((o) => [o.id, o.aberto])));
   ok("1: sem aviso de falha", !e.semSugestao, e.semSugestao);
+  ok("1: a leitura das conversas do cliente pede a situação (ou *)",
+     e.colunasDaLeitura.length > 0 && e.colunasDaLeitura.every((c) => c.trim() === "*" || /situacao/.test(c)), JSON.stringify(e.colunasDaLeitura));
+  corDoEmAtendimento = por("a7").corSit;
+  ok("1: o Acordos 1 diz que a conversa está em atendimento", por("a7").situacao === "aberto" && por("a7").seloSit === "Em Atendimento",
+     JSON.stringify([por("a7").situacao, por("a7").seloSit]));
+  ok("1: o SAC diz que está finalizada", por("a5").situacao === "finalizado" && por("a5").seloSit === "Finalizados",
+     JSON.stringify([por("a5").situacao, por("a5").seloSit]));
+  ok("1: o Arquivo diz Arquivada, e não Finalizados", por("a13").situacao === "arquivada" && por("a13").seloSit === "Arquivada",
+     JSON.stringify([por("a13").situacao, por("a13").seloSit]));
+  ok("1: o título explica aberta e finalizada",
+     /em aberto/i.test(por("a7").tituloSit) && /finalizada/i.test(por("a5").tituloSit) && /arquivada/i.test(por("a13").tituloSit),
+     JSON.stringify([por("a7").tituloSit, por("a5").tituloSit, por("a13").tituloSit]));
+  ok("1: a aberta tem a cor da conversa (verde), e a finalizada é apagada (cinza)",
+     !!por("a7").corSit && !!por("a5").corSit && por("a7").corSit !== por("a5").corSit, JSON.stringify([por("a7").corSit, por("a5").corSit]));
+  ok("1: os sem conversa não têm selo de situação",
+     e.opcoes.filter((o) => o.tem === "nao").length > 0 && e.opcoes.filter((o) => o.tem === "nao").every((o) => !o.situacao),
+     JSON.stringify(e.opcoes.map((o) => [o.id, o.situacao])));
 
   // O Enter escolhe a sugerida.
   await page.keyboard.press("Enter").catch(() => {});
@@ -162,6 +200,7 @@ async function abrir(ct, { quebrar = false, largura = 1400 } = {}) {
 }
 
 // ---- 2. o cliente respondeu por último ----
+// (corDoEmAtendimento vem da cena 1: o Novos tem de ter outra cor.)
 {
   const { ctx, estouros, ler } = await abrir(C2);
   const e = await ler();
@@ -172,6 +211,13 @@ async function abrir(ct, { quebrar = false, largura = 1400 } = {}) {
   ok("2: o SAC diz Cliente respondeu", /^Cliente respondeu · /.test(por("a5").ultima), por("a5").ultima);
   ok("2: o Acordos 1 diz Nossa última mensagem", /^Nossa última mensagem · /.test(por("a7").ultima), por("a7").ultima);
   ok("2: o título fala de dois", /já conversam com este cliente · 2/i.test(e.titulos[0]?.texto || ""), JSON.stringify(e.titulos));
+  ok("2: o SAC diz Novos (aberta, ninguém respondeu)", por("a5").situacao === "aguardando" && por("a5").seloSit === "Novos",
+     JSON.stringify([por("a5").situacao, por("a5").seloSit]));
+  ok("2: o Acordos 1 diz Finalizados", por("a7").situacao === "finalizado" && por("a7").seloSit === "Finalizados",
+     JSON.stringify([por("a7").situacao, por("a7").seloSit]));
+  ok("2: o Novos tem uma cor própria (âmbar), diferente da finalizada e da Em Atendimento",
+     !!por("a5").corSit && por("a5").corSit !== por("a7").corSit && por("a5").corSit !== corDoEmAtendimento,
+     JSON.stringify([por("a5").corSit, por("a7").corSit, corDoEmAtendimento]));
   ok("2: sem erro na tela", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
@@ -208,7 +254,27 @@ async function abrir(ct, { quebrar = false, largura = 1400 } = {}) {
   ok("5: a 360, a janela abre", e.opcoes.length > 0, String(e.opcoes.length));
   ok("5: e a tela não rola de lado", e.largura <= e.janela, `${e.largura} > ${e.janela}`);
   ok("5: o selo continua na sugerida", e.opcoes[0]?.selo === true, JSON.stringify(e.opcoes[0]));
+  ok("5: e o selo da situação também", e.opcoes[0]?.seloSit === "Em Atendimento", JSON.stringify(e.opcoes[0]));
+  ok("5: o selo e a última mensagem cabem inteiros no cartão",
+     e.opcoes.filter((o) => o.tem === "sim").length === 3 && e.opcoes.filter((o) => o.tem === "sim").every((o) => o.dentro),
+     JSON.stringify(e.opcoes.map((o) => [o.id, o.dentro])));
   ok("5: sem erro na tela", estouros.length === 0, estouros.join(" | "));
+  await ctx.close();
+}
+
+// ---- 6. o banco sem o 028: sem selo de situação, e a janela como antes ----
+{
+  const { ctx, estouros, ler } = await abrir(C1, { sem028: true });
+  const e = await ler();
+  ok("6: a janela abre com os três com conversa",
+     e.opcoes.filter((o) => o.grupo === "com-conversa").length === 3, JSON.stringify(e.opcoes.map((o) => [o.id, o.grupo])));
+  // A arquivada continua dizendo Arquivada: a pasta existe sem o 028.
+  ok("6: nenhum selo de aba nas não arquivadas", e.opcoes.filter((o) => o.id !== "a13").length > 0
+       && e.opcoes.filter((o) => o.id !== "a13").every((o) => !o.situacao), JSON.stringify(e.opcoes.map((o) => [o.id, o.situacao])));
+  ok("6: e a arquivada continua dizendo Arquivada", e.opcoes.find((o) => o.id === "a13")?.seloSit === "Arquivada",
+     JSON.stringify(e.opcoes.find((o) => o.id === "a13")));
+  ok("6: a sugestão continua", e.opcoes[0]?.id === "a7" && e.opcoes[0]?.sugerido, JSON.stringify(e.opcoes[0]));
+  ok("6: sem erro na tela", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
 
