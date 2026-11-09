@@ -35,6 +35,7 @@ const ok = (nome, cond, det = "") => {
 };
 
 const nav = await abrirNavegador();
+let corDoEmAtendimento = "";
 const H = (n) => new Date(Date.now() - n * 3600e3).toISOString();
 const contato = (id, numero, nome) => ({ id, numero, nome, vantoro_nome: null, nome_zorvin: null,
   vantoro_cliente_id: null, foto_url: null });
@@ -86,6 +87,7 @@ async function abrir(ct, { quebrar = false, largura = 1400, sem028 = false } = {
   await page.route("**/ponte-de-mentira/**", (r) => r.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' }));
   await page.addInitScript(({ s, q, sem }) => {
     globalThis.__SEMENTE = s;
+    globalThis.__DIARIO = [];
     if (q) globalThis.__QUEBRAR_SO_A_LEITURA = ["mensagens"];
     if (sem) globalThis.__SEM_SITUACAO = true;
   }, { s: semente, q: quebrar, sem: sem028 });
@@ -104,6 +106,9 @@ async function abrir(ct, { quebrar = false, largura = 1400, sem028 = false } = {
       seloSit: b.querySelector("[data-situacao-da-conversa]")?.innerText || "",
       corSit: b.querySelector("[data-situacao-da-conversa]") ? getComputedStyle(b.querySelector("[data-situacao-da-conversa]")).color : "",
       tituloSit: b.querySelector("[data-situacao-da-conversa]")?.getAttribute("title") || "",
+      // O selo e a última mensagem inteiros dentro do cartão (o celular).
+      dentro: [b.querySelector("[data-situacao-da-conversa]"), b.querySelector("[data-ultima-mensagem]")].filter(Boolean)
+        .every((x) => x.getBoundingClientRect().right <= b.getBoundingClientRect().right + 0.5),
       selo: !!b.querySelector("[data-selo-sugerido]"),
       aberto: !!b.querySelector("[data-aberto-agora]"),
       texto: b.innerText,
@@ -116,6 +121,11 @@ async function abrir(ct, { quebrar = false, largura = 1400, sem028 = false } = {
       opcoes,
       titulos: [...document.querySelectorAll("[data-titulo-do-grupo]")].map((t) => ({ marca: t.getAttribute("data-titulo-do-grupo"), texto: t.innerText })),
       semSugestao: document.querySelector("[data-escolha-sem-sugestao]")?.innerText || "",
+      // A leitura das conversas do cliente: as colunas que ela pediu. A bancada
+      // devolve a linha inteira de \`conversas\` qualquer que seja a coluna
+      // pedida, e só o pedido diz se a situação seria lida no banco de verdade.
+      colunasDaLeitura: (globalThis.__DIARIO || []).filter((m) => m.tabela === "conversas" && (m.pedidos || []).includes("contato_id"))
+        .map((m) => m.colunas),
       largura: document.documentElement.scrollWidth,
       janela: innerWidth,
     };
@@ -157,6 +167,9 @@ async function abrir(ct, { quebrar = false, largura = 1400, sem028 = false } = {
   ok("1: o sem conversa diz Conversa nova", semC && /Conversa nova/.test(semC.texto), semC?.texto);
   ok("1: o telefone aberto na barra diz aberto agora", e.opcoes.filter((o) => o.aberto).length === 1, JSON.stringify(e.opcoes.map((o) => [o.id, o.aberto])));
   ok("1: sem aviso de falha", !e.semSugestao, e.semSugestao);
+  ok("1: a leitura das conversas do cliente pede a situação (ou *)",
+     e.colunasDaLeitura.length > 0 && e.colunasDaLeitura.every((c) => c.trim() === "*" || /situacao/.test(c)), JSON.stringify(e.colunasDaLeitura));
+  corDoEmAtendimento = por("a7").corSit;
   ok("1: o Acordos 1 diz que a conversa está em atendimento", por("a7").situacao === "aberto" && por("a7").seloSit === "Em Atendimento",
      JSON.stringify([por("a7").situacao, por("a7").seloSit]));
   ok("1: o SAC diz que está finalizada", por("a5").situacao === "finalizado" && por("a5").seloSit === "Finalizados",
@@ -187,6 +200,7 @@ async function abrir(ct, { quebrar = false, largura = 1400, sem028 = false } = {
 }
 
 // ---- 2. o cliente respondeu por último ----
+// (corDoEmAtendimento vem da cena 1: o Novos tem de ter outra cor.)
 {
   const { ctx, estouros, ler } = await abrir(C2);
   const e = await ler();
@@ -201,8 +215,9 @@ async function abrir(ct, { quebrar = false, largura = 1400, sem028 = false } = {
      JSON.stringify([por("a5").situacao, por("a5").seloSit]));
   ok("2: o Acordos 1 diz Finalizados", por("a7").situacao === "finalizado" && por("a7").seloSit === "Finalizados",
      JSON.stringify([por("a7").situacao, por("a7").seloSit]));
-  ok("2: o Novos tem uma cor própria (âmbar), diferente da finalizada",
-     !!por("a5").corSit && por("a5").corSit !== por("a7").corSit, JSON.stringify([por("a5").corSit, por("a7").corSit]));
+  ok("2: o Novos tem uma cor própria (âmbar), diferente da finalizada e da Em Atendimento",
+     !!por("a5").corSit && por("a5").corSit !== por("a7").corSit && por("a5").corSit !== corDoEmAtendimento,
+     JSON.stringify([por("a5").corSit, por("a7").corSit, corDoEmAtendimento]));
   ok("2: sem erro na tela", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
@@ -240,6 +255,9 @@ async function abrir(ct, { quebrar = false, largura = 1400, sem028 = false } = {
   ok("5: e a tela não rola de lado", e.largura <= e.janela, `${e.largura} > ${e.janela}`);
   ok("5: o selo continua na sugerida", e.opcoes[0]?.selo === true, JSON.stringify(e.opcoes[0]));
   ok("5: e o selo da situação também", e.opcoes[0]?.seloSit === "Em Atendimento", JSON.stringify(e.opcoes[0]));
+  ok("5: o selo e a última mensagem cabem inteiros no cartão",
+     e.opcoes.filter((o) => o.tem === "sim").length === 3 && e.opcoes.filter((o) => o.tem === "sim").every((o) => o.dentro),
+     JSON.stringify(e.opcoes.map((o) => [o.id, o.dentro])));
   ok("5: sem erro na tela", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
