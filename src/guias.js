@@ -33,6 +33,10 @@ export const TELAS_DA_GUIA = {
   esperando: "Esperando resposta",
   faxina: "Faxina da fila",
   painel: "Painel",
+  // A TELA DE TESTE DAS LIGAÇÕES (11/11), só para quem administra — ver
+  // `ligacoes.js`. Numa guia própria: a ligação continua enquanto a pessoa
+  // trabalha nas conversas na outra.
+  ligacoes: "Ligações (teste)",
 };
 
 const parametros = (busca) => {

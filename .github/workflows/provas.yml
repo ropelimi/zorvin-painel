@@ -69,7 +69,12 @@ jobs:
   # ------------------------------------------------------------
   partes:
     name: Provas do painel (parte ${{ matrix.parte }} de ${{ strategy.job-total }})
-    runs-on: ubuntu-latest
+    # A MÁQUINA FICA ESCRITA (`ubuntu-24.04`), E NÃO `ubuntu-latest` (11/11).
+    # Trocar de máquina é uma decisão, e não algo que o GitHub decide por nós no
+    # meio de uma entrega: em 11/11 ele passou o `ubuntu-latest` para o 26.04.
+    # A ponte já fixava a 24.04, e é nela que todas as rodadas verdes rodaram.
+    # (A queda daquele dia NÃO era da versão: ver "Instalar o navegador".)
+    runs-on: ubuntu-24.04
     strategy:
       # UMA PARTE QUE REPROVA NÃO DERRUBA AS OUTRAS. Com o padrão (`true`), a
       # primeira reprovação cancelaria as outras duas máquinas no meio, e a
@@ -156,8 +161,25 @@ jobs:
       # É por isso que este passo vem DEPOIS do `npm ci`, e não antes: baixar
       # primeiro traria a build de outra versão, e o Playwright recusaria com
       # "Executable doesn't exist".
+      #
+      # SE OS PACOTES DO UBUNTU NÃO VIEREM, O NAVEGADOR VEM SEM ELES (11/11).
+      # Em 11/11 as máquinas do GitHub não resolviam os servidores de pacotes
+      # do Ubuntu ("Temporary failure resolving 'azure.archive.ubuntu.com'"),
+      # no 26.04 e no 24.04: as três partes da PR #333 morreram aqui, três
+      # rodadas seguidas, sem nenhuma prova rodar. As bibliotecas que o
+      # Chromium exige já vêm na máquina (o apt as lista como "already the
+      # newest version"); o que faltava baixar eram fontes de outras escritas
+      # (japonês, chinês, tailandês, cirílico), que nenhuma prova usa — a
+      # Liberation Sans, que desenha a Arial dos botões, e a de emoji também já
+      # vêm. Então: tenta com `--with-deps`, e, falhando, baixa só o navegador.
+      # Se faltar uma biblioteca de verdade, o Chromium não abre e as provas
+      # reprovam dizendo isso — nada passa calado.
       - name: Instalar o navegador
-        run: npx playwright install --with-deps chromium
+        run: |
+          if ! npx playwright install --with-deps chromium; then
+            echo "::warning::Os pacotes do Ubuntu não vieram; baixando só o navegador."
+            npx playwright install chromium
+          fi
 
       # ------------------------------------------------------------
       #  A PONTE PRECISA ESTAR AO LADO — E ISTO NÃO É CAPRICHO
@@ -253,7 +275,7 @@ jobs:
     name: Provas do painel
     needs: partes
     if: ${{ always() }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: As partes passaram?
