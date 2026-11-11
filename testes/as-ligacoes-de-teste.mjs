@@ -50,6 +50,12 @@ const clicar = async (page, sel) => {
   if (!(await page.locator(sel).count())) return false;
   return page.locator(sel).first().click({ timeout: 5000 }).then(() => true).catch(() => false);
 };
+// Perguntados só depois de saber que o campo existe: `inputValue` e
+// `isDisabled` num campo que não está na tela esperam 30 segundos e estouram a
+// prova inteira, sem dizer as conferências seguintes (o painel de antes, sem a
+// tela, foi pego assim na primeira rodada de sabotagens).
+const valor = async (page, sel) => (await page.locator(sel).count()) ? page.locator(sel).first().inputValue() : null;
+const desligado = async (page, sel) => (await page.locator(sel).count()) ? page.locator(sel).first().isDisabled() : null;
 const preencher = async (page, sel, valor) => {
   if (!(await page.locator(sel).count())) return false;
   return page.locator(sel).first().fill(valor, { timeout: 5000 }).then(() => true).catch(() => false);
@@ -91,7 +97,7 @@ async function abrir({ init = null, admin = true, viewport = { width: 1280, heig
 //  100, 180 e, por fim, 486 (ocupado).
 // ============================================================
 function servidorSip(page, { aceitaConexao = true, senha = SENHA } = {}) {
-  const visto = { registros: [], autorizados: 0, recusados: 0, convites: [], acks: 0, conectou: 0, mensagens: [] };
+  const visto = { registros: [], autorizados: 0, recusados: 0, convites: [], acks: 0, conectou: 0, fechou: 0, mensagens: [] };
   const cab = (msg, nome) => {
     const m = msg.match(new RegExp(`^${nome}:\\s*(.*)$`, "im"));
     return m ? m[1].trim() : "";
@@ -121,6 +127,8 @@ function servidorSip(page, { aceitaConexao = true, senha = SENHA } = {}) {
   return page.routeWebSocket((u) => u.host === `${DOMINIO}:7443`, (ws) => {
     visto.conectou++;
     if (!aceitaConexao) { ws.close({ code: 1006, reason: "fora do ar" }); return; }
+    // A página que fecha a conexão (Desconectar, a senha recusada) é contada.
+    ws.onClose(() => { visto.fechou++; });
     ws.onMessage((m) => {
       const msg = String(m);
       visto.mensagens.push(msg);
@@ -185,10 +193,10 @@ console.log("\n1. Só para quem administra");
   await page.goto(`${ENDERECO}?tela=ligacoes`);
   ok("quem administra vê a tela", await esperar(page, '[data-tela="ligacoes"]', 20000));
   ok("o título da guia é o da tela", (await page.title()).startsWith("Ligações (teste)"), await page.title());
-  ok("o endereço da Nvoip já vem escrito", (await page.locator(SEM("wss")).inputValue()) === "wss://app.nvoip.com.br:7443");
+  ok("o endereço da Nvoip já vem escrito", (await valor(page, SEM("wss"))) === "wss://app.nvoip.com.br:7443");
   ok("o campo da senha é de senha (não se lê na tela)", (await attr(page, SEM("senha"), "type")) === "password");
   ok("a conta começa desconectada", (await attr(page, "[data-ligacoes-conta]", "data-ligacoes-conta")) === "desligada");
-  ok("e Ligar começa desligado", await page.locator("[data-ligacoes-ligar]").isDisabled().catch(() => false));
+  ok("e Ligar começa desligado", (await desligado(page, "[data-ligacoes-ligar]")) === true);
 
   // O que falta é dito antes de conectar, e nada sai para a rede.
   await clicar(page, "[data-ligacoes-conectar]");
@@ -234,12 +242,12 @@ console.log("\n2. A biblioteca de verdade: o registro com a senha conferida");
   ok("o servidor desafiou, e a resposta do desafio confere com a senha (MD5)", visto.autorizados >= 1 && visto.recusados === 0,
      `autorizados ${visto.autorizados}, recusados ${visto.recusados}`);
   ok("a senha nunca vai escrita no que sai para a rede", !visto.mensagens.some((m) => m.includes(SENHA)));
-  ok("os campos da conta ficam travados enquanto conectada", await page.locator(SEM("senha")).isDisabled().catch(() => false));
+  ok("os campos da conta ficam travados enquanto conectada", (await desligado(page, SEM("senha"))) === true);
   ok("o registro diz como quem se registrou", (await texto(page, "[data-ligacoes-registro]")).includes(`Registrado como ${USUARIO}@${DOMINIO}`));
   ok("…e não leva a senha", !(await texto(page, "[data-ligacoes-registro]")).includes(SENHA));
   const guardado = await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }));
   ok("a senha não fica guardada no navegador (nem local, nem da guia)", !guardado.includes(SENHA));
-  ok("Ligar fica ligado com a conta conectada", !(await page.locator("[data-ligacoes-ligar]").isDisabled().catch(() => true)));
+  ok("Ligar fica ligado com a conta conectada", (await desligado(page, "[data-ligacoes-ligar]")) === false);
 
   // A LIGAÇÃO DE VERDADE, que o servidor de mentira põe para tocar e dá ocupado.
   await preencher(page, "[data-ligacoes-numero]", "(11) 98765-4321");
@@ -259,7 +267,7 @@ console.log("\n2. A biblioteca de verdade: o registro com a senha conferida");
   // Desconectar desfaz o registro e destrava os campos.
   await clicar(page, "[data-ligacoes-desconectar]");
   ok("Desconectar volta a conta para desconectada", (await esperarAttr(page, "[data-ligacoes-conta]", "data-ligacoes-conta", "desligada")) === "desligada");
-  ok("…e destrava os campos", !(await page.locator(SEM("senha")).isDisabled().catch(() => true)));
+  ok("…e destrava os campos", (await desligado(page, SEM("senha"))) === false);
   await ctx.close();
 }
 
@@ -282,6 +290,11 @@ console.log("\n3. A senha errada e o endereço que não abre");
      && (await texto(page, "[data-ligacoes-frase-da-conta]")).includes("403"), await texto(page, "[data-ligacoes-frase-da-conta]"));
   await page.waitForTimeout(2500);
   ok("a senha recusada não é tentada de novo (a Nvoip pode bloquear)", visto.recusados === 1, `tentativas recusadas: ${visto.recusados}`);
+  // A CONTA RECUSADA NÃO FICA PENDURADA NA NVOIP. A biblioteca não tenta de
+  // novo sozinha na hora, mas deixa a conexão aberta, e o próximo Conectar
+  // criaria uma segunda conta ao lado da primeira (a primeira rodada de
+  // sabotagens mostrou: tirar o `stop` passava pelas conferências de cima).
+  ok("…e a conexão com a Nvoip é fechada", visto.fechou >= 1, `fechou ${visto.fechou}`);
   ok("…e Conectar volta, para corrigir", (await page.locator("[data-ligacoes-conectar]").count()) === 1);
   await ctx.close();
 }
@@ -386,7 +399,7 @@ console.log("\n4. A ligação atendida, o mudo, o teclado e o desligar");
   const chamada = await page.evaluate(() => globalThis.__SIP.uas[0].chamadas[0]);
   ok("a ligação pede só o áudio, com o STUN", chamada && chamada.alvo === "1133334444" && chamada.opcoes.mediaConstraints.audio === true
      && chamada.opcoes.mediaConstraints.video === false && (chamada.opcoes.pcConfig.iceServers || []).length > 0, JSON.stringify(chamada));
-  ok("com uma ligação no ar, Ligar fica desligado", await page.locator("[data-ligacoes-ligar]").isDisabled().catch(() => false));
+  ok("com uma ligação no ar, Ligar fica desligado", (await desligado(page, "[data-ligacoes-ligar]")) === true);
   await page.evaluate(() => globalThis.__SIP.atenderDoOutroLado());
   ok("atendida do outro lado, a tela diz \"Em ligação\"", (await esperarAttr(page, "[data-ligacao]", "data-ligacao", "em_ligacao")) === "em_ligacao");
   await page.waitForTimeout(1300);
@@ -412,7 +425,7 @@ console.log("\n4. A ligação atendida, o mudo, o teclado e o desligar");
   ok("…e a tela diz que foi encerrada", (await texto(page, "[data-ligacoes-fim]")).includes("A ligação foi encerrada"), await texto(page, "[data-ligacoes-fim]"));
   const depois = await page.evaluate(() => { const e = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(e); return e.defaultPrevented; });
   ok("depois da ligação, fechar a guia não pergunta mais", depois === false);
-  ok("e Ligar volta", !(await page.locator("[data-ligacoes-ligar]").isDisabled().catch(() => true)));
+  ok("e Ligar volta", (await desligado(page, "[data-ligacoes-ligar]")) === false);
   await ctx.close();
 }
 
