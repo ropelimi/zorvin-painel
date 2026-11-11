@@ -394,13 +394,13 @@ console.log("\n4. A ligação atendida, o mudo, o teclado e o desligar");
   ok("a biblioteca recebe a conta montada (uri, senha e endereço)", cfg && cfg.uri === `sip:${USUARIO}@${DOMINIO}` && cfg.temSenha
      && cfg.sockets[0] === "wss://app.nvoip.com.br:7443", JSON.stringify(cfg));
   await preencher(page, "[data-ligacoes-numero]", "11 3333-4444");
-  await page.locator("[data-ligacoes-numero]").press("Enter");
+  if (await page.locator("[data-ligacoes-numero]").count()) await page.locator("[data-ligacoes-numero]").press("Enter", { timeout: 5000 }).catch(() => {});
   ok("Enter no número liga", (await esperarAttr(page, "[data-ligacao]", "data-ligacao", "tocando")) === "tocando");
-  const chamada = await page.evaluate(() => globalThis.__SIP.uas[0].chamadas[0]);
+  const chamada = await page.evaluate(() => globalThis.__SIP.uas[0].chamadas[0]).catch(() => null);
   ok("a ligação pede só o áudio, com o STUN", chamada && chamada.alvo === "1133334444" && chamada.opcoes.mediaConstraints.audio === true
      && chamada.opcoes.mediaConstraints.video === false && (chamada.opcoes.pcConfig.iceServers || []).length > 0, JSON.stringify(chamada));
   ok("com uma ligação no ar, Ligar fica desligado", (await desligado(page, "[data-ligacoes-ligar]")) === true);
-  await page.evaluate(() => globalThis.__SIP.atenderDoOutroLado());
+  await page.evaluate(() => globalThis.__SIP.atenderDoOutroLado()).catch(() => null);
   ok("atendida do outro lado, a tela diz \"Em ligação\"", (await esperarAttr(page, "[data-ligacao]", "data-ligacao", "em_ligacao")) === "em_ligacao");
   await page.waitForTimeout(1300);
   ok("…com o relógio andando", /^00:0[1-9]$/.test(await texto(page, "[data-ligacoes-duracao]")), await texto(page, "[data-ligacoes-duracao]"));
@@ -411,14 +411,14 @@ console.log("\n4. A ligação atendida, o mudo, o teclado e o desligar");
 
   await clicar(page, "[data-ligacoes-mudo]");
   ok("Mudo põe o microfone no mudo", (await attr(page, "[data-ligacoes-mudo]", "data-ligacoes-mudo")) === "sim"
-     && (await page.evaluate(() => globalThis.__SIP.sessoes[0].gestos.some((g) => g[0] === "mute"))));
+     && (await page.evaluate(() => globalThis.__SIP.sessoes[0].gestos.some((g) => g[0] === "mute")).catch(() => null)));
   await clicar(page, "[data-ligacoes-mudo]");
   ok("…e de novo tira do mudo", (await attr(page, "[data-ligacoes-mudo]", "data-ligacoes-mudo")) === "nao"
-     && (await page.evaluate(() => globalThis.__SIP.sessoes[0].gestos.some((g) => g[0] === "unmute"))));
+     && (await page.evaluate(() => globalThis.__SIP.sessoes[0].gestos.some((g) => g[0] === "unmute")).catch(() => null)));
   await clicar(page, "[data-ligacoes-teclado]");
   await clicar(page, '[data-ligacoes-tecla="1"]');
   await clicar(page, '[data-ligacoes-tecla="#"]');
-  const dtmf = await page.evaluate(() => globalThis.__SIP.sessoes[0].gestos.filter((g) => g[0] === "dtmf").map((g) => g[1]).join(""));
+  const dtmf = await page.evaluate(() => globalThis.__SIP.sessoes[0].gestos.filter((g) => g[0] === "dtmf").map((g) => g[1]).join("")).catch(() => null);
   ok("o teclado manda as teclas (para a URA)", dtmf === "1#", dtmf);
   await clicar(page, "[data-ligacoes-desligar]");
   ok("Desligar encerra a ligação", (await esperarAttr(page, "[data-ligacao]", "data-ligacao", "encerrada")) === "encerrada");
@@ -436,7 +436,7 @@ console.log("\n5. A ligação que chega");
 {
   const { ctx, page } = await abrir({ init: SIP_DE_MENTIRA });
   await conectarDeMentira(page);
-  await page.evaluate(() => globalThis.__SIP.chegaLigacao("5511988887777"));
+  await page.evaluate(() => globalThis.__SIP.chegaLigacao("5511988887777")).catch(() => null);
   ok("a ligação que chega aparece, com Atender e Recusar", await esperar(page, "[data-ligacoes-chegando]", 5000)
      && (await page.locator("[data-ligacoes-atender]").count()) === 1 && (await page.locator("[data-ligacoes-recusar]").count()) === 1);
   ok("…e diz de quem é", (await texto(page, "[data-ligacoes-quem-liga]")).includes("5511988887777"), await texto(page, "[data-ligacoes-quem-liga]"));
@@ -445,19 +445,19 @@ console.log("\n5. A ligação que chega");
   const resp = await page.evaluate(() => (globalThis.__SIP.sessoes[0].gestos.find((g) => g[0] === "answer") || [])[1]);
   ok("…pedindo só o áudio", resp && resp.mediaConstraints.audio === true && resp.mediaConstraints.video === false, JSON.stringify(resp));
   // Uma segunda ligação no meio da primeira ouve "ocupado".
-  await page.evaluate(() => globalThis.__SIP.chegaLigacao("5521977776666"));
+  await page.evaluate(() => globalThis.__SIP.chegaLigacao("5521977776666")).catch(() => null);
   await page.waitForTimeout(200);
-  const segunda = await page.evaluate(() => globalThis.__SIP.sessoes[1].gestos);
+  const segunda = await page.evaluate(() => globalThis.__SIP.sessoes[1].gestos).catch(() => null);
   ok("uma segunda ligação no meio da primeira ouve ocupado (486)", segunda.some((g) => g[0] === "terminate" && g[1] && g[1].status_code === 486), JSON.stringify(segunda));
   ok("…e a primeira continua", (await attr(page, "[data-ligacao]", "data-ligacao")) === "em_ligacao");
-  await page.evaluate(() => globalThis.__SIP.desligarDoOutroLado());
+  await page.evaluate(() => globalThis.__SIP.desligarDoOutroLado()).catch(() => null);
   ok("o outro lado desliga, e a tela diz que terminou", (await esperarAttr(page, "[data-ligacao]", "data-ligacao", "encerrada")) === "encerrada");
 
   // Recusar.
-  await page.evaluate(() => globalThis.__SIP.chegaLigacao("5531966665555"));
+  await page.evaluate(() => globalThis.__SIP.chegaLigacao("5531966665555")).catch(() => null);
   await esperar(page, "[data-ligacoes-chegando]", 5000);
   await clicar(page, "[data-ligacoes-recusar]");
-  const recusa = await page.evaluate(() => globalThis.__SIP.sessoes[2].gestos);
+  const recusa = await page.evaluate(() => globalThis.__SIP.sessoes[2].gestos).catch(() => null);
   ok("Recusar responde ocupado (486)", recusa.some((g) => g[0] === "terminate" && g[1] && g[1].status_code === 486), JSON.stringify(recusa));
   ok("…e o cartão da ligação que chega some", (await page.locator("[data-ligacoes-chegando]").count()) === 0);
   await ctx.close();
@@ -470,7 +470,7 @@ console.log("\n6. O microfone negado, e sair da guia desliga tudo");
 {
   const { ctx, page } = await abrir({ init: SIP_DE_MENTIRA });
   await conectarDeMentira(page);
-  await page.evaluate(() => { globalThis.__SIP.cenario.microfone = false; });
+  await page.evaluate(() => { globalThis.__SIP.cenario.microfone = false; }).catch(() => null);
   await preencher(page, "[data-ligacoes-numero]", "11987654321");
   await clicar(page, "[data-ligacoes-ligar]");
   ok("sem o microfone, a ligação não sai", (await esperarAttr(page, "[data-ligacao]", "data-ligacao", "encerrada")) === "encerrada");

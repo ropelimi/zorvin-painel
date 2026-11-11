@@ -3375,6 +3375,133 @@ antes de o pdf.js começar a buscar o resto. Quem pega é a cena da fila, com o
 depósito lento: três downloads ficam no ar ao mesmo tempo, quando a fila deixa
 dois.
 
+## As ligações pelo Zorvin: a tela de teste (11/11)
+
+Pedido do Rodrigo: fazer ligações pelo Zorvin, sem pegar o aparelho. Ele
+recusou a API oficial do WhatsApp (*"Não quero usar a API Oficial"*), e o
+caminho escolhido é o VoIP da **Nvoip**, com um número novo de DDD 11 (o fixo
+continua como está, sem portabilidade). Depois: *"Pode fazer a tela de teste
+das ligações"*, com o endereço que o João, da Nvoip, passou:
+`wss://app.nvoip.com.br:7443`. O usuário SIP é o que termina em 001, e a
+senha SIP fica no painel da Nvoip (Configurações > Usuários > editar o
+usuário).
+
+**Esta é a tela de TESTE, e não a da equipe.** Ela existe para conferir, com o
+teste de 7 dias da Nvoip, três coisas antes de construir o resto: o Zorvin
+conecta e se registra com o usuário SIP; a ligação sai e as duas pontas se
+ouvem; e a ligação que chega no número toca aqui.
+
+| | |
+|---|---|
+| onde | menu ⋮ do topo → **Ligações (teste)** (`data-abrir-ligacoes`), só para quem administra, numa guia própria (`?tela=ligacoes`, `Ligacoes.jsx`) |
+| quem não administra | o item não aparece, e a guia aberta à mão diz que a tela é só para quem administra |
+| a conta | o endereço WSS (já escrito), o usuário SIP, a senha SIP e o domínio (em branco, vale o do endereço). Conectar e Desconectar |
+| ligar | o número com o DDD, a linha "Vai discar: …" com só os algarismos, Ligar (ou Enter). Durante a ligação: Desligar, Mudo e Teclado (para a URA de um banco) |
+| a ligação que chega | um cartão com o número, Atender e Recusar, e um toque sintetizado (nenhum arquivo) |
+| o registro | "O que aconteceu", com a hora de cada passo e o botão de copiar, para mandar a quem for investigar |
+
+**Como funciona:** o navegador fala SIP com o servidor da Nvoip por uma
+conexão WebSocket segura (WSS), e a voz vai por WebRTC, como numa chamada do
+Meet. A biblioteca é o **JsSIP** (3.13.9, a versão escrita sem `^`), buscada só
+quando alguém conecta (`import()`, um arquivo à parte de uns 250 KB): ela não
+entra no arquivo principal do Zorvin. As contas sem tela moram em
+`src/ligacoes.js`.
+
+**A senha SIP é digitada na tela, e só mora na memória da guia.** Não vai ao
+banco, nem ao navegador (`localStorage`, `sessionStorage`), nem à ponte, nem ao
+registro de eventos; fechou ou recarregou a guia, ela some. O campo é de senha,
+com o olho para conferir o que foi digitado. É a régua das senhas da ficha.
+
+- **O endereço tem de ser `wss://`**: com `ws://` a senha iria aberta pela
+  internet. Só a própria máquina (`127.0.0.1`, `localhost`) aceita `ws://`.
+- **O usuário colado com o domínio** (`sip:123456001@outro.dominio`) usa
+  aquele domínio, e não vira "usuario@dominio@dominio".
+- **O número vai só com os algarismos.** O "+" e o "55" da frente NÃO são
+  tirados: quem diz o formato que a Nvoip espera é o teste, e a tela mostra o
+  que vai ser discado antes do clique.
+- **A senha recusada (401/403) não é tentada de novo**: a Nvoip pode bloquear
+  quem erra muitas vezes seguidas. A frase diz onde conferir a senha.
+- **O endereço que não abre não fica em "Conectando…" para sempre.** Antes do
+  primeiro registro, a queda da conexão é a resposta, e a tela manda conferir
+  o endereço e a internet; depois dele, é um soluço, e a biblioteca tenta de
+  novo sozinha.
+- **Uma ligação por vez**: a segunda que chega no meio da primeira ouve
+  "ocupado" (486). Recusar também responde 486.
+- **O fim de cada ligação é dito**, com o código SIP quando houver (*"o número
+  está ocupado (código SIP 486)"*), e o microfone negado tem a frase do que
+  fazer (o cadeado ao lado do endereço).
+- **A ligação e a conta conectada seguram a atualização sozinha do Zorvin**
+  (`useMotivoParaEsperar`): recarregar derrubaria a ligação e apagaria a senha
+  digitada. E fechar ou recarregar a guia no meio de uma ligação pergunta
+  antes (`beforeunload`).
+- **Sair da guia desliga tudo**: nada fica conectado à Nvoip sem uma tela que
+  diga isso.
+- **O STUN do Google** (`stun.l.google.com`) só diz ao navegador por qual
+  endereço público ele sai; nenhuma voz passa por ele.
+
+**O que fica de fora, e é decisão:**
+
+- **a versão da equipe**: um usuário SIP só, guardado no Zorvin, usado por uma
+  pessoa de cada vez, com o aviso de "linha em uso por fulano". Ela depende de
+  o contrato da Nvoip permitir, e de decidir onde a senha mora (perguntado ao
+  João);
+- **ligar de dentro de uma conversa**, gravar a ligação e anotá-la na
+  conversa;
+- **o domínio SIP da Nvoip não foi conferido** (a documentação dela não abre
+  desta sessão): o padrão é o servidor do endereço WSS, como costuma ser no
+  FreeSWITCH, e o campo deixa trocar;
+- **na prova, a ligação de verdade não é atendida**: atender exige um servidor
+  de mídia, e a prova não tem um. A metade com a biblioteca de verdade vai até
+  o "ocupado"; a ligação atendida, o mudo, o teclado e a que chega são provados
+  com uma biblioteca de mentira;
+- **o motivo que segura a atualização não tem conferência própria**: a prova
+  confere a pergunta do `beforeunload`, que é a outra metade.
+
+Prova: `as-ligacoes-de-teste`, 74 conferências em sete cenas. **A metade com
+a biblioteca de verdade** usa o JsSIP contra um servidor SIP de mentira, que a
+prova põe no lugar do endereço da Nvoip (`page.routeWebSocket`) e que responde
+como um FreeSWITCH: desafia o REGISTER (401) e o INVITE (407) com digest MD5,
+confere a resposta com a senha certa, e na ligação manda 100, 180 e 486. Ela
+prova que a tela fala SIP de verdade: o domínio, o número só com os
+algarismos, a senha que nunca vai escrita na rede, a senha errada, o endereço
+que não abre e o usuário colado com o domínio. O navegador da prova tem um
+microfone de mentira (`--use-fake-device-for-media-stream`). **A outra metade**
+usa uma biblioteca de mentira (`__SIP_DE_MENTIRA`, só com a bancada ligada):
+a ligação atendida, o relógio, o mudo, o teclado, a ligação que chega, a
+segunda ligação, recusar, o microfone negado e o celular a 360.
+
+**24 sabotagens e 24 pegas**, rodadas em cópias e lidas uma a uma (e a cópia
+de controle passou inteira):
+
+- o painel de antes inteiro (63 reprovações);
+- **quem pode:** sem a guarda de quem administra; o item do menu para todo
+  mundo;
+- **a senha:** guardada no navegador; escrita no registro; sem conferir o
+  `wss://`; a senha recusada sem fechar a conexão; os campos da conta sem
+  travar;
+- **conectar:** o endereço que não abre ficando em "Conectando…"; o usuário
+  colado com o domínio sem separar; a frase da senha sem o código;
+- **ligar:** o número sem tirar o que não é algarismo; sem o STUN; Ligar ligado
+  sem a conta conectada; o fim sem o código SIP; o microfone negado sem a
+  frase;
+- **na ligação:** o relógio parado; o Mudo sem mudar o microfone; o teclado
+  sem mandar as teclas; fechar a guia sem perguntar;
+- **a ligação que chega:** a segunda sem ocupado; Recusar sem o 486; atender
+  pedindo vídeo.
+
+**A primeira rodada achou dois defeitos da PROVA, e foi refeita** depois do
+conserto:
+
+- **a senha recusada sem fechar a conexão passava.** O JsSIP não tenta de novo
+  sozinho na hora, então as conferências de cima não viam diferença; mas a
+  conexão ficava aberta, e o próximo Conectar criaria uma segunda conta ao lado
+  da primeira. Entrou a conferência de que a conexão é fechada;
+- **o painel de antes estourava a prova**, em vez de reprovar: `inputValue`,
+  `isDisabled` e `press` num campo que não existe esperam 30 segundos e param a
+  prova. Hoje as leituras e os gestos são guardados, e as chamadas à biblioteca
+  de mentira também (`.catch`). Nessa segunda volta, a cópia de controle e a do
+  painel de antes foram rodadas de novo sozinhas.
+
 ## A mídia de um cliente, tipo no WhatsApp (06/11)
 
 Pedido da equipe (Maria Nicolly), com a foto de uma conversa, repassado pelo
