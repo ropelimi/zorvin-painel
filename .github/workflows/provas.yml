@@ -69,7 +69,17 @@ jobs:
   # ------------------------------------------------------------
   partes:
     name: Provas do painel (parte ${{ matrix.parte }} de ${{ strategy.job-total }})
-    runs-on: ubuntu-latest
+    # A MÁQUINA FICA ESCRITA (`ubuntu-24.04`), E NÃO `ubuntu-latest` (11/11).
+    #
+    # Em 11/11 o GitHub passou o `ubuntu-latest` para o Ubuntu 26.04, e nele o
+    # `playwright install --with-deps` não conseguiu baixar as fontes do
+    # Chromium: os servidores de pacotes do Ubuntu não respondiam ("Temporary
+    # failure resolving 'archive.ubuntu.com'"). As três partes da PR #333
+    # morreram no passo do navegador, duas rodadas seguidas, sem nenhuma prova
+    # rodar. A ponte já fixava a 24.04 (pelo Postgres da máquina), e é nela que
+    # todas as rodadas verdes até aqui rodaram. Trocar de máquina é uma
+    # decisão, e não algo que o GitHub decide por nós no meio de uma entrega.
+    runs-on: ubuntu-24.04
     strategy:
       # UMA PARTE QUE REPROVA NÃO DERRUBA AS OUTRAS. Com o padrão (`true`), a
       # primeira reprovação cancelaria as outras duas máquinas no meio, e a
@@ -253,7 +263,7 @@ jobs:
     name: Provas do painel
     needs: partes
     if: ${{ always() }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: As partes passaram?

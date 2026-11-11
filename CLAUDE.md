@@ -10830,6 +10830,16 @@ passo das provas — equilibradas: quem cresceu foi a suíte, de ~68 para ~110
 minutos somados em dez dias. As seis rodadas de 01 e 02/11 levaram de 37 a 40
 minutos do começo ao fim, e cada parte continua longe do teto de 90.
 
+**A máquina ficou escrita: `ubuntu-24.04`, e não `ubuntu-latest` (11/11).**
+Naquele dia o GitHub passou o `ubuntu-latest` para o Ubuntu 26.04, e nele o
+`playwright install --with-deps` não conseguia baixar as fontes do Chromium:
+os servidores de pacotes do Ubuntu não respondiam ("Temporary failure
+resolving 'archive.ubuntu.com'"). As três partes da PR #333 morreram no passo
+do navegador, duas rodadas seguidas, sem nenhuma prova rodar. A ponte já
+fixava a 24.04, e é nela que todas as rodadas verdes até então rodaram.
+**Trocar de máquina é uma decisão**, e não algo que o GitHub decide por nós no
+meio de uma entrega.
+
 Prova: `as-provas-em-partes`, 40 conferências. Ela chama o próprio `rodar.mjs`,
 **sempre com `--listar`**, e confere as partes, cada máquina, as recusas, a
 tabela velha e as três linhas do GitHub. **15 sabotagens, 14 pegas e uma que
