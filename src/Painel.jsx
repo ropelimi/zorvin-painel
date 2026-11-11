@@ -13,7 +13,7 @@ import {
   Image as ImageIcon, Video,
   Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote, Volume2,
   ListChecks, Undo2, UserCheck, SquareKanban, BellRing, BellPlus, CircleCheck, RotateCcw,
-  Loader2, Headset, Hourglass, Eraser, ScrollText, AlarmClock, RefreshCw
+  Loader2, Headset, Hourglass, Eraser, ScrollText, AlarmClock, RefreshCw, PhoneCall
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
@@ -49,6 +49,7 @@ import Funil from "./Funil";
 import Tarefas from "./Tarefas.jsx";
 import Esperando from "./Esperando.jsx";
 import Faxina from "./Faxina.jsx";
+import Ligacoes from "./Ligacoes.jsx";
 import { mudouDesdeALista } from "./faxina.js";
 import { RELER_A_CADA_MS as RELER_A_ESPERA_MS, TETO_DAS_ATRASADAS, ESPERA_ANTES_DA_PRIMEIRA_MS, ehParaMim,
          quemAvisarAgora, marcarAvisadas as marcarEsperasAvisadas, chaveDoAviso as chaveDoAvisoDeEspera,
@@ -3866,6 +3867,8 @@ export default function Painel({ sessao }) {
   // A FAXINA DA FILA (01/11) — ver `Faxina.jsx`. Só existe com o 028 (as
   // abas) e com o "Finalizar" de pé: é ele que a faxina usa.
   const telaFaxina = TELA_DA_GUIA === "faxina";
+  // A TELA DE TESTE DAS LIGAÇÕES (11/11), só para quem administra.
+  const telaLigacoes = TELA_DA_GUIA === "ligacoes";
   const [temAvisoDeEspera, setTemAvisoDeEspera] = useState(null);
   const temAvisoDeEsperaRef = useRef(null);
   useEffect(() => { temAvisoDeEsperaRef.current = temAvisoDeEspera; }, [temAvisoDeEspera]);
@@ -17434,6 +17437,9 @@ export default function Painel({ sessao }) {
       return funisDosTelefones === null ? null : true;
     }
     if (TELA_DA_GUIA === "tarefas") return temTarefas === null ? null : temTarefas === true;
+    // AS LIGAÇÕES SÃO SÓ DE QUEM ADMINISTRA. Com o cadastro sem resposta, não
+    // se sabe ainda: a guia diz que está abrindo, e o que não carregou.
+    if (TELA_DA_GUIA === "ligacoes") return erroDoAcesso ? null : souAdmin;
     if (TELA_DA_GUIA === "faxina") {
       if (temSituacao === false || temTratada === false || temAssuntos === false) return false;
       return temSituacao === null || temTratada === null || temAssuntos === null ? null : true;
@@ -18304,6 +18310,12 @@ export default function Painel({ sessao }) {
                   )}
                   <a data-abrir-painel data-abre-guia href={enderecoDaTela("painel")} target="_blank" rel="noopener"
                      onClick={() => setMenuTopoAberto(false)} style={ITEM_QUE_ABRE_GUIA}><BarChart3 size={17} color={C.textSecondary} /> Painel</a>
+                  {/* AS LIGAÇÕES (TESTE), 11/11: só quem administra, numa guia
+                      própria. É o teste da Nvoip, e não a versão da equipe. */}
+                  {souAdmin && (
+                    <a data-abrir-ligacoes data-abre-guia href={enderecoDaTela("ligacoes")} target="_blank" rel="noopener"
+                       onClick={() => setMenuTopoAberto(false)} style={ITEM_QUE_ABRE_GUIA}><PhoneCall size={17} color={C.textSecondary} /> Ligações (teste)</a>
+                  )}
                   {/* Quem administra no Vantoro administra aqui. Esconder o botão
                       é cortesia, não segurança: quem não é admin esbarra nas
                       regras do banco de qualquer forma. */}
@@ -22720,7 +22732,9 @@ export default function Painel({ sessao }) {
           <Marca tamanho={20} cor={C.textPrimary} corFraca={C.textSecondary} />
           <div style={{ fontSize: 15, maxWidth: 420, lineHeight: 1.5 }}>
             {guiaPronta === false
-              ? <>Este Zorvin não tem a tela <b>{nomeDaTelaDaGuia}</b>.</>
+              ? (TELA_DA_GUIA === "ligacoes"
+                  ? <>A tela <b>{nomeDaTelaDaGuia}</b> é só para quem administra.</>
+                  : <>Este Zorvin não tem a tela <b>{nomeDaTelaDaGuia}</b>.</>)
               : <>Abrindo <b>{nomeDaTelaDaGuia}</b>…</>}
           </div>
           {guiaPronta !== false && (erroDoAcesso || Object.keys(falhasDeLeitura).length > 0) && (
@@ -22750,6 +22764,9 @@ export default function Painel({ sessao }) {
       {/* O Painel recebe os telefones e os departamentos já carregados: são os
           nomes das linhas do relatório, e refazer as consultas aqui daria uma
           segunda lista que pode divergir da que está na tela. */}
+      {/* AS LIGAÇÕES (TESTE), 11/11 — ver `Ligacoes.jsx`. */}
+      {telaLigacoes && guiaPronta === true && <Ligacoes C={C} aoFechar={fecharAGuia} />}
+
       {telaPainel && guiaPronta === true && (
         // `CClaro`: o papel sai sempre no tema claro (ver `CSS_DA_IMPRESSAO`).
         <PainelNumeros C={C} CClaro={TEMAS.claro} modo={modo} advogados={advogados} departamentos={departamentos}
