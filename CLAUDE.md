@@ -1214,6 +1214,26 @@ e 5 pegas** (3, 9, 2, 6 e 2 conferências reprovando, todas limpas). Ela mede
 por isso que o menu de tags media 139px de altura enquanto a pessoa via 21 —
 `getBoundingClientRect` não sabe que um ancestral está recortando.
 
+### O link da OS na ficha (11/11)
+
+Pedido do Rodrigo, com a foto da ficha: *"em 'Ficha no Vantoro', colocar um
+link para abrir a OS do Cliente"*. A caixa "ORDEM DE SERVIÇO · ABERTA" dizia as
+pendências e não levava a lugar nenhum.
+
+- **"Abrir a OS"** (`data-abrir-a-os`), na linha do status, à direita, abre a
+  tela da ordem no Vantoro (`/cadastro/ordem/<id>/`, a `core_ordem` de lá)
+  numa aba nova, com `noopener noreferrer`, como a ficha completa;
+- **o endereço sai de `enderecoNoVantoro`**, e o número vai escapado;
+- **só com o número da ordem**: o Vantoro manda `ordem_servico.id` desde a
+  ficha de sempre (`_resumo`). Sem ele (um Vantoro de antes), a caixa fica, e
+  o link não;
+- **lá, qualquer pessoa entrada vê a ordem** (só `login_required`); mexer nela
+  é de quem a puxou, ou de quem administra. Lido no código do Vantoro em 11/11.
+
+Prova: `o-link-da-os-na-ficha`, 30 conferências: o link pintado, na linha do
+status e dentro da ficha, o clique que abre a aba nova, sem o número, sem a
+ordem, o número escapado, a ficha na gaveta (1100) e o celular (390).
+
 ### As observações do cadastro (01/10)
 
 Pedido do Rodrigo em 30/09: *"Na Ficha do Vantoro, no Zorvin, precisa

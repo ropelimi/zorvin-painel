@@ -1712,8 +1712,27 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
               <div style={{
                 background: C.listActive, borderRadius: 9, padding: "10px 12px", marginBottom: 14,
               }}>
-                <div style={{ fontSize: 11, color: C.textSecondary, marginBottom: 5 }}>
-                  ORDEM DE SERVIÇO · {cliente.ordem_servico.status}
+                {/* O LINK DA OS (11/11): a tela da ordem no Vantoro
+                    (`/cadastro/ordem/<id>/`), numa aba nova, como a ficha
+                    completa. Só com o número da ordem: o Vantoro manda o `id`
+                    junto, e sem ele não há para onde levar. Lá, qualquer pessoa
+                    entrada VÊ a ordem; mexer nela é de quem a puxou. */}
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8,
+                              flexWrap: "wrap", marginBottom: 5 }}>
+                  <div style={{ fontSize: 11, color: C.textSecondary }}>
+                    ORDEM DE SERVIÇO · {cliente.ordem_servico.status}
+                  </div>
+                  {cliente.ordem_servico.id != null && cliente.ordem_servico.id !== "" && (
+                    <a data-abrir-a-os
+                       href={enderecoNoVantoro(`/cadastro/ordem/${encodeURIComponent(cliente.ordem_servico.id)}/`)}
+                       target="_blank" rel="noopener noreferrer"
+                       title="Abrir a ordem de serviço deste cliente no Vantoro, numa aba nova"
+                       style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center",
+                                gap: 4, fontSize: 12, color: C.link, textDecoration: "none",
+                                whiteSpace: "nowrap" }}>
+                      <ExternalLink size={12} /> Abrir a OS
+                    </a>
+                  )}
                 </div>
                 {/* `pendencias` pode não vir. Sem esta guarda, `.length` estoura —
                     e no React 18 um erro assim não mostra mensagem nenhuma: ele
