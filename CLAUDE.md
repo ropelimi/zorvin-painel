@@ -10831,14 +10831,24 @@ minutos somados em dez dias. As seis rodadas de 01 e 02/11 levaram de 37 a 40
 minutos do começo ao fim, e cada parte continua longe do teto de 90.
 
 **A máquina ficou escrita: `ubuntu-24.04`, e não `ubuntu-latest` (11/11).**
-Naquele dia o GitHub passou o `ubuntu-latest` para o Ubuntu 26.04, e nele o
-`playwright install --with-deps` não conseguia baixar as fontes do Chromium:
-os servidores de pacotes do Ubuntu não respondiam ("Temporary failure
-resolving 'archive.ubuntu.com'"). As três partes da PR #333 morreram no passo
-do navegador, duas rodadas seguidas, sem nenhuma prova rodar. A ponte já
-fixava a 24.04, e é nela que todas as rodadas verdes até então rodaram.
-**Trocar de máquina é uma decisão**, e não algo que o GitHub decide por nós no
-meio de uma entrega.
+Naquele dia o GitHub passou o `ubuntu-latest` para o Ubuntu 26.04. **Trocar de
+máquina é uma decisão**, e não algo que o GitHub decide por nós no meio de uma
+entrega; a ponte já fixava a 24.04, e é nela que todas as rodadas verdes
+rodaram.
+
+**E o navegador instala sem os pacotes do Ubuntu, quando eles não vêm
+(11/11).** No mesmo dia as máquinas do GitHub deixaram de resolver os
+servidores de pacotes do Ubuntu ("Temporary failure resolving
+'azure.archive.ubuntu.com'"), e o `playwright install --with-deps` morria
+baixando fontes. As três partes da PR #333 caíram ali três rodadas seguidas,
+sem nenhuma prova rodar. **Eu culpei o Ubuntu 26.04 primeiro, e estava
+errado**: com a 24.04 fixada, a rodada seguinte caiu igual. Hoje o passo tenta
+com `--with-deps` e, falhando, baixa só o navegador, com um aviso na rodada.
+As bibliotecas que o Chromium exige já vêm na máquina (o apt as lista como
+"already the newest version"); o que faltava eram fontes de outras escritas
+(japonês, chinês, tailandês, cirílico), que nenhuma prova usa. A Liberation
+Sans, que desenha a Arial dos botões, e a de emoji também já vêm. **Antes de
+culpar uma versão, confira se a mesma falha aparece sem ela.**
 
 Prova: `as-provas-em-partes`, 40 conferências. Ela chama o próprio `rodar.mjs`,
 **sempre com `--listar`**, e confere as partes, cada máquina, as recusas, a
