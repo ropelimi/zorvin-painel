@@ -13,7 +13,7 @@ import {
   Image as ImageIcon, Video,
   Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote, Volume2,
   ListChecks, Undo2, UserCheck, SquareKanban, BellRing, BellPlus, CircleCheck, RotateCcw,
-  Loader2, Headset, Hourglass, Eraser, ScrollText, AlarmClock, RefreshCw, PhoneCall
+  Loader2, Headset, Hourglass, Eraser, ScrollText, AlarmClock, RefreshCw, PhoneCall, Phone
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
@@ -50,6 +50,7 @@ import Tarefas from "./Tarefas.jsx";
 import Esperando from "./Esperando.jsx";
 import Faxina from "./Faxina.jsx";
 import Ligacoes from "./Ligacoes.jsx";
+import LigacaoNaConversa from "./LigacaoNaConversa.jsx";
 import { mudouDesdeALista } from "./faxina.js";
 import { RELER_A_CADA_MS as RELER_A_ESPERA_MS, TETO_DAS_ATRASADAS, ESPERA_ANTES_DA_PRIMEIRA_MS, ehParaMim,
          quemAvisarAgora, marcarAvisadas as marcarEsperasAvisadas, chaveDoAviso as chaveDoAvisoDeEspera,
@@ -3423,6 +3424,11 @@ export default function Painel({ sessao }) {
   const [tentativaDeAcesso, setTentativaDeAcesso] = useState(0);
   const [departamentoId, setDepartamentoId] = useState(null);
   const [souAdmin, setSouAdmin] = useState(false);
+  // A LIGAÇÃO DE DENTRO DA CONVERSA (12/11): a linha mora em
+  // `LigacaoNaConversa`, uma só para a guia, e o cabeçalho só pergunta se há
+  // uma ligação, e com qual conversa.
+  const [estadoDaLigacao, setEstadoDaLigacao] = useState(null);
+  const telefoneRef = useRef(null);
   // A minha linha em `usuarios` — o espelho do cadastro do Vantoro. É de onde
   // sai o nome que a equipe vê.
   const [meuCadastro, setMeuCadastro] = useState(null);
@@ -4630,6 +4636,7 @@ export default function Painel({ sessao }) {
   //  largura, medida na mesma régua (com o ícone, o recheio e a borda) em
   //  19/10, a 1920: "Já tratei" deu os 90 de sempre, o que confere a régua;
   //  "Finalizar" 92,7 e "Reabrir" 85,8.
+  const LARGURA_DO_TELEFONE = 40;
   const LARGURA_DO_JA_TRATEI = { "Já tratei": 90, "Voltar para a fila": 139, "Finalizar": 93, "Reabrir": 86 };
   const aConversaDoCabecalho = conversaId != null ? conversas.find((x) => x.id === conversaId) : null;
   const situacaoDoCabecalho = temSituacao === true && aConversaDoCabecalho
@@ -4643,8 +4650,25 @@ export default function Painel({ sessao }) {
     : (abertaFoiTratada ? "Voltar para a fila" : "Já tratei");
   const JA_TRATEI_ESCRITO = !fichaDoJaTratei ? 0 : LARGURA_DO_JA_TRATEI[rotuloDoJaTratei] + 12;
   const JA_TRATEI_EM_ICONE = !fichaDoJaTratei ? 0 : 35 + 12;
-  const cabecalhoApertado  = !estreito && larguraDaConversa - FILA_ESCRITA - JA_TRATEI_ESCRITO < NOME_MINIMO;
-  const cabecalhoRecolhido = !estreito && larguraDaConversa - FILA_EM_ICONES - JA_TRATEI_EM_ICONE < NOME_MINIMO;
+  //  E O TELEFONE (12/11), o botão de ligar de dentro da conversa: só para
+  //  quem administra (é a linha da Nvoip, ainda em teste), na guia das
+  //  conversas, e nunca num grupo. Ele soma à parte, como o "Já tratei", com
+  //  a largura medida na régua do navegador (o ícone de 19 e o recheio de 10,
+  //  como a lupa ao lado) mais o vão de 12.
+  const podeLigar = souAdmin && !TELA_DA_GUIA;
+  const ligarNaFila = Boolean(podeLigar && aConversaDoCabecalho
+    && !String(aConversaDoCabecalho.contato?.numero || "").startsWith("grupo:"));
+  const LIGAR_NA_FILA = ligarNaFila ? LARGURA_DO_TELEFONE + 12 : 0;
+  const ligacaoDestaConversa = Boolean(estadoDaLigacao && estadoDaLigacao.emLigacao
+    && conversaId != null && estadoDaLigacao.conversaId === conversaId);
+  const ligarNaFilaSolta = ligarNaFila && !estreito;
+  const ligarParaAConversa = (cv) => {
+    if (!cv || !telefoneRef.current) return;
+    telefoneRef.current.ligarPara({ numero: cv.contato?.numero, nome: nomeDoContato(cv.contato) || "",
+                                   foto: cv.contato?.foto_url || null, conversaId: cv.id });
+  };
+  const cabecalhoApertado  = !estreito && larguraDaConversa - FILA_ESCRITA - JA_TRATEI_ESCRITO - LIGAR_NA_FILA < NOME_MINIMO;
+  const cabecalhoRecolhido = !estreito && larguraDaConversa - FILA_EM_ICONES - JA_TRATEI_EM_ICONE - LIGAR_NA_FILA < NOME_MINIMO;
   // ============================================================
   //  A LINHA DO NÚMERO E OS SEUS SELOS (06/10)
   //
@@ -4670,9 +4694,9 @@ export default function Painel({ sessao }) {
   const NUMERO_NA_LINHA = 95;
   const SELO_ESCRITO = 92;
   const espacoDaLinha = larguraDaConversa - 56
-    - (cabecalhoRecolhido ? 82
-       : cabecalhoApertado ? FILA_EM_ICONES + JA_TRATEI_EM_ICONE
-       : FILA_ESCRITA + JA_TRATEI_ESCRITO);
+    - (cabecalhoRecolhido ? 82 + LIGAR_NA_FILA
+       : cabecalhoApertado ? FILA_EM_ICONES + JA_TRATEI_EM_ICONE + LIGAR_NA_FILA
+       : FILA_ESCRITA + JA_TRATEI_ESCRITO + LIGAR_NA_FILA);
   const selosNaLinha = (temResponsavel === true ? 1 : 0) + (temFunil === true && funilDaConversa ? 1 : 0)
     + (temTarefas === true && tarefasDaConversa ? 1 : 0);
   const selosCompactos = !estreito && espacoDaLinha - NUMERO_NA_LINHA < selosNaLinha * SELO_ESCRITO;
@@ -16853,6 +16877,17 @@ export default function Painel({ sessao }) {
     : trateiDisponivel && !conversa.esperando_desde && Boolean(conversa.tratada_em);
   const podeTratar = trateiDisponivel && !estaTratada;
 
+  // O TELEFONE DA CONVERSA (12/11): uma definição só, desenhada antes da lupa
+  // com a fila solta e ao lado do ⋮ com ela recolhida.
+  const botaoDeLigar = !(ligarNaFilaSolta && conversa) ? null : (
+    <button data-ligar-na-conversa onClick={() => ligarParaAConversa(conversa)}
+            aria-label={ligacaoDestaConversa ? "Voltar à ligação" : "Ligar (voz)"}
+            title={ligacaoDestaConversa ? "Voltar à ligação" : `Ligar para ${nomeDoContato(conversa.contato) || numeroBonito(conversa.contato?.numero)}`}
+            style={{ ...BOTAO_ICONE, padding: 10, background: ligacaoDestaConversa ? C.listActive : "transparent" }}>
+      <Phone size={19} color={ligacaoDestaConversa ? C.green : C.textSecondary} />
+    </button>
+  );
+
   const acaoJaTratei = !podeTratar && !estaTratada ? null : (escrito) => {
     const rotulo = situacaoDaAberta ? (podeTratar ? "Finalizar" : "Reabrir")
       : (podeTratar ? "Já tratei" : "Voltar para a fila");
@@ -19833,6 +19868,9 @@ export default function Painel({ sessao }) {
                     dos outros seis não seria achado por quem está aprendendo
                     a usar a fila. */}
                 {acaoJaTratei && acaoJaTratei(false)}
+                {/* LIGAR (12/11), onde o WhatsApp Web põe o telefone: ao lado
+                    da lupa. Ver `botaoDeLigar`. */}
+                {botaoDeLigar}
                 <button aria-label="Buscar na conversa" onClick={() => setBuscaAberta((v) => !v)} title="Buscar na conversa" style={{ ...BOTAO_ICONE, padding: 10 }}>
                   <Search size={19} color={buscaAberta ? C.green : C.textSecondary} />
                 </button>
@@ -19843,6 +19881,10 @@ export default function Painel({ sessao }) {
                   fila não cabe. O conteúdo é o MESMO nos dois: uma segunda
                   escrita dele divergiria no primeiro conserto, e divergir aqui
                   é uma ação existir num tamanho de janela e sumir no outro. */}
+              {/* COM A FILA RECOLHIDA, O TELEFONE FICA À VISTA, ao lado do ⋮:
+                  é o gesto que o WhatsApp deixa sempre na barra, e na tela do
+                  escritório (1280, com a ficha) a fila vive recolhida. */}
+              {cabecalhoRecolhido && botaoDeLigar}
               {(estreito || cabecalhoRecolhido) && (
                 <span ref={acoesRef} style={{ position: "relative", display: "flex" }}>
                   <button aria-label="Mais opções desta conversa" title="Mais opções desta conversa"
@@ -19872,6 +19914,15 @@ export default function Painel({ sessao }) {
                           este menu é o único caminho, e a fila de espera é o
                           motivo de a pessoa ter aberto a conversa. */}
                       {acaoJaTratei && acaoJaTratei(true)}
+                      {/* LIGAR, pela outra porta: no celular, a única (o
+                          cabeçalho do celular não comporta mais um botão). */}
+                      {ligarNaFila && estreito && (
+                        <button onClick={() => { setMenuDaConversa(false); ligarParaAConversa(conversa); }}
+                                data-ligar-item
+                                style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
+                          <Phone size={17} color={C.green} /> {ligacaoDestaConversa ? "Voltar à ligação" : "Ligar (voz)"}
+                        </button>
+                      )}
                       {/* O COPILOTO, pela outra porta — no celular, a única: lá a
                           caixa de escrever não comporta mais um botão. Some com
                           texto na caixa, pela mesma regra do botão. */}
@@ -22766,6 +22817,10 @@ export default function Painel({ sessao }) {
           segunda lista que pode divergir da que está na tela. */}
       {/* AS LIGAÇÕES (TESTE), 11/11 — ver `Ligacoes.jsx`. */}
       {telaLigacoes && guiaPronta === true && <Ligacoes C={C} aoFechar={fecharAGuia} />}
+      {podeLigar && (
+        <LigacaoNaConversa ref={telefoneRef} C={C} Avatar={Avatar} estreito={estreito}
+                           formatarNumero={numeroBonito} aoAvisar={mostrarAviso} aoMudar={setEstadoDaLigacao} />
+      )}
 
       {telaPainel && guiaPronta === true && (
         // `CClaro`: o papel sai sempre no tema claro (ver `CSS_DA_IMPRESSAO`).
