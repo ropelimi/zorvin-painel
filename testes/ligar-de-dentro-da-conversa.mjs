@@ -59,6 +59,13 @@ async function esperarAttr(page, sel, nome, alvo, prazo = 8000) {
   }
   return v;
 }
+// A BIBLIOTECA DE MENTIRA, PERGUNTADA SEM ESTOURAR: num painel que não ligou
+// (ou que ligou errado), a sessão que a prova procura não existe, e a pergunta
+// estouraria a prova inteira em vez de deixar as conferências dizerem o nome.
+const sip = (page, f) => page.evaluate(f).catch((e) => {
+  console.log(`  (a biblioteca de mentira não respondeu: ${String(e.message).split("\n")[0]})`);
+  return null;
+});
 const existe = async (page, sel, prazo = 5000) =>
   page.waitForSelector(sel, { timeout: prazo }).then(() => true).catch(() => false);
 const sumiu = async (page, sel, prazo = 5000) =>
@@ -270,7 +277,7 @@ const { ctx, page, estouros } = await abrir();
   await clicar(page, "[data-ligar-na-conversa]");
   ok("sem a conta conectada, o clique pede a conta da Nvoip", await existe(page, "[data-ligacao-conta]"));
   ok("…dizendo para quem vai ligar", (await texto(page, "[data-ligacao-conta]")).includes("Ligar para MARIA LIGAÇÃO TESTE"));
-  ok("…e nada foi discado ainda", (await page.evaluate(() => globalThis.__SIP.uas.length)) === 0);
+  ok("…e nada foi discado ainda", (await sip(page, () => globalThis.__SIP.uas.length)) === 0);
   await foto(page, "1-conta");
   await preencher(page, SEM("usuario"), USUARIO);
   await preencher(page, SEM("senha"), SENHA);
@@ -280,7 +287,7 @@ const { ctx, page, estouros } = await abrir();
   const cfg = await page.evaluate(() => { const u = globalThis.__SIP.uas[0]; return u ? { uri: u.cfg.uri, temSenha: u.cfg.password === "Senha#Secreta-9", url: u.cfg.sockets[0].url } : null; });
   ok("a conta vai à biblioteca com o endereço da Nvoip", cfg && cfg.uri === `sip:${USUARIO}@app.nvoip.com.br` && cfg.temSenha
      && cfg.url === "wss://app.nvoip.com.br:7443", JSON.stringify(cfg));
-  const alvo = await page.evaluate(() => (globalThis.__SIP.uas[0].chamadas[0] || {}).alvo);
+  const alvo = await sip(page, () => (globalThis.__SIP.uas[0].chamadas[0] || {}).alvo);
   ok("o número sai com o 55 e com o nono dígito (557190012345 → 5571990012345)", alvo === "5571990012345", alvo);
   const guardado = await page.evaluate((s) => {
     const tudo = [];
@@ -319,20 +326,20 @@ console.log("\n3. A janela do WhatsApp");
   ok("…e o botão vermelho e redondo de desligar", visual.vermelho === "rgb(234, 0, 56)" && visual.redondo === "50%", JSON.stringify(visual));
   ok("a janela está pintada (nada por cima)", await pintado(page, "[data-ligacao-desligar]"));
   await foto(page, "2-tocando");
-  await page.evaluate(() => globalThis.__SIP.atenderDoOutroLado());
+  await sip(page, () => globalThis.__SIP.atenderDoOutroLado());
   ok("atendida do outro lado, \"Em ligação\"", (await esperarAttr(page, "[data-ligacao]", "data-ligacao", "em_ligacao")) === "em_ligacao");
   await page.waitForTimeout(1300);
   ok("…com o relógio andando", /^00:0[1-9]$/.test(await texto(page, "[data-ligacao] [data-ligacao-status]")),
      await texto(page, "[data-ligacao] [data-ligacao-status]"));
   await clicar(page, "[data-ligacao-mudo]");
   ok("Mudo põe o microfone no mudo", (await attr(page, "[data-ligacao-mudo]", "data-ligacao-mudo")) === "sim"
-     && (await page.evaluate(() => globalThis.__SIP.sessoes[0].gestos.some((g) => g[0] === "mute"))));
+     && (await sip(page, () => globalThis.__SIP.sessoes[0].gestos.some((g) => g[0] === "mute"))));
   await clicar(page, "[data-ligacao-mudo]");
   ok("…e tira do mudo", (await attr(page, "[data-ligacao-mudo]", "data-ligacao-mudo")) === "nao");
   await clicar(page, "[data-ligacao-teclado]");
   await clicar(page, '[data-ligacao-tecla="1"]');
   await clicar(page, '[data-ligacao-tecla="#"]');
-  const dtmf = await page.evaluate(() => globalThis.__SIP.sessoes[0].gestos.filter((g) => g[0] === "dtmf").map((g) => g[1]).join(""));
+  const dtmf = await sip(page, () => globalThis.__SIP.sessoes[0].gestos.filter((g) => g[0] === "dtmf").map((g) => g[1]).join(""));
   ok("o teclado manda as teclas (para a URA)", dtmf === "1#", dtmf);
   await foto(page, "3-teclado");
   await clicar(page, "[data-ligacao-teclado]");
@@ -362,9 +369,9 @@ console.log("\n4. Minimizada, a ligação continua com outra conversa aberta");
   await foto(page, "4-pilula");
   await abrirConversa(page, "cv-lig-2");
   ok("abrindo outra conversa, a pílula continua", (await nomeAberto(page)).includes("Fixo") && (await page.locator("[data-ligacao-pilula]").count()) === 1);
-  ok("…e a ligação também", (await page.evaluate(() => globalThis.__SIP.sessoes[0].fim)) === false);
+  ok("…e a ligação também", (await sip(page, () => globalThis.__SIP.sessoes[0].fim)) === false);
   await clicar(page, "[data-ligar-na-conversa]");
-  ok("ligar para outra pessoa no meio da ligação não disca", (await page.evaluate(() => globalThis.__SIP.uas[0].chamadas.length)) === 1);
+  ok("ligar para outra pessoa no meio da ligação não disca", (await sip(page, () => globalThis.__SIP.uas[0].chamadas.length)) === 1);
   ok("…e diz que já há uma ligação", await page.waitForFunction(() => document.body.innerText.includes("Já há uma ligação em andamento"), null, { timeout: 4000 }).then(() => true).catch(() => false));
   ok("…trazendo a janela de volta", await existe(page, '[data-ligacao="em_ligacao"]'));
   await clicar(page, "[data-ligacao-minimizar]");
@@ -384,10 +391,10 @@ console.log("\n5. A segunda ligação não pede a senha, e o fixo vai como está
 {
   await clicar(page, "[data-ligar-na-conversa]");
   ok("com a conta já conectada, liga direto", await existe(page, "[data-ligacao]") && (await page.locator("[data-ligacao-conta]").count()) === 0);
-  const alvo = await page.evaluate(() => (globalThis.__SIP.uas[0].chamadas[1] || {}).alvo);
+  const alvo = await sip(page, () => (globalThis.__SIP.uas[0].chamadas[1] || {}).alvo);
   ok("o fixo sai com o 55 e sem nono dígito (551133334444)", alvo === "551133334444", alvo);
-  ok("…numa conta só (nenhuma segunda conexão)", (await page.evaluate(() => globalThis.__SIP.uas.length)) === 1);
-  await page.evaluate(() => globalThis.__SIP.naoAtende());
+  ok("…numa conta só (nenhuma segunda conexão)", (await sip(page, () => globalThis.__SIP.uas.length)) === 1);
+  await sip(page, () => globalThis.__SIP.naoAtende());
   ok("a que não completou diz por quê", (await esperarAttr(page, "[data-ligacao]", "data-ligacao", "encerrada")) === "encerrada"
      && (await texto(page, "[data-ligacao] [data-ligacao-status]")).startsWith("O número não está disponível"),
      await texto(page, "[data-ligacao] [data-ligacao-status]"));
@@ -395,7 +402,7 @@ console.log("\n5. A segunda ligação não pede a senha, e o fixo vai como está
   ok("…e não some sozinha (o motivo fica para ler)", (await page.locator("[data-ligacao]").count()) === 1);
   await foto(page, "5-nao-completou");
   await clicar(page, "[data-ligacao-de-novo]");
-  const de = await page.evaluate(() => (globalThis.__SIP.uas[0].chamadas[2] || {}).alvo);
+  const de = await sip(page, () => (globalThis.__SIP.uas[0].chamadas[2] || {}).alvo);
   ok("\"Ligar de novo\" disca o mesmo número", de === "551133334444", de);
   await clicar(page, "[data-ligacao-desligar]");
   await esperarAttr(page, "[data-ligacao]", "data-ligacao", "encerrada");
@@ -406,19 +413,19 @@ console.log("\n5. A segunda ligação não pede a senha, e o fixo vai como está
 // ============================================================
 console.log("\n6. A ligação que chega");
 {
-  await page.evaluate(() => globalThis.__SIP.chegaLigacao("5511988887777"));
+  await sip(page, () => globalThis.__SIP.chegaLigacao("5511988887777"));
   ok("ela abre a janela, com Recusar e Atender", (await esperarAttr(page, "[data-ligacao]", "data-ligacao", "chegando")) === "chegando"
      && (await page.locator("[data-ligacao-atender]").count()) === 1 && (await page.locator("[data-ligacao-recusar]").count()) === 1);
   ok("…dizendo \"Ligação de voz recebida\"", (await texto(page, "[data-ligacao] [data-ligacao-status]")) === "Ligação de voz recebida");
   await foto(page, "6-chegando");
   await clicar(page, "[data-ligacao-recusar]");
-  const g = await page.evaluate(() => globalThis.__SIP.sessoes[globalThis.__SIP.sessoes.length - 1].gestos);
+  const g = await sip(page, () => globalThis.__SIP.sessoes[globalThis.__SIP.sessoes.length - 1].gestos);
   ok("Recusar responde ocupado (486)", g.some((x) => x[0] === "terminate" && x[1] && x[1].status_code === 486), JSON.stringify(g));
-  await page.evaluate(() => globalThis.__SIP.chegaLigacao("5511977776666"));
+  await sip(page, () => globalThis.__SIP.chegaLigacao("5511977776666"));
   await esperarAttr(page, "[data-ligacao]", "data-ligacao", "chegando");
   await clicar(page, "[data-ligacao-atender]");
   ok("Atender atende", (await esperarAttr(page, "[data-ligacao]", "data-ligacao", "em_ligacao")) === "em_ligacao");
-  await page.evaluate(() => globalThis.__SIP.desligarDoOutroLado());
+  await sip(page, () => globalThis.__SIP.desligarDoOutroLado());
   await esperarAttr(page, "[data-ligacao]", "data-ligacao", "encerrada");
   ok("nenhum erro de JavaScript na guia inteira", estouros.length === 0, estouros.join(" | "));
 }
@@ -438,7 +445,7 @@ console.log("\n7. A senha errada não liga, e Cancelar desfaz");
   await preencher(p2, SEM("senha"), "errada");
   await clicar(p2, "[data-ligacao-conectar]");
   ok("a senha recusada é dita na janela da conta", await p2.waitForFunction(() => (document.querySelector("[data-ligacao-erro-da-conta]") || {}).innerText?.includes("recusou o usuário ou a senha"), null, { timeout: 5000 }).then(() => true).catch(() => false));
-  ok("…e nada é discado", (await p2.evaluate(() => globalThis.__SIP.uas[0].chamadas.length)) === 0);
+  ok("…e nada é discado", (await sip(p2, () => globalThis.__SIP.uas[0].chamadas.length)) === 0);
   ok("…e a janela fica, para corrigir", (await p2.locator("[data-ligacao-conta]").count()) === 1);
   await clicar(p2, '[data-ligacao-conta] [aria-label="Cancelar"]');
   ok("Cancelar fecha a janela da conta", await sumiu(p2, "[data-ligacao-conta]"));

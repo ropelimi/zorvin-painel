@@ -3593,8 +3593,41 @@ WhatsApp Web"*.
 - **o motivo que segura a atualização não tem conferência própria**, como na
   tela de teste: a prova confere o `beforeunload`.
 
-Prova: `ligar-de-dentro-da-conversa`, com a biblioteca SIP de mentira (a mesma
-de `as-ligacoes-de-teste`).
+Prova: `ligar-de-dentro-da-conversa`, 76 conferências em oito cenas, com a
+biblioteca SIP de mentira (a mesma de `as-ligacoes-de-teste`): quem não
+administra; o telefone da conversa e o do ⋮ do celular; a janela da conta e a
+ligação que sai sozinha quando a conta conecta; a janela, a pílula e o lugar
+delas (sem cobrir a caixa de escrever nem o cabeçalho); a troca de conversa no
+meio da ligação; a segunda ligação, o fixo e "Ligar de novo"; a ligação que
+chega; o celular a 360; e o nome do cliente de 1000 a 1520 pontos, com o
+telefone sempre à vista.
+
+**29 sabotagens, 28 pegas e uma que vaza com razão**, rodadas em cópias e
+lidas uma a uma (e a cópia de controle passou inteira):
+
+- o painel de antes inteiro (57 reprovações);
+- **quem pode e o número:** sem a guarda de quem administra; o telefone no
+  grupo; o número sem o 55; sem o nono dígito; o nono dígito no fixo;
+- **a conta:** a senha guardada no navegador; sem guardar o usuário;
+  conectada, sem ligar sozinha; ligando quando a conta falha;
+- **a ligação:** minimizar desligando; a linha por conversa (some na troca);
+  ligar para outro no meio; a janela e a pílula embaixo, sobre a caixa; a
+  janela com o fundo do tema; a atendida sem sumir sozinha, e a que não
+  completou sumindo; fechar a guia sem perguntar; o celular sem a tela
+  inteira; Recusar sem o 486; o Mudo e o teclado só na tela; sem o "Voltar à
+  ligação"; a ligação que chega sem Atender; sem o item no ⋮;
+- **a largura:** o telefone fora da conta, e a largura curta (pegas pela
+  `o-cabecalho-nao-corta-o-que-importa`, com o nome a 227 e a 202);
+- **e a que vaza:** a segunda ligação abrindo a janela da conta. A conta já
+  está conectada, e o efeito que liga quando a conta conecta disca na hora: a
+  janela pisca por um desenho, e a régua de 25/09 vale. O caminho direto fica,
+  para não piscar.
+
+**A primeira rodada achou um defeito da prova:** quatro sabotagens a
+derrubavam (a janela ou a pílula que não existia, a sessão SIP que não
+nasceu), em vez de reprovar pelo nome. As medidas e as perguntas à biblioteca
+de mentira passaram a ser guardadas (`sip`), e as quatro, rodadas de novo, são
+pegas limpas.
 
 ## A mídia de um cliente, tipo no WhatsApp (06/11)
 
