@@ -3522,6 +3522,113 @@ conserto:
   de mentira também (`.catch`). Nessa segunda volta, a cópia de controle e a do
   painel de antes foram rodadas de novo sozinhas.
 
+### Ligar de dentro da conversa (12/11)
+
+Depois de a Nvoip liberar crédito de teste, a primeira ligação pela tela de
+teste deu certo. Pedido do Rodrigo: *"monte um visual onde possamos ligar por
+dentro da conversa"*, e *"o visual deve ser o mais parecido possível com o
+WhatsApp Web"*.
+
+| onde | o quê |
+|---|---|
+| o cabeçalho da conversa, no computador | um **telefone** sempre à vista (`data-ligar-na-conversa`): logo antes da lupa com a fila solta, e ao lado do ⋮ com ela recolhida |
+| o ⋮ do celular | **Ligar (voz)** (`data-ligar-item`): o cabeçalho do celular não comporta mais um botão |
+| a primeira ligação da guia | a janela **"Ligar para FULANO"** pede o usuário e a senha SIP (`data-ligacao-conta`), e liga sozinha quando a conta conecta |
+| a ligação | a **janela da chamada do WhatsApp** (`data-ligacao`): escura nos dois temas, a foto de 96 pontos no meio, o nome, o número, "Chamando…", "Tocando…" e depois o relógio, e os botões redondos (teclado, mudo e o vermelho de desligar) |
+| minimizada | uma **pílula verde** (`data-ligacao-pilula`) com o nome e o relógio, para abrir de novo ou desligar |
+| a que chega | a janela com "Ligação de voz recebida", Recusar (486) e Atender |
+| no celular | a janela ocupa a tela inteira, como a chamada do WhatsApp no celular |
+
+- **A linha mora numa escrita só** (`src/useLinhaSip.js`): a conta, a ligação,
+  o áudio e o registro saíram de `Ligacoes.jsx`, e a tela de teste e a da
+  conversa usam a mesma. A prova `as-ligacoes-de-teste` passou sem mudar uma
+  linha depois da separação.
+- **Uma linha para a guia, e não por conversa** (`LigacaoNaConversa.jsx`,
+  montado uma vez no Painel): a ligação continua enquanto a pessoa abre outras
+  conversas. O telefone da conversa da ligação diz "Voltar à ligação"; o de
+  outra conversa não disca, avisa que já há uma ligação e traz a janela de volta.
+- **No alto, à direita, abaixo do cabeçalho**, a janela e a pílula: embaixo,
+  elas cobririam o botão de enviar, e a pessoa escreve ao cliente com a
+  ligação no ar.
+- **O número sai com o 55 e com o nono dígito**
+  (`numeroDoContatoParaLigar`, em `ligacoes.js`). O teste de 11/11 mostrou que a
+  Nvoip quer o 55 (sem ele, 404). E o celular gravado na forma antiga (8
+  dígitos) ganha o 9: no WhatsApp as duas formas são a mesma conta, mas na rede
+  de telefone o número sem o 9 não existe mais. O fixo vai como está. Grupo não
+  tem telefone.
+- **A senha SIP continua só na memória da guia.** O usuário fica no navegador
+  (`zorvin-sip-usuario`), porque não é segredo. **A conta conectada não segura
+  a atualização sozinha do Zorvin** nesta guia (`seguraConectada: false`): a
+  guia das conversas passaria o dia sem se atualizar. Só a ligação em andamento
+  segura, e fechar a guia no meio dela pergunta antes. Depois de uma
+  atualização, a senha é pedida de novo na ligação seguinte.
+- **A ligação atendida que terminou sai da tela sozinha** em 5 segundos. A que
+  não completou fica, com o motivo ("O número não está disponível (código SIP
+  480)") e o **Ligar de novo**.
+- **Só para quem administra**, como a tela de teste: a linha da Nvoip ainda é de
+  teste, com um usuário SIP só. Abrir para a equipe é trocar `podeLigar`, no
+  Painel, e depende das respostas da Nvoip (quantos usuários, onde a senha mora).
+- **Sempre à vista no computador, também com a fila recolhida.** Na tela do
+  escritório (1280, com a ficha) a fila vive recolhida no ⋮, e o telefone
+  dentro dele sumiria da vista — no WhatsApp ele está sempre na barra.
+- **O botão soma à conta de largura do cabeçalho** (`LARGURA_DO_TELEFONE`, 44:
+  os 40 do botão, medidos, e 4 de folga, mais o vão de 12), como o "Já
+  tratei", nas três formas da fila (escrita, em ícones e recolhida): sem isso,
+  o nome do cliente cairia abaixo do piso de 230. **A folga foi medida:** com
+  40, a 1440 com a ficha a conta dizia "cabe em ícone" e o nome ficava com 227
+  (a prova `o-cabecalho-nao-corta-o-que-importa` pegou). **O efeito, para quem
+  administra:** a fila recolhe ou vira ícone 56 pontos antes. Com a ficha
+  aberta, a 1400 e a 1440 ela passa a recolher no ⋮ (era em ícones), e a 1600
+  a ficar em ícones (era escrita). As provas que procuram um botão da barra
+  nessas larguras passaram a rodar a 1600, com o motivo escrito
+  (`a-auditoria-de-07-10`, `a-midia-de-um-cliente`, `as-outras-gravacoes-caladas`, `clicar-fora-nao-descarta-o-digitado`, `o-link-abre-a-conversa-em-qualquer-aba`, `o-relatorio-do-ja-tratei`, `a-contabilizacao-dos-atendimentos`, `aguardando-em-aberto-e-finalizados`, `o-ja-tratei` e `o-outros-do-ja-tratei`), e a do cabeçalho confere
+  o degrau "em ícone" a 1600.
+
+**Fica de fora, e é decisão:**
+
+- **a ligação não fica registrada na conversa** (a bolha "Ligação de voz · 2
+  min" do WhatsApp). Pede uma tabela nova na ponte, e fica para depois do teste;
+- **a ligação que chega não diz o nome do cliente**, só o número: as ligações
+  vão chegar pelo celular, como o Rodrigo decidiu;
+- **o motivo que segura a atualização não tem conferência própria**, como na
+  tela de teste: a prova confere o `beforeunload`.
+
+Prova: `ligar-de-dentro-da-conversa`, 76 conferências em oito cenas, com a
+biblioteca SIP de mentira (a mesma de `as-ligacoes-de-teste`): quem não
+administra; o telefone da conversa e o do ⋮ do celular; a janela da conta e a
+ligação que sai sozinha quando a conta conecta; a janela, a pílula e o lugar
+delas (sem cobrir a caixa de escrever nem o cabeçalho); a troca de conversa no
+meio da ligação; a segunda ligação, o fixo e "Ligar de novo"; a ligação que
+chega; o celular a 360; e o nome do cliente de 1000 a 1520 pontos, com o
+telefone sempre à vista.
+
+**29 sabotagens, 28 pegas e uma que vaza com razão**, rodadas em cópias e
+lidas uma a uma (e a cópia de controle passou inteira):
+
+- o painel de antes inteiro (57 reprovações);
+- **quem pode e o número:** sem a guarda de quem administra; o telefone no
+  grupo; o número sem o 55; sem o nono dígito; o nono dígito no fixo;
+- **a conta:** a senha guardada no navegador; sem guardar o usuário;
+  conectada, sem ligar sozinha; ligando quando a conta falha;
+- **a ligação:** minimizar desligando; a linha por conversa (some na troca);
+  ligar para outro no meio; a janela e a pílula embaixo, sobre a caixa; a
+  janela com o fundo do tema; a atendida sem sumir sozinha, e a que não
+  completou sumindo; fechar a guia sem perguntar; o celular sem a tela
+  inteira; Recusar sem o 486; o Mudo e o teclado só na tela; sem o "Voltar à
+  ligação"; a ligação que chega sem Atender; sem o item no ⋮;
+- **a largura:** o telefone fora da conta, e a largura curta (pegas pela
+  `o-cabecalho-nao-corta-o-que-importa`, com o nome a 227 e a 202);
+- **e a que vaza:** a segunda ligação abrindo a janela da conta. A conta já
+  está conectada, e o efeito que liga quando a conta conecta disca na hora: a
+  janela pisca por um desenho, e a régua de 25/09 vale. O caminho direto fica,
+  para não piscar.
+
+**A primeira rodada achou um defeito da prova:** quatro sabotagens a
+derrubavam (a janela ou a pílula que não existia, a sessão SIP que não
+nasceu), em vez de reprovar pelo nome. As medidas e as perguntas à biblioteca
+de mentira passaram a ser guardadas (`sip`), e as quatro, rodadas de novo, são
+pegas limpas.
+
 ## A mídia de um cliente, tipo no WhatsApp (06/11)
 
 Pedido da equipe (Maria Nicolly), com a foto de uma conversa, repassado pelo

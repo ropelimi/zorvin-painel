@@ -40,7 +40,10 @@ const diasAtras = (d) => horasAtras(d * 24);
 
 /** Os dois telefones: o que o painel abre, e outro qualquer. */
 async function telefones() {
-  const ctx = await nav.newContext({ viewport: { width: 1400, height: 900 } });
+  // A 1600, e não a 1400 (12/11): com o telefone de ligar ("Ligar de dentro da
+  // conversa", no CLAUDE.md), a 1400 com a ficha aberta a fila do cabeçalho
+  // recolhe no ⋮, e os botões que esta prova clica saem da barra.
+  const ctx = await nav.newContext({ viewport: { width: 1600, height: 900 } });
   const page = await ctx.newPage();
   await page.goto(ENDERECO);
   await page.waitForSelector("[data-conversa-nome]");
@@ -101,7 +104,7 @@ const SEMENTE = {
 };
 
 async function abrirPainel({ admin = true, semRelatorio = false, falha = false } = {}) {
-  const ctx = await nav.newContext({ viewport: { width: 1400, height: 900 }, acceptDownloads: true });
+  const ctx = await nav.newContext({ viewport: { width: 1600, height: 900 }, acceptDownloads: true });
   const page = await ctx.newPage();
   const estouros = [];
   page.on("pageerror", (e) => estouros.push(e.message));

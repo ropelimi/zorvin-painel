@@ -63,7 +63,10 @@ plantar("a13", "aberto", 5000);   // a antiga: centenas de conversas mais novas 
 
 async function abrirPeloLink(chave, { esperar = 5000 } = {}) {
   const c = CT[chave];
-  const ctx = await nav.newContext({ viewport: { width: 1400, height: 900 } });
+  // A 1600, e não a 1400 (12/11): com o telefone de ligar ("Ligar de dentro da
+  // conversa", no CLAUDE.md), a 1400 com a ficha aberta a fila do cabeçalho
+  // recolhe no ⋮, e os botões que esta prova clica saem da barra.
+  const ctx = await nav.newContext({ viewport: { width: 1600, height: 900 } });
   const page = await ctx.newPage();
   const estouros = [];
   page.on("pageerror", (e) => estouros.push(e.message));
@@ -154,7 +157,7 @@ for (const chave of casos) {
     const corpo = r.request().url().includes("/historico/contato/") ? { ok: true, linhas } : { ok: true };
     return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(corpo) });
   };
-  const ctx = await nav.newContext({ viewport: { width: 1400, height: 900 } });
+  const ctx = await nav.newContext({ viewport: { width: 1600, height: 900 } });
   const page = await ctx.newPage();
   const estouros = [];
   page.on("pageerror", (e) => estouros.push(e.message));

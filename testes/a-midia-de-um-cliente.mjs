@@ -39,7 +39,10 @@ const texto = (loc) => loc.count().then((n) => (n ? loc.first().innerText().catc
 const attr = (loc, a) => loc.count().then((n) => (n ? loc.first().getAttribute(a).catch(() => null) : null));
 const todosOsTextos = (loc) => loc.evaluateAll((els) => els.map((e) => e.innerText));
 
-async function abrir({ semente = null, largura = 1400, altura = 900, celular = false } = {}) {
+// A 1600, E NÃO A 1400 (12/11): quem administra ganhou o telefone no cabeçalho
+// (ligar de dentro da conversa), e a 1400 com a ficha aberta a fila recolhe no
+// ⋮ — o reloginho do Histórico sai da barra por falta de espaço.
+async function abrir({ semente = null, largura = 1600, altura = 900, celular = false } = {}) {
   const ctx = await nav.newContext({ viewport: { width: largura, height: altura }, timezoneId: "America/Sao_Paulo",
                                      ...(celular ? { isMobile: true, hasTouch: true } : {}) });
   const page = await ctx.newPage();

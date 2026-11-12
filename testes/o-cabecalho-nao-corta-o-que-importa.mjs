@@ -170,9 +170,12 @@ console.log("\n2. O nome do cliente nunca é espremido abaixo do piso");
   // trocado a fila inteira por um menu em telas onde ela cabia folgada.
   ok("nas telas pequenas a fila se recolhe no ⋮",
      escada.find((e) => e.L === 1280)?.recolhido === true);
+  // A 1600, E NÃO MAIS A 1440 (12/11): quem administra ganhou o telefone no
+  // cabeçalho (ligar de dentro da conversa), e a 1440 com a ficha aberta ele
+  // não cabe junto da fila em ícone sem espremer o nome — ali ela recolhe.
   ok("nas médias ela volta, em ícone",
-     escada.find((e) => e.L === 1440)?.recolhido === false
-     && escada.find((e) => e.L === 1440)?.escrito === false);
+     escada.find((e) => e.L === 1600)?.recolhido === false
+     && escada.find((e) => e.L === 1600)?.escrito === false);
   ok("e nas grandes os rótulos vêm escritos",
      escada.find((e) => e.L === 1920)?.escrito === true);
 }

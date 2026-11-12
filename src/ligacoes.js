@@ -170,3 +170,25 @@ export async function carregarSip() {
   const m = await import("jssip");
   return m.default || m;
 }
+
+/** O número de um CONTATO como vai ser discado de dentro da conversa (12/11).
+ *  O teste de 11/11 mostrou que a Nvoip quer o 55 na frente: sem ele, deu 404.
+ *  E o celular gravado na forma antiga (8 dígitos) ganha o nono dígito — no
+ *  WhatsApp as duas formas são a mesma conta, mas na rede de telefone o
+ *  número sem o 9 não existe mais. A conta é a de `chaveDoNumero`: só celular
+ *  ganha o 9, e o fixo fica como está. Grupo não tem para onde ligar. */
+export function numeroDoContatoParaLigar(bruto) {
+  const texto = String(bruto || "");
+  if (texto.startsWith("grupo:")) return { erro: "Grupo não recebe ligação." };
+  const d = texto.replace(/\D/g, "");
+  if (!d) return { erro: "Este contato não tem número." };
+  const nacional = (d.startsWith("55") && (d.length === 12 || d.length === 13)) ? d.slice(2) : d;
+  if (nacional.length === 10 || nacional.length === 11) {
+    const comNove = nacional.length === 10 && "6789".includes(nacional[2])
+      ? nacional.slice(0, 2) + "9" + nacional.slice(2) : nacional;
+    return { numero: "55" + comNove };
+  }
+  // Número de fora do Brasil (ou de um formato que não é o nosso): vai como
+  // está gravado, só os algarismos.
+  return numeroParaDiscar(d);
+}

@@ -26,6 +26,9 @@
 //   9. os três números cabem, no computador (ao lado do nome) e no celular
 //      (embaixo dele), e arquivar tira a conversa do número da aba.
 import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+// A 1600, e não a 1400 (12/11): com o telefone de ligar ("Ligar de dentro da
+// conversa", no CLAUDE.md), a 1400 com a ficha aberta a fila do cabeçalho
+// recolhe no ⋮, e o "Finalizar" / "Já tratei" que esta prova clica sai da barra.
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -45,7 +48,7 @@ const H = (n) => new Date(AGORA - n * 3600e3).toISOString();
 /** O telefone que o painel ABRE — descoberto, e não escolhido a dedo (a lição
  *  de `o-ja-tratei`: a conta de teste não enxerga todos os telefones). */
 async function telefoneQueAbre() {
-  const ctx = await nav.newContext({ viewport: { width: 1400, height: 900 } });
+  const ctx = await nav.newContext({ viewport: { width: 1600, height: 900 } });
   const page = await ctx.newPage();
   await page.goto(ENDERECO);
   await page.waitForSelector("[data-conversa-nome]");
@@ -128,7 +131,7 @@ function semente() {
 
 /** TODAS AS BANDEIRAS EM TODA ABERTURA — `addInitScript` acumula, e uma
  *  ligada num cenário continuaria valendo nos seguintes. */
-async function abrirPainel({ semSituacao = false, erro = {}, semEfeito = [], atraso = {}, largura = 1400,
+async function abrirPainel({ semSituacao = false, erro = {}, semEfeito = [], atraso = {}, largura = 1600,
                              altura = 900, extra = null, cliqueNaoFinaliza = false, contagem = null,
                              ajustar = null, contagemFalha = false } = {}) {
   const ctx = await nav.newContext({ viewport: { width: largura, height: altura } });

@@ -98,7 +98,10 @@ const SEMENTE = {
   ],
 };
 
-async function abrirPainel(largura = 1400) {
+// A 1600, E NÃO A 1400 (12/11): quem administra ganhou o telefone no cabeçalho
+// (ligar de dentro da conversa), e a 1400 com a ficha aberta a fila recolhe no
+// ⋮ — o "Já tratei" sai da barra por falta de espaço. A 1600 ele fica, em ícone.
+async function abrirPainel(largura = 1600) {
   const ctx = await nav.newContext({ viewport: { width: largura, height: 900 } });
   const page = await ctx.newPage();
   const estouros = [];

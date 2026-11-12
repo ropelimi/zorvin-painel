@@ -38,6 +38,9 @@
 //   A7  HELO     40 dias atrás, atendida — o período anterior
 //   A8  IVO      100 dias atrás — fora dos dois
 import { abrirNavegador, ENDERECO, abrirATela } from "./navegador.mjs";
+// A 1600, e não a 1400 (12/11): com o telefone de ligar ("Ligar de dentro da
+// conversa", no CLAUDE.md), a 1400 com a ficha aberta a fila do cabeçalho
+// recolhe no ⋮, e o "Finalizar" / "Já tratei" que esta prova clica sai da barra.
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -55,7 +58,7 @@ const H = (h) => new Date(AGORA - h * 3600e3).toISOString();
 
 /** Os dois telefones: o que o painel abre, e outro qualquer. */
 async function telefones() {
-  const ctx = await nav.newContext({ viewport: { width: 1400, height: 900 } });
+  const ctx = await nav.newContext({ viewport: { width: 1600, height: 900 } });
   const page = await ctx.newPage();
   await page.goto(ENDERECO);
   await page.waitForSelector("[data-conversa-nome]");
@@ -143,7 +146,7 @@ function semente() {
 }
 
 /** TODAS AS BANDEIRAS EM TODA ABERTURA — `addInitScript` acumula. */
-async function abrirPainel({ admin = true, semFuncao = false, semSituacao = false, falha = false, largura = 1400 } = {}) {
+async function abrirPainel({ admin = true, semFuncao = false, semSituacao = false, falha = false, largura = 1600 } = {}) {
   const ctx = await nav.newContext({ viewport: { width: largura, height: 900 }, acceptDownloads: true });
   const page = await ctx.newPage();
   const estouros = [];
