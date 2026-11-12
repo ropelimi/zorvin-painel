@@ -41,6 +41,9 @@
 // ORIGINAL que volta, o banco que recusa).
 // ------------------------------------------------------------
 import { abrirNavegador, ENDERECO } from "./navegador.mjs";
+// A 1600, e não a 1400 (12/11): com o telefone de ligar ("Ligar de dentro da
+// conversa", no CLAUDE.md), a 1400 com a ficha aberta a fila do cabeçalho
+// recolhe no ⋮, e o "Finalizar" / "Já tratei" que esta prova clica sai da barra.
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -74,7 +77,7 @@ const ESPERA = diasAtras(6);
  *  estava em lugar nenhum da tela, e a prova reprovou falando de "Já tratei"
  *  quando o que faltava era o telefone certo. */
 async function telefoneQueAbre() {
-  const ctx = await nav.newContext({ viewport: { width: 1400, height: 900 } });
+  const ctx = await nav.newContext({ viewport: { width: 1600, height: 900 } });
   const page = await ctx.newPage();
   await page.goto(ENDERECO);
   await page.waitForSelector("[data-conversa-nome]");
@@ -127,7 +130,7 @@ const SEMENTE = {
 };
 
 async function abrirPainel({ semTratada = false, semAssuntos = false, semRecontagem = false,
-                             erro = {}, semEfeito = [], largura = 1400 } = {}) {
+                             erro = {}, semEfeito = [], largura = 1600 } = {}) {
   const ctx = await nav.newContext({ viewport: { width: largura, height: 900 } });
   const page = await ctx.newPage();
   const estouros = [];

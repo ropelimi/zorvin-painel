@@ -3581,7 +3581,7 @@ WhatsApp Web"*.
   aberta, a 1400 e a 1440 ela passa a recolher no ⋮ (era em ícones), e a 1600
   a ficar em ícones (era escrita). As provas que procuram um botão da barra
   nessas larguras passaram a rodar a 1600, com o motivo escrito
-  (`a-auditoria-de-07-10`, `a-midia-de-um-cliente`), e a do cabeçalho confere
+  (`a-auditoria-de-07-10`, `a-midia-de-um-cliente`, `as-outras-gravacoes-caladas`, `clicar-fora-nao-descarta-o-digitado`, `o-link-abre-a-conversa-em-qualquer-aba`, `o-relatorio-do-ja-tratei`, `a-contabilizacao-dos-atendimentos`, `aguardando-em-aberto-e-finalizados`, `o-ja-tratei` e `o-outros-do-ja-tratei`), e a do cabeçalho confere
   o degrau "em ícone" a 1600.
 
 **Fica de fora, e é decisão:**

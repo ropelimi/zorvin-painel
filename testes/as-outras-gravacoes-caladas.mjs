@@ -53,7 +53,10 @@ const nav = await abrirNavegador();
  *  ligada num cenário continuaria valendo nos seguintes (armadilha escrita no
  *  CLAUDE.md, já aconteceu duas vezes). A última escrita vence. */
 async function abrirPainel({ recusar = [], semente = null } = {}) {
-  const ctx = await nav.newContext({ viewport: { width: 1400, height: 900 } });
+  // A 1600, e não a 1400 (12/11): com o telefone de ligar ("Ligar de dentro da
+  // conversa", no CLAUDE.md), a 1400 com a ficha aberta a fila do cabeçalho
+  // recolhe no ⋮, e o "Marcar como não lida" que esta prova clica sai da barra.
+  const ctx = await nav.newContext({ viewport: { width: 1600, height: 900 } });
   const page = await ctx.newPage();
   const estouros = [];
   page.on("pageerror", (e) => estouros.push(e.message));
