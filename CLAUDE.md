@@ -3623,9 +3623,15 @@ WhatsApp Web"*.
 - **A ligação atendida que terminou sai da tela sozinha** em 5 segundos. A que
   não completou fica, com o motivo ("O número não está disponível (código SIP
   480)") e o **Ligar de novo**.
-- **Só para quem administra**, como a tela de teste: a linha da Nvoip ainda é de
-  teste, com um usuário SIP só. Abrir para a equipe é trocar `podeLigar`, no
-  Painel, e depende das respostas da Nvoip (quantos usuários, onde a senha mora).
+- ~~**Só para quem administra**, como a tela de teste.~~ **Para toda a equipe
+  desde 12/11**, a pedido do Rodrigo: *"Liberar o telefone de ligar para toda
+  a equipe"* (`podeLigar` = a guia das conversas). Cada pessoa digita o
+  usuário e a senha SIP na primeira ligação da guia, como antes. **A tela de
+  teste continua só de quem administra.** O que não muda, e foi dito a ele: a
+  linha é um usuário SIP só, e duas pessoas ligando ao mesmo tempo pela mesma
+  conta é o que a Nvoip ainda precisa responder (quantos usuários o contrato
+  permite). O efeito na largura: para quem não administra, a fila do
+  cabeçalho também passa a recolher ou virar ícone 56 pontos antes.
 - **Sempre à vista no computador, também com a fila recolhida.** Na tela do
   escritório (1280, com a ficha) a fila vive recolhida no ⋮, e o telefone
   dentro dele sumiria da vista — no WhatsApp ele está sempre na barra.
