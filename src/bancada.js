@@ -1617,7 +1617,7 @@ for (const c of TABELAS.conversas || []) {
 // ============================================================
 //  O RETRATO DE OUTRA GUIA (02/11)
 //
-//  Funil, Tarefas, Esperando resposta, Faxina e Painel abrem numa GUIA
+//  Funil, Tarefas, Esperando resposta e Painel abrem numa GUIA
 //  PRÓPRIA (`guias.js`), e esta bancada mora na memória de cada página: a guia
 //  nova começa da semente, e não do que a guia das conversas acabou de gravar.
 //  Em produção as duas guias leem o MESMO banco — o "Já tratei" marcado numa

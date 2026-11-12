@@ -13,7 +13,7 @@ import {
   Image as ImageIcon, Video,
   Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote, Volume2,
   ListChecks, Undo2, UserCheck, SquareKanban, BellRing, BellPlus, CircleCheck, RotateCcw,
-  Loader2, Headset, Hourglass, Eraser, ScrollText, AlarmClock, RefreshCw, PhoneCall, Phone
+  Loader2, Headset, Hourglass, ScrollText, AlarmClock, RefreshCw, PhoneCall, Phone
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
@@ -48,10 +48,8 @@ import PainelNumeros from "./PainelNumeros";
 import Funil from "./Funil";
 import Tarefas from "./Tarefas.jsx";
 import Esperando from "./Esperando.jsx";
-import Faxina from "./Faxina.jsx";
 import Ligacoes from "./Ligacoes.jsx";
 import LigacaoNaConversa from "./LigacaoNaConversa.jsx";
-import { mudouDesdeALista } from "./faxina.js";
 import { RELER_A_CADA_MS as RELER_A_ESPERA_MS, TETO_DAS_ATRASADAS, ESPERA_ANTES_DA_PRIMEIRA_MS, ehParaMim,
          quemAvisarAgora, marcarAvisadas as marcarEsperasAvisadas, chaveDoAviso as chaveDoAvisoDeEspera,
          corteDasAtrasadas, ehAtrasada, HA_DIAS_OU_MAIS, rotuloDosMinutos, fraseDoLimite, quantosClientes,
@@ -634,7 +632,7 @@ const RELER_A_EQUIPE_MS =
 // ============================================================
 //  ESTA GUIA É UMA TELA? (02/11) — ver `guias.js`
 //
-//  Funil, Tarefas, Esperando resposta, Faxina da fila e Painel abrem cada uma
+//  Funil, Tarefas, Esperando resposta e Painel abrem cada uma
 //  numa guia própria (`/?tela=funil`). A guia de uma tela monta o Zorvin
 //  inteiro — é dele que a tela tira os telefones, a equipe, os assuntos e o
 //  que o banco tem —, mas MAIS LEVE, e isso não é enfeite:
@@ -642,7 +640,7 @@ const RELER_A_EQUIPE_MS =
 //    - NÃO ASSINA O TEMPO REAL. Cada guia assinada recebe cada gravação do
 //      escritório, e o limite do Supabase é por segundo, somado entre todas
 //      (o entupimento de 20/10). Nenhuma tela usa o tempo real: o Funil e as
-//      Tarefas se releem sozinhos, a Faxina confere antes de cada finalização;
+//      Tarefas se releem sozinhos;
 //    - NÃO TOCA AVISO NENHUM e não pergunta a saúde do sistema: quem avisa é a
 //      guia das conversas. Duas guias avisando seriam dois sons por mensagem;
 //    - NÃO ABRE CONVERSA: a conversa clicada numa tela abre noutra guia, já
@@ -3452,7 +3450,7 @@ export default function Painel({ sessao }) {
     setScriptsDoBanco((antes) => manterOQueSeSabia(antes, estado));
   }, []);
   // O Painel de números (quanto se falou, por telefone e por atendente). Desde
-  // 02/11 ele, o Funil, as Tarefas, o Esperando resposta e a Faxina abrem numa
+  // 02/11 ele, o Funil, as Tarefas, e o Esperando resposta abrem numa
   // GUIA PRÓPRIA (ver `TELA_DA_GUIA`): nesta guia a tela é o que o endereço
   // diz, e nunca se abre por cima das conversas.
   const telaPainel = TELA_DA_GUIA === "painel";
@@ -3870,9 +3868,6 @@ export default function Painel({ sessao }) {
   // ponte não rodou) e `true` tem — OU A PERGUNTA FALHOU por outro motivo, e
   // aí a lista aparece e diz o erro, em vez de sumir por causa de um tropeço.
   const telaEsperando = TELA_DA_GUIA === "esperando";
-  // A FAXINA DA FILA (01/11) — ver `Faxina.jsx`. Só existe com o 028 (as
-  // abas) e com o "Finalizar" de pé: é ele que a faxina usa.
-  const telaFaxina = TELA_DA_GUIA === "faxina";
   // A TELA DE TESTE DAS LIGAÇÕES (11/11), só para quem administra.
   const telaLigacoes = TELA_DA_GUIA === "ligacoes";
   const [temAvisoDeEspera, setTemAvisoDeEspera] = useState(null);
@@ -7124,9 +7119,6 @@ export default function Painel({ sessao }) {
   const nAtrasadas = atrasadas.linhas.length;
   const nEsperando = nSemResposta + nAtrasadas;
   const mostraEsperando = temAvisoDeEspera === true || podeContarAtrasadas;
-  // A FAXINA SÓ COM O 028 E COM O FINALIZAR DE PÉ: sem as abas não há "não
-  // finalizada", e sem os assuntos não há como finalizar.
-  const podeFaxina = temSituacao === true && temTratada === true && temAssuntos === true;
   const erroDaEspera = semResposta.erro || atrasadas.erro;
   const tituloDaEspera = nEsperando
     ? `Esperando resposta — ${[nSemResposta ? `${quantosClientes(nSemResposta)} sem resposta` : "",
@@ -11459,7 +11451,7 @@ export default function Painel({ sessao }) {
       else if (midiasAberta) setMidiasAberta(false);
       else if (telaAdmin) setTelaAdmin(false);
       // A GUIA DE UMA TELA (02/11) NÃO FECHA COM ESC: a tela é a guia
-      // inteira, e um Esc sem querer no meio da faxina ou de um arraste no
+      // inteira, e um Esc sem querer no meio de um arraste no
       // funil fecharia a guia. Fecha-se pelo botão da tela ou pelo X da guia.
       // O degrau fica AQUI, e não no fim: o que está acima dele (as janelas, as
       // Mídias) continua fechando, e o que está abaixo é das conversas, que
@@ -12456,9 +12448,8 @@ export default function Painel({ sessao }) {
   //  transação com desfazer-na-mão daria um terceiro caminho de falha para
   //  cuidar. A ordem acima é o que torna a falha parcial suportável.
   // ============================================================
-  // AS LINHAS DE UM "JÁ TRATEI", numa escrita só: o Finalizar da conversa e o
-  // da faxina da fila (01/11) gravam o mesmo registro, e duas montagens
-  // divergiriam no primeiro conserto.
+  // AS LINHAS DE UM "JÁ TRATEI", numa escrita só (a faxina da fila, que
+  // também as gravava, saiu em 12/11).
   function linhasDoTratamento(conv, ids, descricao) {
     // O TEXTO VAI SÓ NA LINHA DO ASSUNTO QUE O PEDE (o OUTROS, script 009).
     // Repeti-lo em ACORDOS e VENDA LN faria o relatório dizer três vezes a
@@ -12558,59 +12549,6 @@ export default function Painel({ sessao }) {
     setJaTratei(null);
     releTratadosDoHistorico(conv.id);
     mostrarAviso("Tirada da fila de espera.");
-  }
-
-  // ============================================================
-  //  A FINALIZAÇÃO DA FAXINA DA FILA (01/11) — ver `Faxina.jsx`
-  //
-  //  A mesma gravação do Finalizar da conversa (`linhasDoTratamento`), e o
-  //  banco finaliza na mesma gravação (028). Duas coisas a mais, e as duas
-  //  porque NINGUÉM ESTÁ OLHANDO para a conversa:
-  //
-  //    - ANTES, relê a conversa e confere que nada mudou desde que a lista
-  //      foi lida (`mudouDesdeALista`). O cliente que escreve enquanto a
-  //      pessoa limpa a fila teria a mensagem dele coberta pela finalização —
-  //      o 028 não reabre por mensagem anterior ao clique —, e ninguém leria;
-  //    - DEPOIS, relê a situação, como o Finalizar da conversa: a resposta
-  //      diz o que o banco fez, e não o que se esperava que ele fizesse.
-  //
-  //  Devolve `{ ok, protocolo }`, `{ ok, jaEstava }` ou `{ ok: false, erro }`
-  //  (com `mudou` quando chegou mensagem). Quem diz à pessoa é a faxina,
-  //  linha por linha.
-  // ============================================================
-  async function finalizarDaFaxina(conv, ids, descricao) {
-    const NADA = "Nada foi gravado.";
-    let agora;
-    try {
-      const r = await supabase.from("conversas")
-        .select("id, situacao, protocolo, ultima_atividade, esperando_desde").eq("id", conv.id).maybeSingle();
-      if (r.error) return { ok: false, erro: comOCodigo(`Não consegui conferir a conversa antes de finalizar. ${NADA}`, r.error, "conferir a conversa") };
-      agora = r.data;
-    } catch (e) {
-      return { ok: false, erro: comOCodigo(`Não consegui conferir a conversa antes de finalizar. ${NADA}`, e, "conferir a conversa") };
-    }
-    if (!agora) return { ok: false, erro: `Esta conversa não existe mais — pode ter sido juntada a outra. ${NADA}` };
-    if (agora.situacao === "finalizado") return { ok: true, jaEstava: true };
-    if (mudouDesdeALista(conv, agora)) {
-      return { ok: false, mudou: true,
-               erro: "Chegou mensagem nesta conversa depois que a lista foi lida, e ela não foi finalizada. Abra a conversa e veja antes." };
-    }
-    let reg;
-    try {
-      reg = await supabase.from("zorvin_tratamentos").insert(linhasDoTratamento(agora, ids, descricao)).select("id");
-    } catch (e) {
-      return { ok: false, erro: comOCodigo("Não consegui registrar o que foi tratado. A conversa não foi finalizada.", e, "registrar tratamento") };
-    }
-    if (reg.error) return { ok: false, erro: comOCodigo("Não consegui registrar o que foi tratado. A conversa não foi finalizada.", reg.error, "registrar tratamento") };
-    if (naoGravouNada(reg)) return { ok: false, erro: "O banco não deixou registrar. A conversa não foi finalizada." };
-    const s2 = await lerSituacao(conv.id);
-    if (!s2) return { ok: false, erro: "Registrei o que foi tratado, mas não consegui conferir se a conversa foi finalizada. Atualize a lista." };
-    aplicarSituacao(conv.id, s2);
-    releTratadosDoHistorico(conv.id);
-    if (s2.situacao !== "finalizado") {
-      return { ok: false, erro: "Registrei o que foi tratado, mas o banco não finalizou a conversa. Ela continua onde estava." };
-    }
-    return { ok: true, protocolo: s2.protocolo };
   }
 
   //  DESFAZER — e ele não é luxo.
@@ -12867,53 +12805,6 @@ export default function Painel({ sessao }) {
       erro: "Não consegui arquivar. Rode o SQL da coluna 'arquivada'.",
       recusado: "O banco não deixou arquivar. A conversa continua na lista.",
     });
-  }
-
-  // Menu ⋮ do topo: marca TODAS as conversas do advogado como lidas.
-  // "TODAS" QUER DIZER TODAS, e não as que estão carregadas.
-  //
-  // Ela montava a lista de ids a partir de `conversas` — que agora é só a
-  // primeira página. O botão dizia "todas marcadas como lidas" e deixava as
-  // outras 1000 intocadas.
-  //
-  // O recorte vai para o banco: um `update` com `advogado_id` e `nao_lidas > 0`
-  // alcança o telefone inteiro, sem lista de ids e sem lotes.
-  async function marcarTodasLidas() {
-    setMenuTopoAberto(false);
-    const advId = advogadoId;
-    if (!advId) return;
-    if (!(naoLidasPorAdv[advId] || 0)) { mostrarAviso("Nenhuma conversa não lida."); return; }
-    setConversas((prev) => prev.map((c) => ({ ...c, nao_lidas: 0 })));
-    setNaoLidasPorAdv((m) => ({ ...m, [advId]: 0 }));
-    // AQUI "ZERO LINHAS" TEM DUAS CAUSAS, e é a única desta rodada em que tem.
-    //
-    // Em todas as outras marcas o alvo é UMA linha que a tela acabou de ler:
-    // zero linhas só pode ser a regra de acesso. Nesta o recorte vai ao banco
-    // (`advogado_id` + `nao_lidas > 0`), e entre a conferência do selo logo
-    // acima e esta gravação um colega pode ter marcado as mesmas conversas —
-    // aí zero linhas quer dizer "já estavam lidas", e o serviço está feito.
-    //
-    // Não dá para separar os dois daqui sem uma segunda ida ao banco, e a
-    // frase não pode escolher um deles no chute: acusar o banco quando foi um
-    // colega faz alguém abrir chamado por nada, e dizer "todas marcadas" numa
-    // recusa é a mentira que esta rodada existe para tirar. Então ela diz os
-    // dois e aponta onde está a resposta — o selo, que a releitura logo acima
-    // acabou de buscar.
-    const r = await supabase.from("conversas")
-      .update({ nao_lidas: 0 }).eq("advogado_id", advId).gt("nao_lidas", 0).select("id");
-    carregarNaoLidasPorAdv();
-    agendarContagemDasAbas();
-    if (r.error) {
-      mostrarAviso(comOCodigo("Não consegui marcar todas.", r.error, "marcar todas como lidas"), 7000);
-      carregarConversas(advId); return;
-    }
-    if (naoGravouNada(r)) {
-      mostrarAviso("Nenhuma conversa mudou: ou um colega marcou antes de você, ou o banco "
-                 + "não deixou. O selo da barra diz qual dos dois.", 7000);
-      carregarConversas(advId);
-      return;
-    }
-    mostrarAviso("Todas marcadas como lidas");
   }
 
   // Marca a conversa como lida. É o gesto de "já tratei disto".
@@ -17484,10 +17375,6 @@ export default function Painel({ sessao }) {
     // AS LIGAÇÕES SÃO SÓ DE QUEM ADMINISTRA. Com o cadastro sem resposta, não
     // se sabe ainda: a guia diz que está abrindo, e o que não carregou.
     if (TELA_DA_GUIA === "ligacoes") return erroDoAcesso ? null : souAdmin;
-    if (TELA_DA_GUIA === "faxina") {
-      if (temSituacao === false || temTratada === false || temAssuntos === false) return false;
-      return temSituacao === null || temTratada === null || temAssuntos === null ? null : true;
-    }
     if (TELA_DA_GUIA === "esperando") {
       // A tela sabe esperar as duas leituras (`abaDeComeco`), e as abas
       // aparecem conforme cada uma chega. Só não há tela quando NENHUMA das
@@ -17701,7 +17588,7 @@ export default function Painel({ sessao }) {
              onde o que falta é largura seria trocar um defeito por outro. */
           button:has(> svg:only-child) { min-width: 40px !important; }
           /* O LINK QUE ABRE UMA TELA NUMA GUIA NOVA (02/11) é, para o dedo, um
-             botão como os outros. O Funil, as Tarefas, a Faxina e o Painel do
+             botão como os outros. O Funil, as Tarefas e o Painel do
              menu ⋮ eram botões e ganhavam os 40 aqui em cima; virando link
              (data-abre-guia), ficaram com 39, e a regra não os via. */
           [data-abre-guia] { min-height: 40px !important; }
@@ -18264,7 +18151,8 @@ export default function Painel({ sessao }) {
               {/* ABAIXO DO BOTÃO, e não por cima dele (auditoria de 07/10): em
                   `top: 26` o menu cobria a metade de baixo do ⋮ (34px no
                   computador, 40 no celular), e o segundo toque para fechar
-                  caía em "Marcar todas como lidas" — que não pergunta nada. */}
+                  caía no primeiro item. ("Marcar todas como lidas", que era
+                  esse item e não perguntava nada, saiu em 12/11.) */}
               {menuTopoAberto && (
                 <div style={{ position: "absolute", top: estreito ? 44 : 38, right: 0, width: 230, background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.28)", zIndex: 50, overflow: "hidden" }}>
                   {/* ATUALIZAR O ZORVIN (05/11): só com uma versão nova
@@ -18298,7 +18186,6 @@ export default function Painel({ sessao }) {
                       </span>
                     </button>
                   )}
-                  <button onClick={marcarTodasLidas} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><CheckCheck size={17} color={C.textSecondary} /> Marcar todas como lidas</button>
                   <button onClick={() => { setMenuTopoAberto(false); abrirConfig(); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "transparent", cursor: "pointer", color: C.textPrimary, fontSize: 14, textAlign: "left" }}><Settings size={17} color={C.textSecondary} /> Configurações</button>
                   {/* O PAINEL É DE TODO MUNDO.
                       Ele ficava só com quem administra por um motivo real: o
@@ -18315,8 +18202,9 @@ export default function Painel({ sessao }) {
                       abertas em uma nova guia". São LINKS, e não botões: o
                       clique do meio e o "abrir em nova janela" do navegador
                       também servem, e o endereço é o da tela (`guias.js`).
-                      "Marcar todas como lidas" e "Desconectar" continuam
-                      botões: são ações, e não telas. */}
+                      "Desconectar" continua botão: é uma ação, e não uma
+                      tela. ("Marcar todas como lidas" e a "Faxina da fila"
+                      saíram em 12/11, a pedido do Rodrigo.) */}
                   {/* O FUNIL DE ETAPAS (script 017). Só aparece com o script
                       rodado: sem ele, o botão abriria uma tela que diz "falta
                       rodar o 017" para quem não pode fazer nada a respeito.
@@ -18342,14 +18230,6 @@ export default function Painel({ sessao }) {
                       {nEsperando > 0 && (
                         <span style={{ fontSize: 12, fontWeight: 700, color: nSemResposta ? C.erroTexto : C.ambarTexto }}>{nEsperando}</span>
                       )}
-                    </a>
-                  )}
-                  {/* A FAXINA DA FILA (01/11): as conversas paradas há mais de
-                      um mês, com o Finalizar na linha. Ver `Faxina.jsx`. */}
-                  {podeFaxina && (
-                    <a data-abrir-faxina data-abre-guia href={enderecoDaTela("faxina")} target="_blank" rel="noopener"
-                       onClick={() => setMenuTopoAberto(false)} style={ITEM_QUE_ABRE_GUIA}>
-                      <Eraser size={17} color={C.textSecondary} /> Faxina da fila
                     </a>
                   )}
                   <a data-abrir-painel data-abre-guia href={enderecoDaTela("painel")} target="_blank" rel="noopener"
@@ -22888,20 +22768,6 @@ export default function Painel({ sessao }) {
                    aoAbrirConversa={(cv) => abrirConversaNumaGuia(cv)}
                    aoAtualizar={lerQuemEspera}
                    aoFechar={fecharAGuia} />
-      )}
-
-      {/* A FAXINA DA FILA (01/11). Abrir a conversa abre NOUTRA GUIA (02/11);
-          finalizar passa pela gravação do Finalizar. */}
-      {telaFaxina && guiaPronta === true && (
-        <Faxina C={C} estreito={estreito} meuId={meuId} advogados={advogadosPermitidos} nomeDaPessoa={nomeDaPessoa}
-                assuntos={assuntos} erroDosAssuntos={erroAssuntos}
-                colunasContato={colunasDoContato("nome, numero, foto_url")} temArquivada={TEM_ARQUIVADA}
-                rotularMidia={(tipo) => rotuloMidia(tipo, null, false)}
-                aoAbrirConversa={(cv) => abrirConversaNumaGuia(cv)}
-                aoFinalizar={finalizarDaFaxina}
-                aoTerminarLote={agendarContagemDasAbas}
-                aoAvisar={mostrarAviso}
-                aoFechar={fecharAGuia} />
       )}
 
       {/* A JANELA DA TAREFA, no meio da tela — como a de editar a agendada:

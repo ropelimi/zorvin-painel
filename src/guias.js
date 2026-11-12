@@ -3,8 +3,8 @@
 //
 //  Pedido do Rodrigo: "Com exceção de 'Configurações' e 'Departamentos e
 //  acessos' que abrem como popup, todas as outras opções ao clicar devem ser
-//  abertas em uma nova guia." Funil, Tarefas, Esperando resposta, Faxina da
-//  fila e Painel abrem cada uma numa guia do navegador, e a conversa aberta
+//  abertas em uma nova guia." Funil, Tarefas, Esperando resposta e Painel
+//  abrem (a Faxina da fila também abria, até sair em 12/11) cada uma numa guia do navegador, e a conversa aberta
 //  de dentro de uma delas abre noutra guia, já nela (as duas respostas dele
 //  à pergunta de como abrir a conversa e se os ícones da barra iam junto).
 //
@@ -31,7 +31,6 @@ export const TELAS_DA_GUIA = {
   funil: "Funil",
   tarefas: "Tarefas",
   esperando: "Esperando resposta",
-  faxina: "Faxina da fila",
   painel: "Painel",
   // A TELA DE TESTE DAS LIGAÇÕES (11/11), só para quem administra — ver
   // `ligacoes.js`. Numa guia própria: a ligação continua enquanto a pessoa

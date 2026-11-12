@@ -63,7 +63,7 @@ async function naoRolaDeLado(onde, p = page) {
  *  monitor a diferença some; no aparelho é a diferença entre acertar e abrir
  *  outra coisa. */
 //  O LINK QUE ABRE UMA TELA NUMA GUIA NOVA (`data-abre-guia`, 02/11) entra
-//  na conta: o Funil, as Tarefas, a Faxina e o Painel do menu ⋮ eram botões, e
+//  na conta: o Funil, as Tarefas e o Painel do menu ⋮ eram botões, e
 //  virando link saíram da régua do painel e desta varredura ao mesmo tempo —
 //  ficaram com 39 sem ninguém ver.
 async function dedosCabem(onde, p = page) {
@@ -442,7 +442,7 @@ console.log("\nAs telas de dentro, uma a uma");
   }
 
   // O PAINEL ABRE NUMA GUIA PRÓPRIA (02/11), como o Funil, as Tarefas, a
-  // Espera e a Faxina: o item do menu é um link, e a medida é feita na guia
+  // e a Espera: o item do menu é um link, e a medida é feita na guia
   // nova, que tem a largura do aparelho como esta.
   {
     await page.keyboard.press("Escape");

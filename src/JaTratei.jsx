@@ -54,18 +54,8 @@ import { DIAS_DO_VERMELHO } from "./espera.js";
 // descobriria o teto no erro do banco, depois de apertar Confirmar.
 const TETO_DA_DESCRICAO = 500;
 
-// ------------------------------------------------------------
-//  E ELA FINALIZA VÁRIAS DE UMA VEZ, NA FAXINA DA FILA (01/11)
-//
-//  `lote` é quantas conversas a faxina marcou. A checklist é a MESMA — os
-//  mesmos assuntos para todas, e a marcação continua obrigatória: limpar a
-//  fila em lote não pode virar o botão de "sumir com cinquenta conversas" que
-//  a regra de cima impede numa só. Muda o que a janela PROMETE: o título diz
-//  quantas, e a frase diz que nenhum cliente recebe mensagem.
-// ------------------------------------------------------------
 export function JaTratei({ C, estreito, nome, dias, esperando = true, finalizar = false, protocolo = null,
-                           assuntos, erroDosAssuntos = "", ocupado, erro, aoConfirmar, aoFechar, lote = 0 }) {
-  const emLote = finalizar && lote > 1;
+                           assuntos, erroDosAssuntos = "", ocupado, erro, aoConfirmar, aoFechar }) {
   const [escolhidos, setEscolhidos] = useState([]);
   const [descricao, setDescricao] = useState("");
 
@@ -90,7 +80,6 @@ export function JaTratei({ C, estreito, nome, dias, esperando = true, finalizar 
     <div onMouseDown={(e) => { apertouNoFundo.current = e.target === e.currentTarget; }}
          onClick={(e) => { if (apertouNoFundo.current && e.target === e.currentTarget) aoFechar(); }}
          data-ja-tratei-janela data-ja-tratei-modo={finalizar ? "finalizar" : "tratar"}
-         data-ja-tratei-lote={emLote ? lote : undefined}
          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 200,
                   display: "flex", alignItems: "center", justifyContent: "center", padding: estreito ? 12 : 24 }}>
       <div onClick={(e) => e.stopPropagation()}
@@ -103,7 +92,7 @@ export function JaTratei({ C, estreito, nome, dias, esperando = true, finalizar 
           {finalizar ? <CircleCheck size={18} color={C.green} /> : <ListChecks size={18} color={C.green} />}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 15, fontWeight: 700 }}>
-              {emLote ? `Finalizar ${lote} conversas` : finalizar ? "Finalizar" : "Já tratei"}
+              {finalizar ? "Finalizar" : "Já tratei"}
             </div>
             <div style={{ fontSize: 12.5, color: C.textSecondary, overflow: "hidden",
                           textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -128,11 +117,7 @@ export function JaTratei({ C, estreito, nome, dias, esperando = true, finalizar 
         <div style={{ padding: "12px 16px", fontSize: 12.5, color: C.textSecondary, lineHeight: 1.5 }}>
           {/* SÓ PROMETE TIRAR DA FILA QUEM ESTÁ NELA. Na conversa respondida
               o "Já tratei" só registra, e a frase diz isso. */}
-          {emLote
-            ? <>Finaliza as {lote} conversas marcadas, com os mesmos assuntos, <b>sem mandar mensagem a nenhum
-                cliente</b>: elas vão para “{NOME_DA_SITUACAO.finalizado}”. Se um cliente escrever de novo, a conversa
-                dele volta para “{NOME_DA_SITUACAO.aberto}” com um protocolo novo.</>
-            : finalizar
+          {finalizar
             ? <>Finaliza o atendimento <b>sem mandar mensagem</b>: a conversa vai para “{NOME_DA_SITUACAO.finalizado}”. Marque
                 o que foi tratado. Se o cliente escrever de novo, ela volta para “{NOME_DA_SITUACAO.aberto}” com um protocolo novo.</>
             : esperando
@@ -225,7 +210,7 @@ export function JaTratei({ C, estreito, nome, dias, esperando = true, finalizar 
                            minHeight: estreito ? 40 : undefined }}>
             {ocupado ? <Loader2 size={14} className="zv-girando" /> : null}
             {ocupado ? (finalizar ? "Finalizando…" : esperando ? "Tirando da fila…" : "Registrando…")
-              : emLote ? `Finalizar ${lote}` : finalizar ? "Finalizar" : "Confirmar"}
+              : finalizar ? "Finalizar" : "Confirmar"}
           </button>
         </div>
         {nenhum && ativos.length > 0 && (

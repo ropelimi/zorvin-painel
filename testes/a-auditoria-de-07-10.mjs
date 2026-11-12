@@ -197,11 +197,13 @@ console.log("\n4. O menu ⋮ do alto abre abaixo do botão");
   await page.waitForTimeout(200);
   const m = await page.evaluate(() => {
     const botao = document.querySelector('[aria-label="Menu"]');
-    const item = [...document.querySelectorAll("button")].find((b) => /Marcar todas como lidas/.test(b.textContent || ""));
+    // "Marcar todas como lidas", o primeiro item, saiu em 12/11: mede-se o
+    // primeiro que ficou, Configurações.
+    const item = [...document.querySelectorAll("button")].find((b) => /^\s*Configurações\s*$/.test(b.textContent || ""));
     if (!botao || !item) return null;
     return { botaoFim: botao.getBoundingClientRect().bottom, menuTopo: item.parentElement.getBoundingClientRect().top };
   });
-  ok("o menu começa onde o botão termina — o segundo toque não cai em “Marcar todas como lidas”",
+  ok("o menu começa onde o botão termina — o segundo toque não cai no primeiro item",
      m && m.menuTopo >= m.botaoFim - 1, JSON.stringify(m));
   await ctx.close();
 }

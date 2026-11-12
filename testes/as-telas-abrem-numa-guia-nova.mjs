@@ -52,7 +52,6 @@ const TELAS = [
   { tela: "funil", marca: "[data-abrir-funil]", nome: "Funil" },
   { tela: "tarefas", marca: "[data-abrir-tarefas-menu]", nome: "Tarefas" },
   { tela: "esperando", marca: "[data-abrir-esperando-menu]", nome: "Esperando resposta" },
-  { tela: "faxina", marca: "[data-abrir-faxina]", nome: "Faxina da fila" },
   { tela: "painel", marca: "[data-abrir-painel]", nome: "Painel" },
 ];
 
@@ -533,12 +532,13 @@ console.log("\n10. Um nome que não é de tela abre as conversas; o F5 da tela c
   await g.close();
 
   ok("o menu ⋮ abre", await abrirMenu(page));
-  const guia = await abrirPeloLink(ctx, page, "[data-abrir-faxina]", "faxina");
-  ok("a guia da Faxina abriu", Boolean(guia) && await visivel(guia, '[data-tela="faxina"]'));
+  // A FAXINA SAIU EM 12/11: o F5 é conferido na guia do Funil.
+  const guia = await abrirPeloLink(ctx, page, "[data-abrir-funil]", "funil");
+  ok("a guia do Funil abriu", Boolean(guia) && await visivel(guia, '[data-tela="funil"]'));
   if (guia) {
     await guia.reload();
-    ok("o F5 da guia da Faxina continua na Faxina", await esperar(guia, '[data-tela="faxina"]', 30000));
-    ok("com o mesmo título", (await guia.title()) === `Faxina da fila · ${NOME_DA_ABA}`, await guia.title());
+    ok("o F5 da guia do Funil continua no Funil", await esperar(guia, '[data-tela="funil"]', 30000));
+    ok("com o mesmo título", (await guia.title()) === `Funil · ${NOME_DA_ABA}`, await guia.title());
   }
   await ctx.close();
 }

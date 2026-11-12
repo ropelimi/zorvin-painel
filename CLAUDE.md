@@ -747,12 +747,12 @@ a ampulheta da barra lateral **vão junto com o menu**.
 
 | o quê | abre |
 |---|---|
-| Funil, Tarefas, Esperando resposta, Faxina da fila e Painel, no menu ⋮ do topo | cada um numa guia nova |
+| Funil, Tarefas, Esperando resposta e Painel, no menu ⋮ do topo (a Faxina da fila também, até sair em 12/11) | cada um numa guia nova |
 | o sino (Tarefas) e a ampulheta (Esperando resposta), na barra lateral | idem |
 | o "Ver quais" do resumo do alto | a guia do Esperando resposta |
 | a conversa clicada dentro de uma tela (o cartão do funil, a tarefa, o cliente que espera, a linha da faxina) | noutra guia, já nela |
 | Configurações e Departamentos e acessos | por cima, nesta guia, como antes |
-| Mídias, "Marcar todas como lidas" e "Desconectar" | como antes: não são telas |
+| Mídias e "Desconectar" ("Marcar todas como lidas" saiu em 12/11) | como antes: não são telas |
 
 **O endereço diz o que a guia é** (`src/guias.js`), e é por isso que o F5 de
 uma guia de tela continua na tela:
@@ -6907,7 +6907,35 @@ junção, e juntar virando guardar) continuam sendo pegas por ela. **Ao pôr uma
 coluna nova numa leitura com relógio próprio, procure as provas que contam
 leituras por coluna**, e não só as que têm o nome da tela.
 
-## A faxina da fila (01/11)
+## "Marcar todas como lidas" e a "Faxina da fila" saíram (12/11)
+
+Pedido do Rodrigo, com a foto do menu ⋮ do topo: *"'Marcar todas como
+lidas' e 'Faxina da fila', pode remover do sistema."*
+
+- **saíram do menu ⋮**, e o código junto: `marcarTodasLidas`,
+  `finalizarDaFaxina`, `Faxina.jsx`, `faxina.js` e a tela `faxina` de
+  `guias.js`. O endereço `?tela=faxina` (de um favorito) abre as conversas,
+  como qualquer nome que não é tela;
+- **a janela do Finalizar perdeu o modo em lote** (`lote`, em
+  `JaTratei.jsx`), que só a faxina usava. O Finalizar de cada conversa
+  continua igual;
+- **o "Marcar como lida" de cada conversa continua** (o cabeçalho e o ⋮ da
+  conversa): saiu só o de todas de uma vez;
+- **nada no banco muda**: a faxina só lia e gravava pelo Finalizar.
+
+**As provas foram INVERTIDAS, e não apagadas:** `a-faxina-da-fila` virou
+`a-faxina-e-o-marcar-todas-sairam` (o menu sem os dois, no computador e no
+celular; o endereço da faxina abrindo as conversas; o Finalizar de pé), e o
+painel de antes reprova 6 conferências dela. A cena da faxina de
+`a-ia-nao-sugere-o-assunto` saiu; `as-telas-abrem-numa-guia-nova` confere o
+F5 na guia do Funil; a cena 4 de `a-auditoria-de-07-10` mede o menu pelo
+primeiro item que ficou (Configurações); e `a-revisao-do-leiaute` deixou de
+abrir a tela da faxina.
+
+## A faxina da fila (01/11) — SAIU EM 12/11
+
+**Saiu em 12/11, a pedido do Rodrigo** — ver a seção logo acima. O que está
+escrito abaixo é a história de como ela funcionava.
 
 Pedido do Rodrigo, da lista de recomendações de 31/10: *"Pode seguir para a
 terceira recomendação"* — *"Uma tela de faxina da fila. As 313 conversas
