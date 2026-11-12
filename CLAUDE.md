@@ -3571,12 +3571,18 @@ WhatsApp Web"*.
 - **Sempre à vista no computador, também com a fila recolhida.** Na tela do
   escritório (1280, com a ficha) a fila vive recolhida no ⋮, e o telefone
   dentro dele sumiria da vista — no WhatsApp ele está sempre na barra.
-- **O botão soma à conta de largura do cabeçalho** (`LARGURA_DO_TELEFONE`, 40,
-  medido, mais o vão de 12), como o "Já tratei", nas três formas da fila
-  (escrita, em ícones e recolhida): sem isso, o nome do cliente cairia abaixo
-  do piso de 230. **O efeito, para quem administra:** a fila recolhe ou vira
-  ícone 52 pontos antes. A 1400 com a ficha aberta, ela passa a recolher no ⋮
-  (era em ícones), e a 1600 com a ficha, a ficar em ícones (era escrita).
+- **O botão soma à conta de largura do cabeçalho** (`LARGURA_DO_TELEFONE`, 44:
+  os 40 do botão, medidos, e 4 de folga, mais o vão de 12), como o "Já
+  tratei", nas três formas da fila (escrita, em ícones e recolhida): sem isso,
+  o nome do cliente cairia abaixo do piso de 230. **A folga foi medida:** com
+  40, a 1440 com a ficha a conta dizia "cabe em ícone" e o nome ficava com 227
+  (a prova `o-cabecalho-nao-corta-o-que-importa` pegou). **O efeito, para quem
+  administra:** a fila recolhe ou vira ícone 56 pontos antes. Com a ficha
+  aberta, a 1400 e a 1440 ela passa a recolher no ⋮ (era em ícones), e a 1600
+  a ficar em ícones (era escrita). As provas que procuram um botão da barra
+  nessas larguras passaram a rodar a 1600, com o motivo escrito
+  (`a-auditoria-de-07-10`, `a-midia-de-um-cliente`), e a do cabeçalho confere
+  o degrau "em ícone" a 1600.
 
 **Fica de fora, e é decisão:**
 

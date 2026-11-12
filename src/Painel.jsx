@@ -4636,7 +4636,10 @@ export default function Painel({ sessao }) {
   //  largura, medida na mesma régua (com o ícone, o recheio e a borda) em
   //  19/10, a 1920: "Já tratei" deu os 90 de sempre, o que confere a régua;
   //  "Finalizar" 92,7 e "Reabrir" 85,8.
-  const LARGURA_DO_TELEFONE = 40;
+  //  O botão mede 40; os 4 a mais são a folga que a conta não via (as bordas
+  //  e os arredondamentos): MEDIDO a 1440 com a ficha, com 40 a conta dizia
+  //  "cabe em ícone" e o nome ficava com 227, abaixo do piso.
+  const LARGURA_DO_TELEFONE = 44;
   const LARGURA_DO_JA_TRATEI = { "Já tratei": 90, "Voltar para a fila": 139, "Finalizar": 93, "Reabrir": 86 };
   const aConversaDoCabecalho = conversaId != null ? conversas.find((x) => x.id === conversaId) : null;
   const situacaoDoCabecalho = temSituacao === true && aConversaDoCabecalho
