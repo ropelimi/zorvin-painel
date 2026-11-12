@@ -59,3 +59,32 @@ export function oTelefoneAbertoPrimeiro(lista, telefoneAberto) {
   for (const c of lista || []) (ehDeOutroTelefone(c, telefoneAberto) ? deFora : daqui).push(c);
   return deFora.length ? [...daqui, ...deFora] : daqui;
 }
+
+/** A CONVERSA QUE A BUSCA MOSTRA TEM DE EXISTIR DE VERDADE (12/11).
+ *
+ *  Relato do Rodrigo, com foto: procurando "ADRIANA AMARAL", a lista mostrava
+ *  uma conversa EM BRANCO no SAC, sem prévia, e abria em "Nenhuma mensagem
+ *  nesta conversa ainda". Nunca houve mensagem ali: a linha de `conversas`
+ *  nasce de um "Nova conversa" que não chegou a mandar nada, do link do
+ *  Vantoro, de um aviso que não saiu. Medido em 12/11: 407 das 2.483
+ *  conversas não têm mensagem nenhuma.
+ *
+ *  A LISTA já as escondia (`semMensagem`, em `carregarConversas`); a busca,
+ *  que lê `conversas` por conta própria, não. Agora a busca pede a mesma
+ *  pergunta, `mensagens(id)` com teto de uma, e esconde a vazia pela mesma
+ *  régua:
+ *
+ *  - SÓ A LISTA QUE VEIO E ESTÁ VAZIA esconde. Sem o campo (um banco que não
+ *    devolve a junção), mostra: esconder por falta de resposta apagaria
+ *    conversas de verdade, calado;
+ *  - A FIXADA FICA: fixar é dizer "esta fica à vista";
+ *  - A CONVERSA ABERTA FICA: tirá-la da busca com ela na tela deixaria a
+ *    direita sem a linha da esquerda.
+ *
+ *  Sem a conversa, o "Começar conversa" do cadastro volta a aparecer para o
+ *  telefone aberto: ele é oferecido justamente a quem não tem conversa ali. */
+export function conversaQueExiste(c, aberta) {
+  if (!c) return false;
+  if (!Array.isArray(c.mensagens) || c.mensagens.length > 0) return true;
+  return Boolean(c.fixada) || (aberta != null && String(c.id) === String(aberta));
+}

@@ -53,6 +53,20 @@ async function abrirPainel(status, largura = 1600) {
   // falta de espaço — não por falta de Vantoro. A 1600 a barra vem solta, e
   // "está na barra" volta a medir só o que esta prova quer medir.
   const ctx = await nav.newContext({ viewport: { width: largura, height: 900 } });
+  // OS TRÊS CONTATOS RENOMEADOS DA BANCADA GANHAM UMA MENSAGEM (12/11): ela os
+  // planta com a prévia e nenhuma mensagem, e a busca passou a esconder a
+  // conversa sem mensagem nenhuma (ver "A busca não mostra a conversa em
+  // branco", no CLAUDE.md). O telefone é o primeiro pelo nome ("Acordos 1",
+  // a7), como a bancada escolhe. A mensagem vai pela semente desta prova, e
+  // não pela bancada: lá ela poria as três na lista de sempre de toda prova.
+  await ctx.addInitScript(() => {
+    const s = globalThis.__SEMENTE || {};
+    const quando = new Date(Date.now() - 2 * 3600e3).toISOString();
+    globalThis.__SEMENTE = { ...s, mensagens: [...(s.mensagens || []), ...[0, 1, 2].map((i) => ({
+      id: `m-renomeado-${i}`, conversa_id: `a7-ren${i}`, origem: "contato", tipo: "texto",
+      texto: "Combinado, obrigado", criado_em: quando, id_uazapi: `u-renomeado-${i}`,
+    }))] };
+  });
   const page = await ctx.newPage();
   const estouros = [];
   page.on("pageerror", (e) => estouros.push(e.message));
