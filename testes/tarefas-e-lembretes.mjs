@@ -520,8 +520,12 @@ console.log("\n9. Os selos da linha do número NÃO se sobrepõem");
 // A FORMA ESPERADA em cada largura, medida em 06/10: escrita onde cabem os três
 // selos com ~92px cada, ícone onde não cabem. Conferida em TODAS as larguras —
 // um "if" só na de 1920 passaria calado nas outras.
-for (const [largura, ficha, forma] of [[1280, "nao", "sim"], [1366, "nao", "sim"], [1400, "sim", "sim"],
-                                       [1440, "nao", "nao"], [1600, "sim", "sim"], [1920, "sim", "nao"]]) {
+// E O TELEFONE (12/11) MUDOU DUAS: quem administra ganhou o telefone no
+// cabeçalho, que soma à conta da fila. A 1400 com a ficha a fila agora recolhe
+// no ⋮, e a linha do número ganha espaço para os selos escritos; a 1440 sem a
+// ficha, a fila solta come o espaço que os deixava escritos.
+for (const [largura, ficha, forma] of [[1280, "nao", "sim"], [1366, "nao", "sim"], [1400, "sim", "nao"],
+                                       [1440, "nao", "sim"], [1600, "sim", "sim"], [1920, "sim", "nao"]]) {
   const { ctx, page } = await abrirPainel({ largura, ficha });
   await abrirConversa(page, NOMES.a);
   const m = await page.evaluate(() => {
