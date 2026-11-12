@@ -4653,12 +4653,12 @@ export default function Painel({ sessao }) {
     : (abertaFoiTratada ? "Voltar para a fila" : "Já tratei");
   const JA_TRATEI_ESCRITO = !fichaDoJaTratei ? 0 : LARGURA_DO_JA_TRATEI[rotuloDoJaTratei] + 12;
   const JA_TRATEI_EM_ICONE = !fichaDoJaTratei ? 0 : 35 + 12;
-  //  E O TELEFONE (12/11), o botão de ligar de dentro da conversa: só para
-  //  quem administra (é a linha da Nvoip, ainda em teste), na guia das
-  //  conversas, e nunca num grupo. Ele soma à parte, como o "Já tratei", com
+  //  E O TELEFONE (12/11), o botão de ligar de dentro da conversa: para toda
+  //  a equipe desde 12/11 (era só de quem administra, com a linha em teste),
+  //  na guia das conversas, e nunca num grupo. Ele soma à parte, como o "Já tratei", com
   //  a largura medida na régua do navegador (o ícone de 19 e o recheio de 10,
   //  como a lupa ao lado) mais o vão de 12.
-  const podeLigar = souAdmin && !TELA_DA_GUIA;
+  const podeLigar = !TELA_DA_GUIA;
   const ligarNaFila = Boolean(podeLigar && aConversaDoCabecalho
     && !String(aConversaDoCabecalho.contato?.numero || "").startsWith("grupo:"));
   const LIGAR_NA_FILA = ligarNaFila ? LARGURA_DO_TELEFONE + 12 : 0;

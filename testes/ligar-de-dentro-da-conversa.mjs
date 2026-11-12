@@ -264,8 +264,12 @@ console.log("\n1. O telefone no cabeçalho");
 {
   const { ctx, page } = await abrir({ admin: false });
   await abrirConversa(page, "cv-lig-1");
-  ok("quem não administra não vê o telefone (a linha ainda é de teste)",
-     (await nomeAberto(page)).includes("MARIA") && (await page.locator("[data-ligar-na-conversa]").count()) === 0);
+  // INVERTIDA em 12/11, e não apagada: o telefone foi liberado para toda a
+  // equipe. A tela de teste continua só de quem administra.
+  ok("quem não administra também vê o telefone (liberado para a equipe)",
+     (await nomeAberto(page)).includes("MARIA") && (await page.locator("[data-ligar-na-conversa]").count()) === 1);
+  await clicar(page, "[data-ligar-na-conversa]");
+  ok("…e o clique pede a conta da Nvoip, como para quem administra", await existe(page, "[data-ligacao-conta]"));
   await ctx.close();
 }
 
