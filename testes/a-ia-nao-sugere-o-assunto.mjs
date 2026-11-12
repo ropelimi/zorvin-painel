@@ -18,10 +18,10 @@
 //      nenhum selo, nenhuma caixa;
 //   2. marcar à mão e finalizar grava só o que a pessoa marcou, sem
 //      `sugestao_ia` no pedido;
-//   3. na faxina, a finalização de uma conversa também não pede;
+//   3. (era a faxina, que saiu em 12/11: ver `a-faxina-e-o-marcar-todas-sairam`);
 //   4. sem o 028 (o "Já tratei" de antes), também não;
 //   5. no celular, também não.
-import { abrirNavegador, ENDERECO, guiaQueAbre } from "./navegador.mjs";
+import { abrirNavegador, ENDERECO } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
 const ok = (nome, cond, det = "") => {
@@ -241,45 +241,6 @@ console.log("\n2. Marcar à mão e finalizar grava só o que a pessoa marcou");
   ok("e o pedido não leva a coluna da sugestão", t.length === 1 && t[0].levouSugestao === false, q(t));
   ok("a conversa foi finalizada", (await situacaoDe(page, "cv-sug-2")) === "finalizado", q(await situacaoDe(page, "cv-sug-2")));
   ok("e nada foi pedido à IA", pedidos.length === 0, String(pedidos.length));
-  ok("sem erro de JavaScript", estouros.length === 0, q(estouros));
-  await ctx.close();
-}
-
-// ==================================================================
-console.log("\n3. Na faxina, a finalização de uma conversa também não pede");
-{
-  const { ctx, page: conversas, estouros } = await abrirPagina({ largura: 1360 });
-  await clicar(conversas.locator('button[aria-label="Menu"]'));
-  await conversas.waitForTimeout(250);
-  // A FAXINA ABRE NUMA GUIA NOVA (02/11).
-  const faxina = (await conversas.locator("[data-abrir-faxina]").count())
-    ? await guiaQueAbre(ctx, () => clicar(conversas.locator("[data-abrir-faxina]"))) : null;
-  ok("a faxina abriu, numa guia nova", Boolean(faxina));
-  const page = faxina || conversas;
-  page.setDefaultTimeout(8000);
-  await page.waitForSelector('[data-tela="faxina"]', { timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(1200);
-  const tem = await page.locator('[data-faxina-telefone] option[value="a8"]').count();
-  if (tem) await page.locator("[data-faxina-telefone]").first().selectOption("a8");
-  await page.waitForTimeout(1500);
-  // A PARADA não espera resposta (`esperando_desde` nulo): mora no grupo "a
-  // equipe falou por último".
-  await clicar(page.locator('[data-faxina-grupo="equipe"]'));
-  await page.waitForTimeout(1200);
-  ok("a parada aparece", (await page.locator('[data-faxina-linha="cv-sug-fx1"]').count()) === 1);
-  await clicar(page.locator('[data-faxina-finalizar="cv-sug-fx1"]'));
-  await page.waitForTimeout(1500);
-  const abriu = (await page.locator("[data-ja-tratei-janela]").count()) === 1;
-  const v = await daIa(page);
-  ok("a janela abre e não pede sugestão", abriu && pedidos.length === 0, q({ abriu, pedidos: pedidos.length }));
-  ok("nenhuma caixa, selo ou botão da IA, e nada marcado", nadaDaIa(v) && igual(await marcados(page), []),
-     q({ ...v, marcados: await marcados(page) }));
-  await alternar(page, "ACORDOS");
-  await clicar(page.locator("[data-ja-tratei-confirmar]"));
-  await page.waitForTimeout(1800);
-  const t = await tratamentosDe(page, "cv-sug-fx1");
-  ok("e a faxina grava ACORDOS, sem a coluna da sugestão",
-     t.length === 1 && t[0].assunto_id === "as-6" && t[0].levouSugestao === false, q(t));
   ok("sem erro de JavaScript", estouros.length === 0, q(estouros));
   await ctx.close();
 }

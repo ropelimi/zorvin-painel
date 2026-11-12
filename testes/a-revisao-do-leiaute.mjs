@@ -167,7 +167,6 @@ if (vale("1")) {
     { nome: "a tela do Funil", tela: "funil" },
     { nome: "a tela de Tarefas", tela: "tarefas" },
     { nome: "a tela Esperando resposta", tela: "esperando" },
-    { nome: "a tela da Faxina", tela: "faxina" },
     { nome: "a tela do Painel", tela: "painel" },
   ];
   for (const [largura, altura] of [[1366, 768], [390, 844]]) {
@@ -315,7 +314,7 @@ if (vale("6")) {
     contatos: [contato("um", "11"), contato("cinco", "15"), contato("parada", "21"), contato("outra", "31")],
     conversas: [
       conversa("um", "11", { dias: 1 }), conversa("cinco", "15", { dias: 5, naoLidas: 2 }),
-      // a parada há 40 dias, com o cliente esperando: o primeiro grupo da faxina
+      // a parada há 40 dias, com o cliente esperando (era da faxina, que saiu em 12/11)
       conversa("parada", "21", { dias: 40 }),
       // uma conversa com mensagem por ler noutro telefone: o selo dele na barra
       conversa("outra", "31", { naoLidas: 3, adv: "a2" }),
@@ -337,8 +336,6 @@ if (vale("6")) {
     { nome: "a aba das suas conversas, na tela Esperando resposta", tela: "esperando",
       antes: (p) => clicar(p, '[role="tab"]:has-text("SUAS CONVERSAS")'),
       prova: (p) => p.locator("[data-atrasada-linha]").count().then((n) => n >= 1) },
-    { nome: "a tela da Faxina, com uma conversa parada", tela: "faxina",
-      prova: (p) => p.locator("[data-faxina-parada]").count().then((n) => n >= 1) },
     { nome: "a lista, com o selo de mensagens por ler noutro telefone",
       prova: (p) => p.locator("[data-selo-nao-lidas]").count().then((n) => n >= 1) },
     // O SINO E A AMPULHETA DA BARRA EM ÂMBAR: sem tarefa atrasada e sem cliente

@@ -16,7 +16,7 @@ export const ENDERECO = process.env.ZORVIN_BANCADA || "http://127.0.0.1:5199/";
 // ============================================================
 //  AS TELAS NUMA GUIA PRÓPRIA (02/11)
 //
-//  Funil, Tarefas, Esperando resposta, Faxina e Painel abrem cada uma numa
+//  Funil, Tarefas, Esperando resposta e Painel abrem cada uma numa
 //  guia nova (`src/guias.js`), no endereço `?tela=…`. A prova que mede a TELA,
 //  e não o gesto de abri-la, abre o endereço na própria página: o gesto (o
 //  link, a guia nova, a guia leve) é provado em `as-telas-abrem-numa-guia-nova`.

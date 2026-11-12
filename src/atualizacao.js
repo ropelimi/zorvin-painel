@@ -44,8 +44,8 @@ import { useEffect, useRef, useState } from "react";
 //
 //  E EM TODOS OS MOMENTOS, O QUE SE PERDERIA SEGURA A RECARGA: texto na caixa
 //  de escrever, rascunho noutra conversa, ficha por salvar, áudio gravado,
-//  anexo escolhido ou subindo, texto digitado numa janela, a faxina
-//  finalizando conversas, um áudio tocando. Cada tela diz o que é dela
+//  anexo escolhido ou subindo, texto digitado numa janela, um áudio
+//  tocando. Cada tela diz o que é dela
 //  (`useMotivoParaEsperar`).
 //
 //  O SOM DOS AVISOS CONTINUA DEPOIS DA RECARGA. Medido no Chromium: o
