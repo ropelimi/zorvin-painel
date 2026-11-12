@@ -98,7 +98,7 @@ import { tipoDoAnexo, caminhoDoAnexoDaRapida, semAColunaDoAnexo, nomeDoAnexo, an
 import { caminhoDoAnexoDaNota, CACHE_DO_ANEXO_DA_NOTA, FRASE_DA_NOTA_SEM_ANEXO } from "./anexoNaNota.js";
 import { ehLembreteAutomatico, fechouSozinho } from "./acompanhamento.js";
 import { podeSerEscolhida, quemSaiuNoFim, saiuDoEscritorio, semAColunaAtivoDaEquipe } from "./quemSaiu.js";
-import { ehDeOutroTelefone, aBuscaAlcanca, oTelefoneAbertoPrimeiro } from "./buscaEmTodosOsTelefones.js";
+import { ehDeOutroTelefone, aBuscaAlcanca, oTelefoneAbertoPrimeiro, conversaQueExiste } from "./buscaEmTodosOsTelefones.js";
 import { tamanhoDosTelefones, TELEFONE_MENOR, TELEFONE_MENOR_NO_CELULAR, ESMAECER, VAO_CSS } from "./barraLateral.js";
 import { TELAS_DA_GUIA, telaDaGuia, linhaDaGuia, conversaDaGuia, enderecoDaTela, enderecoDaConversa,
          abrirNumaGuia, fecharAGuia, reivindicarAviso, naVezDasGuias, anunciarConversaVista, outraGuiaVendo,
@@ -14853,11 +14853,13 @@ export default function Painel({ sessao }) {
         // regra de acesso de `conversas` recorta pelos telefones da pessoa, e
         // a tela tira o que um clique não abre (`aBuscaAlcanca`).
         const { data, error } = await supabase.from("conversas")
-          .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
+          .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")}), mensagens(id)`)
+          // SÓ A PERGUNTA "TEM ALGUMA?" (12/11): ver `conversaQueExiste`.
+          .limit(1, { referencedTable: "mensagens" })
           .abortSignal(sinal)
           .in("contato_id", idsCt.slice(i, i + 150));
         if (error) return { encontradas, porNome, falhou: !foiAbortada(error) };
-        (data || []).forEach((c) => {
+        (data || []).filter((c) => conversaQueExiste(c, conversaIdRef.current)).forEach((c) => {
           porNome[c.id] = nomePorCt.get(String(c.contato_id)) || "";
           encontradas.push(c);
         });
@@ -14981,10 +14983,12 @@ export default function Painel({ sessao }) {
       for (let i = 0; i < idsCt.length; i += 150) {
         // Em todos os telefones, como a busca por nome (04/11).
         const { data } = await supabase.from("conversas")
-          .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
+          .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")}), mensagens(id)`)
+          // SÓ A PERGUNTA "TEM ALGUMA?" (12/11): ver `conversaQueExiste`.
+          .limit(1, { referencedTable: "mensagens" })
           .abortSignal(sinal)
           .in("contato_id", idsCt.slice(i, i + 150));
-        (data || []).forEach((c) => {
+        (data || []).filter((c) => conversaQueExiste(c, conversaIdRef.current)).forEach((c) => {
           const num = String(c.contato?.numero || "");
           porChave.forEach((nome, k) => {
             if (num.endsWith(k)) { porCad[c.id] = nome; if (desteTelefone(c)) jaCasou.add(k); }
@@ -15274,11 +15278,13 @@ export default function Painel({ sessao }) {
             // Pelos ids que a função achou, em qualquer telefone (04/11): ela
             // já recortou pelo que a pessoa enxerga.
             const { data, error: erroLote } = await supabase.from("conversas")
-              .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
+              .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")}), mensagens(id)`)
+              // SÓ A PERGUNTA "TEM ALGUMA?" (12/11): ver `conversaQueExiste`.
+              .limit(1, { referencedTable: "mensagens" })
               .abortSignal(sinal)
               .in("id", ids.slice(i, i + 150));
             if (erroLote && !sinal.aborted) { faltouTrazer = true; console.error("[zorvin] busca: conversas achadas", erroLote); }
-            encontradas.push(...(data || []));
+            encontradas.push(...(data || []).filter((c) => conversaQueExiste(c, conversaIdRef.current)));
           }
           if (!meu()) return;
           if (faltouTrazer) setErroBusca((antes) => antes || recadoDaBusca({ falhouMensagem: true }));

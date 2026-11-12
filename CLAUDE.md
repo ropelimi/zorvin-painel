@@ -2947,6 +2947,64 @@ sabotagem) e retomada da décima primeira, sobre o mesmo código: as sabotagens
 rodam em cópias, e o repositório não foi tocado. A prova inteira rodou de novo
 antes do commit.
 
+## A busca não mostra a conversa em branco (12/11)
+
+Relato do Rodrigo, com foto: procurando "ADRIANA AMARAL", a lista mostrava
+uma conversa zerada no SAC, sem prévia, que abria em "Nenhuma mensagem nesta
+conversa ainda". Com essa cliente nunca houve mensagem ali. *"Corrija isso,
+para aparecer apenas as conversas que realmente existem, que possuem
+mensagens. E quando não tem conversas com mensagens, já está correto,
+aparecendo apenas o resultado com o contato para 'Começar conversa'."*
+
+**Medido em 12/11, só contando:** 407 das 2.483 conversas não têm mensagem
+nenhuma. A linha nasce de um "Nova conversa" que não chegou a mandar nada,
+do link do Vantoro, de um aviso que não saiu.
+
+**A lista de sempre já as escondia** (`semMensagem`, em `carregarConversas`).
+A busca lê `conversas` por conta própria, em três lugares, e não perguntava:
+
+| o caminho | o que mudou |
+|---|---|
+| os nomes e o número (`procurarSoPelosNomes`) | pede `mensagens(id)` com teto de uma, e esconde a vazia |
+| as conversas que `buscar_conversas` achou | o mesmo |
+| as que o cadastro do Vantoro achou | o mesmo, e assim a oferta "Começar conversa" aparece para quem só tinha a vazia neste telefone |
+
+- **Uma regra só** (`conversaQueExiste`, em `buscaEmTodosOsTelefones.js`),
+  a mesma da lista: só a lista de mensagens que VEIO e está vazia esconde (sem
+  o campo, mostra); a fixada fica; a conversa aberta fica;
+- **as conversas achadas pelo texto não mudaram**: quem casou numa mensagem
+  tem mensagem;
+- **nada no banco**: a busca do banco continua devolvendo a vazia pelo nome,
+  e a tela a tira. É decisão: mexer na `buscar_conversas` seria um script na
+  ponte para o mesmo efeito.
+
+**Fica de fora, e é decisão:** a conversa vazia aberta continuar na busca não
+tem cena (abrir uma conversa vazia pede o "Nova conversa", e a regra é a da
+lista, que já existia).
+
+Prova: `a-busca-nao-mostra-conversa-vazia`, 16 conferências em duas cenas: o
+caso do relato (a vazia neste telefone e a de verdade noutro), pelo nome e
+pelo número; o contraste com mensagem; a vazia fixada; e, com o Vantoro, a
+oferta de começar conversa para quem só tinha a vazia, e nenhuma oferta para
+quem tem conversa com mensagem neste telefone.
+
+**Três provas antigas acharam conversas da bancada com prévia e nenhuma
+mensagem**, o que o banco de verdade não tem, e foram ajustadas, e não
+apagadas: `busca` e `esconder-o-vantoro` dão uma mensagem aos três contatos
+renomeados (pela semente de cada prova: na bancada, eles entrariam na lista de
+sempre de toda prova), e `numero-que-nao-recebe` marca como fixadas as
+conversas dos números ruins, que só têm envios que falharam (nada em
+`mensagens`, como no banco) e que ela abre pela busca.
+
+**6 sabotagens, 5 pegas e uma que vaza com razão**, rodadas uma a uma: o
+painel de antes inteiro (7 reprovações, o relato reproduzido); os nomes sem o
+filtro (7); as conversas do banco sem o filtro (7: os dois caminhos acham a
+vazia pelo nome, e cada um sozinho a devolve); o Vantoro sem o filtro (4: a
+oferta some); e sem pedir as mensagens (7). **A que vaza:** a fixada
+escondida pela regra. A fixada já vem na lista de sempre (as fixadas são lidas
+à parte, e sempre), e a busca a acha ali. A guarda fica: ela não depende de
+como a lista lê as fixadas.
+
 ## Copiar leva só o texto (08/10)
 
 Relato do Rodrigo: *"quando eu copio uma mensagem do Zorvin e colo em um

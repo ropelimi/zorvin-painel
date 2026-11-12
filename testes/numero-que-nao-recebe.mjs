@@ -41,6 +41,17 @@ page.on("pageerror", (e) => erros.push("pageerror: " + e.message));
 await page.goto(ENDERECO);
 await page.waitForSelector("[data-conversa-nome]");
 await page.waitForTimeout(1800);
+// AS CONVERSAS DOS NÚMEROS RUINS FICAM FIXADAS NESTA PROVA (12/11). Na bancada
+// elas só têm envios que falharam (nada em `mensagens`, como no banco de
+// verdade), e desde 12/11 a busca esconde a conversa sem mensagem nenhuma,
+// como a lista já escondia (ver "A busca não mostra a conversa em branco", no
+// CLAUDE.md). A fixada continua à vista, e é por ela que esta prova chega à
+// tarja. A busca lê o banco na hora, então basta marcar antes de procurar.
+await page.evaluate(() => {
+  for (const c of globalThis.__TABELAS.conversas || []) {
+    if (String(c.id).startsWith("conv-ct-")) c.fixada = true;
+  }
+});
 
 /** Abre uma conversa pelo nome do contato e devolve o que a tarja diz. */
 async function abrir(nome) {
