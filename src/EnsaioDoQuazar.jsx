@@ -176,6 +176,7 @@ export function BolhaDoEnsaio({ m, C, estreito }) {
 const MODOS = [
   { valor: "desligado", rotulo: "Desligado" },
   { valor: "ensaio", rotulo: "Ensaio: ele escreve a resposta, mas ela não vai para o cliente" },
+  { valor: "valendo", rotulo: "Valendo: ele responde o cliente (a mensagem pronta não sai)" },
 ];
 
 export function QuazarANoite({ cx, C, depId, linha, temColuna, aoMudar, aoAvisar }) {
@@ -198,8 +199,8 @@ export function QuazarANoite({ cx, C, depId, linha, temColuna, aoMudar, aoAvisar
       const [tels, ens] = await Promise.all([
         supabase.from("advogados").select("id, departamento_id").eq("departamento_id", depId),
         supabase.from("zorvin_quazar_noturno")
-          .select("id, conversa_id, texto, resumo, motivo, status, avaliacao, comentario, pronta_em, criada_em")
-          .in("status", ["pronta", "calada"]).gte("criada_em", desde)
+          .select("*")
+          .in("status", ["pronta", "calada", "enviada"]).gte("criada_em", desde)
           .order("criada_em", { ascending: false }).limit(200),
       ]);
       if (!vivo) return;
@@ -251,8 +252,9 @@ export function QuazarANoite({ cx, C, depId, linha, temColuna, aoMudar, aoAvisar
     a.total += 1;
     if (e.avaliacao === "boa") a.boas += 1; else if (e.avaliacao === "ruim") a.ruins += 1; else a.sem += 1;
     if (e.status === "calada") a.caladas += 1;
+    if (e.status === "enviada") a.enviadas += 1;
     return a;
-  }, { total: 0, boas: 0, ruins: 0, sem: 0, caladas: 0 });
+  }, { total: 0, boas: 0, ruins: 0, sem: 0, caladas: 0, enviadas: 0 });
 
   return (
     <div style={cx.secao} data-quazar-a-noite={modo}>
@@ -264,6 +266,10 @@ export function QuazarANoite({ cx, C, depId, linha, temColuna, aoMudar, aoAvisar
         <br />
         <b>No ensaio, nada vai para o cliente:</b> a mensagem pronta continua saindo, e a resposta que o{" "}
         {NOME_DO_ASSISTENTE} daria aparece na conversa, tracejada, para a equipe marcar se ele acertou.
+        <br />
+        <b>Valendo, ele responde de verdade:</b> espera 1 minuto depois da última mensagem do cliente (para
+        responder tudo de uma vez), se apresenta pelo nome e conversa enquanto o cliente escrever. A
+        resposta aparece na conversa com o rosto dele, e o cliente continua em Novos, esperando a equipe.
       </div>
       {!linha ? (
         <div data-quazar-sem-linha style={{ fontSize: 13, color: C.textSecondary }}>
@@ -290,7 +296,8 @@ export function QuazarANoite({ cx, C, depId, linha, temColuna, aoMudar, aoAvisar
           <div data-quazar-ensaio-contas style={{ fontSize: 13, color: C.textPrimary, margin: "6px 0" }}>
             {contas.total === 0
               ? "Nenhuma resposta de ensaio nos últimos 7 dias neste departamento."
-              : `Nos últimos 7 dias: ${contas.total} ${contas.total === 1 ? "resposta" : "respostas"} de ensaio`
+              : `Nos últimos 7 dias: ${contas.total} ${contas.total === 1 ? "resposta" : "respostas"}`
+                + `${contas.enviadas ? ` (${contas.enviadas} ${contas.enviadas === 1 ? "enviada" : "enviadas"} ao cliente)` : " de ensaio"}`
                 + `${contas.caladas ? ` (${contas.caladas} em que ele ficaria calado)` : ""} — `
                 + `${contas.boas} ${contas.boas === 1 ? "boa" : "boas"}, ${contas.ruins} ${contas.ruins === 1 ? "ruim" : "ruins"}, `
                 + `${contas.sem} sem avaliação.`}
@@ -306,12 +313,13 @@ export function QuazarANoite({ cx, C, depId, linha, temColuna, aoMudar, aoAvisar
                     {ct.nome || ct.numero || "Cliente"}
                     <span style={{ fontWeight: 400, color: C.textSecondary }}>
                       {" "}· {Number.isNaN(quando.getTime()) ? "" : quando.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                      {e.status === "enviada" ? " · enviada" : ""}
                       {e.avaliacao === "boa" ? " · marcada boa" : e.avaliacao === "ruim" ? " · marcada ruim" : ""}
                     </span>
                   </div>
                   <div style={{ fontSize: 13, color: C.textSecondary, lineHeight: 1.4, overflow: "hidden",
                                 display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflowWrap: "anywhere" }}>
-                    {e.status === "calada" ? `Ficaria calado${e.motivo ? `: ${e.motivo}` : "."}` : e.texto}
+                    {e.status === "calada" ? `${e.modo === "valendo" ? "Ficou calado" : "Ficaria calado"}${e.motivo ? `: ${e.motivo}` : "."}` : e.texto}
                   </div>
                   {e.comentario && (
                     <div style={{ fontSize: 12.5, color: C.erroTexto, marginTop: 2 }}>O que estava errado: {e.comentario}</div>

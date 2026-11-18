@@ -74,6 +74,7 @@ import { useEstadoDoCopiloto, copilotoAparece, pedirSugestao, resumoAparece, ped
 import ResumoDaConversa from "./ResumoDaConversa.jsx";
 import { NOME_DO_ASSISTENTE } from "./assistente.js";
 import { RostoDoAssistente } from "./RostoDoAssistente.jsx";
+const TITULO_DO_QUAZAR_NA_BOLHA = `Resposta automática do ${NOME_DO_ASSISTENTE}, o assistente virtual, com o escritório fechado: ninguém da equipe a escreveu.`;
 import { BolhaDoEnsaio, bolhaDoEnsaio } from "./EnsaioDoQuazar.jsx";
 import { mensagensDepoisDoResumo, textoDoResumo } from "./resumoDaConversa.js";
 import { ABAS_DA_SITUACAO, NOME_DA_SITUACAO } from "./abasDaSituacao.js";
@@ -3017,14 +3018,15 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
             {mostrarAutor && (
               quem.aparelho || quem.rotulo || quem.automatica ? (
                 <div data-autor-automatico={quem.automatica ? "" : undefined}
-                     title={quem.automatica
+                     data-autor-quazar={quem.quazar ? "" : undefined}
+                     title={quem.quazar ? TITULO_DO_QUAZAR_NA_BOLHA : quem.automatica
                       ? "Mensagem automática, enviada sozinha pelo Vantoro (aviso de audiência): ninguém da equipe a escreveu."
                       : quem.aparelho
                       ? "Saiu pelo aplicativo do WhatsApp, fora do Zorvin — o WhatsApp não diz qual atendente escreveu."
                       : "Rótulo do histórico importado, e não uma pessoa do escritório."}
                      style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5,
                               fontWeight: 600, color: C.textSecondary, marginBottom: 1 }}>
-                  {quem.automatica ? <Bot size={12} /> : quem.aparelho ? <Smartphone size={12} /> : <History size={12} />}
+                  {quem.quazar ? <RostoDoAssistente tamanho={14} /> : quem.automatica ? <Bot size={12} /> : quem.aparelho ? <Smartphone size={12} /> : <History size={12} />}
                   {quem.nome}
                 </div>
               ) : (
@@ -3321,10 +3323,11 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
                    antes de o Zorvin anotar quem escreve, também. */
                 ? <span data-avatar-automatico={quem.automatica ? "" : undefined}
                         data-avatar-sem-autor={!quem.nome ? "" : undefined}
-                        title={quem.automatica
+                        data-avatar-quazar={quem.quazar ? "" : undefined}
+                        title={quem.quazar ? TITULO_DO_QUAZAR_NA_BOLHA : quem.automatica
                           ? "Mensagem automática, enviada sozinha pelo Vantoro (aviso de audiência): ninguém da equipe a escreveu."
                           : !quem.nome ? "Quem enviou esta mensagem não ficou registrado." : quem.nome}
-                        aria-label={quem.automatica ? "Aviso automático do Vantoro"
+                        aria-label={quem.quazar ? `${NOME_DO_ASSISTENTE}, assistente virtual` : quem.automatica ? "Aviso automático do Vantoro"
                           : !quem.nome ? "Quem enviou não ficou registrado" : quem.nome}
                         /* `border-box`: sem ele a borda somava 2 aos 28, e o
                            círculo saía maior que os rostos de gente (e
@@ -3339,7 +3342,8 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
                         aplicativo, o relógio do histórico para o
                         rótulo que veio da importação, e um rosto sem
                         traços para quem não ficou registrado. */}
-                    {quem.automatica ? <Bot size={15} color={C.textSecondary} />
+                    {quem.quazar ? <RostoDoAssistente tamanho={24} />
+                      : quem.automatica ? <Bot size={15} color={C.textSecondary} />
                       : quem.aparelho ? <Smartphone size={14} color={C.textSecondary} />
                       : quem.rotulo ? <History size={14} color={C.textSecondary} />
                       : <UserRound size={14} color={C.textSecondary} />}
@@ -5123,6 +5127,12 @@ export default function Painel({ sessao }) {
     // Hoje, todo `automatica` é aviso do Vantoro: a resposta fora do horário
     // não mora em `mensagens`. Uma mensagem automática de outra origem, no
     // futuro, pede outro rótulo aqui.
+    // A RESPOSTA DO QUAZAR À NOITE (18/11, script 059 da ponte) também é
+    // automática, e ganha o nome e o rosto dele: é ele quem fala com o cliente
+    // com o escritório fechado.
+    if (m.pelo_quazar === true) {
+      return { id: null, nome: `${NOME_DO_ASSISTENTE} · assistente virtual`, foto: null, automatica: true, quazar: true };
+    }
     if (m.automatica === true) {
       return { id: null, nome: "Aviso automático do Vantoro", foto: null, automatica: true };
     }
