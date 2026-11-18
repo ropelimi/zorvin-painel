@@ -37,6 +37,8 @@ import VisualizadorDePdf from "./VisualizadorDePdf.jsx";
 // O que este banco já disse que não tem, para não perguntar de novo a cada nota.
 // Vale só nesta sessão: rodar o SQL que falta e apertar F5 devolve a coluna.
 const COLUNAS_QUE_FALTAM_EM_NOTAS = new Set();
+// O BANCO SEM O 060 da ponte não tem a marca do "Sugerir resposta" na fila.
+let FILA_SEM_A_MARCA_DA_SUGESTAO = false;
 // E EM `contatos` (auditoria de 27/10): o nome que a agenda grava vai também
 // para `nome_zorvin`, e numa base sem essa coluna ela é tirada do pedido uma
 // vez só nesta sessão — ver `gravarNomeDaAgenda`.
@@ -75,6 +77,13 @@ import ResumoDaConversa from "./ResumoDaConversa.jsx";
 import { NOME_DO_ASSISTENTE } from "./assistente.js";
 import { RostoDoAssistente } from "./RostoDoAssistente.jsx";
 const TITULO_DO_QUAZAR_NA_BOLHA = `Resposta automática do ${NOME_DO_ASSISTENTE}, o assistente virtual, com o escritório fechado: ninguém da equipe a escreveu.`;
+// A MENSAGEM QUE SAIU DO "SUGERIR RESPOSTA" (18/11): um rosto pequeno do
+// Quazar ao lado da hora, só na tela da equipe (o cliente recebe o texto e
+// mais nada). O `title` diz se saiu como ele escreveu ou se a pessoa mexeu.
+const TITULO_DA_SUGESTAO = {
+  igual: `Escrita com o “Sugerir resposta” do ${NOME_DO_ASSISTENTE} e enviada sem mudanças. Só a equipe vê esta marca.`,
+  editada: `Escrita com o “Sugerir resposta” do ${NOME_DO_ASSISTENTE} e editada por quem enviou. Só a equipe vê esta marca.`,
+};
 import { BolhaDoEnsaio, bolhaDoEnsaio } from "./EnsaioDoQuazar.jsx";
 import { mensagensDepoisDoResumo, textoDoResumo } from "./resumoDaConversa.js";
 import { ABAS_DA_SITUACAO, NOME_DA_SITUACAO } from "./abasDaSituacao.js";
@@ -1934,6 +1943,12 @@ function MetaBolha({ C, m, saida, flutuante, aoReenviar }) {
           depois vê outra coisa, sem saber se houve correção ou se a memória
           falhou. Fica à direita, junto da hora, como no WhatsApp. */}
       {m.editada && <span style={{ fontStyle: "italic", opacity: .85 }}>Editada</span>}
+      {TITULO_DA_SUGESTAO[m.sugestao_quazar] && (
+        <span data-sugestao-quazar={m.sugestao_quazar} title={TITULO_DA_SUGESTAO[m.sugestao_quazar]}
+              style={{ display: "inline-flex", alignItems: "center", opacity: .85 }}>
+          <RostoDoAssistente tamanho={13} titulo={TITULO_DA_SUGESTAO[m.sugestao_quazar]} />
+        </span>
+      )}
       {horaCurta(m.criado_em)}
       {saida && (
         m._status === "enviando" ? (
@@ -4095,6 +4110,11 @@ export default function Painel({ sessao }) {
   // ============================================================
   const estadoDoCopiloto = useEstadoDoCopiloto();
   const [copiloto, setCopiloto] = useState({});
+  // A MENSAGEM QUE VEIO DO "SUGERIR RESPOSTA" (18/11), por conversa: o último
+  // texto que o Quazar pôs na caixa (ou no rascunho). Ao enviar, a mensagem
+  // ganha a marca 'igual' (saiu como ele escreveu) ou 'editada'. A caixa que
+  // esvazia apaga a lembrança: o que vier depois é da pessoa.
+  const sugeridaRef = useRef({});
   // O RESUMO DA CONVERSA (01/11) — "Resumir". Também POR CONVERSA:
   // { [conversaId]: { fase: "pensando" | "pronto" | "erro", pedido, ... } }.
   // O resumo de A não aparece em B, e voltar para A mostra o de A. O
@@ -11814,7 +11834,19 @@ export default function Painel({ sessao }) {
   }
 
   async function gravarNaFila(payload) {
+    if (FILA_SEM_A_MARCA_DA_SUGESTAO && payload && "sugestao_quazar" in payload) {
+      payload = { ...payload };
+      delete payload.sugestao_quazar;
+    }
     let { error } = await supabase.from("fila_envio").insert(payload);
+    // BANCO SEM O 060 da ponte: a marca da sugestão sai, e a mensagem vai
+    // assim mesmo. Lembrado no módulo, para não tropeçar a cada envio.
+    if (error && payload && "sugestao_quazar" in payload && /sugestao_quazar/i.test(error.message || "")) {
+      FILA_SEM_A_MARCA_DA_SUGESTAO = true;
+      payload = { ...payload };
+      delete payload.sugestao_quazar;
+      ({ error } = await supabase.from("fila_envio").insert(payload));
+    }
     // Base sem o SQL de agosto/2026: tira só o id e tenta de novo — o nome
     // ainda pode existir, e desistir dos dois de uma vez perderia informação
     // que a base aguenta guardar.
@@ -12865,6 +12897,9 @@ export default function Painel({ sessao }) {
     if (modoNota) { enviarNota(); return; }
     const t = rascunho.trim();
     if (!t || !conversaId) return;
+    const sugerida = sugeridaRef.current[conversaId];
+    const marcaDaSugestao = sugerida == null ? null : (t === String(sugerida).trim() ? "igual" : "editada");
+    delete sugeridaRef.current[conversaId];
     setRascunho("");
     setEmojiAberto(false);
     setPertoDoFim(true); // ao enviar, sempre volto para o fim da conversa
@@ -12876,7 +12911,7 @@ export default function Painel({ sessao }) {
       id: tempId, conversa_id: conversaId, origem: "advogado", enviado_por: meuNome, enviado_por_id: meuId, enviado_por_foto: minhaFoto,
       tipo: "texto", texto: t, criado_em: new Date().toISOString(), _status: "enviando",
       resposta_previa: alvo?.previa || null, resposta_autor: alvo?.autor || null,
-      _responderId: alvo?.id_uazapi || null,
+      _responderId: alvo?.id_uazapi || null, sugestao_quazar: marcaDaSugestao,
     };
     setMensagens((prev) => [...prev, provisoria]);
     // Coloca na fila de envio; a ponte processa e manda pela Uazapi.
@@ -12887,6 +12922,7 @@ export default function Painel({ sessao }) {
     // envio de mensagem. Uma palavra tira a dependência.
     const payload = { conversa_id: conversaId, texto: t, status: "pendente",
                       enviado_por: meuNome, enviado_por_id: meuId, enviado_por_foto: minhaFoto };
+    if (marcaDaSugestao) payload.sugestao_quazar = marcaDaSugestao;
     if (alvo) {
       payload.responder_id_uazapi = alvo.id_uazapi;
       payload.resposta_previa = alvo.previa;
@@ -14339,6 +14375,7 @@ export default function Painel({ sessao }) {
     if (conversaIdRef.current === id) {
       if (!rascunhoRef.current.trim() && !modoNotaRef.current && !editandoRef.current) {
         mudarCopiloto(id, faixaDoAjuste());
+        sugeridaRef.current[id] = texto;
         colocarNaCaixa(texto);
       } else {
         mudarCopiloto(id, { fase: "atrasada", sugestao: texto });
@@ -14348,6 +14385,7 @@ export default function Painel({ sessao }) {
     const guardado = rascunhosRef.current[id];
     if (!guardado || !String(guardado.texto || "").trim()) {
       rascunhosRef.current[id] = { texto, nota: false };
+      sugeridaRef.current[id] = texto;
       mudarCopiloto(id, faixaDoAjuste());
     } else {
       mudarCopiloto(id, { fase: "atrasada", sugestao: texto });
@@ -14361,6 +14399,7 @@ export default function Painel({ sessao }) {
     // ensinado uma, e o Desfazer dela continua na faixa.
     mudarCopiloto(conversaId, faixaDoAjuste({ mudou: Boolean(s.deAjuste), licao: s.licao || null,
                                               aviso: s.aviso || "" }));
+    sugeridaRef.current[conversaId] = s.sugestao;
     colocarNaCaixa(s.sugestao);
   }
 
@@ -14409,6 +14448,7 @@ export default function Painel({ sessao }) {
     if (conversaIdRef.current === id) {
       if (rascunhoRef.current === enviada && !modoNotaRef.current && !editandoRef.current) {
         mudarCopiloto(id, depois);
+        sugeridaRef.current[id] = texto;
         colocarNaCaixa(texto);
       } else {
         mudarCopiloto(id, { ...depois, fase: "atrasada", sugestao: texto, deAjuste: true });
@@ -14419,6 +14459,7 @@ export default function Painel({ sessao }) {
     const textoGuardado = String((guardado && guardado.texto) || "");
     if (textoGuardado === enviada || !textoGuardado.trim()) {
       rascunhosRef.current[id] = { texto, nota: false };
+      sugeridaRef.current[id] = texto;
       mudarCopiloto(id, depois);
     } else {
       mudarCopiloto(id, { ...depois, fase: "atrasada", sugestao: texto, deAjuste: true });
@@ -14454,6 +14495,18 @@ export default function Painel({ sessao }) {
   // E SÓ DENTRO DA MESMA CONVERSA. Na troca, a conversa chega antes do
   // rascunho dela (ele volta num efeito): por um desenho, a caixa da conversa
   // de volta parece vazia, e a faixa dela sumiria sem ninguém ter mexido.
+  // A CAIXA QUE ESVAZIA, NA MESMA CONVERSA, apaga a lembrança da sugestão: a
+  // pessoa apagou o que o Quazar escreveu, e o que ela escrever agora é dela.
+  // Na troca de conversa a caixa parece vazia por um desenho (a régua da
+  // faixa, logo abaixo), e não conta.
+  const conversaDaSugestaoRef = useRef(null);
+  useEffect(() => {
+    const anterior = conversaDaSugestaoRef.current;
+    conversaDaSugestaoRef.current = conversaId;
+    if (anterior !== conversaId || !conversaId) return;
+    if (!rascunho.trim()) delete sugeridaRef.current[conversaId];
+  }, [rascunho, conversaId]);
+
   const conversaDaFaixaRef = useRef(null);
   useEffect(() => {
     const anterior = conversaDaFaixaRef.current;

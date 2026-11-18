@@ -72,6 +72,8 @@ import { telefoneLegivel } from "./numeros.js";
 import { diasDesde, DIAS_DO_VERMELHO } from "./espera.js";
 import { Titulo, Grafico } from "./blocosDoPainel.jsx";
 import TendenciasDoPainel from "./TendenciasDoPainel.jsx";
+import { RostoDoAssistente } from "./RostoDoAssistente.jsx";
+import { NOME_DO_ASSISTENTE } from "./assistente.js";
 import {
   juntarAEquipe, colunasVisiveis, colunasDaFicha, fraseDoQueFaltou, ordenarAEquipe,
   sentidoDeComeco, mediana, aPessoaNaEquipe, baseDaComparacao, linhasDoCabecalho, COLUNAS_DA_EQUIPE,
@@ -291,6 +293,8 @@ const SECOES_DO_PAINEL = [
   { id: "carteira", curto: "Carteira", rotulo: "Carteira de cada responsável" },
   { id: "funil", curto: "Funil", rotulo: "Funil" },
   { id: "jatratei", curto: "Já tratei", rotulo: "Já tratei" },
+  // O "SUGERIR RESPOSTA" (18/11): quem usou o Quazar para escrever.
+  { id: "sugestoes", curto: "Sugerir resposta", rotulo: "Sugerir resposta do Quazar" },
 ];
 
 export default function PainelNumeros({ C: CDaTela, CClaro = null, modo: modoDaTela = "claro", advogados = [], departamentos = [],
@@ -354,6 +358,11 @@ export default function PainelNumeros({ C: CDaTela, CClaro = null, modo: modoDaT
   const lTratados = useLeitura("zorvin_relatorio_tratados", {
     p_desde: deIso, p_ate: ateIso, p_quem: quem, p_fuso: fuso,
     p_telefone: telefone, p_departamento: departamento, p_limite: 1000,
+  });
+  // O "SUGERIR RESPOSTA" (18/11, script 060 da ponte).
+  const lSugestoes = useLeitura("zorvin_relatorio_sugestoes", {
+    p_desde: deIso, p_ate: ateIso, p_quem: quem, p_fuso: fuso,
+    p_telefone: telefone, p_departamento: departamento,
   });
   const carregando = lPainel.carregando, erro = lPainel.erro, faltaSql = lPainel.semFuncao, d = lPainel.dados;
 
@@ -861,7 +870,137 @@ export default function PainelNumeros({ C: CDaTela, CClaro = null, modo: modoDaT
                              souAdmin={souAdmin} meuId={meuId} advogados={advogados}
                              aoEscolherPessoa={escolherPessoa} />
         </section>
+
+        {/* O "SUGERIR RESPOSTA" (18/11): quem usou o Quazar para escrever, e
+            quanto mexeu no que ele escreveu. Função própria (script 060). */}
+        <section id="secao-do-painel-sugestoes" data-secao-do-painel="sugestoes" data-nao-imprime={fora("sugestoes")}>
+          <RelatorioSugestoes C={C} estilos={estilos} cores={cores} leitura={lSugestoes}
+                              souAdmin={souAdmin} meuId={meuId} aoEscolherPessoa={escolherPessoa} quem={quem} />
+        </section>
       </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   O "SUGERIR RESPOSTA" DO QUAZAR (18/11)
+   ================================================================
+   Pedido do Rodrigo: "Quando for usado o 'Sugerir resposta' eu preciso saber
+   que o usuário usou essa opção [...] Preciso também de um relatório para
+   isso." A conta é do banco (`zorvin_relatorio_sugestoes`, script 060 da
+   ponte):
+     - PEDIDAS: os cliques em "Sugerir resposta" que deram certo (e, à parte,
+       os "Pedir uma mudança");
+     - USADAS: as mensagens que saíram com a sugestão, SEM MUDANÇA ou
+       EDITADAS (a pessoa mexeu antes de mandar);
+     - ESCRITAS: as mensagens de texto que a pessoa mandou pelo painel. A
+       parte das escritas que saiu com o Quazar é o "quanto ela usa".
+   Quem atende vê só o que é dela (o recorte é do banco). Sem a função, quem
+   administra lê que falta a atualização; quem atende não vê nada. A falha é
+   dita com o código (armadilha nº 2). */
+function RelatorioSugestoes({ C, estilos, cores, leitura, souAdmin, meuId, aoEscolherPessoa, quem }) {
+  const { carregando, erro, semFuncao } = leitura;
+  const r = leitura.dados || null;
+  if (semFuncao && !souAdmin) return null;
+  const t = (r && r.total) || {};
+  const pct = (a, b) => (Number(b) > 0 ? `${Math.round((Number(a) / Number(b)) * 100)}%` : "—");
+  const pessoas = (r && r.por_pessoa) || [];
+  const cartao = (rotulo, valor, detalhe, attr) => (
+    <div style={{ ...estilos.cartao, flex: "1 1 150px", minWidth: 0 }} data-cartao-da-sugestao={attr}>
+      <div style={{ fontSize: 12, color: C.textSecondary, fontWeight: 600 }}>{rotulo}</div>
+      <div style={{ fontSize: 26, fontWeight: 800, margin: "4px 0 2px", color: C.textPrimary }} data-valor>{valor}</div>
+      <div style={{ fontSize: 12, color: C.textSecondary }}>{detalhe}</div>
+    </div>
+  );
+  return (
+    <div data-relatorio-sugestoes>
+      <Titulo C={C}><span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+        <RostoDoAssistente tamanho={18} /> “Sugerir resposta” do {NOME_DO_ASSISTENTE}</span></Titulo>
+
+      {carregando && <div style={{ ...estilos.nota, padding: "8px 0" }}>Contando as sugestões…</div>}
+
+      {semFuncao && (
+        <div style={{ ...estilos.cartao, display: "flex", gap: 12, alignItems: "flex-start" }} data-sugestoes-falta>
+          <AlertCircle size={20} color={cores.aviso} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ ...estilos.nota, fontSize: 13.5 }}>
+            <b style={{ color: C.textPrimary }}>Falta uma atualização no banco</b> (a 060). Ela entra sozinha
+            quando a ponte é publicada: confira em Departamentos e acessos → Atualizações do banco.
+          </div>
+        </div>
+      )}
+
+      {!!erro && (
+        <div style={{ ...estilos.cartao, borderColor: "#e5573f", color: C.erroTexto }} data-sugestoes-erro>
+          Não consegui contar as sugestões: {erro}
+        </div>
+      )}
+
+      {!carregando && !semFuncao && !erro && r && (
+        <>
+          <div style={{ ...estilos.nota, marginBottom: 12 }} data-sugestoes-escopo>
+            Cada mensagem que saiu com a sugestão tem o rosto do {NOME_DO_ASSISTENTE} ao lado da hora, na conversa
+            (só a equipe vê).{" "}
+            {r.so_meu ? <>Aqui estão <b style={{ color: C.textPrimary }}>os seus números</b>.</> : null}
+          </div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+            {cartao("Sugestões pedidas", numero(t.pedidas),
+                    Number(t.ajustes) ? `e ${numero(t.ajustes)} ${Number(t.ajustes) === 1 ? "mudança pedida" : "mudanças pedidas"}` : "nenhuma mudança pedida",
+                    "pedidas")}
+            {cartao("Mensagens enviadas com a sugestão", numero(t.usadas),
+                    `${pct(t.usadas, t.pedidas)} das sugestões pedidas`, "usadas")}
+            {cartao("Sem mudança · editadas", `${numero(t.iguais)} · ${numero(t.editadas)}`,
+                    "editada: a pessoa mexeu antes de mandar", "iguais-editadas")}
+            {cartao("Das mensagens escritas", pct(t.usadas, t.escritas),
+                    `${numero(t.usadas)} de ${numero(t.escritas)} saíram com o ${NOME_DO_ASSISTENTE}`, "parte")}
+          </div>
+          {r.antes && (
+            <div style={{ ...estilos.nota, marginBottom: 12 }} data-sugestoes-antes>
+              No período anterior, do mesmo tamanho: {numero(r.antes.pedidas)} pedidas e {numero(r.antes.usadas)} enviadas.
+            </div>
+          )}
+          <div style={{ ...estilos.cartao, overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
+              <thead><tr>
+                <th style={estilos.th}>Pessoa</th>
+                <th style={estilos.thNum}>Pedidas</th>
+                <th style={estilos.thNum} title="Pedir uma mudança">Mudanças</th>
+                <th style={estilos.thNum}>Enviadas</th>
+                <th style={estilos.thNum}>Sem mudança</th>
+                <th style={estilos.thNum}>Editadas</th>
+                <th style={estilos.thNum} title="Das mensagens que a pessoa escreveu no período">% das escritas</th>
+              </tr></thead>
+              <tbody>
+                {pessoas.map((p) => {
+                  const sou = meuId && String(p.id) === String(meuId);
+                  const escolhida = quem != null && String(p.id) === String(quem);
+                  return (
+                    <tr key={p.id || p.nome} data-pessoa-da-sugestao={p.nome}
+                        onClick={souAdmin && p.id ? () => aoEscolherPessoa(p.id) : undefined}
+                        style={{ cursor: souAdmin && p.id ? "pointer" : "default", background: escolhida ? C.headerBar : "transparent" }}>
+                      <td style={estilos.td}>
+                        <span style={{ fontWeight: sou ? 800 : 600 }}>{p.nome}</span>
+                        {sou && <span style={{ marginLeft: 7, fontSize: 11, fontWeight: 700, color: "#fff",
+                                               background: cores.selo, borderRadius: 10, padding: "1px 7px" }}>você</span>}
+                      </td>
+                      <td style={estilos.num} data-pedidas={p.pedidas}>{numero(p.pedidas)}</td>
+                      <td style={estilos.num} data-ajustes={p.ajustes}>{numero(p.ajustes)}</td>
+                      <td style={estilos.num} data-usadas={p.usadas}>{numero(p.usadas)}</td>
+                      <td style={estilos.num} data-iguais={p.iguais}>{numero(p.iguais)}</td>
+                      <td style={estilos.num} data-editadas={p.editadas}>{numero(p.editadas)}</td>
+                      <td style={estilos.num} data-parte={pct(p.usadas, p.escritas)}>{pct(p.usadas, p.escritas)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {!pessoas.length && (
+              <div style={{ ...estilos.nota, marginTop: 8 }} data-sugestoes-vazio>
+                Ninguém usou o “Sugerir resposta” neste período.
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

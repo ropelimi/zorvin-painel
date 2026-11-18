@@ -1475,6 +1475,8 @@ const TABELAS = {
   // O ENSAIO DO QUAZAR À NOITE (script 055 da ponte): começa VAZIO. Quem
   // escreve é a ponte; cada prova planta as suas pela `__SEMENTE`.
   zorvin_quazar_noturno: [],
+  // OS PEDIDOS AO "SUGERIR RESPOSTA" (script 060 da ponte): só a ponte escreve.
+  zorvin_sugestoes: [],
   // A DISTRIBUIÇÃO DAS CONVERSAS NOVAS (script 023 da ponte). As três
   // começam VAZIAS, que é como o script as entrega: nenhum departamento
   // ligado, ninguém com a chave mexida (vale o padrão — quem atende recebe,
@@ -4384,6 +4386,57 @@ export const supabase = {
         por_pessoa: porPessoa,
         por_dia: [...dias.values()].sort((a, b) => a.quando.localeCompare(b.quando)),
         total_registros: agora.length, registros,
+      }, error: null };
+    }
+
+    // O "SUGERIR RESPOSTA" DO QUAZAR (script 060 da ponte, 18/11): as
+    // pedidas (`zorvin_sugestoes`), as usadas e as escritas (`mensagens`),
+    // pela régua da função do banco. `__SEM_SUGESTOES` é o banco sem o 060;
+    // `__SUGESTOES_FALHA`, a função que tropeça.
+    if (nome === "zorvin_relatorio_sugestoes") {
+      if (globalThis.__SEM_SUGESTOES) {
+        return { data: null, error: { code: "PGRST202", message: "Could not find the function public.zorvin_relatorio_sugestoes" } };
+      }
+      if (globalThis.__SUGESTOES_FALHA) {
+        return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } };
+      }
+      await espera(40);
+      const eu = TABELAS.usuarios[0] || {};
+      const soMeu = !eu.admin;
+      const quem = soMeu ? eu.id || null : (args && args.p_quem) || null;
+      const t1 = args && args.p_ate ? new Date(args.p_ate).getTime() : Date.now();
+      const t0 = args && args.p_desde ? new Date(args.p_desde).getTime() : t1 - 30 * 86400e3;
+      const tAntes = t0 - (t1 - t0);
+      const tel = (args && args.p_telefone) || null, dep = (args && args.p_departamento) || null;
+      const conv = new Map((TABELAS.conversas || []).map((c) => [String(c.id), c]));
+      const adv = new Map(ADVOGADOS.map((a) => [String(a.id), a]));
+      const nomeDe = new Map((TABELAS.equipe || []).map((u) => [String(u.id), u.nome]));
+      const vale = (convId, q, pessoa) => {
+        const c = conv.get(String(convId));
+        if (!c || c.arquivada || q < tAntes || q > t1) return false;
+        if (tel && String(c.advogado_id) !== String(tel)) return false;
+        if (dep && String((adv.get(String(c.advogado_id)) || {}).departamento_id) !== String(dep)) return false;
+        return !quem || String(pessoa) === String(quem);
+      };
+      const msgs = (TABELAS.mensagens || []).filter((m) => m.origem === "advogado" && (m.tipo || "texto") === "texto"
+        && m.enviado_por_id && !m.automatica && vale(m.conversa_id, new Date(m.criado_em).getTime(), m.enviado_por_id))
+        .map((m) => ({ quem: String(m.enviado_por_id), q: new Date(m.criado_em).getTime(), marca: m.sugestao_quazar || null }));
+      const peds = (TABELAS.zorvin_sugestoes || []).filter((x) => vale(x.conversa_id, new Date(x.quando).getTime(), x.quem))
+        .map((x) => ({ quem: String(x.quem), q: new Date(x.quando).getTime(), tipo: x.tipo || "sugerir" }));
+      const am = msgs.filter((x) => x.q >= t0), ap = peds.filter((x) => x.q >= t0);
+      const contas = (m, p) => ({
+        pedidas: p.filter((x) => x.tipo === "sugerir").length, ajustes: p.filter((x) => x.tipo === "ajustar").length,
+        usadas: m.filter((x) => x.marca).length, iguais: m.filter((x) => x.marca === "igual").length,
+        editadas: m.filter((x) => x.marca === "editada").length, escritas: m.length });
+      const pessoas = [...new Set([...am.filter((x) => x.marca).map((x) => x.quem), ...ap.map((x) => x.quem)])];
+      const porPessoa = pessoas.map((id) => ({ id, nome: nomeDe.get(id) || "(sem nome)",
+        ...contas(am.filter((x) => x.quem === id), ap.filter((x) => x.quem === id)) }))
+        .sort((a, b) => b.usadas - a.usadas || a.nome.localeCompare(b.nome));
+      return { data: {
+        so_meu: soMeu, total: contas(am, ap),
+        antes: args && args.p_desde ? { pedidas: peds.filter((x) => x.q < t0 && x.tipo === "sugerir").length,
+                                        usadas: msgs.filter((x) => x.q < t0 && x.marca).length } : null,
+        por_pessoa: porPessoa, por_dia: [],
       }, error: null };
     }
 
