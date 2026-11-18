@@ -7808,6 +7808,40 @@ cópia sem sabotagem passou inteira):
   portas. **Ao escolher portas para cópias, fuja das que o Chrome recusa**
   (6566, 6665 a 6669, 6697, 10080…).
 
+## O Quazar à noite, valendo (18/11)
+
+Pedido do Rodrigo: *"Sobre os ensaios do Quazar, quero já começar a usar. Não
+revi todas as respostas, mas todas que eu vi são muito boas. Importante é que
+a IA demore 1 minuto para responder, para dar tempo do contato enviar mais de
+uma mensagem dentro da conversa, antes de uma resposta do Quazar. Importante
+também o Quazar se apresentar com seu nome"*.
+
+**Quem decide e manda é a ponte** (script 059 e a rodada `quazarDaNoite`; ver
+"O Quazar à noite, valendo" no CLAUDE.md dela). A resposta vai ao cliente pela
+fila, e entra em `mensagens` marcada `automatica` e `pelo_quazar`. O painel
+faz duas coisas:
+
+| onde | o quê |
+|---|---|
+| a conversa | a bolha do Quazar diz **"Quazar · assistente virtual"** (`data-autor-quazar`), com o rosto dele na linha do autor e no avatar (`data-avatar-quazar`), e o `title` diz que ninguém da equipe a escreveu. Nunca as iniciais de quem olha a tela |
+| Departamentos e acessos → Fora do horário | o modo **Valendo** (`data-quazar-modo="valendo"`): "ele responde o cliente (a mensagem pronta não sai)". A explicação diz que ele espera 1 minuto depois da última mensagem do cliente |
+| a lista da aba | as respostas enviadas aparecem com " · enviada", e as contas dizem quantas foram enviadas ao cliente |
+
+- **`pelo_quazar` vem antes de `automatica`** em `quemFalou`: as duas marcas
+  estão na mensagem do Quazar, e o aviso de audiência do Vantoro (só
+  `automatica`) continua com o robô e "Aviso automático do Vantoro";
+- **a conversa não mostra a resposta enviada como bolha de ensaio**: a leitura
+  do ensaio pede só `pronta` e `calada`. A enviada já está nas mensagens;
+- **avaliar a enviada é só pela lista da aba**, e é decisão: na conversa, a
+  bolha é uma mensagem como as outras.
+
+Prova: `o-quazar-responde-a-noite`, 18 conferências em duas cenas: a bolha (o
+autor, o rosto pintado, o `title`, o `aria-label`, nenhuma inicial, e o aviso
+do Vantoro com o robô) e a aba (a opção Valendo, a frase do 1 minuto, as
+enviadas nas contas e na linha, e gravar 'valendo' sem mexer no resto). **2
+sabotagens e 2 pegas**: a mensagem do Quazar sem o seu caso em `quemFalou` (5
+reprovações) e a opção Valendo tirada (4).
+
 ## O resumo da conversa — "Resumir" (01/11)
 
 Pedido do Rodrigo, da lista de recomendações de 31/10: *"…em seguida pode
