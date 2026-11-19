@@ -7786,6 +7786,26 @@ pedidas.
 todas as mensagens de texto da equipe no período, e a bancada já traz muitas.
 Hoje a conta esperada sai das mensagens da bancada, pela régua da função.
 
+### A tabela por pessoa se ordena (19/11)
+
+Pedido do Rodrigo, com a foto da tabela: *"Deixe as tabelas do relatório do
+Sugerir resposta, com a possibilidade de ordenar do mais crescente para
+decrescente e vice e versa."*
+
+- **Cada cabeçalho é um botão** (`data-ordenar-sugestoes`): clicar ordena por
+  ele, clicar de novo inverte, com ▲ ou ▼ e o `aria-sort`, como a tabela da
+  equipe;
+- **de começo, quem pediu mais vem primeiro** (Pedidas ▼). Uma coluna nova de
+  número começa pelo maior; "Pessoa", de A a Z;
+- **o "—" do "% das escritas"** (quem não escreveu nada no período) vai sempre
+  para o fim, nos dois sentidos;
+- **a ordem é da tela** (`ordenarAsSugestoes`): o banco manda as linhas, e a
+  função não mudou. Ordenar não escolhe ninguém: o clique na linha continua
+  sendo o de recortar a tela numa pessoa.
+
+Prova: `a-sugestao-do-quazar-fica-marcada`, agora 42 conferências. A
+sabotagem que nunca inverte é pega por três.
+
 ## O "Sugerir resposta" pesquisa na internet (19/11)
 
 Pedido do Rodrigo, com a foto de uma cliente perguntando sobre "a nova lei que

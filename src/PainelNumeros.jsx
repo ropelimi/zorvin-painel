@@ -898,13 +898,52 @@ export default function PainelNumeros({ C: CDaTela, CClaro = null, modo: modoDaT
    Quem atende vê só o que é dela (o recorte é do banco). Sem a função, quem
    administra lê que falta a atualização; quem atende não vê nada. A falha é
    dita com o código (armadilha nº 2). */
+/* AS COLUNAS DA TABELA POR PESSOA, e como cada uma ordena (19/11). Pedido do
+   Rodrigo: "Deixe as tabelas do relatório do Sugerir resposta, com a
+   possibilidade de ordenar do mais crescente para decrescente e vice e
+   versa." Clicar no cabeçalho ordena por ele; clicar de novo inverte. O
+   número começa pelo maior, e o nome pela ordem alfabética. A pessoa sem
+   mensagem escrita não tem "% das escritas" (é "—"), e vai sempre para o fim,
+   nos dois sentidos: no começo, um "—" se leria como o primeiro lugar. */
+const COLUNAS_DA_SUGESTAO = [
+  { id: "nome", rotulo: "Pessoa" },
+  { id: "pedidas", rotulo: "Pedidas" },
+  { id: "ajustes", rotulo: "Mudanças", ajuda: "Pedir uma mudança" },
+  { id: "usadas", rotulo: "Enviadas" },
+  { id: "iguais", rotulo: "Sem mudança" },
+  { id: "editadas", rotulo: "Editadas" },
+  { id: "parte", rotulo: "% das escritas", ajuda: "Das mensagens que a pessoa escreveu no período" },
+];
+const valorDaSugestao = (p, coluna) => {
+  if (coluna === "nome") return String(p.nome || "");
+  if (coluna === "parte") return Number(p.escritas) > 0 ? Number(p.usadas || 0) / Number(p.escritas) : null;
+  return Number(p[coluna] || 0);
+};
+export function ordenarAsSugestoes(pessoas, coluna, sentido) {
+  const mult = sentido === "asc" ? 1 : -1;
+  return [...pessoas].sort((a, b) => {
+    const va = valorDaSugestao(a, coluna), vb = valorDaSugestao(b, coluna);
+    if (va == null && vb == null) return String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR");
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    const c = coluna === "nome" ? va.localeCompare(vb, "pt-BR", { sensitivity: "base" }) : va - vb;
+    return c !== 0 ? c * mult : String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR");
+  });
+}
+
 function RelatorioSugestoes({ C, estilos, cores, leitura, souAdmin, meuId, aoEscolherPessoa, quem }) {
   const { carregando, erro, semFuncao } = leitura;
   const r = leitura.dados || null;
+  const [ordem, setOrdem] = useState({ coluna: "pedidas", sentido: "desc" });
+  const pessoasDoBanco = (r && r.por_pessoa) || [];
+  const pessoas = useMemo(() => ordenarAsSugestoes(pessoasDoBanco, ordem.coluna, ordem.sentido),
+                          [pessoasDoBanco, ordem.coluna, ordem.sentido]);
   if (semFuncao && !souAdmin) return null;
   const t = (r && r.total) || {};
   const pct = (a, b) => (Number(b) > 0 ? `${Math.round((Number(a) / Number(b)) * 100)}%` : "—");
-  const pessoas = (r && r.por_pessoa) || [];
+  const ordenarPor = (id) => setOrdem((o) => (o.coluna === id
+    ? { coluna: id, sentido: o.sentido === "asc" ? "desc" : "asc" }
+    : { coluna: id, sentido: id === "nome" ? "asc" : "desc" }));
   const cartao = (rotulo, valor, detalhe, attr) => (
     <div style={{ ...estilos.cartao, flex: "1 1 150px", minWidth: 0 }} data-cartao-da-sugestao={attr}>
       <div style={{ fontSize: 12, color: C.textSecondary, fontWeight: 600 }}>{rotulo}</div>
@@ -961,13 +1000,22 @@ function RelatorioSugestoes({ C, estilos, cores, leitura, souAdmin, meuId, aoEsc
           <div style={{ ...estilos.cartao, overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
               <thead><tr>
-                <th style={estilos.th}>Pessoa</th>
-                <th style={estilos.thNum}>Pedidas</th>
-                <th style={estilos.thNum} title="Pedir uma mudança">Mudanças</th>
-                <th style={estilos.thNum}>Enviadas</th>
-                <th style={estilos.thNum}>Sem mudança</th>
-                <th style={estilos.thNum}>Editadas</th>
-                <th style={estilos.thNum} title="Das mensagens que a pessoa escreveu no período">% das escritas</th>
+                {COLUNAS_DA_SUGESTAO.map((c) => {
+                  const ativa = ordem.coluna === c.id;
+                  const base = c.id === "nome" ? estilos.th : estilos.thNum;
+                  return (
+                    <th key={c.id} style={{ ...base, color: ativa ? C.textPrimary : base.color }} title={c.ajuda}
+                        aria-sort={ativa ? (ordem.sentido === "asc" ? "ascending" : "descending") : "none"}>
+                      <button onClick={() => ordenarPor(c.id)} data-ordenar-sugestoes={c.id}
+                              title={ativa ? "Clique de novo para inverter a ordem" : `Ordenar por ${c.rotulo.toLowerCase()}`}
+                              style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", font: "inherit",
+                                       color: "inherit", letterSpacing: "inherit", textTransform: "inherit", fontWeight: "inherit",
+                                       whiteSpace: "nowrap" }}>
+                        {c.rotulo}{ativa ? (ordem.sentido === "asc" ? " ▲" : " ▼") : ""}
+                      </button>
+                    </th>
+                  );
+                })}
               </tr></thead>
               <tbody>
                 {pessoas.map((p) => {
