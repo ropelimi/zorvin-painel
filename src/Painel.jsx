@@ -14362,8 +14362,13 @@ export default function Painel({ sessao }) {
     const contexto = { cliente: !ehGrupo(conversa) ? nomeDoContato(conversa.contato) : "", atendente: meuNome };
     mudarCopiloto(id, { fase: "pensando" });
     let texto;
+    // AS FONTES DA PESQUISA NA INTERNET (19/11) vão junto da sugestão, para a
+    // faixa mostrar à atendente o que conferir antes de mandar.
+    let pesquisa = { pesquisou: false, fontes: [] };
     try {
-      texto = preencherVariaveis(await pedirSugestao(id), { ...contexto, agora: new Date() });
+      const r = await pedirSugestao(id);
+      pesquisa = { pesquisou: r.pesquisou, fontes: r.fontes };
+      texto = preencherVariaveis(r.texto, { ...contexto, agora: new Date() });
     } catch (e) {
       mudarCopiloto(id, { fase: "erro", erro: String((e && e.message) || e) });
       return;
@@ -14374,11 +14379,11 @@ export default function Painel({ sessao }) {
     // ele estiver vazio — é o que a pessoa encontra ao voltar.
     if (conversaIdRef.current === id) {
       if (!rascunhoRef.current.trim() && !modoNotaRef.current && !editandoRef.current) {
-        mudarCopiloto(id, faixaDoAjuste());
+        mudarCopiloto(id, faixaDoAjuste(pesquisa));
         sugeridaRef.current[id] = texto;
         colocarNaCaixa(texto);
       } else {
-        mudarCopiloto(id, { fase: "atrasada", sugestao: texto });
+        mudarCopiloto(id, { fase: "atrasada", sugestao: texto, ...pesquisa });
       }
       return;
     }
@@ -14386,9 +14391,9 @@ export default function Painel({ sessao }) {
     if (!guardado || !String(guardado.texto || "").trim()) {
       rascunhosRef.current[id] = { texto, nota: false };
       sugeridaRef.current[id] = texto;
-      mudarCopiloto(id, faixaDoAjuste());
+      mudarCopiloto(id, faixaDoAjuste(pesquisa));
     } else {
-      mudarCopiloto(id, { fase: "atrasada", sugestao: texto });
+      mudarCopiloto(id, { fase: "atrasada", sugestao: texto, ...pesquisa });
     }
   }
 
@@ -14398,7 +14403,8 @@ export default function Painel({ sessao }) {
     // A LIÇÃO VAI JUNTO: a mensagem refeita que chegou atrasada pode ter
     // ensinado uma, e o Desfazer dela continua na faixa.
     mudarCopiloto(conversaId, faixaDoAjuste({ mudou: Boolean(s.deAjuste), licao: s.licao || null,
-                                              aviso: s.aviso || "" }));
+                                              aviso: s.aviso || "", pesquisou: Boolean(s.pesquisou),
+                                              fontes: s.fontes || [] }));
     sugeridaRef.current[conversaId] = s.sugestao;
     colocarNaCaixa(s.sugestao);
   }
@@ -20526,6 +20532,22 @@ export default function Painel({ sessao }) {
                         Pedir
                       </button>
                     </form>
+                  )}
+                  {copilotoAqui.pesquisou && copilotoAqui.fase === "sugeriu" && !copilotoAqui.mudou && (
+                    // A PESQUISA NA INTERNET (19/11): a atendente vê de onde veio o
+                    // que a mensagem diz, e confere antes de mandar.
+                    <div data-copiloto-fontes style={{ fontSize: 12.5, color: C.textSecondary, lineHeight: 1.45 }}>
+                      <span style={{ color: C.textPrimary }}>
+                        O {NOME_DO_ASSISTENTE} pesquisou na internet para esta resposta. Confira antes de mandar
+                      </span>
+                      {(copilotoAqui.fontes || []).length ? ":" : " — a resposta não citou fonte."}
+                      {(copilotoAqui.fontes || []).map((f) => (
+                        <div key={f.url} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <a data-copiloto-fonte href={f.url} target="_blank" rel="noopener noreferrer"
+                             title={f.url} style={{ color: C.verdeTexto }}>{f.titulo}</a>
+                        </div>
+                      ))}
+                    </div>
                   )}
                   {copilotoAqui.erro && copilotoAqui.fase !== "erro" && (
                     <div data-copiloto-erro-do-pedido style={{ fontSize: 12.5, color: C.erroTexto }}>
