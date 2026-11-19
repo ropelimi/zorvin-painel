@@ -275,6 +275,32 @@ const cartao = (page, c) => page.locator(`${R} [data-cartao-da-sugestao="${c}"] 
      (await attr(linha("JENIFER ALMEIDA").locator("[data-usadas]"), "data-usadas")) === "1"
      && (await attr(linha("JENIFER ALMEIDA").locator("[data-parte]"), "data-parte")) === pct(1, escritas["u-jenifer"] || 0),
      q([await attr(linha("JENIFER ALMEIDA").locator("[data-parte]"), "data-parte"), escritas["u-jenifer"]]));
+  // A ORDEM DA TABELA (19/11): clicar no cabeçalho ordena, clicar de novo inverte.
+  const ordemDasLinhas = () => page.locator(`${R} [data-pessoa-da-sugestao]`).evaluateAll((ls) => ls.map((l) => l.getAttribute("data-pessoa-da-sugestao")));
+  const cab = (id) => page.locator(`${R} [data-ordenar-sugestoes="${id}"]`);
+  const sortDe = (id) => attr(page.locator(`${R} th:has([data-ordenar-sugestoes="${id}"])`), "aria-sort");
+  const chegou = async (esperada) => { for (let i = 0; i < 20; i++) { if (q(await ordemDasLinhas()) === q(esperada)) return true; await page.waitForTimeout(100); } return false; };
+  ok("os sete cabeçalhos são botões de ordenar", (await page.locator(`${R} [data-ordenar-sugestoes]`).count()) === 7);
+  ok("de começo, quem pediu mais vem primeiro (▼ em Pedidas)",
+     (await chegou(["Rodrigo Sousa", "JENIFER ALMEIDA"])) && (await sortDe("pedidas")) === "descending"
+     && /▼/.test(await texto(cab("pedidas"))), q(await ordemDasLinhas()));
+  await clicar(cab("pedidas"));
+  ok("clicar de novo em Pedidas inverte: do menor para o maior (▲)",
+     (await chegou(["JENIFER ALMEIDA", "Rodrigo Sousa"])) && (await sortDe("pedidas")) === "ascending"
+     && /▲/.test(await texto(cab("pedidas"))), q(await ordemDasLinhas()));
+  await clicar(cab("nome"));
+  ok("Pessoa ordena pelo nome, de A a Z, e as outras colunas perdem a seta",
+     (await chegou(["JENIFER ALMEIDA", "Rodrigo Sousa"])) && (await sortDe("nome")) === "ascending"
+     && (await sortDe("pedidas")) === "none" && !/[▲▼]/.test(await texto(cab("pedidas"))), q(await ordemDasLinhas()));
+  await clicar(cab("nome"));
+  ok("e de Z a A no segundo clique", (await chegou(["Rodrigo Sousa", "JENIFER ALMEIDA"])) && (await sortDe("nome")) === "descending", q(await ordemDasLinhas()));
+  await clicar(cab("usadas"));
+  ok("uma coluna nova começa pelo maior (Enviadas: 2 antes de 1)",
+     (await chegou(["Rodrigo Sousa", "JENIFER ALMEIDA"])) && (await sortDe("usadas")) === "descending", q(await ordemDasLinhas()));
+  await clicar(cab("usadas"));
+  ok("e inverte no segundo clique", (await chegou(["JENIFER ALMEIDA", "Rodrigo Sousa"])) && (await sortDe("usadas")) === "ascending", q(await ordemDasLinhas()));
+  ok("ordenar não escolhe ninguém (a tela não se recorta numa pessoa)",
+     (await page.locator(`${R} [data-pessoa-da-sugestao]`).count()) === 2, q(await ordemDasLinhas()));
   ok("a seção está no menu de imprimir e nos atalhos", (await page.locator('[data-nav-do-painel] button, [data-nav-do-painel] a').filter({ hasText: "Sugerir resposta" }).count()) >= 1);
   ok("nenhum estouro", estouros.length === 0, q(estouros));
   await ctx.close();
