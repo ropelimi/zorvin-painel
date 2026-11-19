@@ -7806,6 +7806,24 @@ decrescente e vice e versa."*
 Prova: `a-sugestao-do-quazar-fica-marcada`, agora 42 conferências. A
 sabotagem que nunca inverte é pega por três.
 
+## O Quazar de dia no SAC, em ensaio (19/11)
+
+Pedido do Rodrigo: o Quazar lê as conversas, os andamentos e as intimações do
+Vantoro e as tarefas do ADVBOX e do Vantoro, e responde sozinho, em ensaio, os
+clientes novos do telefone do SAC. Quem escreve é a ponte (script 061 e a
+rodada `quazarDeDia`; ver o CLAUDE.md dela). A resposta mora no mesmo registro
+do ensaio da noite (`zorvin_quazar_noturno`), com `periodo = 'dia'`.
+
+- **A bolha é a do ensaio** (`EnsaioDoQuazar.jsx`), tracejada no meio, com
+  "Ensaio do Quazar de dia" (`data-ensaio-periodo="dia"`), "não foi enviada ao
+  cliente" e o mesmo Boa/Ruim;
+- **o que ele leu do caso** aparece numa linha (`data-ensaio-contexto`), só com
+  contagens ("Leu o caso no Vantoro: 2 processo(s), …"), ou por que não leu;
+- **a aba Fora do horário lista só o ensaio da noite**: o de dia é avaliado na
+  conversa.
+
+Prova: `o-quazar-a-noite-em-ensaio`, cena 8 (48 conferências ao todo).
+
 ## O "Sugerir resposta" pesquisa na internet (19/11)
 
 Pedido do Rodrigo, com a foto de uma cliente perguntando sobre "a nova lei que
