@@ -224,7 +224,21 @@ export async function pedirSugestao(conversaId) {
   });
   const texto = String((r && r.sugestao) || "").trim();
   if (!texto) throw new Error(`O ${NOME_DO_ASSISTENTE} não devolveu sugestão desta vez. Tente de novo.`);
-  return texto;
+  return { texto, ...fontesDaSugestao(r) };
+}
+
+/** AS FONTES DA PESQUISA NA INTERNET (19/11): a ponte pesquisa quando a
+ *  pergunta do cliente é de fora do que o escritório sabe, e diz quais páginas
+ *  a resposta usou. Vão para a faixa, para a atendente conferir antes de
+ *  mandar; a mensagem ao cliente não leva link. Só endereço http(s), até cinco.
+ *  A ponte de antes não manda nada, e a faixa fica como era. */
+export function fontesDaSugestao(r) {
+  const fontes = (Array.isArray(r && r.fontes) ? r.fontes : [])
+    .map((f) => ({ titulo: String((f && f.titulo) || "").trim(), url: String((f && f.url) || "").trim() }))
+    .filter((f) => /^https?:\/\//i.test(f.url))
+    .slice(0, 5)
+    .map((f) => ({ ...f, titulo: f.titulo || f.url }));
+  return { pesquisou: Boolean(r && r.pesquisou === true), fontes };
 }
 
 /** Pede ao copiloto que mude a mensagem. Devolve `{ sugestao, licao, aviso }`:

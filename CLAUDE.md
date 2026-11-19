@@ -7786,6 +7786,25 @@ pedidas.
 todas as mensagens de texto da equipe no período, e a bancada já traz muitas.
 Hoje a conta esperada sai das mensagens da bancada, pela régua da função.
 
+## O "Sugerir resposta" pesquisa na internet (19/11)
+
+Pedido do Rodrigo, com a foto de uma cliente perguntando sobre "a nova lei que
+bloqueia o salário": quando a pergunta não está no banco nem na conversa, o
+Quazar pesquisa na internet ao clicar em "Sugerir resposta", sempre depois de
+consultar o que o escritório já sabe, sem inventar e com a linguagem da equipe.
+**Quem pesquisa e decide quando é a ponte** (ver o CLAUDE.md dela). Aqui:
+
+- **a sugestão entra na caixa como sempre**, sem link nenhum;
+- **a faixa do Quazar diz que ele pesquisou** (`data-copiloto-fontes`) e mostra
+  as fontes que a resposta citou (`data-copiloto-fonte`, até cinco, só
+  http(s)), cada uma numa aba nova com `noopener noreferrer`, para a atendente
+  conferir antes de mandar. Sem fonte citada, a faixa diz isso;
+- **depois de "Pedir uma mudança", as fontes saem**: a mensagem já é outra;
+- **sem pesquisa, e com a ponte de antes**, a faixa fica como era
+  (`fontesDaSugestao`, em `copiloto.js`).
+
+Prova: `o-quazar-pesquisa-na-internet`, 14 conferências.
+
 ## O Quazar à noite, em ensaio (06/11)
 
 Pedido do Rodrigo: *"Como agora temos o Quazar, o que acha de começarmos a
