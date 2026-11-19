@@ -7726,6 +7726,66 @@ uma (e uma cópia sem sabotagem nenhuma, de controle, passou inteira):
 vieram) e `o-resumo-da-conversa` (a frase de baixo do quadro e o texto
 copiado).
 
+## O "Sugerir resposta" fica marcado na mensagem, e tem relatório (18/11)
+
+Pedido do Rodrigo: *"Quando for usado o 'Sugerir resposta' eu preciso saber
+que o usuário usou essa opção, tem que aparecer de alguma forma
+discretamente na mensagem (apenas para a equipe, não para o contato).
+Preciso também de um relatório para isso."*
+
+A marca e os pedidos moram no banco (script 060 da ponte: ver o CLAUDE.md
+dela). Aqui:
+
+| onde | o quê |
+|---|---|
+| a bolha | um **rosto pequeno do Quazar** (13 pontos) ao lado da hora (`data-sugestao-quazar`), com o `title` dizendo *"enviada sem mudanças"* ou *"editada por quem enviou"*, e *"Só a equipe vê esta marca"* |
+| o envio (`enviar`) | a mensagem vai à fila com `sugestao_quazar`: `'igual'` se o texto é o que o Quazar escreveu, `'editada'` se a pessoa mexeu |
+| Painel de números | a seção **"Sugerir resposta" do Quazar** (`data-relatorio-sugestoes`), a última da tela: sugestões pedidas (e mudanças pedidas), mensagens enviadas com a sugestão (e a parte das pedidas), sem mudança · editadas, e a parte das mensagens escritas que saiu com o Quazar; e uma linha por pessoa |
+
+- **Quem lembra a sugestão é a tela** (`sugeridaRef`, por conversa): o último
+  texto que o Quazar pôs na caixa ou no rascunho (o "Sugerir resposta", o
+  "Usar a sugestão" que chegou atrasada e o "Pedir uma mudança"). **A caixa
+  que esvazia, na mesma conversa, apaga a lembrança**: quem apaga a sugestão
+  e escreve sozinha manda a mensagem sem marca. Na troca de conversa a caixa
+  parece vazia por um desenho, e não conta (a régua da faixa do copiloto).
+- **A bolha que está saindo já tem a marca** (a provisória leva o campo).
+- **O cliente não recebe nada disto**: a marca é uma coluna da fila e da
+  mensagem.
+- **Banco sem o 060**: a gravação na fila que falha pela coluna é feita de
+  novo sem ela, e o módulo lembra (`FILA_SEM_A_MARCA_DA_SUGESTAO`): a
+  mensagem sai, sem a marca.
+- **O relatório**: a conta é do banco (`zorvin_relatorio_sugestoes`), com a
+  mesma barra de filtros do Painel. Quem atende vê só o que é dela; quem
+  administra clica numa pessoa para recortar a tela. Sem a função, quem
+  administra lê que falta a atualização; quem atende não vê a seção. A falha
+  vem com o código.
+- **As seções do Painel passaram a nove**, e `o-painel-de-gestao` foi
+  INVERTIDA, e não apagada (o menu de imprimir e os atalhos com a seção nova
+  no fim).
+
+**Fica de fora, e é decisão:** o reenviar de uma mensagem que falhou não leva
+a marca; e a nota interna e a edição de uma mensagem não são marcadas (a
+sugestão é para o cliente).
+
+Prova: `a-sugestao-do-quazar-fica-marcada`, 34 conferências em quatro cenas:
+o envio (igual, editada, apagada e escrita sozinha, sem o Quazar, e a bolha
+que sai com a marca); a marca na conversa (o title de cada uma, pintada, do
+tamanho certo, na linha da hora); o banco sem o 060; e o relatório (os
+cartões, a linha de cada pessoa contra as mensagens da bancada, o atalho, a
+falta e a falha).
+
+**11 sabotagens e 11 pegas**, rodadas em cópias e lidas uma a uma (e a cópia
+de controle passou inteira): sem a marca na fila; sempre 'igual'; a caixa
+vazia sem apagar a lembrança; sem lembrar a sugestão; a bolha sem a marca; o
+mesmo title nos dois casos; sem a volta do banco sem o 060; a bolha que sai
+sem a marca; o relatório sem a seção (pega também pela `o-painel-de-gestao`);
+a falta calada para quem administra; e a parte das escritas contada pelas
+pedidas.
+
+**A primeira escrita da prova errou as porcentagens**: as "escritas" contam
+todas as mensagens de texto da equipe no período, e a bancada já traz muitas.
+Hoje a conta esperada sai das mensagens da bancada, pela régua da função.
+
 ## O Quazar à noite, em ensaio (06/11)
 
 Pedido do Rodrigo: *"Como agora temos o Quazar, o que acha de começarmos a
