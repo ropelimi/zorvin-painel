@@ -1,5 +1,7 @@
 // ============================================================
-//  O ENSAIO DO QUAZAR À NOITE (script 055 da ponte, 06/11)
+//  O ENSAIO DO QUAZAR À NOITE (script 055 da ponte, 06/11) — e DE DIA, no
+//  SAC (script 061 da ponte, 19/11): a mesma bolha, dizendo "de dia" e o que
+//  ele leu do caso no Vantoro (só as contagens).
 //
 //  Pedido do Rodrigo: o Quazar responde à noite quem escreve com o
 //  escritório fechado. Decidido com ele, começa por um ENSAIO: o cliente
@@ -37,6 +39,10 @@ export function bolhaDoEnsaio(r, convId) {
     _motivo: r.motivo || "",
     _avaliacao: r.avaliacao || null,
     _comentario: r.comentario || "",
+    // O ENSAIO DE DIA (061 da ponte) mora na mesma tabela: sem a coluna,
+    // é a noite de sempre.
+    _periodo: r.periodo === "dia" ? "dia" : "noite",
+    _contexto: r.contexto || "",
   };
 }
 
@@ -98,6 +104,7 @@ export function BolhaDoEnsaio({ m, C, estreito }) {
 
   return (
     <div data-msg-id={m.id} data-ensaio-do-quazar={m._status} data-ensaio-avaliacao={avaliacao || ""}
+         data-ensaio-periodo={m._periodo}
          style={{ display: "flex", justifyContent: "center", margin: "8px 0" }}>
       <div style={{ width: estreito ? "92%" : "min(78%, 560px)", boxSizing: "border-box", background: C.panel,
                     color: C.textPrimary, borderRadius: 10, padding: "8px 11px 9px", border: `1.5px dashed ${C.divider}` }}>
@@ -105,7 +112,7 @@ export function BolhaDoEnsaio({ m, C, estreito }) {
                       color: C.textSecondary, marginBottom: 5 }}>
           <RostoDoAssistente tamanho={20} />
           <span style={{ minWidth: 0 }}>
-            Ensaio do {NOME_DO_ASSISTENTE} à noite · <span data-ensaio-nao-enviada>não foi enviada ao cliente</span>
+            Ensaio do {NOME_DO_ASSISTENTE} {m._periodo === "dia" ? "de dia" : "à noite"} · <span data-ensaio-nao-enviada>não foi enviada ao cliente</span>
           </span>
           <span style={{ marginLeft: "auto", flexShrink: 0, fontWeight: 400 }}>{horaCurta(m.criado_em)}</span>
         </div>
@@ -121,6 +128,11 @@ export function BolhaDoEnsaio({ m, C, estreito }) {
         {m._resumo && (
           <div data-ensaio-resumo style={{ fontSize: 12.5, lineHeight: 1.4, color: C.textSecondary, marginTop: 6 }}>
             <b>Para a equipe:</b> {m._resumo}
+          </div>
+        )}
+        {m._contexto && (
+          <div data-ensaio-contexto style={{ fontSize: 12, lineHeight: 1.4, color: C.textSecondary, marginTop: 4 }}>
+            {m._contexto}
           </div>
         )}
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 8 }}>
@@ -230,7 +242,8 @@ export function QuazarANoite({ cx, C, depId, linha, temColuna, aoMudar, aoAvisar
       setLista((ens.data || []).map((e) => {
         const c = conversaDe.get(String(e.conversa_id));
         return c ? { ...e, conversa: { ...c, contato: contatoDe.get(String(c.contato_id)) || null } } : null;
-      }).filter((e) => e && ids.has(String(e.conversa.advogado_id))));
+      // O ENSAIO DE DIA (061 da ponte) não é desta aba: ela é a da noite.
+      }).filter((e) => e && e.periodo !== "dia" && ids.has(String(e.conversa.advogado_id))));
     })();
     return () => { vivo = false; };
   }, [temColuna, depId]);

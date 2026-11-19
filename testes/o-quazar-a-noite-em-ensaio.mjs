@@ -15,7 +15,9 @@
 //      para a faixa âmbar;
 //   5. na aba Fora do horário, o modo do departamento (desligado ou ensaio) e
 //      as respostas da semana, com as contas e o link que abre a conversa;
-//   6. sem a coluna do 055, a seção não aparece; no celular, a bolha cabe.
+//   6. sem a coluna do 055, a seção não aparece; no celular, a bolha cabe;
+//   8. o ensaio DE DIA (061 da ponte) é a mesma bolha, dizendo "de dia" e o
+//      que ele leu do caso, e fica fora da lista da aba (que é da noite).
 import { abrirNavegador, ENDERECO } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
@@ -274,6 +276,32 @@ console.log("\n7. No celular, a bolha cabe");
     return b ? { esq: b.left, dir: b.right, largura: innerWidth, rola: document.documentElement.scrollWidth > innerWidth } : null;
   });
   ok("a bolha do ensaio cabe na tela, sem rolar de lado", medida && medida.esq >= 0 && medida.dir <= medida.largura && !medida.rola, q(medida));
+  await ctx.close();
+}
+
+// ==================================================================
+console.log("\n8. O ensaio DE DIA (061 da ponte): a mesma bolha, dizendo \"de dia\" e o que ele leu");
+{
+  const DIA = { ...PRONTA, id: "qn-dia", periodo: "dia", texto: "RESPOSTA-DE-DIA: o juiz já recebeu o seu processo.",
+                contexto: "Leu o caso no Vantoro: 1 processo(s), 1 intimação(ões), 2 tarefa(s) (1 pendente(s)).",
+                cliente_ate_id: "m-noite-2", ate: iso(500), criada_em: iso(498), pronta_em: iso(498) };
+  const { ctx, page, estouros } = await abrir({ semente: semente({ ensaios: [PRONTA, DIA], fora: [linhaFora({ quazar: "ensaio" })] }) });
+  await clicar(page.locator('[data-conversa-id="cv-noite"]'));
+  await page.waitForTimeout(1300);
+  const dia = page.locator('[data-ensaio-periodo="dia"]');
+  ok("a resposta do ensaio de dia aparece, dizendo que é de dia e que não foi enviada",
+     (await dia.count()) === 1 && /Ensaio do Quazar de dia/.test(await texto(dia)) && /não foi enviada ao cliente/.test(await texto(dia)), q(await texto(dia)));
+  ok("com o que ele leu do caso (só as contagens)", /Leu o caso no Vantoro: 1 processo/.test(await texto(dia.locator("[data-ensaio-contexto]"))));
+  ok("e a da noite continua dizendo \"à noite\", sem linha do caso",
+     /Ensaio do Quazar à noite/.test(await texto(page.locator('[data-ensaio-periodo="noite"]')))
+     && (await page.locator('[data-ensaio-periodo="noite"] [data-ensaio-contexto]').count()) === 0);
+  const aval = await clicar(dia.locator('[data-avaliar-ensaio="boa"]'));
+  await page.waitForTimeout(600);
+  ok("e também se avalia", aval && (await doBanco(page, "qn-dia") || {}).avaliacao === "boa", q(await doBanco(page, "qn-dia")));
+  ok("a aba Fora do horário (que é da noite) não lista o ensaio de dia",
+     await abrirAAba(page) && (await page.locator("[data-quazar-a-noite]").count()) === 1
+     && !/RESPOSTA-DE-DIA/.test(await texto(page.locator("[data-quazar-a-noite]"))), q(await texto(page.locator("[data-quazar-a-noite]"))));
+  ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
 
