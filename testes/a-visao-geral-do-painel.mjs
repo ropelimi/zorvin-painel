@@ -45,7 +45,7 @@ const ok = (nome, cond, det = "") => {
 const q = (x) => JSON.stringify(x);
 const CENAS = (process.env.CENAS || "").split(",").map((s) => s.trim()).filter(Boolean);
 const vale = (cena) => !CENAS.length || CENAS.includes(cena);
-const TODAS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13"];
+const TODAS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"];
 
 const nav = await abrirNavegador();
 
@@ -847,6 +847,50 @@ if (vale("13")) {
      && cd.titulo === "A carteira de JENIFER ALMEIDA tem 16 conversas; a mediana da equipe é 2", q({ cd, jen }));
   ok("e o caminho é a seção da carteira", Boolean(cd.acao) && cd.acao.tipo === "secao" && cd.acao.texto === "Ver a carteira", q(cd.acao));
   ok("sem estouro de JavaScript", estouros.length === 0, q(estouros));
+  await ctx.close();
+}
+
+// ==================================================================
+// 14. OS CARTÕES COM A FAIXA DE COR E O SELO DA COMPARAÇÃO (23/11)
+//     A comparação continua dizendo a mesma frase; a cor do selo diz se o
+//     número foi para o lado bom (verde) ou ruim (vermelho). O prazo que
+//     melhorou é verde (a semente de sempre: 62%, contra 33%), o que piorou é
+//     vermelho (a da cena 13: 62%, contra 80%), e o volume fica neutro (mais
+//     atendimento não é, sozinho, melhor nem pior).
+if (vale("14")) {
+  console.log("\n14. A faixa de cor e o selo da comparação nos cartões");
+  const cartoes = (page) => page.$$eval("[data-indicadores] [data-indicador]", (ns) => ns.map((n) => {
+    const f = n.querySelector("[data-faixa-do-indicador]"), c = n.querySelector("[data-comparacao-do-indicador]");
+    return { id: n.getAttribute("data-indicador"), faixa: f ? getComputedStyle(f).backgroundColor : null,
+             faixaNoTopo: f ? Math.abs(f.getBoundingClientRect().top - n.getBoundingClientRect().top) < 2 : false,
+             tom: c ? c.getAttribute("data-tom-da-comparacao") : null, cor: c ? getComputedStyle(c).color : null,
+             fundo: c ? getComputedStyle(c).backgroundColor : null, texto: c ? c.innerText.trim() : null };
+  }));
+  let { ctx, page, estouros } = await abrirPainel();
+  let L = await cartoes(page);
+  ok("todo cartão tem a faixa de cor no alto", L.length >= 4 && L.every((x) => x.faixa && x.faixaNoTopo), q(L));
+  const cores = new Set(L.map((x) => x.faixa));
+  ok("cada assunto com a sua cor (prazo, resposta, atendimentos, espera)", cores.size >= 4, q([...cores]));
+  const pz = L.find((x) => x.id === "prazo") || {};
+  ok("o prazo que melhorou: selo verde, com a mesma frase de antes",
+     pz.tom === "bom" && pz.cor === "rgb(1, 117, 97)" && pz.fundo !== "rgba(0, 0, 0, 0)" && /^↑ 28 pontos/.test(pz.texto || ""), q(pz));
+  const at = L.find((x) => x.id === "atendimentos") || {};
+  ok("os atendimentos: comparação neutra, sem selo colorido", at.tom === "neutro" && at.fundo === "rgba(0, 0, 0, 0)", q(at));
+  const es = L.find((x) => x.id === "esperando-agora") || {};
+  ok("a espera com atrasadas: faixa vermelha", es.faixa === "rgb(208, 59, 59)", q(es));
+  ok("sem estouro de JavaScript", estouros.length === 0, q(estouros));
+  await ctx.close();
+
+  ({ ctx, page, estouros } = await abrirPainel({ anteriorMaior: true, carteiraGrande: true }));
+  L = await cartoes(page);
+  const pz2 = L.find((x) => x.id === "prazo") || {};
+  ok("o prazo que piorou: selo vermelho", pz2.tom === "ruim" && pz2.cor === "rgb(198, 40, 40)" && /^↓ 18 pontos/.test(pz2.texto || ""), q(pz2));
+  await ctx.close();
+
+  ({ ctx, page, estouros } = await abrirPainel({ escuro: true }));
+  L = await cartoes(page);
+  const pz3 = L.find((x) => x.id === "prazo") || {};
+  ok("no tema escuro, o selo verde usa a letra verde do escuro", pz3.tom === "bom" && pz3.cor === "rgb(31, 191, 156)", q(pz3));
   await ctx.close();
 }
 

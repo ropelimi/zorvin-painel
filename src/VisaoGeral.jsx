@@ -178,7 +178,7 @@ function Indicadores({ C, V, estilos, p, c, quem, sou, nome, deIso, ateIso }) {
   if (prazo && prazo.julgados > 0) {
     lista.push(
       <Indicador key="prazo" C={C} estilos={estilos} id="prazo" rotulo="No prazo" valor={porcento(prazo.pct)} bruto={prazo.pct}
-        faisca={faiscaDoPrazo}
+        faisca={faiscaDoPrazo} cor={V.status.bom} tom={delta == null || delta === 0 ? "neutro" : delta > 0 ? "bom" : "ruim"}
         sub={<>{fmt(prazo.noPrazo)} de {fmt(prazo.julgados)} {prazo.julgados === 1 ? "cliente" : "clientes"}{limite ? <> · prazo de {limite} de expediente</> : null}</>}
         comparacao={delta == null ? null
           : delta === 0 ? <>igual ao período anterior</>
@@ -188,12 +188,12 @@ function Indicadores({ C, V, estilos, p, c, quem, sou, nome, deIso, ateIso }) {
   }
   if (pr && Number(pr.quantos) > 0) {
     lista.push(com052
-      ? <Indicador key="primeira" C={C} estilos={estilos} id="primeira-resposta" rotulo="1ª resposta"
+      ? <Indicador key="primeira" C={C} estilos={estilos} id="primeira-resposta" rotulo="1ª resposta" cor={V.categorias[6]}
           valor={tempoCurto(pr.mediana_expediente)} bruto={pr.mediana_expediente}
           sub={<>de expediente · a mediana de {fmt(pr.quantos)} {Number(pr.quantos) === 1 ? "cliente" : "clientes"}</>}
           comparacao={<>no relógio: {tempoCurto(pr.mediana)}</>}
           ajuda="Mediana do tempo entre o cliente abrir o atendimento e a primeira resposta da equipe, contando só o horário de expediente do departamento. No relógio, a noite, o fim de semana e o feriado entram na conta — e quem chega às 8h e responde a fila da noite parece lento." />
-      : <Indicador key="primeira" C={C} estilos={estilos} id="primeira-resposta" rotulo="1ª resposta"
+      : <Indicador key="primeira" C={C} estilos={estilos} id="primeira-resposta" rotulo="1ª resposta" cor={V.categorias[6]}
           valor={tempoCurto(pr.mediana)} bruto={pr.mediana}
           sub={<>no relógio, contando noite e fim de semana · a mediana de {fmt(pr.quantos)} {Number(pr.quantos) === 1 ? "cliente" : "clientes"}</>}
           ajuda="Mediana do tempo entre o cliente abrir o atendimento e a primeira resposta da equipe, no relógio." />);
@@ -204,7 +204,7 @@ function Indicadores({ C, V, estilos, p, c, quem, sou, nome, deIso, ateIso }) {
     const pct = va >= 10 ? Math.round(((vb - va) / va) * 100) : null;
     lista.push(
       <Indicador key="atendimentos" C={C} estilos={estilos} id="atendimentos" rotulo="Atendimentos" valor={fmt(t.atendimentos)} bruto={t.atendimentos}
-        faisca={faiscaDosAtendimentos}
+        faisca={faiscaDosAtendimentos} cor={V.situacao.em_atendimento}
         sub={<>{fmt(t.finalizados)} {Number(t.finalizados) === 1 ? "finalizado" : "finalizados"} · {fmt(t.em_atendimento)} em atendimento</>}
         comparacao={!a.existe ? null
           : pct != null && Math.abs(pct) <= 300
@@ -216,6 +216,7 @@ function Indicadores({ C, V, estilos, p, c, quem, sou, nome, deIso, ateIso }) {
   if (carteira) {
     lista.push(
       <Indicador key="esperando" C={C} estilos={estilos} id="esperando-agora" agora rotulo="Esperando resposta"
+        cor={carteira.atrasadas ? V.status.critico : V.status.atencao}
         valor={fmt(carteira.esperando)} bruto={carteira.esperando}
         sub={<><b style={{ color: carteira.atrasadas ? C.erroTexto : C.textPrimary }} data-atrasadas-do-indicador={carteira.atrasadas}>{fmt(carteira.atrasadas)}</b> {rotuloDasAtrasadas(dias).toLowerCase()}{carteira.de === "pessoa" ? <> · {carteiraDe({ sou, nome }, "na")}</> : null}</>}
         ajuda={`Conversas em que o cliente escreveu e ainda não teve resposta, agora${carteira.de === "pessoa" ? "" : " — com responsável ou não"}. Não usa o período. “${rotuloDasAtrasadas(dias)}” são as que esperam há ${dias} dias de calendário ou mais.`} />,
@@ -223,6 +224,7 @@ function Indicadores({ C, V, estilos, p, c, quem, sou, nome, deIso, ateIso }) {
     if (carteira.semDono) {
       lista.push(
         <Indicador key="sem-dono" C={C} estilos={estilos} id="sem-responsavel" agora rotulo="Sem responsável"
+          cor={V.situacao.sem_resposta}
           valor={fmt(carteira.semDono.conversas)} bruto={carteira.semDono.conversas}
           sub={<>{fmt(carteira.semDono.esperando)} esperando resposta</>}
           ajuda="Conversas abertas que ainda não têm responsável, agora. Quem responder primeiro assume — ou a distribuição automática, onde está ligada." />,
@@ -241,14 +243,25 @@ function Indicadores({ C, V, estilos, p, c, quem, sou, nome, deIso, ateIso }) {
  *  vizinhos ficarem na mesma altura), o número, e embaixo o que ele quer
  *  dizer. A marca "agora" vai na linha de baixo, e não no rótulo: no rótulo
  *  ela empurrava o ⓘ para uma segunda linha. */
-function Indicador({ C, estilos, id, rotulo, valor, bruto, sub, comparacao, ajuda, agora = false, faisca = null }) {
+function Indicador({ C, estilos, id, rotulo, valor, bruto, sub, comparacao, ajuda, agora = false, faisca = null,
+                     cor = null, tom = "neutro" }) {
+  // O SELO DA COMPARAÇÃO (23/11): verde quando o número foi para o lado bom,
+  // vermelho quando foi para o ruim, neutro quando não dá para dizer. O texto
+  // é o mesmo de antes: a cor é um reforço, e quem não a distingue lê a seta.
+  const selo = tom === "bom" ? { fundo: C.verdeFundo || "rgba(12,163,12,.12)", texto: C.verdeTexto }
+    : tom === "ruim" ? { fundo: C.erroFundo || "rgba(208,59,59,.12)", texto: C.erroTexto }
+    : null;
   return (
-    <div style={{ ...estilos.cartao, display: "flex", flexDirection: "column" }} data-indicador={id} data-valor={bruto == null ? "" : String(bruto)}>
+    <div style={{ ...estilos.cartao, display: "flex", flexDirection: "column", position: "relative", overflow: "hidden",
+                  paddingTop: 19 }}
+         data-indicador={id} data-valor={bruto == null ? "" : String(bruto)}>
+      {cor && <span aria-hidden="true" data-faixa-do-indicador
+                    style={{ position: "absolute", left: 0, right: 0, top: 0, height: 3, background: cor }} />}
       <div style={{ ...estilos.rotulo, display: "flex", alignItems: "center", gap: 5 }}>
         <span>{rotulo}</span>
         {ajuda && <span title={ajuda} style={{ display: "flex", cursor: "help", flexShrink: 0 }}><Info size={12} /></span>}
       </div>
-      <div style={estilos.valor} data-valor-do-indicador>{valor}</div>
+      <div style={{ ...estilos.valor, fontSize: 34, letterSpacing: -0.8 }} data-valor-do-indicador>{valor}</div>
       {(sub || agora) && (
         <div style={{ ...estilos.nota, marginTop: 4 }}>
           {agora && (
@@ -262,7 +275,15 @@ function Indicador({ C, estilos, id, rotulo, valor, bruto, sub, comparacao, ajud
           {sub}
         </div>
       )}
-      {comparacao && <div style={{ ...estilos.nota, marginTop: 2 }} data-comparacao-do-indicador>{comparacao}</div>}
+      {comparacao && (
+        <div style={{ ...estilos.nota, marginTop: 6 }}>
+          <span data-comparacao-do-indicador data-tom-da-comparacao={tom}
+                style={selo ? { display: "inline-block", background: selo.fundo, color: selo.texto, fontWeight: 600,
+                                borderRadius: 999, padding: "1px 8px", lineHeight: 1.6 } : undefined}>
+            {comparacao}
+          </span>
+        </div>
+      )}
       {faisca}
     </div>
   );

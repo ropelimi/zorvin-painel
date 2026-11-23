@@ -541,6 +541,35 @@ export default function PainelNumeros({ C: CDaTela, CClaro = null, modo: modoDaT
     }).map((s) => s.id);
     setComConteudo((v) => (v.join(",") === vis.join(",") ? v : vis));
   });
+  // A SEÇÃO À VISTA (23/11): o atalho dela fica aceso na barra, para quem
+  // rola a tela saber onde está numa página de nove seções. É a última seção
+  // cujo topo já passou da barra de filtros; no fim da página, a última.
+  const [secaoAtual, setSecaoAtual] = useState(null);
+  useEffect(() => {
+    const tela = telaRef.current;
+    if (!tela) return undefined;
+    let quadro = 0;
+    const medir = () => {
+      quadro = 0;
+      const barra = barraRef.current ? barraRef.current.offsetHeight : 0;
+      const topoDaTela = tela.getBoundingClientRect().top;
+      let atual = null;
+      for (const el of tela.querySelectorAll("[data-secao-do-painel]")) {
+        if (!el.offsetHeight) continue;
+        if (el.getBoundingClientRect().top - topoDaTela <= barra + 48) atual = el.getAttribute("data-secao-do-painel");
+      }
+      if (tela.scrollTop > 0 && tela.scrollTop + tela.clientHeight >= tela.scrollHeight - 4) {
+        const visiveis = [...tela.querySelectorAll("[data-secao-do-painel]")].filter((el) => el.offsetHeight);
+        if (visiveis.length) atual = visiveis[visiveis.length - 1].getAttribute("data-secao-do-painel");
+      }
+      setSecaoAtual((v) => (v === atual ? v : atual));
+    };
+    const aoRolar = () => { if (!quadro) quadro = requestAnimationFrame(medir); };
+    tela.addEventListener("scroll", aoRolar, { passive: true });
+    medir();
+    return () => { tela.removeEventListener("scroll", aoRolar); if (quadro) cancelAnimationFrame(quadro); };
+  }, []);
+
   const irPara = (id) => {
     const el = document.getElementById(`secao-do-painel-${id}`), tela = telaRef.current;
     if (!el || !tela) return;
@@ -643,9 +672,13 @@ export default function PainelNumeros({ C: CDaTela, CClaro = null, modo: modoDaT
                style={{ flex: "1 1 auto", minWidth: 0, display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none" }}>
             {comConteudo.length > 1 && SECOES_DO_PAINEL.filter((s) => comConteudo.includes(s.id)).map((s) => (
               <button key={s.id} onClick={() => irPara(s.id)} data-ir-para={s.id}
+                      aria-current={secaoAtual === s.id ? "true" : undefined}
+                      data-secao-atual={secaoAtual === s.id ? "sim" : undefined}
                       style={{ flexShrink: 0, minHeight: 28, padding: "3px 11px", borderRadius: 14, cursor: "pointer",
-                               border: `1px solid ${C.divider}`, background: C.headerBar, color: C.textSecondary,
-                               fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
+                               border: `1px solid ${secaoAtual === s.id ? C.greenDark : C.divider}`,
+                               background: secaoAtual === s.id ? C.greenDark : C.headerBar,
+                               color: secaoAtual === s.id ? "#fff" : C.textSecondary,
+                               fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", transition: "background .15s, color .15s" }}>
                 {s.curto}
               </button>
             ))}
@@ -1069,6 +1102,69 @@ function RelatorioSugestoes({ C, estilos, cores, leitura, souAdmin, meuId, aoEsc
    canal livre para repetir o que o comprimento já mostra (a régua do ranking
    de antes, que esta seção substitui). */
 const formatarColuna = (c, v) => (v == null ? "—" : c.tipo === "tempo" ? tempo(v) : numero(v));
+
+/* O PÓDIO DA EQUIPE (23/11) — "um ranking com os melhores", pedido do
+   Rodrigo. Os três primeiros da métrica escolhida, em cima das barras.
+
+   SÓ ONDE "PRIMEIRO" QUER DIZER "MELHOR": na carteira e no "Há +2 dias" o
+   primeiro é quem tem MAIS trabalho parado, e uma medalha ali seria um
+   prêmio pelo atraso (são as colunas sem posição, `semPosicao`). E só quem
+   entra na comparação (`baseDaComparacao`): quem não fez aquilo no período
+   não sobe ao pódio com zero, e a linha "pelo nome" (as mensagens de antes de
+   ago/2026, sem conta) não é uma pessoa. Com menos de duas pessoas na base,
+   não há o que comparar, e o pódio não aparece. */
+const MEDALHAS = [
+  { lugar: 1, cor: "#d4a017", fundo: "rgba(212,160,23,.14)" },
+  { lugar: 2, cor: "#8a97a3", fundo: "rgba(138,151,163,.16)" },
+  { lugar: 3, cor: "#b4763f", fundo: "rgba(180,118,63,.15)" },
+];
+function PodioDaEquipe({ C, col, linhas, barras, destaque, podeEscolher, aoEscolher }) {
+  if (!col || col.semPosicao || col.alerta) return null;
+  const base = new Set(baseDaComparacao(linhas, col.id).map((l) => l.chave));
+  const top = barras.filter((l) => base.has(l.chave)).slice(0, 3);
+  if (base.size < 2 || !top.length) return null;
+  // A ORDEM DO DESENHO é a de um pódio (2º, 1º, 3º); a do documento, a do
+  // ranking, para quem lê com leitor de tela ouvir o primeiro primeiro.
+  const ordemVisual = [1, 0, 2].filter((i) => i < top.length);
+  return (
+    <ol data-podio-da-equipe={col.id} aria-label={`Os três primeiros em ${col.rotulo}`}
+        style={{ listStyle: "none", margin: "0 auto 16px", padding: 0, display: "grid", gap: 10, maxWidth: 200 * top.length,
+                 gridTemplateColumns: `repeat(${top.length}, minmax(0, 1fr))`, alignItems: "end" }}>
+      {top.map((l, i) => {
+        const m = MEDALHAS[i];
+        const clica = podeEscolher && l.id && !l.pelonome;
+        const verde = destaque != null && l.id != null && String(l.id) === destaque;
+        const Caixa = clica ? "button" : "div";
+        return (
+          <li key={l.chave} data-lugar-do-podio={m.lugar} data-nome-do-podio={l.nome}
+              style={{ order: ordemVisual.indexOf(i), minWidth: 0 }}>
+            <Caixa onClick={clica ? () => aoEscolher(l.id) : undefined}
+                   title={`${m.lugar}º lugar · ${l.nome}: ${formatarColuna(col, l[col.id])}`}
+                   style={{ width: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column", alignItems: "center",
+                            gap: 4, padding: m.lugar === 1 ? "18px 8px 14px" : "12px 8px 12px", borderRadius: 12,
+                            border: `1px solid ${m.lugar === 1 ? m.cor : C.divider}`, background: m.fundo,
+                            cursor: clica ? "pointer" : "default", color: C.textPrimary, font: "inherit", textAlign: "center" }}>
+              <span aria-hidden="true"
+                    style={{ width: m.lugar === 1 ? 34 : 28, height: m.lugar === 1 ? 34 : 28, borderRadius: "50%", background: m.cor,
+                             color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+                             fontWeight: 800, fontSize: m.lugar === 1 ? 15 : 13, boxShadow: "0 1px 2px rgba(0,0,0,.15)" }}>
+                {m.lugar}º
+              </span>
+              <span style={{ fontSize: 13, fontWeight: verde ? 800 : 700, maxWidth: "100%", overflow: "hidden",
+                             textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {l.nome}{l.sou ? " (você)" : ""}
+              </span>
+              <span data-valor-do-podio style={{ fontSize: m.lugar === 1 ? 22 : 18, fontWeight: 800, letterSpacing: -0.4,
+                                                fontVariantNumeric: "tabular-nums" }}>
+                {formatarColuna(col, l[col.id])}
+              </span>
+            </Caixa>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 const posicaoPorExtenso = (p) => (p.posicao == null ? "" : `${p.posicao}º de ${p.de}`);
 
 function AEquipe({ C, estilos, cores, linhas, fontes, foraDaTabela, faltou, quem, meuId, podeEscolher, aoEscolher, dias }) {
@@ -1136,6 +1232,8 @@ function AEquipe({ C, estilos, cores, linhas, fontes, foraDaTabela, faltou, quem
               {col.tipo === "tempo" ? "mediana de cada pessoa · quanto menor, melhor · o mais rápido primeiro" : col.ajuda}
             </div>
           </div>
+          <PodioDaEquipe C={C} col={col} linhas={linhas} barras={barras} destaque={destaque}
+                         podeEscolher={podeEscolher} aoEscolher={aoEscolher} />
           {!barras.length && <div style={estilos.nota}>Ninguém tem este número no recorte.</div>}
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {barras.map((l) => {
