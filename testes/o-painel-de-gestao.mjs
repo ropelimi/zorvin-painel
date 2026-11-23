@@ -814,7 +814,8 @@ if (vale("10")) {
   ok("nem na carteira", (await page.locator("[data-podio-da-equipe]").count()) === 0);
 
   await clicar(page, '[data-metrica-da-equipe="finalizou"]');
-  ok("os lugares do pódio são botões para quem administra", (await podio()).every((x) => x.botao));
+  const lugares = await podio();
+  ok("os lugares do pódio são botões para quem administra", lugares.length > 0 && lugares.every((x) => x.botao), q(lugares));
   await clicar(page, '[data-podio-da-equipe] [data-lugar-do-podio="1"] button');
   const ficha = await page.locator("[data-ficha-da-pessoa]").innerText().catch(() => "");
   ok("clicar no 1º lugar escolhe a pessoa (a ficha dela abre)", ficha.includes(NOMES[JEN]), ficha.slice(0, 120));
