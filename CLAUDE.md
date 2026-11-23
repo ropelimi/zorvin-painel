@@ -9460,6 +9460,42 @@ sete (com a Visão geral primeiro), as nove colunas da equipe viraram dez (com
 a 1ª resposta em expediente), e quem volta ao alto é o atalho da Visão geral
 — o da equipe agora leva a seção dela para logo abaixo da barra.
 
+## O Painel premium: as cores dos cartões, o pódio e o atalho aceso (23/11)
+
+Pedido do Rodrigo: *"E a tela "Painel", quero que você melhore ela. Deixe ela
+uma tela premium, uma tela interativa, com os dados que mais importam
+apresentados em gráficos, com fácil entendimento do usuário que acessar a
+tela, prezando a qualidade dos dados com uma ótima experiência para o
+usuário."*
+
+**Nenhum número novo, e nenhuma ida a mais ao banco**: o que mudou é como os
+números de sempre se leem.
+
+| onde | o quê |
+|---|---|
+| os cartões da Visão geral | uma **faixa de cor no alto** de cada um (`data-faixa-do-indicador`), a cor do assunto: o prazo verde, a resposta roxa, os atendimentos azuis, quem espera âmbar (vermelho com atrasadas), sem responsável o âmbar escuro; o número maior (34) |
+| a comparação do prazo | um **selo** (`data-tom-da-comparacao`): verde quando melhorou, vermelho quando piorou, com a mesma frase ("↑ 28 pontos…"). Nos atendimentos a comparação fica neutra: mais atendimentos não é bom nem ruim |
+| a equipe | um **pódio** (`data-podio-da-equipe`) com os três primeiros da métrica escolhida, com medalhas, desenhado 2º-1º-3º. Quem administra clica num lugar e abre a ficha da pessoa |
+| os atalhos da barra | o da seção que está na tela fica **aceso** (`data-secao-atual`, `aria-current`) |
+
+- **O pódio só vale para desempenho**: na carteira e no "Há +2 dias" (volume
+  de trabalho, `semPosicao` e `alerta`) não há pódio, pela régua da posição de
+  05/11. Ele conta só quem está na base da comparação: a linha "pelo nome" e
+  quem não fez aquilo no período ficam de fora. Com menos de duas pessoas, não
+  aparece;
+- **a ordem do documento é a do ranking** (o 1º primeiro, para o leitor de
+  tela); a do desenho, a de um pódio, pelo `order` do CSS;
+- **as cores do status vêm com a seta e a frase**, nunca sozinhas.
+
+Prova: `o-painel-de-gestao`, cena 10, e `a-visao-geral-do-painel`, cena 14.
+**7 sabotagens e 7 pegas**, rodadas em cópias e lidas uma a uma: o pódio na
+carteira e nas atrasadas; o pódio com a linha "pelo nome"; o pódio na ordem
+do documento; sem a faixa; o tom sempre neutro; o tom invertido; sem o atalho
+aceso.
+
+**Fica de fora, e é decisão:** a ordem dos três lugares não é provada com
+três pessoas: na semente, cada métrica tem duas.
+
 ## O Painel sem as listas de protocolos e de registros (06/11)
 
 Pedido do Rodrigo: *"A tela "Painel" está com muita informação, tem coisa que

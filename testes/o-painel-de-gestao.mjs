@@ -29,6 +29,11 @@
 //   8. NO CELULAR: nada rola de lado, a barra não gruda, o ranking em duas
 //      linhas e as métricas numa linha;
 //   9. OS ATALHOS das seções levam a cada uma.
+//  10. O PÓDIO DA EQUIPE (23/11): os três primeiros da métrica escolhida, os
+//      mesmos das barras (sem a linha "pelo nome" e sem quem tem zero); o
+//      tempo pelo mais rápido; nenhum pódio na carteira e nas atrasadas
+//      (primeiro ali é quem tem mais trabalho parado); o clique escolhe a
+//      pessoa; e o atalho da seção à vista fica aceso na barra.
 import { abrirNavegador, ENDERECO, abrirATela } from "./navegador.mjs";
 
 let falhas = 0, feitas = 0;
@@ -40,7 +45,7 @@ const ok = (nome, cond, det = "") => {
 const q = (x) => JSON.stringify(x);
 const CENAS = (process.env.CENAS || "").split(",").map((s) => s.trim()).filter(Boolean);
 const vale = (cena) => !CENAS.length || CENAS.includes(cena);
-const TODAS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
+const TODAS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
 
 const nav = await abrirNavegador();
 // UM "AGORA" SÓ para a semente inteira — a lição das provas do "Já tratei".
@@ -766,6 +771,63 @@ if (vale("9")) {
   await clicar(page, '[data-ir-para="visao"]');
   await page.waitForTimeout(900);
   ok("e o da Visão geral volta ao alto", (await page.evaluate(() => document.querySelector('[data-tela="painel"]').scrollTop)) < 40);
+  ok("sem estouro de JavaScript", estouros.length === 0, q(estouros));
+  await ctx.close();
+}
+
+// ==================================================================
+if (vale("10")) {
+  console.log("\n10. O pódio da equipe, e o atalho da seção à vista");
+  const { ctx, page, estouros } = await abrirPainel();
+  const podio = () => page.$$eval("[data-podio-da-equipe] [data-lugar-do-podio]", (ns) => ns.map((n) => ({
+    lugar: n.getAttribute("data-lugar-do-podio"), nome: n.getAttribute("data-nome-do-podio"),
+    valor: (n.querySelector("[data-valor-do-podio]")?.innerText || "").trim(),
+    botao: Boolean(n.querySelector("button")), ordem: getComputedStyle(n).order })));
+  const peloNome = await page.$$eval("[data-tabela-da-equipe] [data-equipe-linha]", (ns) =>
+    ns.filter((n) => /pelo nome/.test(n.innerText)).map((n) => n.getAttribute("data-equipe-linha")));
+  // O PÓDIO É O COMEÇO DAS BARRAS, sem quem não é pessoa e sem quem tem zero.
+  const esperado = (b) => b.filter((x) => !peloNome.includes(x.nome) && Number(x.valor) > 0).slice(0, 3).map((x) => x.nome);
+
+  let b = await barras(page), p = await podio();
+  ok("o pódio aparece nos atendimentos", p.length > 0, q(p));
+  ok("com os três primeiros das barras, sem a linha “pelo nome”", q(p.map((x) => x.nome)) === q(esperado(b)),
+     q({ podio: p.map((x) => x.nome), barras: esperado(b) }));
+  ok("nos lugares 1, 2 e 3, na ordem do ranking", p.map((x) => x.lugar).join() === ["1", "2", "3"].slice(0, p.length).join(), q(p));
+  // DESENHADO COMO UM PÓDIO: o 2º à esquerda do 1º (e o 3º à direita, quando
+  // há três). A semente tem dois com atendimentos: o 3º só no tempo, abaixo.
+  ok("desenhado como um pódio: o 2º à esquerda do 1º", p.length >= 2 && p[0].ordem === "1" && p[1].ordem === "0"
+     && (p.length < 3 || p[2].ordem === "2"), q(p));
+  ok("o valor do 1º é o da primeira barra de pessoa", p[0] && b.find((x) => x.nome === p[0].nome)?.valor === p[0].valor.replace(/\./g, ""), q({ p: p[0], b }));
+
+  await clicar(page, '[data-metrica-da-equipe="finalizou"]');
+  p = await podio();
+  ok("no Finalizou, só quem finalizou algum: a Jenifer (2) e eu (1)",
+     q(p.map((x) => [x.lugar, x.nome, x.valor])) === q([["1", NOMES[JEN], "2"], ["2", NOMES[EU], "1"]]), q(p));
+
+  await clicar(page, '[data-metrica-da-equipe="resposta"]');
+  b = await barras(page); p = await podio();
+  ok("no tempo de resposta, o mais rápido em 1º", p.length > 0 && q(p.map((x) => x.nome)) === q(esperado(b)), q({ p, b }));
+
+  await clicar(page, '[data-metrica-da-equipe="atrasadas"]');
+  ok("nas atrasadas não há pódio (primeiro ali é quem tem mais parado)", (await page.locator("[data-podio-da-equipe]").count()) === 0);
+  await clicar(page, '[data-metrica-da-equipe="carteira"]');
+  ok("nem na carteira", (await page.locator("[data-podio-da-equipe]").count()) === 0);
+
+  await clicar(page, '[data-metrica-da-equipe="finalizou"]');
+  const lugares = await podio();
+  ok("os lugares do pódio são botões para quem administra", lugares.length > 0 && lugares.every((x) => x.botao), q(lugares));
+  await clicar(page, '[data-podio-da-equipe] [data-lugar-do-podio="1"] button');
+  const ficha = await page.locator("[data-ficha-da-pessoa]").innerText().catch(() => "");
+  ok("clicar no 1º lugar escolhe a pessoa (a ficha dela abre)", ficha.includes(NOMES[JEN]), ficha.slice(0, 120));
+
+  // O ATALHO À VISTA: no alto, a Visão geral; depois de ir à equipe, a equipe.
+  await page.evaluate(() => document.querySelector("[data-tela=painel]").scrollTo({ top: 0 }));
+  await page.waitForTimeout(500);
+  const atual = () => page.$$eval("[data-ir-para][aria-current=true]", (ns) => ns.map((n) => n.getAttribute("data-ir-para")));
+  ok("no alto da tela, o atalho aceso é o da Visão geral", q(await atual()) === q(["visao"]), q(await atual()));
+  await clicar(page, '[data-ir-para="equipe"]');
+  await page.waitForTimeout(1500);
+  ok("depois de ir à equipe, o aceso é o da equipe (um só)", q(await atual()) === q(["equipe"]), q(await atual()));
   ok("sem estouro de JavaScript", estouros.length === 0, q(estouros));
   await ctx.close();
 }
