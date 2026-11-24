@@ -821,6 +821,12 @@ function faltaAFuncao(erro) {
     || /could not find the function/i.test(String(erro.message || ""));
 }
 
+// OS FILTROS DA LISTA QUE SAÍRAM: "minhas" (06/11, o seletor de responsáveis
+// faz o mesmo) e "favoritas" (24/11, a equipe não usava). A foto da tela que a
+// atualização sozinha guarda pode trazer um deles, e a página nova volta em
+// "Tudo" em vez de desenhar um filtro que não existe mais.
+const FILTROS_QUE_SAIRAM = ["minhas", "favoritas"];
+
 // A CHAVE DA PERGUNTA QUE O FILTRO DA LISTA FAZ AO BANCO (auditoria de 28/10)
 // — a mesma conta no efeito que pergunta e na frase que espera a resposta (ver
 // `perguntasDoFiltro`). A pasta de arquivadas só entra na chave dos filtros que
@@ -828,11 +834,11 @@ function faltaAFuncao(erro) {
 // dentro e fora dela.
 //
 // E OS RESPONSÁVEIS ESCOLHIDOS NO ALTO (04/11) entram na chave dos mesmos
-// filtros que a pasta: os que perguntam pelas não lidas, as favoritas e as
-// arquivadas, e só eles mandam a escolha ao banco. Nos outros, a chave com a
+// filtros que a pasta: os que perguntam pelas não lidas e pelas arquivadas, e
+// só eles mandam a escolha ao banco. Nos outros, a chave com a
 // escolha ficaria esperando uma resposta que nunca sai.
 function chaveDoFiltro(filtro, arquivadas, advId, responsaveis = "") {
-  const pelaPasta = filtro === "tudo" || filtro === "naolidas" || filtro === "favoritas";
+  const pelaPasta = filtro === "tudo" || filtro === "naolidas";
   return `${filtro}|${pelaPasta && arquivadas ? "arquivadas" : ""}|${advId || ""}|${pelaPasta ? responsaveis : ""}`;
 }
 
@@ -4477,10 +4483,11 @@ export default function Painel({ sessao }) {
   const marcosRef = useRef({ convId: null, lista: [] });
   // RELER OS MARCOS — preenchido logo depois de `carregarMensagens`.
   const relerMarcosRef = useRef(() => {});
-  // "minhas" saiu da gaveta em 06/11: a aba que se atualizou com ele ligado
-  // volta em "Tudo", e não num filtro que a tela não sabe mais desenhar.
+  // "minhas" saiu da gaveta em 06/11, e "favoritas" da fita em 24/11: a aba
+  // que se atualizou com um deles ligado volta em "Tudo", e não num filtro
+  // que a tela não sabe mais desenhar.
   const [filtro, setFiltro] = useState(() => (fotoDaRecarga && typeof fotoDaRecarga.filtro === "string" && fotoDaRecarga.filtro
-    && fotoDaRecarga.filtro !== "minhas" ? fotoDaRecarga.filtro : "tudo")); // aba/filtro da lista: 'tudo' | 'naolidas' | 'favoritas' | 'tag:<id>' | 'frente:<FRENTE>'
+    && !FILTROS_QUE_SAIRAM.includes(fotoDaRecarga.filtro) ? fotoDaRecarga.filtro : "tudo")); // aba/filtro da lista: 'tudo' | 'naolidas' | 'tag:<id>' | 'frente:<FRENTE>'
   // O filtro de agora, para quem é chamado fora do desenho (a releitura das
   // tarefas depois de um clique).
   const filtroRef = useRef("tudo");
@@ -6259,12 +6266,12 @@ export default function Painel({ sessao }) {
   // É a armadilha nº 2 com outra roupa: ausência desenhada no lugar de
   // "ainda não perguntei".
   const [extrasGrupo, setExtrasGrupo] = useState([]);
-  // AS NÃO LIDAS, AS FAVORITAS E AS ARQUIVADAS QUE AS PÁGINAS LIDAS NÃO TÊM
-  // (auditoria de 28/10) — o desenho de `extrasGrupo`. As três são uma marca
-  // na própria linha, e a tela as procurava só nas páginas carregadas: a
-  // favorita da posição 450 não aparecia, a pasta dizia "Nenhuma conversa
-  // arquivada." logo abaixo da linha "Arquivadas 1", e na ordem "Antigas" a
-  // pílula dizia "Não lidas 500" sobre uma lista vazia.
+  // AS NÃO LIDAS E AS ARQUIVADAS QUE AS PÁGINAS LIDAS NÃO TÊM (auditoria de
+  // 28/10) — o desenho de `extrasGrupo`. As duas são uma marca na própria
+  // linha, e a tela as procurava só nas páginas carregadas: a pasta dizia
+  // "Nenhuma conversa arquivada." logo abaixo da linha "Arquivadas 1", e na
+  // ordem "Antigas" a pílula dizia "Não lidas 500" sobre uma lista vazia.
+  // (As favoritas também passavam por aqui, até saírem em 24/11.)
   const [extrasMarcadas, setExtrasMarcadas] = useState([]);
   // AS PERGUNTAS QUE OS FILTROS DA LISTA FAZEM AO BANCO (auditoria de 28/10):
   // `{ [chave]: { estado, codigo, cortou } }`, e `estado` é "procurando",
@@ -6611,13 +6618,13 @@ export default function Painel({ sessao }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtro, advogadoId, tentativaDosFiltros]);
 
-  // AS NÃO LIDAS, AS FAVORITAS E AS ARQUIVADAS — ver `extrasMarcadas`
+  // AS NÃO LIDAS E AS ARQUIVADAS — ver `extrasMarcadas`
   // (auditoria de 28/10). Pela régua das minhas: COM ORDEM (a da lista) e com
   // teto, e o teto é dito.
   useEffect(() => {
     let cancelado = false;
     setExtrasMarcadas([]);
-    const pelaMarca = filtro === "naolidas" || filtro === "favoritas";
+    const pelaMarca = filtro === "naolidas";
     if (!advogadoId || !(pelaMarca || (verArquivadas && filtro === "tudo"))) {
       limparFalhaDeLeitura("filtro-marcadas");
       return;
@@ -6634,15 +6641,14 @@ export default function Painel({ sessao }) {
         .eq("advogado_id", advId), escolhidosDaLista);
       if (verArquivadas) q = q.eq("arquivada", true);
       if (filtro === "naolidas") q = q.gt("nao_lidas", 0);
-      if (filtro === "favoritas") q = q.eq("favorita", true);
       const { data, error } = await q.order("ultima_atividade", { ascending: ordem === "antigas" })
         .order("id").limit(500);
       if (cancelado || advogadoIdRef.current !== advId) return;
       // A COLUNA QUE NÃO EXISTE é ausência de verdade, e não falha: num banco
-      // sem `favorita` não há favorita nenhuma para trazer.
+      // sem `arquivada` não há arquivada nenhuma para trazer.
       if (error && !faltaColuna(error)) {
         anotarFalhaDeLeitura("filtro-marcadas", verArquivadas && filtro === "tudo" ? "as conversas arquivadas"
-          : filtro === "naolidas" ? "as conversas não lidas" : "as favoritas", error);
+          : "as conversas não lidas", error);
         marcarPergunta(chave, "falhou", error);
         return;
       }
@@ -10191,7 +10197,6 @@ export default function Painel({ sessao }) {
             ultima_mensagem: cv.ultima_mensagem,
             ultima_atividade: cv.ultima_atividade,
             nao_lidas: cv.nao_lidas,
-            favorita: cv.favorita,
             arquivada: cv.arquivada,
             // Fixar vale para a equipe toda, então quem fixou de outra máquina
             // tem de subir aqui também. O `??` é para a base que ainda não tem a
@@ -12389,10 +12394,10 @@ export default function Painel({ sessao }) {
   }
 
   // ============================================================
-  //  AS QUATRO MARCAS DA CONVERSA, NUM CAMINHO SÓ
+  //  AS MARCAS DA CONVERSA, NUM CAMINHO SÓ
   //
-  //  Não lida, favorita, fixada e arquivada são o mesmo gesto com quatro
-  //  nomes: acerta a tela na hora, grava, e desfaz se o banco não gravar.
+  //  Não lida, fixada e arquivada (e a favorita, até 24/11) são o mesmo
+  //  gesto com nomes diferentes: acerta a tela na hora, grava, e desfaz se o banco não gravar.
   //  Estava escrito quatro vezes, e as quatro cópias tinham o MESMO furo —
   //  conferiam só o `error`. Um `update` barrado pela regra de acesso não
   //  devolve erro: ele atualiza zero linhas e responde "pronto" (ver
@@ -12811,21 +12816,9 @@ export default function Painel({ sessao }) {
     });
   }
 
-  // Favoritar / desfavoritar uma conversa (aba "Favoritas").
-  async function alternarFavorita(conv) {
-    setMenuConversa(null);
-    const novo = !conv.favorita;
-    await gravarMarcaDaConversa(conv, { favorita: novo }, {
-      certo: novo ? "Adicionada aos favoritos" : "Removida dos favoritos",
-      erro: "Não consegui favoritar. Rode o SQL da coluna 'favorita'.",
-      recusado: "O banco não deixou favoritar. A marca não ficou.",
-    });
-  }
-
   // FIXAR uma conversa no alto da lista.
   //
-  // Diferente de favoritar: favorito é uma ABA, uma gaveta que se abre quando se
-  // quer; fixar é uma conversa que fica à vista todo dia, acima das outras,
+  // Fixar é uma conversa que fica à vista todo dia, acima das outras,
   // mesmo quando não é a mais recente. Quem atende uma negociação em curso não
   // quer procurá-la de novo a cada mensagem nova que chega de outra pessoa.
   async function alternarFixada(conv) {
@@ -14678,7 +14671,6 @@ export default function Painel({ sessao }) {
     // escolher uma delas seria estreitar a tela sem motivo.
     if (idsQuem && !idsQuem.has(String(c.id))) return false;
     if (filtro === "naolidas") return (c.nao_lidas || 0) > 0;
-    if (filtro === "favoritas") return !!c.favorita;
     // OS GRUPOS SE RECONHECEM NA PRÓPRIA LINHA — não é preciso perguntar ao
     // banco para saber se uma conversa JÁ CARREGADA é de grupo. O banco entra
     // noutro lugar (`extrasGrupo`), e só para trazer os que não couberam nas
@@ -14729,7 +14721,7 @@ export default function Painel({ sessao }) {
   // e os filtros emendam conversas que a lista não tem, e a leitura das
   // etiquetas só conhecia a lista. Pelos ids, como `idsDaLista`: o tempo real
   // muda `conversas` a cada aviso, e só um conjunto NOVO de conversas pede
-  // as etiquetas de novo. (As não lidas, as favoritas e as arquivadas de fora
+  // as etiquetas de novo. (As não lidas e as arquivadas de fora
   // das páginas entram também — `extrasMarcadas`, auditoria de 28/10.)
   const idsDosExtras = useMemo(() => {
     const naLista = new Set(conversas.map((c) => String(c.id)));
@@ -15628,7 +15620,7 @@ export default function Painel({ sessao }) {
     // e o de baixo custaria um `Set` sobre a lista inteira a cada redesenho —
     // trabalho de sobra em cima do caminho mais quente que esta tela tem.
     if (!busca.trim() && !filtro.startsWith("tag:") && filtro !== "grupos"
-        && filtro !== "tarefas" && filtro !== "naolidas" && filtro !== "favoritas"
+        && filtro !== "tarefas" && filtro !== "naolidas"
         && !verArquivadas && !quemFiltra.length) return daLista;
     // As que vieram do banco e não estavam na lista. Entram na mesma ordem de
     // sempre — fixada em cima, depois recente primeiro —, e não emendadas no
@@ -15787,14 +15779,14 @@ export default function Painel({ sessao }) {
   // 28/10) — ver `perguntasDoFiltro`. Sem resposta guardada para a chave de
   // agora, ela ainda não voltou: "procurando".
   const filtroPerguntaAoBanco = filtro === "grupos" || filtro === "tarefas"
-    || filtro === "naolidas" || filtro === "favoritas" || filtro.startsWith("tag:") || (verArquivadas && filtro === "tudo");
+    || filtro === "naolidas" || filtro.startsWith("tag:") || (verArquivadas && filtro === "tudo");
   const perguntaDaLista = filtroPerguntaAoBanco
     ? perguntasDoFiltro[chaveDoFiltro(filtro, verArquivadas, advogadoId, responsaveisDaLista)] || { estado: "procurando", codigo: "", cortou: 0 }
     : null;
   const oQueOFiltroProcura = verArquivadas && filtro === "tudo" ? "as conversas arquivadas"
     : filtro === "grupos" ? "os grupos"
     : filtro === "tarefas" ? "as conversas com tarefa para hoje" : filtro === "naolidas" ? "as conversas não lidas"
-    : filtro === "favoritas" ? "as favoritas" : "as conversas desta etiqueta";
+    : "as conversas desta etiqueta";
   // A FRASE DA LISTA QUE NÃO VEIO, escrita uma vez para as duas portas por
   // onde ela chega (a lista vazia e a lista filtrada vazia, logo abaixo).
   const listaQueFalhou = ["falhou", `Não consegui carregar as conversas deste telefone${falhasDeLeitura.conversas?.codigo
@@ -15850,10 +15842,9 @@ export default function Painel({ sessao }) {
     // para sempre. Auditoria de 28/10.)
     : filtro === "tarefas" ? ["sem-tarefas-hoje", "Nenhuma conversa deste telefone com tarefa para hoje ou atrasada."]
     // OS FILTROS FALAM DO QUE A PESSOA PEDIU (auditoria de 27/10): com "Não
-    // lidas", "Favoritas" ou uma etiqueta ligados, a lista vazia dizia "Nenhuma
+    // lidas" ou uma etiqueta ligados, a lista vazia dizia "Nenhuma
     // conversa ainda" — sobre o telefone inteiro, que ela acabou de ver cheio.
     : filtro === "naolidas" ? ["sem-nao-lidas", "Nenhuma conversa com mensagem por ler nesta aba."]
-    : filtro === "favoritas" ? ["sem-favoritas", "Nenhuma conversa favorita nesta aba. Marque uma pelo menu ⋮ dela."]
     : filtro.startsWith("tag:") ? ["sem-etiqueta", "Nenhuma conversa com esta etiqueta neste telefone."]
     : temSituacao === true && filtro === "tudo" && ABA_VAZIA[abaSituacao]
       ? [`sem-conversa-${abaSituacao}`, ABA_VAZIA[abaSituacao]]
@@ -15873,12 +15864,12 @@ export default function Painel({ sessao }) {
   // trouxeram tudo o que casa. Deixar o "+" ali diria que ainda falta alguma
   // coisa — e quem estivesse conferindo uma etiqueta não saberia se o número
   // na tela é o número de verdade.
-  // AS NÃO LIDAS, AS FAVORITAS E A PASTA TAMBÉM (auditoria de 28/10):
+  // AS NÃO LIDAS E A PASTA TAMBÉM (auditoria de 28/10):
   // perguntam ao banco agora, e "0 de 0+ conversas" era a página carregada
   // falando pelo filtro.
   const listaPodeCrescer = !busca.trim() && !filtro.startsWith("tag:")
     && filtro !== "grupos" && filtro !== "tarefas"
-    && filtro !== "naolidas" && filtro !== "favoritas" && !verArquivadas && !quemFiltra.length;
+    && filtro !== "naolidas" && !verArquivadas && !quemFiltra.length;
 
   // Não lidas de cada advogado, para o selo na barra lateral.
   // Para o advogado atual usamos a lista já carregada (que zera a conversa
@@ -18596,7 +18587,8 @@ export default function Painel({ sessao }) {
             tela quebrada. Esmaecer a borda não resolveu: o traço colorido
             atravessa o esmaecido e termina em seco.
 
-            Com três pílulas fixas mais uma de etiquetas, a linha CABE, e o que
+            Com duas pílulas fixas (eram três até as Favoritas saírem, em
+            24/11) mais uma de etiquetas, a linha CABE, e o que
             não couber quebra para baixo (`wrap`) em vez de ser cortado. E o
             menu resolve um problema que a fita tinha de nascença: etiqueta que
             ficava depois da dobra era invisível — para filtrar por ela, a
@@ -18604,7 +18596,10 @@ export default function Painel({ sessao }) {
         {/* `position: relative` NA FITA, e não na pílula — ver o menu de mais
             filtros logo abaixo. */}
         <div data-fita-de-filtros style={{ position: "relative", display: "flex", flexWrap: "wrap", gap: 5, padding: "0 12px 7px", background: C.panel }}>
-          {[["tudo", "Tudo"], ["naolidas", `Não lidas${totalNaoLidasLista ? " " + totalNaoLidasLista : ""}`], ["favoritas", "Favoritas"]].map(([k, label]) => {
+          {/* "FAVORITAS" SAIU EM 24/11, a pedido do Rodrigo ("não usamos essa
+              função"), junto com o "Adicionar aos favoritos" do menu da
+              conversa e a estrela da linha: era o único uso da marca. */}
+          {[["tudo", "Tudo"], ["naolidas", `Não lidas${totalNaoLidasLista ? " " + totalNaoLidasLista : ""}`]].map(([k, label]) => {
             const ativo = filtro === k;
             return (
               <button key={k} data-aba={k} onClick={() => setFiltro(k)} style={{ flexShrink: 0, minHeight: 30, border: `1px solid ${ativo ? C.greenDark : C.divider}`, background: ativo ? C.greenDark : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 20, padding: "4px 11px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
@@ -19006,14 +19001,13 @@ export default function Painel({ sessao }) {
               // AS TECLAS SÃO DA LINHA, e não dos filhos dela (auditoria de
               // 28/10): o Enter e o Espaço no ⌄ (e nos itens do menu dele)
               // subiam até aqui, o `preventDefault` cancelava o botão e a
-              // conversa abria no lugar do menu — e Fixar, Favoritar e Arquivar
+              // conversa abria no lugar do menu — e Fixar e Arquivar
               // só existem nele.
               <div key={c.id} data-conversa-nome={nome} data-conversa-id={c.id} role="button" tabIndex={0} onKeyDown={(e) => { if (e.target !== e.currentTarget) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrirConversa(c); } }} onClick={() => abrirConversa(c)} onMouseEnter={() => setConvHover(c.id)} onMouseLeave={() => setConvHover((h) => (h === c.id ? null : h))} style={{ position: "relative", width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: estreito ? 10 : 12, padding: estreito ? "10px 8px" : "10px 14px", background: c.id === conversaId ? C.listActive : (convHover === c.id ? C.divider : C.panel), borderBottom: `1px solid ${C.divider}`, cursor: "pointer", color: C.textPrimary }}>
                 <Avatar nome={nome} foto={c.contato?.foto_url} size={48} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
                     <span style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
-                      {c.favorita && <Star size={13} color="#f5c518" fill="#f5c518" style={{ flexShrink: 0 }} />}
                       {/* A DICA AO PASSAR O MOUSE. O nome e a prévia cabem
                           numa linha e são cortados com reticências —
                           "Procurações e Documentos(…" não diz de qual pasta é,
@@ -19176,9 +19170,6 @@ export default function Painel({ sessao }) {
                     </button>
                     <button onClick={(e) => { e.stopPropagation(); alternarFixada(c); }} style={{ width: "100%", textAlign: "left", padding: "10px 14px", border: "none", background: C.panel, cursor: "pointer", color: C.textPrimary, fontSize: 14 }}>
                       {c.fixada ? "Desafixar" : "Fixar no topo"}
-                    </button>
-                    <button onClick={(e) => { e.stopPropagation(); alternarFavorita(c); }} style={{ width: "100%", textAlign: "left", padding: "10px 14px", border: "none", background: C.panel, cursor: "pointer", color: C.textPrimary, fontSize: 14 }}>
-                      {c.favorita ? "Remover dos favoritos" : "Adicionar aos favoritos"}
                     </button>
                     <button onClick={(e) => { e.stopPropagation(); alternarArquivada(c, !c.arquivada); }} style={{ width: "100%", textAlign: "left", padding: "10px 14px", border: "none", borderTop: `1px solid ${C.divider}`, background: C.panel, cursor: "pointer", color: C.textPrimary, fontSize: 14 }}>
                       {c.arquivada ? "Desarquivar" : "Arquivar"}

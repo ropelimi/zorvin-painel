@@ -6,7 +6,8 @@
 //   * ENTER E ESPAÇO NO ⌄ DA LINHA ABRIAM A CONVERSA, e não o menu. A linha
 //     trata as teclas para abrir a conversa e chamava `preventDefault()` para
 //     QUALQUER filho — inclusive o ⌄ e os itens do menu dele —, cancelando a
-//     ativação do botão. E Fixar, Favoritar e Arquivar só existem nesse menu.
+//     ativação do botão. E Fixar e Arquivar só existem nesse menu (Favoritar
+//     também, até sair em 24/11).
 //
 //   * ITENS CLICÁVEIS QUE O TAB NÃO ALCANÇAVA: a Mídia da barra (a única
 //     entrada para o acervo), entrar e sair das arquivadas, os contatos e as
@@ -111,12 +112,17 @@ console.log("\n1. O ⌄ da linha abre o menu pelo teclado — e não a conversa"
   await page.waitForTimeout(300);
   ok("e Espaço também abre", (await menu.count()) === 1);
   ok("ainda sem abrir a conversa", (await conversaAberta(page)) === 0);
-  const favoritar = page.locator('[data-conversa-id="cv-teclado"] button', { hasText: "Adicionar aos favoritos" });
-  ok("“Adicionar aos favoritos” recebe o foco", await focar(page, favoritar));
+  // "Adicionar aos favoritos" saiu do menu em 24/11 (a equipe não usava as
+  // Favoritas). A conferência foi INVERTIDA, e não apagada: o item não volta,
+  // e o gesto pelo teclado passou para "Fixar no topo", que ficou.
+  ok("o menu não oferece mais “Adicionar aos favoritos”",
+     (await page.locator('[data-conversa-id="cv-teclado"] button', { hasText: "favoritos" }).count()) === 0);
+  const fixar = page.locator('[data-conversa-id="cv-teclado"] button', { hasText: "Fixar no topo" });
+  ok("“Fixar no topo” recebe o foco", await focar(page, fixar));
   await page.keyboard.press("Enter");
   await page.waitForTimeout(1200);
-  const favorita = await page.evaluate(() => !!(globalThis.__TABELAS.conversas.find((c) => c.id === "cv-teclado") || {}).favorita);
-  ok("Enter nele favorita a conversa", favorita);
+  const fixada = await page.evaluate(() => !!(globalThis.__TABELAS.conversas.find((c) => c.id === "cv-teclado") || {}).fixada);
+  ok("Enter nele fixa a conversa", fixada);
   ok("e a conversa continua fechada", (await conversaAberta(page)) === 0);
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();

@@ -15,7 +15,8 @@
 //     "nenhuma" logo abaixo dela (a etiqueta), ou "Procurando…" para sempre
 //     (as tarefas);
 //   * "Favoritas" e "Não lidas" nem perguntavam: olhavam só as páginas
-//     carregadas. A favorita da posição 450 não aparecia, e na ordem
+//     carregadas (as Favoritas saíram em 24/11). A favorita da posição 450
+//     não aparecia, e na ordem
 //     "Antigas" a pílula dizia "Não lidas 500" sobre uma lista que dizia
 //     "Nenhuma conversa ainda." e "0 de 0+ conversas";
 //   * a pasta de arquivadas, pelo mesmo caminho, dizia "Nenhuma conversa
@@ -256,52 +257,59 @@ console.log("\n6. “Tentar de novo” relê a etiqueta");
 }
 
 // ==================================================================
-console.log("\n7. “Favoritas” e a pasta de arquivadas perguntam ao banco");
+console.log("\n7. “Favoritas” saiu da fita (24/11), e a pasta de arquivadas pergunta ao banco");
+// INVERTIDA, e não apagada: a cena conferia que "Favoritas" trazia a favorita
+// da posição 450. O filtro saiu (a equipe não usava), e o que fica é a
+// garantia de que ele não volta: nenhuma pílula, e a favorita de fora das
+// páginas não é trazida por filtro nenhum. A pasta de arquivadas continua
+// perguntando ao banco, e o rodapé dela não promete mais com o "+".
 {
   const { ctx, page, estouros } = await abrir();
-  // A FAVORITA NA POSIÇÃO 450 — três páginas além da que a lista trouxe.
   await page.evaluate(() => { globalThis.__TABELAS.conversas.find((c) => c.id === "a13-c450").favorita = true; });
   ok("fui ao telefone de 1.200 conversas", await irPara(page, "Arquivo"));
-  ok("a favorita não está entre as carregadas", !(await idsNaLista(page)).includes("a13-c450"));
-  ok("escolhi “Favoritas”", await clicar(page, '[data-aba="favoritas"]'));
-  await page.waitForTimeout(3000);
-  ok("a favorita da posição 450 aparece", (await idsNaLista(page)).includes("a13-c450"), JSON.stringify(await idsNaLista(page)));
-  // O "+" É A PÁGINA CARREGADA FALANDO PELO FILTRO: com o banco já perguntado,
-  // não há mais nada a buscar por ele. Era "0 de 0+" com a lista vazia; com as
-  // linhas de fora trazidas, seria "1 de 1+" — a mesma promessa falsa.
-  const rodape = await page.locator('[data-teste="fim-da-lista"]').innerText().catch(() => "");
-  ok("e o rodapé não promete mais com o “+” — nem “0 de 0+”", !/\+/.test(rodape), rodape);
+  ok("a fita tem “Tudo” e “Não lidas”", (await page.locator('[data-fita-de-filtros] [data-aba="tudo"]').count()) === 1
+     && (await page.locator('[data-fita-de-filtros] [data-aba="naolidas"]').count()) === 1);
+  ok("e não oferece mais “Favoritas”", (await page.locator('[data-aba="favoritas"]').count()) === 0
+     && !/Favoritas/.test(await page.locator("[data-fita-de-filtros]").innerText().catch(() => "")));
+  ok("a favorita da posição 450 continua fora da lista", !(await idsNaLista(page)).includes("a13-c450"));
 
-  await clicar(page, '[data-aba="tudo"]');
-  await page.waitForTimeout(800);
   ok("entrei nas arquivadas", await clicar(page, 'text="Arquivadas"'));
   await page.waitForTimeout(3000);
   ok("a arquivada de duzentos dias atrás aparece, e não “Nenhuma conversa arquivada.”",
      (await idsNaLista(page)).includes("a13-arquivada"), `${await marca(page)} ${JSON.stringify(await idsNaLista(page))}`);
+  // O "+" É A PÁGINA CARREGADA FALANDO PELO FILTRO: com o banco já perguntado,
+  // não há mais nada a buscar por ele. Conferido aqui na pasta, que pergunta
+  // ao banco do mesmo jeito que "Favoritas" perguntava.
+  const rodape = await page.locator('[data-teste="fim-da-lista"]').innerText().catch(() => "");
+  ok("e o rodapé da pasta não promete mais com o “+”", !/\+/.test(rodape), rodape);
   ok("e nada de faixa, com tudo respondendo", (await faixa(page)) === 0);
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }
 
 // ==================================================================
-console.log("\n8. “Favoritas” num telefone sem nenhuma, e com o banco falhando");
+console.log("\n8. “Não lidas” num telefone sem nenhuma, e com o banco falhando");
+// Era a cena das Favoritas; a régua (procurando, a frase do filtro, e a falha
+// que não vira "nenhuma") é a mesma, e passou para o filtro que ficou.
 {
   const { ctx, page, estouros } = await abrir();
+  await page.evaluate(() => { for (const c of globalThis.__TABELAS.conversas) c.nao_lidas = 0; });
+  ok("fui a um telefone sem nenhuma não lida", await irPara(page, "Acordos 2"));
   await lento(page, "conversas", 2500);
-  ok("escolhi “Favoritas”", await clicar(page, '[data-aba="favoritas"]'));
+  ok("escolhi “Não lidas”", await clicar(page, '[data-aba="naolidas"]'));
   await page.waitForTimeout(600);
   ok("com o banco no ar, a lista diz que procura", (await marca(page)) === "procurando-filtro", String(await marca(page)));
   await page.waitForTimeout(4500);
   const r = await recado(page);
-  ok("com a resposta, a frase é das favoritas, e não “Nenhuma conversa ainda.”", r && r.marca === "sem-favoritas", JSON.stringify(r));
+  ok("com a resposta, a frase é das não lidas, e não “Nenhuma conversa ainda.”", r && r.marca === "sem-nao-lidas", JSON.stringify(r));
 
   await normal(page);
   await clicar(page, '[data-aba="tudo"]');
   await page.waitForTimeout(600);
   await quebrar(page, ["conversas"]);
-  await clicar(page, '[data-aba="favoritas"]');
+  await clicar(page, '[data-aba="naolidas"]');
   await page.waitForTimeout(2500);
-  ok("a leitura que falhou não vira “nenhuma favorita”", (await marca(page)) === "falhou-filtro", String(await marca(page)));
+  ok("a leitura que falhou não vira “nenhuma não lida”", (await marca(page)) === "falhou-filtro", String(await marca(page)));
   ok("e a faixa âmbar acende", (await faixa(page)) === 1);
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
