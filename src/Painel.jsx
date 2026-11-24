@@ -13,7 +13,8 @@ import {
   Image as ImageIcon, Video,
   Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote, Volume2,
   ListChecks, Undo2, UserCheck, SquareKanban, BellRing, BellPlus, CircleCheck, RotateCcw,
-  Loader2, Headset, Hourglass, ScrollText, AlarmClock, RefreshCw, PhoneCall, Phone
+  Loader2, Headset, Hourglass, ScrollText, AlarmClock, RefreshCw, PhoneCall, Phone,
+  Keyboard, SendHorizontal, Zap
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
@@ -1080,6 +1081,15 @@ function acordarPonte() {
 // no escuro; letra de 11px nesse contraste é o tipo de coisa que só quem tem
 // vinte anos e um monitor bom consegue ler. `horaNaoLida` existe separado
 // porque ela aparece sobre DOIS fundos (a linha comum e a selecionada).
+// O QUE O SELETOR DE ARQUIVOS PEDE, por botão (ver `escolherArquivos`). "tudo"
+// é o de sempre, o do clipe; os outros são os do "+" do celular.
+const ACEITA_NO_ANEXO = {
+  tudo: "image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip",
+  fotos: "image/*,video/*",
+  camera: "image/*",
+  documento: ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.csv,.odt,.ods,.rtf",
+};
+
 const TEMAS = {
   claro: {
     rail: "#202c33", headerBar: "#f0f2f5", panel: "#ffffff", listActive: "#f0f2f5",
@@ -4041,6 +4051,10 @@ export default function Painel({ sessao }) {
   const fileRef = useRef(null);
   const [pertoDoFim, setPertoDoFim] = useState(true);
   const [emojiAberto, setEmojiAberto] = useState(false);
+  // O "+" DO CELULAR (24/11), como no aplicativo do WhatsApp: tocado, ele
+  // abre as opções no lugar do teclado e vira um teclado; o teclado devolve o
+  // teclado e o "+". Ver `painelDoMais`.
+  const [maisAberto, setMaisAberto] = useState(false);
   const [buscaConversa, setBuscaConversa] = useState("");
   const [buscaAberta, setBuscaAberta] = useState(false);
   const [respondendo, setRespondendo] = useState(null); // { id_uazapi, previa, autor }
@@ -4600,9 +4614,10 @@ export default function Painel({ sessao }) {
   // pé, ou com a ficha em coluna numa janela pequena) sobravam uns 75 pontos:
   // "Digite uma mensagem" quebrava em duas linhas, e a caixa nascia com a
   // altura de duas. Abaixo de 440 de conversa, a frase é a curta. No celular
-  // a caixa tem menos botões, e a frase de sempre cabe a partir de 375 (o
-  // iPhone pequeno); a 360 (o Android pequeno) ela também quebrava.
-  const caixaApertada = estreito ? largura < 370 : larguraDaConversa < 440;
+  // a frase de sempre cabe a partir de 390. Desde 24/11 a barra é a do
+  // aplicativo do WhatsApp (o "+", a câmera e o microfone fora da pílula, a
+  // figurinha dentro), e a 375 sobram uns 160 pontos para os 169 da frase.
+  const caixaApertada = estreito ? largura < 390 : larguraDaConversa < 440;
 
   // O "RESUMIR" NA BARRA DE ESCREVER SAI DA LARGURA DA CONVERSA (05/11), e não
   // do cabeçalho. Relato do Rodrigo: *"Quando a Ficha do Vantoro está aberta,
@@ -10761,7 +10776,7 @@ export default function Painel({ sessao }) {
     const guardado = conversaId ? rascunhosRef.current[conversaId] : null;
     setRascunho(guardado ? guardado.texto : "");
     setModoNota(guardado ? !!guardado.nota : false);
-    setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); setRespondendo(null); setHistorico(null); setTagMenuAberto(false);
+    setPertoDoFim(true); setBuscaAberta(false); setBuscaConversa(""); setEmojiAberto(false); setMaisAberto(false); setRespondendo(null); setHistorico(null); setTagMenuAberto(false);
     // A FICHA SÓ SE FECHA ONDE NÃO É COLUNA ao trocar de conversa — no
     // celular e na gaveta das janelas médias (27/10), onde ela cobre a
     // conversa. Onde é coluna fixa, fechá-la aqui faria o pedido de 28/09
@@ -11515,6 +11530,9 @@ export default function Painel({ sessao }) {
       else if (menuEtapa) setMenuEtapa(false);
       else if (menuTarefa) setMenuTarefa(false);
       else if (emojiAberto) setEmojiAberto(false);
+      // O PAINEL DO "+" (24/11) está no lugar do teclado: Esc o fecha antes da
+      // conversa, como o dos emojis.
+      else if (maisAberto) setMaisAberto(false);
       else if (seletorAberto) setSeletorAberto(false);
       else if (historico) setHistorico(null);
       // ESC FECHA O QUE ESTÁ POR CIMA, e onde a ficha é coluna ela não está:
@@ -11536,7 +11554,7 @@ export default function Painel({ sessao }) {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, pdfAberto, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, menuEtapa, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, menuResponsaveis, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, seletorAberto, fichaAberta, fichaEmColuna, menuDepartamentos, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada, jaTratei, trateiOcupado, reabrindo, reabrirOcupado, escolhaTelefone, resumos, copiloto, modoNota]);
+  }, [confirmarApagar, notaParaApagar, renomeando, selecao, editando, encaminhar, reagindo, rostoAberto, imagemAberta, pdfAberto, anexosPendentes, audioPronto, gravando, configAberta, novaConversaAberta, rapidaForm, tagForm, contatoForm, midiasAberta, telaAdmin, menuEtapa, menuTarefa, janelaTarefa, menuConversa, menuDaConversa, menuOrdem, menuTopoAberto, menuEtiquetas, menuQuem, menuResponsaveis, quemParticipou, tagMenuAberto, menuResponsavel, emojiAberto, maisAberto, seletorAberto, fichaAberta, fichaEmColuna, menuDepartamentos, historico, buscaAberta, respondendo, conversaId, escolhendoHora, editandoAgendada, jaTratei, trateiOcupado, reabrindo, reabrirOcupado, escolhaTelefone, resumos, copiloto, modoNota]);
 
   // Clicar fora fecha o seletor de emoji, o de advogado e as mensagens rápidas.
   useEffect(() => {
@@ -11563,6 +11581,13 @@ export default function Painel({ sessao }) {
         setReagindo(null); setRostoAberto(null); setReagindoTudo(false);
       }
       if (emojiAberto && emojiRef.current && !emojiRef.current.contains(e.target)) setEmojiAberto(false);
+      // O PAINEL DO "+" fecha com o toque fora dele, como o teclado do celular
+      // desce quando se toca na conversa. A BARRA DE ESCREVER NÃO CONTA COMO
+      // FORA: fechado no `mousedown`, o painel some debaixo do dedo, a barra
+      // desce, e o `click` cai noutro lugar — a figurinha, a câmera e o
+      // microfone não abriam. Os botões da barra fecham o painel eles mesmos,
+      // no clique, e o campo fecha pelo `onFocus`.
+      if (maisAberto && !(e.target.closest && (e.target.closest("[data-painel-do-mais]") || e.target.closest("[data-barra-de-escrever]")))) setMaisAberto(false);
       if (seletorAberto && seletorRef.current && !seletorRef.current.contains(e.target)) setSeletorAberto(false);
       if (tagMenuAberto && !dentroDoMenu && !(tagMenuRef.current && tagMenuRef.current.contains(e.target))) setTagMenuAberto(false);
       // O MENU DO RESPONSÁVEL tem dois endereços (ver `listaDeResponsaveis`),
@@ -11588,7 +11613,7 @@ export default function Painel({ sessao }) {
     }
     document.addEventListener("mousedown", aoClicar);
     return () => document.removeEventListener("mousedown", aoClicar);
-  }, [reagindo, rostoAberto, emojiAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas, menuQuem, menuResponsaveis, quemParticipou, menuDaConversa, menuOrdem, menuDepartamentos, menuResponsavel, menuEtapa, menuTarefa]);
+  }, [reagindo, rostoAberto, emojiAberto, maisAberto, seletorAberto, tagMenuAberto, menuTopoAberto, menuEtiquetas, menuQuem, menuResponsaveis, quemParticipou, menuDaConversa, menuOrdem, menuDepartamentos, menuResponsavel, menuEtapa, menuTarefa]);
 
   // Fecha o menuzinho da conversa (marcar não lida) ao clicar em qualquer lugar.
   useEffect(() => {
@@ -13569,6 +13594,31 @@ export default function Painel({ sessao }) {
     e.target.value = ""; // permite escolher o mesmo arquivo de novo depois
     abrirAnexos(arquivos);
   }
+
+  // UM CAMPO DE ARQUIVO SÓ, COM O QUE SE PEDE AGORA (24/11). O "+" do celular
+  // oferece Fotos, Câmera e Documento, e cada um abre o seletor do aparelho
+  // no lugar certo: a galeria, a câmera (`capture`) ou os arquivos. Não são
+  // três campos: um segundo campo com `multiple` deixaria de ser o único que
+  // as provas (e o arrastar) conhecem, e um campo a mais é um caminho a mais
+  // para divergir de `aoEscolherArquivo`. Por isso o `accept` e o `capture`
+  // são postos AQUI, a cada escolha — o clipe do computador e o da nota
+  // passam por aqui também, e voltam a pedir tudo.
+  function escolherArquivos(tipo = "tudo") {
+    const campo = fileRef.current;
+    if (!campo) return;
+    campo.accept = ACEITA_NO_ANEXO[tipo] || ACEITA_NO_ANEXO.tudo;
+    if (tipo === "camera") campo.setAttribute("capture", "environment");
+    else campo.removeAttribute("capture");
+    campo.click();
+  }
+
+  // O PAINEL DO "+" SÓ É DESENHADO COM A CAIXA DE ESCREVER EMBAIXO, no
+  // celular (ver `painelDoMais`). Não há um efeito que o feche quando a barra
+  // troca de roupa (a gravação, a seleção, a nota que sobe, a edição): todos
+  // esses caminhos começam com um toque fora do painel ou com um botão dele, e
+  // os dois o fecham. A troca de conversa o fecha junto com o resto da caixa.
+  const gravandoAqui = Boolean(gravando && gravandoConv === conversaId);
+  const audioProntoAqui = Boolean(audioPronto && audioPronto.convId === conversaId);
 
   // COLAR UM PRINT DIRETO NA CONVERSA (Ctrl+V).
   //
@@ -16977,6 +17027,85 @@ export default function Painel({ sessao }) {
   // oferecido e negado no fim, que é a pior ordem possível.
   //
   // E a frase diz o que FAZER: responder por outro telefone, ou reativar.
+  // O CAMPO DE ESCREVER DO CELULAR, COMO O DO APLICATIVO DO WHATSAPP (24/11).
+  //
+  // Pedido do Rodrigo, com duas fotos do WhatsApp no iPhone: "o mais parecido
+  // possível". No celular a barra deixa de ser uma pílula com cinco botões
+  // dentro e passa a ser a do aplicativo:
+  //
+  //   [+]  ( texto ................ [figurinha] )  [câmera] [microfone]
+  //   [+]  ( texto ................ [figurinha] )  (enviar, verde)
+  //
+  // O "+" abre, NO LUGAR DO TECLADO, as opções (`painelDoMais`) — fotos,
+  // câmera, documento, a nota interna, as respostas rápidas, agendar e o
+  // Quazar —, e vira um teclado; tocado, o teclado volta e o "+" também. A
+  // nota interna, o clipe e o relógio de agendar, que moravam na pílula,
+  // passaram para o painel do "+": é o lugar do WhatsApp para "o resto".
+  //
+  // SÓ NA CAIXA DE BAIXO. A nota interna sobe para o alto da conversa e
+  // continua com a pílula âmbar de sempre: ali o que se escreve não vai ao
+  // cliente, e a roupa diferente é o que diz isso.
+  const comoNoWhatsApp = estreito && !modoNota;
+  // O BOTÃO DOS EMOJIS E FIGURINHAS É UMA DEFINIÇÃO SÓ, COM DOIS ENDEREÇOS
+  // (24/11): no computador, a carinha à esquerda da caixa, como no WhatsApp
+  // Web; no celular, a figurinha DENTRO da pílula, à direita, como no
+  // aplicativo do WhatsApp — e ali ela abre nas figurinhas, que é o que o
+  // desenho promete (o emoji do celular está no próprio teclado). Duas cópias
+  // do painel divergiriam na primeira correção.
+  const botaoDoEmoji = !modoNota && (
+    <span ref={emojiRef} data-figurinhas style={{ display: "flex", alignSelf: comoNoWhatsApp ? "flex-end" : undefined }}>
+      {emojiAberto && (
+        <div ref={encaixarNaJanela} style={{ position: "absolute", bottom: 60, left: 12, zIndex: 30 }}>
+          {abaEmoji === "figurinha" ? (
+            <PainelFigurinhas C={C} figurinhas={figurinhas} figHover={figHover}
+              aoPassarMouse={setFigHover}
+              aoEnviar={enviarFigurinhaUrl}
+              aoRemover={(u) => alternarFigurinhaFavorita({ midia_url: u })}
+              aoNova={() => figurinhaRef.current?.click()}
+              rodape={<AbasDoPainel C={C} aba={abaEmoji} aoTrocar={setAbaEmoji} />} />
+          ) : (
+            <PainelEmoji C={C} aoEscolher={inserirEmoji}
+              rodape={<AbasDoPainel C={C} aba={abaEmoji} aoTrocar={setAbaEmoji} />} />
+          )}
+        </div>
+      )}
+      <button onClick={() => {
+                const abrir = !emojiAberto;
+                setEmojiAberto(abrir);
+                if (abrir) { setMaisAberto(false); if (comoNoWhatsApp) setAbaEmoji("figurinha"); carregarFigurinhas(); }
+              }}
+        title="Emojis e figurinhas" aria-label="Emojis e figurinhas"
+        style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
+        {comoNoWhatsApp
+          ? <Sticker size={23} strokeWidth={1.8} color={emojiAberto ? C.green : C.textPrimary} />
+          : <Smile size={24} color={emojiAberto ? C.green : C.textSecondary} />}
+      </button>
+    </span>
+  );
+
+  // O "+" QUE VIRA TECLADO. Aberto o painel, o teclado do aparelho desce (o
+  // campo perde o foco) e o desenho troca; tocado de novo, o foco volta ao
+  // campo, o teclado sobe, e o painel fecha (pelo `onFocus` do campo, que é o
+  // mesmo caminho de quem toca direto no texto).
+  const botaoDoMais = (
+    <button data-mais={maisAberto ? "aberto" : "fechado"}
+            onClick={() => {
+              if (maisAberto) { setMaisAberto(false); inputRef.current?.focus(); return; }
+              inputRef.current?.blur();
+              setEmojiAberto(false);
+              setMaisAberto(true);
+            }}
+            aria-expanded={maisAberto}
+            aria-controls="painel-do-mais"
+            title={maisAberto ? "Voltar ao teclado" : "Anexar e mais opções"}
+            aria-label={maisAberto ? "Voltar ao teclado" : "Anexar e mais opções"}
+            style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0, alignSelf: "flex-end", marginBottom: 2 }}>
+      {maisAberto
+        ? <Keyboard size={26} strokeWidth={1.7} color={C.textPrimary} />
+        : <Plus size={28} strokeWidth={1.7} color={C.textPrimary} />}
+    </button>
+  );
+
   const caixaDeEscrever = linhaDesativada ? (
     <div data-linha-desativada
          style={{ padding: "12px 16px", background: C.headerBar, borderTop: `1px solid ${C.divider}`,
@@ -17002,8 +17131,11 @@ export default function Painel({ sessao }) {
         arredondamento é da pílula — não de cada peça. É assim que
         o WhatsApp Web faz, e é o que faz a barra parecer uma
         coisa só em vez de quatro. */}
-    <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "flex-end",
-                  gap: 2, borderRadius: 24, padding: "4px 6px",
+    {comoNoWhatsApp && !editando && botaoDoMais}
+    <div data-pilula-de-escrever={comoNoWhatsApp ? "celular" : "computador"}
+         style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "flex-end",
+                  gap: 2, borderRadius: comoNoWhatsApp ? 22 : 24,
+                  padding: comoNoWhatsApp ? "2px 2px 2px 10px" : "4px 6px",
                   background: modoNota ? (modo === "escuro" ? "#3a3320" : "#fff8d6") : C.balaoFundo,
                   border: modoNota ? "1px solid #e6cf6a" : "1px solid transparent",
                   boxSizing: "border-box" }}>
@@ -17018,29 +17150,7 @@ export default function Painel({ sessao }) {
         campo cabe numa linha no celular, e o painel encolhe.
         A figurinha, que mora no mesmo botão, sairia do WhatsApp — não teria
         como entrar numa nota de qualquer forma. */}
-    {!modoNota && (
-    <span ref={emojiRef} data-figurinhas style={{ display: "flex" }}>
-      {emojiAberto && (
-        <div ref={encaixarNaJanela} style={{ position: "absolute", bottom: 60, left: 12, zIndex: 30 }}>
-          {abaEmoji === "figurinha" ? (
-            <PainelFigurinhas C={C} figurinhas={figurinhas} figHover={figHover}
-              aoPassarMouse={setFigHover}
-              aoEnviar={enviarFigurinhaUrl}
-              aoRemover={(u) => alternarFigurinhaFavorita({ midia_url: u })}
-              aoNova={() => figurinhaRef.current?.click()}
-              rodape={<AbasDoPainel C={C} aba={abaEmoji} aoTrocar={setAbaEmoji} />} />
-          ) : (
-            <PainelEmoji C={C} aoEscolher={inserirEmoji}
-              rodape={<AbasDoPainel C={C} aba={abaEmoji} aoTrocar={setAbaEmoji} />} />
-          )}
-        </div>
-      )}
-      <button onClick={() => { const abrir = !emojiAberto; setEmojiAberto(abrir); if (abrir) carregarFigurinhas(); }}
-        title="Emojis e figurinhas" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
-        <Smile size={24} color={emojiAberto ? C.green : C.textSecondary} />
-      </button>
-    </span>
-    )}
+    {!comoNoWhatsApp && botaoDoEmoji}
     {/* BARRA DE FORMATAÇÃO — aparece ao selecionar texto na caixa.
         Fica ACIMA da caixa, e não em cima do texto selecionado:
         numa caixa de uma a três linhas as duas posições quase
@@ -17133,26 +17243,28 @@ export default function Painel({ sessao }) {
         `aria-pressed` porque o botão tem DOIS estados e eles não podem ser
         adivinhados pelo texto do título: foi assim que um ajudante de prova
         passou a desligar o modo achando que ligava. */}
+    {!comoNoWhatsApp && (
     <button data-nota-interna onClick={() => setModoNota((v) => !v)}
             aria-pressed={modoNota}
             title={modoNota ? "Voltar para a mensagem" : "Escrever nota interna (só a equipe vê)"}
             style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
       <StickyNote size={22} color={modoNota ? "#d4a017" : C.textSecondary} />
     </button>
+    )}
     {/* O CLIPE DA NOTA (05/11) PÕE O ARQUIVO NA NOTA, e não no WhatsApp: o
         título diz isso, o clipe fica âmbar como o botão da nota, e a prévia
         que ele abre é a âmbar (ver `abrirAnexos` e `salvarNotaComAnexo`).
         Num banco sem o 053 o clipe some na nota, como sumia antes — o
         arquivo não teria onde ficar, e anexado ali ia para o CLIENTE. */}
-    {(!modoNota || notaComAnexo === true) && (
-    <button data-anexar={modoNota ? "nota" : "mensagem"} onClick={() => fileRef.current?.click()}
+    {!comoNoWhatsApp && (!modoNota || notaComAnexo === true) && (
+    <button data-anexar={modoNota ? "nota" : "mensagem"} onClick={() => escolherArquivos("tudo")}
             title={modoNota ? "Anexar arquivo à nota interna" : "Anexar arquivo"}
             aria-label={modoNota ? "Anexar arquivo à nota interna (só a equipe vê)" : "Anexar arquivo"}
             style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
       <Paperclip size={22} color={modoNota ? "#d4a017" : C.textSecondary} />
     </button>
     )}
-    <input ref={fileRef} type="file" multiple onChange={aoEscolherArquivo} style={{ display: "none" }} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" />
+    <input ref={fileRef} type="file" multiple onChange={aoEscolherArquivo} style={{ display: "none" }} accept={ACEITA_NO_ANEXO.tudo} />
     <input ref={figurinhaRef} type="file" accept="image/webp,image/png,image/jpeg" style={{ display: "none" }}
       onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) { setEmojiAberto(false); enviarArquivo(f, "", conversaId, "figurinha"); } }} />
       {/*
@@ -17169,6 +17281,9 @@ export default function Painel({ sessao }) {
       data-campo={modoNota ? "nota" : "mensagem"}
       value={rascunho}
       onChange={(e) => { setRascunho(e.target.value); setSlashIdx(0); }}
+      // TOCAR NO TEXTO FECHA O PAINEL DO "+": o teclado sobe no lugar dele,
+      // como no WhatsApp (24/11).
+      onFocus={() => setMaisAberto(false)}
       onSelect={(e) => {
         // Aparece quando há trecho selecionado, some quando não
         // há. `onSelect` é o único evento que o navegador dispara
@@ -17260,7 +17375,8 @@ export default function Painel({ sessao }) {
         e com a caixa vazia a janela abriria para nada. Some na nota interna
         (nota não vai ao cliente, não há o que agendar) e na edição (editar
         corrige o que já saiu). */}
-    {temAgenda === true && rascunho.trim() && !modoNota && !editando && (
+    {comoNoWhatsApp && botaoDoEmoji}
+    {!comoNoWhatsApp && temAgenda === true && rascunho.trim() && !modoNota && !editando && (
       <button data-agendar onClick={() => setEscolhendoHora((v) => (v === "texto" ? null : "texto"))}
               title="Agendar esta mensagem" aria-label="Agendar esta mensagem"
               aria-expanded={escolhendoHora === "texto"}
@@ -17331,15 +17447,121 @@ export default function Painel({ sessao }) {
           : <RostoDoAssistente tamanho={28} />}
       </button>
     )}
-    {(rascunho.trim() || modoNota) ? (
+    {!comoNoWhatsApp && ((rascunho.trim() || modoNota) ? (
       <button onClick={enviar} title={modoNota ? "Salvar nota" : "Enviar"} style={{ border: "none", background: modoNota ? "#d4a017" : C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, alignSelf: "flex-end" }}>{modoNota ? <StickyNote size={19} color="#fff" /> : <Send size={20} color="#fff" />}</button>
     ) : (
       <button onClick={iniciarGravacao} title="Gravar áudio" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0 }}>
         <Mic size={24} color={C.textSecondary} />
       </button>
-    )}
+    ))}
     </div>
+    {/* FORA DA PÍLULA, NO CELULAR, como no aplicativo: com a caixa vazia, a
+        câmera e o microfone; com texto (ou corrigindo uma mensagem), o botão
+        verde e redondo de enviar. */}
+    {comoNoWhatsApp && ((rascunho.trim() || editando) ? (
+      <button data-enviar-celular onClick={() => { setMaisAberto(false); enviar(); }} title="Enviar" aria-label="Enviar"
+              style={{ border: "none", background: C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 42, height: 42, borderRadius: "50%", flexShrink: 0, alignSelf: "flex-end", marginBottom: 1, padding: 0 }}>
+        <SendHorizontal size={21} color="#fff" />
+      </button>
+    ) : (
+      <>
+        <button data-camera-celular onClick={() => { setMaisAberto(false); escolherArquivos("camera"); }}
+                title="Tirar uma foto" aria-label="Tirar uma foto"
+                style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0, alignSelf: "flex-end", marginBottom: 2 }}>
+          <Camera size={24} strokeWidth={1.8} color={C.textPrimary} />
+        </button>
+        <button onClick={() => { setMaisAberto(false); iniciarGravacao(); }} title="Gravar áudio" aria-label="Gravar áudio"
+                style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0, alignSelf: "flex-end", marginBottom: 2 }}>
+          <Mic size={24} strokeWidth={1.8} color={C.textPrimary} />
+        </button>
+      </>
+    ))}
   </>
+  );
+
+  // O PAINEL DO "+" (24/11) — o que o aplicativo do WhatsApp mostra no lugar
+  // do teclado quando se toca no "+". Ver `comoNoWhatsApp`.
+  //
+  // AS OPÇÕES SÃO AS DO ZORVIN, e não uma cópia das do WhatsApp: localização,
+  // contato, enquete e evento não existem aqui. Ficaram as que mandam um
+  // arquivo (fotos, câmera, documento) e as que moravam na pílula e não
+  // cabiam mais nela (a nota interna, o relógio de agendar), mais duas que no
+  // celular ficavam longe: as respostas rápidas (o "/" pede trocar de teclado
+  // no iPhone) e o "Sugerir resposta" do Quazar (que só estava no ⋮).
+  //
+  // A QUE NÃO SE PODE FAZER AGORA FICA À VISTA, APAGADA, e diz por quê ao
+  // toque: agendar sem texto, as rápidas e o Quazar com texto na caixa. Sumir
+  // e aparecer conforme o que está escrito faria os botões mudarem de lugar
+  // debaixo do dedo.
+  const caixaComTexto = Boolean(rascunho.trim());
+  const opcoesDoMais = [
+    { id: "fotos", rotulo: "Fotos", icone: <Images size={26} color="#3b8ef3" />,
+      fazer: () => escolherArquivos("fotos") },
+    { id: "camera", rotulo: "Câmera", icone: <Camera size={26} color={C.textPrimary} />,
+      fazer: () => escolherArquivos("camera") },
+    { id: "documento", rotulo: "Documento", icone: <FileText size={26} color="#1d9bf0" />,
+      fazer: () => escolherArquivos("documento") },
+    { id: "nota", rotulo: "Nota interna", icone: <StickyNote size={26} color="#d4a017" />,
+      // A NOTA SOBE PARA O ALTO DA CONVERSA, com a pílula âmbar de sempre.
+      fazer: () => setModoNota(true) },
+    rapidas.length > 0 && { id: "rapida", rotulo: "Respostas rápidas", icone: <Zap size={26} color="#f0a500" />,
+      apagada: caixaComTexto,
+      dica: caixaComTexto ? "As respostas rápidas entram com a caixa vazia" : "Escolher uma resposta rápida",
+      // O "/" ABRE O MENU DE SEMPRE, e o foco no campo traz o teclado: quem
+      // escolhe com o dedo escolhe ali, e quem continua escrevendo filtra.
+      fazer: () => {
+        if (caixaComTexto) { mostrarAviso("As respostas rápidas entram com a caixa vazia: apague o que está escrito, ou escreva / no começo."); return; }
+        setRascunho("/"); setSlashIdx(0);
+        requestAnimationFrame(() => inputRef.current?.focus());
+      } },
+    temAgenda === true && { id: "agendar", rotulo: "Agendar", icone: <Clock size={26} color="#e5484d" />,
+      apagada: !caixaComTexto, extra: { "data-agendar": "" },
+      dica: caixaComTexto ? "Agendar esta mensagem" : "Escreva a mensagem antes de agendar",
+      fazer: () => {
+        if (!caixaComTexto) { mostrarAviso("Escreva a mensagem primeiro; depois toque no + e em Agendar."); return; }
+        setEscolhendoHora("texto");
+      } },
+    copilotoDisponivel && { id: "quazar", rotulo: "Sugerir resposta", icone: <RostoDoAssistente tamanho={30} />,
+      apagada: !podeSugerir, extra: { "data-copiloto-no-mais": "" },
+      dica: copilotoPensando ? `O ${NOME_DO_ASSISTENTE} está escrevendo a sugestão…`
+        : caixaComTexto ? `O ${NOME_DO_ASSISTENTE} sugere com a caixa vazia` : `Sugerir resposta (${NOME_DO_ASSISTENTE})`,
+      fazer: () => {
+        if (copilotoPensando) return;
+        if (!podeSugerir) { mostrarAviso(`O ${NOME_DO_ASSISTENTE} sugere com a caixa vazia: apague o que está escrito para pedir uma sugestão.`); return; }
+        sugerirComCopiloto();
+      } },
+  ].filter(Boolean);
+  const painelDoMais = estreito && maisAberto && conversa && !modoNota && !selecao && !gravandoAqui
+    && !audioProntoAqui && !linhaDesativada && !editando && (
+    <div id="painel-do-mais" data-painel-do-mais role="group" aria-label="Anexar e mais opções"
+         style={{ background: C.headerBar, borderTop: `1px solid ${C.divider}`,
+                  borderRadius: "16px 16px 0 0", flexShrink: 0,
+                  padding: "8px 10px calc(18px + env(safe-area-inset-bottom, 0px))" }}>
+      {/* A ALÇA DE CIMA é desenho, como a do WhatsApp: diz "isto é uma
+          gaveta". Fecha-se pelo teclado, pelo toque fora ou pelo Esc. */}
+      <div aria-hidden="true" style={{ width: 36, height: 5, borderRadius: 3, background: C.textSecondary,
+                                       opacity: 0.35, margin: "0 auto 14px" }} />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "14px 6px" }}>
+        {opcoesDoMais.map((o) => (
+          <button key={o.id} type="button" data-opcao-do-mais={o.id} {...(o.extra || {})}
+                  onClick={() => { setMaisAberto(false); o.fazer(); }}
+                  aria-disabled={o.apagada ? "true" : undefined}
+                  title={o.dica || o.rotulo}
+                  style={{ border: "none", background: "transparent", cursor: "pointer", padding: 0, minWidth: 0,
+                           display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+                           color: C.textPrimary, opacity: o.apagada ? 0.45 : 1 }}>
+            <span style={{ width: "100%", maxWidth: 78, height: 54, borderRadius: 27, background: C.balaoFundo,
+                           display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {o.icone}
+            </span>
+            <span style={{ fontSize: 12.5, lineHeight: "15px", textAlign: "center", maxWidth: "100%",
+                           overflowWrap: "break-word" }}>
+              {o.rotulo}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 
   // VINCULAR A NOTA A UM PROCESSO. Sobe junto com a caixa: pertence à nota, e
@@ -20639,7 +20861,12 @@ export default function Painel({ sessao }) {
                 escolhido, fica preenchido de âmbar forte com um "✓"; em nota
                 geral, fica claro e diz por extenso que é opcional. */}
 
-            <div style={{ background: C.barraFundo, padding: estreito ? "7px 8px" : "9px 16px", display: "flex", alignItems: "flex-end", gap: estreito ? 6 : 10, position: "relative" }}>
+            {/* NO CELULAR A BARRA TEM FUNDO PRÓPRIO (24/11), o mesmo do alto da
+                conversa, como no aplicativo do WhatsApp — é dela que o painel
+                do "+" continua para baixo, no lugar do teclado. No computador
+                continua só o balão, como no WhatsApp Web. */}
+            <div data-barra-de-escrever
+                 style={{ background: estreito ? C.headerBar : C.barraFundo, padding: estreito ? "7px 8px" : "9px 16px", display: "flex", alignItems: "flex-end", gap: estreito ? 4 : 10, position: "relative" }}>
               {selecao ? (
                 /* A BARRA DA SELEÇÃO substitui a de digitar, como no WhatsApp.
                    Deixar as duas na tela convidaria a escrever no meio de uma
@@ -20722,6 +20949,7 @@ export default function Painel({ sessao }) {
                 caixaDeEscrever
               )}
             </div>
+            {painelDoMais}
           </>
         )}
       </div>
@@ -22266,7 +22494,10 @@ export default function Painel({ sessao }) {
         // por baixo das Mídias (190) e das telas inteiras (200 a 230): baixar
         // um documento que o depósito não tem, de dentro das Mídias, dizia a
         // falha atrás da tela — e o clique parecia não ter feito nada.
-        <div data-aviso style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "#333", color: "#fff", padding: "10px 18px", borderRadius: 8, fontSize: 14, boxShadow: "0 4px 12px rgba(0,0,0,.3)", zIndex: 1000, maxWidth: "90%", textAlign: "center" }}>
+        // E SEM PEGAR O TOQUE (24/11): é só texto, e no celular ele cai em cima
+        // da segunda fileira do painel do "+". Os quatro segundos dele
+        // engoliam o toque em Agendar logo depois do recado de "escreva antes".
+        <div data-aviso style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "#333", color: "#fff", padding: "10px 18px", borderRadius: 8, fontSize: 14, boxShadow: "0 4px 12px rgba(0,0,0,.3)", zIndex: 1000, maxWidth: "90%", textAlign: "center", pointerEvents: "none" }}>
           {aviso}
         </div>
       )}

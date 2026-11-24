@@ -10021,6 +10021,147 @@ e as abas, a conta delas antes do laço. As conferências só cresceram: a rodad
 já começada continuou valendo para as pegas, e a cópia de controle foi rodada
 de novo com a prova final (119 de 119).
 
+## O campo de escrever do celular, como o do WhatsApp (24/11)
+
+Pedido do Rodrigo, com duas fotos do aplicativo do WhatsApp: *"Na versão
+mobile preciso que dentro da conversa, no campo de digitar mensagem, seja o
+mais parecido possível com o do aplicativo WhatsApp."* E, logo depois: *"Ele
+fica com um ícone de "+" e ao clicar nele aparecem opções para selecionar, e
+no lugar do teclado aparecem as mídias, e o ícone muda para um ícone de
+teclado, que aí clicar volta para o teclado e volta a ficar um "+""*.
+
+**Só no celular, e só na caixa de baixo** (`comoNoWhatsApp` = `estreito &&
+!modoNota`). O computador continua com a barra do WhatsApp Web, e a nota
+interna, que sobe para o alto da conversa, continua com a pílula âmbar de
+sempre: ali o que se escreve não vai ao cliente, e a roupa diferente é o que
+diz isso.
+
+| | antes | agora, no celular |
+|---|---|---|
+| à esquerda | a carinha, o clipe e a nota, dentro da pílula | o **"+"**, fora da pílula (`data-mais`) |
+| a pílula | tudo dentro | só o texto e, à direita, a **figurinha** (`data-pilula-de-escrever="celular"`) |
+| à direita, com a caixa vazia | o microfone, dentro da pílula | a **câmera** e o **microfone**, fora da pílula (`data-camera-celular`) |
+| à direita, com texto | a seta verde, dentro da pílula | o **botão verde e redondo** de enviar (`data-enviar-celular`) |
+| o fundo da barra | transparente | o do alto da conversa (`C.headerBar`), como no aplicativo |
+
+### O "+" que vira teclado
+
+- **Tocado, o "+" abre o painel no lugar do teclado** (`data-painel-do-mais`):
+  o campo perde o foco (o teclado do aparelho desce), e o painel aparece
+  embaixo da barra, de ponta a ponta, até o pé da tela. **O "+" vira um
+  teclado** (`data-mais="aberto"`, "Voltar ao teclado");
+- **tocado o teclado, o painel fecha e o foco volta ao campo** (o teclado do
+  aparelho sobe), e o teclado volta a ser o "+";
+- **o painel também fecha** com o toque no texto (pelo `onFocus` do campo), o
+  toque na conversa, o Esc (um degrau só: a conversa não fecha junto), a troca
+  de conversa, e o toque em qualquer opção;
+- **a barra de escrever não conta como "fora"**. Fechado no `mousedown`, o
+  painel sumia debaixo do dedo, a barra descia, e o `click` caía noutro lugar:
+  a figurinha, a câmera e o enviar não atendiam com o painel aberto. A prova
+  achou. Os botões da barra fecham o painel eles mesmos, no clique.
+
+**As opções do painel** (`opcoesDoMais`), quatro por linha:
+
+| a opção | o que faz | quando fica apagada |
+|---|---|---|
+| Fotos | o seletor de fotos e vídeos, vários de uma vez | — |
+| Câmera | a câmera do aparelho (`capture="environment"`) | — |
+| Documento | o seletor de documentos, sem a galeria | — |
+| Nota interna | sobe a nota para o alto da conversa | — |
+| Respostas rápidas | põe o "/" na caixa e abre o menu de sempre, com o foco no campo | com texto na caixa; e não aparece sem rápidas cadastradas |
+| Agendar | a janela da hora, para o texto que está na caixa | sem texto |
+| Sugerir resposta | o Quazar sugere | com texto na caixa; e não aparece sem o Quazar |
+
+**A opção apagada continua à vista**, e o toque nela diz por quê ("Escreva a
+mensagem primeiro; depois toque no + e em Agendar."), em vez de sumir: quem
+procura o Agendar no lugar de sempre e não o acha conclui que ele não existe.
+
+**O que mudou de lugar:** a nota interna, o clipe e o relógio de agendar
+moravam na pílula, e passaram para o painel do "+", que é o lugar do
+WhatsApp para "o resto". O "Sugerir resposta" do menu ⋮ do celular continua.
+
+### O resto
+
+- **Um campo de arquivo só** (`fileRef`), com o `accept` e o `capture`
+  trocados na hora (`escolherArquivos`, com `ACEITA_NO_ANEXO`): as provas e a
+  prévia dos anexos conhecem um campo só, e a câmera não pode ficar presa nas
+  Fotos de depois;
+- **a figurinha abre nas figurinhas** no celular: o emoji está no próprio
+  teclado do aparelho, e o desenho promete figurinha. No computador, a carinha
+  continua abrindo nos emojis;
+- **a frase do campo**: "Digite uma mensagem" a partir de 390, e "Mensagem"
+  abaixo disso (`caixaApertada`, que era 370). Com o "+", a câmera e o
+  microfone fora da pílula, a 375 sobram uns 160 pontos para os 169 da frase;
+- **o vão da barra do celular passou de 6 para 4**: a 390 faltava 1 ponto
+  para a frase;
+- **o recado (`data-aviso`) deixou de pegar o toque** (`pointerEvents: none`):
+  é só texto, e no celular ele cai em cima da segunda fileira do painel. Os
+  quatro segundos dele engoliam o toque em Agendar logo depois do recado de
+  "escreva antes".
+- **corrigindo uma mensagem, o "+" sai e o botão verde fica**: corrigir é
+  mandar o texto de novo, e não anexa nada.
+
+**Fica de fora, e é decisão:**
+
+- **o microfone tocado com o painel aberto não tem cena**: gravar pede o
+  microfone de verdade, e a prova não tem. Ele passa pelo mesmo caminho da
+  câmera, que tem.
+
+**As provas que abriam a nota pelo botão da barra passaram a abrir pelo
+"+"**, no celular: `nota` (`entrarNoModoNota`), `as-notas-com-anexo`
+(`ligarNota`) e `nota-no-alto`, que foi INVERTIDA, e não apagada (*"a barra
+não tem mais o botão da nota"*, e o botão continua à mão no painel do "+").
+`a-mensagem-agendada` (cena 7, a 360) agenda pelo "+".
+
+Prova: `o-campo-de-escrever-do-celular`, 130 conferências em onze cenas: a barra
+vazia (a ordem, fora e dentro da pílula, pintada, os alvos de 40 e o campo de
+16); o texto e o botão verde, que envia (também com o painel aberto); o "+" e o
+teclado (o painel embaixo da barra, de ponta a ponta, as opções pintadas, e os
+cinco jeitos de fechar); o seletor de cada opção (e a câmera da barra com o
+painel aberto); a nota interna; o Agendar, as rápidas e o Quazar, apagados e
+acesos; sem rápidas; a figurinha; o tema claro, 320 e 375; o computador; e a
+correção de uma mensagem.
+
+**36 sabotagens e 36 pegas**, todas limpas, rodadas em cópias e lidas uma a
+uma (e a cópia de controle passou inteira):
+
+- o painel de antes inteiro (79 reprovações — é o pedido reproduzido);
+- **o "+":** dentro da pílula; sem virar teclado; sem tirar o foco do campo;
+  o teclado sem devolver o foco; na edição de uma mensagem;
+- **o que fecha o painel:** sem o degrau do Esc; sem o toque fora; a barra
+  contando como fora (5: o painel some debaixo do dedo); o campo sem fechar ao
+  ganhar o foco; o enviar sem fechar; a troca de conversa sem fechar;
+- **a barra:** o recado pegando o toque; a frase de sempre a partir de 370; o
+  vão de 6; a figurinha à esquerda, como no computador; a figurinha abrindo
+  nos emojis; a câmera e o microfone dentro da pílula, como antes (13); o
+  enviar quadrado, e sem o verde; o painel acima da barra; a barra sem fundo;
+  a barra do celular também no computador (6);
+- **as opções:** Fotos pedindo tudo; a Câmera sem o `capture`; o `capture`
+  que fica depois da câmera; o Documento com a galeria; a nota interna, o
+  clipe e o relógio de volta na barra (o relógio, pega pela
+  `a-mensagem-agendada`); Agendar sem texto calado, e aceso sem texto; as
+  rápidas por cima do texto, sem o foco, e sem a guarda de existir; o Quazar
+  pedindo com texto.
+
+**A primeira rodada achou dois furos, e os dois eram da prova:**
+
+- **a troca de conversa sem fechar passava**: a cena trocava de conversa com
+  um toque na lista, e esse toque já fecha o painel (é um toque fora dele).
+  Hoje a conversa seguinte é aberta sem toque (`element.click()`);
+- **o "+" na edição passava**: nenhuma cena editava uma mensagem no celular.
+  Entrou a cena 11, com uma mensagem nossa dentro do prazo de editar.
+
+Consertada a prova, rodaram de novo a cópia de controle e as cinco sabotagens
+que tocam nas duas cenas (o toque fora, a barra contando como fora, o campo
+que fecha ao ganhar o foco, a troca de conversa e a edição): as cinco pegas.
+
+**A primeira escrita da prova achou três defeitos do painel, e não dela:** a
+figurinha que não atendia com o painel aberto (a barra contando como "fora"),
+o toque em Agendar engolido pelo recado de antes, e a frase "Digite uma
+mensagem" passando 1 ponto do campo a 390 (pega pela `a-revisao-do-leiaute`).
+E um da prova: o Playwright não clica num botão com `aria-disabled`, e o dedo
+clica. A prova toca nas opções apagadas com `force`.
+
 ## O tempo real que entupia — e a mensagem que parecia não ter saído (20/10)
 
 Relato do Rodrigo: *"Quando é enviada uma mensagem demora para aparecer,

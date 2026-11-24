@@ -190,7 +190,11 @@ async function abrirConversa(page) {
 }
 async function ligarNota(page) {
   if (await conta(page, 'textarea[data-campo="nota"]')) return true;
-  const ok2 = await clicar(page, "[data-nota-interna]", 900);
+  // NO CELULAR (24/11), A NOTA SE ABRE PELO "+": a barra é a do aplicativo do
+  // WhatsApp, e o botão da nota mora no painel do "+".
+  const ok2 = (await conta(page, "[data-nota-interna]"))
+    ? await clicar(page, "[data-nota-interna]", 900)
+    : (await clicar(page, "[data-mais]", 300)) && (await clicar(page, '[data-opcao-do-mais="nota"]', 900));
   return ok2 && (await conta(page, 'textarea[data-campo="nota"]')) > 0;
 }
 async function desligarNota(page) {

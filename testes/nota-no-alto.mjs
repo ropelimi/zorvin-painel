@@ -149,16 +149,22 @@ console.log("\nDá para voltar para a mensagem, pelos dois caminhos");
 
 console.log("\nNo celular");
 {
-  // O botão fica na barra de escrever, que no celular é desenhada igual — então
-  // ele continua ao alcance sem precisar de nada no menu ⋮. O que precisa ser
-  // conferido aqui é o PAINEL: ele é novo, e é largo.
+  // NO CELULAR (24/11), A NOTA MORA NO PAINEL DO "+": a barra de escrever é a
+  // do aplicativo do WhatsApp (o "+", a pílula, a câmera e o microfone), e o
+  // botão da nota saiu dela. Continua a dois toques, sem nada no menu ⋮. O
+  // que precisa ser conferido aqui é o PAINEL: ele é novo, e é largo.
   await page.setViewportSize({ width: 390, height: 780 });
   await page.waitForTimeout(1200);
-  const noCelular = await page.locator("[data-nota-interna]").count();
-  ok("o botão da nota continua à mão no celular", noCelular > 0);
+  ok("no celular, a barra não tem mais o botão da nota", (await page.locator("[data-nota-interna]").count()) === 0);
+  if (await page.locator("[data-mais]").count()) {
+    await page.locator("[data-mais]").first().click();
+    await page.waitForTimeout(300);
+  }
+  const noCelular = await page.locator('[data-opcao-do-mais="nota"]').count();
+  ok("o botão da nota continua à mão no celular, no painel do “+”", noCelular > 0);
 
   if (noCelular > 0) {
-    await page.locator("[data-nota-interna]").first().click();
+    await page.locator('[data-opcao-do-mais="nota"]').first().click();
     await page.waitForTimeout(1200);
     ok("e abre a mesma caixa, no alto", await page.locator("[data-nota-no-alto]").count() > 0);
     const largura = await page.evaluate(() => {

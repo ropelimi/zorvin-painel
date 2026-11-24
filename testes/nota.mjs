@@ -151,7 +151,17 @@ const seletor = () => page.locator("[data-processo-da-nota] select");
 // O botão agora diz o que é (`aria-pressed`), e é isso que se lê.
 async function entrarNoModoNota() {
   const botao = page.locator("[data-nota-interna]");
-  if (!(await botao.count())) return;
+  // NO CELULAR (24/11), A NOTA SE ABRE PELO "+": a barra é a do aplicativo do
+  // WhatsApp, e o botão da nota mora no painel do "+".
+  if (!(await botao.count())) {
+    if (await page.locator('textarea[data-campo="nota"]').count()) return;
+    if (!(await page.locator("[data-mais]").count())) return;
+    await page.locator("[data-mais]").first().click();
+    await page.waitForTimeout(300);
+    await page.locator('[data-opcao-do-mais="nota"]').first().click().catch(() => {});
+    await page.waitForTimeout(900);
+    return;
+  }
   const ligado = await botao.first().getAttribute("aria-pressed");
   if (ligado !== "true") {
     await botao.first().click();

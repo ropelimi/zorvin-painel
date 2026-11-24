@@ -315,9 +315,14 @@ console.log("\n6. Sem o script 013: nada de relógio, e enviar segue como sempre
 
 console.log("\n7. No celular, a janela da hora cabe na tela");
 {
+  // DESDE 24/11 O RELÓGIO MORA NO "+" DO CELULAR, como as outras opções do
+  // aplicativo do WhatsApp (ver `o-campo-de-escrever-do-celular`): a barra
+  // não o mostra, e o "+" o oferece.
   const { ctx, page, estouros } = await abrirPainel({ largura: 360 });
   await escrever(page, "Do celular");
-  ok("o relógio aparece no celular", await clicar(page, "[data-agendar]"));
+  ok("no celular, o relógio não fica na barra", (await page.locator("[data-agendar]").count()) === 0);
+  ok("o “+” abre as opções", await clicar(page, "[data-mais]"));
+  ok("e o Agendar está lá", await clicar(page, "[data-agendar]"));
   const caixa = await page.locator("[data-escolher-hora]").boundingBox().catch(() => null);
   ok("e a janela fica inteira dentro dos 360px", caixa && caixa.x >= 0 && caixa.x + caixa.width <= 360,
      JSON.stringify(caixa));
