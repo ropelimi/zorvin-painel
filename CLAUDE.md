@@ -5081,7 +5081,7 @@ recorta também os números das abas.
   com os responsáveis (script 046 da ponte). Sem escolha, a chamada é a de
   antes, só com o telefone. A resposta leva a escolha que a pediu, e a de
   outra escolha, chegando atrasada, não escreve número nas abas desta;
-- **os filtros que perguntam ao banco** (Não lidas, Favoritas, Arquivadas)
+- **os filtros que perguntam ao banco** (Não lidas, Arquivadas; e Favoritas, até sair em 24/11)
   recortam lá também; os outros (etiqueta, grupos, minhas, tarefas, quem
   participou) passam pelo recorte da tela.
 
@@ -5241,6 +5241,57 @@ procurando, a falha e o teto do seletor estão em `o-seletor-de-responsaveis`).
 sem sabotagem passou inteira): o painel de antes inteiro (4 reprovações) e a
 opção de volta sem a marca `data-minhas-opcao` (pega pela conferência que
 procura o nome no menu).
+
+### As "Favoritas" saíram da lista (24/11)
+
+Pedido do Rodrigo, com a foto da fita de filtros: *"E a opção 'Favoritas'
+pode remover, não usamos essa função."*
+
+**Medido no banco em 24/11, só contando:** uma conversa favorita em 2.565.
+
+**A marca de favorita da conversa tinha três usos, e os três eram desta
+função**: a pílula da fita, o "Adicionar aos favoritos" do menu ⌄ da linha e a
+estrela amarela ao lado do nome. Saíram os três, e o filtro inteiro junto: o
+`"favoritas"` da lista, a leitura das favoritas de fora das páginas (que
+morava em `extrasMarcadas`, com as não lidas e as arquivadas), a frase da
+lista vazia (`sem-favoritas`) e a falha da faixa. **A coluna `favorita`
+continua no banco**, sem uso: nada a apaga, e a ponte não a toca.
+
+- **A fita ficou com "Tudo" e "Não lidas"**, mais a seta das etiquetas e dos
+  grupos (e, no celular, a pílula da ordem);
+- **a aba que se atualiza sozinha com o filtro ligado volta em "Tudo"**: os
+  filtros que saíram moram numa lista só (`FILTROS_QUE_SAIRAM`, com o
+  "minhas" de 06/11), e a foto da tela (`fotoDaVolta`) que traz um deles é
+  desenhada sem ele;
+- **o "Favoritar" de uma MENSAGEM fica**: é outra marca (`mensagens.favorita`,
+  no menu da bolha), e o pedido foi sobre a fita.
+
+**As provas foram INVERTIDAS, e não apagadas:**
+
+- as cenas 7 e 8 de `os-filtros-nao-afirmam-ausencia`: a 7 confere que a fita
+  não oferece mais "Favoritas" e que a favorita da posição 450 não é trazida
+  por filtro nenhum (o rodapé sem o "+" passou a ser conferido na pasta de
+  arquivadas); a 8 passou a régua (procurando, a frase do filtro e a falha que
+  não vira "nenhuma") para "Não lidas", num telefone sem nenhuma;
+- a cena 13 de `a-auditoria-de-27-10`: a pílula não volta, e a lista vazia de
+  um filtro fala do filtro, agora com "Não lidas";
+- `o-teclado-alcanca-a-lista`: o menu não oferece mais "favoritos", e o gesto
+  pelo teclado passou para "Fixar no topo".
+
+Prova: `as-favoritas-sairam`, 29 conferências: a fita no computador e no
+celular; a conversa favorita (plantada) sem estrela e com o menu sem
+"favoritos"; a foto com "favoritas" voltando em "Tudo", e o contraste da foto
+com "Não lidas" voltando em "Não lidas"; e o "Favoritar" da mensagem de pé.
+
+**7 sabotagens e 7 pegas**, rodadas em cópias e lidas uma a uma: o painel de
+antes inteiro (7 reprovações); a pílula de volta (4); o item do menu de volta;
+a estrela de volta; a foto com "favoritas" aceita; a foto ignorada sempre
+(pega pelo contraste); e o "Favoritar" da mensagem tirado junto.
+
+**A primeira rodada achou um defeito da prova:** a primeira abertura de um
+servidor recém-subido passou dos 8 s da espera padrão, e a cópia estourou no
+`goto` sem dizer nada. A espera da página passou a ser de 60 s
+(`setDefaultNavigationTimeout`), e a sabotagem, rodada de novo, é pega.
 
 ## Quem saiu não aparece para escolher (04/11)
 

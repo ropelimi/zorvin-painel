@@ -761,13 +761,18 @@ if (vale("13")) {
   await ctx.close();
 }
 if (vale("13")) {
-  // A LISTA VAZIA DE UM FILTRO fala do filtro.
+  // A LISTA VAZIA DE UM FILTRO fala do filtro. A cena usava "Favoritas", que
+  // saiu da fita em 24/11 — INVERTIDA, e não apagada: a pílula não volta, e a
+  // régua passou para "Não lidas" (com nenhuma não lida na bancada).
   const { ctx, page } = await abrir();
-  const fav = page.getByRole("button", { name: "Favoritas", exact: true });
-  ok("liguei o filtro Favoritas", (await fav.count()) > 0 && (await fav.first().click(), true));
-  await page.waitForTimeout(800);
+  ok("a fita não oferece mais “Favoritas”", (await page.getByRole("button", { name: "Favoritas", exact: true }).count()) === 0);
+  await page.evaluate(() => { for (const c of globalThis.__TABELAS.conversas) c.nao_lidas = 0; });
+  ok("fui a outro telefone, que relê a lista", await clicar(page, '[data-telefone="Acordos 2"]'));
+  await page.waitForTimeout(2500);
+  ok("liguei o filtro Não lidas", await clicar(page, '[data-aba="naolidas"]'));
+  await page.waitForTimeout(1500);
   const recado = await page.locator("[data-recado-da-lista]").first().getAttribute("data-recado-da-lista").catch(() => null);
-  ok("a lista vazia diz que não há favorita, e não “Nenhuma conversa ainda”", recado === "sem-favoritas", recado);
+  ok("a lista vazia diz que não há não lida, e não “Nenhuma conversa ainda”", recado === "sem-nao-lidas", recado);
   await ctx.close();
 }
 if (vale("13")) {
