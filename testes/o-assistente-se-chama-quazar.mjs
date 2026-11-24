@@ -537,7 +537,7 @@ ok("com o rosto dele", (await rostoEm(titulo).count()) === 1);
   ok("pintado", p.ok, q(p));
 }
 const manual = page.locator("[data-manual-do-copiloto]");
-ok("a explicação diz o que o Quazar lê", /o Quazar lê as últimas 40 mensagens/.test(await texto(manual)), q((await texto(manual)).slice(0, 300)));
+ok("a explicação diz o que o Quazar lê", /o Quazar lê a conversa aberta inteira/.test(await texto(manual)), q((await texto(manual)).slice(0, 300)));
 ok("e que as notas internas não vão para ele", /As notas internas não vão para o Quazar\./.test(await texto(manual)));
 ok("a seção das lições diz o que ele aprendeu com a equipe",
    await esperar(async () => /O que o Quazar aprendeu com a equipe/.test(await texto(page.locator("[data-licoes-do-copiloto]")))),

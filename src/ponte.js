@@ -53,7 +53,9 @@ export async function chamarPonte(caminho, opcoes = {}) {
   // Vantoro — que é OUTRA hospedagem, e que também hiberna. Meio minuto ali
   // desistiria de um trabalho que estava andando, e o painel diria "demorou
   // demais" para algo que teria terminado.
-  const { espera = ESPERA_PADRAO, ...restante } = opcoes;
+  // `comoArquivo` (24/11): a resposta boa é um arquivo (a voz do Quazar), e
+  // não JSON. A recusa continua vindo em JSON, com a frase da ponte.
+  const { espera = ESPERA_PADRAO, comoArquivo = false, ...restante } = opcoes;
   const relogio = new AbortController();
   const estourou = setTimeout(() => relogio.abort(), espera);
   let r;
@@ -75,6 +77,7 @@ export async function chamarPonte(caminho, opcoes = {}) {
   } finally {
     clearTimeout(estourou);
   }
+  if (comoArquivo && r.ok) return r.blob();
   const corpo = await r.json().catch(() => ({}));
   // A RECUSA LEVA O CÓDIGO HTTP (auditoria de 07/10): quem chama precisa
   // separar "a ponte disse não" (4xx — insistir não muda nada, e cair num

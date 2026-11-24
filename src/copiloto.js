@@ -79,7 +79,8 @@ const DE_NOVO_EM_MS =
   (typeof globalThis !== "undefined" && globalThis.__PERGUNTAR_DE_NOVO_EM) || 30000;
 const VEZES_DE_NOVO = 4;
 
-const NAO_CONSEGUI = () => ({ ligado: null, modelo: null, resumo: null, funil: null, ajustar: null, aprende: null });
+const NAO_CONSEGUI = () => ({ ligado: null, modelo: null, resumo: null, funil: null, ajustar: null, aprende: null,
+  ouvir: null, voz: null, voz_pronta: null });
 
 let promessa = null;
 let falhas = 0;
@@ -123,6 +124,14 @@ export function perguntarOCopiloto() {
         ajustar: respondeu ? corpo.ajustar === true : null,
         // E O APRENDIZADO: três respostas, como o funil.
         aprende: !respondeu ? null : corpo.aprende === true ? true : corpo.aprende === false ? false : "antiga",
+        // O PEDIDO FALADO (24/11): a ponte de antes, e a sem a chave do Groq,
+        // não falam dele (ou dizem `false`), e o microfone some.
+        ouvir: respondeu ? corpo.ouvir === true : null,
+        // A VOZ DO QUAZAR (24/11): `voz` é a chave da ElevenLabs na ponte;
+        // `voz_pronta`, se quem administra já escolheu a voz. Três respostas:
+        // `null` é "não sei" (a ponte ainda não leu, ou não respondeu).
+        voz: respondeu ? corpo.voz === true : null,
+        voz_pronta: !respondeu ? null : corpo.voz_pronta === true ? true : corpo.voz_pronta === false ? false : null,
       };
     })
     .catch(() => NAO_CONSEGUI())
@@ -283,6 +292,71 @@ export async function pedirResumo(conversaId) {
     ate: r.ate || null,
     avisos: lista(r.avisos),
   };
+}
+
+/** O MICROFONE DO "PEDIR UMA MUDANÇA" (24/11) aparece? A régua do resumo: só a
+ *  ponte que RESPONDEU sem dizer `ouvir` esconde (a de antes, ou a sem a chave
+ *  do Groq); a pergunta que falhou mostra, e o clique diz o que houver. E o
+ *  navegador precisa saber gravar. */
+export const ouvirAparece = (estado) =>
+  ajusteAparece(estado) && estado.ouvir !== false
+  && typeof window !== "undefined" && typeof window.MediaRecorder === "function"
+  && Boolean(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+
+/** O "OUVIR" DO RESUMO (24/11) aparece? A ponte que diz não ter a chave da
+ *  ElevenLabs esconde, e a que diz que ninguém escolheu a voz também: o botão
+ *  só daria a frase "ainda não tem voz" a quem não pode escolher. "Não sei"
+ *  mostra. */
+export const vozAparece = (estado) =>
+  resumoAparece(estado) && estado.voz !== false && estado.voz_pronta !== false;
+
+/** Quem administra acabou de escolher a voz: as telas abertas nesta guia
+ *  passam a oferecer o "Ouvir" sem precisar recarregar. */
+export function aVozFoiEscolhida() {
+  if (!promessa) return;
+  promessa.then((r) => {
+    const novo = { ...r, voz: true, voz_pronta: true };
+    promessa = Promise.resolve(novo);
+    ouvintes.forEach((f) => f(novo));
+  });
+}
+
+const ESPERA_DO_OUVIR_MS = 60000;
+const ESPERA_DA_VOZ_MS = 100000;
+
+function emBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const leitor = new FileReader();
+    leitor.onload = () => resolve(String(leitor.result || "").replace(/^data:[^,]*,/, ""));
+    leitor.onerror = () => reject(new Error("Não consegui ler a gravação."));
+    leitor.readAsDataURL(blob);
+  });
+}
+
+/** O PEDIDO FALADO (24/11): manda a gravação à ponte, que devolve o que foi
+ *  dito. Nada é gravado em lugar nenhum. */
+export async function ouvirPedido(gravacao) {
+  const audio = await emBase64(gravacao);
+  const r = await chamarPonte("/copiloto/ouvir", {
+    method: "POST",
+    body: JSON.stringify({ audio, mime: gravacao.type || "audio/webm" }),
+    espera: ESPERA_DO_OUVIR_MS,
+  });
+  const texto = String((r && r.texto) || "").replace(/\s+/g, " ").trim();
+  if (!texto) throw new Error("Não ouvi nenhuma fala no áudio. Grave de novo, mais perto do microfone, ou escreva o pedido.");
+  return texto;
+}
+
+/** O QUAZAR LÊ UM TEXTO (24/11): a ponte devolve o mp3, ou a frase da recusa. */
+export async function pedirAVoz(texto) {
+  const audio = await chamarPonte("/copiloto/voz/falar", {
+    method: "POST",
+    body: JSON.stringify({ texto }),
+    espera: ESPERA_DA_VOZ_MS,
+    comoArquivo: true,
+  });
+  if (!audio || !audio.size) throw new Error(`A voz do ${NOME_DO_ASSISTENTE} veio vazia. Tente de novo.`);
+  return audio;
 }
 
 // A BANCADA PRECISA ESQUECER ENTRE CENÁRIOS (a régua de `temVantoro.js`).
