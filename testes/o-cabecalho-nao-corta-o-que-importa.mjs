@@ -219,11 +219,25 @@ console.log("\n4. O menu de mais filtros cai DENTRO da coluna");
   // começa colada na borda da coluna, e um menu de 250px ancorado nela com
   // `right: 0` termina ali e começa em −63. MEDIDO, com a fita forçada a
   // quebrar: antes left −63, agora left 72.
+  //
+  // A LARGURA SAI DA CONTA, e não de um número (24/11). Com a pílula
+  // "Favoritas" na fita, 200 bastava; sem ela a fita ficava numa linha só, e
+  // com um número maior (280) era a "Não lidas" que descia, levando a seta
+  // para o lado dela, longe da borda — e o menu ancorado à direita da seta
+  // cabia, aprovando o defeito antigo. Hoje a "Não lidas" ocupa exatamente o
+  // que sobra na primeira linha ao lado do "Tudo", e só a seta desce, sozinha
+  // e colada na borda, que é o caso que quebrou no escritório.
   const { ctx, page, estouros } = await abrir(1366);
   await page.evaluate(() => {
+    const fita = document.querySelector("[data-fita-de-filtros]");
     const t = [...document.querySelectorAll("[data-fita-de-filtros] button")]
       .find((b) => /Não lidas/.test(b.innerText));
-    if (t) t.style.minWidth = "200px";   // o efeito de um contador de 3 dígitos
+    const tudo = document.querySelector('[data-fita-de-filtros] [data-aba="tudo"]');
+    if (!fita || !t || !tudo) return;
+    const cs = getComputedStyle(fita);
+    const dentro = fita.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const vao = parseFloat(cs.columnGap) || 0;
+    t.style.minWidth = `${Math.floor(dentro - tudo.getBoundingClientRect().width - vao - 1)}px`;
   });
   await page.waitForTimeout(200);
   const pilula = page.locator("[data-mais-filtros]");
@@ -237,14 +251,18 @@ console.log("\n4. O menu de mais filtros cai DENTRO da coluna");
     if (!menu || !fita) return null;
     const r = menu.getBoundingClientRect(), f = fita.getBoundingClientRect();
     const quem = document.elementFromPoint(Math.round(r.left + 8), Math.round(r.bottom - 8));
+    const seta = document.querySelector("[data-mais-filtros]").getBoundingClientRect();
     return { linhasDaFita: new Set([...fita.children]
                .map((c) => Math.round(c.getBoundingClientRect().top))).size,
+             setaNaBorda: Math.round(seta.left - f.left - parseFloat(getComputedStyle(fita).paddingLeft)),
              menu: { left: Math.round(r.left), right: Math.round(r.right) },
              coluna: { left: Math.round(f.left), right: Math.round(f.right) },
              cantoPintado: !!(quem && menu.contains(quem)) };
   });
   ok("a fita está mesmo quebrada (senão esta cena mede o caso fácil)",
      m && m.linhasDaFita === 2, JSON.stringify(m));
+  ok("e a seta desceu sozinha, colada na borda da fita (o caso do escritório)",
+     m && Math.abs(m.setaNaBorda) <= 1, JSON.stringify(m));
   // A RÉGUA É A COLUNA, E NÃO A JANELA — a mesma lição de 16/09, no menu da
   // ordem: um menu pode caber na janela e mesmo assim derramar da coluna.
   ok("o menu começa dentro da coluna",

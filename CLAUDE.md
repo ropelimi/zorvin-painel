@@ -5293,6 +5293,23 @@ servidor recém-subido passou dos 8 s da espera padrão, e a cópia estourou no
 `goto` sem dizer nada. A espera da página passou a ser de 60 s
 (`setDefaultNavigationTimeout`), e a sabotagem, rodada de novo, é pega.
 
+**E a integração contínua achou uma prova vizinha que dependia da pílula.**
+A cena 4 de `o-cabecalho-nao-corta-o-que-importa` (o menu de filtros que
+abria fora da tela, 29/09) precisa da fita QUEBRADA, com a seta sozinha na
+segunda linha, colada na borda. Ela forçava a quebra alargando a "Não lidas"
+para 200 pontos, e isso só bastava com a "Favoritas" ao lado: sem ela, a fita
+ficou numa linha só, e a cena reprovou dizendo que media o caso fácil.
+Alargar para um número maior (280) não servia: aí era a "Não lidas" que
+descia, levando a seta para o lado dela, e o menu ancorado à direita da seta
+cabia. **Medido: o defeito antigo recriado passava.** Hoje a largura sai da
+conta (a "Não lidas" ocupa o que sobra na primeira linha ao lado do "Tudo"), e
+uma conferência nova exige a seta colada na borda. Com o defeito antigo, o
+menu começa em −148 e a cena reprova. A parte 2 da integração contínua tinha
+reprovado também na `digitar`, que mede tempo, na primeira rodada (1,47×);
+aqui, no mesmo commit, ela deu 0,88×, e passou na segunda rodada lá.
+**Ler só o fim do registro de uma parte que reprovou não basta**: a
+`digitar` estava no fim e a falha de verdade, mais acima.
+
 ## Quem saiu não aparece para escolher (04/11)
 
 Relato do Rodrigo, com a foto do menu "Passar para": *"A Gabriely Mota está
