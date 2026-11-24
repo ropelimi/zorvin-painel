@@ -1,8 +1,91 @@
-import React from "react";
-import { Loader2, X, Copy, RotateCcw, AlertCircle } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { Loader2, X, Copy, RotateCcw, AlertCircle, Volume2, Square } from "lucide-react";
 import { NOME_DO_ASSISTENTE } from "./assistente.js";
 import { RostoDoAssistente } from "./RostoDoAssistente.jsx";
 import { PARTES_DO_RESUMO, fraseDaLeitura } from "./resumoDaConversa.js";
+import { pedirAVoz } from "./copiloto.js";
+
+// ============================================================
+//  A VOZ DO QUAZAR (24/11) — o "Ouvir" do quadro. A ponte manda o texto à
+//  ElevenLabs, com a voz que quem administra escolheu, e devolve o mp3.
+//
+//  O ÁUDIO FICA GUARDADO NA GUIA, pelo texto (até 10): ouvir de novo o mesmo
+//  resumo, ou fechar o quadro e abrir, não pede outra vez. Um resumo novo é
+//  outro texto, e outro áudio.
+//
+//  FECHAR O QUADRO, OU PEDIR OUTRO RESUMO, PARA A VOZ: ela fala do resumo que
+//  está na tela, e não de um que saiu.
+// ============================================================
+const VOZES_GUARDADAS = new Map();
+const VOZES_NO_MAXIMO = 10;
+function guardarAVoz(texto, url) {
+  VOZES_GUARDADAS.set(texto, url);
+  while (VOZES_GUARDADAS.size > VOZES_NO_MAXIMO) {
+    const [primeiro, velha] = VOZES_GUARDADAS.entries().next().value;
+    VOZES_GUARDADAS.delete(primeiro);
+    try { URL.revokeObjectURL(velha); } catch (_) { /* já solta */ }
+  }
+}
+
+function useVozDoResumo(texto) {
+  const [voz, setVoz] = useState({ fase: "parado", erro: "" });
+  const audioRef = useRef(null);
+  const vivoRef = useRef(true);
+  const textoRef = useRef(texto);
+  textoRef.current = texto;
+
+  function calar() {
+    const a = audioRef.current;
+    audioRef.current = null;
+    if (a) { try { a.pause(); a.currentTime = 0; } catch (_) { /* já parou */ } }
+  }
+  useEffect(() => {
+    vivoRef.current = true;
+    return () => { vivoRef.current = false; calar(); };
+  }, []);
+  // OUTRO TEXTO (outro resumo, ou nenhum): a voz de antes para.
+  useEffect(() => { calar(); setVoz({ fase: "parado", erro: "" }); }, [texto]);
+
+  async function tocar(url, deQualTexto) {
+    calar();
+    const audio = new Audio(url);
+    audioRef.current = audio;
+    audio.onended = () => { if (audioRef.current === audio) { audioRef.current = null; setVoz({ fase: "parado", erro: "" }); } };
+    try {
+      await audio.play();
+      if (vivoRef.current && textoRef.current === deQualTexto && audioRef.current === audio) setVoz({ fase: "tocando", erro: "" });
+    } catch (e) {
+      if (audioRef.current === audio) audioRef.current = null;
+      if (vivoRef.current) {
+        setVoz({ fase: "erro", erro: "O navegador não deixou tocar o áudio. Clique em Ouvir de novo." });
+      }
+    }
+  }
+
+  async function ouvir() {
+    const deQualTexto = textoRef.current;
+    if (!deQualTexto) return;
+    if (voz.fase === "tocando") { calar(); setVoz({ fase: "parado", erro: "" }); return; }
+    if (voz.fase === "preparando") return;
+    const guardada = VOZES_GUARDADAS.get(deQualTexto);
+    if (guardada) { await tocar(guardada, deQualTexto); return; }
+    setVoz({ fase: "preparando", erro: "" });
+    let url;
+    try {
+      const audio = await pedirAVoz(deQualTexto);
+      url = URL.createObjectURL(audio);
+      guardarAVoz(deQualTexto, url);
+    } catch (e) {
+      if (vivoRef.current && textoRef.current === deQualTexto) setVoz({ fase: "erro", erro: String((e && e.message) || e) });
+      return;
+    }
+    // O QUADRO FECHOU, OU O RESUMO MUDOU, enquanto a voz vinha: ela fica
+    // guardada para a próxima vez, e não toca.
+    if (!vivoRef.current || textoRef.current !== deQualTexto) return;
+    await tocar(url, deQualTexto);
+  }
+  return { voz, ouvir };
+}
 
 // ============================================================
 //  O QUADRO DO RESUMO (01/11) — ver `resumoDaConversa.js` e, na ponte,
@@ -23,7 +106,11 @@ import { PARTES_DO_RESUMO, fraseDaLeitura } from "./resumoDaConversa.js";
 //  de advocacia: um resumo que inventasse um acordo e fosse lido como fato é
 //  o pior desfecho, e a frase custa uma linha.
 // ============================================================
-export default function ResumoDaConversa({ C, escuro, estreito, estado, novas = 0, aoFechar, aoResumirDeNovo, aoCopiar }) {
+export default function ResumoDaConversa({ C, escuro, estreito, estado, novas = 0, aoFechar, aoResumirDeNovo, aoCopiar,
+                                          textoParaOuvir = "" }) {
+  // O "OUVIR" SÓ COM O RESUMO PRONTO, e só com a voz ligada (quem desenha o
+  // quadro passa o texto só aí).
+  const { voz, ouvir } = useVozDoResumo(estado && estado.fase === "pronto" ? textoParaOuvir : "");
   if (!estado) return null;
   const { fase } = estado;
   const corDaBorda = fase === "erro" ? (escuro ? "#e57373" : "#c0392b") : C.green;
@@ -52,6 +139,20 @@ export default function ResumoDaConversa({ C, escuro, estreito, estado, novas = 
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <RostoDoAssistente tamanho={24} />
         <b style={{ fontSize: 14, flex: 1, minWidth: 120 }}>Resumo da conversa</b>
+        {fase === "pronto" && textoParaOuvir && (
+          <button data-resumo-ouvir={voz.fase} onClick={ouvir} disabled={voz.fase === "preparando"}
+                  aria-pressed={voz.fase === "tocando"}
+                  title={voz.fase === "tocando" ? "Parar a leitura"
+                    : voz.fase === "preparando" ? `Preparando a voz do ${NOME_DO_ASSISTENTE}…`
+                    : `O ${NOME_DO_ASSISTENTE} lê o resumo em voz alta`}
+                  aria-label={voz.fase === "tocando" ? "Parar a leitura do resumo" : `Ouvir o ${NOME_DO_ASSISTENTE} ler o resumo`}
+                  style={{ ...botao, ...(voz.fase === "tocando" ? { borderColor: C.green, color: C.verdeTexto } : null) }}>
+            {voz.fase === "preparando"
+              ? <Loader2 size={14} color={C.green} style={{ animation: "zv-resumo-gira 1s linear infinite" }} />
+              : voz.fase === "tocando" ? <Square size={12} fill="currentColor" /> : <Volume2 size={14} />}
+            {estreito ? "" : voz.fase === "preparando" ? "Preparando a voz…" : voz.fase === "tocando" ? "Parar" : "Ouvir"}
+          </button>
+        )}
         {fase === "pronto" && (
           <button data-resumo-copiar onClick={aoCopiar} title="Copiar o resumo (texto puro)" style={botao}>
             <Copy size={14} /> Copiar
@@ -69,10 +170,16 @@ export default function ResumoDaConversa({ C, escuro, estreito, estado, novas = 
         </button>
       </div>
 
+      <style>{"@keyframes zv-resumo-gira { to { transform: rotate(360deg); } }"}</style>
+      {fase === "pronto" && voz.fase === "erro" && (
+        <div data-resumo-voz-erro role="alert" style={{ display: "flex", gap: 6, alignItems: "flex-start", marginTop: 8,
+                                                      fontSize: 12.5, lineHeight: 1.45, color: C.erroTexto }}>
+          <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 2 }} /> {voz.erro}
+        </div>
+      )}
       {fase === "pensando" && (
         <div data-resumo-pensando style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10,
                                            fontSize: 13, color: C.textSecondary }}>
-          <style>{"@keyframes zv-resumo-gira { to { transform: rotate(360deg); } }"}</style>
           <Loader2 size={16} color={C.green} style={{ flexShrink: 0, animation: "zv-resumo-gira 1s linear infinite" }} />
           Lendo a conversa para resumir… pode levar alguns segundos.
         </div>

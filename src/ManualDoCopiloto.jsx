@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 import { NOME_DO_ASSISTENTE } from "./assistente.js";
 import { RostoDoAssistente } from "./RostoDoAssistente.jsx";
 import { LicoesDoCopiloto, NotasDoCopiloto, useNomesDaEquipe } from "./AprendizadoDoCopiloto.jsx";
+import { VozDoQuazar } from "./VozDoQuazar.jsx";
 
 // ============================================================
 //  O MANUAL DO COPILOTO — a aba "Quazar" de Departamentos e acessos. Desde
@@ -114,8 +115,8 @@ export function ManualDoCopiloto({ cx, C, departamentos = [], telefones = [] }) 
           {situacao.frase}
         </div>
         <div style={{ ...cx.dica, marginBottom: 0 }}>
-          Ao clicar em <b>Sugerir resposta</b>, o {NOME_DO_ASSISTENTE} lê as últimas 40 mensagens da
-          conversa aberta (os áudios, pela transcrição), as mensagens rápidas da equipe, o
+          Ao clicar em <b>Sugerir resposta</b>, o {NOME_DO_ASSISTENTE} lê a conversa aberta inteira,
+          também o que veio antes de ela ser finalizada e reaberta (os áudios, pela transcrição), as mensagens rápidas da equipe, o
           manual abaixo, as lições que a equipe ensinou e o que ele aprendeu lendo as conversas
           daquele telefone e daquele departamento — e escreve uma resposta na caixa. <b>Nada sai
           sozinho</b>: quem atende lê, pede uma mudança se precisar e só então envia. As notas
@@ -172,6 +173,7 @@ export function ManualDoCopiloto({ cx, C, departamentos = [], telefones = [] }) 
         </>)}
       </div>
 
+      <VozDoQuazar cx={cx} C={C} />
       <LicoesDoCopiloto cx={cx} C={C} nomes={nomes} />
       <NotasDoCopiloto cx={cx} C={C} departamentos={departamentos} telefones={telefones}
                        estado={estado} nomes={nomes} />

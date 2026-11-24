@@ -8,6 +8,7 @@
 // ============================================================
 
 import { NOME_DO_ASSISTENTE } from "./assistente.js";
+import { nomeCompleto } from "./variaveis.js";
 
 export const PARTES_DO_RESUMO = [
   { chave: "quer", titulo: "O que o cliente quer", vazio: "Não ficou claro na conversa." },
@@ -67,4 +68,29 @@ export function textoDoResumo(resumo, { nome = "", quando = "" } = {}) {
     `${PARTES_DO_RESUMO[2].titulo}:`,
     ...lista(r.falta, PARTES_DO_RESUMO[2].vazio),
   ].join("\n");
+}
+
+// O TETO DA PONTE para o que a voz lê (`VOZ_TETO_TEXTO`, 2500). Passando, o
+// fim é cortado aqui, e a frase da IA continua no fim.
+const TETO_DO_QUE_SE_OUVE = 2400;
+
+/** O RESUMO PARA OUVIR (24/11), lido pela voz do Quazar. Frases inteiras, e
+ *  não a lista do quadro: os traços de "- " seriam lidos como "traço". O nome
+ *  do cliente vai arrumado ("ANDREIA CRISTINA MARTINS" vira "Andreia Cristina
+ *  Martins"): em maiúsculas, a voz pode soletrar. E a frase da IA fica no fim,
+ *  como no quadro: ouvido, o resumo também não pode passar por fato. */
+export function textoParaOuvir(resumo, { nome = "" } = {}) {
+  const r = resumo || {};
+  const ponto = (t) => { const x = String(t || "").trim(); return !x ? "" : /[.!?…]$/.test(x) ? x : `${x}.`; };
+  const lista = (v, vazio) => (v && v.length ? v.map(ponto).join(" ") : ponto(vazio));
+  const quem = nomeCompleto(nome);
+  const corpo = [
+    `${NOME_DO_ASSISTENTE} aqui. Resumo da conversa${quem ? ` com ${quem}` : ""}.`,
+    `${PARTES_DO_RESUMO[0].titulo}: ${ponto(r.quer || PARTES_DO_RESUMO[0].vazio)}`,
+    `${PARTES_DO_RESUMO[1].titulo}: ${lista(r.combinado, PARTES_DO_RESUMO[1].vazio)}`,
+    `${PARTES_DO_RESUMO[2].titulo}: ${lista(r.falta, PARTES_DO_RESUMO[2].vazio)}`,
+  ].join("\n");
+  const fim = "Confira na conversa antes de agir.";
+  const cabe = TETO_DO_QUE_SE_OUVE - fim.length - 1;
+  return `${corpo.length > cabe ? `${corpo.slice(0, cabe - 1).trimEnd()}…` : corpo}\n${fim}`;
 }

@@ -14,7 +14,7 @@ import {
   Bold, Italic, Strikethrough, Code, ListOrdered, List, Quote, Volume2,
   ListChecks, Undo2, UserCheck, SquareKanban, BellRing, BellPlus, CircleCheck, RotateCcw,
   Loader2, Headset, Hourglass, ScrollText, AlarmClock, RefreshCw, PhoneCall, Phone,
-  Keyboard, SendHorizontal, Zap
+  Keyboard, SendHorizontal, Zap, Square
 } from "lucide-react";
 import { FORMATOS, calcularFormato, formatoDaTecla } from "./formatacao.js";
 import FichaVantoro from "./FichaVantoro";
@@ -73,7 +73,9 @@ import EscolherHora from "./EscolherHora.jsx";
 import { perguntarOsScripts, fraseDosScriptsParaAFaixa, manterOQueSeSabia } from "./scriptsDoBanco.js";
 import { rotuloDaHora, porQueNaoServe, semAColunaDaAgenda, aindaDaParaEditar } from "./agenda.js";
 import { useEstadoDoCopiloto, copilotoAparece, pedirSugestao, resumoAparece, pedirResumo, ajusteAparece, pedirAjuste,
-         campoDoAjusteAparece, faixaDoCopilotoAparece, faixaDoCopilotoFecha } from "./copiloto.js";
+         campoDoAjusteAparece, faixaDoCopilotoAparece, faixaDoCopilotoFecha, ouvirAparece, ouvirPedido,
+         vozAparece, pedirAVoz } from "./copiloto.js";
+import { useGravadorDoPedido, relogioDoPedido } from "./gravadorDoPedido.js";
 import ResumoDaConversa from "./ResumoDaConversa.jsx";
 import { NOME_DO_ASSISTENTE } from "./assistente.js";
 import { RostoDoAssistente } from "./RostoDoAssistente.jsx";
@@ -86,7 +88,7 @@ const TITULO_DA_SUGESTAO = {
   editada: `Escrita com o “Sugerir resposta” do ${NOME_DO_ASSISTENTE} e editada por quem enviou. Só a equipe vê esta marca.`,
 };
 import { BolhaDoEnsaio, bolhaDoEnsaio } from "./EnsaioDoQuazar.jsx";
-import { mensagensDepoisDoResumo, textoDoResumo } from "./resumoDaConversa.js";
+import { mensagensDepoisDoResumo, textoDoResumo, textoParaOuvir as textoDoResumoParaOuvir } from "./resumoDaConversa.js";
 import { ABAS_DA_SITUACAO, NOME_DA_SITUACAO } from "./abasDaSituacao.js";
 import { SEM_RESPONSAVEL, chaveDosResponsaveis, daChave, passaNosResponsaveis, recortarPelosResponsaveis,
          argumentosDaContagem, rotuloDosResponsaveis, fraseDosResponsaveis } from "./responsaveisDaLista.js";
@@ -4136,6 +4138,12 @@ export default function Painel({ sessao }) {
   //  voltando para A ela tem de ver que o pedido ainda está andando.
   // ============================================================
   const estadoDoCopiloto = useEstadoDoCopiloto();
+  // O PEDIDO FALADO AO QUAZAR (24/11): a gravação mora aqui, e o espelho deixa
+  // a escada do Esc e o que segura a atualização perguntarem sem depender do
+  // desenho.
+  const gravadorDoPedido = useGravadorDoPedido();
+  const pedidoFaladoRef = useRef(gravadorDoPedido);
+  pedidoFaladoRef.current = gravadorDoPedido;
   const [copiloto, setCopiloto] = useState({});
   // A MENSAGEM QUE VEIO DO "SUGERIR RESPOSTA" (18/11), por conversa: o último
   // texto que o Quazar pôs na caixa (ou no rascunho). Ao enviar, a mensagem
@@ -4793,6 +4801,9 @@ export default function Painel({ sessao }) {
     if (guardados) lista.push(guardados === 1 ? "o rascunho de outra conversa" : `os rascunhos de ${guardados} conversas`);
     if (gravando) lista.push("o áudio que está sendo gravado");
     if (audioPronto) lista.push("o áudio gravado e não enviado");
+    if (pedidoFaladoRef.current && pedidoFaladoRef.current.fase === "gravando") {
+      lista.push(`o pedido ao ${NOME_DO_ASSISTENTE} que está sendo gravado`);
+    }
     if (anexosPendentes.length) lista.push(anexosPendentes.length === 1 ? "o anexo escolhido e não enviado" : "os anexos escolhidos e não enviados");
     if (mensagens.some((m) => m && m._status === "enviando" && String(m.id).startsWith("temp-"))) {
       lista.push("a mensagem que ainda está saindo");
@@ -11546,6 +11557,9 @@ export default function Painel({ sessao }) {
       // A FAIXA DO COPILOTO (05/11) fica logo acima da caixa de escrever, como
       // a citação: Esc fecha ELA antes da conversa. O primeiro Esc no campo
       // de pedir uma mudança apaga o pedido, e quem o pega é o próprio campo.
+      // GRAVANDO O PEDIDO FALADO (24/11), o Esc cancela a gravação, sem mandar
+      // nada; só o seguinte fecha a faixa.
+      else if (pedidoFaladoRef.current && pedidoFaladoRef.current.fase !== "parado") pedidoFaladoRef.current.cancelar();
       else if (conversaId && faixaDoCopilotoFecha(copiloto[conversaId],
                { nota: modoNota, editando: Boolean(editando), vazia: !rascunhoRef.current.trim() }))
         mudarCopiloto(conversaId, null);
@@ -14363,6 +14377,12 @@ export default function Painel({ sessao }) {
   // O "PEDIR UMA MUDANÇA" (05/11) só com a ponte que tem a rota: a de antes
   // não diz `ajustar`, e aí a sugestão entra na caixa sem faixa, como antes.
   const ajusteDisponivel = ajusteAparece(estadoDoCopiloto);
+  // O MICROFONE DO PEDIDO (24/11): a ponte que não ouve (a de antes, ou sem a
+  // chave do Groq) não o oferece, e o navegador que não grava também não.
+  const ouvirDisponivel = ouvirAparece(estadoDoCopiloto);
+  // A VOZ DO QUAZAR (24/11): o "Ouvir" do resumo, só com a chave da
+  // ElevenLabs na ponte e uma voz escolhida.
+  const vozDisponivel = vozAparece(estadoDoCopiloto);
   const copilotoAqui = conversaId ? copiloto[conversaId] || null : null;
   const copilotoPensando = Boolean(copilotoAqui && copilotoAqui.fase === "pensando");
   // O CAMPO DE PEDIR UMA MUDANÇA mora com a mensagem na caixa de escrever (as
@@ -14481,11 +14501,13 @@ export default function Painel({ sessao }) {
   //  - O AVISO DA PONTE (a lição que não pôde ser guardada) é dito: calado, a
   //    atendente acharia que o copiloto aprendeu.
   // ------------------------------------------------------------
-  async function pedirMudancaAoCopiloto() {
+  async function pedirMudancaAoCopiloto(pedidoFalado) {
     const id = conversaId;
     const s = id && copiloto[id];
     if (!conversa || !s || s.fase !== "sugeriu" || modoNota || editando) return;
-    const pedido = String(s.pedido || "").trim();
+    // O PEDIDO FALADO (24/11) chega pronto: o texto do campo ainda não foi
+    // desenhado quando a resposta da ponte chega.
+    const pedido = String((typeof pedidoFalado === "string" ? pedidoFalado : s.pedido) || "").trim();
     if (!pedido) return;
     const enviada = rascunhoRef.current;
     const contexto = { cliente: !ehGrupo(conversa) ? nomeDoContato(conversa.contato) : "", atendente: meuNome };
@@ -14521,6 +14543,62 @@ export default function Painel({ sessao }) {
       mudarCopiloto(id, { ...depois, fase: "atrasada", sugestao: texto, deAjuste: true });
     }
   }
+
+  // O PEDIDO FALADO chama o "Pedir" do desenho de AGORA, e não o do desenho
+  // em que a gravação começou: a conversa e a caixa podem ter mudado.
+  const pedirMudancaRef = useRef(null);
+  pedirMudancaRef.current = pedirMudancaAoCopiloto;
+  const conversaDaGravacaoRef = useRef(null);
+
+  // ------------------------------------------------------------
+  //  O PEDIDO FALADO AO QUAZAR (24/11) — ver `gravadorDoPedido.js`.
+  //  Um toque grava, outro termina; a ponte devolve o que foi dito
+  //  (`ouvirPedido`), o texto entra no campo e o pedido sai pelo caminho do
+  //  digitado. Passando de 500 caracteres (o teto do campo e da ponte), ele
+  //  fica no campo para a pessoa encurtar. Com a conversa trocada no meio,
+  //  o texto fica no campo da conversa dele, e nada sai sozinho.
+  // ------------------------------------------------------------
+  function gravarPedidoFalado() {
+    const id = conversaId;
+    const s = id && copiloto[id];
+    if (gravadorDoPedido.fase === "gravando") { gravadorDoPedido.parar(); return; }
+    if (!s || s.fase !== "sugeriu" || s.ouvindo || gravadorDoPedido.fase !== "parado") return;
+    conversaDaGravacaoRef.current = id;
+    mexerNoCopiloto(id, (atual) => (atual ? { ...atual, erro: "" } : atual));
+    gravadorDoPedido.comecar({
+      aoFalhar: (frase) => mexerNoCopiloto(id, (atual) => (atual ? { ...atual, erro: frase } : atual)),
+      aoTerminar: (gravacao) => ouvirOPedidoFalado(id, gravacao),
+    });
+  }
+
+  async function ouvirOPedidoFalado(id, gravacao) {
+    if (!gravacao || !gravacao.size) {
+      mexerNoCopiloto(id, (atual) => (atual ? { ...atual, erro: "A gravação ficou vazia. Grave de novo, ou escreva o pedido." } : atual));
+      return;
+    }
+    mexerNoCopiloto(id, (atual) => (atual ? { ...atual, ouvindo: true, erro: "" } : atual));
+    let texto;
+    try {
+      texto = await ouvirPedido(gravacao);
+    } catch (e) {
+      mexerNoCopiloto(id, (atual) => (atual ? { ...atual, ouvindo: false, erro: String((e && e.message) || e) } : atual));
+      return;
+    }
+    const longo = texto.length > 500;
+    mexerNoCopiloto(id, (atual) => (atual ? {
+      ...atual, ouvindo: false, pedido: texto,
+      erro: longo ? "O pedido falado passou de 500 caracteres: encurte no campo e aperte Pedir." : "",
+    } : atual));
+    if (longo || conversaIdRef.current !== id) return;
+    pedirMudancaRef.current(texto);
+  }
+
+  // A GRAVAÇÃO SAI COM A FAIXA, e com a troca de conversa: o pedido é sobre a
+  // mensagem desta conversa, e não pode ir para a de outra.
+  useEffect(() => {
+    if (pedidoFaladoRef.current.fase === "parado") return;
+    if (!campoDoAjuste || conversaDaGravacaoRef.current !== conversaId) pedidoFaladoRef.current.cancelar();
+  }, [campoDoAjuste, conversaId]);
 
   async function desfazerLicaoDoCopiloto() {
     const id = conversaId;
@@ -20500,7 +20578,11 @@ export default function Painel({ sessao }) {
               <div data-ancora-do-resumo style={{ position: "relative", height: 0, zIndex: 15 }}>
                 <ResumoDaConversa C={C} escuro={modo === "escuro"} estreito={estreito} estado={resumoAqui}
                                   novas={resumoNovas} aoFechar={() => fecharResumo()}
-                                  aoResumirDeNovo={resumirAConversa} aoCopiar={copiarResumo} />
+                                  aoResumirDeNovo={resumirAConversa} aoCopiar={copiarResumo}
+                                  textoParaOuvir={vozDisponivel && resumoAqui && resumoAqui.fase === "pronto"
+                                    ? textoDoResumoParaOuvir(resumoAqui.resumo,
+                                        { nome: conversa && !ehGrupo(conversa) ? nomeDoContato(conversa.contato) : "" })
+                                    : ""} />
               </div>
             )}
             <div ref={listaRef} data-lista-mensagens onScroll={aoRolar} style={{ flex: 1, overflowY: "auto", padding: estreito ? "16px 10px" : "20px 8%", display: "flex", flexDirection: "column", gap: 6 }}>
@@ -20739,7 +20821,8 @@ export default function Painel({ sessao }) {
                           style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <input data-copiloto-pedido-campo
                              value={copilotoAqui.pedido || ""}
-                             readOnly={copilotoAqui.fase === "ajustando"}
+                             readOnly={copilotoAqui.fase === "ajustando" || Boolean(copilotoAqui.ouvindo)
+                                       || gravadorDoPedido.fase !== "parado"}
                              maxLength={500}
                              onChange={(e) => {
                                const v = e.target.value;
@@ -20753,18 +20836,59 @@ export default function Painel({ sessao }) {
                                  mexerNoCopiloto(conversaId, (atual) => (atual ? { ...atual, pedido: "" } : atual));
                                }
                              }}
-                             placeholder={`Pedir uma mudança ao ${NOME_DO_ASSISTENTE} (ex.: não podemos passar o telefone do advogado)`}
+                             placeholder={copilotoAqui.ouvindo ? "Ouvindo o seu pedido…"
+                               : gravadorDoPedido.fase === "gravando" ? "Gravando… toque no quadrado para mandar o pedido"
+                               : gravadorDoPedido.fase === "abrindo" ? "Abrindo o microfone…"
+                               : `Pedir uma mudança ao ${NOME_DO_ASSISTENTE} (ex.: não podemos passar o telefone do advogado)`}
                              aria-label={`Pedir uma mudança ao ${NOME_DO_ASSISTENTE}`}
                              style={{ flex: 1, minWidth: 0, border: `1px solid ${C.divider}`, borderRadius: 16,
                                       padding: "6px 12px", fontSize: 13, background: C.inputBg || C.panelBg,
                                       color: C.textPrimary, outline: "none",
-                                      opacity: copilotoAqui.fase === "ajustando" ? 0.7 : 1 }} />
+                                      opacity: copilotoAqui.fase === "ajustando" || copilotoAqui.ouvindo ? 0.7 : 1 }} />
+                      {/* O MICROFONE DO PEDIDO (24/11): um toque grava, o quadrado
+                          termina e manda. Gravando, ele mostra o tempo, e o X ao
+                          lado cancela sem mandar nada. */}
+                      {ouvirDisponivel && gravadorDoPedido.fase === "gravando" && (
+                        <button type="button" data-copiloto-gravar-cancelar onClick={() => gravadorDoPedido.cancelar()}
+                                title="Cancelar a gravação, sem mandar nada" aria-label="Cancelar a gravação do pedido"
+                                style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex",
+                                         alignItems: "center", justifyContent: "center", flexShrink: 0, padding: 4 }}>
+                          <X size={16} color={C.textSecondary} />
+                        </button>
+                      )}
+                      {ouvirDisponivel && (
+                        <button type="button" data-copiloto-gravar={copilotoAqui.ouvindo ? "ouvindo" : gravadorDoPedido.fase}
+                                onClick={gravarPedidoFalado}
+                                disabled={copilotoAqui.fase === "ajustando" || Boolean(copilotoAqui.ouvindo)
+                                          || gravadorDoPedido.fase === "abrindo"}
+                                title={gravadorDoPedido.fase === "gravando" ? `Parar e mandar o pedido ao ${NOME_DO_ASSISTENTE}`
+                                  : copilotoAqui.ouvindo ? "Ouvindo o seu pedido…"
+                                  : `Pedir a mudança ao ${NOME_DO_ASSISTENTE} falando`}
+                                aria-label={gravadorDoPedido.fase === "gravando" ? "Parar e mandar o pedido falado"
+                                  : `Pedir a mudança ao ${NOME_DO_ASSISTENTE} falando`}
+                                style={{ border: "none", cursor: "pointer", flexShrink: 0, display: "flex",
+                                         alignItems: "center", justifyContent: "center", gap: 5, height: 30, minWidth: 30,
+                                         borderRadius: 15, padding: gravadorDoPedido.fase === "gravando" ? "0 10px" : 0,
+                                         background: gravadorDoPedido.fase === "gravando" ? VERMELHO_DO_SELO : "transparent",
+                                         color: gravadorDoPedido.fase === "gravando" ? "#fff" : C.textSecondary,
+                                         fontSize: 12.5, fontWeight: 600, fontVariantNumeric: "tabular-nums",
+                                         opacity: copilotoAqui.fase === "ajustando" ? 0.55 : 1 }}>
+                          {copilotoAqui.ouvindo || gravadorDoPedido.fase === "abrindo"
+                            ? <Loader2 size={16} color={C.green} style={{ animation: "zv-copiloto-gira 1s linear infinite" }} />
+                            : gravadorDoPedido.fase === "gravando"
+                              ? <><Square size={11} fill="#fff" color="#fff" />
+                                  <span data-copiloto-gravando-tempo>{relogioDoPedido(gravadorDoPedido.segundos)}</span></>
+                              : <Mic size={18} />}
+                        </button>
+                      )}
                       <button type="submit" data-copiloto-pedir
-                              disabled={copilotoAqui.fase === "ajustando" || !(copilotoAqui.pedido || "").trim()}
+                              disabled={copilotoAqui.fase === "ajustando" || !(copilotoAqui.pedido || "").trim()
+                                        || Boolean(copilotoAqui.ouvindo) || gravadorDoPedido.fase !== "parado"}
                               title={`Mandar o pedido ao ${NOME_DO_ASSISTENTE}`}
                               style={{ border: "none", background: C.botao, color: "#fff", borderRadius: 14,
                                        padding: "5px 12px", fontSize: 12.5, cursor: "pointer", flexShrink: 0,
-                                       opacity: copilotoAqui.fase === "ajustando" || !(copilotoAqui.pedido || "").trim() ? 0.55 : 1 }}>
+                                       opacity: copilotoAqui.fase === "ajustando" || !(copilotoAqui.pedido || "").trim()
+                                         || copilotoAqui.ouvindo || gravadorDoPedido.fase !== "parado" ? 0.55 : 1 }}>
                         Pedir
                       </button>
                     </form>

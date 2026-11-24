@@ -8241,6 +8241,179 @@ e os tiques num `<span>`, e por isso não é "folha". A conferência do que est�
 pintado procurava a última mensagem entre os elementos sem filhos, e não a
 achava. Hoje ela procura o elemento que tem o texto como filho direto.
 
+## O Quazar ouve o pedido e lê o resumo (24/11)
+
+Dois pedidos do Rodrigo, no mesmo dia: *"No "Sugerir resposta" quando vou
+pedir uma mudança ao Quazar, quero que seja possível pedir a mudança também
+enviando um áudio e não só digitando."* E: *"no ícone de pergaminho onde temos
+o resumo da conversa, quero também a possibilidade de darmos voz ao Quazar!
+Uma opção dele ler o resumo para o usuário. Crie uma voz única, que seja
+marcante, difícil de não reconhecer, de forma natural com o jeito do nosso
+pato Quazar."* O serviço da voz é a **ElevenLabs**, escolhida por ele.
+
+**Quem fala com o Groq e com a ElevenLabs é a ponte** (`POST /copiloto/ouvir`,
+as rotas `/copiloto/voz…` e o script 062 — ver "Pedir a mudança ao Quazar
+falando" e "A voz do Quazar (script 062, 24/11)" no CLAUDE.md dela). A chave
+da ElevenLabs (`ELEVENLABS_API_KEY`) mora na Render, no serviço da ponte.
+
+### O pedido falado
+
+| onde | o quê |
+|---|---|
+| a faixa do Quazar, depois da sugestão | um **microfone** entre o campo e o "Pedir" (`data-copiloto-gravar`) |
+| um toque | grava: o botão fica vermelho, com um **quadrado** e o tempo (`data-copiloto-gravando-tempo`), e um **X** ao lado cancela (`data-copiloto-gravar-cancelar`); o campo e o "Pedir" travam |
+| o quadrado | termina e manda: o campo diz "Ouvindo o seu pedido…", e o microfone gira |
+| a resposta da ponte | o texto entra no campo e **sai como pedido**, pelo caminho do digitado: a mensagem refeita, a lição, o "Aprendi" e o Desfazer são os de sempre |
+
+As contas sem tela moram em `src/gravadorDoPedido.js` (`useGravadorDoPedido`,
+`fraseDoMicrofone`, `relogioDoPedido`) e em `copiloto.js` (`ouvirAparece`,
+`ouvirPedido`).
+
+- **Só com a ponte que ouve** (`ouvir` em `/copiloto/estado`, a chave do
+  Groq): a ponte de antes, e a sem a chave, não oferecem o microfone. **Na
+  dúvida (a pergunta falhou), oferece**, pela régua dos três estados. E só no
+  navegador que sabe gravar (`MediaRecorder`).
+- **Um minuto no máximo** (`TETO_DO_PEDIDO_FALADO_S`): passando, a gravação
+  termina sozinha e vai como está.
+- **O microfone é devolvido ao terminar** (as trilhas param), também no
+  cancelar e na tela que sai. Sem isso, o ponto vermelho do navegador ficaria
+  aceso, e o microfone preso para a ligação ou para um áudio ao cliente.
+- **O X e o Esc cancelam sem mandar nada.** O Esc com a gravação aberta fecha
+  só a gravação; o seguinte fecha a faixa, como antes.
+- **A conversa trocada no meio da gravação cancela** (a gravação é sobre a
+  mensagem desta conversa). **Trocada enquanto a ponte ouve**, o texto fica no
+  campo da conversa dele, e **nada sai sozinho**: nem nela, nem na conversa
+  aberta agora.
+- **Passando de 500 caracteres** (o teto do campo e da ponte), o texto fica no
+  campo com a frase de encurtar, e não sai.
+- **O que não serve é dito na faixa** (`data-copiloto-erro-do-pedido`): o "não
+  ouvi nenhuma fala" da ponte, a gravação vazia, e o microfone recusado pelo
+  navegador, com o que fazer (o cadeado ao lado do endereço). O microfone
+  volta a ficar parado, para tentar de novo.
+- **A gravação segura a atualização sozinha do Zorvin**
+  (`useMotivoParaEsperar`), como o áudio ao cliente.
+- **Nada é gravado em lugar nenhum**: nem o áudio, nem o texto.
+
+### O "Ouvir" do resumo
+
+| onde | o quê |
+|---|---|
+| o quadro do resumo, pronto | o botão **Ouvir** (`data-resumo-ouvir`), antes do Copiar; no celular, só o ícone |
+| o clique | "Preparando a voz…" (a ponte pede à ElevenLabs), depois **Parar** enquanto toca; no fim, volta a dizer Ouvir |
+| a recusa | a frase da ponte embaixo do cabeçalho (`data-resumo-voz-erro`), e o botão volta para tentar de novo |
+
+- **Só com a voz ligada E escolhida** (`voz` e `voz_pronta` em
+  `/copiloto/estado`, `vozAparece`): sem a chave, ou sem ninguém ter escolhido
+  a voz, o botão daria só a frase "ainda não tem voz" a quem não pode
+  escolher. **"Não sei" mostra** (a ponte que ainda não leu a voz, ou a
+  pergunta que falhou).
+- **O que a voz lê é o resumo em frases** (`textoParaOuvir`, em
+  `resumoDaConversa.js`), e não a lista do quadro: *"Quazar aqui. Resumo da
+  conversa com Andreia Cristina Martins."*, as três partes com os títulos, e
+  **"Confira na conversa antes de agir."** no fim: ouvido, o resumo também não
+  pode passar por fato. O nome vai arrumado (`nomeCompleto`): em maiúsculas, a
+  voz pode soletrar. Até 2.400 caracteres (a ponte aceita 2.500). **O grupo
+  não ganha nome.** A ponte tira os dados pessoais antes de mandar à
+  ElevenLabs.
+- **O áudio fica guardado na guia**, pelo texto (até 10): ouvir de novo o
+  mesmo resumo não pede outra vez. Um resumo novo é outro texto.
+- **Fechar o quadro e pedir outro resumo calam a voz**, e a voz que chega
+  depois de fechar não toca (fica guardada para a próxima vez).
+- **`chamarPonte` aprendeu `comoArquivo`**: a resposta boa é o mp3, e a recusa
+  continua vindo em JSON, com a frase.
+
+### A voz do Quazar, na aba Quazar
+
+Departamentos e acessos → **Quazar** → **A voz do Quazar**
+(`src/VozDoQuazar.jsx`, `data-voz-do-quazar`), antes das lições. **A voz é
+desenhada, e não escolhida numa lista**: a ElevenLabs cria uma voz nova a
+partir de uma descrição e devolve três opções, e **quem escolhe é quem ouve**,
+a régua dos sons de aviso (*quem não ouve o som não o fabrica*).
+
+- **a descrição de partida** vem da ponte (em inglês, a língua em que a
+  ElevenLabs desenha melhor: um pato malandro de óculos escuros, voz um pouco
+  nasalada e brilhante que lembra um pato sem grasnar, falando português do
+  Brasil). Quem administra muda na tela, e é **essa** que vai para a
+  ElevenLabs (`data-voz-descricao`, de 20 a 1.000 caracteres;
+  `data-voz-descricao-de-partida` volta a de partida);
+- **"Gerar 3 opções"** (`data-voz-gerar`) devolve três tocadores com a amostra
+  em português (`data-voz-opcao`); **"Escolher esta"** (`data-voz-escolher`)
+  guarda a voz, diz quem escolheu e quando (`data-voz-escolhida`), e o "Ouvir"
+  aparece no resumo **sem recarregar** (`aVozFoiEscolhida`, que avisa as telas
+  abertas nesta guia);
+- **cada "Escolher esta" cria uma voz na biblioteca da ElevenLabs**: a conta
+  tem um limite de vozes, e as velhas se apagam por lá. Dito na tela;
+- **sem a chave**, a seção diz qual variável falta (`data-voz-sem-chave`);
+  **sem o 062**, qual atualização (`data-voz-sem-tabela`); **a ponte de antes**
+  (404) é dita como tal (`data-voz-erro`). Nos três, não oferece gerar;
+- **a recusa da ElevenLabs** (os créditos, a cota, a chave) vem com a frase da
+  ponte (`data-voz-recado="erro"`).
+
+**A frase da aba sobre o que o Quazar lê foi corrigida junto**: ela dizia "as
+últimas 40 mensagens", e desde 24/11 ele lê a conversa inteira (ver "O Quazar
+lê a conversa inteira", no CLAUDE.md da ponte). A conferência de
+`o-assistente-se-chama-quazar` que lia a frase foi trocada.
+
+**Fica de fora, e é decisão:**
+
+- **a ElevenLabs não foi chamada daqui**: a prova usa uma ponte de mentira, e
+  a ponte segue a documentação da ElevenLabs. Um erro de verdade aparece na
+  tela, com a frase;
+- **o microfone no navegador que não grava** (sem `MediaRecorder`) e **o
+  motivo que segura a atualização** não têm cena própria;
+- **o som tocando de verdade**: o navegador de prova não tem alto-falante; o
+  espião conta o `play` e o `pause` pedidos, e o fim do áudio (um WAV curto de
+  verdade).
+
+Prova: `o-quazar-ouve-e-fala`, 166 conferências em nove cenas, com o microfone
+de mentira do Chromium (`--use-fake-device-for-media-stream`) e os fluxos dele
+à vista da prova (as trilhas abertas): o microfone e quem o oferece; gravar,
+ouvir e pedir; o teto, o X, o Esc e a troca de conversa; o que não serve; a
+conversa trocada enquanto a ponte ouve (com uma sugestão também na outra
+conversa, que é onde um pedido perdido cairia); quem oferece o "Ouvir"; a voz
+lendo o resumo; a aba da voz; e o celular a 390.
+
+**39 sabotagens e 39 pegas**, rodadas em cópias e lidas uma a uma (e a
+cópia de controle passou inteira):
+
+- o painel de antes inteiro (99 reprovações — é o pedido reproduzido);
+- **o microfone:** sem olhar a ponte; escondido na dúvida; o campo sem travar
+  gravando; o Pedir sem travar gravando; o X que manda em vez de cancelar; o
+  Esc sem o degrau da gravação; a troca de conversa sem cancelar a gravação; o
+  microfone não devolvido (4); sem o teto de tempo; a recusa do microfone
+  calada; a gravação sem o tipo;
+- **o que foi dito:** não sai como pedido (6); sai com o texto antigo do campo
+  (6); sem o teto de 500 (3); sai na conversa trocada; sem o "Ouvindo…"; a
+  recusa da ponte calada;
+- **a voz no resumo:** o Ouvir sem olhar a voz (4); escondido na dúvida; a voz
+  lendo a lista do quadro (3); o nome em maiúsculas; sem a frase da IA no fim;
+  sem guardar a voz; o Parar que não para (3); fechar o quadro sem calar; a
+  voz que chega depois de fechar tocando; outro resumo sem calar; a recusa da
+  voz calada; a ponte lendo o mp3 como JSON (12); o Ouvir com a palavra no
+  celular;
+- **a aba da voz:** gerar sem a descrição da tela; escolher sem a descrição;
+  escolher sem avisar as telas; a voz escolhida sem os ouvintes; sem o mínimo
+  de 20 caracteres; a ponte de antes dita como erro qualquer; gerar oferecido
+  sem a chave; a escolhida sem quem escolheu.
+
+**A primeira rodada achou dois furos, e os dois eram da prova:**
+
+- **o painel de antes estourava a prova**, em vez de reprovar: `isDisabled`
+  num botão que não existe espera 30 segundos e para a prova ali. Hoje os
+  quatro lugares que perguntam se um botão está desligado passam por um
+  ajudante que antes pergunta se ele existe (`desligado`);
+- **o Pedir sem travar gravando passava**: gravando, o campo do pedido está
+  vazio, e o Pedir sem texto já fica desligado. A cena 3 passou a escrever um
+  pedido no campo antes de gravar, e confere que o Pedir trava, que o Enter
+  não manda o escrito, e que o X devolve o campo com o texto e o Pedir de
+  volta.
+
+**E uma da rodada:** a sabotagem do painel de antes o montava a partir do
+`HEAD`, e um commit de rascunho no meio do caminho fez o `HEAD` ser o painel
+novo — ela "vazou", passando inteira. Hoje ela parte do commit de base,
+escrito pelo número. **A cópia do "antes" sai de um commit nomeado, e nunca
+do `HEAD`.**
+
 ## O assunto do Finalizar — a IA sugere (01/11) — SAIU EM 04/11
 
 **Saiu em 04/11, a pedido do Rodrigo:** *"A sugestão da IA no Finalizar, pode
