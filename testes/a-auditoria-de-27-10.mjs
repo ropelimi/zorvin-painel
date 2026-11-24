@@ -366,8 +366,16 @@ if (vale("8")) {
   const visto = await page.evaluate(() => {
     const a = document.querySelector("[data-aviso]");
     if (!a) return { tem: false };
+    // A faixa não pega o toque desde 24/11 (`pointerEvents: none`: no celular
+    // ela cai em cima do painel do "+", e engolia o toque em Agendar). E o
+    // `elementFromPoint` pula o que não pega toque: medido assim, a faixa
+    // pintada por cima sairia "atrás". O toque é ligado só durante a medida,
+    // para ela dizer quem está PINTADO no ponto, que é o que esta cena guarda.
+    const antes = a.style.pointerEvents;
+    a.style.pointerEvents = "auto";
     const r = a.getBoundingClientRect();
     const topo = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    a.style.pointerEvents = antes;
     return { tem: true, texto: a.innerText, pintado: Boolean(topo && a.contains(topo)) };
   });
   ok("a faixa diz que não deu", visto.tem && /Não consegui baixar/.test(visto.texto || ""), JSON.stringify(visto));

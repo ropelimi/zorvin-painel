@@ -10097,7 +10097,13 @@ WhatsApp para "o resto". O "Sugerir resposta" do menu ⋮ do celular continua.
 - **o recado (`data-aviso`) deixou de pegar o toque** (`pointerEvents: none`):
   é só texto, e no celular ele cai em cima da segunda fileira do painel. Os
   quatro segundos dele engoliam o toque em Agendar logo depois do recado de
-  "escreva antes".
+  "escreva antes". **E a integração contínua achou uma prova vizinha que media
+  por aí:** a cena 8 de `a-auditoria-de-27-10` confere que a faixa fica
+  PINTADA por cima das Mídias com o `elementFromPoint`, e ele pula o que não
+  pega toque: a faixa de cima saía "atrás". Hoje a cena liga o toque da faixa
+  só durante a medida, e a sabotagem que a põe atrás das Mídias (`zIndex: 1`)
+  continua pega. **Ao tirar o toque de um elemento, procure as provas que o
+  medem com `elementFromPoint`;**
 - **corrigindo uma mensagem, o "+" sai e o botão verde fica**: corrigir é
   mandar o texto de novo, e não anexa nada.
 
