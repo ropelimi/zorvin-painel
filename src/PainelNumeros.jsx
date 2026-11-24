@@ -949,11 +949,16 @@ const COLUNAS_DA_SUGESTAO = [
   { id: "usadas", rotulo: "Enviadas" },
   { id: "iguais", rotulo: "Sem mudança" },
   { id: "editadas", rotulo: "Editadas" },
-  { id: "parte", rotulo: "% das escritas", ajuda: "Das mensagens que a pessoa escreveu no período" },
+  { id: "melhoradas", rotulo: "Melhoradas", ajuda: "Mensagens que a pessoa escreveu e o Quazar melhorou (“Melhorar o texto”)" },
+  { id: "parte", rotulo: "% das escritas", ajuda: "Das mensagens que a pessoa escreveu no período, as que saíram com o Quazar (sugeridas ou melhoradas)" },
 ];
+// AS QUE SAÍRAM COM O QUAZAR: as do "Sugerir resposta" (`usadas`) e, desde
+// 24/11, as do "Melhorar o texto" (`melhoradas`, o 063 da ponte). Sem o 063
+// a chave não vem, e conta zero.
+const comOQuazar = (p) => Number(p.usadas || 0) + Number(p.melhoradas || 0);
 const valorDaSugestao = (p, coluna) => {
   if (coluna === "nome") return String(p.nome || "");
-  if (coluna === "parte") return Number(p.escritas) > 0 ? Number(p.usadas || 0) / Number(p.escritas) : null;
+  if (coluna === "parte") return Number(p.escritas) > 0 ? comOQuazar(p) / Number(p.escritas) : null;
   return Number(p[coluna] || 0);
 };
 export function ordenarAsSugestoes(pessoas, coluna, sentido) {
@@ -1026,16 +1031,19 @@ function RelatorioSugestoes({ C, estilos, cores, leitura, souAdmin, meuId, aoEsc
                     `${pct(t.usadas, t.pedidas)} das sugestões pedidas`, "usadas")}
             {cartao("Sem mudança · editadas", `${numero(t.iguais)} · ${numero(t.editadas)}`,
                     "editada: a pessoa mexeu antes de mandar", "iguais-editadas")}
-            {cartao("Das mensagens escritas", pct(t.usadas, t.escritas),
-                    `${numero(t.usadas)} de ${numero(t.escritas)} saíram com o ${NOME_DO_ASSISTENTE}`, "parte")}
+            {"melhoradas" in t && cartao("Textos melhorados", numero(t.melhoradas),
+                    `${numero(t.melhorias)} ${Number(t.melhorias) === 1 ? "pedido" : "pedidos"} de “Melhorar o texto”`, "melhoradas")}
+            {cartao("Das mensagens escritas", pct(comOQuazar(t), t.escritas),
+                    `${numero(comOQuazar(t))} de ${numero(t.escritas)} saíram com o ${NOME_DO_ASSISTENTE}`, "parte")}
           </div>
           {r.antes && (
             <div style={{ ...estilos.nota, marginBottom: 12 }} data-sugestoes-antes>
-              No período anterior, do mesmo tamanho: {numero(r.antes.pedidas)} pedidas e {numero(r.antes.usadas)} enviadas.
+              No período anterior, do mesmo tamanho: {numero(r.antes.pedidas)} pedidas e {numero(r.antes.usadas)} enviadas
+              {"melhoradas" in r.antes ? <>; {numero(r.antes.melhoradas)} {Number(r.antes.melhoradas) === 1 ? "texto melhorado" : "textos melhorados"}</> : null}.
             </div>
           )}
           <div style={{ ...estilos.cartao, overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
               <thead><tr>
                 {COLUNAS_DA_SUGESTAO.map((c) => {
                   const ativa = ordem.coluna === c.id;
@@ -1072,7 +1080,8 @@ function RelatorioSugestoes({ C, estilos, cores, leitura, souAdmin, meuId, aoEsc
                       <td style={estilos.num} data-usadas={p.usadas}>{numero(p.usadas)}</td>
                       <td style={estilos.num} data-iguais={p.iguais}>{numero(p.iguais)}</td>
                       <td style={estilos.num} data-editadas={p.editadas}>{numero(p.editadas)}</td>
-                      <td style={estilos.num} data-parte={pct(p.usadas, p.escritas)}>{pct(p.usadas, p.escritas)}</td>
+                      <td style={estilos.num} data-melhoradas={p.melhoradas ?? ""}>{numero(p.melhoradas || 0)}</td>
+                      <td style={estilos.num} data-parte={pct(comOQuazar(p), p.escritas)}>{pct(comOQuazar(p), p.escritas)}</td>
                     </tr>
                   );
                 })}
@@ -1080,7 +1089,7 @@ function RelatorioSugestoes({ C, estilos, cores, leitura, souAdmin, meuId, aoEsc
             </table>
             {!pessoas.length && (
               <div style={{ ...estilos.nota, marginTop: 8 }} data-sugestoes-vazio>
-                Ninguém usou o “Sugerir resposta” neste período.
+                Ninguém usou o “Sugerir resposta” nem o “Melhorar o texto” neste período.
               </div>
             )}
           </div>

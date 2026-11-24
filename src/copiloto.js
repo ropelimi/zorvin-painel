@@ -80,7 +80,7 @@ const DE_NOVO_EM_MS =
 const VEZES_DE_NOVO = 4;
 
 const NAO_CONSEGUI = () => ({ ligado: null, modelo: null, resumo: null, funil: null, ajustar: null, aprende: null,
-  ouvir: null, voz: null, voz_pronta: null });
+  ouvir: null, voz: null, voz_pronta: null, melhorar: null });
 
 let promessa = null;
 let falhas = 0;
@@ -132,6 +132,9 @@ export function perguntarOCopiloto() {
         // `null` é "não sei" (a ponte ainda não leu, ou não respondeu).
         voz: respondeu ? corpo.voz === true : null,
         voz_pronta: !respondeu ? null : corpo.voz_pronta === true ? true : corpo.voz_pronta === false ? false : null,
+        // O "MELHORAR O TEXTO" (24/11): a ponte de antes não fala dele, e o
+        // Quazar não aparece com texto na caixa.
+        melhorar: respondeu ? corpo.melhorar === true : null,
       };
     })
     .catch(() => NAO_CONSEGUI())
@@ -172,6 +175,11 @@ export const resumoAparece = (estado) => copilotoAparece(estado) && estado.resum
 /** O "Pedir uma mudança" aparece? A régua do resumo: a ponte que respondeu
  *  sem a rota (a de antes de 05/11) também esconde. */
 export const ajusteAparece = (estado) => copilotoAparece(estado) && estado.ajustar !== false;
+
+/** O "MELHORAR O TEXTO" (24/11) aparece? A régua do resumo: só a ponte que
+ *  RESPONDEU sem a rota (a de antes) esconde; a pergunta que falhou mostra, e
+ *  o clique diz o que houver. */
+export const melhorarAparece = (estado) => copilotoAparece(estado) && estado.melhorar !== false;
 
 /** O CAMPO DE PEDIR UMA MUDANÇA está à vista? Ele mora com a mensagem na
  *  caixa de escrever: com a caixa vazia (a mensagem foi enviada), na nota
@@ -265,6 +273,20 @@ export async function pedirAjuste(conversaId, { pedido, sugestao }) {
   const licao = r && r.licao && r.licao.id != null && String(r.licao.texto || "").trim()
     ? { id: r.licao.id, texto: String(r.licao.texto).trim() } : null;
   return { sugestao: texto, licao, aviso: String((r && r.aviso) || "").trim() };
+}
+
+/** Pede ao Quazar que melhore o texto que a atendente escreveu (24/11).
+ *  Devolve `{ texto, igual }`: o texto melhorado CRU (a régua da sugestão:
+ *  quem chama preenche os marcadores, se vierem) e se nada mudou. */
+export async function pedirMelhoria(conversaId, texto) {
+  const r = await chamarPonte("/copiloto/melhorar", {
+    method: "POST",
+    body: JSON.stringify({ conversa_id: conversaId, texto }),
+    espera: ESPERA_DO_AJUSTE_MS,
+  });
+  const melhorado = String((r && r.sugestao) || "").trim();
+  if (!melhorado) throw new Error(`O ${NOME_DO_ASSISTENTE} não devolveu o texto desta vez. Tente de novo.`);
+  return { texto: melhorado, igual: r.igual === true };
 }
 
 /** Pede o resumo de uma conversa. Devolve `{ resumo: { quer, combinado,

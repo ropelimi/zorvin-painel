@@ -40,6 +40,9 @@ import VisualizadorDePdf from "./VisualizadorDePdf.jsx";
 const COLUNAS_QUE_FALTAM_EM_NOTAS = new Set();
 // O BANCO SEM O 060 da ponte não tem a marca do "Sugerir resposta" na fila.
 let FILA_SEM_A_MARCA_DA_SUGESTAO = false;
+// E O BANCO SEM O 063 tem a marca, mas recusa 'melhorada' (23514): só ela sai,
+// e as do "Sugerir resposta" continuam.
+let FILA_SEM_A_MARCA_MELHORADA = false;
 // E EM `contatos` (auditoria de 27/10): o nome que a agenda grava vai também
 // para `nome_zorvin`, e numa base sem essa coluna ela é tirada do pedido uma
 // vez só nesta sessão — ver `gravarNomeDaAgenda`.
@@ -74,7 +77,7 @@ import { perguntarOsScripts, fraseDosScriptsParaAFaixa, manterOQueSeSabia } from
 import { rotuloDaHora, porQueNaoServe, semAColunaDaAgenda, aindaDaParaEditar } from "./agenda.js";
 import { useEstadoDoCopiloto, copilotoAparece, pedirSugestao, resumoAparece, pedirResumo, ajusteAparece, pedirAjuste,
          campoDoAjusteAparece, faixaDoCopilotoAparece, faixaDoCopilotoFecha, ouvirAparece, ouvirPedido,
-         vozAparece, pedirAVoz } from "./copiloto.js";
+         vozAparece, pedirAVoz, melhorarAparece, pedirMelhoria } from "./copiloto.js";
 import { useGravadorDoPedido, relogioDoPedido } from "./gravadorDoPedido.js";
 import ResumoDaConversa from "./ResumoDaConversa.jsx";
 import { NOME_DO_ASSISTENTE } from "./assistente.js";
@@ -86,6 +89,7 @@ const TITULO_DO_QUAZAR_NA_BOLHA = `Resposta automática do ${NOME_DO_ASSISTENTE}
 const TITULO_DA_SUGESTAO = {
   igual: `Escrita com o “Sugerir resposta” do ${NOME_DO_ASSISTENTE} e enviada sem mudanças. Só a equipe vê esta marca.`,
   editada: `Escrita com o “Sugerir resposta” do ${NOME_DO_ASSISTENTE} e editada por quem enviou. Só a equipe vê esta marca.`,
+  melhorada: `Escrita por quem enviou e melhorada pelo ${NOME_DO_ASSISTENTE} (“Melhorar o texto”). Só a equipe vê esta marca.`,
 };
 import { BolhaDoEnsaio, bolhaDoEnsaio } from "./EnsaioDoQuazar.jsx";
 import { mensagensDepoisDoResumo, textoDoResumo, textoParaOuvir as textoDoResumoParaOuvir } from "./resumoDaConversa.js";
@@ -4150,6 +4154,11 @@ export default function Painel({ sessao }) {
   // ganha a marca 'igual' (saiu como ele escreveu) ou 'editada'. A caixa que
   // esvazia apaga a lembrança: o que vier depois é da pessoa.
   const sugeridaRef = useRef({});
+  // O TEXTO QUE O QUAZAR MELHOROU (24/11), por conversa: a mensagem que a
+  // pessoa escreveu e pediu para melhorar sai com a marca 'melhorada', mexida
+  // depois ou não. Vale até a caixa esvaziar, ou até um "Sugerir resposta"
+  // trocar o texto.
+  const melhoradaRef = useRef({});
   // O RESUMO DA CONVERSA (01/11) — "Resumir". Também POR CONVERSA:
   // { [conversaId]: { fase: "pensando" | "pronto" | "erro", pedido, ... } }.
   // O resumo de A não aparece em B, e voltar para A mostra o de A. O
@@ -4638,6 +4647,12 @@ export default function Painel({ sessao }) {
   // "Resumir a conversa" onde ele existe.
   const RESUMO_NA_BARRA_A_PARTIR = 500;
   const resumoNaBarra = !estreito && larguraDaConversa >= RESUMO_NA_BARRA_A_PARTIR;
+  // O "MELHORAR O TEXTO" NA BARRA (24/11), pela mesma régua: com texto na
+  // caixa, a barra já tem o relógio de agendar e o pergaminho, e o rosto do
+  // Quazar custa mais 40 pontos. Abaixo disto ele mora no ⋮ do cabeçalho, que
+  // existe ali (abaixo de 590 o cabeçalho sempre recolhe).
+  const MELHORAR_NA_BARRA_A_PARTIR = RESUMO_NA_BARRA_A_PARTIR + 40;
+  const melhorarNaBarra = !estreito && larguraDaConversa >= MELHORAR_NA_BARRA_A_PARTIR;
 
   // ============================================================
   //  QUEM TEM PRIORIDADE NO CABEÇALHO É O NOME, E NÃO OS BOTÕES
@@ -11885,11 +11900,22 @@ export default function Painel({ sessao }) {
   }
 
   async function gravarNaFila(payload) {
-    if (FILA_SEM_A_MARCA_DA_SUGESTAO && payload && "sugestao_quazar" in payload) {
+    if (payload && "sugestao_quazar" in payload
+        && (FILA_SEM_A_MARCA_DA_SUGESTAO || (FILA_SEM_A_MARCA_MELHORADA && payload.sugestao_quazar === "melhorada"))) {
       payload = { ...payload };
       delete payload.sugestao_quazar;
     }
     let { error } = await supabase.from("fila_envio").insert(payload);
+    // BANCO SEM O 063: a marca existe e recusa 'melhorada' (23514). Sai só
+    // ela, e a mensagem vai assim mesmo — a mensagem do cliente vale mais do
+    // que a marca. As marcas do "Sugerir resposta" continuam.
+    if (error && payload && payload.sugestao_quazar === "melhorada"
+        && (error.code === "23514" || /violates check constraint/i.test(error.message || ""))) {
+      FILA_SEM_A_MARCA_MELHORADA = true;
+      payload = { ...payload };
+      delete payload.sugestao_quazar;
+      ({ error } = await supabase.from("fila_envio").insert(payload));
+    }
     // BANCO SEM O 060 da ponte: a marca da sugestão sai, e a mensagem vai
     // assim mesmo. Lembrado no módulo, para não tropeçar a cada envio.
     if (error && payload && "sugestao_quazar" in payload && /sugestao_quazar/i.test(error.message || "")) {
@@ -12937,8 +12963,10 @@ export default function Painel({ sessao }) {
     const t = rascunho.trim();
     if (!t || !conversaId) return;
     const sugerida = sugeridaRef.current[conversaId];
-    const marcaDaSugestao = sugerida == null ? null : (t === String(sugerida).trim() ? "igual" : "editada");
+    const marcaDaSugestao = melhoradaRef.current[conversaId] ? "melhorada"
+      : sugerida == null ? null : (t === String(sugerida).trim() ? "igual" : "editada");
     delete sugeridaRef.current[conversaId];
+    delete melhoradaRef.current[conversaId];
     setRascunho("");
     setEmojiAberto(false);
     setPertoDoFim(true); // ao enviar, sempre volto para o fim da conversa
@@ -14392,6 +14420,13 @@ export default function Painel({ sessao }) {
   const faixaDoCopiloto = faixaDoCopilotoAparece(copilotoAqui, modoDaFaixa);
   const podeSugerir = copilotoDisponivel && Boolean(conversa) && !linhaDesativada && !modoNota
     && !editando && !rascunho.trim() && !copilotoPensando;
+  // O "MELHORAR O TEXTO" (24/11): o Quazar com TEXTO na caixa. Não na nota
+  // (não vai ao cliente), nem na edição de uma mensagem, nem com o "/" das
+  // respostas rápidas aberto.
+  const melhorarDisponivel = melhorarAparece(estadoDoCopiloto);
+  const melhorarAVista = melhorarDisponivel && Boolean(conversa) && !linhaDesativada && !modoNota
+    && !editando && Boolean(rascunho.trim()) && !rascunho.trimStart().startsWith("/");
+  const podeMelhorar = melhorarAVista && !copilotoPensando;
 
   function mudarCopiloto(id, valor) {
     setCopiloto((atual) => {
@@ -14451,6 +14486,7 @@ export default function Painel({ sessao }) {
       if (!rascunhoRef.current.trim() && !modoNotaRef.current && !editandoRef.current) {
         mudarCopiloto(id, faixaDoAjuste(pesquisa));
         sugeridaRef.current[id] = texto;
+        delete melhoradaRef.current[id];
         colocarNaCaixa(texto);
       } else {
         mudarCopiloto(id, { fase: "atrasada", sugestao: texto, ...pesquisa });
@@ -14461,6 +14497,7 @@ export default function Painel({ sessao }) {
     if (!guardado || !String(guardado.texto || "").trim()) {
       rascunhosRef.current[id] = { texto, nota: false };
       sugeridaRef.current[id] = texto;
+      delete melhoradaRef.current[id];
       mudarCopiloto(id, faixaDoAjuste(pesquisa));
     } else {
       mudarCopiloto(id, { fase: "atrasada", sugestao: texto, ...pesquisa });
@@ -14474,9 +14511,97 @@ export default function Painel({ sessao }) {
     // ensinado uma, e o Desfazer dela continua na faixa.
     mudarCopiloto(conversaId, faixaDoAjuste({ mudou: Boolean(s.deAjuste), licao: s.licao || null,
                                               aviso: s.aviso || "", pesquisou: Boolean(s.pesquisou),
-                                              fontes: s.fontes || [] }));
-    sugeridaRef.current[conversaId] = s.sugestao;
+                                              fontes: s.fontes || [],
+                                              ...(s.deMelhoria ? { deMelhoria: true, melhorou: true, original: s.original } : {}) }));
+    guardarDeOndeVeio(conversaId, s.sugestao, Boolean(s.deMelhoria));
     colocarNaCaixa(s.sugestao);
+  }
+
+  // DE ONDE VEIO O TEXTO QUE O QUAZAR PÔS NA CAIXA, para a marca do envio: o
+  // "Sugerir resposta" ('igual' ou 'editada') ou o "Melhorar o texto"
+  // ('melhorada'). A mudança pedida depois de uma melhoria continua sendo o
+  // texto da pessoa, melhorado.
+  function guardarDeOndeVeio(id, texto, deMelhoria) {
+    if (deMelhoria) {
+      melhoradaRef.current[id] = true;
+      delete sugeridaRef.current[id];
+    } else {
+      sugeridaRef.current[id] = texto;
+      delete melhoradaRef.current[id];
+    }
+  }
+
+  // ------------------------------------------------------------
+  //  "MELHORAR O TEXTO" (24/11)
+  //
+  //  Pedido do Rodrigo: *"após digitar um texto na conversa, a opção do
+  //  Quazar estar disponível para melhorar o texto."* Com texto na caixa, o
+  //  rosto do Quazar (no lugar em que ele sugere com a caixa vazia) manda o
+  //  texto à ponte (`POST /copiloto/melhorar`), que o devolve corrigido e no
+  //  jeito da equipe, sem mudar o sentido.
+  //
+  //  - O TEXTO MELHORADO ENTRA NA CAIXA, e NÃO SAI SOZINHO. A faixa diz que ele
+  //    está ali, oferece "Voltar ao meu texto" e o campo de pedir uma mudança.
+  //  - SÓ TROCA O QUE ESTAVA NA CAIXA QUANDO SE PEDIU (a régua do ajuste):
+  //    quem continuou escrevendo enquanto o Quazar pensava não perde o que
+  //    escreveu, e a faixa oferece usar o texto melhorado. Com a conversa
+  //    fechada, ele vira o rascunho dela, se o rascunho ainda for o mandado.
+  //  - O TEXTO QUE JÁ ESTAVA BOM (a ponte diz `igual`) fica como está, e a
+  //    faixa diz que nada mudou — sem a marca: a mensagem é toda da pessoa.
+  // ------------------------------------------------------------
+  async function melhorarComCopiloto() {
+    if (!conversa || !conversaId) return;
+    const id = conversaId;
+    if (copiloto[id] && copiloto[id].fase === "pensando") return;
+    if (modoNotaRef.current || editandoRef.current) return;
+    const enviado = rascunhoRef.current;
+    if (!enviado.trim()) return;
+    const contexto = { cliente: !ehGrupo(conversa) ? nomeDoContato(conversa.contato) : "", atendente: meuNome };
+    mudarCopiloto(id, { fase: "pensando", melhorando: true });
+    let r;
+    try {
+      r = await pedirMelhoria(id, enviado.trim());
+    } catch (e) {
+      mudarCopiloto(id, { fase: "erro", erro: String((e && e.message) || e) });
+      return;
+    }
+    const texto = preencherVariaveis(r.texto, { ...contexto, agora: new Date() });
+    const faixa = faixaDoAjuste({ melhorou: true, igual: r.igual, ...(r.igual ? {} : { deMelhoria: true, original: enviado }) });
+    if (r.igual && !faixa) mostrarAviso(`O seu texto já estava bom: o ${NOME_DO_ASSISTENTE} não mudou nada.`);
+    if (conversaIdRef.current === id) {
+      if (rascunhoRef.current !== enviado || modoNotaRef.current || editandoRef.current) {
+        if (r.igual) { mudarCopiloto(id, null); return; }
+        mudarCopiloto(id, { fase: "atrasada", sugestao: texto, deMelhoria: true, original: enviado });
+        return;
+      }
+      mudarCopiloto(id, faixa);
+      if (!r.igual) {
+        guardarDeOndeVeio(id, texto, true);
+        colocarNaCaixa(texto);
+      }
+      return;
+    }
+    const guardado = rascunhosRef.current[id];
+    if (String((guardado && guardado.texto) || "") !== enviado) {
+      mudarCopiloto(id, r.igual ? null : { fase: "atrasada", sugestao: texto, deMelhoria: true, original: enviado });
+      return;
+    }
+    if (!r.igual) {
+      rascunhosRef.current[id] = { texto, nota: false };
+      guardarDeOndeVeio(id, texto, true);
+    }
+    mudarCopiloto(id, faixa);
+  }
+
+  // VOLTAR AO MEU TEXTO: o que a pessoa escreveu antes de pedir a melhoria
+  // volta para a caixa, sem marca nenhuma — e a faixa sai.
+  function voltarAoTextoOriginal() {
+    const s = conversaId && copiloto[conversaId];
+    if (!s || s.original == null || modoNota || editando) return;
+    delete melhoradaRef.current[conversaId];
+    delete sugeridaRef.current[conversaId];
+    mudarCopiloto(conversaId, null);
+    colocarNaCaixa(s.original);
   }
 
   // ------------------------------------------------------------
@@ -14521,12 +14646,14 @@ export default function Painel({ sessao }) {
       return;
     }
     const texto = preencherVariaveis(r.sugestao, { ...contexto, agora: new Date() });
+    const deMelhoria = Boolean(s.deMelhoria);
     const depois = { fase: "sugeriu", pedido: "", erro: "", mudou: true, licao: r.licao, aviso: r.aviso,
-                     desfeita: false, erroDesfazer: "" };
+                     desfeita: false, erroDesfazer: "",
+                     ...(deMelhoria ? { deMelhoria: true, melhorou: true, original: s.original } : {}) };
     if (conversaIdRef.current === id) {
       if (rascunhoRef.current === enviada && !modoNotaRef.current && !editandoRef.current) {
         mudarCopiloto(id, depois);
-        sugeridaRef.current[id] = texto;
+        guardarDeOndeVeio(id, texto, deMelhoria);
         colocarNaCaixa(texto);
       } else {
         mudarCopiloto(id, { ...depois, fase: "atrasada", sugestao: texto, deAjuste: true });
@@ -14537,7 +14664,7 @@ export default function Painel({ sessao }) {
     const textoGuardado = String((guardado && guardado.texto) || "");
     if (textoGuardado === enviada || !textoGuardado.trim()) {
       rascunhosRef.current[id] = { texto, nota: false };
-      sugeridaRef.current[id] = texto;
+      guardarDeOndeVeio(id, texto, deMelhoria);
       mudarCopiloto(id, depois);
     } else {
       mudarCopiloto(id, { ...depois, fase: "atrasada", sugestao: texto, deAjuste: true });
@@ -14638,7 +14765,10 @@ export default function Painel({ sessao }) {
     const anterior = conversaDaSugestaoRef.current;
     conversaDaSugestaoRef.current = conversaId;
     if (anterior !== conversaId || !conversaId) return;
-    if (!rascunho.trim()) delete sugeridaRef.current[conversaId];
+    if (!rascunho.trim()) {
+      delete sugeridaRef.current[conversaId];
+      delete melhoradaRef.current[conversaId];
+    }
   }, [rascunho, conversaId]);
 
   const conversaDaFaixaRef = useRef(null);
@@ -17525,6 +17655,19 @@ export default function Painel({ sessao }) {
           : <RostoDoAssistente tamanho={28} />}
       </button>
     )}
+    {/* E COM TEXTO NA CAIXA, O MESMO ROSTO MELHORA O TEXTO (24/11), no mesmo
+        lugar: com a caixa vazia ele sugere, com texto ele melhora. Onde a
+        caixa não comporta mais um botão (`melhorarNaBarra`), ele está no ⋮. */}
+    {!estreito && melhorarNaBarra && melhorarAVista && (
+      <button data-copiloto-melhorar onClick={melhorarComCopiloto} disabled={copilotoPensando}
+              title={copilotoPensando ? `O ${NOME_DO_ASSISTENTE} está melhorando o texto…` : `Melhorar o texto (${NOME_DO_ASSISTENTE})`}
+              aria-label={`Melhorar o texto com o ${NOME_DO_ASSISTENTE}`}
+              style={{ border: "none", background: "transparent", cursor: copilotoPensando ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, padding: 0, alignSelf: "flex-end" }}>
+        {copilotoPensando
+          ? <Loader2 size={21} color={C.green} style={{ animation: "zv-copiloto-gira 1s linear infinite" }} />
+          : <RostoDoAssistente tamanho={28} />}
+      </button>
+    )}
     {!comoNoWhatsApp && ((rascunho.trim() || modoNota) ? (
       <button onClick={enviar} title={modoNota ? "Salvar nota" : "Enviar"} style={{ border: "none", background: modoNota ? "#d4a017" : C.green, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: "50%", flexShrink: 0, alignSelf: "flex-end" }}>{modoNota ? <StickyNote size={19} color="#fff" /> : <Send size={20} color="#fff" />}</button>
     ) : (
@@ -17599,7 +17742,19 @@ export default function Painel({ sessao }) {
         if (!caixaComTexto) { mostrarAviso("Escreva a mensagem primeiro; depois toque no + e em Agendar."); return; }
         setEscolhendoHora("texto");
       } },
-    copilotoDisponivel && { id: "quazar", rotulo: "Sugerir resposta", icone: <RostoDoAssistente tamanho={30} />,
+    // O QUAZAR DO "+": com a caixa vazia ele sugere; com texto, e com a
+    // ponte que melhora (24/11), ele melhora o texto. Com a ponte de antes,
+    // com texto, ele continua dizendo que sugere com a caixa vazia.
+    copilotoDisponivel && caixaComTexto && melhorarDisponivel && {
+      id: "quazar", rotulo: "Melhorar o texto", icone: <RostoDoAssistente tamanho={30} />,
+      apagada: !podeMelhorar, extra: { "data-copiloto-no-mais": "", "data-copiloto-melhorar-no-mais": "" },
+      dica: copilotoPensando ? `O ${NOME_DO_ASSISTENTE} está melhorando o texto…` : `Melhorar o texto (${NOME_DO_ASSISTENTE})`,
+      fazer: () => {
+        if (copilotoPensando) return;
+        if (!podeMelhorar) { mostrarAviso(`O ${NOME_DO_ASSISTENTE} melhora o texto de uma mensagem ao cliente: com as respostas rápidas abertas, escolha uma primeiro.`); return; }
+        melhorarComCopiloto();
+      } },
+    copilotoDisponivel && !(caixaComTexto && melhorarDisponivel) && { id: "quazar", rotulo: "Sugerir resposta", icone: <RostoDoAssistente tamanho={30} />,
       apagada: !podeSugerir, extra: { "data-copiloto-no-mais": "" },
       dica: copilotoPensando ? `O ${NOME_DO_ASSISTENTE} está escrevendo a sugestão…`
         : caixaComTexto ? `O ${NOME_DO_ASSISTENTE} sugere com a caixa vazia` : `Sugerir resposta (${NOME_DO_ASSISTENTE})`,
@@ -20205,6 +20360,16 @@ export default function Painel({ sessao }) {
                           <RostoDoAssistente tamanho={20} /> Sugerir resposta
                         </button>
                       )}
+                      {/* E O "MELHORAR O TEXTO" (24/11), com texto na caixa:
+                          no celular e onde a barra não comporta o rosto
+                          (`melhorarNaBarra`), este é o caminho. */}
+                      {podeMelhorar && (estreito || !melhorarNaBarra) && (
+                        <button onClick={() => { setMenuDaConversa(false); melhorarComCopiloto(); }}
+                                data-copiloto-melhorar-item
+                                style={{ ...ITEM_DO_MENU, color: C.textPrimary }}>
+                          <RostoDoAssistente tamanho={20} /> Melhorar o texto
+                        </button>
+                      )}
                       {/* O RESUMO (01/11), logo depois do copiloto: os dois de IA
                           juntos. No celular e no computador com o cabeçalho
                           recolhido este é o único caminho; com o quadro
@@ -20787,24 +20952,43 @@ export default function Painel({ sessao }) {
                     <div data-copiloto-frase style={{ flex: 1, minWidth: 0, fontSize: 13, color: C.textPrimary }}>
                       <b style={{ color: copilotoAqui.fase === "erro" ? C.erroTexto : C.verdeTexto }}>{NOME_DO_ASSISTENTE}</b>
                       {" · "}
-                      {copilotoAqui.fase === "pensando" ? "lendo a conversa para sugerir a resposta…"
+                      {copilotoAqui.fase === "pensando"
+                          ? (copilotoAqui.melhorando ? "melhorando o seu texto…" : "lendo a conversa para sugerir a resposta…")
                         : copilotoAqui.fase === "ajustando" ? "refazendo a mensagem com o seu pedido…"
                         : copilotoAqui.fase === "erro" ? copilotoAqui.erro
                         : copilotoAqui.fase === "atrasada"
                           ? (copilotoAqui.deAjuste
                               ? "a mensagem refeita chegou depois que você mexeu na caixa, e não entrou nela."
-                              : "a sugestão chegou depois que você começou a escrever, e não entrou na caixa.")
+                              : copilotoAqui.deMelhoria
+                                ? "o texto melhorado chegou depois que você mexeu na caixa, e não entrou nela."
+                                : "a sugestão chegou depois que você começou a escrever, e não entrou na caixa.")
                         : !campoDoAjuste ? (copilotoAqui.licao ? "o que ele aprendeu com o seu pedido:" : "sobre o seu pedido:")
                         : copilotoAqui.mudou ? "a mensagem refeita está na caixa. Confira antes de enviar."
+                        : copilotoAqui.melhorou && copilotoAqui.igual
+                          ? "o seu texto já estava bom: nada mudou. Se quiser, peça uma mudança aqui."
+                        : copilotoAqui.melhorou
+                          ? "o texto melhorado está na caixa. Confira antes de enviar — e, se algo não serve, peça a mudança aqui."
                         : "a sugestão está na caixa. Confira antes de enviar — e, se algo não serve, peça a mudança aqui."}
                     </div>
+                    {/* VOLTAR AO MEU TEXTO (24/11): o texto melhorado nunca
+                        apaga o que a pessoa escreveu sem volta. */}
+                    {copilotoAqui.fase === "sugeriu" && copilotoAqui.original != null && !copilotoAqui.igual
+                      && campoDoAjuste && (
+                      <button data-copiloto-voltar-ao-texto onClick={voltarAoTextoOriginal}
+                              title="Pôr de volta na caixa o texto que você escreveu"
+                              style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.verdeTexto || C.green,
+                                       borderRadius: 14, padding: "4px 10px", fontSize: 12.5, cursor: "pointer", flexShrink: 0 }}>
+                        Voltar ao meu texto
+                      </button>
+                    )}
                     {copilotoAqui.fase === "atrasada" && !modoNota && !editando && (
                       <button data-copiloto-usar onClick={usarSugestaoAtrasada}
                               title={copilotoAqui.deAjuste ? "Trocar o que está na caixa pela mensagem refeita"
-                                                           : `Trocar o que está na caixa pela sugestão do ${NOME_DO_ASSISTENTE}`}
+                                       : copilotoAqui.deMelhoria ? "Trocar o que está na caixa pelo texto melhorado"
+                                       : `Trocar o que está na caixa pela sugestão do ${NOME_DO_ASSISTENTE}`}
                               style={{ border: `1px solid ${C.divider}`, background: "transparent", color: C.verdeTexto || C.green,
                                        borderRadius: 14, padding: "4px 10px", fontSize: 12.5, cursor: "pointer", flexShrink: 0 }}>
-                        {copilotoAqui.deAjuste ? "Usar a mensagem refeita" : "Usar a sugestão"}
+                        {copilotoAqui.deAjuste ? "Usar a mensagem refeita" : copilotoAqui.deMelhoria ? "Usar o texto melhorado" : "Usar a sugestão"}
                       </button>
                     )}
                     {copilotoAqui.fase !== "pensando" && copilotoAqui.fase !== "ajustando" && (

@@ -280,7 +280,7 @@ const cartao = (page, c) => page.locator(`${R} [data-cartao-da-sugestao="${c}"] 
   const cab = (id) => page.locator(`${R} [data-ordenar-sugestoes="${id}"]`);
   const sortDe = (id) => attr(page.locator(`${R} th:has([data-ordenar-sugestoes="${id}"])`), "aria-sort");
   const chegou = async (esperada) => { for (let i = 0; i < 20; i++) { if (q(await ordemDasLinhas()) === q(esperada)) return true; await page.waitForTimeout(100); } return false; };
-  ok("os sete cabeçalhos são botões de ordenar", (await page.locator(`${R} [data-ordenar-sugestoes]`).count()) === 7);
+  ok("os oito cabeçalhos são botões de ordenar (com os textos melhorados, 24/11)", (await page.locator(`${R} [data-ordenar-sugestoes]`).count()) === 8);
   ok("de começo, quem pediu mais vem primeiro (▼ em Pedidas)",
      (await chegou(["Rodrigo Sousa", "JENIFER ALMEIDA"])) && (await sortDe("pedidas")) === "descending"
      && /▼/.test(await texto(cab("pedidas"))), q(await ordemDasLinhas()));

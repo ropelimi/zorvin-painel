@@ -7874,6 +7874,92 @@ decrescente e vice e versa."*
 Prova: `a-sugestao-do-quazar-fica-marcada`, agora 42 conferências. A
 sabotagem que nunca inverte é pega por três.
 
+## O Quazar melhora o texto (24/11)
+
+Pedido do Rodrigo: *"O que eu preciso agora é de uma atualização onde após
+digitar um texto na conversa, a opção do Quazar estar disponível para
+melhorar o texto."* Quem melhora é a ponte (`POST /copiloto/melhorar`, script
+063; ver "Melhorar o texto" no CLAUDE.md dela): o texto volta corrigido e no
+jeito da equipe, **sem mudar o sentido**, e igual quando já estava bom.
+
+| onde | o quê |
+|---|---|
+| a barra de escrever, no computador | **com texto na caixa, o rosto do Quazar melhora** (`data-copiloto-melhorar`), no mesmo lugar em que, com a caixa vazia, ele sugere |
+| conversa abaixo de 540 pontos | o rosto não cabe na barra (a caixa guarda o piso de 200), e o caminho é o ⋮ do cabeçalho (`data-copiloto-melhorar-item`) |
+| o celular | o "+" diz **"Melhorar o texto"** com texto na caixa, e "Sugerir resposta" com ela vazia; o ⋮ também tem o item |
+| a faixa do Quazar | "melhorando o seu texto…"; depois, "o texto melhorado está na caixa", com o campo de pedir uma mudança e **Voltar ao meu texto** (`data-copiloto-voltar-ao-texto`) |
+| a bolha | a marca **'melhorada'** ao lado da hora, com o rosto pequeno e o `title` "Escrita por quem enviou e melhorada pelo Quazar" |
+| o Painel de números | o cartão **Textos melhorados** (`data-cartao-da-sugestao="melhoradas"`), com os pedidos, e a coluna **Melhoradas** na tabela |
+
+- **O texto melhorado entra na caixa e NÃO sai sozinho**, a régua da sugestão;
+- **só troca o que estava na caixa quando se pediu**: quem continua
+  escrevendo enquanto o Quazar pensa não perde nada, e a faixa oferece "Usar o
+  texto melhorado". Trocada a conversa, ele vira o rascunho dela, se o
+  rascunho ainda for o mandado;
+- **o texto que já estava bom** (a ponte diz `igual`) fica como está, a faixa
+  diz que nada mudou, e a mensagem sai sem marca: ela é toda da pessoa;
+- **"Voltar ao meu texto"** põe de volta o que a pessoa escreveu, sem marca;
+- **a marca 'melhorada' vale até a caixa esvaziar**: mexida depois, a
+  mensagem continua 'melhorada' (a pessoa escreveu, o Quazar melhorou). O
+  "Pedir uma mudança" depois de uma melhoria continua 'melhorada', e o
+  "Sugerir resposta" depois troca a marca para a dele (`guardarDeOndeVeio`);
+- **não na nota interna, nem na edição de uma mensagem, nem com o "/" das
+  respostas rápidas aberto** (`melhorarAVista`);
+- **só com a ponte que melhora** (`melhorar` em `/copiloto/estado`,
+  `melhorarAparece`): com a ponte de antes, o rosto com texto não aparece, e
+  o "+" continua dizendo "Sugerir resposta";
+- **o banco sem o 063** tem a coluna da marca e recusa 'melhorada' (23514): a
+  mensagem sai sem a marca (`FILA_SEM_A_MARCA_MELHORADA`), e as marcas do
+  "Sugerir resposta" continuam;
+- **o relatório**: `usadas` passou a contar só o "Sugerir resposta" ('igual' e
+  'editada'), e o "% das escritas" soma as sugeridas e as melhoradas (as que
+  saíram com o Quazar).
+
+**A régua da largura** (`MELHORAR_NA_BARRA_A_PARTIR`, 540 = o pergaminho mais
+40): com texto, a barra tem o relógio de agendar e o pergaminho, e o rosto
+custa mais 40 pontos. Entre 540 e 590 o cabeçalho ainda recolhe no ⋮, e o ⋮
+não repete o item que está na barra.
+
+Prova: `o-quazar-melhora-o-texto`, 100 conferências em 13 cenas, com a ponte
+fingida pela prova: o rosto com texto e sem texto (e a ponte de antes); o
+texto melhorado na caixa, com a marca na fila e na bolha que sai, também
+mexido depois; o "Voltar ao meu texto"; o texto que já estava bom; a caixa
+mexida enquanto o Quazar pensa; a troca de conversa no meio; a falha; o
+"Pedir uma mudança" e o "Sugerir resposta" depois de melhorar; a conversa
+estreita, com a fronteira dos 540 pontos medida de 920 a 1020; o celular a
+390; o banco sem o 063; e o relatório.
+
+**29 sabotagens, 28 pegas e uma que vaza com razão**, rodadas em cópias e
+lidas uma a uma (e a cópia de controle passou inteira):
+
+- o painel de antes inteiro (52 reprovações — é o pedido reproduzido);
+- **quando o rosto aparece:** sem olhar a ponte; com o "/" das rápidas; na
+  barra em qualquer largura (a 900 a caixa cai para 181); a régua igual à do
+  pergaminho; a régua alta demais;
+- **a marca:** o envio sem ela (6); a caixa vazia sem apagá-la; o "Voltar" sem
+  tirá-la; o texto igual guardando-a; o "Pedir uma mudança" perdendo a
+  melhoria; o "Usar o texto melhorado" sem ela;
+- **a faixa e a caixa:** a caixa mexida sobrescrita; sem o "Voltar ao meu
+  texto" (6); sem o "melhorando"; a falha calada; o botão sem desligar; o
+  texto de outra conversa entrando na aberta; o pedido sem tirar os espaços;
+- **o banco sem o 063:** sem a volta; a volta desligando a marca do
+  "Sugerir resposta";
+- **os caminhos:** o "+" sem o item; o ⋮ sem o item; o ⋮ repetindo o item da
+  barra;
+- **o relatório:** a parte das escritas sem as melhoradas; sem o cartão; a
+  tabela sem a coluna; a bancada contando as melhoradas nas usadas;
+- **e a que vaza:** o "Sugerir resposta" sem apagar a marca 'melhorada'. Ele
+  só aparece com a caixa vazia, e a caixa que esvazia já a apagou: é a
+  segunda guarda — a régua de 25/09.
+
+**A primeira rodada achou um defeito da prova:** com o painel de antes, a
+medida do rosto lia um botão que não existe, e a prova parava ali, em vez de
+reprovar até o fim. A medida passou a ser guardada, e a sabotagem, rodada de
+novo, é pega por 52 conferências.
+
+**`a-sugestao-do-quazar-fica-marcada` foi INVERTIDA, e não apagada**: os sete
+cabeçalhos da tabela viraram oito.
+
 ## O Quazar de dia no SAC, em ensaio (19/11)
 
 Pedido do Rodrigo: o Quazar lê as conversas, os andamentos e as intimações do

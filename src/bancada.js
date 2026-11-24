@@ -2629,6 +2629,16 @@ function consulta(tabela) {
           }
         }
       }
+      // A MARCA 'melhorada' (063): o banco sem o 063 tem a coluna da marca
+      // (060) e recusa o valor novo pela regra de verificação.
+      // `__SEM_MELHORADA` é esse banco.
+      if (gravacao && tabela === "fila_envio" && globalThis.__SEM_MELHORADA) {
+        const regs = Array.isArray(gravacao.reg) ? gravacao.reg : [gravacao.reg];
+        if (regs.some((r) => r && r.sugestao_quazar === "melhorada")) {
+          return resolver({ data: null, count: null, error: { code: "23514",
+            message: 'new row for relation "fila_envio" violates check constraint "fila_envio_sugestao_quazar_valida"' } });
+        }
+      }
       // O HISTÓRICO DO FUNIL É DO GATILHO no banco (script 017): todo cartão
       // que nasce, muda de etapa ou sai deixa uma linha em `zorvin_movimentos`,
       // e mudar de etapa carimba `movido_em`. A bancada imita os dois, senão o
@@ -4424,18 +4434,26 @@ export const supabase = {
       const peds = (TABELAS.zorvin_sugestoes || []).filter((x) => vale(x.conversa_id, new Date(x.quando).getTime(), x.quem))
         .map((x) => ({ quem: String(x.quem), q: new Date(x.quando).getTime(), tipo: x.tipo || "sugerir" }));
       const am = msgs.filter((x) => x.q >= t0), ap = peds.filter((x) => x.q >= t0);
+      // DESDE O 063: `usadas` é só o "Sugerir resposta" ('igual' e
+      // 'editada'); o "Melhorar o texto" vem à parte (`melhorias`, os
+      // pedidos; `melhoradas`, as mensagens).
+      const doSugerir = (x) => x.marca === "igual" || x.marca === "editada";
       const contas = (m, p) => ({
         pedidas: p.filter((x) => x.tipo === "sugerir").length, ajustes: p.filter((x) => x.tipo === "ajustar").length,
-        usadas: m.filter((x) => x.marca).length, iguais: m.filter((x) => x.marca === "igual").length,
-        editadas: m.filter((x) => x.marca === "editada").length, escritas: m.length });
+        melhorias: p.filter((x) => x.tipo === "melhorar").length,
+        usadas: m.filter(doSugerir).length, iguais: m.filter((x) => x.marca === "igual").length,
+        editadas: m.filter((x) => x.marca === "editada").length,
+        melhoradas: m.filter((x) => x.marca === "melhorada").length, escritas: m.length });
       const pessoas = [...new Set([...am.filter((x) => x.marca).map((x) => x.quem), ...ap.map((x) => x.quem)])];
       const porPessoa = pessoas.map((id) => ({ id, nome: nomeDe.get(id) || "(sem nome)",
         ...contas(am.filter((x) => x.quem === id), ap.filter((x) => x.quem === id)) }))
-        .sort((a, b) => b.usadas - a.usadas || a.nome.localeCompare(b.nome));
+        .sort((a, b) => (b.usadas + b.melhoradas) - (a.usadas + a.melhoradas) || a.nome.localeCompare(b.nome));
       return { data: {
         so_meu: soMeu, total: contas(am, ap),
         antes: args && args.p_desde ? { pedidas: peds.filter((x) => x.q < t0 && x.tipo === "sugerir").length,
-                                        usadas: msgs.filter((x) => x.q < t0 && x.marca).length } : null,
+                                        usadas: msgs.filter((x) => x.q < t0 && doSugerir(x)).length,
+                                        melhorias: peds.filter((x) => x.q < t0 && x.tipo === "melhorar").length,
+                                        melhoradas: msgs.filter((x) => x.q < t0 && x.marca === "melhorada").length } : null,
         por_pessoa: porPessoa, por_dia: [],
       }, error: null };
     }
