@@ -4847,6 +4847,95 @@ o número mandado sem conferir o nono dígito; o número antigo no lugar do
 desta conversa; a conversa que não é ligada; o número mandado antes da ficha
 inteira).
 
+## A ficha procura o cliente como o Vantoro procura (24/11)
+
+Pedido do Rodrigo, com a foto do campo de CPF da ficha sem cadastro:
+*"Preciso que na Ficha do Vantoro, tenha a opção de pesquisa igual do Vantoro,
+onde podemos localizar o cliente pelo nome, CPF, e-mail, etc."* O campo só
+achava pelo CPF, e quem atende nem sempre tem o CPF à mão.
+
+| na ficha sem cadastro | o quê |
+|---|---|
+| no alto | **"Já é cliente? Procure no Vantoro"** (`data-busca-sem-cadastro`): nome, CPF, e-mail, telefone ou processo |
+| cada achado (`data-achado-na-busca`) | o nome, o CPF, os telefones e o e-mail, com **Acrescentar (número desta conversa)** e **Só abrir** |
+| embaixo | o pré-cadastro, como antes, agora com o **CPF depois do nome** (`data-cpf-sem-cadastro`) |
+
+- **É a busca do próprio Vantoro** (`/vantoro/buscar`, a mesma da "Nova
+  conversa"): os números comparados só pelos dígitos, até 20 cadastros, e os
+  processos sem cliente ditos à parte. Nenhuma rota nova na ponte, nenhuma
+  mudança no Vantoro;
+- **a pergunta só sai quando a pessoa para de digitar** (400ms), com 3 letras
+  ou números no mínimo, e **a resposta de um termo antigo é abandonada**:
+  "joão" chegando depois de "joão pedro" não vira a lista do termo novo. Entre
+  a tecla e a resposta, a ficha diz "Procurando no Vantoro…", e não mostra a
+  lista de antes;
+- **Acrescentar** é o caminho do CPF de 29/09 (`acrescentarEsteNumeroAoCadastro`):
+  a ficha inteira primeiro, o número depois (como mais um telefone, e não o
+  WhatsApp principal), o vínculo da conversa por último. **Só abrir** abre para
+  ver, sem acrescentar nem ligar (`abrirCadastroDeOutro`);
+- **"não consegui procurar" não tem a cara de "não achei"** (`data-busca-no-vantoro="falhou"`):
+  a frase diz que isso não quer dizer que a pessoa não seja cliente, e oferece
+  "Tentar de novo";
+- **o CPF que ninguém tem vai para o pré-cadastro**, só se o CPF de lá estiver
+  vazio, e a frase diz isso. Um nome procurado não vai para lugar nenhum
+  (`ehCpfOuCnpj`);
+- **o CPF do pré-cadastro continua conferido** enquanto se digita
+  (`cpf-existe`): achando, o "Criar" sai de cena, como desde 29/09. É a segunda
+  guarda contra o duplicado.
+
+**A procura vem antes do pré-cadastro, e é a régua de 29/09** (a primeira
+pergunta é "ele já é cliente?"). A conferência de `o-numero-novo-acha-o-cadastro-pelo-cpf`
+que pedia o CPF como primeiro campo foi **INVERTIDA, e não apagada**: hoje
+pede a procura primeiro e o CPF depois dela e do nome.
+
+**Fica de fora, e é decisão:** a procura na ficha que já tem cadastro (o
+"Trocar" volta à lista de candidatos ou a esta tela, que já tem a procura); e
+a procura limpa depois de acrescentar ou abrir não tem cena (a procura some
+com a ficha aberta).
+
+Prova: `a-ficha-procura-o-cliente`, 82 conferências em 16 cenas, com a ponte
+de mentira respondendo a busca e a ficha: a procura primeiro, e o que ela diz;
+menos de 3 letras; o nome sem perguntar a cada tecla; o e-mail com o "+"
+inteiro no endereço; a resposta de um termo antigo; a lista de antes ao mudar o
+termo; o acrescentar no segundo achado (a ficha, o número, o vínculo, nessa
+ordem); o "Só abrir"; o "não achou" com o CPF indo para o pré-cadastro (e o que
+já estava lá ficando); o processo sem cliente; a falha com o "Tentar de novo";
+os 20 primeiros; o CPF do pré-cadastro conferido; e a gaveta a 1100 e o celular
+a 390 e a 360.
+
+**22 sabotagens, 20 pegas e duas que vazam com razão**, rodadas em cópias e
+lidas uma a uma (e a cópia de controle passou inteira):
+
+- a ficha de antes inteira (52 reprovações — é o pedido reproduzido);
+- **a pergunta:** sem esperar parar de digitar; sem abandonar a resposta
+  antiga; sem o "procurando" na tecla; o termo sem codificar no endereço; sem o
+  mínimo de 3;
+- **a falha:** virando "nenhum cadastro"; sem dizer que não quer dizer nada; o
+  "Tentar de novo" que não pergunta;
+- **o CPF:** sem ir para o pré-cadastro; por cima do que já estava lá; qualquer
+  termo indo para o CPF; o CPF do pré-cadastro sem a conferência;
+- **os achados:** o "Só abrir" acrescentando; o acrescentar no primeiro achado;
+  sem os processos sem cliente; o cartão sem o segundo telefone, e sem o
+  e-mail; sem dizer que mostrou só os 20 primeiros;
+- **e as que vazam:**
+  - **sem a guarda do termo antigo na tela.** O efeito põe "procurando" a cada
+    tecla, e a guarda só cobre o desenho entre a tecla e o efeito, que a prova
+    não vê. Ela fica: não depende de como o efeito é escrito;
+  - **os botões do cartão sem quebrar a linha.** Até no celular de 360 (a régua
+    da casa) "Acrescentar" com o número e "Só abrir" cabem numa linha, e a prova
+    confere que cada botão termina dentro do próprio cartão. A quebra é para um
+    número mais longo ou um cartão mais estreito, e fica.
+
+**A primeira rodada mostrou a segunda vazando, e a prova ganhou duas coisas** (a
+cena a 360 e a conferência do botão dentro do cartão) antes de a sabotagem ser
+rodada de novo. Ela continuou vazando, com razão.
+
+**E a integração contínua pegou um `if` calado**: a conferência dos 40 pontos
+de dedo só rodava no celular (`if (larg < 768) ok(...)`), e o vigia
+`provas-que-reprovam` reprovou. Eu tinha rodado `olho-nas-provas.mjs`, que só
+guarda a conta do vigia e não confere nada sozinho. **O vigia é a prova
+`provas-que-reprovam`**: é ela que se roda antes do commit.
+
 ## O pré-cadastro não promete mais a ordem — a tarefa é pedida (02/10)
 
 Pedido do Rodrigo: no pré-cadastro, uma caixa **"Criar a tarefa “Cadastro de

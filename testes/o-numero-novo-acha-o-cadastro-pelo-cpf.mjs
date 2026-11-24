@@ -138,20 +138,25 @@ const procura = page.locator("[data-procura-cpf]");
 const criar = page.getByRole("button", { name: /Criar pré-cadastro/ });
 
 // ------------------------------------------------------------------
-console.log("\nO número sem cadastro pergunta o CPF PRIMEIRO");
+console.log("\nO número sem cadastro pergunta PRIMEIRO se já é cliente");
 await abrir();
 {
   const campo = page.locator("[data-cpf-sem-cadastro]");
   ok("a ficha sem cadastro tem o campo do CPF", await campo.count() === 1);
-  // O CPF ANTES DO NOME. Com ele depois, o gesto natural era preencher de
-  // cima para baixo e apertar Criar — o duplicado do relato.
-  const cpfPrimeiro = await page.evaluate(() => {
+  // A PROCURA ANTES DE TUDO (24/11, INVERTIDA, e não apagada). Até ali era o
+  // CPF que vinha primeiro, pela mesma razão: com ele depois do nome, o gesto
+  // natural era preencher de cima para baixo e apertar Criar — o duplicado do
+  // relato. Hoje quem vem primeiro é a procura no Vantoro, que acha também
+  // pelo CPF, e o CPF fica no pré-cadastro, conferido como antes.
+  const ordem = await page.evaluate(() => {
     const cpf = document.querySelector("[data-cpf-sem-cadastro]");
+    const busca = document.querySelector("[data-ficha] [data-busca-sem-cadastro]");
     const inputs = [...document.querySelectorAll("[data-ficha] input")];
-    return cpf ? inputs.indexOf(cpf) === 0 : null;
+    return { busca: busca ? inputs.indexOf(busca) : null, cpf: cpf ? inputs.indexOf(cpf) : null };
   });
-  ok("e ele vem antes de tudo, antes do nome", cpfPrimeiro === true, String(cpfPrimeiro));
-  const dica = await campo.getAttribute("placeholder").catch(() => "");
+  ok("a procura vem antes de tudo, e o CPF depois dela e do nome",
+     ordem.busca === 0 && ordem.cpf > 1, JSON.stringify(ordem));
+  const dica = await page.locator("[data-ficha] label").first().innerText().catch(() => "");
   ok("dizendo para que serve: achar o cadastro de quem já é cliente",
      /já é cliente/i.test(dica || ""), `dizia: "${dica}"`);
   ok("o pré-cadastro continua oferecido para quem NÃO é cliente",

@@ -152,6 +152,15 @@ function mascaraCep(valor) {
   return d.length <= 5 ? d : `${d.slice(0, 5)}-${d.slice(5)}`;
 }
 
+// O TERMO DA PROCURA É UM CPF (ou CNPJ)? Só dígitos e a pontuação de sempre,
+// com 11 ou 14 dígitos. Um nome com números no meio não é documento.
+export function ehCpfOuCnpj(termo) {
+  const t = String(termo || "").trim();
+  if (!/^[\d.\-/\s]+$/.test(t)) return false;
+  const d = t.replace(/\D/g, "");
+  return d.length === 11 || d.length === 14;
+}
+
 // Busca o endereço pelo CEP. Serviço público e sem cadastro; se estiver fora do
 // ar, o atendente digita à mão e nada trava.
 async function buscarCep(cep) {
@@ -363,6 +372,13 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
   // pedem três gestos diferentes.
   //   null · "procurando" · "nao-achou" · "falhou"
   const [cpfProcura, setCpfProcura] = useState(null);
+  // A PROCURA NO VANTORO, no número sem cadastro (24/11) — ver
+  // `desenharBuscaNoVantoro`. O termo é o que a pessoa escreveu; a resposta
+  // diz de qual termo ela é, e a de outro termo não é desenhada.
+  //   estado: null · "curta" · "procurando" · "nada" · "falhou" · "achou"
+  const [termoDaBusca, setTermoDaBusca] = useState("");
+  const [busca, setBusca] = useState({ estado: null });
+  const [tentativaDaBusca, setTentativaDaBusca] = useState(0);
   const [telefones, setTelefones] = useState([]);
   const [novoNumero, setNovoNumero] = useState("");
   const [mexendoTel, setMexendoTel] = useState(false);
@@ -567,6 +583,56 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
     return () => { valeu = false; clearTimeout(relogio); };
   }, [edicao.cpf, cliente]);
 
+  // ============================================================
+  //  A PROCURA NO VANTORO, NO NÚMERO SEM CADASTRO (24/11)
+  //
+  //  Pedido do Rodrigo, com a foto do campo de CPF: "na Ficha do Vantoro,
+  //  tenha a opção de pesquisa igual do Vantoro, onde podemos localizar o
+  //  cliente pelo nome, CPF, e-mail, etc." O campo só achava pelo CPF, e o
+  //  cliente que trocou de número nem sempre tem o CPF à mão de quem atende.
+  //
+  //  É A BUSCA DO PRÓPRIO VANTORO (`/vantoro/buscar`, a mesma da "Nova
+  //  conversa"): nome, CPF, telefone, e-mail ou número do processo, com os
+  //  números comparados só pelos dígitos. Uma segunda regra de busca aqui
+  //  acharia uma coisa e o Vantoro outra.
+  //
+  //  A PERGUNTA SÓ SAI QUANDO A PESSOA PARA DE DIGITAR (400ms), e a resposta
+  //  de um termo antigo é abandonada: "mar" chegando depois de "maria" poria
+  //  na tela a lista de outra pergunta.
+  //
+  //  O CPF QUE NINGUÉM TEM VAI PARA O PRÉ-CADASTRO: quem procurou pelo CPF e
+  //  não achou vai criar o cadastro com ele, e digitar de novo seria trabalho
+  //  à toa. Só se o CPF do pré-cadastro estiver vazio: o que a pessoa já
+  //  escreveu lá é dela.
+  // ============================================================
+  useEffect(() => {
+    const termo = termoDaBusca.trim();
+    if (!termo) { setBusca({ estado: null }); return undefined; }
+    if (termo.length < 3) { setBusca({ estado: "curta", termo }); return undefined; }
+    // "PROCURANDO" JÁ NA TECLA, e não só quando a pergunta sai: nos 400ms de
+    // espera, a lista de antes ficaria na tela com cara de resposta do termo
+    // novo.
+    setBusca({ estado: "procurando", termo });
+    let valeu = true;
+    const relogio = setTimeout(async () => {
+      try {
+        const r = await chamarPonte(`/vantoro/buscar?q=${encodeURIComponent(termo)}`);
+        if (!valeu) return;
+        const achados = Array.isArray(r && r.clientes) ? r.clientes : [];
+        const soltos = Array.isArray(r && r.processos_sem_cliente) ? r.processos_sem_cliente : [];
+        setBusca({ estado: achados.length ? "achou" : "nada", termo, achados, soltos });
+        if (!achados.length && ehCpfOuCnpj(termo)) {
+          setEdicao((e) => (String(e.cpf || "").trim() ? e : { ...e, cpf: termo }));
+        }
+      } catch (e) {
+        // A FALHA É DITA, e nunca vira "nenhum cadastro": calada, ela teria a
+        // cara de "não é cliente", e a pessoa criaria o duplicado.
+        if (valeu) setBusca({ estado: "falhou", termo, erro: (e && e.message) || "" });
+      }
+    }, 400);
+    return () => { valeu = false; clearTimeout(relogio); };
+  }, [termoDaBusca, tentativaDaBusca]);
+
   // ABRIR O CADASTRO QUE JÁ TEM ESTE CPF.
   //
   // `cpf-existe` responde POUCO de propósito — id, nome e as contagens —,
@@ -582,6 +648,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
       const inteiro = (r && r.cliente) || null;
       if (!inteiro) throw new Error("não veio a ficha");
       setCpfDeOutro(null);
+      setTermoDaBusca("");
       // ABRIR NÃO LIGA (auditoria de 27/10). Este é o "não é ele" — a mãe
       // falando pelo celular do filho, com o CPF dele na mão —, e por baixo
       // ele gravava o vínculo: a conversa dela ganhava o nome do filho e as
@@ -667,6 +734,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
 
       setCpfDeOutro(null);
       setCpfProcura(null);
+      setTermoDaBusca("");
       setCliente(inteiro);
       const comOGuardado = comRascunho(inteiro, quem);
       setEdicao(comOGuardado.edicao);
@@ -1272,6 +1340,120 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
   }
 
   // ------------------------------------------------------------
+  //  A PROCURA NO VANTORO (24/11): o que ela respondeu
+  //
+  //  Cada resposta diz o que fazer a seguir, como a do CPF:
+  //    procurando → espere;
+  //    achou      → é a mesma pessoa? acrescente este número, ou só abra;
+  //    nada       → pode criar o pré-cadastro;
+  //    falhou     → NÃO conclua que não é cliente: tente de novo.
+  // ------------------------------------------------------------
+  function desenharBuscaNoVantoro() {
+    const miudo = { fontSize: 12, lineHeight: 1.45, color: C.textSecondary, marginTop: 4 };
+    const b = busca;
+    if (!b.estado) return null;
+    // A RESPOSTA DE OUTRO TERMO NÃO É DESENHADA: entre a tecla e os 400ms, a
+    // lista de antes diria que é a resposta do que acabou de ser escrito.
+    if (b.estado !== "curta" && b.termo !== termoDaBusca.trim()) {
+      return <div data-busca-no-vantoro="procurando" style={miudo}>Procurando no Vantoro…</div>;
+    }
+    if (b.estado === "curta") {
+      return <div data-busca-no-vantoro="curta" style={miudo}>Escreva ao menos 3 letras ou números.</div>;
+    }
+    if (b.estado === "procurando") {
+      return <div data-busca-no-vantoro="procurando" style={miudo}>Procurando no Vantoro…</div>;
+    }
+    const nomesNosProcessos = (b.soltos || []).slice(0, 3).map((p) => p.nome_no_processo).filter(Boolean);
+    const soltos = (b.soltos || []).length ? (
+      <div data-processos-sem-cliente={b.soltos.length} style={{ ...miudo, marginTop: 8 }}>
+        {b.soltos.length === 1 ? "Há 1 processo" : `Há ${b.soltos.length} processos`} com
+        “{b.termo}” no Vantoro sem cliente ligado
+        {nomesNosProcessos.length ? ` (o nome no processo: ${nomesNosProcessos.join("; ")})` : ""}
+        . Para ligar um deles a um cadastro, abra o processo no Vantoro.
+      </div>
+    ) : null;
+    if (b.estado === "falhou") {
+      return (
+        <div data-busca-no-vantoro="falhou" style={{ ...miudo, color: C.erroTexto || "#e5695a" }}>
+          Não consegui procurar no Vantoro agora — isto não quer dizer que a
+          pessoa não seja cliente. Tente de novo antes de criar um cadastro.
+          {b.erro ? <div data-busca-motivo style={{ marginTop: 2 }}>{b.erro}</div> : null}
+          <button data-busca-tentar-de-novo onClick={() => setTentativaDaBusca((n) => n + 1)}
+                  style={{ marginTop: 6, border: `1px solid ${C.divider}`, borderRadius: 7,
+                           background: "transparent", color: C.textPrimary, cursor: "pointer",
+                           fontSize: 12.5, fontWeight: 600, padding: "5px 10px" }}>
+            Tentar de novo
+          </button>
+        </div>
+      );
+    }
+    if (b.estado === "nada") {
+      const foiParaOPreCadastro = ehCpfOuCnpj(b.termo)
+        && String(edicao.cpf || "").replace(/\D/g, "") === b.termo.replace(/\D/g, "");
+      return (
+        <div data-busca-no-vantoro="nada" style={miudo}>
+          Nenhum cadastro com “{b.termo}” no Vantoro.
+          {foiParaOPreCadastro ? " O CPF já foi para o pré-cadastro, logo abaixo." : ""}
+          {soltos}
+        </div>
+      );
+    }
+    const esteNumero = telefoneLegivel(numero);
+    const linhaDe = (c) => {
+      const tels = [];
+      const vistos = new Set();
+      for (const t of [c.telefone, c.telefone2]) {
+        const chave = chaveDoNumero(t || "");
+        if (!chave || vistos.has(chave)) continue;
+        vistos.add(chave);
+        tels.push(telefoneLegivel(t));
+      }
+      return [c.cpf ? `CPF ${c.cpf}` : null, ...tels, c.email || null].filter(Boolean).join(" · ");
+    };
+    const botaoMiudo = {
+      border: `1px solid ${C.divider}`, borderRadius: 7, background: "transparent",
+      color: C.textPrimary, cursor: "pointer", fontSize: 12.5, fontWeight: 600, padding: "6px 10px",
+    };
+    return (
+      <div data-busca-no-vantoro="achou">
+        <div style={miudo}>
+          {b.achados.length >= 20
+            ? `Mostrando os 20 primeiros com “${b.termo}” — escreva mais para afinar.`
+            : `${b.achados.length === 1 ? "1 cadastro" : `${b.achados.length} cadastros`} com “${b.termo}”.`}
+          {" "}É a mesma pessoa, escrevendo por um número novo? O número entra como
+          mais um telefone do cadastro — o WhatsApp principal continua o de antes.
+        </div>
+        {b.achados.map((c) => (
+          <div key={c.id} data-achado-na-busca={c.id}
+               style={{ marginTop: 8, borderRadius: 9, padding: "9px 11px",
+                        border: `1px solid ${C.divider}`, background: C.panel,
+                        color: C.textPrimary, fontSize: 13, lineHeight: 1.45,
+                        overflowWrap: "anywhere" }}>
+            <b>{c.nome}</b>
+            <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>
+              {linhaDe(c) || "sem outros dados"}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+              <button data-acrescentar-ao-achado-da-busca={c.id} disabled={salvando}
+                      onClick={() => acrescentarEsteNumeroAoCadastro(c)}
+                      title={`Acrescentar ${esteNumero} ao cadastro de ${c.nome}, e ligar esta conversa a ele`}
+                      style={{ ...botao, padding: "6px 10px", fontSize: 12.5, opacity: salvando ? 0.6 : 1 }}>
+                <Plus size={14} /> {salvando ? "Acrescentando…" : `Acrescentar ${esteNumero}`}
+              </button>
+              <button data-so-abrir-achado-da-busca={c.id} onClick={() => abrirCadastroDeOutro(c)}
+                      title={`Abrir o cadastro de ${c.nome} só para ver, sem acrescentar este número`}
+                      style={botaoMiudo}>
+                Só abrir
+              </button>
+            </div>
+          </div>
+        ))}
+        {soltos}
+      </div>
+    );
+  }
+
+  // ------------------------------------------------------------
   //  A PROCURA PELO CPF, NO NÚMERO SEM CADASTRO
   //
   //  Quatro respostas, e cada uma diz o que fazer a seguir:
@@ -1612,18 +1794,31 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
             <div style={{ color: C.textSecondary, fontSize: 13.5, lineHeight: 1.55, marginBottom: 14 }}>
               Este número ainda <b>não tem cadastro</b> no Vantoro.
             </div>
-            {/* O CPF VEM PRIMEIRO, e é a mudança de 29/09. O cliente que troca
-                de celular chega aqui por um número que o Vantoro não conhece
-                — e a primeira pergunta é "ele já é cliente?", não "vamos
-                criar". Com o CPF lá embaixo, depois do nome, o gesto natural
-                era preencher de cima para baixo e apertar Criar: o duplicado.
-                É o mesmo campo que o pré-cadastro usa, e não um segundo:
-                dois campos de CPF na mesma tela fariam a pessoa perguntar em
-                qual digitar, e o outro ficaria vazio. */}
+            {/* A PROCURA VEM PRIMEIRO (24/11), e é a régua de 29/09 com a
+                busca do Vantoro no lugar do CPF: a primeira pergunta é "ele
+                já é cliente?", e não "vamos criar". Ela acha pelo nome, CPF,
+                e-mail, telefone ou processo, como a busca de lá. */}
+            <label style={rotulo}>Já é cliente? Procure no Vantoro</label>
+            <input data-busca-sem-cadastro
+                   style={{ ...campo, marginBottom: 2, textOverflow: "ellipsis" }} value={termoDaBusca}
+                   placeholder="Nome, CPF, e-mail, telefone ou processo"
+                   aria-label="Procurar o cliente no Vantoro pelo nome, CPF, e-mail, telefone ou processo"
+                   onChange={(e) => setTermoDaBusca(e.target.value)} />
+            {desenharBuscaNoVantoro()}
+            <div style={{ color: C.textSecondary, fontSize: 12.5, lineHeight: 1.5,
+                          margin: "14px 0 10px" }}>
+              Não é cliente ainda? Crie o pré-cadastro — o CPF é opcional.
+            </div>
+            <label style={rotulo}>Nome</label>
+            <input style={{ ...campo, marginBottom: 12 }} value={edicao.nome ?? (nomeContato || "")}
+                   onChange={(e) => setEdicao({ ...edicao, nome: e.target.value })} />
+            {/* O CPF DO PRÉ-CADASTRO CONTINUA CONFERIDO enquanto se digita:
+                o CPF de quem já é cliente acha o cadastro aqui também, e o
+                "Criar" sai de cena. É a segunda guarda contra o duplicado. */}
             <label style={rotulo}>CPF</label>
             <input data-cpf-sem-cadastro inputMode="numeric"
                    style={{ ...campo, marginBottom: 4 }} value={edicao.cpf || ""}
-                   placeholder="Já é cliente? Digite o CPF para achar o cadastro"
+                   placeholder="Opcional — se já for cliente, a ficha avisa"
                    onChange={(e) => setEdicao({ ...edicao, cpf: e.target.value })} />
             {desenharProcuraPeloCpf()}
             {/* ACHOU O CADASTRO, O PRÉ-CADASTRO SAI DE CENA. Criar ali seria
@@ -1632,13 +1827,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
                 o botão só levaria a um erro depois de a pessoa escolher o
                 papel. Trocando o CPF, ele volta. */}
             {!cpfDeOutro && (<>
-            <div style={{ color: C.textSecondary, fontSize: 12.5, lineHeight: 1.5,
-                          margin: "10px 0 14px" }}>
-              Não é cliente ainda? Crie o pré-cadastro — o CPF é opcional agora.
-            </div>
-            <label style={rotulo}>Nome</label>
-            <input style={{ ...campo, marginBottom: 14 }} value={edicao.nome ?? (nomeContato || "")}
-                   onChange={(e) => setEdicao({ ...edicao, nome: e.target.value })} />
+            <div style={{ height: 10 }} />
             {/* CLIENTE OU RÉU — a escolha que decide a ordem de serviço.
                 Dois botões, e não uma lista: são duas opções, e uma lista
                 fechada esconderia a segunda atrás de um clique. Quem atende
