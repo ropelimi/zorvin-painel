@@ -4893,7 +4893,7 @@ pede a procura primeiro e o CPF depois dela e do nome.
 a procura limpa depois de acrescentar ou abrir não tem cena (a procura some
 com a ficha aberta).
 
-Prova: `a-ficha-procura-o-cliente`, 81 conferências em 16 cenas, com a ponte
+Prova: `a-ficha-procura-o-cliente`, 82 conferências em 16 cenas, com a ponte
 de mentira respondendo a busca e a ficha: a procura primeiro, e o que ela diz;
 menos de 3 letras; o nome sem perguntar a cada tecla; o e-mail com o "+"
 inteiro no endereço; a resposta de um termo antigo; a lista de antes ao mudar o
@@ -4929,6 +4929,12 @@ lidas uma a uma (e a cópia de controle passou inteira):
 **A primeira rodada mostrou a segunda vazando, e a prova ganhou duas coisas** (a
 cena a 360 e a conferência do botão dentro do cartão) antes de a sabotagem ser
 rodada de novo. Ela continuou vazando, com razão.
+
+**E a integração contínua pegou um `if` calado**: a conferência dos 40 pontos
+de dedo só rodava no celular (`if (larg < 768) ok(...)`), e o vigia
+`provas-que-reprovam` reprovou. Eu tinha rodado `olho-nas-provas.mjs`, que só
+guarda a conta do vigia e não confere nada sozinho. **O vigia é a prova
+`provas-que-reprovam`**: é ela que se roda antes do commit.
 
 ## O pré-cadastro não promete mais a ordem — a tarefa é pedida (02/10)
 

@@ -416,7 +416,9 @@ for (const [nome, larg, alt] of [["14. Na gaveta, a 1100", 1100, 800], ["15. No 
   ok("os cartões e os botões cabem na ficha e na tela", !!m && m.fora.length === 0, q(m));
   ok("a tela não rola de lado", !!m && !m.rolaDeLado);
   ok("o botão de acrescentar está pintado", !!m && m.pintado, q(m));
-  if (larg < 768) ok("e tem os 40 pontos de alvo de dedo", !!m && m.alto >= 40, q(m));
+  // no celular, os 40 pontos de alvo de dedo; no computador, a altura de um botão (sem o if calado)
+  const alvo = larg < 768 ? 40 : 20;
+  ok(`e tem pelo menos ${alvo} pontos de altura`, !!m && m.alto >= alvo, q(m));
   ok("nenhum estouro", estouros.length === 0, q(estouros));
   await ctx.close();
 }
