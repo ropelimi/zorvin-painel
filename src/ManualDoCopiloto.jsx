@@ -101,7 +101,7 @@ export function ManualDoCopiloto({ cx, C, departamentos = [], telefones = [] }) 
   // O QUE A PONTE DIZ DO COPILOTO — ligado, desligado, ou não deu para saber.
   // A chave é da ponte, e ninguém a vê daqui; o que se diz é se ela existe.
   const situacao = !estado ? { cor: C.textSecondary, frase: `Perguntando à ponte se o ${NOME_DO_ASSISTENTE} está ligado…` }
-    : estado.ligado === true ? { cor: C.green, frase: `Ligado${estado.modelo ? ` (${estado.modelo})` : ""}: o botão “Sugerir resposta” aparece na caixa de escrever.` }
+    : estado.ligado === true ? { cor: C.verdeTexto, frase: `Ligado${estado.modelo ? ` (${estado.modelo})` : ""}: o botão “Sugerir resposta” aparece na caixa de escrever.` }
     : estado.ligado === false ? { cor: C.erroTexto, frase: "Ainda não está ligado: falta a variável ANTHROPIC_API_KEY na Render (serviço da ponte). Enquanto ela não existir, o botão não aparece para a equipe." }
     : { cor: C.ambarTexto, frase: `Não consegui perguntar à ponte se o ${NOME_DO_ASSISTENTE} está ligado. O botão aparece assim mesmo, e o clique diz o que estiver errado.` };
 

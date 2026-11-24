@@ -21,6 +21,10 @@
 //  cartão, o topo tem a barra, o fundo tem o papel de parede do chat) e a
 //  paleta do claro e a do escuro são diferentes. O DESENHO é que é fixo.
 //
+//  O TAMANHO pode ser um número (em pontos) ou uma conta de CSS: o topo da
+//  lista passa `min(19px, …cqw)`, para a marca encolher num celular de 320
+//  em vez de ser cortada no meio do "Zorvin" (24/11). O vão entre as duas
+//  palavras é em `em`, e acompanha qualquer um dos dois.
 export default function Marca({ tamanho = 19, cor, corFraca }) {
   return (
     <span
@@ -37,7 +41,7 @@ export default function Marca({ tamanho = 19, cor, corFraca }) {
       {/* Espaço em margem, e não um " " no texto: entre um negrito e um peso
           normal o espaço comum encolhe e as duas palavras quase se encostam.
           Proporcional ao tamanho para o vão ser o mesmo a 19 e a 26. */}
-      <span style={{ fontWeight: 400, color: corFraca, marginLeft: tamanho * 0.2 }}>
+      <span style={{ fontWeight: 400, color: corFraca, marginLeft: "0.2em" }}>
         Zorvin
       </span>
     </span>

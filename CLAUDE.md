@@ -9921,6 +9921,106 @@ dias"; hoje as duas pedem o vermelho da lista (#c62828 no claro).
   de tempo se confere rodando a prova de novo, sozinha, antes de procurar
   defeito.
 
+## A revisão responsiva de 24/11 — o celular de 320 e as cores que faltavam
+
+Pedido do Rodrigo: *"Reveja todas as telas, inclusive na versão mobile para
+deixar 100% responsivas."*
+
+**Uma varredura abriu o Zorvin em nove larguras** (320, 360, 390, 430, 768,
+1024, 1280, 1366 e 1920), nos dois temas:
+
+- **31 estados**: a lista, a conversa, a ficha, o ⋮ da conversa e o da linha,
+  o histórico, o menu do topo, a "Nova conversa", a seta da fita, o seletor de
+  responsáveis, a Mídia, as sete abas das Configurações, as oito de
+  Departamentos e acessos e as cinco telas (Funil, Tarefas, Esperando
+  resposta, Painel e Ligações);
+- **12 janelas por cima**, de 320 a 430: a ficha, o Finalizar, o Lembrar, o
+  Resumir, a ligação, as etiquetas, o histórico, quem participou, a lupa da
+  conversa, os emojis, o agendar e o responsável.
+
+Ela mediu o que a de 05/11 mediu (a tela rolando de lado, o que sai da tela, o
+texto cortado sem reticências, o alvo de dedo, a letra dos campos no celular,
+o que se sobrepõe na camada de cima, o contraste e os erros de JavaScript), e
+olhou as fotos de cada estado.
+
+**Não acharam nada** a lista, a conversa e o histórico (fora o rótulo abaixo),
+a ficha, os menus da conversa e da linha, a "Nova conversa", o seletor de
+responsáveis, as Configurações (fora a ponta abaixo), Departamentos e acessos
+(fora a aba do Quazar), o Funil, as Tarefas, o Esperando resposta, as Ligações
+e as doze janelas por cima. Nenhum alvo de dedo pequeno, nenhum campo com letra
+menor que 16 no celular, nenhum erro de JavaScript.
+
+| onde | o que acontecia | agora |
+|---|---|---|
+| a marca no topo da lista, num celular de 320 | a coluna tem 260 pontos, e os três botões de 40 deixam 110 para um nome que pede 138 a 19 pontos: a tela dizia **"Ropelimi Zor"** | a letra é o menor entre 19 e o que cabe na caixa (`TAMANHO_DA_MARCA`, com `container-type`): **14,9 a 320**, 17,6 a 340, e os 19 de sempre de 360 em diante |
+| o menu da seta da fita, a 320 | 250 pontos a 12 da borda da coluna: passava da tela | a largura da fita menos as margens, até 250 (no computador, os 250 de sempre) |
+| as abas da Mídia, no celular | na linha do título, alinhadas à direita: a 320 o começo de "Mídias" ficava do lado de lá da borda, sem como rolar até ele, e a 390 a sombra da ponta cobria o "Links" mesmo cabendo | numa linha própria, abaixo do título, dividindo a largura (cabem até em 320). No computador, na linha do título, como sempre |
+| a ponta que esmaece, no fim de uma fita (`.fita-borda`) | ela ficava por cima dos últimos 14 a 26 pontos do último botão, também com a fita rolada até o fim, e também quando tudo cabia: o "Importar histórico" das Configurações no celular, e, no computador, o "Links" das abas da Mídia e o último atalho do Painel ficavam esmaecidos onde não havia mais nada depois | a margem negativa passou para a direita: rolada até o fim (ou cabendo tudo), a ponta fica depois do último botão; no começo, continua esmaecendo o que transborda |
+| os atalhos do Painel, no celular | rolavam de lado, e o último atalho cortado seco na borda se lia como tela quebrada | esmaecem na ponta, como as abas das Configurações |
+| o "Ligado" da aba do Quazar | verde da marca: **3,0:1** | o verde de texto do tema (`C.verdeTexto`) |
+| "Pelo celular" e o rótulo do histórico importado, na bolha verde do tema escuro | o cinza de sempre: **3,3:1** | o cinza da hora de quem envia (`C.horaNaSaida`), 5,0:1 |
+| o número das medalhas do pódio do Painel | letra branca: **2,4:1** no ouro, 3,0:1 na prata e 3,7:1 no bronze | letra escura (`TINTA_DA_MEDALHA`): 6,6 no ouro e 5,3 na prata; o bronze clareou um tom (#c4844a), porque com a letra escura o de antes dava 4,2:1, e agora dá 5,1:1 |
+
+**A marca: o vão entre as duas palavras é em `em`** (`Marca.jsx`): com a letra
+em conta de CSS, o `tamanho * 0.2` de antes daria um número inválido e
+"RopelimiZorvin" grudado.
+
+**A ponta é uma regra só** (o CSS de `.fita-borda`), usada nas abas das
+Configurações no celular, nas da Mídia no computador e agora nos atalhos do
+Painel. O conserto vale para as três.
+
+### O que fica de fora, e por quê
+
+- **o "Deus" branco por cima das fotos da Mídia** aparece na varredura com
+  1,0:1: ela calcula o fundo pela cor dos ancestrais e não enxerga a foto nem o
+  degradê escuro que fica por baixo do nome. Na foto da tela ele se lê;
+- **a fileira de abas das Configurações continua rolando de lado no
+  celular** (decisão de 05/11: é o jeito de caber sete abas em 360 pontos);
+- **a fita de filtros da lista usa duas linhas no celular** (a seta desce
+  para a segunda), e é o desenho do celular desde 16/09;
+- **as abas da Mídia no computador andaram 2 pontos para a esquerda**: a ponta
+  agora ocupa o vão depois da última aba. Não se vê;
+- **o "coberto" da varredura** são os menus e as janelas abertos, que cobrem
+  de propósito.
+
+Prova: `a-revisao-responsiva-de-24-11`, 119 conferências em cinco cenas: a
+marca a 320, 360, 390 e 1366 (inteira, com o vão, com 19 pontos de 360 em
+diante e de 14 a 19 a 320); o menu da seta a 320, 390 e 1366 (no computador
+com os 252 de sempre, no celular com folga dos dois lados da fita); as abas da
+Mídia a 320 (claro), 390 (escuro) e 1366; a ponta no começo e no fim das abas
+das Configurações e dos atalhos do Painel; e o contraste do "Ligado", do
+"Pelo celular" e das três medalhas, nos dois temas.
+
+**13 sabotagens, 12 pegas e uma que vaza com razão**, rodadas em cópias e
+lidas uma a uma (e a cópia de controle passou inteira):
+
+- o painel de antes inteiro (15 reprovações — é o pedido reproduzido: a marca
+  cortada a 320, o menu passando da tela, "Mídias" fora da fita e o "Links"
+  debaixo da ponta);
+- **a marca:** os 19 pontos fixos; a caixa sem se medir (`container-type`); o
+  vão em pontos, como antes (com a letra em conta de CSS, as duas palavras
+  grudam, em todas as larguras);
+- **o menu da seta** com os 250 fixos;
+- **a Mídia:** as abas na linha do título no celular (7: os nomes cortados);
+- **a ponta:** a margem de antes, à esquerda (4: o "Importar histórico", o
+  último atalho do Painel no celular e no computador, e o "Links" da Mídia no
+  computador); os atalhos do Painel sem a ponta;
+- **as letras:** o "Ligado" com o verde de antes (3,0:1); o "Pelo celular" com
+  o cinza de sempre (3,3:1 no escuro); a medalha com a letra branca; o bronze
+  de antes (4,2:1);
+- **e a que vaza:** a ponta de volta nas abas da Mídia no celular. Lá as abas
+  dividem a largura e sempre cabem, e com a margem à direita a ponta fica
+  depois da última aba, sem cobrir nada. A guarda fica: sem a classe `fita`,
+  no celular, a ponta não teria o que esmaecer.
+
+**O vigia `provas-que-reprovam` pegou três conferências da primeira escrita**:
+o tamanho do menu só no computador (um `if` sem `else`: no celular a prova não
+conferia nada ali), e o laço e o `.every` das abas da Mídia sem conferir antes
+que as três abas foram medidas. Hoje o menu tem conferência nas duas larguras,
+e as abas, a conta delas antes do laço. As conferências só cresceram: a rodada
+já começada continuou valendo para as pegas, e a cópia de controle foi rodada
+de novo com a prova final (119 de 119).
+
 ## O tempo real que entupia — e a mensagem que parecia não ter saído (20/10)
 
 Relato do Rodrigo: *"Quando é enviada uma mensagem demora para aparecer,
