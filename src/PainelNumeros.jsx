@@ -668,8 +668,11 @@ export default function PainelNumeros({ C: CDaTela, CClaro = null, modo: modoDaT
         <div data-linha-das-secoes
              style={{ maxWidth: 1180, margin: "0 auto", padding: "0 18px 10px",
                       display: "flex", alignItems: "center", gap: 10 }}>
-          <nav data-nav-do-painel aria-label="Seções do painel"
-               style={{ flex: "1 1 auto", minWidth: 0, display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none" }}>
+          {/* A PONTA DOS ATALHOS ESMAECE (24/11), como a fita de filtros da
+              lista: no celular eles rolam de lado, e o último cortado seco
+              na borda se lia como tela quebrada, e não como "tem mais". */}
+          <nav data-nav-do-painel aria-label="Seções do painel" className="sem-scrollbar fita"
+               style={{ flex: "1 1 auto", minWidth: 0, display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none", "--fita-fundo": C.panel }}>
             {comConteudo.length > 1 && SECOES_DO_PAINEL.filter((s) => comConteudo.includes(s.id)).map((s) => (
               <button key={s.id} onClick={() => irPara(s.id)} data-ir-para={s.id}
                       aria-current={secaoAtual === s.id ? "true" : undefined}
@@ -682,6 +685,7 @@ export default function PainelNumeros({ C: CDaTela, CClaro = null, modo: modoDaT
                 {s.curto}
               </button>
             ))}
+            {comConteudo.length > 1 && <span aria-hidden className="fita-borda" />}
           </nav>
           <BotaoDeImprimir C={C} sombra={sombra} secoes={secoes} escolhidas={paraImprimir}
                            definir={setParaImprimir} imprimir={imprimir} />
@@ -1113,10 +1117,13 @@ const formatarColuna = (c, v) => (v == null ? "—" : c.tipo === "tempo" ? tempo
    não sobe ao pódio com zero, e a linha "pelo nome" (as mensagens de antes de
    ago/2026, sem conta) não é uma pessoa. Com menos de duas pessoas na base,
    não há o que comparar, e o pódio não aparece. */
+// A LETRA DA MEDALHA É ESCURA (24/11): o branco dava 2,4:1 no ouro e 3,0:1 na
+// prata. O bronze clareou um tom para a letra escura passar de 4,5:1 (5,1:1).
+const TINTA_DA_MEDALHA = "#1f2328";
 const MEDALHAS = [
   { lugar: 1, cor: "#d4a017", fundo: "rgba(212,160,23,.14)" },
   { lugar: 2, cor: "#8a97a3", fundo: "rgba(138,151,163,.16)" },
-  { lugar: 3, cor: "#b4763f", fundo: "rgba(180,118,63,.15)" },
+  { lugar: 3, cor: "#c4844a", fundo: "rgba(196,132,74,.15)" },
 ];
 function PodioDaEquipe({ C, col, linhas, barras, destaque, podeEscolher, aoEscolher }) {
   if (!col || col.semPosicao || col.alerta) return null;
@@ -1145,8 +1152,9 @@ function PodioDaEquipe({ C, col, linhas, barras, destaque, podeEscolher, aoEscol
                             border: `1px solid ${m.lugar === 1 ? m.cor : C.divider}`, background: m.fundo,
                             cursor: clica ? "pointer" : "default", color: C.textPrimary, font: "inherit", textAlign: "center" }}>
               <span aria-hidden="true"
+                    data-medalha={m.lugar}
                     style={{ width: m.lugar === 1 ? 34 : 28, height: m.lugar === 1 ? 34 : 28, borderRadius: "50%", background: m.cor,
-                             color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+                             color: TINTA_DA_MEDALHA, display: "flex", alignItems: "center", justifyContent: "center",
                              fontWeight: 800, fontSize: m.lugar === 1 ? 15 : 13, boxShadow: "0 1px 2px rgba(0,0,0,.15)" }}>
                 {m.lugar}º
               </span>

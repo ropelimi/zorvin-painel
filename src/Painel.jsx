@@ -1194,6 +1194,10 @@ function chaveDeNome(t) {
 // com `!important`. O dedo continua com o alvo que o dedo precisa; quem abre
 // mão dos 6px é o ponteiro, que não erra.
 const ICONE_DO_TOPO = { minWidth: 34, minHeight: 34, padding: 7 };
+// A LETRA DA MARCA NO TOPO DA LISTA: 19 pontos, ou o que couber na caixa dela.
+// "Ropelimi Zorvin" mede ~7,1 vezes a letra (na Arial dos botões e na Segoe UI
+// do escritório); 7,4 deixa folga para o arredondamento de cada letra.
+const TAMANHO_DA_MARCA = "min(19px, calc(100cqw / 7.4))";
 
 const BOTAO_ICONE = {
   border: "none", background: "transparent", cursor: "pointer",
@@ -3046,7 +3050,10 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
                       ? "Saiu pelo aplicativo do WhatsApp, fora do Zorvin — o WhatsApp não diz qual atendente escreveu."
                       : "Rótulo do histórico importado, e não uma pessoa do escritório."}
                      style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5,
-                              fontWeight: 600, color: C.textSecondary, marginBottom: 1 }}>
+                              // NA BOLHA VERDE, O CINZA DA HORA DE QUEM ENVIA
+                              // (24/11): o cinza de sempre dava 3,3:1 sobre o
+                              // verde escuro do tema escuro.
+                              fontWeight: 600, color: saida ? C.horaNaSaida : C.textSecondary, marginBottom: 1 }}>
                   {quem.quazar ? <RostoDoAssistente tamanho={14} /> : quem.automatica ? <Bot size={12} /> : quem.aparelho ? <Smartphone size={12} /> : <History size={12} />}
                   {quem.nome}
                 </div>
@@ -17702,10 +17709,18 @@ export default function Painel({ sessao }) {
 
            A margem negativa devolve exatamente a largura que ele ocupa, então
            ele não empurra nada: só pinta por cima. E quando não há o que rolar,
-           o que ele esmaece é o próprio fundo — ou seja, não se vê nada. */
+           o que ele esmaece é o próprio fundo — ou seja, não se vê nada.
+
+           A MARGEM É À DIREITA, e não à esquerda (24/11). À esquerda, o lugar
+           dele era em cima dos últimos 26 pontos do último botão, e com a fita
+           rolada até o fim (ou cabendo inteira, como as abas da Mídia no
+           computador) ele esmaecia justo o último, sem nada depois: o
+           "Importar histórico" das Configurações no celular, o "Links" da
+           Mídia. À direita, o lugar dele é DEPOIS do último botão; no começo
+           da fita, o sticky o segura na borda, por cima do que transborda. */
         .fita-borda {
           position: sticky; right: 0; flex: 0 0 32px; width: 32px;
-          margin-left: -32px; align-self: stretch; pointer-events: none;
+          margin-right: -32px; align-self: stretch; pointer-events: none;
           background: linear-gradient(to right, transparent, var(--fita-fundo));
         }
       `}</style>
@@ -18051,8 +18066,14 @@ export default function Painel({ sessao }) {
 
                 Agora cabe numa linha só: a linha que sobrou desceu para a
                 lista de conversas, que é o que a pessoa veio ver. */}
-            <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", overflow: "hidden" }}>
-              <Marca tamanho={19} cor={C.textPrimary} corFraca={C.textSecondary} />
+            {/* A MARCA ENCOLHE NUM CELULAR DE 320 (24/11). Ali a coluna tem
+                260 pontos, e os três botões de 40 (alvo de dedo) deixam uns
+                110 para um nome que pede 138 a 19 pontos: a tela dizia
+                "Ropelimi Zor". A caixa se mede (`container-type`), e a letra
+                é o menor entre 19 e o que cabe nela (`TAMANHO_DA_MARCA`):
+                a 360 em diante continua 19. */}
+            <div data-caixa-da-marca style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", overflow: "hidden", containerType: "inline-size" }}>
+              <Marca tamanho={TAMANHO_DA_MARCA} cor={C.textPrimary} corFraca={C.textSecondary} />
             </div>
             {/* Nova conversa (⊞), estilo WhatsApp Web */}
             <button onClick={() => { setBuscaContato(""); setContatoForm(null); setNovaConversaAberta(true); carregarContatos(); }} aria-label="Nova conversa" title="Nova conversa" style={{ ...BOTAO_ICONE, ...ICONE_DO_TOPO, color: C.textSecondary }}>
@@ -18751,7 +18772,9 @@ export default function Painel({ sessao }) {
                   && !(temTarefas === true && ve("Com tarefa para hoje"))
                   && !ve("Grupos") && !ve("Todas as conversas");
                 return (
-              <div data-menu-mais-filtros role="listbox" style={{ position: "absolute", top: "100%", left: 12, zIndex: 40, width: 250, maxHeight: comPesquisa ? 380 : 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
+              // NUM CELULAR DE 320 a coluna tem 260 pontos, e 12+250 passava
+              // da tela (24/11): a largura é a da fita menos as margens, até 250.
+              <div data-menu-mais-filtros role="listbox" style={{ position: "absolute", top: "100%", left: 12, zIndex: 40, width: "min(250px, calc(100% - 24px))", maxHeight: comPesquisa ? 380 : 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
                 {comPesquisa && (
                   <div style={{ position: "sticky", top: 0, zIndex: 1, background: C.panel, padding: "8px 10px", borderBottom: `1px solid ${C.divider}` }}>
                     <CampoDePesquisa C={C} valor={pesquisa} aoMudar={setPesquisa} rotulo="Pesquisar etiqueta"
@@ -22574,9 +22597,16 @@ export default function Painel({ sessao }) {
                 em 390px, e o que sobrava para fora era justamente o X de fechar.
                 Aqui o título perde o subtítulo, a fita de abas encolhe e rola, e
                 o X fica fixo — nunca sai da tela. */}
-            <div style={{ display: "flex", alignItems: "center", gap: estreito ? 8 : 14, padding: estreito ? "12px 12px" : "14px 18px", borderBottom: `1px solid ${C.divider}` }}>
-              <div style={{ flex: "0 1 auto", minWidth: 0 }}>
-                <div data-titulo-das-midias style={{ fontSize: 15.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: estreito ? 120 : 320 }}
+            {/* E NO CELULAR AS ABAS DESCEM PARA UMA LINHA PRÓPRIA (24/11). Na
+                mesma linha do título, a fita rolava com as abas alinhadas à
+                direita: num celular de 320 o começo de "Mídias" ficava do lado
+                de lá da borda, sem como rolar até ele (o que transborda de um
+                `flex-end` vai para o lado que não rola), e a 390 a sombra da
+                ponta cobria o "Links" mesmo cabendo. Embaixo, as três dividem
+                a largura e cabem até em 320. */}
+            <div data-cabecalho-das-midias style={{ display: "flex", flexWrap: estreito ? "wrap" : "nowrap", alignItems: "center", gap: estreito ? 8 : 14, rowGap: 4, padding: estreito ? "10px 12px 0" : "14px 18px", borderBottom: `1px solid ${C.divider}` }}>
+              <div style={{ flex: estreito ? "1 1 auto" : "0 1 auto", minWidth: 0 }}>
+                <div data-titulo-das-midias style={{ fontSize: 15.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: estreito ? "100%" : 320 }}
                      title={escopoDasMidias ? `Mídia de ${escopoDasMidias.nome}` : undefined}>
                   {escopoDasMidias ? `Mídia de ${escopoDasMidias.nome}` : "Mídia"}
                 </div>
@@ -22588,12 +22618,13 @@ export default function Painel({ sessao }) {
                   </div>
                 )}
               </div>
-              <div className="sem-scrollbar fita" style={{ flex: 1, minWidth: 0, display: "flex", gap: 4, justifyContent: estreito ? "flex-end" : "center", "--fita-fundo": C.panel }}>
+              <div data-abas-das-midias className={estreito ? undefined : "sem-scrollbar fita"}
+                   style={{ flex: estreito ? "1 0 100%" : 1, order: estreito ? 3 : 0, minWidth: 0, display: "flex", gap: 4, justifyContent: "center", "--fita-fundo": C.panel }}>
                 {[["midias", "Mídias"], ["documentos", "Documentos"], ["links", "Links"]].map(([k, r]) => (
                   <button key={k} onClick={() => { setMidiaAba(k); abrirMidias(k, escopoDasMidias, quemMandou); }} data-aba-das-midias={k}
-                          style={{ flexShrink: 0, border: "none", background: "transparent", cursor: "pointer", padding: estreito ? "8px 8px" : "8px 14px", fontSize: 14, fontWeight: 600, color: midiaAba === k ? C.textPrimary : C.textSecondary, borderBottom: `2px solid ${midiaAba === k ? C.green : "transparent"}` }}>{r}</button>
+                          style={{ flex: estreito ? "1 1 0" : "0 0 auto", minWidth: 0, border: "none", background: "transparent", cursor: "pointer", padding: estreito ? "8px 4px" : "8px 14px", fontSize: 14, fontWeight: 600, whiteSpace: "nowrap", color: midiaAba === k ? C.textPrimary : C.textSecondary, borderBottom: `2px solid ${midiaAba === k ? C.green : "transparent"}` }}>{r}</button>
                 ))}
-                <span aria-hidden className="fita-borda" />
+                {!estreito && <span aria-hidden className="fita-borda" />}
               </div>
               <button onClick={() => setMidiasAberta(false)} aria-label="Fechar" title="Fechar"
                       style={{ ...BOTAO_ICONE, padding: estreito ? 7 : 10, color: C.textSecondary }}>
