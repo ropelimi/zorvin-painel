@@ -148,7 +148,11 @@ console.log("\nE o silêncio, que é metade do valor");
 
   await page.fill('input[placeholder*="Buscar por nome"]', "");
   await page.waitForTimeout(1200);
-  await page.locator("[data-conversa-nome]").first().click();
+  // A PRIMEIRA CONVERSA QUE NÃO É DOS NÚMEROS RUINS (25/11). Eles são fixados
+  // por esta prova, e a lista os põe no alto quando relê as fixadas: na
+  // integração contínua, uma releitura no meio da cena fez a "conversa de
+  // sempre" ser a do telefone fixo, com a tarja dele.
+  await page.locator('[data-conversa-id]:not([data-conversa-id^="conv-ct-"])').first().click();
   await page.waitForTimeout(1600);
   const naComum = await page.evaluate(() =>
     document.querySelectorAll("[data-numero-nao-recebe]").length);
