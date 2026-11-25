@@ -8391,6 +8391,132 @@ enviadas nas contas e na linha, e gravar 'valendo' sem mexer no resto). **2
 sabotagens e 2 pegas**: a mensagem do Quazar sem o seu caso em `quemFalou` (5
 reprovações) e a opção Valendo tirada (4).
 
+## As conversas do Quazar, e ele entre quem participou (25/11)
+
+Pedido do Rodrigo: *"Tem alguma forma de eu ver todas as mensagens que o
+Quazar conversou com o cliente que estava aguardando há mais de 7 dias? Cria
+uma tela só para isso, e também cria ele como pessoa que participou da
+conversa ou como responsável pelo atendimento, algo do tipo."*
+
+**Nada mudou no banco nem na ponte.** A mensagem do Quazar já entra em
+`mensagens` marcada `pelo_quazar` (script 059 da ponte), e a tela lê só isso,
+com a regra de acesso de quem olha. As contas sem tela moram em
+`src/conversasDoQuazar.js`; a tela, em `src/ConversasDoQuazar.jsx`.
+
+| onde | o quê |
+|---|---|
+| menu ⋮ do topo | **Conversas do Quazar** (`data-abrir-quazar`), com o rosto dele, numa guia nova (`?tela=quazar`, título "Conversas do Quazar · Ropelimi Zorvin"). Para toda a equipe |
+| o alto da tela | três escolhas, cada uma com quantas: **Esperavam há 7 dias ou mais** (o padrão: é o pedido), **2 dias ou mais** e **Todas** (`data-filtro-quazar`) |
+| cada linha (`data-conversa-do-quazar`) | o cliente, o telefone, a frase da espera ("O cliente esperava há 9 dias quando o Quazar respondeu (25/11 às 10:00)", em negrito a partir de 7 dias e na cor da espera da lista), quantas mensagens o Quazar mandou, se o cliente respondeu depois, se a equipe entrou depois e quando, a aba e o responsável com a data |
+| **Ver as mensagens** | abre ali mesmo o que o cliente escreveu enquanto esperava e a conversa com o Quazar, na hora de Brasília, com o rosto dele nas mensagens dele |
+| **Abrir a conversa** | um link de verdade (`target="_blank"`, `noopener`) para a conversa, no telefone dela |
+
+### A espera, e de qual momento é a linha
+
+- **A espera começa na primeira mensagem do cliente depois da última mensagem
+  de GENTE da equipe** e vai até a primeira mensagem do Quazar, em dias de
+  calendário de São Paulo, a régua do "esperando há N dias" da lista. **Nem o
+  Quazar nem o aviso automático do Vantoro param a espera**
+  (`ehDaEquipe` exige `!automatica && !pelo_quazar`): ninguém da equipe os
+  escreveu;
+- **um momento do Quazar** (`episodiosDoQuazar`) é o trecho em que ele falou
+  sem ninguém da equipe no meio. Uma conversa pode ter vários (uma noite,
+  depois o dia). **A linha mostra o da maior espera** (no empate, o mais
+  recente), que é a pergunta do pedido, e a conversa aberta diz quantos
+  outros houve;
+- **a ordem é a da mensagem mais recente do Quazar.**
+
+### O que a tela lê, e quando para
+
+- **As 500 mensagens mais recentes do Quazar** (eram ~237 no banco inteiro em
+  25/11), as conversas e os clientes delas, e de cada conversa só quem
+  escreveu e quando (páginas de 1000, até 10 por lote de 50 conversas). **O
+  texto só vem ao abrir a linha**: as 10 mensagens finais da espera e as 30
+  primeiras do momento. Cortando, a tela diz (`data-quazar-cortado`);
+- **três estados, e cada um diz o seu**: sem a coluna do 059, *"falta a
+  atualização do banco"* (`data-quazar-sem-coluna`), e não falha; a leitura
+  que falha diz com o código e tem **Tentar de novo** (`data-falha-do-quazar`),
+  e não vira "nenhuma conversa"; e nenhuma conversa é dita
+  (`data-quazar-vazio`).
+
+### O Quazar entre quem participou da conversa
+
+- **No grupinho do cabeçalho e na lista dele**, com o rosto e o nome "Quazar ·
+  assistente virtual" (`data-rosto-participante-quazar`,
+  `data-participante-quazar`). Até aqui ele ficava de fora com o aviso
+  automático (`q.automatica`); agora a exceção vai escrita
+  (`q.automatica && !q.quazar`), e o aviso do Vantoro continua de fora;
+- **a frase conta as pessoas à parte**: "1 pessoa do escritório e o Quazar
+  escreveram aqui", ou "Só o Quazar, o assistente virtual, escreveu aqui";
+- **a nota do Quazar** (o aviso de quem pede atenção, 068), assinada "Quazar"
+  sem conta, conta como ele, e não como uma segunda pessoa;
+- **no filtro "Quem participou da conversa"** ele vem primeiro, à parte das
+  pessoas (`data-participou-quazar`), e a pesquisa vale para ele. Ele não tem
+  conta: as conversas dele são perguntadas ao banco pela marca das mensagens
+  (`pelo_quazar`, as 2000 mais recentes), e as das pessoas à função de sempre.
+  "Qualquer um" soma as duas respostas, e "Todos juntos" fica com as que estão
+  nas duas;
+- **o banco sem o 059**: marcar o Quazar diz que o filtro não está disponível,
+  e a opção sai (`QUAZAR_NAS_MENSAGENS`). **A leitura que falha** acende a
+  faixa âmbar ("as conversas do Quazar"). **Não se pergunta nada na abertura**:
+  a prova `partida` conta as idas.
+
+### O Quazar NÃO vira responsável, e é decisão
+
+O pedido oferecia as duas coisas ("como pessoa que participou da conversa ou
+como responsável pelo atendimento"), e ficou a primeira:
+
+- `responsavel_id` aponta para `usuarios`, e o Quazar não tem conta. Uma conta
+  falsa para ele entraria na equipe, no rodízio da distribuição, nos
+  relatórios por pessoa e nas listas de escolher;
+- **o aviso de mensagem nova vai só para o responsável**: com o Quazar como
+  dono, o cliente que respondesse a ele não avisaria ninguém;
+- o que ele fez já aparece onde se procura: entre quem participou, na tela
+  nova, no "Já tratei" sem pessoa ("O "Já tratei" do Quazar (25/11)") e nos
+  protocolos.
+
+Prova: `as-conversas-do-quazar`, 110 conferências em nove cenas: a conta
+direto na função (a maior espera, e não a do momento mais recente nem a do
+primeiro; o aviso automático e o Quazar fora de "gente da equipe"); o menu
+(o link e a guia nova, com o título); a tela (as escolhas e as contas, cada
+campo da linha, a espera que não para no aviso automático, as mensagens
+abertas na ordem, o link que abre a conversa noutra guia, "2 dias ou mais",
+"Todas" e a conversa de dois momentos); o banco sem o 059; a leitura que falha
+e o "Tentar de novo"; nenhuma conversa; o filtro (a opção antes das pessoas, o
+recorte, o rastro, "Todos juntos" e "Qualquer um", o banco sem o 059 e a
+falha); quem participou (o grupinho, a lista, as duas frases, e ele fora do
+seletor de responsáveis); e o celular a 360 e a 390.
+
+**20 sabotagens e 20 pegas**, rodadas em cópias e lidas uma a uma (e a cópia
+de controle passou inteira):
+
+- o painel de antes inteiro (73 reprovações — é o pedido reproduzido);
+- **a conta:** a espera parando no aviso automático do Vantoro; o Quazar
+  contando como gente da equipe (43); a espera desde a última mensagem do
+  cliente, e não da primeira; a linha pelo primeiro momento, e pelo mais
+  recente, e não pelo da maior espera; no empate, o primeiro momento;
+- **a tela:** o padrão "Todas"; o link da conversa sem `noopener`; a tela
+  fora das guias (49); o item do menu na mesma guia;
+- **os estados:** a coluna que falta virando falha; a falha virando "nenhuma
+  conversa";
+- **o filtro:** sem perguntar ao banco pelo Quazar; "Todos juntos" somando; a
+  falha calada; o banco sem a marca com a opção ficando;
+- **quem participou:** o Quazar de fora (como antes); a frase contando o
+  Quazar como pessoa; o grupinho sem o rosto dele.
+
+**A primeira rodada ensinou duas coisas, uma da rodada e uma da
+prova:**
+
+- **a sabotagem do "primeiro momento" não sabotava nada.** Ela trocava só a
+  primeira metade da condição (`false && A || B`), e o empate continuava
+  escolhendo pelo resto — a lição do 044 da ponte, outra vez. Refeita
+  trocando a condição inteira, ela é pega; e a prova ganhou a cena 0, com a
+  conta direto na função, porque a semente da tela não separava "a maior
+  espera" de "o primeiro momento";
+- **o painel de antes e o Quazar como equipe paravam a prova**, em vez de
+  reprovar: a medida do negrito lia a frase da espera sem perguntar se ela
+  existia. Hoje a medida é guardada, e as duas são pegas até a última cena.
+
 ## O resumo da conversa — "Resumir" (01/11)
 
 Pedido do Rodrigo, da lista de recomendações de 31/10: *"…em seguida pode

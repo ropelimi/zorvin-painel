@@ -53,6 +53,7 @@ import Departamentos from "./Departamentos";
 import PainelNumeros from "./PainelNumeros";
 import Funil from "./Funil";
 import Tarefas from "./Tarefas.jsx";
+import ConversasDoQuazar from "./ConversasDoQuazar.jsx";
 import Esperando from "./Esperando.jsx";
 import Ligacoes from "./Ligacoes.jsx";
 import LigacaoNaConversa from "./LigacaoNaConversa.jsx";
@@ -81,6 +82,7 @@ import { useEstadoDoCopiloto, copilotoAparece, pedirSugestao, resumoAparece, ped
 import { useGravadorDoPedido, relogioDoPedido } from "./gravadorDoPedido.js";
 import ResumoDaConversa from "./ResumoDaConversa.jsx";
 import { NOME_DO_ASSISTENTE } from "./assistente.js";
+import { semAColunaDoQuazar } from "./conversasDoQuazar.js";
 import { RostoDoAssistente } from "./RostoDoAssistente.jsx";
 const TITULO_DO_QUAZAR_NA_BOLHA = `Resposta automática do ${NOME_DO_ASSISTENTE}, o assistente virtual, com o escritório fechado: ninguém da equipe a escreveu.`;
 // A MENSAGEM QUE SAIU DO "SUGERIR RESPOSTA" (18/11): um rosto pequeno do
@@ -323,6 +325,17 @@ let SEM_RESPOSTAS_AUTOMATICAS = false;
 // O ENSAIO DO QUAZAR À NOITE (script 055 da ponte): sem a tabela, a conversa
 // abre como antes, e não se pergunta de novo nesta sessão.
 let SEM_ENSAIO_DO_QUAZAR = false;
+// O QUAZAR NO FILTRO "QUEM PARTICIPOU DA CONVERSA" (25/11). Ele não tem conta
+// em `usuarios`, e por isso vai no filtro com um id que não é de ninguém. As
+// conversas dele são perguntadas ao banco pela marca da mensagem
+// (`pelo_quazar`, script 059 da ponte). Sem a coluna, a opção some nesta
+// sessão (`QUAZAR_NAS_MENSAGENS` vira falso): é ausência do recurso, e não
+// falha.
+const QUAZAR_NO_FILTRO = "quazar";
+let QUAZAR_NAS_MENSAGENS = true;
+// No máximo quantas mensagens do Quazar a pergunta do filtro lê (as mais
+// recentes). Medido em 25/11: ~237 no banco inteiro.
+const TETO_DO_QUAZAR_NO_FILTRO = 2000;
 
 // ============================================================
 //  OS MARCOS DOS PROTOCOLOS (script 028 da ponte)
@@ -3918,6 +3931,9 @@ export default function Painel({ sessao }) {
   const telaEsperando = TELA_DA_GUIA === "esperando";
   // A TELA DE TESTE DAS LIGAÇÕES (11/11), só para quem administra.
   const telaLigacoes = TELA_DA_GUIA === "ligacoes";
+  // AS CONVERSAS DO QUAZAR (25/11), para toda a equipe: só lê, e a regra de
+  // acesso decide o que cada pessoa vê.
+  const telaQuazar = TELA_DA_GUIA === "quazar";
   const [temAvisoDeEspera, setTemAvisoDeEspera] = useState(null);
   const temAvisoDeEsperaRef = useRef(null);
   useEffect(() => { temAvisoDeEsperaRef.current = temAvisoDeEspera; }, [temAvisoDeEspera]);
@@ -6480,24 +6496,64 @@ export default function Painel({ sessao }) {
       setEstadoQuem("carregando");
     }
     (async () => {
-      const { data, error } = await supabase.rpc("conversas_por_atendente", {
-        p_advogado: advId, p_usuarios: quemFiltra,
-        p_todos: modoQuem === "todos", p_limite: 500,
-      });
-      if (!vivo || advogadoIdRef.current !== advId) return;
-      if (error) {
-        setEstadoQuem("falhou");
-        anotarFalhaDeLeitura("filtro-quem", "o filtro de atendentes", error);
-        return;
+      // AS PESSOAS vão à função do banco; O QUAZAR, à marca das mensagens dele
+      // (25/11): ele não tem conta, e a função conta só quem tem. As duas
+      // respostas se juntam pela regra escolhida — "qualquer um" soma,
+      // "todos juntos" fica com as conversas que estão nas duas.
+      const pessoas = quemFiltra.filter((id) => id !== QUAZAR_NO_FILTRO);
+      const comQuazar = quemFiltra.includes(QUAZAR_NO_FILTRO);
+      let idsPessoas = null;
+      let cortouPessoas = false;
+      if (pessoas.length) {
+        const { data, error } = await supabase.rpc("conversas_por_atendente", {
+          p_advogado: advId, p_usuarios: pessoas,
+          p_todos: modoQuem === "todos", p_limite: 500,
+        });
+        if (!vivo || advogadoIdRef.current !== advId) return;
+        if (error) {
+          setEstadoQuem("falhou");
+          anotarFalhaDeLeitura("filtro-quem", "o filtro de atendentes", error);
+          return;
+        }
+        idsPessoas = (data || []).map((r) => String(r.id));
+        cortouPessoas = idsPessoas.length >= 500;
+      }
+      let idsQuazar = null;
+      let cortouQuazar = false;
+      if (comQuazar) {
+        const { data, error } = await supabase.from("mensagens").select("conversa_id")
+          .eq("pelo_quazar", true).order("criado_em", { ascending: false }).limit(TETO_DO_QUAZAR_NO_FILTRO);
+        if (!vivo || advogadoIdRef.current !== advId) return;
+        if (error) {
+          // O BANCO SEM A MARCA DO QUAZAR: a opção some, e a escolha sai com
+          // ela — calada não, com o aviso de por quê.
+          if (semAColunaDoQuazar(error)) {
+            QUAZAR_NAS_MENSAGENS = false;
+            setQuemFiltra((atual) => atual.filter((id) => id !== QUAZAR_NO_FILTRO));
+            mostrarAviso(`Este Zorvin ainda não marca as mensagens do ${NOME_DO_ASSISTENTE}: o filtro por ele não está disponível.`);
+            return;
+          }
+          setEstadoQuem("falhou");
+          anotarFalhaDeLeitura("filtro-quem", `as conversas do ${NOME_DO_ASSISTENTE}`, error);
+          return;
+        }
+        idsQuazar = [...new Set((data || []).map((r) => String(r.conversa_id)))];
+        cortouQuazar = (data || []).length >= TETO_DO_QUAZAR_NO_FILTRO;
       }
       limparFalhaDeLeitura("filtro-quem");
       setEstadoQuem("ok");
-      const ids = (data || []).map((r) => String(r.id));
+      let ids;
+      if (idsPessoas && idsQuazar) {
+        if (modoQuem === "todos") {
+          const doQuazar = new Set(idsQuazar);
+          ids = idsPessoas.filter((id) => doQuazar.has(id));
+        } else ids = [...new Set([...idsPessoas, ...idsQuazar])];
+      } else ids = idsPessoas || idsQuazar || [];
       setIdsQuem(new Set(ids));
       // NO TETO, A TELA DIZ (auditoria de 28/10): 500 de volta quer dizer que
       // pode haver mais — e quem participou de mais do que isso via uma lista
       // cortada com cara de inteira.
-      setCorteQuem(ids.length >= 500 ? 500 : 0);
+      setCorteQuem(cortouPessoas ? 500 : cortouQuazar ? ids.length : 0);
 
       // As que a lista ainda não tem — mesmo caminho da busca e da etiqueta.
       const jaNaLista = new Set(conversasRef.current.map((c) => String(c.id)));
@@ -16193,12 +16249,22 @@ export default function Painel({ sessao }) {
     const mapa = new Map();
     for (const m of mensagens) {
       if (m.origem !== "advogado" && m.origem !== "nota") continue;
-      const q = quemFalou(m);
+      let q = quemFalou(m);
       // NEM APARELHO, NEM RÓTULO, NEM O AVISO AUTOMÁTICO. A pergunta do
       // grupinho é "com quem eu falo sobre este cliente", e nenhum dos três
       // tem a quem perguntar.
-      if (!q.nome || q.aparelho || q.rotulo || q.automatica) continue;
-      const chave = q.id || "nome:" + chaveDeNome(q.nome);
+      //
+      // O QUAZAR ENTRA (25/11), a pedido do Rodrigo: ele conversa com o
+      // cliente, e quem abre a conversa precisa saber que ele esteve aqui.
+      // Ele é automático (`automatica`), e por isso a exceção vai escrita.
+      if (!q.nome || q.aparelho || q.rotulo || (q.automatica && !q.quazar)) continue;
+      // A NOTA DO QUAZAR (o aviso de quem pede atenção, script 068 da ponte)
+      // é assinada "Quazar", sem conta: é a mesma pessoa das mensagens dele,
+      // e duas linhas com ele seriam uma pessoa vista por dois caminhos.
+      if (!q.quazar && !q.id && m.origem === "nota" && chaveDeNome(q.nome) === chaveDeNome(NOME_DO_ASSISTENTE)) {
+        q = { id: null, nome: `${NOME_DO_ASSISTENTE} · assistente virtual`, foto: null, automatica: true, quazar: true };
+      }
+      const chave = q.quazar ? "quazar" : (q.id || "nome:" + chaveDeNome(q.nome));
       const antes = mapa.get(chave);
       if (!antes) { mapa.set(chave, { ...q, quantas: 1, ultimaEm: m.criado_em }); continue; }
       antes.quantas++;
@@ -16247,7 +16313,8 @@ export default function Painel({ sessao }) {
   // Os nomes de quem está marcado no filtro de atendentes, na ordem em que
   // aparecem na lista — para o rastro que fica na fita de filtros.
   const nomesQuemFiltra = quemFiltra
-    .map((id) => (atendentes.find((a) => String(a.id) === String(id)) || {}).nome)
+    .map((id) => (id === QUAZAR_NO_FILTRO ? NOME_DO_ASSISTENTE
+      : (atendentes.find((a) => String(a.id) === String(id)) || {}).nome))
     .filter(Boolean);
 
   // Menu de mensagens rápidas: aparece ao digitar "/" no começo da mensagem.
@@ -16334,15 +16401,22 @@ export default function Painel({ sessao }) {
       <div style={{ padding: "10px 12px 8px", borderBottom: `1px solid ${C.divider}`, fontSize: 13.5, fontWeight: 700, color: C.textPrimary }}>
         Quem participou desta conversa
         <div style={{ fontSize: 11.5, fontWeight: 400, color: C.textSecondary, marginTop: 2 }}>
-          {atendentesInteragiram.length === 1
-            ? "1 pessoa do escritório escreveu aqui"
-            : `${atendentesInteragiram.length} pessoas do escritório escreveram aqui`}
+          {(() => {
+            // O QUAZAR NÃO É "PESSOA DO ESCRITÓRIO": a frase conta as pessoas,
+            // e diz o assistente à parte.
+            const gente = atendentesInteragiram.filter((a) => !a.quazar).length;
+            const comQuazar = atendentesInteragiram.some((a) => a.quazar);
+            if (!gente) return `Só o ${NOME_DO_ASSISTENTE}, o assistente virtual, escreveu aqui`;
+            const pessoas = gente === 1 ? "1 pessoa do escritório" : `${gente} pessoas do escritório`;
+            return comQuazar ? `${pessoas} e o ${NOME_DO_ASSISTENTE} escreveram aqui`
+              : `${pessoas} ${gente === 1 ? "escreveu" : "escreveram"} aqui`;
+          })()}
         </div>
       </div>
       {atendentesInteragiram.map((a) => (
-        <div key={a.id || a.nome} data-participante={a.nome}
+        <div key={a.id || a.nome} data-participante={a.nome} data-participante-quazar={a.quazar ? "sim" : undefined}
              style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 12px" }}>
-          <Avatar nome={a.nome} foto={a.foto} size={30} />
+          {a.quazar ? <RostoDoAssistente tamanho={30} titulo={a.nome} /> : <Avatar nome={a.nome} foto={a.foto} size={30} />}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13.5, color: C.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nome}</div>
             {/* "3 mensagens · ontem" — quantas e quando, que é o
@@ -18628,6 +18702,10 @@ export default function Painel({ sessao }) {
                   // por isso o achado guarda a mesma ordem.
                   const comPesquisa = atendentes.length >= PESQUISA_A_PARTIR_DE;
                   const achados = comPesquisa ? atendentesNoFiltro.filter((a) => casaComAPesquisa(pesquisa, a.nome)) : atendentesNoFiltro;
+                  // O QUAZAR (25/11) vem primeiro, à parte das pessoas, com o
+                  // rosto dele. A pesquisa vale para ele também.
+                  const quazarNoMenu = QUAZAR_NAS_MENSAGENS
+                    && (!comPesquisa || casaComAPesquisa(pesquisa, NOME_DO_ASSISTENTE, "assistente virtual"));
                   return (
                 <div data-menu-quem style={{ position: "absolute", top: 38, right: 0, zIndex: 50, width: 272, maxHeight: comPesquisa ? 440 : 380, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>
                   {/* O TÍTULO ficou necessário quando o botão virou só um
@@ -18673,7 +18751,28 @@ export default function Painel({ sessao }) {
                                        focar={!estreito} nome="quem" />
                     </div>
                   )}
-                  {comPesquisa && achados.length === 0 && (
+                  {quazarNoMenu && (() => {
+                    const marcado = quemFiltra.includes(QUAZAR_NO_FILTRO);
+                    return (
+                      <button data-participou-quazar={marcado ? "marcado" : "desmarcado"}
+                              onClick={() => setQuemFiltra((atual) =>
+                                marcado ? atual.filter((x) => x !== QUAZAR_NO_FILTRO) : [...atual, QUAZAR_NO_FILTRO])}
+                              title={`Conversas em que o ${NOME_DO_ASSISTENTE}, o assistente virtual, escreveu ao cliente`}
+                              style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", border: "none",
+                                       borderBottom: `1px solid ${C.divider}`, background: "transparent", cursor: "pointer",
+                                       color: C.textPrimary, fontSize: 13.5, textAlign: "left" }}>
+                        <span style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                                       border: `1.5px solid ${marcado ? C.green : C.divider}`, background: marcado ? C.green : "transparent" }}>
+                          {marcado && <Check size={12} color="#fff" />}
+                        </span>
+                        <RostoDoAssistente tamanho={20} />
+                        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{NOME_DO_ASSISTENTE}</span>
+                        <span style={{ flexShrink: 0, fontSize: 11, color: C.textSecondary }}>assistente virtual</span>
+                      </button>
+                    );
+                  })()}
+
+                  {comPesquisa && achados.length === 0 && !quazarNoMenu && (
                     <div data-nada-com-a-pesquisa style={{ padding: "14px 12px", fontSize: 13, color: C.textSecondary, textAlign: "center" }}>{nadaComAPesquisa("Ninguém", pesquisa)}</div>
                   )}
 
@@ -18825,6 +18924,10 @@ export default function Painel({ sessao }) {
                   )}
                   <a data-abrir-painel data-abre-guia href={enderecoDaTela("painel")} target="_blank" rel="noopener"
                      onClick={() => setMenuTopoAberto(false)} style={ITEM_QUE_ABRE_GUIA}><BarChart3 size={17} color={C.textSecondary} /> Painel</a>
+                  {/* AS CONVERSAS DO QUAZAR (25/11): o que o assistente
+                      escreveu aos clientes, com quanto cada um esperava. */}
+                  <a data-abrir-quazar data-abre-guia href={enderecoDaTela("quazar")} target="_blank" rel="noopener"
+                     onClick={() => setMenuTopoAberto(false)} style={ITEM_QUE_ABRE_GUIA}><RostoDoAssistente tamanho={17} /> Conversas do {NOME_DO_ASSISTENTE}</a>
                   {/* AS LIGAÇÕES (TESTE), 11/11: só quem administra, numa guia
                       própria. É o teste da Nvoip, e não a versão da equipe. */}
                   {souAdmin && (
@@ -20351,8 +20454,11 @@ export default function Painel({ sessao }) {
                             style={{ display: "flex", alignItems: "center", border: "none", background: "transparent",
                                      cursor: "pointer", padding: 2, borderRadius: 20 }}>
                       {atendentesInteragiram.slice(0, 4).map((a, idx) => (
-                        <span key={a.id || a.nome} style={{ marginLeft: idx === 0 ? 0 : -8, borderRadius: "50%", border: `2px solid ${C.headerBar}`, display: "flex" }}>
-                          <Avatar nome={a.nome} foto={a.foto} size={26} />
+                        <span key={a.id || a.nome} data-rosto-participante-quazar={a.quazar ? "sim" : undefined}
+                              title={a.quazar ? a.nome : undefined}
+                              style={{ marginLeft: idx === 0 ? 0 : -8, borderRadius: "50%", border: `2px solid ${C.headerBar}`, display: "flex",
+                                       background: a.quazar ? C.panel : undefined }}>
+                          {a.quazar ? <RostoDoAssistente tamanho={26} /> : <Avatar nome={a.nome} foto={a.foto} size={26} />}
                         </span>
                       ))}
                       {atendentesInteragiram.length > 4 && (
@@ -23481,6 +23587,13 @@ export default function Painel({ sessao }) {
                  aoUsarMensagem={(cv, t) => abrirConversaNumaGuia(cv, t.id)}
                  aoMudou={tarefasMudaram}
                  aoFechar={fecharAGuia} />
+      )}
+
+      {/* AS CONVERSAS DO QUAZAR (25/11). "Abrir a conversa" é um link que
+          abre a conversa NOUTRA GUIA, como nas outras telas. */}
+      {telaQuazar && guiaPronta === true && (
+        <ConversasDoQuazar C={C} meuId={meuId} pessoas={equipe.porId} advogados={advogadosPermitidos}
+                           aoFechar={fecharAGuia} />
       )}
 
       {/* A TELA "ESPERANDO RESPOSTA" (31/10). Abrir um cliente abre a conversa
