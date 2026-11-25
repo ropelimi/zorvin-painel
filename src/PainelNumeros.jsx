@@ -2613,16 +2613,20 @@ function RelatorioProtocolos({ C, estilos, cores, deIso, ateIso, leitura, quem,
                       {pessoas.map((p) => {
                         const sou = meuId && p.id && String(p.id) === String(meuId);
                         const escolhe = souAdmin && p.id;
+                        // FINALIZADOS SEM PESSOA: quase todos pela faxina do Quazar
+                        // (script 064 da ponte), e os poucos de antes sem registro.
+                        const nomeDaLinha = p.tipo === "desconhecido" ? `${NOME_DO_ASSISTENTE} e sem registro` : p.nome;
                         return (
-                          <tr key={`${p.tipo}-${p.id || p.nome}`} data-pessoa-nos-protocolos={p.nome}
+                          <tr key={`${p.tipo}-${p.id || p.nome}`} data-pessoa-nos-protocolos={nomeDaLinha}
                               onClick={() => escolhe && aoEscolherPessoa(p.id)}
                               title={p.tipo === "celular" ? "Respondido direto pelo WhatsApp do aparelho, fora do Zorvin: não dá para saber quem foi."
                                    : p.tipo === "rotulo" ? "Mensagem de antes de ago/2026, que guardou só o nome de quem escreveu."
+                                   : p.tipo === "desconhecido" ? `Finalizados sem uma pessoa: quase todos pelo ${NOME_DO_ASSISTENTE}, na faxina da fila. Entram aqui também os poucos de antes que não guardaram quem foi.`
                                    : undefined}
                               style={{ cursor: escolhe ? "pointer" : "default",
                                        background: quem && String(quem) === String(p.id) ? C.listActive : "transparent" }}>
                             <td style={{ ...estilos.td, fontWeight: sou ? 800 : 600, color: p.tipo === "pessoa" ? C.textPrimary : C.textSecondary }}>
-                              {p.nome}
+                              {nomeDaLinha}
                               {sou && <span style={{ marginLeft: 7, fontSize: 11, fontWeight: 700, color: "#fff",
                                                      background: cores.selo, borderRadius: 10, padding: "1px 7px" }}>você</span>}
                             </td>
@@ -3019,7 +3023,7 @@ function RelatorioJaTratei({ C, estilos, cores, leitura, deIso, ateIso, passo, q
       ["Quando", "Quem", "Cliente", "Número", "Telefone do escritório", "Assuntos", "O que foi tratado", "Esperava desde", "Desfeito"],
       ...regs.map((x) => [
         new Date(x.quando).toLocaleString("pt-BR"),
-        x.quem_nome || "",
+        x.quem_nome || (x.quem == null ? NOME_DO_ASSISTENTE : ""),
         nomeDoContato(x.contato),
         telefoneLegivel(x.contato && x.contato.numero),
         nomeDoTelefone(x.advogado_id),
@@ -3164,15 +3168,21 @@ function RelatorioJaTratei({ C, estilos, cores, leitura, deIso, ateIso, passo, q
                 <table style={{ width: "100%", borderCollapse: "collapse" }}><tbody>
                   {pessoas.map((p) => {
                     const sou = meuId && String(p.id) === String(meuId);
+                    // SEM PESSOA É O QUAZAR (a faxina, script 064 da ponte).
+                    const doQuazar = !p.id;
+                    const nomeDaLinha = doQuazar ? NOME_DO_ASSISTENTE : p.nome;
                     return (
-                      <tr key={p.id || p.nome} data-pessoa-no-relatorio={p.nome}
+                      <tr key={p.id || "quazar"} data-pessoa-no-relatorio={nomeDaLinha}
+                          data-quazar-no-relatorio={doQuazar ? "" : undefined}
+                          title={doQuazar ? `Finalizadas pelo ${NOME_DO_ASSISTENTE} na faxina da fila: o silêncio de 7 dias, e as que ele leu.` : undefined}
                           onClick={() => souAdmin && p.id && aoEscolherPessoa(p.id)}
                           style={{ cursor: souAdmin && p.id ? "pointer" : "default",
                                    background: String(quem) === String(p.id) ? C.listActive : "transparent" }}>
                         <td style={{ ...estilos.td, width: "70%" }}>
-                          <div style={{ fontWeight: sou ? 800 : 600 }}>
-                            {p.nome}
-                            {sou && <span style={{ marginLeft: 7, fontSize: 11, fontWeight: 700, color: "#fff",
+                          <div style={{ fontWeight: sou ? 800 : 600, display: "flex", alignItems: "center", gap: 6 }}>
+                            {doQuazar && <RostoDoAssistente tamanho={16} />}
+                            {nomeDaLinha}
+                            {sou && <span style={{ marginLeft: 1, fontSize: 11, fontWeight: 700, color: "#fff",
                                                    background: cores.selo, borderRadius: 10, padding: "1px 7px" }}>você</span>}
                           </div>
                           <div style={{ height: 6, background: C.divider, borderRadius: 3, overflow: "hidden", marginTop: 6 }}>

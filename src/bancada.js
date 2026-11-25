@@ -4504,8 +4504,9 @@ export const supabase = {
       const porAssunto = [...conta(linhasValendo, (x) => String(x.assunto_id)).entries()]
         .map(([id, vezes]) => ({ id, nome: (assunto.get(id) || {}).nome, ativo: (assunto.get(id) || {}).ativo !== false, vezes }))
         .sort((a, b) => b.vezes - a.vezes || String(a.nome).localeCompare(String(b.nome)));
-      const porPessoa = [...conta(eventos.filter((e) => !e.desfeito), (e) => String(e.quem)).entries()]
-        .map(([id, n]) => ({ id, nome: nomeDe.get(id) || "(sem nome)", tratamentos: n }))
+      // SEM PESSOA, `id` nulo e "(sem nome)", como a função do banco devolve.
+      const porPessoa = [...conta(eventos.filter((e) => !e.desfeito), (e) => (e.quem == null ? "" : String(e.quem))).entries()]
+        .map(([id, n]) => ({ id: id || null, nome: (id && nomeDe.get(id)) || "(sem nome)", tratamentos: n }))
         .sort((a, b) => b.tratamentos - a.tratamentos || a.nome.localeCompare(b.nome));
       const porDia = [...conta(valendo, (e) => iso(soDia(e.quando))).entries()]
         .map(([quando, n]) => ({ quando, tratamentos: n })).sort((a, b) => a.quando.localeCompare(b.quando));
