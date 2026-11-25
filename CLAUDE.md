@@ -6,6 +6,13 @@
 
 Rodrigo (@ropelimi), gerente comercial de um escritório de advocacia. **Não é desenvolvedor** — se descreve como leigo. Explique em linguagem simples, evite jargão, e dê o passo a passo em vez de assumir conhecimento de terminal, Git ou infraestrutura. Fala português (pt-BR).
 
+**Horários sempre no de Brasília** (pedido dele em 25/11: *"Me fale sempre o
+horário de Brasília"*). A máquina destas sessões, o GitHub e os registros do
+Supabase falam em UTC, três horas à frente: "05:40" do servidor são 02:40 em
+Brasília. Toda hora que vai para ele (quando as provas terminam, a volta
+marcada para conferir, a hora de um registro) é convertida antes
+(`TZ=America/Sao_Paulo date`), e nunca dita "no horário do servidor".
+
 ## O que é o Zorvin
 
 Central de atendimento de WhatsApp da equipe de **Acordos e Execução** do escritório, sob a marca **Ropelimi**. Vários atendentes usam um painel único para responder as conversas de **vários advogados** (hoje ~8, pode crescer até 20).
@@ -10613,8 +10620,119 @@ prova:**
   que sai de dentro do recheio.
 
 **No celular emulado, a tela se mede por `document.documentElement.clientWidth`,
-e não por `innerWidth`.** Onze provas medem com `innerWidth` e `isMobile`, e
-podem estar cegas do mesmo jeito: fica em aberto.
+e não por `innerWidth`.** ~~Onze provas medem com `innerWidth` e `isMobile`, e
+podem estar cegas do mesmo jeito: fica em aberto.~~ **Trocadas no dia seguinte**
+— ver "A varredura do celular, medindo pela largura certa (25/11)", logo abaixo.
+
+## A varredura do celular, medindo pela largura certa (25/11)
+
+Pedido do Rodrigo, logo depois da seta dos filtros (a v3.53): *"E quero que
+faça uma varredura no celular medindo do jeito certo"*.
+
+**O jeito errado era o de onze provas.** No celular emulado (`isMobile`), e no
+de verdade, quando algo transborda, o navegador ALARGA a janela visível até
+caber, e `innerWidth` passa a dizer o tamanho do que transbordou: 465 numa
+tela de 390. A prova que compara com `innerWidth` aprova a tela que rola de
+lado. Foi assim que o menu da ordem passou por elas indo até 464 pontos (ver
+"A seta dos filtros na linha do "Recentes"", logo acima). **A tela se mede por
+`document.documentElement.clientWidth`**, e a rolagem de lado por
+`scrollWidth > clientWidth` e `innerWidth > clientWidth`.
+
+### Onde ela olhou
+
+Um script de uma vez só, na bancada, com o celular emulado como celular:
+
+| | |
+|---|---|
+| as larguras | 320×568 (o iPhone SE antigo), 360×780 (o Android pequeno, a régua da casa), 393×852, 430×932, 744×1133 e 768×1024 (o iPad em pé) |
+| cada lugar, nas seis | a lista e os menus dela (a ordem, a seta, o seletor de responsáveis, a nova conversa, o ⋮ do topo), a conversa e os dela (o ⋮, o painel do +, as figurinhas), as sete abas das Configurações, as oito de Departamentos e acessos e as cinco telas (Funil, Tarefas, Esperando resposta, Painel e Ligações) |
+| cada botão de cada lugar, a 360, 393 e 320 | os quinze itens do ⋮ da conversa, cada opção do painel do +, cada item do ⋮ do topo e cada botão das cinco telas, um por vez, com a medida depois do clique |
+| o que mediu | a página rolando de lado; o que sai da tela (o que se VÊ de cada elemento, cortado por quem o recorta de lado: o item de uma fita que rola fica dentro da fita); o texto que sai de dentro do botão; o alvo de dedo; a letra dos campos; o que fica por baixo de outra coisa na camada de cima; os menus que passam do pé da tela; e os erros de JavaScript |
+
+**Achou dois defeitos, e as onze provas cegas.** O resto estava limpo nas seis
+larguras. O que aparece "por baixo" são menus abertos, que cobrem de
+propósito. A 744 e a 768 o leiaute é o do computador, e lá o painel do + não
+existe.
+
+| onde | o que acontecia | agora |
+|---|---|---|
+| o menu ⋮ da conversa, num celular de 320×568 | ia até depois do pé da tela: "Quem participou" e o que vem depois ficavam fora de alcance, e a tela da conversa não rola | `encaixarNaJanela` dá a ele a altura que sobra, e ele rola por dentro; o ⋮ da conversa passou a usar o encaixe (`ref`) |
+| Departamentos e acessos: o "Criar" do novo assunto e do novo departamento, e o "Apagar" de cada departamento | o campo com `flex: 1` não encolhia abaixo do tamanho dele, e o botão era espremido por baixo da palavra: o "Criar" ficava com 40 pontos, e a palavra saía dele | nos estilos da janela (`cx`), o campo cede (`minWidth: 0`) e os botões não encolhem (`flexShrink: 0`, `whiteSpace: nowrap`). Vale para toda aba de Departamentos e acessos |
+
+### O menu que passa do pé da tela rola por dentro
+
+`encaixarNaJanela` (os menus dos selos da linha do número, o emoji, a ordem,
+os filtros da tela Esperando resposta e agora o ⋮ da conversa) já empurrava
+para dentro o que passava da borda de lado. Agora, também o que passa do pé:
+
+- **só quando passa do pé**, com o topo dentro da tela, e **só com 160 pontos
+  ou mais de sobra** (`ALTURA_MINIMA`). Menor que isso, um menu de dois itens
+  à vista seria pior do que o de antes;
+- **a altura e a rolagem escritas pelo React são guardadas** (`dataset`) e
+  devolvidas a cada medida: a conta parte sempre do menu como ele é, e um
+  menu que já tinha teto próprio (`maxHeight`) volta a ele;
+- **a altura é a do documento** (`clientHeight`), pela mesma razão da largura;
+- **o menu que abre para cima não muda**: o topo dele não está dentro da tela.
+
+### As onze provas, trocadas
+
+`window.innerWidth` virou `document.documentElement.clientWidth` em
+`a-blindagem-na-ficha`, `a-busca-procura-em-todos-os-telefones`,
+`a-ficha-procura-o-cliente`, `a-midia-de-um-cliente`, `celular`,
+`o-campo-de-escrever-do-celular`, `o-link-da-os-na-ficha`,
+`o-quazar-a-noite-em-ensaio`, `o-zorvin-se-atualiza-sozinho`,
+`os-filtros-da-tela-esperando` e `os-menus-cabem-na-janela`. Medidas pela
+régua certa, as onze passaram com os dois consertos acima. A da `celular`
+(`naoRolaDeLado`) é a que importa mais: era a prova geral do celular, e
+estava cega.
+
+**A conta dos cortes também não estava em nenhuma prova**: o botão espremido
+por baixo da palavra não faz a página rolar de lado nem sai da tela. É o texto
+que sai de dentro do recheio, a régua da seta dos filtros, e quem pega é a
+prova nova.
+
+### A prova que fica
+
+`a-varredura-do-celular`: a parte da varredura que fica, nos estados de todo
+dia, a 360×780 e, nos que importam no aparelho pequeno, também a 320×568
+(39 casos, de 30 estados). Em cada um: abre (e o que tem de aparecer aparece), a página não
+rola de lado, nada sai da tela, nenhum texto sai do botão e o menu aberto cabe
+na altura; e nenhum erro de JavaScript. A varredura de cada botão em seis
+larguras leva mais de meia hora, e não fica como prova.
+
+E `os-menus-cabem-na-janela` ganhou o ⋮ da conversa a 320×568 (cabe na
+altura, rola por dentro, e o último botão é alcançado e pintado depois de
+rolar) e a 393×852 (cabe sem rolar).
+
+**13 sabotagens: 9 pegas e 4 que vazam com razão**, rodadas uma a uma (e a
+cópia de controle passou nas duas provas):
+
+- o painel de antes inteiro (6 reprovações — é o pedido reproduzido);
+- **o encaixe:** sem a altura (4); o ⋮ da conversa sem o encaixe (4); a
+  altura sempre, mesmo cabendo (1: o menu que cabia ganha teto e rola); a
+  altura mínima alta demais (4); a altura pela janela, e não pelo documento
+  (4);
+- **Departamentos e acessos:** as três guardas tiradas juntas (2), o campo sem
+  ceder com o botão encolhendo (2) e com o botão fraco encolhendo (2);
+- **e as que vazam:**
+  - **cada guarda de Departamentos sozinha** (o botão encolhendo, o botão
+    fraco encolhendo, o campo sem ceder). Uma cobre a outra: o campo que cede
+    deixa o botão inteiro, e o botão que não encolhe empurra o campo. As
+    duas ficam, e tiradas aos pares (logo acima) são pegas;
+  - **sem devolver a altura do React.** Ela só faz diferença numa segunda
+    medida do mesmo menu, e todo menu que usa o encaixe passa a função como
+    `ref` estável, medida uma vez. A guarda fica, para o menu que um dia for
+    medido de novo.
+
+**Fica de fora, e é decisão:**
+
+- **a varredura completa não roda de novo sozinha**: ela fica no histórico
+  desta entrega, e a prova guarda os estados de todo dia;
+- **o tablet em pé (744 e 768) não entra na prova**: lá o leiaute é o do
+  computador, que as provas de largura já medem;
+- **o encaixe vertical dos outros menus não tem cena própria**: o ⋮ da
+  conversa é o único que passava do pé numa tela de 320×568, e é ele que a
+  prova mede.
 
 ## O campo de escrever do celular, como o do WhatsApp (24/11)
 

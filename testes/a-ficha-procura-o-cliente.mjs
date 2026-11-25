@@ -398,7 +398,7 @@ for (const [nome, larg, alt] of [["14. Na gaveta, a 1100", 1100, 800], ["15. No 
     const fora = [];
     for (const el of f.querySelectorAll("[data-achado-na-busca], [data-achado-na-busca] button")) {
       const r = el.getBoundingClientRect();
-      if (r.left < fr.left - 1 || r.right > fr.right + 1 || r.right > innerWidth + 1) fora.push(el.textContent.slice(0, 30));
+      if (r.left < fr.left - 1 || r.right > fr.right + 1 || r.right > document.documentElement.clientWidth + 1) fora.push(el.textContent.slice(0, 30));
       // e cada botão termina dentro do PRÓPRIO cartão: a ficha corta o que passa dela, e o cartão não
       const cartao = el.closest("[data-achado-na-busca]");
       if (el.tagName === "BUTTON" && cartao) {
@@ -410,7 +410,7 @@ for (const [nome, larg, alt] of [["14. Na gaveta, a 1100", 1100, 800], ["15. No 
     if (botao) botao.scrollIntoView({ block: "center" });
     const r = botao ? botao.getBoundingClientRect() : null;
     const no = r ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) : null;
-    return { fora, rolaDeLado: document.documentElement.scrollWidth > innerWidth + 1,
+    return { fora, rolaDeLado: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
              pintado: !!no && !!botao && botao.contains(no), alto: r ? Math.round(r.height) : 0 };
   });
   ok("os cartões e os botões cabem na ficha e na tela", !!m && m.fora.length === 0, q(m));

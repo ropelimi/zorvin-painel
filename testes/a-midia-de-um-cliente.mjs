@@ -228,7 +228,7 @@ for (const largura of [360, 390]) {
   ok(`a ${largura}: o acervo é o do cliente`, docs.length === 3 && !docs.some((t) => /OUTRA/.test(t)), q(docs));
   const geo = await page.evaluate(() => {
     const f = document.querySelector("[data-filtros-das-midias]")?.getBoundingClientRect();
-    return { rola: document.documentElement.scrollWidth > window.innerWidth + 1, dentro: f ? f.right <= window.innerWidth + 1 : false };
+    return { rola: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1, dentro: f ? f.right <= document.documentElement.clientWidth + 1 : false };
   });
   ok(`a ${largura}: os filtros cabem, e a tela não rola de lado`, !geo.rola && geo.dentro, q(geo));
   const alvos = await page.locator("[data-quem-mandou]").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));

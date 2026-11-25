@@ -450,9 +450,9 @@ if (vale("9")) {
     const medida = await page.evaluate(() => {
       const barra = document.querySelector("[data-filtros-da-espera]");
       const ps = [...document.querySelectorAll("[data-filtro-da-espera]")].map((b) => b.getBoundingClientRect());
-      return { rolaDeLado: document.documentElement.scrollWidth > window.innerWidth + 1,
-               barra: barra ? barra.getBoundingClientRect().right : 0, janela: window.innerWidth,
-               dentro: ps.every((r) => r.left >= 0 && r.right <= window.innerWidth + 0.5), alturas: ps.map((r) => Math.round(r.height)),
+      return { rolaDeLado: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+               barra: barra ? barra.getBoundingClientRect().right : 0, janela: document.documentElement.clientWidth,
+               dentro: ps.every((r) => r.left >= 0 && r.right <= document.documentElement.clientWidth + 0.5), alturas: ps.map((r) => Math.round(r.height)),
                linhas: new Set(ps.map((r) => Math.round(r.top))).size,
                // O RÓTULO CORTADO: numa linha só, as pílulas encolhem e o texto
                // vira reticências ("Responsável: As s…") sem rolar nada.
@@ -471,8 +471,8 @@ if (vale("9")) {
       const op = m.querySelector("[data-opcao-do-filtro]");
       const ro = op ? op.getBoundingClientRect() : null;
       const alvo = ro ? document.elementFromPoint(ro.left + ro.width / 2, ro.top + ro.height / 2) : null;
-      return { left: r.left, right: r.right, janela: window.innerWidth, opcao: ro ? Math.round(ro.height) : 0,
-               pintada: Boolean(alvo && op.contains(alvo)), rolaDeLado: document.documentElement.scrollWidth > window.innerWidth + 1 };
+      return { left: r.left, right: r.right, janela: document.documentElement.clientWidth, opcao: ro ? Math.round(ro.height) : 0,
+               pintada: Boolean(alvo && op.contains(alvo)), rolaDeLado: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1 };
     });
     ok(`a ${largura}: o menu cabe na tela`, menu && menu.left >= 0 && menu.right <= menu.janela + 0.5 && !menu.rolaDeLado, q(menu));
     ok(`a ${largura}: as opções com o alvo de dedo, e pintadas`, menu && menu.opcao >= 40 && menu.pintada, q(menu));

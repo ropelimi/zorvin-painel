@@ -104,7 +104,7 @@ async function medir(page) {
       href: a.getAttribute("href"), alvo: a.getAttribute("target"), rel: a.getAttribute("rel") || "",
       texto: a.textContent.trim(), title: a.getAttribute("title") || "",
       pintado: !!quem && (quem === a || a.contains(quem)),
-      dentro: r.left >= f.left - 1 && r.right <= f.right + 1 && r.left >= 0 && r.right <= innerWidth,
+      dentro: r.left >= f.left - 1 && r.right <= f.right + 1 && r.left >= 0 && r.right <= document.documentElement.clientWidth,
       mesmaLinha: !!l && Math.abs((r.top + r.bottom) / 2 - (l.top + l.bottom) / 2) <= 8,
       largura: Math.round(r.width),
     };

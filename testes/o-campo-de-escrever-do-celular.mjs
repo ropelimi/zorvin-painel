@@ -148,7 +148,7 @@ const pecas = (page) => page.evaluate(({ PILULA, MAIS }) => {
     clipe: document.querySelectorAll("[data-anexar]").length,
     relogio: [...document.querySelectorAll("[data-agendar]")].filter((el) => !el.closest("[data-painel-do-mais]")).length,
     barraFundo: document.querySelector("[data-barra-de-escrever]") ? getComputedStyle(document.querySelector("[data-barra-de-escrever]")).backgroundColor : null,
-    tela: innerWidth, conteudo: document.documentElement.scrollWidth,
+    tela: document.documentElement.clientWidth, conteudo: document.documentElement.scrollWidth,
   };
 }, { PILULA, MAIS });
 const painelAberto = async (page) => (await conta(page, PAINEL)) > 0
@@ -248,7 +248,7 @@ console.log("\n3. O “+” abre as opções no lugar do teclado, e vira um tecl
     const barra = document.querySelector("[data-barra-de-escrever]").getBoundingClientRect();
     const painel = document.querySelector("[data-painel-do-mais]").getBoundingClientRect();
     return { barraFim: Math.round(barra.bottom), painelTopo: Math.round(painel.top), painelFim: Math.round(painel.bottom),
-             painelEsq: Math.round(painel.left), painelDir: Math.round(painel.right), tela: innerHeight, largura: innerWidth };
+             painelEsq: Math.round(painel.left), painelDir: Math.round(painel.right), tela: innerHeight, largura: document.documentElement.clientWidth };
   }).catch(() => null);
   ok("embaixo da barra, onde fica o teclado", lugar && Math.abs(lugar.painelTopo - lugar.barraFim) <= 1, q(lugar));
   ok("e indo até o pé da tela, de ponta a ponta", lugar && Math.abs(lugar.painelFim - lugar.tela) <= 1
@@ -260,7 +260,7 @@ console.log("\n3. O “+” abre as opções no lugar do teclado, e vira um tecl
   const pintadas = await page.locator("[data-opcao-do-mais]").evaluateAll((els) => els.every((el) => {
     const b = el.getBoundingClientRect();
     const meio = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
-    return b.right <= innerWidth && b.left >= 0 && meio && (meio === el || el.contains(meio));
+    return b.right <= document.documentElement.clientWidth && b.left >= 0 && meio && (meio === el || el.contains(meio));
   })).catch(() => false);
   ok("todas pintadas, dentro da tela", pintadas);
   ok("toquei no teclado", await clicar(page, MAIS));
@@ -451,7 +451,7 @@ console.log("\n8. A figurinha abre o painel nas figurinhas");
     let el = t; while (el && getComputedStyle(el).position !== "absolute") el = el.parentElement;
     if (!el) return null;
     const r = el.getBoundingClientRect();
-    return { esq: Math.round(r.left), dir: Math.round(r.right), tela: innerWidth };
+    return { esq: Math.round(r.left), dir: Math.round(r.right), tela: document.documentElement.clientWidth };
   });
   ok("inteiro na tela", caixa && caixa.esq >= 0 && caixa.dir <= caixa.tela, q(caixa));
   ok("nenhum erro de JavaScript", estouros.length === 0, estouros.join(" | "));
@@ -494,10 +494,10 @@ console.log("\n9. O tema claro, e o celular de 320 e de 375");
   ok("(320) a frase do campo cabe", frase && frase.precisa <= frase.tem, q(frase));
   await clicar(page, MAIS);
   const cabem = await page.locator("[data-opcao-do-mais]").evaluateAll((els) => els.every((el) => {
-    const b = el.getBoundingClientRect(); return b.left >= 0 && b.right <= innerWidth;
+    const b = el.getBoundingClientRect(); return b.left >= 0 && b.right <= document.documentElement.clientWidth;
   })).catch(() => false);
   ok("(320) as opções do “+” cabem", cabem && (await conta(page, "[data-opcao-do-mais]")) >= 6);
-  ok("(320) e a página não rola de lado com o painel aberto", await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+  ok("(320) e a página não rola de lado com o painel aberto", await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1));
   ok("nenhum erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }

@@ -466,7 +466,7 @@ console.log("\nNo celular (360), o selo cabe e a tela não rola de lado");
       dentro: rs.left >= rl.left - 0.5 && rs.right <= rl.right + 0.5,
       pintado: Boolean(no && (no === selo || selo.contains(no))),
       nome: nome ? Math.round(nome.getBoundingClientRect().width) : 0,
-      rolaDeLado: document.documentElement.scrollWidth > innerWidth + 1,
+      rolaDeLado: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
     };
   });
   ok("a linha do outro telefone aparece, com o selo", medida.linha && medida.selo, JSON.stringify(medida));

@@ -20398,7 +20398,7 @@ export default function Painel({ sessao }) {
                   </button>
 
                   {menuDaConversa && (
-                    <div data-menu-conversa
+                    <div data-menu-conversa ref={encaixarNaJanela}
                          style={{ position: "absolute", top: 44, right: 0, zIndex: 60, width: 252,
                                   background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10,
                                   boxShadow: "0 6px 20px rgba(0,0,0,.3)", overflow: "hidden" }}>
