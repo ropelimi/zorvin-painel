@@ -1263,9 +1263,16 @@ como vem.
 
 - **No alto da ficha, antes da ordem de serviço**, com o ícone do escudo, a
   borda da cor do estado e o `title` que explica a regra;
-- **"Ver no Vantoro"** (`data-blindagem-link`) abre a ficha do cliente lá
-  (`/cadastro/clientes/<id>/#juntada`, onde se marca a juntada), numa aba
-  nova, com `noopener noreferrer`;
+- **"Ver no Vantoro"** (`data-blindagem-link`) abre a **tela Blindagem** de
+  lá já pesquisada pelo nome do cliente (`/cadastro/blindagem/?q=<nome>`),
+  numa aba nova, com `noopener noreferrer`. Pedido do Rodrigo, no mesmo dia:
+  *"quero que abre a tela de Blindagem, já com o cliente pesquisado, para
+  facilitar o usuário a clicar e ir direto para o local onde fazemos as
+  procurações específicas"*. A primeira escrita abria a ficha do cliente
+  (`#juntada`). A busca de lá é **pelo nome**, por trecho, e olha todas as
+  abas (`core/views_blindagem.py`): um homônimo aparece junto, com o nome
+  inteiro na linha. O nome vai escapado e sem os espaços de sobra; sem nome,
+  a tela sem pesquisa. **Nada mudou no Vantoro**;
 - **os nomes são os das abas da tela do Vantoro**, para as duas telas dizerem
   a mesma coisa;
 - **sem `blindagem` na resposta (um Vantoro de antes), e com um estado que o
@@ -1289,8 +1296,9 @@ ao Rodrigo é aposentá-las com o selo no ar.
 alto da conversa (pediria a blindagem de cada cliente na lista, uma ida ao
 Vantoro por conversa), e um filtro por blindagem.
 
-Prova: `a-blindagem-na-ficha`, 64 conferências em nove cenas: a conta direto
+Prova: `a-blindagem-na-ficha`, 66 conferências em dez cenas: a conta direto
 na função; as quatro respostas (com a cor, o resumo, as partes e o link);
+o nome na pesquisa (escapado, sem os espaços de sobra, e sem nome);
 só assinadas; sem a blindagem e com um estado desconhecido; a gaveta (1100) e
 o celular (390 e 360); e o tema escuro. Do lado do Vantoro,
 `core/tests_a_blindagem_na_ficha.py` (11 testes).
@@ -1301,7 +1309,9 @@ com link; a completa em âmbar; as partes sem o "falta juntar"; o selo depois
 da ordem de serviço; o estado desconhecido virando selo; a falta da
 blindagem virando "pendente"; o link sem `noopener`; a linha sem quebrar (o
 link sai da ficha na gaveta e no celular); o resumo da parcial sem o total;
-e a cor escrita à mão, sem o tema (no escuro, o verde fica com 2,1:1). No
+e a cor escrita à mão, sem o tema (no escuro, o verde fica com 2,1:1). E as
+duas do link para a tela Blindagem: o link de antes, para a ficha (6
+reprovações), e o nome sem arrumar os espaços (1). No
 Vantoro, **5 sabotagens e 5 pegas**: sem o "sem_acao"; a busca levando a
 blindagem; a aba sem o "parcial"; a edição sem a blindagem; e a conta sem
 reaproveitar os processos que a ficha já trouxe (uma ida a mais ao banco).

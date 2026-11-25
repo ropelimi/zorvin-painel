@@ -320,7 +320,9 @@ registrarMotivoParaEsperar(() => (rascunhosDaFicha.size ? "as alterações não 
 /**
  * O SELO DA BLINDAGEM (25/11): "saber qual cliente já está blindado ou não".
  * A regra e a conta são do Vantoro (a tela Blindagem); o selo escreve a aba que
- * ela mostraria, o que falta e leva à ficha de lá, onde se marca a juntada. Sem
+ * ela mostraria, o que falta e leva à tela Blindagem de lá, já pesquisada pelo
+ * nome do cliente (25/11, a pedido do Rodrigo: é ali que se fazem as procurações
+ * específicas; a busca de lá é pelo nome, e olha todas as abas). Sem
  * `blindagem` na resposta (um Vantoro de antes), nada: a falta do selo não pode
  * se ler como "não blindado". Ver src/blindagem.js.
  */
@@ -329,6 +331,7 @@ function SeloDaBlindagem({ cliente, C }) {
   if (!selo) return null;
   const cor = { verde: C.verdeTexto, ambar: C.ambarTexto, vermelho: C.erroTexto, neutro: C.textSecondary }[selo.tom];
   const Icone = { completa: ShieldCheck, parcial: ShieldHalf, pendente: ShieldAlert, sem_acao: Shield }[selo.estado];
+  const nomeNaBusca = String(cliente.nome || "").replace(/\s+/g, " ").trim();
   const explicacao = "Blindado: cada ação distribuída com a procuração específica assinada há menos de 1 ano "
     + "e juntada no processo. A conta é a da tela Blindagem do Vantoro.";
   return (
@@ -339,11 +342,12 @@ function SeloDaBlindagem({ cliente, C }) {
         <Icone size={16} color={cor} aria-hidden="true" style={{ flexShrink: 0 }} />
         <b data-blindagem-titulo style={{ fontSize: 13, color: cor }}>{selo.titulo}</b>
         <span data-blindagem-resumo style={{ fontSize: 12.5, color: C.textSecondary }}>· {selo.resumo}</span>
-        {cliente.id != null && cliente.id !== "" && selo.estado !== "sem_acao" && (
+        {selo.estado !== "sem_acao" && (
           <a data-blindagem-link
-             href={enderecoNoVantoro(`/cadastro/clientes/${encodeURIComponent(cliente.id)}/#juntada`)}
+             href={enderecoNoVantoro(nomeNaBusca
+               ? `/cadastro/blindagem/?q=${encodeURIComponent(nomeNaBusca)}` : "/cadastro/blindagem/")}
              target="_blank" rel="noopener noreferrer"
-             title="Abrir a blindagem deste cliente no Vantoro (é lá que se marca a juntada), numa aba nova"
+             title="Abrir a tela Blindagem do Vantoro já com este cliente pesquisado (é lá que se fazem as procurações específicas), numa aba nova"
              style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4,
                       fontSize: 12, color: C.link, textDecoration: "none", whiteSpace: "nowrap" }}>
             <ExternalLink size={12} /> Ver no Vantoro

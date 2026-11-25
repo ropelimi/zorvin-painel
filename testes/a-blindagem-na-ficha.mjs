@@ -13,8 +13,10 @@
 //      resumo: completa, parcial (com o que falta, em partes), pendente e sem
 //      ação distribuída;
 //   2. a parcial só com procurações assinadas diz que falta juntar;
-//   3. o link "Ver no Vantoro" leva à ficha do cliente lá (#juntada), numa aba
-//      nova, com noopener; sem ação distribuída, não há link;
+//   3. o link "Ver no Vantoro" abre a tela Blindagem de lá já pesquisada pelo
+//      nome do cliente (é ali que se fazem as procurações específicas), numa aba
+//      nova, com noopener; o nome vai escapado e sem os espaços de sobra; sem
+//      nome, a tela sem pesquisa; sem ação distribuída, não há link;
 //   4. sem `blindagem` na resposta (um Vantoro de antes) e com um estado que o
 //      Zorvin não conhece, nenhum selo, e a ficha continua;
 //   5. o selo vem antes da ordem de serviço, pintado e dentro da ficha, também
@@ -41,7 +43,7 @@ const PARCIAL = B("parcial", { blindadas: 1, falta_juntar: 1, vencidas: 1, porce
 const SO_ASSINADAS = B("parcial", { falta_juntar: 3 });
 const PENDENTE = B("pendente", { sem_procuracao: 3 });
 const SEM_ACAO = B("sem_acao", { total: 0 });
-const LINK = "https://app.vantoro.com.br/cadastro/clientes/v-100/#juntada";
+const LINK = "https://app.vantoro.com.br/cadastro/blindagem/?q=ANDREIA%20CRISTINA%20MARTINS";
 
 const nav = await abrirNavegador();
 
@@ -183,7 +185,7 @@ console.log("\n1. Completa: verde, com o link para o Vantoro");
   ok("verde", m.cor === COR.claro.verde && m.borda === COR.claro.verde, `${m.cor} ${m.borda}`);
   ok("com o ícone", m.icone);
   ok("o title explica a regra", /juntada no processo/.test(m.title) && /menos de 1 ano/.test(m.title), m.title);
-  ok("o link leva à ficha do cliente no Vantoro", m.href === LINK, String(m.href));
+  ok("o link abre a tela Blindagem do Vantoro, pesquisada pelo nome", m.href === LINK, String(m.href));
   ok("numa aba nova, com noopener e noreferrer", m.alvo === "_blank" && /noopener/.test(m.rel) && /noreferrer/.test(m.rel),
      `${m.alvo} ${m.rel}`);
   ok("o selo está pintado, e o link também", m.pintado && m.linkPintado);
@@ -248,6 +250,18 @@ console.log("\n5. Sem ação distribuída: neutro, sem link");
   ok("não é verde, âmbar nem vermelho", m.cor && ![COR.claro.verde, COR.claro.ambar, COR.claro.vermelho].includes(m.cor), m.cor);
   ok("sem link", m.href === null);
   ok("a letra se lê", m.contrasteTitulo >= 4.5, m.contrasteTitulo.toFixed(2));
+  await ctx.close();
+}
+
+console.log("\n5b. O nome na pesquisa: escapado, sem os espaços de sobra; sem nome, a tela sem pesquisa");
+for (const [nome, cliente, esperado] of [
+  ["acento, & e espaço dobrado", { ...BASE, nome: "  JOSÉ  DÁVILA & FILHOS ", blindagem: PENDENTE },
+   "https://app.vantoro.com.br/cadastro/blindagem/?q=JOS%C3%89%20D%C3%81VILA%20%26%20FILHOS"],
+  ["sem nome", { ...BASE, nome: "", blindagem: PENDENTE }, "https://app.vantoro.com.br/cadastro/blindagem/"],
+]) {
+  const { ctx, page } = await abrirFicha(cliente);
+  const m = await medir(page);
+  ok(`${nome}: o link certo`, m.tem && m.href === esperado, String(m.href));
   await ctx.close();
 }
 
