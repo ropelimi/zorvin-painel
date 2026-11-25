@@ -137,11 +137,11 @@ async function medir(page) {
       rel: link ? link.getAttribute("rel") || "" : "",
       linkPintado: !!quemLink && (quemLink === link || link.contains(quemLink)),
       pintado: !!quem && (quem === titulo || titulo.contains(quem)),
-      dentro: r.left >= f.left - 1 && r.right <= f.right + 1 && r.left >= 0 && r.right <= innerWidth
+      dentro: r.left >= f.left - 1 && r.right <= f.right + 1 && r.left >= 0 && r.right <= document.documentElement.clientWidth
               && (!lr || (lr.right <= r.right + 1 && lr.left >= r.left - 1)),
       antesDaOs: !os || !!(s.compareDocumentPosition(os) & Node.DOCUMENT_POSITION_FOLLOWING),
       os: !!os, completa: !!ficha.querySelector("[data-ficha-completa]"),
-      rolaDeLado: document.documentElement.scrollWidth > innerWidth + 1,
+      rolaDeLado: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
     };
   });
 }

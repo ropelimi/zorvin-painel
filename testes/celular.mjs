@@ -49,7 +49,7 @@ await page.waitForTimeout(1200);
 async function naoRolaDeLado(onde, p = page) {
   const m = await p.evaluate(() => ({
     conteudo: document.documentElement.scrollWidth,
-    tela: window.innerWidth,
+    tela: document.documentElement.clientWidth,
   }));
   ok(`${onde}: não rola para o lado`, m.conteudo <= m.tela + 1,
      `o conteúdo tem ${m.conteudo}px numa tela de ${m.tela}px`);

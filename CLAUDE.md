@@ -6,6 +6,13 @@
 
 Rodrigo (@ropelimi), gerente comercial de um escritório de advocacia. **Não é desenvolvedor** — se descreve como leigo. Explique em linguagem simples, evite jargão, e dê o passo a passo em vez de assumir conhecimento de terminal, Git ou infraestrutura. Fala português (pt-BR).
 
+**Horários sempre no de Brasília** (pedido dele em 25/11: *"Me fale sempre o
+horário de Brasília"*). A máquina destas sessões, o GitHub e os registros do
+Supabase falam em UTC, três horas à frente: "05:40" do servidor são 02:40 em
+Brasília. Toda hora que vai para ele (quando as provas terminam, a volta
+marcada para conferir, a hora de um registro) é convertida antes
+(`TZ=America/Sao_Paulo date`), e nunca dita "no horário do servidor".
+
 ## O que é o Zorvin
 
 Central de atendimento de WhatsApp da equipe de **Acordos e Execução** do escritório, sob a marca **Ropelimi**. Vários atendentes usam um painel único para responder as conversas de **vários advogados** (hoje ~8, pode crescer até 20).

@@ -273,7 +273,7 @@ console.log("\n7. No celular, a bolha cabe");
   await page.waitForTimeout(1300);
   const medida = await page.evaluate(() => {
     const b = document.querySelector('[data-ensaio-do-quazar="pronta"] > div')?.getBoundingClientRect();
-    return b ? { esq: b.left, dir: b.right, largura: innerWidth, rola: document.documentElement.scrollWidth > innerWidth } : null;
+    return b ? { esq: b.left, dir: b.right, largura: document.documentElement.clientWidth, rola: document.documentElement.scrollWidth > document.documentElement.clientWidth } : null;
   });
   ok("a bolha do ensaio cabe na tela, sem rolar de lado", medida && medida.esq >= 0 && medida.dir <= medida.largura && !medida.rola, q(medida));
   await ctx.close();

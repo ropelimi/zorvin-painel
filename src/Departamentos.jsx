@@ -228,9 +228,17 @@ export default function Departamentos({ C, aoFechar, abaInicial, aoSaberDosScrip
     secao: { border: `1px solid ${C.divider}`, borderRadius: 12, padding: 14, marginBottom: 14 },
     titulo: { display: "flex", alignItems: "center", gap: 7, fontSize: 14, fontWeight: 700, marginBottom: 4 },
     dica: { fontSize: 12.5, color: C.textSecondary, lineHeight: 1.5, marginBottom: 10 },
-    campo: { border: `1px solid ${C.divider}`, background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "7px 10px", fontSize: 13.5, outline: "none" },
-    botao: { border: "none", background: C.botao, color: "#fff", borderRadius: 8, padding: "7px 13px", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 },
-    botaoFraco: { border: `1px solid ${C.divider}`, background: "transparent", color: C.textSecondary, borderRadius: 8, padding: "6px 11px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" },
+    // O BOTÃO NÃO ENCOLHE POR BAIXO DA PALAVRA, E O CAMPO CEDE (25/11). A
+    // varredura do celular, medindo pela largura de verdade, achou o "Criar"
+    // ao lado de "Nome do departamento" e de "Novo assunto", e o "Apagar" de
+    // cada departamento, espremidos a 40 pontos numa tela de 360, com a
+    // palavra saindo do botão: o campo ficava com a largura que ele mesmo
+    // pede, e quem encolhia era o botão. Hoje o campo pode encolher
+    // (`minWidth: 0`) e o botão, não. Um lugar só, porque todas as abas desta
+    // janela usam estes estilos.
+    campo: { border: `1px solid ${C.divider}`, background: C.inputBg, color: C.textPrimary, borderRadius: 8, padding: "7px 10px", fontSize: 13.5, outline: "none", minWidth: 0 },
+    botao: { border: "none", background: C.botao, color: "#fff", borderRadius: 8, padding: "7px 13px", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0, whiteSpace: "nowrap" },
+    botaoFraco: { border: `1px solid ${C.divider}`, background: "transparent", color: C.textSecondary, borderRadius: 8, padding: "6px 11px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" },
     linha: { display: "flex", alignItems: "center", gap: 8, padding: "7px 0", borderBottom: `1px solid ${C.divider}`, flexWrap: "wrap" },
     aba: (on) => ({ border: `1px solid ${on ? C.botao : C.divider}`, background: on ? C.botao : "transparent", color: on ? "#fff" : C.textSecondary, borderRadius: 20, padding: "5px 15px", fontSize: 13, fontWeight: 600, cursor: "pointer" }),
   };

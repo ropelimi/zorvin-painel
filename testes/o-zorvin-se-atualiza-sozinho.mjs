@@ -909,7 +909,7 @@ if (vale("17")) {
   const ponto = await page.evaluate(() => {
     const p = document.querySelector("[data-versao-nova]");
     const r = p && p.getBoundingClientRect();
-    return r ? { dentro: r.left >= 0 && r.right <= innerWidth && r.top >= 0, w: r.width } : null;
+    return r ? { dentro: r.left >= 0 && r.right <= document.documentElement.clientWidth && r.top >= 0, w: r.width } : null;
   });
   ok("e está dentro da tela", Boolean(ponto && ponto.dentro), q(ponto));
   await abrirMenu(page);
@@ -917,7 +917,7 @@ if (vale("17")) {
     const b = document.querySelector("[data-atualizar-agora]");
     const r = b && b.getBoundingClientRect();
     return { existe: Boolean(b), direita: r ? r.right : 0, esquerda: r ? r.left : 0, altura: r ? r.height : 0,
-             rolaDeLado: document.documentElement.scrollWidth > innerWidth + 1 };
+             rolaDeLado: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1 };
   });
   ok("o item de atualizar está no menu", medida.existe, q(medida));
   ok("e cabe na tela", medida.esquerda >= 0 && medida.direita <= 361, q(medida));
