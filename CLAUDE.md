@@ -4788,6 +4788,40 @@ ganhando `tratada_em`; a janela prometendo a fila; o aviso dizendo que tirou da
 fila; a largura sem a parcela do "Já tratei", pega por
 `o-cabecalho-nao-corta-o-que-importa`).
 
+### O "Já tratei" do Quazar (25/11)
+
+Pedido do Rodrigo, para zerar o SAC: o Quazar finaliza o que acabou, *"com o
+registro dizendo que foi ele"*. Quem finaliza é a **ponte**, com a faxina da
+fila (script 064; ver "A faxina do Quazar (script 064, 25/11)" no CLAUDE.md
+dela): ela grava o "Já tratei" **sem pessoa** (`quem` nulo), e o gatilho do 028
+fecha o atendimento sem `finalizado_por`. **Medido no banco em 25/11: nenhum
+"Já tratei" sem pessoa até ali** (o painel sempre grava quem clicou). Daqui
+para a frente, sem pessoa é o Quazar.
+
+| onde | antes | agora |
+|---|---|---|
+| o histórico do cliente | "alguém da equipe marcou “Já tratei”", com as iniciais "AE" | **"O Quazar finalizou"**, com o rosto dele (`data-registro-do-quazar`), e o porquê que a faxina escreve ("Finalizada pelo Quazar: o cliente só agradeceu.") |
+| o relatório do "Já tratei", por pessoa | "(sem nome)" | **"Quazar"**, com o rosto (`data-quazar-no-relatorio`); a linha não é clicável: não há pessoa para recortar a tela |
+| a planilha do "Já tratei" | o "Quem" vazio | "Quazar" |
+| os protocolos, por pessoa | uma linha sem nome | **"Quazar e sem registro"**, com o porquê no `title`: entram ali também os 11 arquivados que o 057 fechou sem ninguém em 06/11 |
+| a tabela da equipe | — | **o Quazar não entra**: ela compara pessoas, e o que ele fez não pode puxar a mediana de ninguém |
+
+- **A bancada imita o banco**: no "por pessoa" do relatório, o clique sem
+  pessoa vem com `id` nulo e "(sem nome)", como a função do banco devolve. Ela
+  dizia `id: "null"` (o texto), e o painel não o reconheceria;
+- **o registro de gente não muda**: "Rodrigo Sousa marcou “Já tratei”", com a
+  foto ou as iniciais.
+
+Prova: `o-ja-tratei-do-quazar`, 31 conferências em duas cenas: o histórico da
+cliente (o registro do Quazar e o de gente, lado a lado), e o Painel de números
+(o relatório, a planilha, os protocolos e a tabela da equipe).
+
+**10 sabotagens e 10 pegas**, rodadas uma a uma (e a cópia de controle passou
+inteira): o painel de antes inteiro (18 reprovações); o histórico sem o Quazar
+(6); o relatório com o nome do banco; sem o rosto; clicável; a planilha sem
+"Quazar"; os protocolos sem o nome; os protocolos sem o `title`; a tabela da
+equipe com o Quazar (pega pelo "(sem nome)"); e a bancada com `id: "null"` (7).
+
 ## O aviso do nono dígito não previa nada — e mandou mexer na ficha de um cliente
 
 Relato do Rodrigo em 28/09 (com o número trocado por um de exemplo em 28/10):

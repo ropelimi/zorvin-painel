@@ -21510,8 +21510,12 @@ export default function Painel({ sessao }) {
                   </div>
                 )}
                 {historico.tratados.grupos.map((g) => {
-                  const pessoa = equipe.porId[String(g.quem)];
-                  const nome = pessoa?.nome || (String(g.quem) === String(meuId) ? "Você" : "alguém da equipe");
+                  // SEM PESSOA É O QUAZAR (a faxina, script 064 da ponte): só a
+                  // ponte grava o "Já tratei" sem `quem`, e o painel nunca.
+                  const doQuazar = g.quem == null;
+                  const pessoa = doQuazar ? null : equipe.porId[String(g.quem)];
+                  const nome = doQuazar ? NOME_DO_ASSISTENTE
+                    : (pessoa?.nome || (String(g.quem) === String(meuId) ? "Você" : "alguém da equipe"));
                   const linha = (historico.linhas || []).find((l) => String(l.conversaId) === String(g.conversaId));
                   // Os assuntos na ORDEM da administração, e não na do banco:
                   // é a ordem em que a equipe os lê na janela do "Já tratei".
@@ -21524,11 +21528,15 @@ export default function Painel({ sessao }) {
                   const quemDesfez = g.desfeitoPor ? (equipe.porId[String(g.desfeitoPor)]?.nome || "alguém") : null;
                   return (
                     <div key={g.chave} data-registro-no-historico data-desfeito={g.desfeitoEm ? "sim" : undefined}
+                         data-registro-do-quazar={doQuazar ? "" : undefined}
                          style={{ display: "flex", gap: 9, marginBottom: 12, opacity: g.desfeitoEm ? 0.65 : 1 }}>
-                      <div style={{ marginTop: 2 }}><Avatar nome={nome} foto={pessoa?.foto} size={28} /></div>
+                      <div style={{ marginTop: 2 }}>
+                        {doQuazar ? <RostoDoAssistente tamanho={28} titulo={NOME_DO_ASSISTENTE} />
+                                  : <Avatar nome={nome} foto={pessoa?.foto} size={28} />}
+                      </div>
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ fontSize: 13.5, lineHeight: 1.45 }}>
-                          <b>{nome}</b> marcou “Já tratei”
+                          {doQuazar ? <><b>O {NOME_DO_ASSISTENTE}</b> finalizou</> : <><b>{nome}</b> marcou “Já tratei”</>}
                         </div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
                           {nomes.map((n, i) => (
