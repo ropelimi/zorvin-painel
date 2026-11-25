@@ -386,11 +386,6 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
   // todo lead — e porque um pré-cadastro sem escolha nenhuma faria o Vantoro
   // voltar a deduzir pelo documento, que é o defeito que isto conserta.
   const [papel, setPapel] = useState("cliente");
-  // A TAREFA "Cadastro de ações do cliente" É PEDIDA, E NÃO PRESUMIDA. Nasce
-  // DESMARCADA: sem ela o pré-cadastro é só o cadastro, e a ordem abre quando
-  // a venda for lançada. Marcada, o Vantoro já abre a ordem com a tarefa na
-  // fila. Só vale para "Cliente" — parte contrária não abre ordem nenhuma.
-  const [criarTarefa, setCriarTarefa] = useState(false);
   const [buscandoCep, setBuscandoCep] = useState(false);
   const [opcoes, setOpcoes] = useState({ estado_civil: ESTADO_CIVIL_RESERVA });
   // AS SEÇÕES ABERTAS SOBREVIVEM À TROCA DE CONVERSA. A ficha é remontada a
@@ -847,7 +842,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
   // A CAIXA DA TAREFA VOLTA DESMARCADA PELO MESMO MOTIVO: marcada num
   // atendimento e esquecida, ela abriria ordem com tarefa no pool para o lead
   // seguinte sem ninguém ter pedido.
-  useEffect(() => { setPapel("cliente"); setCriarTarefa(false); if (numero) buscar(); /* eslint-disable-next-line */ }, [numero]);
+  useEffect(() => { setPapel("cliente"); if (numero) buscar(); /* eslint-disable-next-line */ }, [numero]);
 
   // O RASCUNHO ACOMPANHA A TELA: a cada tecla, o que difere do cadastro fica
   // guardado; nada diferindo (salvou, descartou, desfez à mão), ele some.
@@ -864,15 +859,15 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
     else rascunhosDaFicha.delete(chaveDoRascunho(quem, cliente.id));
   }, [edicao, cliente, quem]);
 
-  // A FRASE SAI DO QUE O VANTORO RESPONDEU (`tarefa_cadastro`), e não da
-  // caixa: é ele quem sabe se a tarefa nasceu. Sem a resposta (um Vantoro de
-  // antes desta mudança), a frase não afirma nada sobre a tarefa — e, se ela
-  // foi pedida, manda conferir.
-  function fraseDoCriado(tarefa, pediu) {
-    if (tarefa === true) return "Pré-cadastro criado no Vantoro, com a tarefa “Cadastro de ações do cliente”.";
-    if (tarefa === false) return "Pré-cadastro criado no Vantoro, sem tarefa.";
+  // A TAREFA "Cadastro de ações do cliente" NÃO NASCE DO PRÉ-CADASTRO (24/11,
+  // pedido do Rodrigo: "essa tarefa só deve ser criada automaticamente após o
+  // lançamento de uma nova venda"). A caixa que a pedia saiu, e o pedido leva
+  // sempre `criar_tarefa_cadastro: false`. A frase só fala da tarefa se o
+  // Vantoro disser que a criou mesmo assim (`tarefa_cadastro: true`): aí ela
+  // está na fila sem venda nenhuma, e quem criou precisa saber.
+  function fraseDoCriado(tarefa) {
     return "Pré-cadastro criado no Vantoro."
-      + (pediu ? " Ele não disse se a tarefa foi criada — confira na ficha de lá." : "");
+      + (tarefa === true ? " O Vantoro criou também a tarefa “Cadastro de ações do cliente”, que deveria nascer só com a venda — confira na ficha de lá." : "");
   }
 
   async function criar() {
@@ -900,13 +895,12 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
           // Quem está falando com o lead é o único, em todo o sistema, que sabe
           // a resposta. É aqui que ela é dada.
           papel,
-          // SEMPRE VAI, true OU false — e false para a parte contrária mesmo
-          // que a caixa tenha ficado marcada antes de trocar o papel: ali ela
-          // nem aparece, e o que não se vê não pode ser pedido.
-          criar_tarefa_cadastro: papel === "cliente" && criarTarefa,
+          // SEMPRE false, e escrito (24/11): a tarefa "Cadastro de ações do
+          // cliente" nasce com o lançamento da venda, no Vantoro. Escrito, e
+          // não omitido: sem a chave, o Vantoro decidiria sozinho.
+          criar_tarefa_cadastro: false,
         }),
       });
-      const pediuTarefa = papel === "cliente" && criarTarefa;
       setCliente(r.cliente);
       setEdicao({ ...r.cliente });
       // A LISTA DE TELEFONES DO QUE NASCEU (auditoria de 27/10), pela régua de
@@ -924,11 +918,8 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
         !ligou ? (erroDoVinculo.current
                    ? comOCodigo(naoLigou, erroDoVinculo.current, "ligar o pré-cadastro ao contato")
                    : naoLigou)
-        : r.criado ? fraseDoCriado(r.tarefa_cadastro, pediuTarefa)
-        // JÁ EXISTIA: por este caminho a tarefa não é criada. Quem pediu
-        // precisa saber, senão conclui que ela está na fila.
-        : "Já existia no Vantoro."
-          + (pediuTarefa ? " A tarefa “Cadastro de ações do cliente” não é criada por aqui — abra pela ficha no Vantoro." : ""));
+        : r.criado ? fraseDoCriado(r.tarefa_cadastro)
+        : "Já existia no Vantoro.");
     } catch (e) {
       onAviso && onAviso(e.message);
     } finally {
@@ -1848,24 +1839,12 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
                 </button>
               ))}
             </div>
-            {/* A TAREFA, SÓ PARA CLIENTE. Parte contrária não abre ordem, e
-                uma caixa ali seria uma promessa que o Vantoro não cumpre.
-                Vem ANTES da frase de baixo porque a frase diz o que as duas
-                escolhas juntas provocam. */}
-            {papel === "cliente" && (
-              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
-                              fontSize: 13, color: C.textPrimary, margin: "4px 0 6px" }}>
-                <input type="checkbox" data-criar-tarefa checked={criarTarefa}
-                       onChange={(e) => setCriarTarefa(e.target.checked)} />
-                Criar a tarefa “Cadastro de ações do cliente”
-              </label>
-            )}
-            <div style={{ color: C.textSecondary, fontSize: 12, lineHeight: 1.45, marginBottom: 14 }}>
+            {/* O QUE A ESCOLHA PROVOCA. A caixa da tarefa "Cadastro de ações
+                do cliente" saiu em 24/11: a tarefa nasce com a venda. */}
+            <div data-frase-do-papel style={{ color: C.textSecondary, fontSize: 12, lineHeight: 1.45, marginBottom: 14 }}>
               {papel === "contraria"
                 ? "A parte contrária entra no cadastro, mas NÃO abre ordem de serviço."
-                : criarTarefa
-                  ? "Abre a ordem de serviço com a tarefa na fila."
-                  : "Nasce só o cadastro — a ordem abre quando a venda for lançada."}
+                : "Nasce só o cadastro — a ordem e a tarefa “Cadastro de ações do cliente” nascem quando a venda for lançada."}
             </div>
             <button style={{ ...botao, width: "100%", opacity: salvando ? 0.6 : 1 }} onClick={criar} disabled={salvando}>
               <UserPlus size={15} /> {salvando ? "Criando…" : "Criar pré-cadastro"}

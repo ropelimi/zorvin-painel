@@ -4938,6 +4938,9 @@ guarda a conta do vigia e não confere nada sozinho. **O vigia é a prova
 
 ## O pré-cadastro não promete mais a ordem — a tarefa é pedida (02/10)
 
+**A caixa saiu em 24/11** — ver "A caixa da tarefa saiu (24/11)", no fim
+desta seção. O que vem logo abaixo é a história.
+
 Pedido do Rodrigo: no pré-cadastro, uma caixa **"Criar a tarefa “Cadastro de
 ações do cliente”"**, desmarcada, e os textos parando de prometer que o
 pré-cadastro abre a ordem de serviço. Desmarcada, nasce só o cadastro, e a
@@ -4979,6 +4982,41 @@ nascendo e voltando marcada). **E uma vazou, com razão:** trocar só o
 desmarca a caixa assim que a ficha monta — é a régua de 25/09, *sabotagem que
 o resto do sistema conserta sozinho não prova nada*. O defeito de verdade é o
 efeito voltando para marcada, e esse a prova pega por 17 conferências.
+
+### A caixa da tarefa saiu (24/11)
+
+Pedido do Rodrigo, com a foto da caixa: *"quero que você remova essa opção de
+criar a tarefa, pois essa tarefa só deve ser criada automaticamente após o
+lançamento de uma nova venda"*.
+
+- **A caixa "Criar a tarefa “Cadastro de ações do cliente”" saiu** do
+  pré-cadastro, e com ela o estado que a guardava;
+- **o pedido leva sempre `criar_tarefa_cadastro: false`, escrito**, para o
+  cliente e para a parte contrária. Escrito, e não omitido: sem a chave, o
+  Vantoro decidiria sozinho, e daqui não dá para ler o padrão dele;
+- **a frase de baixo** diz, com Cliente: *"Nasce só o cadastro — a ordem e a
+  tarefa “Cadastro de ações do cliente” nascem quando a venda for lançada."*.
+  A da parte contrária não mudou;
+- **o aviso não fala de tarefa** ("Pré-cadastro criado no Vantoro." e "Já
+  existia no Vantoro."), **a não ser que o Vantoro diga que a criou mesmo
+  assim** (`tarefa_cadastro: true`): aí ele diz, e manda conferir na ficha de
+  lá, porque a tarefa está na fila sem venda nenhuma;
+- **a ponte não mudou**: ela repassa o corpo como vem.
+
+A tabela de 02/10, logo acima, é a história: as frases "com a tarefa", "sem
+tarefa" e "abra pela ficha no Vantoro" saíram.
+
+Prova: `o-pre-cadastro-e-a-tarefa`, **INVERTIDA, e não apagada**: 24
+conferências em seis cenas (sem a caixa, com Cliente e com a parte contrária;
+o `false` escrito no corpo; o aviso sem tarefa, no criado, no já existia e no
+Vantoro que não responde `tarefa_cadastro`; e o aviso quando o Vantoro cria a
+tarefa mesmo assim).
+
+**7 sabotagens e 7 pegas**, rodadas em cópias e lidas uma a uma (e a cópia de
+controle passou inteira): a caixa de volta (o painel de antes inteiro); a
+chave omitida do corpo; a chave `true`; o aviso calado quando o Vantoro cria a
+tarefa; o "sem tarefa" de volta no aviso; a frase de antes para o cliente; e o
+"já existia" mandando abrir a tarefa.
 
 ## O responsável pela conversa — o primeiro passo para CRM (30/09)
 
