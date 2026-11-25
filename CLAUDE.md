@@ -8487,7 +8487,35 @@ recorte, o rastro, "Todos juntos" e "Qualquer um", o banco sem o 059 e a
 falha); quem participou (o grupinho, a lista, as duas frases, e ele fora do
 seletor de responsáveis); e o celular a 360 e a 390.
 
-__SABOTAGENS__
+**20 sabotagens e 20 pegas**, rodadas em cópias e lidas uma a uma (e a cópia
+de controle passou inteira):
+
+- o painel de antes inteiro (73 reprovações — é o pedido reproduzido);
+- **a conta:** a espera parando no aviso automático do Vantoro; o Quazar
+  contando como gente da equipe (43); a espera desde a última mensagem do
+  cliente, e não da primeira; a linha pelo primeiro momento, e pelo mais
+  recente, e não pelo da maior espera; no empate, o primeiro momento;
+- **a tela:** o padrão "Todas"; o link da conversa sem `noopener`; a tela
+  fora das guias (49); o item do menu na mesma guia;
+- **os estados:** a coluna que falta virando falha; a falha virando "nenhuma
+  conversa";
+- **o filtro:** sem perguntar ao banco pelo Quazar; "Todos juntos" somando; a
+  falha calada; o banco sem a marca com a opção ficando;
+- **quem participou:** o Quazar de fora (como antes); a frase contando o
+  Quazar como pessoa; o grupinho sem o rosto dele.
+
+**A primeira rodada ensinou duas coisas, uma da rodada e uma da
+prova:**
+
+- **a sabotagem do "primeiro momento" não sabotava nada.** Ela trocava só a
+  primeira metade da condição (`false && A || B`), e o empate continuava
+  escolhendo pelo resto — a lição do 044 da ponte, outra vez. Refeita
+  trocando a condição inteira, ela é pega; e a prova ganhou a cena 0, com a
+  conta direto na função, porque a semente da tela não separava "a maior
+  espera" de "o primeiro momento";
+- **o painel de antes e o Quazar como equipe paravam a prova**, em vez de
+  reprovar: a medida do negrito lia a frase da espera sem perguntar se ela
+  existia. Hoje a medida é guardada, e as duas são pegas até a última cena.
 
 ## O resumo da conversa — "Resumir" (01/11)
 
