@@ -10517,7 +10517,7 @@ desenho, e foi essa a decisão revista.
 | o vão entre "Não lidas" e o número | o espaço | 3 |
 | quem cede quando não cabe | — (quebrava) | a PALAVRA "Não lidas", com reticências |
 | o rastro de quem participou | na fita | numa linha própria, logo abaixo (`data-rastro-no-celular`) |
-| o menu da ordem | saía 90 pontos para a direita, e a tela rolava de lado | `encaixarNaJanela` |
+| o menu da ordem | saía 90 pontos para a direita, e a tela rolava de lado | `encaixarNaJanela`, que passou a medir a tela de verdade |
 
 **Medido depois, com "Não lidas 103":** 345 pontos de borda direita da seta
 a 360, para 347 da fita; com "Esperando", a palavra mais larga da ordem, 347
@@ -10542,8 +10542,19 @@ a 360, para 347 da fita; com "Esperando", a palavra mais larga da ordem, 347
   pílulas, um número e uma letra. A definição é uma só (`rastroDeQuem`), pela
   régua de `controleDaOrdem`;
 - **o menu da ordem cabia mal desde sempre no celular**: ancorado à esquerda
-  da pílula (`left: 0`), ele ia até 479 numa tela de 390, e a página rolava de
+  da pílula (`left: 0`), ele ia até 464 numa tela de 390, e a página rolava de
   lado. A revisão de 24/11 abriu o menu da seta, e não o da ordem;
+- **e o `encaixarNaJanela` não empurrava nada no celular, desde 28/10.** Ele
+  media a tela por `innerWidth`, e no celular, quando algo transborda, o
+  navegador alarga a janela visível até caber: `innerWidth` passa a dizer 465
+  numa tela de 390, e o menu que passava da borda "cabia". Hoje ele mede pela
+  largura do documento (`clientWidth`), que continua sendo a tela. Vale para os
+  dez menus que o usam (os selos da linha do número, o emoji, os filtros da
+  tela Esperando resposta, a ordem);
+- **no computador, a pílula é o texto de sempre**: os dois pedaços (a palavra e
+  o número num `flex`) são só do celular. No computador nada encolhe, e quem lê
+  o texto visível (`innerText`) continua lendo "Não lidas 500" numa linha; com
+  os dois pedaços, lia em duas, e a `os-filtros-nao-afirmam-ausencia` pegou;
 - **no computador, nada muda**: a fita quebra como sempre, e a ordem mora na
   linha da marca.
 

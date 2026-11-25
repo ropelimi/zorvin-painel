@@ -78,7 +78,19 @@ function medir(page) {
       const q = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
       return !!q && (q === el || el.contains(q));
     };
-    const cortado = (el) => !!el && el.scrollWidth > el.clientWidth + 0.5;
+    // Cortado é o texto que passou da caixa (as reticências da palavra) OU que
+    // comeu o recheio da pílula. O scrollWidth sozinho não vê o segundo: o
+    // "Tudo" que encolhe 10 pontos deixa o texto colado na borda, e as duas
+    // contas continuam iguais.
+    const dentroDoRecheio = (el) => {
+      const b = el.getBoundingClientRect(), c = getComputedStyle(el), rg = document.createRange();
+      rg.selectNodeContents(el);
+      const t = rg.getBoundingClientRect();
+      if (!t.width) return true;
+      return t.left >= b.left + parseFloat(c.borderLeftWidth) + parseFloat(c.paddingLeft) - 0.5
+          && t.right <= b.right - parseFloat(c.borderRightWidth) - parseFloat(c.paddingRight) + 0.5;
+    };
+    const cortado = (el) => !!el && (el.scrollWidth > el.clientWidth + 0.5 || !dentroDoRecheio(el));
     const seta = f.querySelector("[data-mais-filtros]");
     const ordem = f.querySelector("[data-ordem]");
     const tudo = f.querySelector('[data-aba="tudo"]');
@@ -102,7 +114,10 @@ function medir(page) {
       })(),
       texto: nl?.textContent ?? null, title: nl?.getAttribute("title") || "",
       quebra: cs.flexWrap,
-      rola: document.documentElement.scrollWidth > innerWidth + 1,
+      // A largura da tela é a do documento (clientWidth), e não innerWidth: no
+      // celular, o navegador alarga a janela visível até caber o que
+      // transbordou, e innerWidth passa a dizer 465 numa tela de 390.
+      rola: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
     };
   });
 }
@@ -199,7 +214,7 @@ for (const largura of [390, 360]) {
     const nome = r.querySelector("button span:not([style*='flex-shrink'])") || r.querySelector("button span");
     const q = document.elementFromPoint(rr.left + 30, rr.top + rr.height / 2);
     return { naLinhaDeBaixo: !!r.closest("[data-rastro-no-celular]") && rr.top >= fr.bottom - 0.5,
-             naTela: rr.left >= 0 && rr.right <= innerWidth, pintado: !!q && r.contains(q),
+             naTela: rr.left >= 0 && rr.right <= document.documentElement.clientWidth, pintado: !!q && r.contains(q),
              nome: nome ? nome.getBoundingClientRect().width : 0 };
   });
   ok(`a ${largura}, com o rastro: ele mora na linha de baixo, pintado e na tela`,
@@ -220,8 +235,8 @@ for (const largura of [390, 360, 320]) {
     const m = document.querySelector("[data-menu-ordem]");
     if (!m) return null;
     const b = m.getBoundingClientRect();
-    return { esq: Math.round(b.left), dir: Math.round(b.right), largura: innerWidth,
-             rola: document.documentElement.scrollWidth > innerWidth + 1 };
+    return { esq: Math.round(b.left), dir: Math.round(b.right), largura: document.documentElement.clientWidth,
+             rola: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1 };
   });
   ok(`a ${largura}: o menu abre, inteiro na tela`, !!r && r.esq >= 0 && r.dir <= r.largura, JSON.stringify(r));
   ok(`a ${largura}: e a tela não rola de lado`, !!r && !r.rola);
