@@ -2988,6 +2988,20 @@ function consulta(tabela) {
           const atual = (TABELAS.contatos || []).find((c) => c.numero === l.contato.numero);
           if (atual) l.contato = { ...l.contato, ...atual };
         }
+        // E SÓ AS COLUNAS DO CONTATO QUE FORAM PEDIDAS (25/11). O painel pede
+        // `contato:contato_id (nome, numero, foto_url, …)`, sem o `id`, e o
+        // banco devolve só isso. A bancada devolvia o contato inteiro, com o
+        // `id`: o "Dar um nome a este contato" gravava por `contato.id` e
+        // passava aqui, e no escritório pedia `contatos?id=eq.undefined` e
+        // recebia 22P02. Cópias, e não a linha guardada: a próxima consulta
+        // pode pedir outras colunas.
+        const doContato = /contato\s*:\s*contato_id\s*\(([^)]*)\)/.exec(colunas || "");
+        const pedidas = doContato && doContato[1].split(",").map((c) => c.trim()).filter(Boolean);
+        if (pedidas && pedidas.length && !pedidas.includes("*")) {
+          linhas = linhas.map((l) => (l.contato
+            ? { ...l, contato: Object.fromEntries(pedidas.map((c) => [c, l.contato[c] ?? null])) }
+            : l));
+        }
       }
       // ------------------------------------------------------------
       //  O TEMPO ESTOURA — como estoura no banco de verdade

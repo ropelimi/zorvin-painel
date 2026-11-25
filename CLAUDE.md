@@ -4182,6 +4182,32 @@ A bancada ganhou `__ERRO_NA_GRAVACAO` — ela só sabia recusar em silêncio
 (`__ESCRITA_SEM_EFEITO`), e uma prova com só essa metade aprovaria a tela que
 não diz código nenhum.
 
+### E o nome não salvava: o contato da lista vem sem o id (25/11)
+
+Relato do Rodrigo, com foto do celular: *"Não consegui salvar o nome. (erro
+22P02)"*, ao usar "Dar um nome a este contato". **O código fez o trabalho
+dele**: lido nos registros do Supabase, o pedido era
+`PATCH contatos?id=eq.undefined`, e o banco respondia *invalid input syntax for
+type uuid: "undefined"*.
+
+**A lista de conversas pede do contato só nome, número, foto e as colunas do
+cadastro** (`colunasDoContato`), e **não o `id`**. `salvarNomeDoContato`
+gravava por `conversa.contato.id`, que nunca existiu fora da bancada. O botão
+do Histórico tinha o mesmo defeito, consertado antes, e por isso usa
+`conversa.contato_id`. Hoje o nome também usa `conversa.contato_id`, e o
+histórico de alterações também. Se nenhum dos dois vier, a tela diz isso, e
+nada é mandado ao banco.
+
+**A bancada escondia o defeito**: o contato vinha pré-colado na conversa, com
+todas as colunas. Hoje ela devolve só as colunas pedidas em
+`contato:contato_id (…)`, como o banco, e em cópias (a próxima consulta pode
+pedir outras). **Ao ler um campo do contato da conversa, ele tem de estar em
+`colunasDoContato`**; o id do contato é `conversa.contato_id`.
+
+Prova: `a-tela-nao-diz-salvei-sem-salvar`, sem mudança: com a bancada honesta,
+o código de antes reprova duas conferências (o nome não fica, e aparece o
+aviso).
+
 ## Duas linhas com o mesmo nome — qual delas é qual?
 
 Relato do escritório em 25/09, com foto: duas conversas idênticas na lista —

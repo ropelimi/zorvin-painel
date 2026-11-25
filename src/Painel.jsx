@@ -13021,6 +13021,16 @@ export default function Painel({ sessao }) {
     const novo = (texto || "").trim();
     const ct = conversa?.contato;
     if (!ct) return;
+    // O ID VEM DA CONVERSA (`contato_id`), e não de `contato.id` (25/11): a
+    // lista pede do contato só nome, número e foto, sem o id. Gravar por
+    // `ct.id` mandava `contatos?id=eq.undefined`, e o banco respondia 22P02 —
+    // o mesmo defeito que já tinha calado o botão do Histórico.
+    const contatoId = conversa.contato_id || ct.id;
+    if (!contatoId) {
+      setRenomeando(null);
+      mostrarAviso("Não consegui salvar o nome: a conversa veio sem o contato. Recarregue a página e tente de novo.", 7000);
+      return;
+    }
     const convDoNome = conversaId;
     const antes = ct.nome_zorvin || "";
     if (novo === antes) { setRenomeando(null); return; }
@@ -13034,7 +13044,7 @@ export default function Painel({ sessao }) {
     // cima já pôs na tela ficaria lá até o próximo F5, quando sumiria sozinho.
     // Ver `naoGravouNada`, em `gravar.js`.
     const r = await supabase.from("contatos")
-      .update({ nome_zorvin: novo || null }).eq("id", ct.id).select("id");
+      .update({ nome_zorvin: novo || null }).eq("id", contatoId).select("id");
     const recusou = naoGravouNada(r);
     if (r.error || recusou) {
       setConversas((prev) => prev.map((c) => (
@@ -13051,7 +13061,7 @@ export default function Painel({ sessao }) {
         7000);
       return;
     }
-    registrarAlteracao({ tipo: "contato_renomeado", alvo: ct.numero, contato_id: ct.id || null,
+    registrarAlteracao({ tipo: "contato_renomeado", alvo: ct.numero, contato_id: contatoId,
                          antes: antes || (ct.nome || ""), depois: novo }, convDoNome);
   }
 
