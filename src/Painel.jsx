@@ -16380,6 +16380,51 @@ export default function Painel({ sessao }) {
   //
   // ELE SEMPRE ESCREVE A ORDEM, nos dois lugares. Um botão que só troca e não
   // conta em que estado está transforma "achei estranho" em "está quebrado".
+  // O RASTRO DO FILTRO DE QUEM PARTICIPOU: o porquê está na fita, onde ele
+  // mora no computador. NO CELULAR ELE GANHA UMA LINHA PRÓPRIA, logo abaixo da
+  // fita (25/11): com a fita numa linha só, ele seria a quinta coisa numa
+  // linha de 275 pontos, e a 360 sobravam o desenho e o X — o nome sumia, e
+  // o "Não lidas" e a etiqueta viravam um número e uma letra. UMA DEFINIÇÃO
+  // SÓ, pela régua de `controleDaOrdem`.
+  const rastroDeQuem = quemFiltra.length === 0 ? null : (
+    <span data-filtro-quem style={{ display: "flex", alignItems: "center", minWidth: 0, maxWidth: 236,
+                                    border: `1px solid ${C.greenDark}`, background: C.greenDark, color: "#fff",
+                                    borderRadius: 20, minHeight: 32, overflow: "hidden" }}>
+      <button onClick={() => setMenuQuem(true)}
+              title={`Conversas em que ${modoQuem === "todos" ? "TODAS estas pessoas falaram, na mesma conversa" : "pelo menos uma destas pessoas falou"}: ${nomesQuemFiltra.join(", ")}`}
+              style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, border: "none", background: "transparent",
+                       color: "#fff", padding: "5px 4px 5px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
+        <Users size={13} style={{ flexShrink: 0 }} />
+        {/* O NOME encolhe com reticências; o "+1" e a regra NÃO.
+            Encolhendo tudo junto, "Rodrigo Sousa +1" virava "Rodrigo
+            Sou…" e sumia justamente a informação de que havia mais
+            alguém marcado — o nome cortado ainda se reconhece, o "+1"
+            cortado vira uma informação a menos. */}
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {nomesQuemFiltra[0] || "1 pessoa"}
+        </span>
+        {nomesQuemFiltra.length > 1 && (
+          <span style={{ flexShrink: 0 }}>+{nomesQuemFiltra.length - 1}</span>
+        )}
+        {/* A REGRA aparece só quando é "todos juntos": é a estreita, a
+            que faz a lista encolher de um jeito que surpreende. A outra
+            é o comportamento que se espera de marcar dois nomes, e
+            escrever "qualquer um" ali roubava metade da pílula para
+            dizer o óbvio. Nos dois casos a frase inteira está no
+            `title` e dentro do menu. */}
+        {nomesQuemFiltra.length > 1 && modoQuem === "todos" && (
+          <span style={{ flexShrink: 0, opacity: .85, fontWeight: 500 }}>· juntos</span>
+        )}
+      </button>
+      <button onClick={() => setQuemFiltra([])} aria-label="Tirar o filtro de quem participou"
+              title="Tirar este filtro"
+              style={{ display: "flex", alignItems: "center", border: "none", background: "transparent",
+                       color: "#fff", padding: "5px 10px 5px 4px", cursor: "pointer" }}>
+        <X size={14} />
+      </button>
+    </span>
+  );
+
   const controleDaOrdem = !advogadoId ? null : (
     <span ref={ordemMenuRef} style={{ position: "relative", display: "flex", flexShrink: 0 }}>
       <button data-ordem onClick={() => setMenuOrdem((v) => !v)}
@@ -16408,7 +16453,7 @@ export default function Painel({ sessao }) {
                        border: `1px solid ${C.greenDark}`,
                        background: C.greenDark,
                        color: "#fff",
-                       borderRadius: 20, padding: "4px 9px", fontSize: 12, fontWeight: 600,
+                       borderRadius: 20, padding: estreito ? "4px 7px" : "4px 9px", fontSize: 12, fontWeight: 600,
                        cursor: "pointer", whiteSpace: "nowrap" }}>
         {/* O ÍCONE SAIU, e por medição: ele custava 17px (13 do desenho, 4 do
             vão) numa linha que estourava em 38. A PALAVRA é que é o contrato
@@ -16426,7 +16471,7 @@ export default function Painel({ sessao }) {
         {ordem === "esperando" ? "Esperando" : ordem === "antigas" ? "Antigas" : "Recentes"}
       </button>
       {menuOrdem && (
-        <div data-menu-ordem
+        <div data-menu-ordem ref={encaixarNaJanela}
              style={{ position: "absolute", top: 36, ...(estreito ? { left: 0 } : { right: 0 }), zIndex: 46, width: 244,
                       background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10,
                       boxShadow: "0 6px 20px rgba(0,0,0,.25)", overflow: "hidden" }}>
@@ -19071,14 +19116,58 @@ export default function Painel({ sessao }) {
             pessoa precisava adivinhar que dava para arrastar. */}
         {/* `position: relative` NA FITA, e não na pílula — ver o menu de mais
             filtros logo abaixo. */}
-        <div data-fita-de-filtros style={{ position: "relative", display: "flex", flexWrap: "wrap", gap: 5, padding: "0 12px 7px", background: C.panel }}>
+        {/* NO CELULAR, UMA LINHA SÓ (25/11). Pedido do Rodrigo, com a foto do
+            iPhone: a seta descia sozinha para uma segunda linha, embaixo do
+            "Tudo", e roubava 45 pontos da lista. "Essa seta precisa ficar na
+            mesma linha ali ao lado do 'Recentes' […], mantendo tudo em uma
+            única linha."
+
+            Medido na bancada, antes: Tudo 54, Não lidas 97 (com dois
+            dígitos), Recentes 73, a seta 40 e três vãos de 5 = 279 pontos.
+            A 375 a fita tem 290 por dentro e cabia; a 360, 275, e quebrava.
+            No iPhone a letra do sistema é mais larga que a das provas, e com
+            "Não lidas 103" quebrava a 393 também (a foto).
+
+            O CONSERTO TEM DUAS PARTES:
+              1. as pílulas ficam mais justas no celular (o recheio de 11
+                 para 9, o da ordem de 9 para 8, o vão de 5 para 4) — é o que
+                 faz caber o caso de todo dia, a 360 com três dígitos;
+              2. `nowrap`, e quem cede quando ainda não cabe (um celular de
+                 320, quatro dígitos, uma etiqueta escolhida) é a PALAVRA "Não
+                 lidas", com reticências — e nunca o número dela, o "Tudo", a
+                 ordem ou a seta. O número é o que a pílula diz de útil; a
+                 ordem é o contrato da palavra (ver `controleDaOrdem`); a seta
+                 é a única porta das etiquetas. A pílula da etiqueta escolhida
+                 já encolhia com reticências, e continua; as duas encolhem
+                 juntas, cada uma pelo seu tamanho.
+
+            O RASTRO DE QUEM PARTICIPOU vai para uma linha própria, logo
+            abaixo (ver `rastroDeQuem`): como quinta coisa da linha, ele e as
+            pílulas viravam um desenho, um número e uma letra.
+
+            NO COMPUTADOR, NADA MUDA: lá a fita tem 356 pontos e quebra só
+            quando o rastro de quem participou aparece, como sempre. */}
+        <div data-fita-de-filtros style={{ position: "relative", display: "flex", flexWrap: estreito ? "nowrap" : "wrap",
+                                            gap: estreito ? 4 : 5, padding: "0 12px 7px", background: C.panel }}>
           {/* "FAVORITAS" SAIU EM 24/11, a pedido do Rodrigo ("não usamos essa
               função"), junto com o "Adicionar aos favoritos" do menu da
               conversa e a estrela da linha: era o único uso da marca. */}
-          {[["tudo", "Tudo"], ["naolidas", `Não lidas${totalNaoLidasLista ? " " + totalNaoLidasLista : ""}`]].map(([k, label]) => {
+          {[["tudo", "Tudo", ""], ["naolidas", "Não lidas", totalNaoLidasLista ? String(totalNaoLidasLista) : ""]].map(([k, label, numero]) => {
             const ativo = filtro === k;
+            // Só a palavra "Não lidas" encolhe (ver a fita, logo acima): o
+            // número e o "Tudo" ficam inteiros.
+            const encolhe = estreito && k === "naolidas";
             return (
-              <button key={k} data-aba={k} onClick={() => setFiltro(k)} style={{ flexShrink: 0, minHeight: 30, border: `1px solid ${ativo ? C.greenDark : C.divider}`, background: ativo ? C.greenDark : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 20, padding: "4px 11px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
+              <button key={k} data-aba={k} onClick={() => setFiltro(k)}
+                      title={encolhe && numero ? `Não lidas: ${numero}` : undefined}
+                      style={{ flexShrink: encolhe ? 1 : 0, minWidth: encolhe ? 0 : undefined, minHeight: 30,
+                               display: "flex", alignItems: "center", justifyContent: "center", gap: 3,
+                               border: `1px solid ${ativo ? C.greenDark : C.divider}`, background: ativo ? C.greenDark : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 20, padding: estreito ? "4px 8px" : "4px 11px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+                <span data-palavra-do-filtro style={{ overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{label}</span>
+                {/* O ESPAÇO DA FRENTE some na tela (é o começo de uma linha) e fica no
+                    texto: quem lê a pílula, a gente ou uma prova, lê "Não lidas 103". */}
+                {numero && <span data-numero-do-filtro style={{ flexShrink: 0 }}>{" " + numero}</span>}
+              </button>
             );
           })}
 
@@ -19098,44 +19187,7 @@ export default function Painel({ sessao }) {
               a fita quebrava numa TERCEIRA linha e as etiquetas iam parar lá
               embaixo. Com o teto, o nome encolhe com reticências e a fita
               volta a caber em duas linhas. */}
-          {quemFiltra.length > 0 && (
-            <span data-filtro-quem style={{ display: "flex", alignItems: "center", minWidth: 0, maxWidth: 236,
-                                            border: `1px solid ${C.greenDark}`, background: C.greenDark, color: "#fff",
-                                            borderRadius: 20, minHeight: 32, overflow: "hidden" }}>
-              <button onClick={() => setMenuQuem(true)}
-                      title={`Conversas em que ${modoQuem === "todos" ? "TODAS estas pessoas falaram, na mesma conversa" : "pelo menos uma destas pessoas falou"}: ${nomesQuemFiltra.join(", ")}`}
-                      style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, border: "none", background: "transparent",
-                               color: "#fff", padding: "5px 4px 5px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
-                <Users size={13} style={{ flexShrink: 0 }} />
-                {/* O NOME encolhe com reticências; o "+1" e a regra NÃO.
-                    Encolhendo tudo junto, "Rodrigo Sousa +1" virava "Rodrigo
-                    Sou…" e sumia justamente a informação de que havia mais
-                    alguém marcado — o nome cortado ainda se reconhece, o "+1"
-                    cortado vira uma informação a menos. */}
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {nomesQuemFiltra[0] || "1 pessoa"}
-                </span>
-                {nomesQuemFiltra.length > 1 && (
-                  <span style={{ flexShrink: 0 }}>+{nomesQuemFiltra.length - 1}</span>
-                )}
-                {/* A REGRA aparece só quando é "todos juntos": é a estreita, a
-                    que faz a lista encolher de um jeito que surpreende. A outra
-                    é o comportamento que se espera de marcar dois nomes, e
-                    escrever "qualquer um" ali roubava metade da pílula para
-                    dizer o óbvio. Nos dois casos a frase inteira está no
-                    `title` e dentro do menu. */}
-                {nomesQuemFiltra.length > 1 && modoQuem === "todos" && (
-                  <span style={{ flexShrink: 0, opacity: .85, fontWeight: 500 }}>· juntos</span>
-                )}
-              </button>
-              <button onClick={() => setQuemFiltra([])} aria-label="Tirar o filtro de quem participou"
-                      title="Tirar este filtro"
-                      style={{ display: "flex", alignItems: "center", border: "none", background: "transparent",
-                               color: "#fff", padding: "5px 10px 5px 4px", cursor: "pointer" }}>
-                <X size={14} />
-              </button>
-            </span>
-          )}
+          {!estreito && rastroDeQuem}
 
           {/* ------------------------------------------------------------
               A SETINHA DO FIM DA FITA — "mais filtros"
@@ -19166,7 +19218,12 @@ export default function Painel({ sessao }) {
                 grupos escolhido    -> "Grupos ✕", verde
                 etiqueta escolhida  -> o nome dela, na cor dela
               ------------------------------------------------------------ */}
-          <span ref={etiquetasRef} style={{ display: "flex", minWidth: 0 }}>
+          {/* A SETA SOZINHA NÃO ENCOLHE: com a fita numa linha só no celular,
+              o invólucro encolhia abaixo dos 40 do botão e a seta passava da
+              borda da coluna, a 320 até fora da tela. Com uma etiqueta ou
+              "Grupos" escolhidos, ela vira pílula com nome, e o nome encolhe
+              com reticências, como sempre. */}
+          <span ref={etiquetasRef} style={{ display: "flex", minWidth: 0, flexShrink: (tagFiltrada || filtroVerde) ? 1 : 0 }}>
             <button data-mais-filtros onClick={() => setMenuEtiquetas((v) => !v)}
                     aria-expanded={menuEtiquetas} aria-haspopup="listbox"
                     aria-label={tagFiltrada ? `Filtrando por ${tagFiltrada.nome}`
@@ -19309,6 +19366,11 @@ export default function Painel({ sessao }) {
           </span>
 
         </div>
+        {estreito && rastroDeQuem && (
+          <div data-rastro-no-celular style={{ display: "flex", padding: "0 12px 7px", background: C.panel }}>
+            {rastroDeQuem}
+          </div>
+        )}
         </>)}
 
         <div ref={listaDeConversasRef} data-lista-de-conversas style={{ flex: 1, overflowY: "auto" }}

@@ -2466,7 +2466,9 @@ conforme o layout — porque a folga está em lugares diferentes em cada um.
   768px uma regra desta tela força todo botão a **40px de alvo de dedo**, e com
   quatro botões de 40 a marca ficava com 100px para um nome que pede 134. Na
   fita do celular ele não custa nada — ela já usa duas linhas, e a segunda tem
-  307px de vão com só as etiquetas dentro.
+  307px de vão com só as etiquetas dentro. **Desde 25/11 a fita do celular é
+  uma linha só**, com a ordem e a seta lado a lado — ver "A seta dos filtros
+  na linha do "Recentes", no celular (25/11)".
 
 **Duas cópias do controle divergiriam no primeiro conserto**, e divergir aqui é
 a lista virar do avesso num layout e não no outro, com a tela dizendo a mesma
@@ -10444,8 +10446,10 @@ Painel. O conserto vale para as três.
   degradê escuro que fica por baixo do nome. Na foto da tela ele se lê;
 - **a fileira de abas das Configurações continua rolando de lado no
   celular** (decisão de 05/11: é o jeito de caber sete abas em 360 pontos);
-- **a fita de filtros da lista usa duas linhas no celular** (a seta desce
-  para a segunda), e é o desenho do celular desde 16/09;
+- ~~**a fita de filtros da lista usa duas linhas no celular** (a seta desce
+  para a segunda), e é o desenho do celular desde 16/09;~~ **Mudou no dia
+  seguinte, a pedido do Rodrigo**: uma linha só — ver logo abaixo, "A seta
+  dos filtros na linha do "Recentes", no celular (25/11)";
 - **as abas da Mídia no computador andaram 2 pontos para a esquerda**: a ponta
   agora ocupa o vão depois da última aba. Não se vê;
 - **o "coberto" da varredura** são os menus e as janelas abertos, que cobrem
@@ -10488,6 +10492,72 @@ que as três abas foram medidas. Hoje o menu tem conferência nas duas larguras,
 e as abas, a conta delas antes do laço. As conferências só cresceram: a rodada
 já começada continuou valendo para as pegas, e a cópia de controle foi rodada
 de novo com a prova final (119 de 119).
+
+## A seta dos filtros na linha do "Recentes", no celular (25/11)
+
+Pedido do Rodrigo, com a foto do iPhone (a seta circulada, sozinha numa
+segunda linha embaixo do "Tudo"): *"Falei para você melhorar a
+responsividade na versão mobile, mas peguei esse print do que pode ser
+melhorado, que é essa seta que precisa ficar na mesma linha ali ao lado do
+"Recentes". Faça isso, mantendo tudo em uma única linha."*
+
+**Medido na bancada, antes:** Tudo 54, "Não lidas 10" 97, Recentes 73, a seta
+40 e três vãos de 5 = 279 pontos. A fita tem a largura da coluna menos 24 de
+recheio: 290 a 375 (cabia), 275 a 360 (quebrava). No iPhone a letra do
+sistema é mais larga que a das provas, e com "Não lidas 103" quebrava a 393
+também (a foto). A revisão de 24/11 tinha deixado as duas linhas como
+desenho, e foi essa a decisão revista.
+
+| no celular | antes | agora |
+|---|---|---|
+| a fita | `wrap` (a seta descia) | `nowrap`: uma linha só |
+| o recheio de "Tudo" e "Não lidas" | 11 | 8 |
+| o recheio da ordem | 9 | 7 |
+| o vão entre as pílulas | 5 | 4 |
+| o vão entre "Não lidas" e o número | o espaço | 3 |
+| quem cede quando não cabe | — (quebrava) | a PALAVRA "Não lidas", com reticências |
+| o rastro de quem participou | na fita | numa linha própria, logo abaixo (`data-rastro-no-celular`) |
+| o menu da ordem | saía 90 pontos para a direita, e a tela rolava de lado | `encaixarNaJanela` |
+
+**Medido depois, com "Não lidas 103":** 345 pontos de borda direita da seta
+a 360, para 347 da fita; com "Esperando", a palavra mais larga da ordem, 347
+— cabe cravado, sem cortar nada. De 375 a 430 sobra de 8 a 72.
+
+- **Quem cede é a palavra, e nunca o número, o "Tudo", a ordem ou a seta.**
+  O número é o que a pílula diz de útil; a ordem é o contrato da palavra (ver
+  "O controle da ordem tem DOIS endereços"); a seta é a única porta das
+  etiquetas. Quando cede, o `title` diz "Não lidas: 103". Acontece com
+  quatro dígitos a 360 e num celular de 320 ("N… 103"), e com uma etiqueta
+  escolhida, que encolhe junto, cada uma pelo seu tamanho ("N… 103" e
+  "Agua…" a 360);
+- **a seta sozinha não encolhe**: com `nowrap`, o invólucro dela encolhia
+  abaixo dos 40 do botão (o `minWidth: 0` de quando ela vira pílula com
+  nome), e a seta passava da borda da coluna, a 320 até fora da tela. A
+  primeira medição achou;
+- **a pílula continua se lendo "Não lidas 103"**: a palavra e o número viraram
+  dois pedaços (só a palavra encolhe), e o espaço da frente do número some na
+  tela e fica no texto. Quatro provas leem a pílula pelo texto;
+- **o rastro de quem participou ganha uma linha própria no celular**: como
+  quinta coisa de uma linha de 275 pontos, ele virava um desenho e um X, e as
+  pílulas, um número e uma letra. A definição é uma só (`rastroDeQuem`), pela
+  régua de `controleDaOrdem`;
+- **o menu da ordem cabia mal desde sempre no celular**: ancorado à esquerda
+  da pílula (`left: 0`), ele ia até 479 numa tela de 390, e a página rolava de
+  lado. A revisão de 24/11 abriu o menu da seta, e não o da ordem;
+- **no computador, nada muda**: a fita quebra como sempre, e a ordem mora na
+  linha da marca.
+
+**Fica de fora, e é decisão:** a letra das pílulas não encolheu (12,5): o que
+faltava cabia no recheio. E a 320 a palavra vira "N…", o preço de não cortar o
+número nem a ordem num celular de 2016.
+
+Prova: `a-seta-na-linha-do-recentes`, 109 conferências em sete cenas: de 360
+a 430 com "Não lidas 103" (uma linha, a seta logo depois da ordem, tudo
+dentro, pintado e inteiro, a seta com 40 pontos, o texto da pílula); 360 com
+"Esperando"; quatro dígitos e 320 (a palavra cede, o número, o "Tudo", a
+ordem e a seta não, e o `title`); a seta abre o menu; a etiqueta escolhida e
+o rastro de quem participou (numa linha própria, com o nome à vista); o menu
+da ordem na tela a 390, 360 e 320; e o computador.
 
 ## O campo de escrever do celular, como o do WhatsApp (24/11)
 
