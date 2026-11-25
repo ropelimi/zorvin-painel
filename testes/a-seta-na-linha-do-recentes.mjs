@@ -134,7 +134,8 @@ console.log("\n2. A 360, com a palavra mais larga da ordem (\"Esperando\")");
   ok("a ordem diz \"Esperando\"", (await page.locator("[data-ordem]").first().textContent().catch(() => "")) === "Esperando");
   ok("uma linha só", !!m && m.linhas === 1, JSON.stringify(m));
   ok("tudo dentro da fita", !!m && m.dentro && m.setaDentro);
-  ok("nada cortado", !!m && Object.values(m.cortados).every((v) => !v), JSON.stringify(m?.cortados));
+  ok("nada cortado", !!m && Object.keys(m.cortados).length === 4 && Object.values(m.cortados).every((v) => !v),
+     JSON.stringify(m?.cortados));
   await ctx.close();
 }
 
@@ -146,7 +147,8 @@ for (const [nome, largura, altura, naoLidas, ordem] of [
 ]) {
   const { ctx, page } = await abrir({ largura, altura, naoLidas, ordem });
   const m = await medir(page);
-  if (!m) { ok(`${nome}: a fita está lá`, false); await ctx.close(); continue; }
+  ok(`${nome}: a fita está lá`, !!m);
+  if (!m) { await ctx.close(); continue; }
   ok(`${nome}: uma linha só`, m.linhas === 1, `${m.linhas} linhas`);
   ok(`${nome}: tudo dentro da fita, e a seta também`, m.dentro && m.setaDentro, JSON.stringify(m.seta));
   ok(`${nome}: a palavra cede`, m.cortados.palavra === true, JSON.stringify(m.cortados));
@@ -235,6 +237,9 @@ console.log("\n7. No computador, nada muda");
      && await page.locator("[data-ordem]").count() === 1);
   const recheio = await page.evaluate(() => getComputedStyle(document.querySelector('[data-aba="tudo"]')).paddingLeft);
   ok("o recheio das pílulas é o de sempre (11)", recheio === "11px", recheio);
+  ok("a pílula é o texto de sempre, sem os dois pedaços do celular",
+     await page.locator('[data-aba="naolidas"] [data-palavra-do-filtro]').count() === 0
+     && (await page.locator('[data-aba="naolidas"]').innerText().catch(() => "")) === "Não lidas 103");
   ok("a pílula se lê \"Não lidas 103\"", !!m && m.texto === "Não lidas 103", String(m?.texto));
   await clicar(page, '[data-grupo="quem"]');
   await page.waitForTimeout(400);

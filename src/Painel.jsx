@@ -19161,12 +19161,19 @@ export default function Painel({ sessao }) {
               <button key={k} data-aba={k} onClick={() => setFiltro(k)}
                       title={encolhe && numero ? `Não lidas: ${numero}` : undefined}
                       style={{ flexShrink: encolhe ? 1 : 0, minWidth: encolhe ? 0 : undefined, minHeight: 30,
-                               display: "flex", alignItems: "center", justifyContent: "center", gap: 3,
+                               ...(estreito ? { display: "flex", alignItems: "center", justifyContent: "center", gap: 3 } : {}),
                                border: `1px solid ${ativo ? C.greenDark : C.divider}`, background: ativo ? C.greenDark : "transparent", color: ativo ? "#fff" : C.textSecondary, borderRadius: 20, padding: estreito ? "4px 8px" : "4px 11px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
-                <span data-palavra-do-filtro style={{ overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{label}</span>
-                {/* O ESPAÇO DA FRENTE some na tela (é o começo de uma linha) e fica no
-                    texto: quem lê a pílula, a gente ou uma prova, lê "Não lidas 103". */}
-                {numero && <span data-numero-do-filtro style={{ flexShrink: 0 }}>{" " + numero}</span>}
+                {/* NO CELULAR, A PALAVRA E O NÚMERO SÃO DOIS PEDAÇOS, para só a
+                    palavra encolher. O espaço da frente do número some na tela
+                    (é o começo de uma linha) e fica no texto: quem lê a pílula
+                    pelo texto lê "Não lidas 103". No computador, o texto de
+                    sempre, inteiro: lá nada encolhe, e quem lê o texto VISÍVEL
+                    (o `innerText`) continua lendo uma linha só — com dois
+                    pedaços num `flex`, ele lê "Não lidas" e o número em duas. */}
+                {estreito ? (<>
+                  <span data-palavra-do-filtro style={{ overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{label}</span>
+                  {numero && <span data-numero-do-filtro style={{ flexShrink: 0 }}>{" " + numero}</span>}
+                </>) : (numero ? `${label} ${numero}` : label)}
               </button>
             );
           })}
