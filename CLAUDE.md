@@ -1234,6 +1234,88 @@ Prova: `o-link-da-os-na-ficha`, 30 conferências: o link pintado, na linha do
 status e dentro da ficha, o clique que abre a aba nova, sem o número, sem a
 ordem, o número escapado, a ficha na gaveta (1100) e o celular (390).
 
+### O selo da blindagem na ficha (25/11)
+
+Pedido do Rodrigo: *"Preciso de alguma forma saber qual cliente já está
+blindado ou não."*
+
+**A regra é do Vantoro**, e não daqui: `core/blindagem.py` e a tela Blindagem
+de lá (`/cadastro/blindagem/`), escritas com o escritório em 13/11 e com o
+ajuste do Max em 16/11. Blindado é o cliente em que **cada ação distribuída**
+(com número de processo, não arquivada) tem a procuração específica
+**assinada há menos de um ano** e **juntada no processo** (marcada no Vantoro
+por quem protocolou). Só assinada, a ação está "assinada, falta juntar".
+
+**A ficha do Vantoro manda `blindagem`** (`GET /clientes/<id>`, e as respostas
+do pré-cadastro e da edição): `estado` (`completa`, `parcial`, `pendente` ou
+`sem_acao`), `total`, `blindadas`, `falta_juntar`, `vencidas`,
+`sem_procuracao`, `porcentagem` e `validade_dias`. O estado é a mesma conta
+das abas da tela de lá (`blindagem.aba`). **A busca não leva a blindagem**:
+seria uma ida ao banco por achado. **A ponte não mudou**: ela repassa a ficha
+como vem.
+
+| o estado | o selo (`data-blindagem`) |
+|---|---|
+| `completa` | verde, "Blindagem completa · as 3 ações com a procuração juntada" |
+| `parcial` | âmbar, "Blindagem parcial · 1 de 3 ações blindadas", e embaixo o que falta: "1 blindada · 1 assinada, falta juntar · 1 vencida (mais de 1 ano)" |
+| `pendente` | vermelho, "Blindagem pendente · nenhuma procuração nas 3 ações" |
+| `sem_acao` | cinza, "Sem ação distribuída · nada a blindar por enquanto", sem link |
+
+- **No alto da ficha, antes da ordem de serviço**, com o ícone do escudo, a
+  borda da cor do estado e o `title` que explica a regra;
+- **"Ver no Vantoro"** (`data-blindagem-link`) abre a **tela Blindagem** de
+  lá já pesquisada pelo nome do cliente (`/cadastro/blindagem/?q=<nome>`),
+  numa aba nova, com `noopener noreferrer`. Pedido do Rodrigo, no mesmo dia:
+  *"quero que abre a tela de Blindagem, já com o cliente pesquisado, para
+  facilitar o usuário a clicar e ir direto para o local onde fazemos as
+  procurações específicas"*. A primeira escrita abria a ficha do cliente
+  (`#juntada`). A busca de lá é **pelo nome**, por trecho, e olha todas as
+  abas (`core/views_blindagem.py`): um homônimo aparece junto, com o nome
+  inteiro na linha. O nome vai escapado e sem os espaços de sobra; sem nome,
+  a tela sem pesquisa. **Nada mudou no Vantoro**;
+- **os nomes são os das abas da tela do Vantoro**, para as duas telas dizerem
+  a mesma coisa;
+- **sem `blindagem` na resposta (um Vantoro de antes), e com um estado que o
+  Zorvin não conhece, nenhum selo**: a falta do selo não pode se ler como "não
+  blindado";
+- **a cor é a de texto do tema** (`verdeTexto`, `ambarTexto`, `erroTexto`),
+  que passa no contraste nos dois temas. As contas sem tela moram em
+  `src/blindagem.js`.
+
+**Medido no banco do Vantoro em 25/11, só contando:** 1.910 clientes com ação
+distribuída e **nenhuma juntada marcada**, ou seja, ninguém com blindagem
+completa ainda. 101 têm todas as procurações assinadas e em dia, 316 parte,
+138 só vencidas, 1.355 nenhuma. O Rodrigo está automatizando a juntada.
+
+**As etiquetas "Blindagem" (53 clientes) e "Blindagem Concluída" (7)** são a
+mesma pergunta respondida à mão, e já discordavam do Vantoro: das 7
+concluídas, só 4 tinham todas as procurações assinadas. A recomendação dada
+ao Rodrigo é aposentá-las com o selo no ar.
+
+**Fica de fora, e é decisão:** o selo na linha da lista de conversas e no
+alto da conversa (pediria a blindagem de cada cliente na lista, uma ida ao
+Vantoro por conversa), e um filtro por blindagem.
+
+Prova: `a-blindagem-na-ficha`, 66 conferências em dez cenas: a conta direto
+na função; as quatro respostas (com a cor, o resumo, as partes e o link);
+o nome na pesquisa (escapado, sem os espaços de sobra, e sem nome);
+só assinadas; sem a blindagem e com um estado desconhecido; a gaveta (1100) e
+o celular (390 e 360); e o tema escuro. Do lado do Vantoro,
+`core/tests_a_blindagem_na_ficha.py` (11 testes).
+
+**11 sabotagens e 11 pegas**, rodadas uma a uma (e a prova sem sabotagem
+passou inteira): sem o selo (o painel de antes); o "sem ação distribuída"
+com link; a completa em âmbar; as partes sem o "falta juntar"; o selo depois
+da ordem de serviço; o estado desconhecido virando selo; a falta da
+blindagem virando "pendente"; o link sem `noopener`; a linha sem quebrar (o
+link sai da ficha na gaveta e no celular); o resumo da parcial sem o total;
+e a cor escrita à mão, sem o tema (no escuro, o verde fica com 2,1:1). E as
+duas do link para a tela Blindagem: o link de antes, para a ficha (6
+reprovações), e o nome sem arrumar os espaços (1). No
+Vantoro, **5 sabotagens e 5 pegas**: sem o "sem_acao"; a busca levando a
+blindagem; a aba sem o "parcial"; a edição sem a blindagem; e a conta sem
+reaproveitar os processos que a ficha já trouxe (uma ida a mais ao banco).
+
 ### As observações do cadastro (01/10)
 
 Pedido do Rodrigo em 30/09: *"Na Ficha do Vantoro, no Zorvin, precisa

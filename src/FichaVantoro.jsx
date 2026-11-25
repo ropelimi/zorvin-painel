@@ -13,7 +13,7 @@
 // ============================================================
 import { useEffect, useState, useRef } from "react";
 import { X, Save, UserPlus, RefreshCw, ExternalLink, ChevronDown, ChevronRight,
-         MessageSquare, Plus } from "lucide-react";
+         MessageSquare, Plus, ShieldCheck, ShieldHalf, ShieldAlert, Shield } from "lucide-react";
 import { supabase } from "./supabase";
 // As regras de telefone são as MESMAS do painel, e por isso vêm do mesmo
 // lugar: decidir se o segundo número do cadastro é outra linha ou o mesmo
@@ -23,6 +23,7 @@ import { chaveDoNumero, outrosNumeros, telefoneLegivel, numeroCanonico } from ".
 // atendentes), e duas cópias divergiriam na primeira mudança.
 import { chamarPonte, BRIDGE_URL, FALTA_PONTE } from "./ponte.js";
 import { enderecoNoVantoro } from "./temVantoro.js";
+import { seloDaBlindagem } from "./blindagem.js";
 import { naoGravouNada, comOCodigo } from "./gravar.js";
 import { registrarMotivoParaEsperar, recargaPedida } from "./atualizacao.js";
 
@@ -315,6 +316,52 @@ if (typeof window !== "undefined") {
 // ficha se perderia numa recarga — e é a mesma conta do botão de salvar. Ver
 // `atualizacao.js`.
 registrarMotivoParaEsperar(() => (rascunhosDaFicha.size ? "as alterações não salvas da ficha" : null));
+
+/**
+ * O SELO DA BLINDAGEM (25/11): "saber qual cliente já está blindado ou não".
+ * A regra e a conta são do Vantoro (a tela Blindagem); o selo escreve a aba que
+ * ela mostraria, o que falta e leva à tela Blindagem de lá, já pesquisada pelo
+ * nome do cliente (25/11, a pedido do Rodrigo: é ali que se fazem as procurações
+ * específicas; a busca de lá é pelo nome, e olha todas as abas). Sem
+ * `blindagem` na resposta (um Vantoro de antes), nada: a falta do selo não pode
+ * se ler como "não blindado". Ver src/blindagem.js.
+ */
+function SeloDaBlindagem({ cliente, C }) {
+  const selo = seloDaBlindagem(cliente.blindagem);
+  if (!selo) return null;
+  const cor = { verde: C.verdeTexto, ambar: C.ambarTexto, vermelho: C.erroTexto, neutro: C.textSecondary }[selo.tom];
+  const Icone = { completa: ShieldCheck, parcial: ShieldHalf, pendente: ShieldAlert, sem_acao: Shield }[selo.estado];
+  const nomeNaBusca = String(cliente.nome || "").replace(/\s+/g, " ").trim();
+  const explicacao = "Blindado: cada ação distribuída com a procuração específica assinada há menos de 1 ano "
+    + "e juntada no processo. A conta é a da tela Blindagem do Vantoro.";
+  return (
+    <div data-blindagem={selo.estado} title={explicacao}
+         style={{ background: C.listActive, borderRadius: 9, padding: "9px 12px", marginBottom: 14,
+                  borderLeft: `3px solid ${cor}` }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+        <Icone size={16} color={cor} aria-hidden="true" style={{ flexShrink: 0 }} />
+        <b data-blindagem-titulo style={{ fontSize: 13, color: cor }}>{selo.titulo}</b>
+        <span data-blindagem-resumo style={{ fontSize: 12.5, color: C.textSecondary }}>· {selo.resumo}</span>
+        {selo.estado !== "sem_acao" && (
+          <a data-blindagem-link
+             href={enderecoNoVantoro(nomeNaBusca
+               ? `/cadastro/blindagem/?q=${encodeURIComponent(nomeNaBusca)}` : "/cadastro/blindagem/")}
+             target="_blank" rel="noopener noreferrer"
+             title="Abrir a tela Blindagem do Vantoro já com este cliente pesquisado (é lá que se fazem as procurações específicas), numa aba nova"
+             style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4,
+                      fontSize: 12, color: C.link, textDecoration: "none", whiteSpace: "nowrap" }}>
+            <ExternalLink size={12} /> Ver no Vantoro
+          </a>
+        )}
+      </div>
+      {selo.partes.length > 0 && (
+        <div data-blindagem-partes style={{ fontSize: 12, color: C.textSecondary, marginTop: 4, lineHeight: 1.45 }}>
+          {selo.partes.join(" · ")}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function FichaVantoro({ numero, nomeContato, C, estreito, sobreposta = false, quem = "", onFechar, onAviso, aoLigarCadastro, aoConversarPor }) {
   const [carregando, setCarregando] = useState(true);
@@ -1876,6 +1923,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
 
         {!carregando && !erro && cliente && (
           <div>
+            <SeloDaBlindagem cliente={cliente} C={C} />
             {cliente.ordem_servico && (
               <div style={{
                 background: C.listActive, borderRadius: 9, padding: "10px 12px", marginBottom: 14,
