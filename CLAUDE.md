@@ -10548,9 +10548,18 @@ a 360, para 347 da fita; com "Esperando", a palavra mais larga da ordem, 347
   media a tela por `innerWidth`, e no celular, quando algo transborda, o
   navegador alarga a janela visível até caber: `innerWidth` passa a dizer 465
   numa tela de 390, e o menu que passava da borda "cabia". Hoje ele mede pela
-  largura do documento (`clientWidth`), que continua sendo a tela. Vale para os
-  dez menus que o usam (os selos da linha do número, o emoji, os filtros da
-  tela Esperando resposta, a ordem);
+  largura do documento (`clientWidth`), que continua sendo a tela;
+- **e empurrado, o menu deixava a página rolando de lado.** O empurrão era
+  pela propriedade `translate`, e o Chromium calcula a largura da página
+  quando o menu nasce, ainda fora da tela, e não a refaz quando só o
+  `translate` muda: o menu aparecia dentro, e a página continuava com 472
+  pontos numa tela de 390. Hoje ele anda pela margem da esquerda, que é posição
+  de verdade, e a conta é refeita. O menu que pende da direita (`right`) não
+  anda pela margem da esquerda, e para ele fica o `translate` de antes: ele só
+  transborda pela esquerda, e o que passa da borda esquerda não faz a página
+  rolar. As duas mudanças valem para os dez menus que usam o `encaixarNaJanela`
+  (os selos da linha do número, o emoji, os filtros da tela Esperando resposta
+  e a ordem);
 - **no computador, a pílula é o texto de sempre**: os dois pedaços (a palavra e
   o número num `flex`) são só do celular. No computador nada encolhe, e quem lê
   o texto visível (`innerText`) continua lendo "Não lidas 500" numa linha; com
@@ -10562,13 +10571,50 @@ a 360, para 347 da fita; com "Esperando", a palavra mais larga da ordem, 347
 faltava cabia no recheio. E a 320 a palavra vira "N…", o preço de não cortar o
 número nem a ordem num celular de 2016.
 
-Prova: `a-seta-na-linha-do-recentes`, 109 conferências em sete cenas: de 360
-a 430 com "Não lidas 103" (uma linha, a seta logo depois da ordem, tudo
+Prova: `a-seta-na-linha-do-recentes`, 112 conferências em sete cenas: de
+360 a 430 com "Não lidas 103" (uma linha, a seta logo depois da ordem, tudo
 dentro, pintado e inteiro, a seta com 40 pontos, o texto da pílula); 360 com
 "Esperando"; quatro dígitos e 320 (a palavra cede, o número, o "Tudo", a
 ordem e a seta não, e o `title`); a seta abre o menu; a etiqueta escolhida e
 o rastro de quem participou (numa linha própria, com o nome à vista); o menu
-da ordem na tela a 390, 360 e 320; e o computador.
+da ordem na tela, e a página sem rolar de lado, a 390, 360 e 320; e o
+computador (a fita quebra, o recheio de sempre, a pílula com o texto de
+sempre).
+
+**15 sabotagens e 15 pegas**, rodadas uma a uma (e a cópia de controle passou
+inteira):
+
+- o painel de antes inteiro (25 reprovações — é o pedido reproduzido: duas
+  linhas a 360);
+- **a linha:** o `wrap` de volta no celular; o recheio e o vão de antes; a
+  seta sozinha encolhendo (ela sai da fita); o `nowrap` também no computador;
+- **quem cede:** a palavra sem encolher (a seta sai da fita); o número
+  encolhendo junto; o "Tudo" encolhendo; sem o espaço do número (a pílula se
+  lê "Não lidas103"); sem o `title`;
+- **o rastro** na fita do celular;
+- **o menu da ordem:** sem o `encaixarNaJanela`; o encaixe medindo por
+  `innerWidth` (o de antes); o encaixe pelo `translate` (o de antes: o menu
+  dentro e a página rolando de lado);
+- **e os dois pedaços também no computador**, pegos também pela
+  `os-filtros-nao-afirmam-ausencia`.
+
+**A primeira rodada teve duas que vazaram, e as duas eram pontos cegos da
+prova:**
+
+- **o menu da ordem sem o encaixe passava**, porque a prova media a tela por
+  `innerWidth`, e o celular emulado (`isMobile`) alarga a janela visível até
+  caber o que transbordou: 465 numa tela de 390. Medida pelo `clientWidth` do
+  documento, a prova reprovou também COM o encaixe: o `encaixarNaJanela`
+  media pelo mesmo `innerWidth`, e o `translate` deixava a página rolando. Os
+  dois consertos acima vieram daí;
+- **o "Tudo" encolhendo passava**, porque o `scrollWidth` não vê o texto
+  comendo o recheio da pílula: ele encolhia 10 pontos, o texto colava na
+  borda, e as duas contas continuavam iguais. Hoje "cortado" é também o texto
+  que sai de dentro do recheio.
+
+**No celular emulado, a tela se mede por `document.documentElement.clientWidth`,
+e não por `innerWidth`.** Onze provas medem com `innerWidth` e `isMobile`, e
+podem estar cegas do mesmo jeito: fica em aberto.
 
 ## O campo de escrever do celular, como o do WhatsApp (24/11)
 
