@@ -36,6 +36,9 @@ export const TELAS_DA_GUIA = {
   // `ligacoes.js`. Numa guia própria: a ligação continua enquanto a pessoa
   // trabalha nas conversas na outra.
   ligacoes: "Ligações (teste)",
+  // AS CONVERSAS DO QUAZAR (25/11): o que o assistente escreveu aos clientes,
+  // com quanto cada um esperava — ver `ConversasDoQuazar.jsx`.
+  quazar: "Conversas do Quazar",
 };
 
 const parametros = (busca) => {
