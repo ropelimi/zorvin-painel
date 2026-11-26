@@ -683,6 +683,11 @@ const RELER_A_EQUIPE_MS =
 // ============================================================
 const TELA_DA_GUIA = telaDaGuia();
 
+// A MENSAGEM QUE VEM PELO LINK DO VANTORO (`texto=`, 26/11) entra na caixa
+// com no máximo 2000 caracteres: o resto de um endereço comprido demais não
+// é mensagem de WhatsApp que alguém leia antes de mandar.
+const MAXIMO_DA_MENSAGEM_DO_LINK = 2000;
+
 // QUANDO A CONVERSA É RELIDA SE A BOLHA ENVIADA NÃO FOR CONFIRMADA PELO TEMPO
 // REAL (20/10) — ver `agendarConferenciaDoEnvio`. A ponte manda um texto em
 // dois a quatro segundos (MEDIDO em 20/10: 90% em até 3,3 s); doze dão folga
@@ -8031,7 +8036,11 @@ export default function Painel({ sessao }) {
   // hoje só o link da Esteira do Vantoro faz isso, quando a pessoa escolhe por
   // qual dos telefones do escritório quer falar. Sem o parâmetro, é o de
   // sempre: o telefone selecionado na barra lateral.
-  async function abrirConversaContato(cont, advAlvo) {
+  //
+  // `antesDeAbrir` (26/11) é o gancho de `verConversaDoHistorico`: roda
+  // depois de a linha ser lida e antes de qualquer troca na tela — é onde a
+  // mensagem do link vira o rascunho da conversa que vai abrir.
+  async function abrirConversaContato(cont, advAlvo, { antesDeAbrir } = {}) {
     const advId = advAlvo || advogadoId;
     if (!advId) { mostrarAviso(`Escolha ${voc.um} ${voc.singular} na barra lateral primeiro.`); return; }
     const { data: conv, error } = await supabase.from("conversas")
@@ -8049,6 +8058,7 @@ export default function Painel({ sessao }) {
     // telefone nem fecha a janela — ver `lerConversaParaAbrir`.
     const linha = await lerConversaParaAbrir(conv.id);
     if (!linha) return;
+    if (antesDeAbrir) antesDeAbrir(linha);
     // Trocar de telefone é trocar de departamento junto: a barra lateral filtra
     // os telefones pelo departamento aberto, e deixar os dois em desacordo
     // esconderia da lista justamente a conversa que se acabou de abrir.
@@ -8269,6 +8279,27 @@ export default function Painel({ sessao }) {
   // Roda uma vez só. O endereço é limpo em seguida, senão atualizar a página
   // reabriria a conversa por cima de onde a pessoa estivesse — e um F5 que
   // muda de conversa sozinho é um painel que não se deixa usar.
+  //
+  // A MENSAGEM PRONTA DA VANDA (26/11): `texto=` e `melhorar=1`. Pedido do
+  // escritório: *"se alguém falar para ela enviar uma mensagem no WhatsApp do
+  // cliente, ela diz que vai pedir para o nosso amigo pato Quazar que é bom de
+  // papo melhorar o texto e enviar para o cliente, aí abre o Zorvin na
+  // conversa com o cliente, e ao clicar em qual telefone queremos ter a
+  // conversa já abrir com a mensagem escrita pronta para enviar ao cliente."*
+  //
+  //   - O TEXTO VAI PARA A CAIXA DE ESCREVER, COMO RASCUNHO, E NÃO SAI
+  //     SOZINHO: quem manda é a pessoa, depois de ler. É o caminho da
+  //     mensagem pronta do lembrete (`mensagemProntaNaCaixa`), e vale nos
+  //     três caminhos do link — o telefone único, o `de=` que casa e a
+  //     janela de escolher o telefone (a mensagem espera a escolha);
+  //   - CORTADO EM 2000 CARACTERES, E SÓ ISSO: o conteúdo é o que a Vanda
+  //     escreveu, sem tirar espaço nem quebra de linha. O corte não parte um
+  //     emoji ao meio (conta por caractere, e não por pedaço do JavaScript);
+  //   - COM `melhorar=1`, O QUAZAR MELHORA o texto depois que ele está na
+  //     caixa, exatamente como o botão (`melhorarComCopiloto`) — e o
+  //     melhorado também não sai sozinho. Sem o "Melhorar o texto" na ponte,
+  //     o texto fica como veio, sem erro;
+  //   - SEM `texto=`, NADA MUDA.
   const linkJaUsado = useRef(false);
   useEffect(() => {
     if (linkJaUsado.current || !advogadoId) return;
@@ -8288,6 +8319,7 @@ export default function Painel({ sessao }) {
       const numero = numeroCanonico(pedido);
       if (numero.length < 8) { mostrarAviso("O link veio com um número incompleto."); return; }
       const nome = (params.get("nome") || "").trim();
+      const mensagem = mensagemDoLink(params);
       const cont = await contatoExistente(numero);
       if (cont && cont.falhou) {
         mostrarAviso(comOCodigo("Não consegui conferir se este número já é um contato, e não abri a conversa. Abra o link de novo em instantes.",
@@ -8295,7 +8327,7 @@ export default function Painel({ sessao }) {
         return;
       }
 
-      if (advogadosPermitidos.length <= 1) { await conversarPeloLink(cont, numero, nome); return; }
+      if (advogadosPermitidos.length <= 1) { await conversarPeloLink(cont, numero, nome, undefined, mensagem); return; }
 
       // O LINK PODE DIZER "POR ONDE", e aí não há o que perguntar.
       //
@@ -8315,7 +8347,7 @@ export default function Painel({ sessao }) {
       if (pedidoDe) {
         const alvo = advogadosPermitidos.find(
           (a) => chaveDoNumero(a.numero) === chaveDoNumero(pedidoDe));
-        if (alvo) { await conversarPeloLink(cont, numero, nome, alvo.id); return; }
+        if (alvo) { await conversarPeloLink(cont, numero, nome, alvo.id, mensagem); return; }
       }
 
       // ONDE JÁ EXISTE CONVERSA COM ESTA PESSOA. É o que transforma a escolha
@@ -8391,7 +8423,7 @@ export default function Painel({ sessao }) {
         if (a.temConversa && quando(a) !== quando(b)) return quando(b) - quando(a);
         return String(a.adv.nome || "").localeCompare(String(b.adv.nome || ""));
       });
-      setEscolhaTelefone({ contato: cont, numero, nome, opcoes, naoConferi, semSugestao });
+      setEscolhaTelefone({ contato: cont, numero, nome, opcoes, naoConferi, semSugestao, mensagem });
     })();
     // `advogadoId` é a única dependência de verdade: é ele que decide de QUAL
     // telefone do escritório a conversa é, e ele chega depois da primeira
@@ -8708,7 +8740,11 @@ export default function Painel({ sessao }) {
   // Abre a conversa do link, criando o contato só se ele ainda não existir.
   // A criação fica para DEPOIS da escolha do telefone de propósito: quem
   // desiste no meio não deixa para trás um contato que ninguém pediu.
-  async function conversarPeloLink(contato, numero, nome, advAlvo) {
+  //
+  // `mensagem` é a do link (`mensagemDoLink`, 26/11): ela vira o rascunho da
+  // conversa DEPOIS de a linha ser lida (`antesDeAbrir`), a régua do lembrete
+  // — a conversa que não abre não fica com uma mensagem esperando na caixa.
+  async function conversarPeloLink(contato, numero, nome, advAlvo, mensagem) {
     let cont = contato;
     if (!cont) {
       const { data, error } = await supabase.from("contatos")
@@ -8722,7 +8758,35 @@ export default function Painel({ sessao }) {
       cont = data;
       carregarContatos();
     }
-    await abrirConversaContato(cont, advAlvo);
+    await abrirConversaContato(cont, advAlvo,
+      mensagem ? { antesDeAbrir: (linha) => mensagemDoLinkNaCaixa(linha, mensagem) } : {});
+  }
+
+  // O QUE O LINK TRAZ PARA A CAIXA (26/11): `texto=`, cortado em 2000
+  // caracteres e sem mexer no conteúdo, e `melhorar=1`. Sem texto (ou só com
+  // espaços), nada: o link abre a conversa como sempre abriu.
+  function mensagemDoLink(params) {
+    const bruto = params.get("texto") || "";
+    if (!bruto.trim()) return null;
+    const texto = Array.from(bruto).slice(0, MAXIMO_DA_MENSAGEM_DO_LINK).join("");
+    return { texto, melhorar: params.get("melhorar") === "1" };
+  }
+
+  // A MENSAGEM DO LINK ENTRA NA CAIXA da conversa que vai abrir, pelo mesmo
+  // caminho da mensagem pronta do lembrete: as variáveis preenchidas
+  // (`{nome}` com o nome do alto da conversa), a pergunta antes de trocar
+  // um texto que já esteja escrito, e nada enviado. Entrou, a tela diz; e com
+  // `melhorar=1` o Quazar é chamado quando o rascunho estiver de fato na
+  // caixa da conversa aberta (`melhorarDoLinkRef`).
+  function mensagemDoLinkNaCaixa(linha, mensagem) {
+    const texto = textoProntoPara(mensagem.texto, linha && linha.contato);
+    const entrou = mensagemProntaNaCaixa(linha.id, texto, {
+      pergunta: "A caixa desta conversa já tem um texto escrito. Trocar pela mensagem que veio do Vantoro?",
+      oQue: "a mensagem que veio do Vantoro",
+    });
+    if (!entrou) return;
+    mostrarAviso("A mensagem que veio do Vantoro está na caixa. Confira e envie.", 7000);
+    melhorarDoLinkRef.current = mensagem.melhorar ? { conversaId: linha.id, texto, chegou: false } : null;
   }
 
   // ---- Importar histórico do WhatsApp em LOTE (vários .txt exportados) ----
@@ -14879,30 +14943,17 @@ export default function Painel({ sessao }) {
     // O NOME SAI DO CONTATO DA CONVERSA. Quem chama manda o que já tem; a
     // guia aberta só com o número da tarefa (02/11) não tem contato nenhum, e
     // usa o da linha lida ao abrir a conversa (`antesDeAbrir`).
-    const textoPara = (ct) => {
-      const grupo = String(ct?.numero || "").startsWith("grupo:");
-      return preencherVariaveis(mensagem, {
-        cliente: ct && !grupo ? nomeDoContato(ct) : "", atendente: meuNome, agora: new Date(),
-      });
+    const texto = textoProntoPara(mensagem, contato);
+    const doLembrete = {
+      pergunta: "A caixa desta conversa já tem um texto escrito. Trocar pela mensagem do lembrete?",
+      oQue: "a mensagem do lembrete",
     };
-    const texto = textoPara(contato);
-    const outroTexto = (t, alvoTexto = texto) => Boolean(String(t || "").trim()) && String(t).trim() !== alvoTexto.trim();
-    const PERGUNTA = "A caixa desta conversa já tem um texto escrito. Trocar pela mensagem do lembrete?";
     if (String(conversaIdRef.current || "") === String(alvo)) {
-      if (editandoRef.current) {
-        mostrarAviso("Termine ou cancele a edição da mensagem antes de usar a mensagem do lembrete.", 7000);
-        return false;
-      }
-      if (outroTexto(rascunhoRef.current) && !window.confirm(PERGUNTA)) return false;
-      setModoNota(false);
-      colocarNaCaixa(texto);
+      if (!mensagemProntaNaCaixa(alvo, texto, doLembrete)) return false;
     } else {
       const abriu = await verConversaDoHistorico({ advogadoId, conversaId: alvo }, {
         antesDeAbrir: (linha) => {
-          const t = contato ? texto : textoPara(linha && linha.contato);
-          const guardado = rascunhosRef.current[alvo];
-          if (guardado && outroTexto(guardado.texto, t) && !window.confirm(PERGUNTA)) return;
-          rascunhosRef.current[alvo] = { texto: t, nota: false };
+          mensagemProntaNaCaixa(alvo, contato ? texto : textoProntoPara(mensagem, linha && linha.contato), doLembrete);
         },
       });
       if (!abriu) return false;
@@ -14910,6 +14961,84 @@ export default function Painel({ sessao }) {
     avisarSeOClienteEscreveuPorUltimo(alvo);
     return true;
   }
+
+  // A MENSAGEM PRONTA, COM AS VARIÁVEIS PREENCHIDAS pela conta das rápidas: o
+  // nome do alto da conversa (o grupo não ganha nome), quem está atendendo e
+  // a saudação pela hora. Serve ao lembrete e à mensagem do link (26/11).
+  function textoProntoPara(mensagem, ct) {
+    const grupo = String(ct?.numero || "").startsWith("grupo:");
+    return preencherVariaveis(mensagem, {
+      cliente: ct && !grupo ? nomeDoContato(ct) : "", atendente: meuNome, agora: new Date(),
+    });
+  }
+
+  // A MENSAGEM PRONTA NA CAIXA DA CONVERSA `alvo` — UMA REGRA SÓ PARA O
+  // LEMBRETE E PARA O LINK DO VANTORO (26/11). A mensagem do link chegou
+  // pedindo exatamente o que o lembrete já fazia, e duas cópias da mesma
+  // regra divergem no primeiro conserto. Devolve se a mensagem entrou.
+  //
+  //   - A CONVERSA ABERTA: a edição em curso não é trocada (a tela diz para
+  //     terminar ou cancelar), a caixa com outro texto pergunta, a nota vira
+  //     mensagem, e o texto entra na caixa;
+  //   - A CONVERSA QUE AINDA VAI ABRIR: o rascunho guardado com outro texto
+  //     pergunta, e a mensagem vira o rascunho dela — é o que a troca de
+  //     conversa põe na caixa.
+  //
+  // Com a mesma mensagem já na caixa, não há o que perguntar.
+  function mensagemProntaNaCaixa(alvo, texto, { pergunta, oQue }) {
+    const outroTexto = (t) => Boolean(String(t || "").trim()) && String(t).trim() !== texto.trim();
+    if (String(conversaIdRef.current || "") === String(alvo)) {
+      if (editandoRef.current) {
+        mostrarAviso(`Termine ou cancele a edição da mensagem antes de usar ${oQue}.`, 7000);
+        return false;
+      }
+      if (outroTexto(rascunhoRef.current) && !window.confirm(pergunta)) return false;
+      setModoNota(false);
+      colocarNaCaixa(texto);
+      return true;
+    }
+    const guardado = rascunhosRef.current[alvo];
+    if (guardado && outroTexto(guardado.texto) && !window.confirm(pergunta)) return false;
+    rascunhosRef.current[alvo] = { texto, nota: false };
+    return true;
+  }
+
+  // ------------------------------------------------------------
+  //  O QUAZAR MELHORA A MENSAGEM QUE VEIO DO VANTORO (26/11)
+  //
+  //  Com `melhorar=1` no link, a Vanda pede ao Quazar, "que é bom de papo",
+  //  para melhorar o texto antes de ele ir ao cliente. O gesto é o do botão
+  //  (`melhorarComCopiloto`), e não um caminho novo: a faixa, o "Voltar ao
+  //  meu texto", a marca 'melhorada' e — o principal — O TEXTO MELHORADO NÃO
+  //  SAI SOZINHO. Quem envia é a pessoa.
+  //
+  //  - SÓ DEPOIS DE O RASCUNHO ESTAR NA CAIXA DA CONVERSA ABERTA: o botão lê
+  //    `rascunhoRef.current`, e a conversa do link abre em passos (a linha, o
+  //    telefone, a aba, e só então a caixa). Chamado antes, ele melhoraria
+  //    a caixa da conversa de antes, ou nada;
+  //  - UMA VEZ SÓ: disparado, o pedido sai do ref;
+  //  - SÓ COM O "MELHORAR O TEXTO" DISPONÍVEL (`podeMelhorar`). Enquanto a
+  //    ponte não respondeu se melhora, ele espera; a ponte que não melhora
+  //    deixa o texto como veio, sem erro;
+  //  - QUEM MEXEU NA CAIXA OU SAIU DA CONVERSA depois de a mensagem chegar
+  //    decidiu por si: o pedido é esquecido, e nada é trocado.
+  // ------------------------------------------------------------
+  const melhorarDoLinkRef = useRef(null);
+  useEffect(() => {
+    const pedido = melhorarDoLinkRef.current;
+    if (!pedido) return;
+    if (String(conversaId || "") !== String(pedido.conversaId) || rascunho !== pedido.texto) {
+      if (pedido.chegou) melhorarDoLinkRef.current = null;
+      return;
+    }
+    pedido.chegou = true;
+    if (estadoDoCopiloto === null) return;
+    if (!melhorarDisponivel || linhaDesativada) { melhorarDoLinkRef.current = null; return; }
+    if (!podeMelhorar) return;
+    melhorarDoLinkRef.current = null;
+    melhorarComCopiloto();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversaId, rascunho, estadoDoCopiloto, melhorarDisponivel, linhaDesativada, podeMelhorar]);
 
   // A PERGUNTA É AO BANCO (a última linha de `mensagens` da conversa), e não à
   // tela: a conversa que acabou de abrir ainda está carregando. A leitura que
@@ -23206,7 +23335,7 @@ export default function Painel({ sessao }) {
               const escolher = async (adv) => {
                 const e = escolhaTelefone;
                 setEscolhaTelefone(null);
-                await conversarPeloLink(e.contato, e.numero, e.nome, adv.id);
+                await conversarPeloLink(e.contato, e.numero, e.nome, adv.id, e.mensagem);
               };
               const titulo = (texto, marca) => (
                 <div data-titulo-do-grupo={marca} style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase",

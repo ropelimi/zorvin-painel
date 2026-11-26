@@ -8238,6 +8238,54 @@ novo, é pega por 52 conferências.
 **`a-sugestao-do-quazar-fica-marcada` foi INVERTIDA, e não apagada**: os sete
 cabeçalhos da tabela viraram oito.
 
+## A mensagem pronta pelo link do Vantoro — a Vanda e o Quazar (26/11)
+
+Pedido do escritório: *"A Vanda precisa ser amiga do Quazar. Por exemplo, se
+alguém falar para ela enviar uma mensagem no WhatsApp do cliente, ela diz que
+vai pedir para o nosso amigo pato Quazar que é bom de papo melhorar o texto e
+enviar para o cliente, aí abre o Zorvin na conversa com o cliente, e ao clicar
+em qual telefone queremos ter a conversa já abrir com a mensagem escrita pronta
+para enviar ao cliente."* A Vanda é a assistente de IA do Vantoro.
+
+O link de sempre (`?telefone=55…&nome=…&de=…`) ganhou dois parâmetros:
+
+| parâmetro | o quê |
+|---|---|
+| `texto` | a mensagem que a Vanda escreveu. Entra **na caixa de escrever**, como rascunho, cortada em 2000 caracteres (por caractere: não parte emoji) e sem mexer no conteúdo. As variáveis das rápidas (`{nome}`, `{saudacao}`, `{atendente}`) são preenchidas |
+| `melhorar` | `1` chama o "Melhorar o texto" do Quazar (`melhorarComCopiloto`) depois que o texto está na caixa da conversa aberta |
+
+- **Nada sai sozinho**, nem o texto do link, nem o melhorado: quem envia é a
+  pessoa, depois de ler. É a régua da sugestão e do lembrete;
+- **vale nos três caminhos do link**: o telefone único, o `de=` que casa e a
+  janela "Falar por qual telefone?" — a mensagem espera a escolha;
+- **o caminho é o da mensagem pronta do lembrete** (`mensagemProntaNaCaixa`,
+  a mesma regra para os dois): a caixa com outro texto pergunta ("Trocar pela
+  mensagem que veio do Vantoro?"), a edição em curso não é trocada, a nota
+  vira mensagem, e o rascunho só é escrito depois de a linha ser lida
+  (`antesDeAbrir`, que `abrirConversaContato` passou a aceitar);
+- **entrou, a tela diz**: "A mensagem que veio do Vantoro está na caixa.
+  Confira e envie.";
+- **o Quazar só é chamado uma vez, e só com o rascunho de fato na caixa**
+  (`melhorarDoLinkRef`): a conversa abre em passos, e o botão lê a caixa da
+  conversa aberta. Enquanto a ponte não respondeu se melhora, espera; a ponte
+  que não melhora deixa o texto como veio, sem erro; quem mexeu na caixa ou
+  saiu da conversa antes decidiu por si, e o pedido é esquecido;
+- **sem `texto=`, nada muda.**
+
+Prova: `a-mensagem-pronta-pelo-link`, 43 conferências em cinco cenas: o `de=`
+que casa (o `{nome}` preenchido, a fila vazia, o Quazar não chamado); a janela
+de escolha com `melhorar=1` (um pedido só, com o texto e a conversa certos, o
+melhorado na caixa com a faixa, nada na fila, e o "Voltar ao meu texto"
+devolvendo o que veio do Vantoro); a ponte que não melhora; o corte em 2000
+com o emoji no limite, para o contato novo; e o link sem `texto=`.
+
+**Sabotagens, rodadas uma a uma:** o painel de antes inteiro (17
+reprovações); o corte por pedaço do JavaScript (parte o emoji); o melhorar
+sem olhar a ponte (3). **E uma que vaza com razão:** chamar o Quazar sem
+conferir que a caixa já tem o texto do link. O `podeMelhorar` exige texto na
+caixa da conversa aberta, e a conversa do link abre com a caixa vazia: é a
+segunda guarda — a régua de 25/09.
+
 ## O Quazar de dia no SAC, em ensaio (19/11)
 
 Pedido do Rodrigo: o Quazar lê as conversas, os andamentos e as intimações do
