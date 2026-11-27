@@ -16391,7 +16391,7 @@ export default function Painel({ sessao }) {
     // lidas" ou uma etiqueta ligados, a lista vazia dizia "Nenhuma
     // conversa ainda" — sobre o telefone inteiro, que ela acabou de ver cheio.
     : filtro === "naolidas" ? ["sem-nao-lidas", "Nenhuma conversa com mensagem por ler nesta aba."]
-    : filtro.startsWith("tag:") ? ["sem-etiqueta", "Nenhuma conversa com esta etiqueta neste telefone."]
+    : filtro.startsWith("tag:") ? ["sem-etiqueta", "Nenhuma conversa com esta etiqueta, em nenhum telefone."]
     : temSituacao === true && filtro === "tudo" && ABA_VAZIA[abaSituacao]
       ? [`sem-conversa-${abaSituacao}`, ABA_VAZIA[abaSituacao]]
     : ["sem-conversa", "Nenhuma conversa ainda."];
