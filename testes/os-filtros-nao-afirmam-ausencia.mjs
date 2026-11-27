@@ -208,7 +208,9 @@ console.log("\n5. A etiqueta");
 {
   const { ctx, page, estouros } = await abrir({ semente: { tags: [{ id: "t-sem-uso", nome: "Sem uso", cor: "#888888" }] } });
   await lento(page, "conversa_tags", 2500);
-  ok("escolhi “Urgente” num telefone que não tem nenhuma", await naGaveta(page, '[data-etiqueta-da-seta="t-urgente"]'));
+  // Desde 27/11 o filtro por etiqueta procura em todos os telefones: a
+  // “Urgente” do telefone Arquivo aparece daqui. A etiqueta vazia é a “Sem uso”.
+  ok("escolhi “Sem uso”, que nenhuma conversa tem", await naGaveta(page, '[data-etiqueta-da-seta="t-sem-uso"]'));
   await page.waitForTimeout(600);
   ok("com o banco ainda no ar, a lista diz que procura — e não “Nenhuma conversa ainda.”",
      (await marca(page)) === "procurando-filtro", String(await marca(page)));
@@ -220,9 +222,13 @@ console.log("\n5. A etiqueta");
   ok("com a resposta, a frase é da etiqueta, e não do telefone", r && r.marca === "sem-etiqueta"
      && /com esta etiqueta/.test(r.texto) && !/Nenhuma conversa ainda/.test(r.texto), JSON.stringify(r));
 
+  ok("e diz que não há em telefone nenhum", r && /em nenhum telefone/.test(r.texto), JSON.stringify(r));
+
   // A ETIQUETA SEM CONVERSA NENHUMA, depois de uma falha: a faixa apaga.
   await normal(page);
   await quebrar(page, ["conversa_tags"]);
+  await naGaveta(page, '[data-etiqueta-da-seta="t-urgente"]');
+  await page.waitForTimeout(800);
   await naGaveta(page, '[data-etiqueta-da-seta="t-sem-uso"]');
   await page.waitForTimeout(2500);
   ok("a leitura da etiqueta falhou, e a lista diz", (await marca(page)) === "falhou-filtro", String(await marca(page)));
