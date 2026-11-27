@@ -84,6 +84,9 @@ import ResumoDaConversa from "./ResumoDaConversa.jsx";
 import { NOME_DO_ASSISTENTE } from "./assistente.js";
 import { semAColunaDoQuazar } from "./conversasDoQuazar.js";
 import { RostoDoAssistente } from "./RostoDoAssistente.jsx";
+/** A nota interna que o Quazar deixa (script 068 da ponte): assinada com o nome dele, sem conta. */
+const ehNotaDoQuazar = (m, quem) => m?.origem === "nota" && !quem?.id && !m?.autor_id
+  && String(m?.autor || "").trim().toLowerCase() === NOME_DO_ASSISTENTE.toLowerCase();
 const TITULO_DO_QUAZAR_NA_BOLHA = `Resposta automática do ${NOME_DO_ASSISTENTE}, o assistente virtual, com o escritório fechado: ninguém da equipe a escreveu.`;
 // A MENSAGEM QUE SAIU DO "SUGERIR RESPOSTA" (18/11): um rosto pequeno do
 // Quazar ao lado da hora, só na tela da equipe (o cliente recebe o texto e
@@ -3016,7 +3019,19 @@ const ListaDeBolhas = React.memo(function ListaDeBolhas({
               </div>
               )}
             </div>
-            <div style={{ width: 28, flexShrink: 0 }}><Avatar nome={quem.nome || "equipe"} foto={quem.foto} size={28} /></div>
+            {/* A NOTA DO QUAZAR (o aviso de quem pede atenção, script 068 da
+                ponte) é assinada "Quazar", sem conta, e aparecia com um "Q"
+                num círculo. Pedido do Rodrigo em 27/11: o rosto dele, como a
+                foto dos demais. */}
+            <div style={{ width: 28, flexShrink: 0 }}>{ehNotaDoQuazar(m, quem)
+              ? <span data-avatar-nota-quazar="" title={`${NOME_DO_ASSISTENTE}, o assistente virtual, deixou esta nota interna.`}
+                      aria-label={`${NOME_DO_ASSISTENTE}, assistente virtual`}
+                      style={{ width: 28, height: 28, boxSizing: "border-box", borderRadius: "50%", background: C.bubbleIn,
+                              border: `1px solid ${C.divider}`, display: "flex", alignItems: "center",
+                              justifyContent: "center" }}>
+                  <RostoDoAssistente tamanho={24} />
+                </span>
+              : <Avatar nome={quem.nome || "equipe"} foto={quem.foto} size={28} />}</div>
           </div>
         ) : (
         <div data-msg-id={m.id} onClick={() => { if (selecao && podeSerApagada(m)) alternarSelecao(m.id); }} onMouseEnter={() => setMsgHover(m.id)} onMouseLeave={() => setMsgHover((h) => (h === m.id ? null : h))} style={{ position: "relative", display: "flex", justifyContent: saida ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6,

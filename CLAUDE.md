@@ -8538,6 +8538,24 @@ com a regra de acesso de quem olha. As contas sem tela moram em
   faixa âmbar ("as conversas do Quazar"). **Não se pergunta nada na abertura**:
   a prova `partida` conta as idas.
 
+### A nota interna do Quazar tem o rosto dele (27/11)
+
+Pedido do Rodrigo, com a foto de uma nota do Quazar com um "Q" num círculo:
+*"Quando o Quazar deixar uma nota interna, deve aparecer a foto dele também,
+igual os demais usuários."* A nota dele (o aviso de quem pede atenção, script
+068 da ponte) é assinada "Quazar", sem conta (`autor_id` nulo), e o `Avatar`
+desenhava as iniciais do nome.
+
+- **A nota do Quazar** (`ehNotaDoQuazar`: origem nota, sem id de quem escreveu,
+  e o autor é o nome do assistente) mostra o rosto dele
+  (`data-avatar-nota-quazar`), 28 pontos, com o `title` dizendo que foi ele;
+- **a nota de uma pessoa** continua com a foto ou as iniciais dela.
+
+Prova: `a-nota-do-quazar-tem-o-rosto-dele`, 14 conferências (no computador e no
+celular: o rosto pintado, do tamanho dos outros, o desenho e não a letra, o
+`title`, e a nota da pessoa sem o rosto do Quazar). A sabotagem que tira o
+rosto (o "Q" de antes) é pega por 10.
+
 ### O Quazar NÃO vira responsável, e é decisão
 
 O pedido oferecia as duas coisas ("como pessoa que participou da conversa ou
