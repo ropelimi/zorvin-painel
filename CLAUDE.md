@@ -1241,6 +1241,34 @@ Prova: `o-link-da-os-na-ficha`, 30 conferências: o link pintado, na linha do
 status e dentro da ficha, o clique que abre a aba nova, sem o número, sem a
 ordem, o número escapado, a ficha na gaveta (1100) e o celular (390).
 
+### O repasse pendente ao abrir a conversa (27/11)
+
+Pedido do Rodrigo: *"Todos os clientes que tiverem repasse precisa aparecer
+ao abrir a conversa, informando que tem repasse pendente e o valor do
+repasse. Esse repasse é a "DESPESA EM ABERTO" que é puxada da aba "Andon"
+dentro da ficha do cliente no Vantoro."*
+
+- **A ficha completa do Vantoro manda `repasse`** desde o Vantoro 598
+  (`GET /vantoro/cliente/:id`, a `_ficha` de lá): `{ estado, aberto, pago }`,
+  ou nulo sem o Andon configurado ou com ele fora do ar;
+- **ao abrir a conversa de um cliente ligado à ficha**
+  (`clienteDaConversa`), o painel pergunta, e com o repasse em aberto mostra
+  uma faixa âmbar logo abaixo do alto da conversa (`data-aviso-de-repasse`):
+  **"Repasse pendente: R$ 1.234,50"** (despesa em aberto no Andon);
+- **só o em aberto ganha faixa**: o pago é dito pela etiqueta automática
+  "Repasse pago" (a ponte, script 077), e o nulo é "não sei", e não "não
+  tem";
+- **uma ida por cliente a cada cinco minutos**, como a ficha, e duas
+  aberturas juntas esperam a mesma (`src/repasse.js`);
+- **a resposta guarda de qual cliente é**: a de A, chegando atrasada, não
+  aparece na conversa de B;
+- **sem Vantoro, e no contato sem ficha, nada**: nem faixa, nem pergunta.
+
+Prova: `o-repasse-ao-abrir-a-conversa`, 32 conferências: a conta direto na
+função; a faixa pintada com o valor; pago, Andon fora do ar e sem ficha sem
+faixa (e sem pergunta); voltar sem perguntar de novo; o celular a 390; e sem
+Vantoro. A sabotagem que tira o guardado é pega.
+
 ### O selo da blindagem na ficha (25/11)
 
 Pedido do Rodrigo: *"Preciso de alguma forma saber qual cliente já está
