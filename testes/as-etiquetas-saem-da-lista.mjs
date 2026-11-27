@@ -12,7 +12,8 @@
 //      seria cumprir a letra do pedido e não o motivo dele;
 //   2. as etiquetas continuam onde não foram riscadas: no alto da conversa
 //      aberta, no menu "Etiquetas" da conversa (marcadas) e no filtro da seta;
-//   3. o mesmo no celular, onde a faixa custava mais.
+//   3. o mesmo no celular, onde a faixa custava mais — e, desde 27/11, as
+//      etiquetas também no alto da conversa aberta no celular.
 //
 // A conversa que vem de fora das páginas (pelo filtro ou pela busca) é
 // conferida em `as-conversas-de-fora-tem-etiqueta`.
@@ -136,6 +137,26 @@ console.log("\n2. No celular");
 {
   const { ctx, page, estouros } = await abrir({ width: 390, height: 844 });
   await conferirAsLinhas(page);
+  // NO ALTO DA CONVERSA ABERTA, TAMBÉM NO CELULAR (27/11). Era "não aparecem
+  // (não cabem)" até o Rodrigo pedir: "Na versão mobile não está aparecendo as
+  // etiquetas na conversa". Conferência INVERTIDA: aparecem, pintadas, dentro
+  // da tela, e a tela não rola de lado.
+  ok("abri a conversa com etiqueta", await clicar(page, '[data-conversa-id="et-com"]'));
+  await page.waitForTimeout(800);
+  const alto = await texto(page, "[data-etiquetas-do-alto]");
+  ok("o alto da conversa mostra as etiquetas no celular", /Urgente/.test(alto), alto);
+  const medida = await page.evaluate(() => {
+    const el = document.querySelector("[data-etiquetas-do-alto] span");
+    if (!el) return null;
+    const r = el.getBoundingClientRect(), w = document.documentElement.clientWidth;
+    const quem = document.elementFromPoint(r.x + Math.min(r.width / 2, 10), r.y + r.height / 2);
+    return { pintada: !!quem && (quem === el || el.contains(quem)), dentro: r.left >= 0 && r.right <= w + 1,
+             rola: document.documentElement.scrollWidth > w, title: el.getAttribute("title") };
+  });
+  ok("a etiqueta está pintada", !!medida && medida.pintada, JSON.stringify(medida));
+  ok("dentro da tela", !!medida && medida.dentro, JSON.stringify(medida));
+  ok("e a tela não rola de lado", !!medida && !medida.rola, JSON.stringify(medida));
+  ok("com o nome inteiro no title", !!medida && !!medida.title, JSON.stringify(medida));
   ok("sem erro de JavaScript", estouros.length === 0, estouros.join(" | "));
   await ctx.close();
 }

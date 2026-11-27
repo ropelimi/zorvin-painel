@@ -20510,15 +20510,17 @@ export default function Painel({ sessao }) {
                     está junto. O AVISO NÃO ENCOLHE ANTES DAS ETIQUETAS: duas
                     pessoas respondendo o mesmo cliente é o que ele existe para
                     evitar, e uma etiqueta cortada continua com o nome inteiro
-                    no menu. No celular as etiquetas não aparecem aqui (não
-                    cabem), e o aviso fica sozinho na linha. */}
-                {((!estreito && tagsDaConversa(conversa.id).length > 0) || atendidoPorOutro(conversa.id)) && (
+                    no menu. NO CELULAR TAMBÉM (27/11, pedido do Rodrigo: "Na
+                    versão mobile não está aparecendo as etiquetas na
+                    conversa"): elas cabem na largura que há, cortadas com
+                    reticências, e o nome inteiro fica no `title`. */}
+                {(tagsDaConversa(conversa.id).length > 0 || atendidoPorOutro(conversa.id)) && (
                   <div data-linha-das-etiquetas
                        style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, overflow: "hidden", minWidth: 0 }}>
-                    {!estreito && tagsDaConversa(conversa.id).length > 0 && (
+                    {tagsDaConversa(conversa.id).length > 0 && (
                       <div data-etiquetas-do-alto style={{ display: "flex", gap: 4, overflow: "hidden", minWidth: 0, flexShrink: 1 }}>
                         {tagsDaConversa(conversa.id).map((t) => (
-                          <span key={t.id} style={{ fontSize: 10.5, fontWeight: 600, color: corDoTextoSobre(t.cor), background: t.cor, borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: t.nome.length > 12 ? 1 : 0 }}>{t.nome}</span>
+                          <span key={t.id} title={t.nome} style={{ fontSize: 10.5, fontWeight: 600, color: corDoTextoSobre(t.cor), background: t.cor, borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: t.nome.length > 12 ? 1 : 0 }}>{t.nome}</span>
                         ))}
                       </div>
                     )}

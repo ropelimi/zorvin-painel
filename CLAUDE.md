@@ -2724,9 +2724,9 @@ longas, quebrando em duas linhas, custavam o dobro.
 | o alto da conversa aberta, no computador | continuam (`data-etiquetas-do-alto`) |
 | o menu "Etiquetas" da conversa | continuam, marcadas |
 | o filtro da seta | continua filtrando por etiqueta |
-| o alto da conversa no celular | como antes: não aparecem (não cabem) |
+| o alto da conversa no celular | ~~como antes: não aparecem (não cabem)~~ **aparecem desde 27/11**, cortadas com reticências e o nome inteiro no `title` (pedido do Rodrigo: *"Na versão mobile não está aparecendo as etiquetas na conversa"*); a prova `as-etiquetas-saem-da-lista` foi INVERTIDA no celular |
 
-**No celular, a etiqueta passou a aparecer só no menu "Etiquetas"** da
+~~**No celular, a etiqueta passou a aparecer só no menu "Etiquetas"**~~ (desde 27/11 ela aparece no alto da conversa também no celular) da
 conversa: o alto da conversa no celular nunca a mostrou, e a linha da lista
 era o único lugar onde ela se via de relance. Dito ao Rodrigo.
 
