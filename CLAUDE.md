@@ -8504,6 +8504,11 @@ com a regra de acesso de quem olha. As contas sem tela moram em
   (`pelo_quazar`, as 2000 mais recentes), e as das pessoas à função de sempre.
   "Qualquer um" soma as duas respostas, e "Todos juntos" fica com as que estão
   nas duas;
+- **ao lado dele, quantas conversas ele tem neste telefone** (27/11, pedido do
+  Rodrigo: *"precisa também mostrar a quantidade do Quazar"*;
+  `data-conversas-do-quazar`), como o número de cada pessoa. É contado só com o
+  menu aberto (as conversas das 2000 mensagens mais recentes dele, recortadas
+  pelo telefone), e a contagem que falha diz "?", e não zero;
 - **o banco sem o 059**: marcar o Quazar diz que o filtro não está disponível,
   e a opção sai (`QUAZAR_NAS_MENSAGENS`). **A leitura que falha** acende a
   faixa âmbar ("as conversas do Quazar"). **Não se pergunta nada na abertura**:

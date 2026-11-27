@@ -6418,6 +6418,39 @@ export default function Painel({ sessao }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [advogadoId, tentativaDosFiltros]);
 
+  // QUANTAS CONVERSAS O QUAZAR TEM NESTE TELEFONE (27/11, pedido do Rodrigo:
+  // "precisa também mostrar a quantidade do Quazar"). As pessoas vêm contadas
+  // pela função do banco; o Quazar não tem conta, e é contado pela marca das
+  // mensagens dele: as conversas em que ele escreveu, recortadas pelo telefone.
+  // SÓ COM O MENU ABERTO: a abertura do painel não ganha consulta nenhuma (a
+  // prova `partida` conta). Três estados: null contando, número, e "falhou",
+  // que o menu diz com "?" (falha não vira zero).
+  const [conversasDoQuazar, setConversasDoQuazar] = useState(null);
+  useEffect(() => {
+    if (!menuQuem || !advogadoId || !QUAZAR_NAS_MENSAGENS) return;
+    let vivo = true;
+    const advId = advogadoId;
+    setConversasDoQuazar(null);
+    (async () => {
+      const { data, error } = await supabase.from("mensagens").select("conversa_id")
+        .eq("pelo_quazar", true).order("criado_em", { ascending: false }).limit(TETO_DO_QUAZAR_NO_FILTRO);
+      if (!vivo) return;
+      if (error) { setConversasDoQuazar(semAColunaDoQuazar(error) ? 0 : "falhou"); return; }
+      const ids = [...new Set((data || []).map((r) => String(r.conversa_id)))];
+      let total = 0;
+      for (let k = 0; k < ids.length; k += 150) {
+        const { count, error: e2 } = await supabase.from("conversas")
+          .select("id", { count: "exact", head: true })
+          .in("id", ids.slice(k, k + 150)).eq("advogado_id", advId);
+        if (!vivo) return;
+        if (e2) { setConversasDoQuazar("falhou"); return; }
+        total += count || 0;
+      }
+      setConversasDoQuazar(total);
+    })();
+    return () => { vivo = false; };
+  }, [menuQuem, advogadoId]);
+
   // Trocar de conversa fecha a lista de quem participou: ela é de UMA conversa,
   // e deixá-la aberta mostraria os rostos da anterior sobre a nova.
   useEffect(() => { setQuemParticipou(false); setMenuResponsavel(false); }, [conversaId]);
@@ -18897,6 +18930,15 @@ export default function Painel({ sessao }) {
                         <RostoDoAssistente tamanho={20} />
                         <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{NOME_DO_ASSISTENTE}</span>
                         <span style={{ flexShrink: 0, fontSize: 11, color: C.textSecondary }}>assistente virtual</span>
+                        {/* QUANTAS CONVERSAS, como as pessoas: "?" se não deu
+                            para contar, nada enquanto conta. */}
+                        {conversasDoQuazar !== null && (
+                          <span data-conversas-do-quazar
+                                title={conversasDoQuazar === "falhou" ? "Não consegui contar as conversas do Quazar" : undefined}
+                                style={{ flexShrink: 0, fontSize: 11.5, color: C.textSecondary, fontVariantNumeric: "tabular-nums" }}>
+                            {conversasDoQuazar === "falhou" ? "?" : conversasDoQuazar}
+                          </span>
+                        )}
                       </button>
                     );
                   })()}
