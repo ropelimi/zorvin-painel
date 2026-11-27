@@ -396,6 +396,11 @@ const idsDaLista = (page) => page.evaluate(() =>
   ok("com o nome, o rosto e \"assistente virtual\"",
      /Quazar/.test(await texto(op)) && /assistente virtual/.test(await texto(op)) && (await op.locator("[data-rosto-do-assistente]").count()) === 1,
      q(await texto(op)));
+  // A QUANTIDADE (27/11): as conversas em que ele escreveu, só deste telefone
+  // (a do SAC fica de fora), como o número ao lado de cada pessoa.
+  await page.waitForFunction(() => document.querySelector("[data-conversas-do-quazar]"), null, { timeout: 8000 }).catch(() => {});
+  const qtd = await texto(page.locator("[data-conversas-do-quazar]"));
+  ok("mostra quantas conversas o Quazar tem neste telefone (3, sem a do SAC)", qtd.trim() === "3", q(qtd));
   const antesDasPessoas = await page.evaluate(() => {
     const o = document.querySelector("[data-menu-quem] [data-participou-quazar]");
     const p = document.querySelector("[data-menu-quem] [data-quem]");
@@ -442,6 +447,9 @@ const idsDaLista = (page) => page.evaluate(() =>
 {
   const { ctx, page } = await abrirOPainel({ flags: { __QUEBRAR: ["mensagens"] } });
   await abrirMenuDeQuem(page);
+  await page.waitForTimeout(1200);
+  const qtdFalha = await texto(page.locator("[data-conversas-do-quazar]"));
+  ok("a contagem que falha diz \"?\", e não zero", qtdFalha.trim() === "?", q(qtdFalha));
   await clicar(page.locator("[data-participou-quazar]"));
   await page.waitForTimeout(1500);
   const faixa = await texto(page.locator("[data-falha-de-leitura]"));
