@@ -39,7 +39,9 @@ const AGORA = Date.now();
 const iso = (min) => new Date(AGORA - min * 60000).toISOString();
 
 const REPASSES = {
-  "v-aberto": { estado: "aberto", aberto: 1234.5, pago: 200 },
+  "v-aberto": { estado: "aberto", aberto: 1234.5, pago: 200, lancamentos: [
+    { data: "2026-11-30", valor: 1234.5, situacao: "em aberto", descricao: "Repasse" },
+    { data: "2026-11-20", valor: 200, situacao: "pago", descricao: "Repasse" }] },
   "v-pago": { estado: "pago", aberto: 0, pago: 900 },
   "v-andon-fora": null,
 };
@@ -52,7 +54,7 @@ const CONTATOS = [
   contato("ct-rep-s", "5511944450004", "Lead Sem Ficha", null),
 ];
 
-async function abrir({ adv = null, largura = 1500, celular = false, comVantoro = true } = {}) {
+async function abrir({ adv = null, largura = 1500, celular = false, comVantoro = true, achaPeloTelefone = false } = {}) {
   const ctx = await nav.newContext({ viewport: { width: largura, height: celular ? 844 : 900 },
                                      ...(celular ? { isMobile: true, hasTouch: true } : {}) });
   const page = await ctx.newPage();
@@ -72,7 +74,14 @@ async function abrir({ adv = null, largura = 1500, celular = false, comVantoro =
     const url = new URL(rota.request().url());
     const json = (corpo) => rota.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(corpo) });
     if (url.pathname.endsWith("/vantoro/status")) return json({ ligado: comVantoro, configurado: comVantoro });
-    if (url.pathname.endsWith("/vantoro/cliente")) return json({ clientes: [], opcoes: {} });
+    if (url.pathname.endsWith("/vantoro/cliente")) {
+      // a busca por telefone devolve o RESUMO, sem repasse (como o Vantoro)
+      const tel = url.searchParams.get("telefone") || "";
+      if (achaPeloTelefone && tel.endsWith("944450001"))
+        return json({ clientes: [{ id: "v-aberto", nome: "CLIENTE COM REPASSE", telefone: "(11) 94445-0001",
+          telefones: [], processos: [] }], opcoes: {} });
+      return json({ clientes: [], opcoes: {} });
+    }
     const m = url.pathname.match(/\/vantoro\/cliente\/([^/]+)$/);
     if (m) {
       const id = decodeURIComponent(m[1]);
@@ -161,6 +170,34 @@ console.log("\n4. No celular (390)");
   ok("a faixa aparece", !!f);
   ok("dentro da tela", !!f && f.dentro);
   ok("a tela não rola de lado", !!f && !f.rola);
+  await ctx.close();
+}
+
+console.log("\n6. A Ficha no Vantoro mostra o repasse ao cliente, com a data");
+{
+  const { ctx, page, estouros } = await abrir({ adv: ADV, achaPeloTelefone: true });
+  ok("abre a conversa", await abrirConversa(page, "CLIENTE COM REPASSE"));
+  await page.waitForSelector("[data-repasse-na-ficha]", { timeout: 6000 }).catch(() => {});
+  const c = await page.evaluate(() => {
+    const k = document.querySelector("[data-repasse-na-ficha]");
+    if (!k) return null;
+    const t = (sel) => [...k.querySelectorAll(sel)].map((e) => e.textContent.replace(/\s/g, " ").trim());
+    const r = k.getBoundingClientRect();
+    const quem = document.elementFromPoint(r.x + 20, r.y + 10);
+    return { estado: k.getAttribute("data-repasse-na-ficha"), texto: k.textContent,
+             pago: t("[data-repasse-pago]")[0], aPagar: t("[data-repasse-a-pagar]")[0],
+             datas: t("[data-repasse-data]"), valores: t("[data-repasse-valor]"),
+             pintada: !!quem && k.contains(quem) };
+  });
+  ok("a caixa do repasse aparece na ficha", !!c, "a ficha não completou com a ficha inteira");
+  ok("diz que é repasse ao cliente", !!c && c.texto.includes("Repasse ao cliente"));
+  ok("em aberto", c?.estado === "aberto", q(c?.estado));
+  ok("pago: R$ 200,00", c?.pago === "R$ 200,00", q(c?.pago));
+  ok("a pagar: R$ 1.234,50", c?.aPagar === "R$ 1.234,50", q(c?.aPagar));
+  ok("cada lançamento com a data", q(c?.datas) === q(["30/11/2026", "20/11/2026"]), q(c?.datas));
+  ok("e o valor de cada um", q(c?.valores) === q(["R$ 1.234,50", "R$ 200,00"]), q(c?.valores));
+  ok("a caixa está pintada", !!c && c.pintada);
+  ok("nenhum erro de JavaScript", estouros.length === 0, q(estouros));
   await ctx.close();
 }
 
