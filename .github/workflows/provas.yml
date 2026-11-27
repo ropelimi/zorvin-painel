@@ -66,6 +66,12 @@ jobs:
   #  Cada máquina instala tudo de novo (o Node, as dependências, o navegador, a
   #  ponte). Isso custa menos de um minuto por máquina, e é o que deixa cada
   #  parte independente das outras.
+  #
+  #  E EM 27/11 PASSARAM A SER CINCO MÁQUINAS, a pedido do Rodrigo. A suíte
+  #  tinha crescido para ~110 minutos somados, e as três partes levavam de 35
+  #  a 40 minutos cada. Com cinco, ~22 minutos de provas e ~1 de preparo por
+  #  máquina. As mesmas provas rodam, sem pular nenhuma: só a divisão muda, e
+  #  `as-provas-em-partes` confere a divisão com o número desta matriz.
   # ------------------------------------------------------------
   partes:
     name: Provas do painel (parte ${{ matrix.parte }} de ${{ strategy.job-total }})
@@ -85,7 +91,7 @@ jobs:
       matrix:
         # Os números são só o nome de cada máquina na tela. QUAL PARTE cada uma
         # roda vem de `strategy.job-index`, no último passo.
-        parte: [1, 2, 3]
+        parte: [1, 2, 3, 4, 5]
     # O TETO EXISTE PARA UMA PROVA PENDURADA, E NÃO PARA A SOMA DAS PROVAS —
     # e em 28/09 ele passou a matar a soma.
     #
