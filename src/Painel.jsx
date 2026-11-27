@@ -6,7 +6,7 @@ import {
   Search, Send, Paperclip, Smile, ChevronDown, MoreVertical,
   MessageSquare, Mic, CheckCheck, LogOut, ArrowLeft, Sun, Moon,
   Clock, AlertCircle, Reply, X, FileText, Download, ChevronUp,
-  StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star,
+  StickyNote, Plus, Trash2, Settings, Camera, Pencil, Tag, Check, Star, Lock,
   Archive, UserPlus, MessageSquarePlus, SquarePen, Pause, ClipboardList, ShieldCheck,
   ChevronLeft, ChevronRight, Images, ExternalLink, Pin, Copy, Forward, Sticker,
   History, BarChart3, Users, Smartphone, Bot, UserRound,
@@ -7410,6 +7410,7 @@ export default function Painel({ sessao }) {
     const nome = (tagForm?.nome || "").trim();
     const cor = tagForm?.cor || CORES_TAG[0];
     if (!nome) { mostrarAviso("Digite o nome da etiqueta."); return; }
+    if (tagForm.id && tags.some((t) => t.id === tagForm.id && t.automatica)) { mostrarAviso("Esta etiqueta vem do Vantoro: ela não se edita aqui."); return; }
     // SÓ A EDIÇÃO PRECISA PERGUNTAR SE MEXEU.
     //
     // Um `update` barrado pela regra de acesso volta SEM erro e com zero
@@ -7436,6 +7437,7 @@ export default function Painel({ sessao }) {
   }
 
   async function apagarTag(id) {
+    if (tags.some((t) => t.id === id && t.automatica)) { mostrarAviso("Esta etiqueta vem do Vantoro: ela não se apaga aqui."); return; }
     if (!window.confirm("Apagar esta etiqueta? Ela sai de todas as conversas.")) return;
     // `.select("id")` porque um DELETE barrado apaga ZERO linhas sem erro. Sem
     // perguntar, a releitura logo abaixo trazia a etiqueta de volta à lista, e
@@ -17320,8 +17322,12 @@ export default function Painel({ sessao }) {
 
   const listaDeEtiquetas = !conversa ? null : (
     <ComPesquisa>{(pesquisa, setPesquisa) => {
-      const comPesquisa = tags.length >= PESQUISA_A_PARTIR_DE;
-      const achadas = comPesquisa ? tags.filter((t) => casaComAPesquisa(pesquisa, t.nome)) : tags;
+      // AS ETIQUETAS QUE VÊM DO VANTORO (27/11, script 075 da ponte) não se
+      // marcam aqui: a blindagem e o subsídio de cada cliente o Zorvin põe e
+      // tira sozinho, e a equipe só filtra por elas.
+      const daEquipe = tags.filter((t) => !t.automatica);
+      const comPesquisa = daEquipe.length >= PESQUISA_A_PARTIR_DE;
+      const achadas = comPesquisa ? daEquipe.filter((t) => casaComAPesquisa(pesquisa, t.nome)) : daEquipe;
       return (
         <div data-menu-marcar-tags style={{ position: "absolute", top: estreito ? 44 : 30, right: 0, width: 240, maxHeight: comPesquisa ? 380 : 320, overflowY: "auto", background: C.panel, border: `1px solid ${C.divider}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 46 }}>
           <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.divider}`, position: "sticky", top: 0, zIndex: 1, background: C.panel }}>
@@ -17333,10 +17339,10 @@ export default function Painel({ sessao }) {
               </div>
             )}
           </div>
-          {tags.length === 0 && (
+          {daEquipe.length === 0 && (
             <div style={{ padding: 14, fontSize: 13, color: C.textSecondary, textAlign: "center" }}>Nenhuma tag ainda. Crie em Configurações → Tags.</div>
           )}
-          {tags.length > 0 && achadas.length === 0 && (
+          {daEquipe.length > 0 && achadas.length === 0 && (
             <div data-nada-com-a-pesquisa style={{ padding: 14, fontSize: 13, color: C.textSecondary, textAlign: "center" }}>{nadaComAPesquisa("Nenhuma etiqueta", pesquisa)}</div>
           )}
           {achadas.map((t) => {
@@ -22540,8 +22546,15 @@ export default function Painel({ sessao }) {
                         <div key={t.id} data-etiqueta-da-config={t.nome} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: `1px solid ${C.divider}` }}>
                           <span style={{ width: 14, height: 14, borderRadius: 4, background: t.cor, flexShrink: 0 }} />
                           <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.nome}</span>
-                          <button data-editar-etiqueta onClick={() => setTagForm({ id: t.id, nome: t.nome, cor: t.cor })} title="Editar" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex", flexShrink: 0 }}><Pencil size={16} /></button>
-                          <button data-apagar-etiqueta onClick={() => apagarTag(t.id)} title="Apagar" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.erroTexto, display: "flex", flexShrink: 0 }}><Trash2 size={16} /></button>
+                          {t.automatica ? (
+                            <span data-etiqueta-do-vantoro title="Esta etiqueta vem do Vantoro: o Zorvin a põe e a tira sozinho. Ela não se edita nem se apaga aqui, e serve para filtrar."
+                                  style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, fontSize: 12, color: C.textSecondary }}>
+                              <Lock size={13} aria-hidden="true" /> Vem do Vantoro
+                            </span>
+                          ) : (<>
+                            <button data-editar-etiqueta onClick={() => setTagForm({ id: t.id, nome: t.nome, cor: t.cor })} title="Editar" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.textSecondary, display: "flex", flexShrink: 0 }}><Pencil size={16} /></button>
+                            <button data-apagar-etiqueta onClick={() => apagarTag(t.id)} title="Apagar" style={{ border: "none", background: "transparent", cursor: "pointer", color: C.erroTexto, display: "flex", flexShrink: 0 }}><Trash2 size={16} /></button>
+                          </>)}
                         </div>
                       ))}
                     </div>

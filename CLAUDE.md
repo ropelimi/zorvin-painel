@@ -2655,6 +2655,30 @@ conversa não vinha na lista — a consulta da página pede `mensagens(id)` junt
 e o contador de não lidas do menu ficava em zero com o grupo na tela.
 
 Prova: `o-campo-de-grupos`, 20 conferências, 5 sabotagens e 5 pegas.
+## As etiquetas que vêm do Vantoro só servem para filtrar (27/11)
+
+Pedido do Rodrigo: as etiquetas "Blindagem completa", "Blindagem parcial",
+"Blindagem pendente" e uma por tipo de subsídio aberto ("SUBSÍDIO EMENDA"…),
+mantidas pelo Vantoro, e *"não pode ser possível a equipe editar essas
+etiquetas, não deve ser permitido excluir ou incluir. As etiquetas devem
+aparecer apenas para serem filtradas."* Quem põe e tira é a ponte (script 075
+e a rodada `etiquetarPeloVantoro`; ver o CLAUDE.md dela), e o banco recusa
+(42501) quem tentar mexer pela tela. A etiqueta automática é a que tem
+`tags.automatica` preenchida.
+
+| onde | a etiqueta automática |
+|---|---|
+| o menu "Etiquetas" da conversa (`data-menu-marcar-tags`) | não é oferecida para marcar |
+| o filtro da seta | é oferecida, e filtra como as outras |
+| o alto da conversa | aparece, como as outras |
+| Configurações → Etiquetas | diz "Vem do Vantoro", com um cadeado (`data-etiqueta-do-vantoro`), sem editar nem apagar |
+
+`apagarTag` e o salvar da etiqueta recusam a automática com uma frase, a
+segunda guarda.
+
+Prova: `as-etiquetas-que-vem-do-vantoro`, 17 conferências. O painel de antes
+reprova 4 (o menu oferece a automática; a configuração tem editar e apagar).
+
 ## As etiquetas saíram da lista de conversas (02/11)
 
 Pedido do Rodrigo, com a foto da lista (a etiqueta de três conversas riscada):
