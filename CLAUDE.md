@@ -12607,6 +12607,14 @@ por máquina. Mudou só a matriz do `provas.yml` (`parte: [1, 2, 3, 4, 5]`):
 reprova se a matriz não tiver as cinco). A verificação "Provas do painel"
 continua juntando todas, com o mesmo nome.
 
+**E no mesmo dia, oito**, também a pedido do Rodrigo (*"Se realmente for
+melhor para ganharmos tempo sem perder a qualidade, pode fazer"*). Pela
+tabela de tempos, cada parte cai de ~33 para ~20,5 minutos de provas, mais o
+preparo de cada máquina. As provas são as mesmas; a matriz é
+`parte: [1, 2, 3, 4, 5, 6, 7, 8]`, e `as-provas-em-partes` confere as oito.
+O GitHub roda até 20 máquinas ao mesmo tempo na conta: duas entregas do
+painel juntas usam 16, e a da ponte, 1.
+
 **A máquina ficou escrita: `ubuntu-24.04`, e não `ubuntu-latest` (11/11).**
 Naquele dia o GitHub passou o `ubuntu-latest` para o Ubuntu 26.04. **Trocar de
 máquina é uma decisão**, e não algo que o GitHub decide por nós no meio de uma

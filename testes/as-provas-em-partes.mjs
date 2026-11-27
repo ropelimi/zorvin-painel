@@ -107,14 +107,14 @@ function tabela(nome, conteudo) {
 }
 
 try {
-  // QUANTAS MÁQUINAS O GITHUB USA vem da matriz do provas.yml (cinco desde
-  // 27/11), e é com esse número que as partes são conferidas aqui: uma prova
+  // QUANTAS MÁQUINAS O GITHUB USA vem da matriz do provas.yml (oito desde
+  // 27/11; cinco antes disso), e é com esse número que as partes são conferidas aqui: uma prova
   // escrita para três aprovaria uma divisão que só vale para três.
   const FLUXO = readFileSync(join(PASTA, "..", ".github", "workflows", "provas.yml"), "utf8");
   const MATRIZ = (FLUXO.match(/\n {8}parte: \[([0-9, ]+)\]\n/) || [, ""])[1].split(",").map((x) => x.trim()).filter(Boolean);
   const N = MATRIZ.length;
   console.log(`\nAs ${N} partes da matriz do GitHub, pela tabela de verdade`);
-  ok("a matriz do GitHub tem cinco máquinas, numeradas de 1 a 5", MATRIZ.join() === "1,2,3,4,5", MATRIZ.join());
+  ok("a matriz do GitHub tem oito máquinas, numeradas de 1 a 8", MATRIZ.join() === "1,2,3,4,5,6,7,8", MATRIZ.join());
   const tres = await listar({ PROVAS_PARTES: String(N) });
   ok("--listar com as partes da matriz sai sem erro", tres.codigo === 0, tres.erro);
   const partes = asPartes(tres.saida);
