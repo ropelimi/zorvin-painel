@@ -21,6 +21,7 @@ import FichaVantoro from "./FichaVantoro";
 import { numeroCanonico, chaveDoNumero, porQueNaoRecebeWhatsApp, daParaChamar,
          telefoneLegivel, formasDoNumeroNaBusca } from "./numeros.js";
 import { chamarPonte, ESPERA_PADRAO } from "./ponte.js";
+import { lerRepasse, avisoDoRepasse } from "./repasse.js";
 import { useTemVantoro, enderecoNoVantoro } from "./temVantoro.js";
 import { useVocabulario } from "./vocabulario.js";
 import { SONS, tocarAviso, somEscolhido, guardarSom,
@@ -10924,6 +10925,24 @@ export default function Painel({ sessao }) {
     return () => { valeu = false; };
   }, [modoNota, clienteDaConversa]);
 
+  // O REPASSE PENDENTE (27/11): a despesa em aberto no Andon do Vantoro,
+  // perguntada ao abrir a conversa de um cliente ligado à ficha. O estado
+  // guarda DE QUAL cliente é a resposta: a de A, chegando atrasada, não
+  // aparece na conversa de B. Falhando a leitura, nada aparece (ver
+  // `repasse.js`: a faixa só fala do que o Vantoro afirmou).
+  const [repasseDaConversa, setRepasseDaConversa] = useState(null);
+  useEffect(() => {
+    if (!clienteDaConversa) return;
+    let valeu = true;
+    lerRepasse(clienteDaConversa, (id) => chamarPonte(`/vantoro/cliente/${encodeURIComponent(id)}`))
+      .then((repasse) => { if (valeu) setRepasseDaConversa({ cliente: String(clienteDaConversa), repasse }); })
+      .catch(() => {});
+    return () => { valeu = false; };
+  }, [clienteDaConversa]);
+  const avisoDeRepasse = clienteDaConversa && repasseDaConversa
+    && repasseDaConversa.cliente === String(clienteDaConversa)
+    ? avisoDoRepasse(repasseDaConversa.repasse) : null;
+
   // Trocar de conversa zera a escolha: o processo de um cliente não vale para
   // outro, e uma escolha que sobrevive à troca é a receita para a nota entrar
   // no processo errado.
@@ -21111,6 +21130,20 @@ export default function Painel({ sessao }) {
                 </div>
               );
             })()}
+
+            {avisoDeRepasse && (
+              <div data-aviso-de-repasse
+                   title="Despesa em aberto na aba Andon da ficha do cliente no Vantoro"
+                   style={{ background: modo === "escuro" ? "#3a2a1a" : "#fff4e5",
+                            borderBottom: "1px solid #e0a458",
+                            padding: estreito ? "7px 12px" : "8px 16px",
+                            display: "flex", alignItems: "center", gap: 8,
+                            fontSize: estreito ? 12.5 : 13, color: C.textPrimary }}>
+                <AlertCircle size={16} color="#d97706" style={{ flexShrink: 0 }} />
+                <span><b>Repasse pendente: <span data-valor-do-repasse>{avisoDeRepasse.valor}</span></b>{" "}
+                  <span style={{ color: C.textSecondary }}>(despesa em aberto no Andon)</span></span>
+              </div>
+            )}
 
             {/* O RESUMO DA CONVERSA (01/11), pendurado numa âncora de altura
                 zero logo acima da lista — o truque do "Ir para o fim": ele cobre
