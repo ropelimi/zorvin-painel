@@ -72,6 +72,12 @@ jobs:
   #  a 40 minutos cada. Com cinco, ~22 minutos de provas e ~1 de preparo por
   #  máquina. As mesmas provas rodam, sem pular nenhuma: só a divisão muda, e
   #  `as-provas-em-partes` confere a divisão com o número desta matriz.
+  #
+  #  E NO MESMO DIA, OITO, também a pedido do Rodrigo ("se realmente for melhor
+  #  para ganharmos tempo sem perder a qualidade"). Com cinco, ~33 minutos por
+  #  parte pela tabela; com oito, ~20,5. As provas são as mesmas: só a divisão
+  #  muda. O GitHub roda até 20 máquinas ao mesmo tempo na conta, e duas
+  #  entregas do painel juntas usam 16.
   # ------------------------------------------------------------
   partes:
     name: Provas do painel (parte ${{ matrix.parte }} de ${{ strategy.job-total }})
@@ -91,7 +97,7 @@ jobs:
       matrix:
         # Os números são só o nome de cada máquina na tela. QUAL PARTE cada uma
         # roda vem de `strategy.job-index`, no último passo.
-        parte: [1, 2, 3, 4, 5]
+        parte: [1, 2, 3, 4, 5, 6, 7, 8]
     # O TETO EXISTE PARA UMA PROVA PENDURADA, E NÃO PARA A SOMA DAS PROVAS —
     # e em 28/09 ele passou a matar a soma.
     #
