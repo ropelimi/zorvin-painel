@@ -24,6 +24,7 @@ import { chaveDoNumero, outrosNumeros, telefoneLegivel, numeroCanonico } from ".
 import { chamarPonte, BRIDGE_URL, FALTA_PONTE } from "./ponte.js";
 import { enderecoNoVantoro } from "./temVantoro.js";
 import { seloDaBlindagem } from "./blindagem.js";
+import { repasseNaFicha, lerFichaInteira } from "./repasse.js";
 import { naoGravouNada, comOCodigo } from "./gravar.js";
 import { registrarMotivoParaEsperar, recargaPedida } from "./atualizacao.js";
 
@@ -357,6 +358,42 @@ function SeloDaBlindagem({ cliente, C }) {
       {selo.partes.length > 0 && (
         <div data-blindagem-partes style={{ fontSize: 12, color: C.textSecondary, marginTop: 4, lineHeight: 1.45 }}>
           {selo.partes.join(" · ")}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * O REPASSE AO CLIENTE (27/11): o que foi pago e o que está por pagar de
+ * repasse ao cliente, com a data de cada lançamento. Só os repasses: a comissão
+ * do advogado associado e as outras despesas não entram (a conta é do Vantoro,
+ * `andon.repasses`). Sem `repasse` na resposta, nada. Ver src/repasse.js.
+ */
+function CaixaDoRepasse({ cliente, C }) {
+  const r = repasseNaFicha(cliente.repasse);
+  if (!r) return null;
+  const cor = r.temAberto ? C.ambarTexto : C.verdeTexto;
+  return (
+    <div data-repasse-na-ficha={r.temAberto ? "aberto" : "pago"}
+         title="Só os lançamentos de repasse ao cliente do financeiro do Andon (a comissão e as outras despesas não entram)."
+         style={{ background: C.listActive, borderRadius: 9, padding: "9px 12px", marginBottom: 14,
+                  borderLeft: `3px solid ${cor}` }}>
+      <b style={{ fontSize: 13, color: C.textPrimary }}>Repasse ao cliente</b>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 4, fontSize: 12.5 }}>
+        <span>Pago: <b data-repasse-pago style={{ color: C.verdeTexto }}>{r.pago}</b></span>
+        <span>A pagar: <b data-repasse-a-pagar style={{ color: r.temAberto ? C.ambarTexto : C.textSecondary }}>{r.aberto}</b></span>
+      </div>
+      {r.lancamentos.length > 0 && (
+        <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 3 }}>
+          {r.lancamentos.map((l, i) => (
+            <div key={i} data-repasse-lancamento={l.pago ? "pago" : "aberto"}
+                 style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 12, color: C.textSecondary, flexWrap: "wrap" }}>
+              <span data-repasse-data style={{ minWidth: 74 }}>{l.data || "sem data"}</span>
+              <span data-repasse-valor style={{ color: C.textPrimary, fontWeight: 600 }}>{l.valor}</span>
+              <span style={{ color: l.pago ? C.verdeTexto : C.ambarTexto }}>{l.pago ? "pago" : (l.situacao || "a pagar")}</span>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -867,11 +904,32 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
       // que ficaram para trás só se acertariam quando alguém os editasse — e
       // ninguém edita uma ficha que já está certa.
       if (achado) ligarContatoAoCadastro(achado);
+      if (achado) completarComAFichaInteira(achado);
     } catch (e) {
       setErro(e.message);
     } finally {
       setCarregando(false);
     }
+  }
+
+  // O REPASSE E A BLINDAGEM VÊM DA FICHA INTEIRA (27/11). A busca por telefone
+  // (`/clientes/buscar`) devolve o resumo de cada achado, e o resumo não leva
+  // nenhum dos dois: seria uma ida ao Andon e ao banco por achado. Achado o
+  // cliente desta conversa, a ficha inteira (`/vantoro/cliente/:id`, a mesma
+  // pergunta da faixa do repasse, guardada por cinco minutos em repasse.js)
+  // completa os dois, sem tocar no que se edita. Falhando, a ficha fica como
+  // estava: sem a caixa, e sem dizer "não tem repasse".
+  async function completarComAFichaInteira(achado) {
+    if (!achado || !achado.id || ("repasse" in achado && "blindagem" in achado)) return;
+    try {
+      const r = await lerFichaInteira(achado.id, (id) => chamarPonte(`/vantoro/cliente/${encodeURIComponent(id)}`));
+      const inteiro = r && r.cliente;
+      if (!inteiro) return;
+      setCliente((atual) => (atual && String(atual.id) === String(achado.id)
+        ? { ...atual, ...(inteiro.repasse !== undefined ? { repasse: inteiro.repasse } : {}),
+            ...(inteiro.blindagem !== undefined ? { blindagem: inteiro.blindagem } : {}) }
+        : atual));
+    } catch (_) { /* a ficha fica como estava */ }
   }
 
   // TROCOU DE NÚMERO, A ESCOLHA DE PAPEL VOLTA AO PADRÃO.
@@ -1924,6 +1982,7 @@ export default function FichaVantoro({ numero, nomeContato, C, estreito, sobrepo
         {!carregando && !erro && cliente && (
           <div>
             <SeloDaBlindagem cliente={cliente} C={C} />
+            <CaixaDoRepasse cliente={cliente} C={C} />
             {cliente.ordem_servico && (
               <div style={{
                 background: C.listActive, borderRadius: 9, padding: "10px 12px", marginBottom: 14,

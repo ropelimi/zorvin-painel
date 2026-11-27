@@ -1269,6 +1269,31 @@ função; a faixa pintada com o valor; pago, Andon fora do ar e sem ficha sem
 faixa (e sem pergunta); voltar sem perguntar de novo; o celular a 390; e sem
 Vantoro. A sabotagem que tira o guardado é pega.
 
+**Na ficha, só o repasse ao cliente, com a data (27/11).** O caso do Rodrigo:
+um cliente com "DESPESAS PAGAS" de R$ 2.400, dos quais R$ 400 foram a comissão
+do advogado associado; o repasse ao cliente foi R$ 2.000. *"Não leve em
+consideração as DESPESAS PAGAS e DESPESAS EM ABERTO, e sim os repasses ao
+cliente, pagos ou em aberto, que estão nos lançamentos … junto com a data do
+lançamento."*
+
+- **O Vantoro conta só o repasse ao cliente** (Vantoro 600,
+  `andon.eh_repasse_ao_cliente`: despesa de origem DANF, ou categoria com
+  "repasse" e "cliente"), e manda cada lançamento (`repasse.lancamentos`: a
+  data, o valor e a situação; o pago pela data do pagamento, o em aberto pela
+  do vencimento). A faixa e as etiquetas seguem a mesma conta, sem mudança aqui;
+- **a Ficha no Vantoro ganhou a caixa "Repasse ao cliente"**
+  (`data-repasse-na-ficha`, logo depois do selo da blindagem): Pago, A pagar e
+  uma linha por lançamento (`data-repasse-lancamento`, com a data dd/mm/aaaa e o
+  valor). Sem repasse nenhum, nem a caixa; o Andon fora do ar (nulo), também não;
+- **a busca por telefone devolve o resumo, sem repasse nem blindagem**, e por
+  isso a ficha completa os dois pela ficha inteira (`/vantoro/cliente/:id`,
+  `completarComAFichaInteira`). É a mesma pergunta da faixa, guardada uma vez
+  por cinco minutos (`lerFichaInteira`, em `src/repasse.js`): a faixa e a caixa
+  não perguntam duas vezes. Só o que se mostra muda; o que se edita, não.
+
+Prova: a cena 6 de `o-repasse-ao-abrir-a-conversa` (a caixa, os dois valores,
+as datas e os valores de cada lançamento, pintada).
+
 ### O selo da blindagem na ficha (25/11)
 
 Pedido do Rodrigo: *"Preciso de alguma forma saber qual cliente já está
