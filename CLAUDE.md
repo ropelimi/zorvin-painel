@@ -3115,6 +3115,28 @@ sabotagem) e retomada da décima primeira, sobre o mesmo código: as sabotagens
 rodam em cópias, e o repositório não foi tocado. A prova inteira rodou de novo
 antes do commit.
 
+## O filtro por etiqueta procura em todos os telefones (27/11)
+
+Pedido do Rodrigo: *"O filtro por etiqueta deve aparecer as conversas de todos
+os telefones, igual funciona o campo de busca."*
+
+- **A leitura das conversas da etiqueta não recorta mais no telefone aberto**
+  (`extrasEtiqueta`, sem o `.eq("advogado_id")`). Quem decide o que cada pessoa
+  vê continua sendo a regra de acesso de `conversas`;
+- **a tela tira o que um clique não abre** (`aBuscaAlcanca`, a linha desativada
+  para quem não administra) e a conversa em branco (`conversaQueExiste`, com
+  `mensagens(id)` e teto de uma), pelas réguas da busca;
+- **a linha de outro telefone leva o selo dele** (`data-selo-do-telefone`), as
+  deste telefone vêm primeiro (`oTelefoneAbertoPrimeiro`), e o clique abre no
+  telefone dela, como na busca. Uma régua só diz quando a lista é de todos os
+  telefones (`listaDeTodosOsTelefones`: com busca escrita ou etiqueta escolhida);
+- **sem filtro, a lista volta a ser só deste telefone**, sem selo.
+
+Prova: `o-filtro-de-etiqueta-em-todos-os-telefones`, 13 conferências (a
+"Urgente" filtrada de outro telefone: as cinco do Arquivo com o selo, a deste
+telefone primeiro e sem selo, e o clique que leva ao Arquivo). O painel de
+antes reprova 6.
+
 ## A busca não mostra a conversa em branco (12/11)
 
 Relato do Rodrigo, com foto: procurando "ADRIANA AMARAL", a lista mostrava

@@ -6755,19 +6755,32 @@ export default function Painel({ sessao }) {
         // de uma vez fariam o pedido ser recusado pelo tamanho.
         const achadas = [];
         for (let i = 0; i < ids.length; i += 150) {
+          // EM TODOS OS TELEFONES (27/11), como a busca: pedido do Rodrigo, "o
+          // filtro por etiqueta deve aparecer as conversas de todos os
+          // telefones, igual funciona o campo de busca". A regra de acesso de
+          // `conversas` recorta pelos telefones da pessoa, e a tela tira o que
+          // um clique não abre (`aBuscaAlcanca`) e a conversa em branco
+          // (`conversaQueExiste`).
           const { data, error } = await supabase
             .from("conversas")
-            .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")})`)
-            .eq("advogado_id", advId)
+            .select(`*, contato:contato_id (${colunasDoContato("nome, numero, foto_url")}), mensagens(id)`)
+            .limit(1, { referencedTable: "mensagens" })
             .in("id", ids.slice(i, i + 150));
           if (error) { falhou(error); return; }
           achadas.push(...(data || []));
         }
+        const alcance = {
+          telefoneAberto: advId,
+          permitidos: advogadosPermitidosRef.current,
+          desativadas: linhasDesativadasRef.current,
+        };
+        const alcancadas = achadas.filter((c) =>
+          aBuscaAlcanca(c, alcance) && conversaQueExiste(c, conversaIdRef.current));
         // Troquei de telefone ou de etiqueta enquanto isto vinha? É resposta de
         // outra pergunta: descarta.
         if (cancelado || advogadoIdRef.current !== advId) return;
         limparFalhaDeLeitura("filtro-etiqueta");
-        setExtrasEtiqueta(achadas);
+        setExtrasEtiqueta(alcancadas);
         setIdsEtiqueta(new Set(ids.map(String)));
         marcarPergunta(chave, "pronto");
       } catch (e) { falhou(e); }
@@ -16118,6 +16131,10 @@ export default function Painel({ sessao }) {
   //  E A LINHA DIZ QUE ESTÁ ARQUIVADA. Sem o selo, a conversa aparece na
   //  busca, some quando a busca é apagada, e parece defeito.
   const buscandoTexto = busca.trim().length > 0;
+  // A LISTA DE TODOS OS TELEFONES (27/11): a busca e o filtro por etiqueta
+  // trazem conversas de outros telefones, e nos dois a linha de fora leva o
+  // selo do telefone, vem depois das deste e abre no telefone dela.
+  const listaDeTodosOsTelefones = buscandoTexto || filtro.startsWith("tag:");
   const naPasta = (c) => buscandoTexto || (!!c.arquivada === verArquivadas);
   // A ABA RECORTA COMO A PASTA, e pela mesma régua: com busca escrita, não.
   // Procurar um cliente e não achá-lo porque ele mora noutra aba seria o
@@ -16184,7 +16201,7 @@ export default function Painel({ sessao }) {
     // NA BUSCA, AS DESTE TELEFONE PRIMEIRO (04/11): ela procura em todos, e a
     // conversa daqui não pode ser empurrada para baixo por uma de outro
     // telefone só por ser mais recente — ver `oTelefoneAbertoPrimeiro`.
-    return busca.trim() ? oTelefoneAbertoPrimeiro(juntas, advogadoId) : juntas;
+    return (busca.trim() || filtro.startsWith("tag:")) ? oTelefoneAbertoPrimeiro(juntas, advogadoId) : juntas;
   })();
 
   // ============================================================
@@ -16241,7 +16258,7 @@ export default function Painel({ sessao }) {
   const chaveDoQueSeVe = (c) => {
     const nome = nomeDoContato(c.contato).trim().toLocaleLowerCase("pt-BR");
     if (!nome) return "";
-    return buscandoTexto && ehDeOutroTelefone(c, advogadoId) ? `${nome}\u0000${c.advogado_id}` : nome;
+    return listaDeTodosOsTelefones && ehDeOutroTelefone(c, advogadoId) ? `${nome}\u0000${c.advogado_id}` : nome;
   };
   const nomesRepetidosNaLista = (() => {
     const quantos = new Map();
@@ -19913,7 +19930,7 @@ export default function Painel({ sessao }) {
                           durante a busca: fora dela a lista é de um telefone
                           só, o aberto. Vem antes dos outros selos porque é o
                           que muda o que o clique faz. */}
-                      {buscandoTexto && ehDeOutroTelefone(c, advogadoId) && (() => {
+                      {listaDeTodosOsTelefones && ehDeOutroTelefone(c, advogadoId) && (() => {
                         const tel = advogados.find((a) => String(a.id) === String(c.advogado_id));
                         const nomeTel = tel ? tel.nome : "outro telefone";
                         return (
