@@ -12503,6 +12503,15 @@ passo das provas — equilibradas: quem cresceu foi a suíte, de ~68 para ~110
 minutos somados em dez dias. As seis rodadas de 01 e 02/11 levaram de 37 a 40
 minutos do começo ao fim, e cada parte continua longe do teto de 90.
 
+**E em 27/11 passaram a ser cinco máquinas**, a pedido do Rodrigo (*"Pode
+fazer, muda para 5 computadores"*). Com três, cada parte levava de 35 a 40
+minutos. Com cinco, a conta dá uns 22 minutos de provas mais um de preparo
+por máquina. Mudou só a matriz do `provas.yml` (`parte: [1, 2, 3, 4, 5]`):
+`rodar.mjs` divide por quantas máquinas o GitHub disser (`job-total`), e
+`as-provas-em-partes` lê o número da matriz e confere a divisão com ele (e
+reprova se a matriz não tiver as cinco). A verificação "Provas do painel"
+continua juntando todas, com o mesmo nome.
+
 **A máquina ficou escrita: `ubuntu-24.04`, e não `ubuntu-latest` (11/11).**
 Naquele dia o GitHub passou o `ubuntu-latest` para o Ubuntu 26.04. **Trocar de
 máquina é uma decisão**, e não algo que o GitHub decide por nós no meio de uma

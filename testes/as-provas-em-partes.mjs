@@ -107,13 +107,20 @@ function tabela(nome, conteudo) {
 }
 
 try {
-  console.log("\nAs três partes, pela tabela de verdade");
-  const tres = await listar({ PROVAS_PARTES: "3" });
-  ok("--listar com três partes sai sem erro", tres.codigo === 0, tres.erro);
+  // QUANTAS MÁQUINAS O GITHUB USA vem da matriz do provas.yml (cinco desde
+  // 27/11), e é com esse número que as partes são conferidas aqui: uma prova
+  // escrita para três aprovaria uma divisão que só vale para três.
+  const FLUXO = readFileSync(join(PASTA, "..", ".github", "workflows", "provas.yml"), "utf8");
+  const MATRIZ = (FLUXO.match(/\n {8}parte: \[([0-9, ]+)\]\n/) || [, ""])[1].split(",").map((x) => x.trim()).filter(Boolean);
+  const N = MATRIZ.length;
+  console.log(`\nAs ${N} partes da matriz do GitHub, pela tabela de verdade`);
+  ok("a matriz do GitHub tem cinco máquinas, numeradas de 1 a 5", MATRIZ.join() === "1,2,3,4,5", MATRIZ.join());
+  const tres = await listar({ PROVAS_PARTES: String(N) });
+  ok("--listar com as partes da matriz sai sem erro", tres.codigo === 0, tres.erro);
   const partes = asPartes(tres.saida);
-  ok("são três partes, numeradas de 1 a 3",
-     partes.length === 3 && partes.map((p) => p.numero).join() === "1,2,3"
-     && partes.every((p) => p.de === 3), tres.saida.slice(0, 300));
+  ok(`são ${N} partes, numeradas de 1 a ${N}`,
+     N > 0 && partes.length === N && partes.map((p) => p.numero).join() === MATRIZ.join()
+     && partes.every((p) => p.de === N), tres.saida.slice(0, 300));
   const juntas = partes.flatMap((p) => p.provas);
   const faltam = PROVAS.filter((n) => !juntas.includes(n));
   ok(`toda prova da pasta está numa parte (${PROVAS.length} provas)`,
@@ -122,7 +129,7 @@ try {
      juntas.length === PROVAS.length && new Set(juntas).size === juntas.length
      && juntas.every((n) => PROVAS.includes(n)), `${juntas.length} nomes para ${PROVAS.length} provas`);
   ok("nenhuma parte vazia, e cada uma diz quantas provas tem",
-     partes.length === 3 && partes.every((p) => p.provas.length > 0 && p.provas.length === p.quantas));
+     N > 0 && partes.length === N && partes.every((p) => p.provas.length > 0 && p.provas.length === p.quantas));
 
   // A ESPERA É A DA PARTE MAIS LENTA. O total sai das próprias partes (a soma
   // do que elas dizem), e não de uma segunda conta escrita aqui: uma conta
@@ -131,32 +138,32 @@ try {
   const soma = minutos.reduce((a, b) => a + b, 0);
   const maisLenta = Math.max(...minutos), maisRapida = Math.min(...minutos);
   const maiorProva = Math.max(...Object.values(TEMPOS)) / 60;
-  ok("a parte mais lenta fica a menos de um minuto do total dividido por três",
-     partes.length === 3 && maisLenta - soma / 3 < 1, `partes: ${minutos.join(" · ")} min`);
+  ok("a parte mais lenta fica a menos de um minuto do total dividido pelas máquinas",
+     N > 0 && partes.length === N && maisLenta - soma / N < 1, `partes: ${minutos.join(" · ")} min`);
   ok("entre a mais lenta e a mais rápida, menos do que a prova mais demorada",
-     partes.length === 3 && maisLenta - maisRapida <= maiorProva + 0.1,
+     N > 0 && partes.length === N && maisLenta - maisRapida <= maiorProva + 0.1,
      `${maisLenta} − ${maisRapida} contra ${maiorProva.toFixed(1)} min`);
 
   console.log("\nCada máquina roda a parte que a lista mostra");
-  const maquinas = await Promise.all([1, 2, 3].map((k) => listar({ PROVAS_PARTES: "3", PROVAS_PARTE: String(k) })));
-  ok("as três saem sem erro", maquinas.length === 3 && maquinas.every((m) => m.codigo === 0),
+  const maquinas = await Promise.all(MATRIZ.map((k) => listar({ PROVAS_PARTES: String(N), PROVAS_PARTE: k })));
+  ok("todas saem sem erro", N > 0 && maquinas.length === N && maquinas.every((m) => m.codigo === 0),
      maquinas.map((m) => m.erro).join(" | "));
   const deCada = maquinas.map((m) => daMaquina(m.saida));
   ok("cada máquina roda exatamente a sua parte da lista",
-     deCada.length === 3 && partes.length === 3
+     N > 0 && deCada.length === N && partes.length === N
      && deCada.every((l, i) => l && [...l].sort().join() === [...partes[i].provas].sort().join()));
   const somadas = deCada.flatMap((l) => l ?? []);
-  ok("as três máquinas juntas rodam toda prova da pasta, uma vez cada",
+  ok("as máquinas juntas rodam toda prova da pasta, uma vez cada",
      somadas.length === PROVAS.length && PROVAS.length > 0
      && [...somadas].sort().join() === PROVAS.join(), `${somadas.length} de ${PROVAS.length}`);
   ok("cada máquina roda na ordem de sempre, e não na ordem da conta",
-     deCada.length === 3 && deCada.every((l) => l && l.length > 0
+     N > 0 && deCada.length === N && deCada.every((l) => l && l.length > 0
        && l.join() === PROVAS.filter((n) => l.includes(n)).join()));
 
   console.log("\nA mesma conta em toda máquina");
-  const deNovo = await listar({ PROVAS_PARTES: "3" });
+  const deNovo = await listar({ PROVAS_PARTES: String(N) });
   ok("chamada de novo, a resposta é a mesma", tres.saida.length > 0 && deNovo.saida === tres.saida);
-  const deOutraPasta = await listar({ PROVAS_PARTES: "3" }, { cwd: tmpdir() });
+  const deOutraPasta = await listar({ PROVAS_PARTES: String(N) }, { cwd: tmpdir() });
   ok("chamada de outra pasta, a resposta é a mesma",
      tres.saida.length > 0 && deOutraPasta.saida === tres.saida, deOutraPasta.erro);
 
